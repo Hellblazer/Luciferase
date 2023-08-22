@@ -8,7 +8,7 @@
         <version>0.0.1-SNAPSHOT</version>
     </parent>
     <artifactId>grpc</artifactId>
-    <name>GRPC</name> 
+    <name>GRPC - Proto/GRPC Code Generation</name> 
     <description>Module that defines and generates all proto/grpc</description>
 
     <dependencies>
