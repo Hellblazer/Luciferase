@@ -160,13 +160,6 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>versions-maven-plugin</artifactId>
-                <configuration>
-                    <generateBackupPoms>false</generateBackupPoms>
-                </configuration>
-            </plugin>
-            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
                 <executions>
@@ -178,11 +171,11 @@
                         <configuration>
                             <rules>
                                 <requireMavenVersion>
-                                    <version>[3.8.1,)</version>
+                                    <version>[3.9.1,)</version>
                                 </requireMavenVersion>
                                 <dependencyConvergence />
                                 <requireJavaVersion>
-                                    <version>[19,)</version>
+                                    <version>[20,)</version>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>
@@ -229,7 +222,7 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.0.0</version>
+                    <version>3.4.0</version>
                     <executions>
                         <execution>
                             <id>add-source</id>
