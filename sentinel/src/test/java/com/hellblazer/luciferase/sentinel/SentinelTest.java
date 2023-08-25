@@ -34,7 +34,6 @@ public class SentinelTest {
     public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
         float radiusSquared = radius * radius;
         Point3f ourPoints[] = new Point3f[numberOfPoints];
-        Point3f translated = new Point3f(radius, radius, radius);
         for (int i = 0; i < ourPoints.length; i++) {
             if (inSphere) {
                 do {
@@ -43,7 +42,6 @@ public class SentinelTest {
             } else {
                 ourPoints[i] = randomPoint(random, -radius, radius);
             }
-            ourPoints[i].add(translated);
         }
 
         return ourPoints;
@@ -79,7 +77,7 @@ public class SentinelTest {
         long now = System.currentTimeMillis();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
-                sentinel.moveBy(site, randomPoint(entropy, 10f, 10f));
+                site.moveBy(randomPoint(entropy, 10f, 10f));
             }
             sentinel.retriangulate();
             assertEquals(15, sites.get(75).getNeighbors().size());

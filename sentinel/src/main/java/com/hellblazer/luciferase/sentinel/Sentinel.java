@@ -17,7 +17,6 @@
 package com.hellblazer.luciferase.sentinel;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -54,31 +53,6 @@ public class Sentinel {
 
     private Tetrahedralization grid;
     private final List<Site>   tracking = new ArrayList<>();
-
-    /**
-     * Move the site by the delta. If the site exits the tracking volume, the site
-     * is no longer tracked by the receiver
-     *
-     * @param site
-     * @param delta
-     */
-    public void moveBy(Site site, Tuple3f delta) {
-        site.moveBy(delta);
-    }
-
-    /**
-     * Move the site to the new location
-     *
-     * @param site
-     * @param newLocation
-     */
-    public void moveTo(Site site, Tuple3f newLocation) {
-        var index = Collections.binarySearch(tracking, site);
-        if (index < 0) {
-            throw new IllegalArgumentException("Site located at: %s is not being tracked by the receiver".formatted(site));
-        }
-        site.set(newLocation);
-    }
 
     public void retriangulate() {
         grid = new Tetrahedralization();
