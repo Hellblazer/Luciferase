@@ -40,8 +40,7 @@
     </modules>
 
     <dependencyManagement>
-        <dependencies> 
-
+        <dependencies>
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2-mvstore</artifactId>
@@ -127,7 +126,7 @@
                 <artifactId>grpc-servlet</artifactId>
                 <version>${grpc.version}</version>
             </dependency>
-            
+
             <!-- JavaFX Stuff -->
             <dependency>
                 <groupId>org.openjfx</groupId>

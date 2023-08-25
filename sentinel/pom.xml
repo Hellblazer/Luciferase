@@ -10,7 +10,7 @@
     <artifactId>sentinel</artifactId>
     <name>Sentinel - point tracking</name>
 
-    <dependencies>
+    <dependencies> 
         <dependency>
             <groupId>com.github.davidmoten</groupId>
             <artifactId>hilbert-curve</artifactId>

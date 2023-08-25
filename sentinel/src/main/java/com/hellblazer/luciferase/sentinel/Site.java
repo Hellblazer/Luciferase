@@ -18,18 +18,25 @@ package com.hellblazer.luciferase.sentinel;
 
 import java.math.BigInteger;
 
-import javax.vecmath.Tuple3i;
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
+
+import com.hellblazer.delaunay.Vertex;
 
 /**
  * @author hal.hildebrand
  */
-public class Site extends Vector3i implements Comparable<Site> {
+public class Site extends Vertex implements Comparable<Site> {
     private static final long serialVersionUID = 1L;
 
     private BigInteger hilbert;
 
-    public Site(Tuple3i initial, BigInteger hilbert) {
-        super(initial);
+    public Site(Point3f p) {
+        this(p, null);
+    }
+
+    public Site(Point3f initial, BigInteger hilbert) {
+        super(initial.x, initial.y, initial.z);
         this.hilbert = hilbert;
     }
 
@@ -40,6 +47,12 @@ public class Site extends Vector3i implements Comparable<Site> {
 
     public BigInteger getHilbert() {
         return hilbert;
+    }
+
+    public void moveBy(Tuple3f delta) {
+        x = x + delta.x;
+        y = y + delta.y;
+        z = z + delta.z;
     }
 
     void setHilbert(BigInteger hilbert) {
