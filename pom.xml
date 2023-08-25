@@ -17,6 +17,7 @@
         <grpc.version>1.54.0</grpc.version>
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
+        <javafx.version>20</javafx.version>
     </properties>
 
     <licenses>
@@ -34,14 +35,32 @@
     <modules>
         <module>grpc</module>
         <module>lucien</module>
+        <module>e2e-test</module>
+        <module>sentinel</module>
     </modules>
 
     <dependencyManagement>
-        <dependencies>
+        <dependencies> 
+
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2-mvstore</artifactId>
                 <version>${h2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.davidmoten</groupId>
+                <artifactId>hilbert-curve</artifactId>
+                <version>0.2.3</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.davidmoten</groupId>
+                <artifactId>sparse-hilbert-index</artifactId>
+                <version>0.1.11</version>
+            </dependency>
+            <dependency>
+                <groupId>javax.vecmath</groupId>
+                <artifactId>vecmath</artifactId>
+                <version>1.5.2</version>
             </dependency>
 
 
@@ -107,6 +126,45 @@
                 <groupId>io.grpc</groupId>
                 <artifactId>grpc-servlet</artifactId>
                 <version>${grpc.version}</version>
+            </dependency>
+            
+            <!-- JavaFX Stuff -->
+            <dependency>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-controls</artifactId>
+                <version>${javafx.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-fxml</artifactId>
+                <version>${javafx.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-swing</artifactId>
+                <version>${javafx.version}</version>
+            </dependency>
+
+            <!-- Test Only Dependencies Below This Line-->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-engine</artifactId>
+                <version>${junit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>4.8.1</version>
+            </dependency>
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
