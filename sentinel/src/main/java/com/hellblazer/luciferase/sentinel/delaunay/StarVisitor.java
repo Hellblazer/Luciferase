@@ -1,7 +1,5 @@
 /**
- * Copyright (C) 2009 Hal Hildebrand. All rights reserved.
- *
- * This file is part of the 3D Incremental Voronoi system
+ * Copyright (C) 2010 Hal Hildebrand. All rights reserved.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -17,15 +15,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.delaunay;
+package com.hellblazer.luciferase.sentinel.delaunay;
 
 /**
- * The canonical enumeration of vertices.
- * <p>
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  *
  */
-public enum V {
-    A, B, C, D;
+@FunctionalInterface
+public interface StarVisitor {
+    void visit(V vertex, Tetrahedron t, Vertex x, Vertex y, Vertex z);
 }

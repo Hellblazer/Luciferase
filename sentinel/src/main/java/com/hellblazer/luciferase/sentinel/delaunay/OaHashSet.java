@@ -13,29 +13,30 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.delaunay;
+package com.hellblazer.luciferase.sentinel.delaunay;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  * 
  */
-public class IdentitySet<T> extends OpenAddressingSet<T> {
+public class OaHashSet<T> extends OpenAddressingSet<T> {
 
-    public IdentitySet() {
-        super(4);
+    public OaHashSet() {
+        super();
     }
 
-    public IdentitySet(int initialCapacity) {
+    public OaHashSet(int initialCapacity) {
         super(initialCapacity);
     }
 
     @Override
     protected boolean equals(Object key, Object ob) {
-        return ob == key;
+        return key.equals(ob);
     }
 
     @Override
     protected int getHash(Object key) {
-        return System.identityHashCode(key);
+        return key.hashCode();
     }
+
 }

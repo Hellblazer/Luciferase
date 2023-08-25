@@ -21,7 +21,7 @@ import java.math.BigInteger;
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 
-import com.hellblazer.delaunay.Vertex;
+import com.hellblazer.luciferase.sentinel.delaunay.Vertex;
 
 /**
  * @author hal.hildebrand

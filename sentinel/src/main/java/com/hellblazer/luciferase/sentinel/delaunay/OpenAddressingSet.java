@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and 
  * limitations under the License.
  */
-package com.hellblazer.delaunay;
+package com.hellblazer.luciferase.sentinel.delaunay;
 
 import java.util.AbstractSet;
 import java.util.Iterator;

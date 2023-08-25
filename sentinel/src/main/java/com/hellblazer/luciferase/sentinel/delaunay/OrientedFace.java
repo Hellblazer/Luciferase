@@ -17,11 +17,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.delaunay;
+package com.hellblazer.luciferase.sentinel.delaunay;
 
-import static com.hellblazer.delaunay.V.B;
-import static com.hellblazer.delaunay.V.C;
-import static com.hellblazer.delaunay.V.D;
+import static com.hellblazer.luciferase.sentinel.delaunay.V.B;
+import static com.hellblazer.luciferase.sentinel.delaunay.V.C;
+import static com.hellblazer.luciferase.sentinel.delaunay.V.D;
 
 import java.util.Iterator;
 import java.util.LinkedList;

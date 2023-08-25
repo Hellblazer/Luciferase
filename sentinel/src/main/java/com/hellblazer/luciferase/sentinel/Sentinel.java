@@ -23,7 +23,7 @@ import java.util.stream.Stream;
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 
-import com.hellblazer.delaunay.Tetrahedralization;
+import com.hellblazer.luciferase.sentinel.delaunay.Tetrahedralization;
 
 /**
  * Kinetic point cloud tracking
