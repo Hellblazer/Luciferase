@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel;
+package com.hellblazer.luciferase.portal;
 
 import java.util.ArrayList;
 
@@ -29,7 +29,7 @@ import javax.vecmath.Point3f;
  *
  */
 
-public class Examples {
+public class TestCases {
 
     public static Point3f[] getCubicCrystalStructure() {
         ArrayList<Point3f> list = new ArrayList<>();

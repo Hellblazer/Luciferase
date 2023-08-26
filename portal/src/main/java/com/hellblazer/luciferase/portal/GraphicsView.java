@@ -5,8 +5,10 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.vecmath.Tuple3f;
+import javax.vecmath.Vector3d;
 
 import com.hellblazer.luciferase.portal.mesh.Face;
+import com.hellblazer.luciferase.portal.mesh.Mesh;
 import com.hellblazer.luciferase.portal.mesh.PolyLine;
 import com.hellblazer.luciferase.sentinel.Vertex;
 
@@ -28,12 +30,16 @@ public class GraphicsView extends Group {
     public void newFace(Tuple3f[] verts, PhongMaterial color, boolean showFace, Group group) {
         List<Point3D> vertices;
         if (showFace) {
+            Mesh mesh = new Mesh();
             Face face = new Face(verts.length + 1);
             for (var i = 0; i < verts.length; i++) {
                 face.setVertexIndex(i, i);
+                mesh.addVertexPosition(new Vector3d(verts[i]));
             }
             face.setVertexIndex(verts.length, 0);
+            mesh.addFace(face);
 
+            mesh.addVertexNormal(face.getFaceNormal());
             MeshView view = face.constructMeshView();
             view.setCullFace(CullFace.BACK);
             view.setMaterial(color);

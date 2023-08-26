@@ -44,7 +44,7 @@ public class TestTimeInsert {
 
         Sentinel tet = new Sentinel(random);
 
-        Point3f[] cubicCrystalStructure = Examples.getCubicCrystalStructure();
+        Point3f[] cubicCrystalStructure = TestCases.getCubicCrystalStructure();
         for (var v : cubicCrystalStructure) {
             tet.track(v);
         }
@@ -67,7 +67,7 @@ public class TestTimeInsert {
 
         Sentinel tet = new Sentinel(random);
 
-        Point3f[] grid = Examples.getGrid();
+        Point3f[] grid = TestCases.getGrid();
         for (var v : grid) {
             tet.track(v);
         }
@@ -131,7 +131,7 @@ public class TestTimeInsert {
 
         Sentinel tet = new Sentinel(random);
 
-        Point3f[] worstCase = Examples.getWorstCase();
+        Point3f[] worstCase = TestCases.getWorstCase();
         for (var v : worstCase) {
             tet.track(v);
         }
