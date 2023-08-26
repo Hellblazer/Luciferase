@@ -39,13 +39,32 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 
 /**
- * A Delaunay tetrahedralization.
+ * A Delaunay tetrahedralization. This implementation is optimized for
+ * Luciferase, not for any other particular use. As such, it is based on floats,
+ * not doubles - although predicates are evaluated with doubles to ensure
+ * nothing horrible blows up. The extent of the "Big Tetrahedron" that defines
+ * the maximum extent of the universe for this tetrahedralization is thus {-32k,
+ * +32k}. This implementation also uses the "fast" version of the inSphere
+ * predicate, rather than the exact. The exact version is most expensive so made
+ * the call here. The result is that the generated mesh isn't precisely exact.
+ * As long as it doesn't blow up, for the purposes of kinetic point tracking,
+ * we're happy.
+ * <p>
+ * We are largely concerned with the topology of the tracked points, and their
+ * relative location, not the precise form of the mesh that encodes the
+ * topology. Because we throw the tetrahedra away on every rebuild, there's
+ * really little need for an index and so random walk is used. It is assumed
+ * that the vast majority, if not damn near entirety of operations concerning
+ * the Sentinel and its tracked components and topology will be operating with a
+ * vertex after the tetrahedralization has occurred. Consequently operations on
+ * Vertex and Tetrahedron are the defacto operation origination rather at the
+ * Sentinel level.
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  *
  */
 
-public class Sentinel {
+public class Sentinel implements Iterable<Vertex> {
     /**
      * Cannonical enumeration of the vertex ordinals
      */
@@ -70,7 +89,7 @@ public class Sentinel {
     /**
      * Scale of the universe
      */
-    private static float SCALE = (float) Math.pow(2D, 30D);
+    private static float SCALE = (float) Math.pow(2, 16);
 
     public static Vertex[] getFourCorners() {
         Vertex[] fourCorners = new Vertex[4];
@@ -162,6 +181,21 @@ public class Sentinel {
         return fourCorners;
     }
 
+    @Override
+    public Iterator<Vertex> iterator() {
+        return head != null ? head.iterator() : new Iterator<Vertex>() {
+            @Override
+            public boolean hasNext() {
+                return false;
+            }
+
+            @Override
+            public Vertex next() {
+                throw new NoSuchElementException();
+            }
+        };
+    }
+
     /**
      * Locate the tetrahedron which contains the query point via a stochastic walk
      * through the delaunay triangulation. This location algorithm is a slight
@@ -207,7 +241,7 @@ public class Sentinel {
      * @return
      */
     public Stream<Vertex> stream() {
-        return StreamSupport.stream(vertices().spliterator(), false);
+        return StreamSupport.stream(spliterator(), false);
     }
 
     /**
@@ -264,32 +298,6 @@ public class Sentinel {
             head.detach(v);
             v.clear();
         }
-    }
-
-    /**
-     * Answer the iteration of all vertices in this tetrahedralization
-     *
-     * @return
-     */
-    public Iterable<Vertex> vertices() {
-        return head != null ? head : new Iterable<Vertex>() {
-
-            @Override
-            public Iterator<Vertex> iterator() {
-                return new Iterator<Vertex>() {
-
-                    @Override
-                    public boolean hasNext() {
-                        return false;
-                    }
-
-                    @Override
-                    public Vertex next() {
-                        throw new NoSuchElementException();
-                    }
-                };
-            }
-        };
     }
 
     /**
