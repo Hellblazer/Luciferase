@@ -27,7 +27,6 @@ import static com.hellblazer.luciferase.sentinel.V.D;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Random;
@@ -155,42 +154,6 @@ public class Sentinel {
     }
 
     /**
-     * Delete the vertex from the tetrahedralization. This algorithm is the
-     * deleteInSphere algorithm from Ledoux. See "Flipping to Robustly Delete a
-     * Vertex in a Delaunay Tetrahedralization", H. Ledoux, C.M. Gold and G. Baciu,
-     * 2005
-     * <p>
-     *
-     * @param v - the vertex to be deleted
-     */
-    public void delete(Vertex v) {
-        assert v != null;
-
-        LinkedList<OrientedFace> ears = v.getEars();
-        class OC implements StarVisitor {
-            int order = 0;
-
-            @Override
-            public void visit(V vertex, Tetrahedron t, Vertex x, Vertex y, Vertex z) {
-                order++;
-            }
-        }
-        var oc = new OC();
-        v.getAdjacent().visitStar(v, oc);
-        while (oc.order > 4) {
-            for (int i = 0; i < ears.size();) {
-                if (ears.get(i).flip(i, ears, v)) {
-                    ears.remove(i);
-                } else {
-                    i++;
-                }
-            }
-        }
-        last = flip4to1(v);
-        size--;
-    }
-
-    /**
      * Answer the four corners of the universe
      *
      * @return
@@ -294,6 +257,13 @@ public class Sentinel {
         final var v = new Vertex(p);
         add(v, near.locate(p, random));
         return v;
+    }
+
+    public void untrack(Vertex v) {
+        if (head != null) {
+            head.detach(v);
+            v.clear();
+        }
     }
 
     /**
