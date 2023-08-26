@@ -142,7 +142,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return adjacent;
     }
 
-    public LinkedList<OrientedFace> getEars() {
+    public final LinkedList<OrientedFace> getEars() {
         assert adjacent != null;
         EarSet aggregator = new EarSet();
         adjacent.visitStar(this, aggregator);
@@ -155,7 +155,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      * @param v - the vertex determining the neighborhood
      * @return the collection of neighboring vertices
      */
-    public Collection<Vertex> getNeighbors() {
+    public final Collection<Vertex> getNeighbors() {
         assert adjacent != null;
 
         final Set<Vertex> neighbors = new IdentitySet<>();
@@ -167,7 +167,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return neighbors;
     }
 
-    public Deque<OrientedFace> getStar() {
+    public final Deque<OrientedFace> getStar() {
         assert adjacent != null;
 
         final Deque<OrientedFace> star = new ArrayDeque<>();
@@ -179,11 +179,10 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
 
     /**
      * Answer the faces of the voronoi region around the receiver
-     *
-     * @param v - the vertex of interest
+     * 
      * @return the list of faces defining the voronoi region defined by the receiver
      */
-    public List<Tuple3f[]> getVoronoiRegion() {
+    public final List<Tuple3f[]> getVoronoiRegion() {
         assert adjacent != null;
 
         final List<Tuple3f[]> faces = new ArrayList<>();
@@ -215,9 +214,8 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      *         and d; -1 if it lies outside; and 0 if the five points are
      *         cospherical
      */
-
     public final int inSphere(Tuple3f a, Tuple3f b, Tuple3f c, Tuple3f d) {
-        double result = Geometry.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
+        double result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
         if (result > 0.0) {
             return 1;
         } else if (result < 0.0) {
@@ -227,7 +225,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
     }
 
     @Override
-    public Iterator<Vertex> iterator() {
+    public final Iterator<Vertex> iterator() {
         return new Iterator<Vertex>() {
             private Vertex next = Vertex.this;
 
@@ -248,7 +246,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         };
     }
 
-    public Tetrahedron locate(Tuple3f query, Random entropy) {
+    public final Tetrahedron locate(Tuple3f query, Random entropy) {
         assert adjacent != null;
         return adjacent.locate(query, entropy);
     }

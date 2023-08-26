@@ -692,6 +692,12 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         faces.add(new Vertex[] { d, a, c });
     }
 
+    public Point3f center() {
+        float[] center = new float[3];
+        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        return new Point3f(center[0], center[1], center[2]);
+    }
+
     /**
      *
      * Perform the 1 -> 4 bistellar flip. This produces 4 new tetrahedron from the
