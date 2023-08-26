@@ -562,32 +562,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                                                        { B, C, A, null } };
 
     /**
-     * Return +1 if the qeury lies inside the sphere passing through a, b, c, and d;
-     * -1 if it lies outside; and 0 if the five points are cospherical. The vertices
-     * a, b, c, and d must be ordered so that they have a positive orientation (as
-     * defined by {@link #orientation(Vertex, Vertex, Vertex)}), or the sign of the
-     * result will be reversed.
-     * <p>
-     *
-     * @param query - the point to query
-     * @param a     , b, c, d - the points defining the sphere, in oriented order
-     * @return +1 if the query lies inside the sphere passing through a, b, c, and
-     *         d; -1 if it lies outside; and 0 if the five points are cospherical
-     */
-
-    public static final int inSphere(Tuple3f query, Tuple3f a, Tuple3f b, Tuple3f c, Tuple3f d) {
-        double result = Geometry.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, query.x, query.y,
-                                          query.z);
-        if (result > 0.0) {
-            return 1;
-        } else if (result < 0.0) {
-            return -1;
-        }
-        return 0;
-
-    }
-
-    /**
      * Answer +1 if the orientation of the query is positive with respect to the
      * plane defined by {a, b, c}, -1 if negative, or 0 if the test point is
      * coplanar
