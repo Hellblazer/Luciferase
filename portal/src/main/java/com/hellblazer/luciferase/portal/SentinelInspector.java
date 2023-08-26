@@ -110,7 +110,6 @@ public class SentinelInspector extends Application {
     public void start(Stage primaryStage) {
 
         // setUserAgentStylesheet(STYLESHEET_MODENA);
-        System.out.println("start()");
 
         root.getChildren().add(world);
         root.setDepthTest(DepthTest.ENABLE);
@@ -147,7 +146,6 @@ public class SentinelInspector extends Application {
     }
 
     private void buildAxes() {
-        System.out.println("buildAxes()");
         final PhongMaterial redMaterial = new PhongMaterial();
         redMaterial.setDiffuseColor(Color.DARKRED);
         redMaterial.setSpecularColor(Color.RED);
@@ -173,11 +171,7 @@ public class SentinelInspector extends Application {
         world.getChildren().addAll(axisGroup);
     }
 
-    // private void buildScene() {
-    // root.getChildren().add(world);
-    // }
     private void buildCamera() {
-        System.out.println("buildCamera()");
         root.getChildren().add(cameraXform);
         cameraXform.getChildren().add(cameraXform2);
         cameraXform2.getChildren().add(cameraXform3);
@@ -195,7 +189,6 @@ public class SentinelInspector extends Application {
         final var random = new Random(666);
         final var tet = new Sentinel(random);
         Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, false);
-//        Point3f ourPoints[] = TestCases.getGrid();
         for (var v : ourPoints) {
             tet.track(v);
         }
@@ -275,5 +268,4 @@ public class SentinelInspector extends Application {
             }
         });
     }
-
 }
