@@ -18,6 +18,7 @@
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
         <javafx.version>20</javafx.version>
+        <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
     </properties>
 
     <licenses>
@@ -42,26 +43,27 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.h2database</groupId>
-                <artifactId>h2-mvstore</artifactId>
-                <version>${h2.version}</version>
+                <groupId>com.hellblazer.primeMover</groupId>
+                <artifactId>runtime</artifactId>
+                <version>${prime-mover.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.github.davidmoten</groupId>
-                <artifactId>hilbert-curve</artifactId>
-                <version>0.2.3</version>
+                <groupId>com.hellblazer.primeMover</groupId>
+                <artifactId>maven-plugin</artifactId>
+                <version>${prime-mover.version}</version>
             </dependency>
-            <dependency>
-                <groupId>com.github.davidmoten</groupId>
-                <artifactId>sparse-hilbert-index</artifactId>
-                <version>0.1.11</version>
-            </dependency>
+
             <dependency>
                 <groupId>javax.vecmath</groupId>
                 <artifactId>vecmath</artifactId>
                 <version>1.5.2</version>
             </dependency>
 
+            <dependency>
+                <groupId>com.h2database</groupId>
+                <artifactId>h2-mvstore</artifactId>
+                <version>${h2.version}</version>
+            </dependency>
 
             <!-- GRPC/Proto Stuff-->
             <dependency>
@@ -245,7 +247,7 @@
                 <plugin>
                     <groupId>com.hellblazer.primeMover</groupId>
                     <artifactId>maven-plugin</artifactId>
-                    <version>0.1.0-SNAPSHOT</version>
+                    <version>${prime-mover.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
@@ -344,4 +346,26 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <repositories>
+        <repository>
+            <id>hell-repo</id>
+            <url>
+                https://raw.githubusercontent.com/Hellblazer/repo-hell/main/mvn-artifact</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>plugin-hell-repo</id>
+            <url>
+                https://raw.githubusercontent.com/Hellblazer/repo-hell/main/mvn-artifact</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 </project>

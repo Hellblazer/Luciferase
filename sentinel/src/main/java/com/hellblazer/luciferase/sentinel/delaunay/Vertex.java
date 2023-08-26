@@ -108,17 +108,17 @@ public class Vertex extends Vector3f {
      */
     private Tetrahedron adjacent;
 
-    protected Vertex(float i, float j, float k) {
+    public Vertex(float i, float j, float k) {
         x = i;
         y = j;
         z = k;
     }
 
-    protected Vertex(float i, float j, float k, float scale) {
+    public Vertex(float i, float j, float k, float scale) {
         this(i * scale, j * scale, k * scale);
     }
 
-    protected Vertex(Tuple3f p) {
+    public Vertex(Tuple3f p) {
         this(p.x, p.y, p.z);
     }
 
@@ -224,6 +224,12 @@ public class Vertex extends Vector3f {
         return 0;
     }
 
+    public void moveBy(Tuple3f delta) {
+        x = x + delta.x;
+        y = y + delta.y;
+        z = z + delta.z;
+    }
+
     /**
      * Answer +1 if the orientation of the receiver is positive with respect to the
      * plane defined by {a, b, c}, -1 if negative, or 0 if the test point is
@@ -244,10 +250,6 @@ public class Vertex extends Vector3f {
         return 0;
     }
 
-    public void reset() {
-        adjacent = null;
-    }
-
     @Override
     public String toString() {
         return "{" + x + ", " + y + ", " + z + "}";
@@ -256,6 +258,10 @@ public class Vertex extends Vector3f {
     void freshenAdjacent(Tetrahedron tetrahedron) {
         if (adjacent == null || adjacent.isDeleted())
             adjacent = tetrahedron;
+    }
+
+    void reset() {
+        adjacent = null;
     }
 
     /**

@@ -24,6 +24,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 
 import com.hellblazer.luciferase.sentinel.delaunay.Tetrahedralization;
+import com.hellblazer.luciferase.sentinel.delaunay.Vertex;
 
 /**
  * Kinetic point cloud tracking
@@ -52,7 +53,7 @@ public class Sentinel {
     }
 
     private Tetrahedralization grid;
-    private final List<Site>   tracking = new ArrayList<>();
+    private final List<Vertex> tracking = new ArrayList<>();
 
     public void retriangulate() {
         grid = new Tetrahedralization();
@@ -61,17 +62,16 @@ public class Sentinel {
         }
     }
 
-    public Stream<Site> stream() {
+    public Stream<Vertex> stream() {
         return tracking.stream();
     }
 
     /**
-     * Track as site from the initial location
+     * Track the vertex
      *
-     * @param initial - the initial location of the site
-     * @return the Site tracked starting at the initial location
+     * @param s
      */
-    public void track(Site s) {
+    public void track(Vertex s) {
         tracking.add(s);
     }
 }

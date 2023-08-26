@@ -25,6 +25,8 @@ import javax.vecmath.Point3f;
 
 import org.junit.jupiter.api.Test;
 
+import com.hellblazer.luciferase.sentinel.delaunay.Vertex;
+
 /**
  * @author hal.hildebrand
  */
@@ -66,10 +68,10 @@ public class SentinelTest {
     @Test
     public void smokin() throws Exception {
         var sentinel = new Sentinel();
-        var sites = new ArrayList<Site>();
+        var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
         for (var p : getRandomPoints(entropy, 500, 1000, true)) {
-            var s = new Site(p);
+            var s = new Vertex(p);
             sentinel.track(s);
             sites.add(s);
         }

@@ -994,40 +994,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         return orientation(query, d, a, c);
     }
 
-    public void removeAnyDegenerateTetrahedronPair() {
-        if (nA != null) {
-            if (nA == nB) {
-                removeDegenerateTetrahedronPair(V.A, V.B, V.C, V.D);
-                return;
-            }
-            if (nA == nC) {
-                removeDegenerateTetrahedronPair(V.A, V.C, V.B, V.D);
-                return;
-            }
-            if (nA == nD) {
-                removeDegenerateTetrahedronPair(V.A, V.D, V.B, V.C);
-                return;
-            }
-        }
-
-        if (nB != null) {
-            if (nB == nC) {
-                removeDegenerateTetrahedronPair(V.B, V.C, V.A, V.D);
-                return;
-            }
-            if (nB == nD) {
-                removeDegenerateTetrahedronPair(V.B, V.D, V.A, V.C);
-                return;
-            }
-        }
-
-        if (nC != null)
-            if (nC == nD) {
-                removeDegenerateTetrahedronPair(V.C, V.D, V.A, V.B);
-                return;
-            }
-    }
-
     @Override
     public String toString() {
         StringBuffer buf = new StringBuffer();
@@ -1044,7 +1010,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         return buf.toString();
     }
 
-    protected void children(Stack<Tetrahedron> stack, Set<Tetrahedron> processed) {
+    void children(Stack<Tetrahedron> stack, Set<Tetrahedron> processed) {
         if (nA != null && !processed.contains(nA)) {
             stack.push(nA);
         }
@@ -1142,6 +1108,40 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     void patch(Vertex old, Tetrahedron n, V vNew) {
         patch(ordinalOf(old), n, vNew);
+    }
+
+    void removeAnyDegenerateTetrahedronPair() {
+        if (nA != null) {
+            if (nA == nB) {
+                removeDegenerateTetrahedronPair(V.A, V.B, V.C, V.D);
+                return;
+            }
+            if (nA == nC) {
+                removeDegenerateTetrahedronPair(V.A, V.C, V.B, V.D);
+                return;
+            }
+            if (nA == nD) {
+                removeDegenerateTetrahedronPair(V.A, V.D, V.B, V.C);
+                return;
+            }
+        }
+
+        if (nB != null) {
+            if (nB == nC) {
+                removeDegenerateTetrahedronPair(V.B, V.C, V.A, V.D);
+                return;
+            }
+            if (nB == nD) {
+                removeDegenerateTetrahedronPair(V.B, V.D, V.A, V.C);
+                return;
+            }
+        }
+
+        if (nC != null)
+            if (nC == nD) {
+                removeDegenerateTetrahedronPair(V.C, V.D, V.A, V.B);
+                return;
+            }
     }
 
     void setNeighbor(V v, Tetrahedron n) {
