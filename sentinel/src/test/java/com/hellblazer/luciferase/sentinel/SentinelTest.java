@@ -25,8 +25,6 @@ import javax.vecmath.Point3f;
 
 import org.junit.jupiter.api.Test;
 
-import com.hellblazer.luciferase.sentinel.delaunay.Vertex;
-
 /**
  * @author hal.hildebrand
  */
@@ -71,9 +69,7 @@ public class SentinelTest {
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
         for (var p : getRandomPoints(entropy, 500, 1000, true)) {
-            var s = new Vertex(p);
-            sentinel.track(s);
-            sites.add(s);
+            sites.add(sentinel.track(p));
         }
         int iterations = 1000;
         long now = System.currentTimeMillis();
@@ -81,13 +77,14 @@ public class SentinelTest {
             for (var site : sites) {
                 site.moveBy(randomPoint(entropy, 10f, 10f));
             }
-            sentinel.retriangulate();
+            sentinel.rebuild();
             assertEquals(17, sites.get(75).getNeighbors().size());
         }
         final var total = System.currentTimeMillis() - now;
-        System.out.println("count: %s time: %s iteration: %s".formatted(sites.size(), total, total / iterations));
+        System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total,
+                                                                                                  iterations,
+                                                                                                  total / iterations));
 
-        sentinel.retriangulate();
         assertEquals(11, sites.get(50).getNeighbors().size());
     }
 }

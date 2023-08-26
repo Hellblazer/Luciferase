@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel.delaunay;
+package com.hellblazer.luciferase.sentinel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -36,8 +36,8 @@ public class VertexTest {
 
     @Test
     public void testFlip4to1() {
-        Tetrahedralization tetrahedralization = new Tetrahedralization();
-        Tetrahedron U = tetrahedralization.myOwnPrivateIdaho();
+        Sentinel tetrahedralization = new Sentinel();
+        Tetrahedron U = Sentinel.myOwnPrivateIdaho(tetrahedralization);
         Vertex N = new Vertex(100, 100, 100);
 
         List<OrientedFace> unlinkedFacets = new ArrayList<>();
@@ -49,7 +49,7 @@ public class VertexTest {
 
     @Test
     public void testOrientation() {
-        Vertex[] fourCorners = Tetrahedralization.getFourCorners();
+        Vertex[] fourCorners = Sentinel.getFourCorners();
         assertEquals(1, fourCorners[3].orientation(fourCorners[0], fourCorners[1], fourCorners[2]));
         assertEquals(-1, fourCorners[3].orientation(fourCorners[1], fourCorners[0], fourCorners[2]));
         assertEquals(0, new Vertex(100, 100, 0).orientation(new Vertex(1000, 100000, 0), new Vertex(0, -1456, 0),
@@ -65,7 +65,7 @@ public class VertexTest {
 
     @Test
     public void testOrientation2() {
-        Vertex[] fourCorners = Tetrahedralization.getFourCorners();
+        Vertex[] fourCorners = Sentinel.getFourCorners();
         Vertex N = new Vertex(0, 0, 0);
         Tetrahedron t = new Tetrahedron(fourCorners);
         for (OrientedFace face : t) {

@@ -17,9 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel.delaunay;
+package com.hellblazer.luciferase.sentinel;
 
-import static com.hellblazer.luciferase.sentinel.delaunay.Vertex.getRandomPoints;
+import static com.hellblazer.luciferase.sentinel.Vertex.getRandomPoints;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Random;
@@ -39,32 +39,32 @@ public class TetrahedralizationTest {
 
     @Test
     public void testCubic() {
-        Tetrahedralization T = new Tetrahedralization(new Random(0));
+        Sentinel T = new Sentinel(new Random(0));
         for (var v : Examples.getCubicCrystalStructure()) {
-            T.insert(v);
+            T.track(v);
         }
 
-        Set<Tetrahedron> L = T.getTetrahedrons();
+        Set<Tetrahedron> L = T.tetrahedrons();
         assertEquals(189, L.size());
     }
 
     @Test
     public void testFlip4to1() {
-        Tetrahedralization T = new Tetrahedralization(new Random(0));
+        Sentinel T = new Sentinel(new Random(0));
         Point3f N = new Point3f(100, 100, 100);
-        var v = T.insert(N);
+        var v = T.track(N);
         T.flip4to1(v);
-        assertEquals(1, T.getTetrahedrons().size());
+        assertEquals(1, T.tetrahedrons().size());
     }
 
     @Test
     public void testGrid() {
-        Tetrahedralization T = new Tetrahedralization(new Random(0));
+        Sentinel T = new Sentinel(new Random(0));
         for (var v : Examples.getGrid()) {
-            T.insert(v);
+            T.track(v);
         }
 
-        Set<Tetrahedron> L = T.getTetrahedrons();
+        Set<Tetrahedron> L = T.tetrahedrons();
         assertEquals(386, L.size());
     }
 
@@ -73,24 +73,24 @@ public class TetrahedralizationTest {
         Random random = new Random(666);
         Point3f ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
 
-        Tetrahedralization T = new Tetrahedralization(random);
+        Sentinel T = new Sentinel(random);
 
         for (var v : ourPoints) {
-            T.insert(v);
+            T.track(v);
         }
 
-        Set<Tetrahedron> L = T.getTetrahedrons();
+        Set<Tetrahedron> L = T.tetrahedrons();
         assertEquals(402835, L.size());
     }
 
     @Test
     public void testWorstCase() {
-        Tetrahedralization T = new Tetrahedralization(new Random(0));
+        Sentinel T = new Sentinel(new Random(0));
         for (var v : Examples.getWorstCase()) {
-            T.insert(v);
+            T.track(v);
         }
 
-        Set<Tetrahedron> L = T.getTetrahedrons();
+        Set<Tetrahedron> L = T.tetrahedrons();
         assertEquals(609, L.size());
     }
 }
