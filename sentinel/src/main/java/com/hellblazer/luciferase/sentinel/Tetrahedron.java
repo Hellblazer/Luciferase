@@ -17,17 +17,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel.delaunay;
+package com.hellblazer.luciferase.sentinel;
 
-import static com.hellblazer.luciferase.sentinel.delaunay.Geometry.centerSphere;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.A;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.B;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.C;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.D;
+import static com.hellblazer.luciferase.sentinel.Geometry.centerSphere;
+import static com.hellblazer.luciferase.sentinel.V.A;
+import static com.hellblazer.luciferase.sentinel.V.B;
+import static com.hellblazer.luciferase.sentinel.V.C;
+import static com.hellblazer.luciferase.sentinel.V.D;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.Stack;
 
@@ -900,6 +901,41 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 throw new UnsupportedOperationException();
             }
         };
+    }
+
+    public Tetrahedron locate(Tuple3f query, Random entropy) {
+        assert query != null;
+
+        V o = null;
+        for (V face : Sentinel.VERTICES) {
+            if (orientationWrt(face, query) < 0) {
+                o = face;
+                break;
+            }
+        }
+        if (o == null) {
+            // The query point is contained in the receiver
+            return this;
+        }
+
+        Tetrahedron current = this;
+        while (true) {
+            // get the tetrahedron on the other side of the face
+            Tetrahedron tetrahedron = current.getNeighbor(o);
+            int i = 0;
+            for (V v : Sentinel.ORDER[tetrahedron.ordinalOf(current).ordinal()][entropy.nextInt(6)]) {
+                o = v;
+                current = tetrahedron;
+                if (tetrahedron.orientationWrt(v, query) < 0) {
+                    // we have found a face which the query point is on the other side
+                    break;
+                }
+                if (i++ == 2) {
+                    return tetrahedron;
+                }
+            }
+        }
+
     }
 
     /**

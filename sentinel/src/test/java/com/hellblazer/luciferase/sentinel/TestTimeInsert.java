@@ -17,9 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel.delaunay;
+package com.hellblazer.luciferase.sentinel;
 
-import static com.hellblazer.luciferase.sentinel.delaunay.Vertex.getRandomPoints;
+import static com.hellblazer.luciferase.sentinel.Vertex.getRandomPoints;
 
 import java.util.Random;
 
@@ -42,18 +42,18 @@ public class TestTimeInsert {
 
         Random random = new Random(666);
 
-        Tetrahedralization tet = new Tetrahedralization(random);
+        Sentinel tet = new Sentinel(random);
 
         Point3f[] cubicCrystalStructure = Examples.getCubicCrystalStructure();
         for (var v : cubicCrystalStructure) {
-            tet.insert(v);
+            tet.track(v);
         }
 
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new Tetrahedralization(random);
+            tet = new Sentinel(random);
             for (var v : cubicCrystalStructure) {
-                tet.insert(v);
+                tet.track(v);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
@@ -65,18 +65,18 @@ public class TestTimeInsert {
 
         Random random = new Random(666);
 
-        Tetrahedralization tet = new Tetrahedralization(random);
+        Sentinel tet = new Sentinel(random);
 
         Point3f[] grid = Examples.getGrid();
         for (var v : grid) {
-            tet.insert(v);
+            tet.track(v);
         }
 
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new Tetrahedralization(random);
+            tet = new Sentinel(random);
             for (var v : grid) {
-                tet.insert(v);
+                tet.track(v);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
@@ -88,16 +88,16 @@ public class TestTimeInsert {
         Random random = new Random(666);
         Point3f ourPoints[] = getRandomPoints(random, 600, 1.0F, false);
 
-        Tetrahedralization tet = new Tetrahedralization(random);
+        Sentinel tet = new Sentinel(random);
 
         for (var v : ourPoints) {
-            tet.insert(v);
+            tet.track(v);
         }
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new Tetrahedralization(random);
+            tet = new Sentinel(random);
             for (var v : ourPoints) {
-                tet.insert(v);
+                tet.track(v);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
@@ -109,16 +109,16 @@ public class TestTimeInsert {
         Random random = new Random(666);
         Point3f ourPoints[] = getRandomPoints(random, 6000, 10.0F, false);
 
-        Tetrahedralization tet = new Tetrahedralization(random);
+        Sentinel tet = new Sentinel(random);
 
         for (var v : ourPoints) {
-            tet.insert(v);
+            tet.track(v);
         }
         long now = System.nanoTime();
         for (int i = 0; i < 2; i++) {
-            tet = new Tetrahedralization(random);
+            tet = new Sentinel(random);
             for (var v : ourPoints) {
-                tet.insert(v);
+                tet.track(v);
             }
         }
         long iter = (System.nanoTime() - now) / 2;
@@ -129,18 +129,18 @@ public class TestTimeInsert {
     public void testWorstCase() throws Exception {
         Random random = new Random(666);
 
-        Tetrahedralization tet = new Tetrahedralization(random);
+        Sentinel tet = new Sentinel(random);
 
         Point3f[] worstCase = Examples.getWorstCase();
         for (var v : worstCase) {
-            tet.insert(v);
+            tet.track(v);
         }
 
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new Tetrahedralization(random);
+            tet = new Sentinel(random);
             for (var v : worstCase) {
-                tet.insert(v);
+                tet.track(v);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
