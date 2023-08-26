@@ -63,7 +63,7 @@
                 <version>${project.version}</version>
                 <artifactId>portal</artifactId>
             </dependency>
-            
+
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>runtime</artifactId>
@@ -73,13 +73,18 @@
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>maven-plugin</artifactId>
                 <version>${prime-mover.version}</version>
-            </dependency> 
-            
+            </dependency>
+            <dependency>
+                <groupId>com.chiralbehaviors</groupId>
+                <artifactId>janus</artifactId>
+                <version>1.0.1-SNAPSHOT</version>
+            </dependency>
+
             <dependency>
                 <groupId>javax.vecmath</groupId>
                 <artifactId>vecmath</artifactId>
                 <version>1.5.2</version>
-            </dependency> 
+            </dependency>
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2-mvstore</artifactId>
