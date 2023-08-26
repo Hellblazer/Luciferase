@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 
+import javax.vecmath.Point3f;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,6 +47,25 @@ public class VertexTest {
         U.flip1to4(N, unlinkedFacets);
 
         tetrahedralization.flip4to1(N);
+    }
+
+    @Test
+    public void testModel() {
+        var m = "Give me food or give me Slack or kill me";
+        var v = new Vertex(new Point3f()) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public <T> T as(Class<T> model) {
+                assertEquals(String.class, model);
+                @SuppressWarnings("unchecked")
+                final var m2 = (T) m;
+                return m2;
+            }
+
+        };
+        final String model = v.as(String.class);
+        assertEquals(m, model);
     }
 
     @Test

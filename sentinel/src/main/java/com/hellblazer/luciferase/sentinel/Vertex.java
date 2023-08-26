@@ -108,7 +108,8 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      * One of the tetrahedra adjacent to the vertex
      */
     private Tetrahedron adjacent;
-    private Vertex      next;    // linked list o' vertices
+
+    private Vertex next; // linked list o' vertices
 
     public Vertex(float i, float j, float k) {
         x = i;
@@ -122,6 +123,17 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
 
     public Vertex(Tuple3f p) {
         this(p.x, p.y, p.z);
+    }
+
+    /**
+     * Answer the component model of the receiver corresponding to the model class
+     *
+     * @param <T>   - type of model
+     * @param model - model class
+     * @return the typed instance of the model, or null if none
+     */
+    public <T> T as(Class<T> model) {
+        return null;
     }
 
     public final double distanceSquared(Tuple3f p1) {

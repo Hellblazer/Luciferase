@@ -40,7 +40,7 @@ public class TetrahedralizationTest {
     @Test
     public void testCubic() {
         Sentinel T = new Sentinel(new Random(0));
-        for (var v : Examples.getCubicCrystalStructure()) {
+        for (var v : TestCases.getCubicCrystalStructure()) {
             T.track(v);
         }
 
@@ -60,7 +60,7 @@ public class TetrahedralizationTest {
     @Test
     public void testGrid() {
         Sentinel T = new Sentinel(new Random(0));
-        for (var v : Examples.getGrid()) {
+        for (var v : TestCases.getGrid()) {
             T.track(v);
         }
 
@@ -86,7 +86,7 @@ public class TetrahedralizationTest {
     @Test
     public void testWorstCase() {
         Sentinel T = new Sentinel(new Random(0));
-        for (var v : Examples.getWorstCase()) {
+        for (var v : TestCases.getWorstCase()) {
             T.track(v);
         }
 
