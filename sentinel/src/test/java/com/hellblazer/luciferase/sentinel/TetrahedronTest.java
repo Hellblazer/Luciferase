@@ -17,12 +17,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel.delaunay;
+package com.hellblazer.luciferase.sentinel;
 
-import static com.hellblazer.luciferase.sentinel.delaunay.V.A;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.B;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.C;
-import static com.hellblazer.luciferase.sentinel.delaunay.V.D;
+import static com.hellblazer.luciferase.sentinel.V.A;
+import static com.hellblazer.luciferase.sentinel.V.B;
+import static com.hellblazer.luciferase.sentinel.V.C;
+import static com.hellblazer.luciferase.sentinel.V.D;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -43,7 +43,7 @@ import org.junit.jupiter.api.Test;
 public class TetrahedronTest {
     @Test
     public void testCreateUniverse() {
-        Tetrahedron idaho = new Tetrahedralization().myOwnPrivateIdaho();
+        Tetrahedron idaho = Sentinel.myOwnPrivateIdaho(new Sentinel());
         assertNotNull(idaho);
         Vertex[] vertices = idaho.getVertices();
         assertNotNull(vertices);
@@ -71,7 +71,7 @@ public class TetrahedronTest {
 
     @Test
     public void testFlip14() {
-        Tetrahedron U = new Tetrahedralization().myOwnPrivateIdaho();
+        Tetrahedron U = Sentinel.myOwnPrivateIdaho(new Sentinel());
         Vertex a = U.getVertex(A);
         Vertex b = U.getVertex(B);
         Vertex c = U.getVertex(C);

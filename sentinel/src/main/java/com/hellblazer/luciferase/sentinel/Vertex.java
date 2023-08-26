@@ -17,19 +17,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.sentinel.delaunay;
+package com.hellblazer.luciferase.sentinel;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Set;
 
 import javax.vecmath.Point3f;
-import javax.vecmath.Tuple3d;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
 
@@ -38,7 +39,7 @@ import javax.vecmath.Vector3f;
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  *
  */
-public class Vertex extends Vector3f {
+public class Vertex extends Vector3f implements Iterable<Vertex> {
     /**
      * Minimal zero
      */
@@ -107,6 +108,7 @@ public class Vertex extends Vector3f {
      * One of the tetrahedra adjacent to the vertex
      */
     private Tetrahedron adjacent;
+    private Vertex      next;    // linked list o' vertices
 
     public Vertex(float i, float j, float k) {
         x = i;
@@ -122,8 +124,8 @@ public class Vertex extends Vector3f {
         this(p.x, p.y, p.z);
     }
 
-    public final double distanceSquared(Tuple3d p1) {
-        double dx, dy, dz;
+    public final double distanceSquared(Tuple3f p1) {
+        float dx, dy, dz;
 
         dx = x - p1.x;
         dy = y - p1.y;
@@ -148,7 +150,7 @@ public class Vertex extends Vector3f {
     }
 
     /**
-     * Answer the collection of neighboring vertices around the indicated vertex.
+     * Answer the collection of neighboring vertices around the receiver.
      *
      * @param v - the vertex determining the neighborhood
      * @return the collection of neighboring vertices
@@ -224,6 +226,33 @@ public class Vertex extends Vector3f {
         return 0;
     }
 
+    @Override
+    public Iterator<Vertex> iterator() {
+        return new Iterator<Vertex>() {
+            private Vertex next = Vertex.this;
+
+            @Override
+            public boolean hasNext() {
+                return next != null;
+            }
+
+            @Override
+            public Vertex next() {
+                if (next == null) {
+                    throw new NoSuchElementException();
+                }
+                var current = next;
+                next = next.next;
+                return current;
+            }
+        };
+    }
+
+    public Tetrahedron locate(Tuple3f query, Random entropy) {
+        assert adjacent != null;
+        return adjacent.locate(query, entropy);
+    }
+
     public void moveBy(Tuple3f delta) {
         x = x + delta.x;
         y = y + delta.y;
@@ -253,6 +282,29 @@ public class Vertex extends Vector3f {
     @Override
     public String toString() {
         return "{" + x + ", " + y + ", " + z + "}";
+    }
+
+    void append(Vertex v) {
+        assert next == null : "Next is not null";
+        next = v;
+    }
+
+    void clear() {
+        adjacent = null;
+        Vertex n = next;
+        while (n != null) {
+            n.adjacent = null;
+            n = n.next;
+        }
+    }
+
+    void detach(Vertex v) {
+        if (next == null) {
+            throw new NoSuchElementException();
+        }
+        if (v == next) {
+            next = v.next;
+        }
     }
 
     void freshenAdjacent(Tetrahedron tetrahedron) {
