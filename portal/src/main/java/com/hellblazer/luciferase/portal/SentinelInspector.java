@@ -92,7 +92,7 @@ public class SentinelInspector extends Application {
     final Xform             cameraXform   = new Xform();
     final Xform             cameraXform2  = new Xform();
     final Xform             cameraXform3  = new Xform();
-    final Xform             moleculeGroup = new Xform();
+    final Xform             transformingGroup = new Xform();
     double                  mouseDeltaX;
     double                  mouseDeltaY;
     double                  mouseOldX;
@@ -151,9 +151,9 @@ public class SentinelInspector extends Application {
         }
         view = new SentinelView(tet);
         view.update(false, false, true, false, true);
-        moleculeGroup.getChildren().add(view);
+        transformingGroup.getChildren().add(view);
 
-        world.getChildren().addAll(moleculeGroup);
+        world.getChildren().addAll(transformingGroup);
     }
 
     private void buildAxes() {
@@ -212,7 +212,7 @@ public class SentinelInspector extends Application {
                     axisGroup.setVisible(!axisGroup.isVisible());
                     break;
                 case V:
-                    moleculeGroup.setVisible(!moleculeGroup.isVisible());
+                    transformingGroup.setVisible(!transformingGroup.isVisible());
                     break;
                 default:
                     break;
