@@ -55,10 +55,15 @@ import javafx.scene.shape.Box;
 import javafx.stage.Stage;
 
 /**
+ * Neolithic 3D viewer, based on ye venerable JavaFX 3D sample app
  * 
+ * @author hal.hildebrand
  * @author cmcastil
  */
 public class SentinelInspector extends Application {
+    /**
+     * This is the main() you want to run from your IDE
+     */
     public static class Launcher {
 
         public static void main(String[] argv) {
@@ -78,14 +83,6 @@ public class SentinelInspector extends Application {
     private static final double SHIFT_MULTIPLIER        = 10.0;
     private static final double TRACK_SPEED             = 0.3;
 
-    /**
-     * The main() method is ignored in correctly deployed JavaFX application. main()
-     * serves only as fallback in case the application can not be launched through
-     * deployment artifacts, e.g., in IDEs with limited FX support. NetBeans ignores
-     * main().
-     *
-     * @param args the command line arguments
-     */
     public static void main(String[] args) {
         launch(args);
     }
@@ -117,7 +114,7 @@ public class SentinelInspector extends Application {
         // buildScene();
         buildCamera();
         buildAxes();
-        buildMolecule();
+        build();
 
         Scene scene = new Scene(root, 1024, 768, true);
         scene.setFill(Color.GREY);
@@ -143,6 +140,20 @@ public class SentinelInspector extends Application {
             double newZ = z + event.getDeltaY() * modifierFactor * modifier;
             camera.setTranslateZ(newZ);
         });
+    }
+
+    private void build() {
+        final var random = new Random(666);
+        final var tet = new Sentinel(random);
+        Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, false);
+        for (var v : ourPoints) {
+            tet.track(v);
+        }
+        view = new SentinelView(tet);
+        view.update(false, false, true, false, true);
+        moleculeGroup.getChildren().add(view);
+
+        world.getChildren().addAll(moleculeGroup);
     }
 
     private void buildAxes() {
@@ -183,20 +194,6 @@ public class SentinelInspector extends Application {
         camera.setTranslateZ(CAMERA_INITIAL_DISTANCE);
         cameraXform.ry.setAngle(CAMERA_INITIAL_Y_ANGLE);
         cameraXform.rx.setAngle(CAMERA_INITIAL_X_ANGLE);
-    }
-
-    private void buildMolecule() {
-        final var random = new Random(666);
-        final var tet = new Sentinel(random);
-        Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, false);
-        for (var v : ourPoints) {
-            tet.track(v);
-        }
-        view = new SentinelView(tet);
-        view.update(false, false, true, false, true);
-        moleculeGroup.getChildren().add(view);
-
-        world.getChildren().addAll(moleculeGroup);
     }
 
     private void handleKeyboard(Scene scene, final Node root) {
