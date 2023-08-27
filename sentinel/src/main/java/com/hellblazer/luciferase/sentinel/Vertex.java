@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Random;
@@ -154,7 +153,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return adjacent;
     }
 
-    public final LinkedList<OrientedFace> getEars() {
+    public final List<OrientedFace> getEars() {
         assert adjacent != null;
         EarSet aggregator = new EarSet();
         adjacent.visitStar(this, aggregator);
@@ -258,6 +257,13 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         };
     }
 
+    /**
+     * Locate the tetrahedron encompassing the query point
+     *
+     * @param query
+     * @param entropy - entropy used for randomization of search
+     * @return the Tetrahedron that encompasses the query point
+     */
     public final Tetrahedron locate(Tuple3f query, Random entropy) {
         assert adjacent != null;
         return adjacent.locate(query, entropy);
@@ -292,6 +298,11 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
     @Override
     public String toString() {
         return "{" + x + ", " + y + ", " + z + "}";
+    }
+
+    public final void visitNeighbors(StarVisitor visitor) {
+        assert adjacent != null;
+        adjacent.visitStar(this, visitor);
     }
 
     void append(Vertex v) {

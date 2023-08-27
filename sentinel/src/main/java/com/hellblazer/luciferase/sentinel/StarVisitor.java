@@ -24,5 +24,19 @@ package com.hellblazer.luciferase.sentinel;
  */
 @FunctionalInterface
 public interface StarVisitor {
-    void visit(V vertex, Tetrahedron t, Vertex x, Vertex y, Vertex z);
+    /**
+     * Visit the tetrahedron t in the start set. The central vertex of the star set
+     * is vertex v in tetrahedron t. The other 3 vertices in tetrahedron t are given
+     * by {a, b, c} and are in counter clockwise order, where the central vertex of
+     * the star is V ordinal D in t, following the right hand rule.
+     * 
+     * @param v - the V Ordinal of the central vertex Vc of the star in tetrahedron
+     *          t
+     * @param t - a tetrahedron in the star set, where the central vertex of the
+     *          start is the vertex ordinal in t
+     * @param a - vertext A relative to Vc
+     * @param b - vertext B relative to Vc
+     * @param c - vertext C relative to Vc
+     */
+    void visit(V v, Tetrahedron t, Vertex a, Vertex b, Vertex c);
 }

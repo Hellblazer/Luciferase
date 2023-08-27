@@ -18,6 +18,7 @@
 package com.hellblazer.luciferase.sentinel;
 
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -56,10 +57,10 @@ public class EarSet implements StarVisitor {
         }
     }
 
-    private LinkedList<OrientedFace> ears    = new LinkedList<>();
-    private Set<Ear>                 visited = new OaHashSet<>();
+    private List<OrientedFace> ears    = new LinkedList<>();
+    private Set<Ear>           visited = new OaHashSet<>();
 
-    public LinkedList<OrientedFace> getEars() {
+    public List<OrientedFace> getEars() {
         return ears;
     }
 

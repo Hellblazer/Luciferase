@@ -39,6 +39,7 @@
         <module>e2e-test</module>
         <module>sentinel</module>
         <module>portal</module>
+        <module>thoth</module>
     </modules>
 
     <dependencyManagement>
