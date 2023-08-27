@@ -20,7 +20,6 @@ import java.util.Collection;
 
 import javax.vecmath.Tuple3f;
 
-import com.hellblazer.luciferase.thoth.Perceiving;
 import com.hellblazer.luciferase.thoth.impl.Node;
 import com.hellblazer.luciferase.thoth.impl.SphereOfInteraction;
 
@@ -32,73 +31,67 @@ import com.hellblazer.luciferase.thoth.impl.SphereOfInteraction;
 public class SOI implements SphereOfInteraction {
 
     @Override
-    public <T extends Perceiving> Node<T> closestTo(Tuple3f point3f) {
+    public Node closestTo(Tuple3f point3f) {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public <T extends Perceiving> Node<T> getAliased(Node<?> node) {
+    public Node getAliased(Node node) {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public Collection<Node<?>> getEnclosingNeighbors(Node<?> id) {
+    public Collection<Node> getEnclosingNeighbors(Node id) {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public Iterable<Node<?>> getNodes() {
+    public Iterable<Node> getNodes() {
         // TODO Auto-generated method stub
         return null;
     }
 
     @Override
-    public Collection<Node<?>> getPeers() {
-        // TODO Auto-generated method stub
-        return null;
-    }
-
-    @Override
-    public boolean includes(Node<?> node) {
+    public boolean includes(Node node) {
         // TODO Auto-generated method stub
         return false;
     }
 
     @Override
-    public <T extends Perceiving> void insert(Node<T> id, Tuple3f point3f) {
+    public void insert(Node id, Tuple3f point3f) {
         // TODO Auto-generated method stub
 
     }
 
     @Override
-    public <T extends Perceiving> boolean isBoundary(Node<T> node, Tuple3f center, float radiusSquared) {
-        // TODO Auto-generated method stub
-        return false;
-    }
-
-    @Override
-    public boolean isEnclosing(Node<?> node, Node<?> center_node_id) {
+    public boolean isBoundary(Node node, Tuple3f center, float radiusSquared) {
         // TODO Auto-generated method stub
         return false;
     }
 
     @Override
-    public boolean overlaps(Node<?> node, Tuple3f center, float radiusSquared) {
+    public boolean isEnclosing(Node node, Node center_node_id) {
         // TODO Auto-generated method stub
         return false;
     }
 
     @Override
-    public void remove(Node<?> node) {
+    public boolean overlaps(Node node, Tuple3f center, float radiusSquared) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    @Override
+    public void remove(Node node) {
         // TODO Auto-generated method stub
 
     }
 
     @Override
-    public void update(Node<?> node, Tuple3f coord) {
+    public void update(Node node, Tuple3f coord) {
         // TODO Auto-generated method stub
 
     }

@@ -21,7 +21,6 @@
 package com.hellblazer.luciferase.thoth.impl;
 
 import java.util.Collection;
-import java.util.UUID;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -36,52 +35,34 @@ import com.hellblazer.luciferase.thoth.Perceiving;
  *
  */
 
-abstract public class Node<E extends Perceiving> extends Vertex implements Cursor, Cloneable {
+abstract public class Node extends Vertex implements Cursor, Cloneable {
     private static final int  BUFFER_MULTIPLIER = 2;
     private static final long serialVersionUID  = 1L;
 
     protected float      aoiRadius;
-    protected final UUID id;
     protected float      maximumVelocity;
     protected float      maxRadiusSquared;
-    protected E          sim;
+    protected Perceiving sim;
 
-    public Node(E entity, UUID id, Point3f location, int aoiRadius, int maximumVelocity) {
+    public Node(Perceiving entity, Point3f location, int aoiRadius, int maximumVelocity) {
         super(location);
         this.sim = entity;
         this.aoiRadius = aoiRadius;
-        this.id = id;
         this.maximumVelocity = maximumVelocity;
         int maxExtent = aoiRadius + maximumVelocity * BUFFER_MULTIPLIER;
         this.maxRadiusSquared = maxExtent * maxExtent;
     }
 
     @Override
-    public Node<E> clone() {
-        @SuppressWarnings("unchecked")
-        final var clone = (Node<E>) super.clone();
+    public Node clone() {
+        final var clone = (Node) super.clone();
         return clone;
     }
 
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if ((obj == null) || !(obj instanceof Node)) {
-            return false;
-        }
-        return id.equals(((Node<?>) obj).id);
-    }
-
-    abstract public void fadeFrom(Node<?> neighbor);
+    abstract public void fadeFrom(Node neighbor);
 
     public float getAoiRadius() {
         return aoiRadius;
-    }
-
-    public UUID getId() {
-        return id;
     }
 
     @Override
@@ -97,36 +78,23 @@ abstract public class Node<E extends Perceiving> extends Vertex implements Curso
         return maximumVelocity;
     }
 
-    public E getSim() {
+    public Perceiving getSim() {
         return sim;
     }
 
-    @Override
-    public int hashCode() {
-        return id.hashCode();
-    }
+    abstract public void leave(Node leaving);
 
-    abstract public void leave(Node<?> leaving);
+    abstract public void move(Node neighbor);
 
-    abstract public void move(Node<?> neighbor);
+    abstract public void moveBoundary(Node neighbor);
 
-    abstract public void moveBoundary(Node<?> neighbor);
+    abstract public void noticeNodes(Collection<Node> nodes);
 
-    abstract public void noticeNodes(Collection<Node<?>> nodes);
+    abstract public void perceive(Node neighbor);
 
-    abstract public void perceive(Node<?> neighbor);
-
-    abstract public void query(Node<?> from, Node<?> joiner);
+    abstract public void query(Node from, Node joiner);
 
     public void setLocation(Tuple3f location) {
         super.set(location);
-    }
-
-    @Override
-    public String toString() {
-        String className = getClass().getCanonicalName();
-        int index = className.lastIndexOf('.');
-        return className.substring(index + 1) + " [" + id + "] (" + x + ", " + y + ", " + z + ") aoi: "
-        + getAoiRadius();
     }
 }

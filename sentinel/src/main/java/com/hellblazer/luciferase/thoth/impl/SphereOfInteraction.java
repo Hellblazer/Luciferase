@@ -24,8 +24,6 @@ import java.util.Collection;
 
 import javax.vecmath.Tuple3f;
 
-import com.hellblazer.luciferase.thoth.Perceiving;
-
 /**
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -40,7 +38,7 @@ public interface SphereOfInteraction {
      * @param point3f
      * @return
      */
-    <T extends Perceiving> Node<T> closestTo(Tuple3f point3f);
+    Node closestTo(Tuple3f point3f);
 
     /**
      * Answer the Node aliased to the Node
@@ -48,7 +46,7 @@ public interface SphereOfInteraction {
      * @param node
      * @return
      */
-    <T extends Perceiving> Node<T> getAliased(Node<?> node);
+    Node getAliased(Node node);
 
     /**
      * get a list of enclosing neighbors
@@ -56,17 +54,15 @@ public interface SphereOfInteraction {
      * @param id
      * @return
      */
-    Collection<Node<?>> getEnclosingNeighbors(Node<?> id);
+    Collection<Node> getEnclosingNeighbors(Node id);
 
-    Iterable<Node<?>> getNodes();
-
-    Collection<Node<?>> getPeers();
+    Iterable<Node> getNodes();
 
     /**
      * @param node
      * @return
      */
-    boolean includes(Node<?> node);
+    boolean includes(Node node);
 
     /**
      * insert a new site, the first inserted is myself
@@ -74,7 +70,7 @@ public interface SphereOfInteraction {
      * @param id
      * @param point3f
      */
-    <T extends Perceiving> void insert(Node<T> id, Tuple3f point3f);
+    void insert(Node id, Tuple3f point3f);
 
     /**
      * check if the node is a boundary neighbor
@@ -84,7 +80,7 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    <T extends Perceiving> boolean isBoundary(Node<T> node, Tuple3f center, float radiusSquared);
+    boolean isBoundary(Node node, Tuple3f center, float radiusSquared);
 
     /**
      * check if the node 'id' is an enclosing neighbor of 'center_node_id'
@@ -93,7 +89,7 @@ public interface SphereOfInteraction {
      * @param center_node_id
      * @return
      */
-    boolean isEnclosing(Node<?> node, Node<?> center_node_id);
+    boolean isEnclosing(Node node, Node center_node_id);
 
     /**
      * check if a circle overlaps with a particular node
@@ -103,14 +99,14 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean overlaps(Node<?> node, Tuple3f center, float radiusSquared);
+    boolean overlaps(Node node, Tuple3f center, float radiusSquared);
 
     /**
      * remove a site
      *
      * @param node
      */
-    void remove(Node<?> node);
+    void remove(Node node);
 
     /**
      * modify the coordinates of a site
@@ -118,6 +114,6 @@ public interface SphereOfInteraction {
      * @param node
      * @param coord
      */
-    void update(Node<?> node, Tuple3f coord);
+    void update(Node node, Tuple3f coord);
 
 }

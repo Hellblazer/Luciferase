@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.Random;
-import java.util.UUID;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -64,9 +63,7 @@ public class PerceptronTest {
         SimEntityImpl[] entities = new SimEntityImpl[numNodes];
         for (int i = 0; i < numNodes; i++) {
             entities[i] = new SimEntityImpl(random, thinkTime, flipStep, maxVelocity, x, y);
-            SphereOfInteraction soi = null;
-            perceptrons[i] = new Perceptron(entities[i], new UUID(0, i),
-                                            new Point3f(random.nextInt(x), random.nextInt(y), 0), aoi, 10, soi);
+            perceptrons[i] = new Perceptron(entities[i], new Point3f(random.nextInt(x), random.nextInt(y), 0), aoi, 10);
             perceptrons[i].join(perceptrons[0]);
             lastDistance.put(perceptrons[i], perceptrons[i]);
         }
@@ -81,7 +78,7 @@ public class PerceptronTest {
             controller.step();
             for (Perceptron<Perceiving> perceptron : perceptrons) {
                 for (var v : perceptron.getNeighbors()) {
-                    Node<?> node = (Node<? extends Perceiving>) v;
+                    Node node = (Node) v;
                     var distance = new Vector3f(perceptron.getLocation());
                     if (distance.length() < perceptron.getAoiRadius()) {
                         // Verify that all the neighbors that are within the

@@ -22,9 +22,9 @@ package com.hellblazer.luciferase.thoth.impl;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -41,28 +41,71 @@ import com.hellblazer.primeMover.annotations.Entity;
  */
 
 @Entity({ Node.class, Movable.class })
-public class Perceptron<E extends Perceiving> extends Node<E> {
+public class Perceptron<E extends Perceiving> extends Node implements SphereOfInteraction {
     private static final long serialVersionUID = 1L;
 
-    protected boolean                     active = true;
-    protected final SphereOfInteraction   soi;
-    protected final Map<UUID, Perceiving> soiSet = new HashMap<>();
+    protected boolean         active = true;
+    protected final Set<Node> soiSet = new HashSet<>();
 
-    public Perceptron(E entity, UUID id, Point3f location, int aoiRadius, int maximumVelocity,
-                      SphereOfInteraction soi) {
-        super(entity, id, location, aoiRadius, maximumVelocity);
+    public Perceptron(E entity, Point3f location, int aoiRadius, int maximumVelocity) {
+        super(entity, location, aoiRadius, maximumVelocity);
         this.aoiRadius = aoiRadius;
         entity.setCursor(this);
-        this.soi = soi;
-        soi.insert(this, location);
     }
 
     @Override
-    public void fadeFrom(Node<?> neighbor) {
+    public Node closestTo(Tuple3f point3f) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public void fadeFrom(Node neighbor) {
         remove(neighbor);
     }
 
-    public void join(Node<?> gateway) {
+    @Override
+    public Node getAliased(Node node) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    @Override
+    public Collection<Node> getEnclosingNeighbors(Node id) {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public Iterable<Node> getNodes() {
+        // TODO Auto-generated method stub
+        return Collections.emptyList();
+    }
+
+    @Override
+    public boolean includes(Node node) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    @Override
+    public void insert(Node id, Tuple3f point3f) {
+        // TODO Auto-generated method stub
+
+    }
+
+    @Override
+    public boolean isBoundary(Node node, Tuple3f center, float radiusSquared) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    @Override
+    public boolean isEnclosing(Node node, Node center_node_id) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    public void join(Node gateway) {
         if (!gateway.equals(this)) {
             gateway.query(this, this);
         }
@@ -70,7 +113,7 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
 
     public void leave() {
         active = false;
-        for (var peer : soi.getPeers()) {
+        for (var peer : getNodes()) {
             if (!peer.equals(this)) {
                 peer.fadeFrom(this);
             }
@@ -78,15 +121,15 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
     }
 
     @Override
-    public void leave(Node<?> leaving) {
-        for (var enclosing : soi.getEnclosingNeighbors(leaving)) {
+    public void leave(Node leaving) {
+        for (var enclosing : getEnclosingNeighbors(leaving)) {
             enclosing.leave(leaving);
         }
         remove(leaving);
     }
 
     @Override
-    public void move(Node<?> neighbor) {
+    public void move(Node neighbor) {
         if (!active) {
             neighbor.leave(this);
             return;
@@ -97,15 +140,15 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
     }
 
     @Override
-    public void moveBoundary(Node<?> neighbor) {
+    public void moveBoundary(Node neighbor) {
         if (!active) {
             neighbor.leave(this);
             return;
         }
 
-        if (!soi.includes(neighbor)) {
-            if (soi.overlaps(this, neighbor.getLocation(), maxRadiusSquared)) {
-                soi.insert(neighbor, neighbor.getLocation());
+        if (!includes(neighbor)) {
+            if (overlaps(this, neighbor.getLocation(), maxRadiusSquared)) {
+                insert(neighbor, neighbor.getLocation());
             }
             return;
         }
@@ -118,11 +161,11 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
     public void moveBy(Tuple3f velocity) {
         super.moveBy(velocity);
         this.setLocation(this);
-        soi.update(this, this);
+        update(this, this);
         removeNonOverlapped();
-        for (var peer : soi.getPeers()) {
+        for (var peer : getNodes()) {
             if (!peer.equals(this)) {
-                if (soi.isBoundary(peer, this, maxRadiusSquared)) {
+                if (isBoundary(peer, this, maxRadiusSquared)) {
                     peer.moveBoundary(this);
                 } else {
                     peer.move(this);
@@ -132,15 +175,15 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
     }
 
     @Override
-    public void noticeNodes(Collection<Node<?>> nodes) {
+    public void noticeNodes(Collection<Node> nodes) {
         if (!active) {
             return;
         }
 
         for (var peer : nodes) {
-            if (!soi.includes(peer)) {
-                soi.insert(peer.clone(), peer.getLocation());
-                if (soi.overlaps(this, peer.getLocation(), peer.getMaximumRadiusSquared())) {
+            if (!includes(peer)) {
+                insert(peer.clone(), peer.getLocation());
+                if (overlaps(this, peer.getLocation(), peer.getMaximumRadiusSquared())) {
                     peer.perceive(this);
                 }
             }
@@ -148,7 +191,13 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
     }
 
     @Override
-    public void perceive(Node<?> neighbor) {
+    public boolean overlaps(Node node, Tuple3f center, float radiusSquared) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+
+    @Override
+    public void perceive(Node neighbor) {
         if (!active) {
             neighbor.leave(this);
             return;
@@ -160,14 +209,14 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
     }
 
     @Override
-    public void query(Node<?> from, Node<?> joiner) {
+    public void query(Node from, Node joiner) {
         if (!active) {
             from.leave(this);
             from.query(joiner, joiner);
             return;
         }
 
-        var closest = soi.closestTo(joiner);
+        var closest = closestTo(joiner);
         if (closest != null && !closest.equals(this) && !closest.equals(from)) {
             closest.query(this, joiner);
         } else {
@@ -177,22 +226,37 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
         }
     }
 
-    protected void add(Node<?> node) {
-        soi.insert(node.clone(), node.getLocation());
+    @Override
+    public void remove(Node neighbor) {
+        if (soiSet.remove(neighbor)) {
+            if (neighbor instanceof Perceiving p) {
+                sim.fade(p);
+            }
+        }
     }
 
-    protected void handshakeWith(Node<?> node) {
+    @Override
+    public void update(Node node, Tuple3f coord) {
+        // TODO Auto-generated method stub
+
+    }
+
+    protected void add(Node node) {
+        insert(node.clone(), node.getLocation());
+    }
+
+    protected void handshakeWith(Node node) {
         if (node.equals(this)) {
             return;
         }
-        var peers = soi.getEnclosingNeighbors(node);
+        var peers = getEnclosingNeighbors(node);
         if (peers.size() > 0) {
             node.noticeNodes(peers);
         }
     }
 
-    protected void notifySimMove(Node<?> neighbor, Tuple3f oldLocation) {
-        if (oldLocation == null || !soiSet.containsKey(neighbor.id)) {
+    protected void notifySimMove(Node neighbor, Tuple3f oldLocation) {
+        if (oldLocation == null || !soiSet.contains(neighbor)) {
             notifySimNotice(neighbor);
             return;
         }
@@ -204,25 +268,17 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
             Point3f nLocation = neighbor.getLocation();
             sim.move(neighbor.getSim(), nLocation, velocity);
         } else {
-            soiSet.remove(neighbor.getId());
+            soiSet.remove(neighbor);
             sim.fade(neighbor.getSim());
         }
     }
 
-    protected void notifySimNotice(Node<?> neighbor) {
+    protected void notifySimNotice(Node neighbor) {
         var distance = new Vector3f(this);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
-            soiSet.put(neighbor.id, neighbor.getSim());
+            soiSet.add(neighbor);
             sim.notice(neighbor.getSim(), neighbor.getLocation());
-        }
-    }
-
-    protected void remove(Node<?> neighbor) {
-        soi.remove(neighbor);
-        Perceiving node = soiSet.remove(neighbor.id);
-        if (node != null) {
-            sim.fade(node);
         }
     }
 
@@ -231,12 +287,12 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
      * neighbor)
      */
     protected void removeNonOverlapped() {
-        ArrayList<Node<?>> removed = new ArrayList<>();
-        for (var neighbor : soi.getPeers()) {
+        ArrayList<Node> removed = new ArrayList<>();
+        for (var neighbor : getNodes()) {
             if (!this.equals(neighbor) &&
-                !soi.overlaps(this, neighbor.getLocation(),
-                              Math.max(maxRadiusSquared, neighbor.getMaximumRadiusSquared())) &&
-                !soi.isEnclosing(neighbor, this)) {
+                !overlaps(this, neighbor.getLocation(),
+                          Math.max(maxRadiusSquared, neighbor.getMaximumRadiusSquared())) &&
+                !isEnclosing(neighbor, this)) {
                 removed.add(neighbor);
             }
         }
@@ -246,15 +302,15 @@ public class Perceptron<E extends Perceiving> extends Node<E> {
         }
     }
 
-    protected Point3f update(Node<?> node) {
-        var neighbor = soi.getAliased(node);
+    protected Point3f update(Node node) {
+        var neighbor = getAliased(node);
         if (neighbor == null) {
-            soi.insert(node.clone(), node.getLocation());
+            insert(node.clone(), node.getLocation());
             return null;
         }
         Point3f oldLocation = new Point3f(neighbor.getLocation());
         neighbor.set(node.getLocation());
-        soi.update(neighbor, node.getLocation());
+        update(neighbor, node.getLocation());
         return oldLocation;
     }
 

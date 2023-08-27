@@ -68,7 +68,7 @@ public class SentinelTest {
         var sentinel = new Sentinel();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : getRandomPoints(entropy, 1000, 100, true)) {
+        for (var p : getRandomPoints(entropy, 512, 1000, true)) {
             sites.add(sentinel.track(p));
         }
         int iterations = 1000;
@@ -78,13 +78,13 @@ public class SentinelTest {
                 site.moveBy(randomPoint(entropy, 10f, 10f));
             }
             sentinel.rebuild();
-            assertEquals(15, sites.get(75).getNeighbors().size());
+            assertEquals(17, sites.get(75).getNeighbors().size());
         }
         final var total = System.currentTimeMillis() - now;
         System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total,
                                                                                                   iterations,
                                                                                                   total / iterations));
 
-        assertEquals(12, sites.get(50).getNeighbors().size());
+        assertEquals(11, sites.get(50).getNeighbors().size());
     }
 }

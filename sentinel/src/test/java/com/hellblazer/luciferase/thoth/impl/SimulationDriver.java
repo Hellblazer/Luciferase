@@ -22,7 +22,6 @@ package com.hellblazer.luciferase.thoth.impl;
 
 import java.util.Map;
 import java.util.Random;
-import java.util.UUID;
 
 import javax.vecmath.Point3f;
 
@@ -68,34 +67,27 @@ public class SimulationDriver {
 
     public void run() {
         Kronos.endSimulationAt(600 * 1000);
-        Random idGenerator = new Random(RANDOM_SEED);
         Random simRandom = new Random(RANDOM_SEED);
         SelfDirectedEntity gatewayEntity = new SelfDirectedEntity(simRandom, THINK_TIME, FLIP_STEP_CONSTANT,
                                                                   MAX_VELOCITY, dim_x, dim_y);
-        SphereOfInteraction gatewaySoi = null;
         Perceptron<Perceiving> gateway = new Perceptron<Perceiving>(gatewayEntity,
-                                                                    new UUID(idGenerator.nextLong(),
-                                                                             idGenerator.nextLong()),
                                                                     new Point3f(simRandom.nextInt(dim_x),
                                                                                 simRandom.nextInt(dim_y), 0),
-                                                                    AOI_RADIUS, 10, gatewaySoi);
+                                                                    AOI_RADIUS, 10);
         gateway.join(gateway);
         for (int i = 1; i < NUMBER_OF_NODES; i++) {
-            SphereOfInteraction soi = null;
             SelfDirectedEntity simEntity = new SelfDirectedEntity(simRandom, THINK_TIME, FLIP_STEP_CONSTANT,
                                                                   MAX_VELOCITY, dim_x, dim_y);
             Perceptron<Perceiving> node = new Perceptron<Perceiving>(simEntity,
-                                                                     new UUID(idGenerator.nextLong(),
-                                                                              idGenerator.nextLong()),
                                                                      new Point3f(simRandom.nextInt(dim_x),
                                                                                  simRandom.nextInt(dim_y), 0),
-                                                                     AOI_RADIUS, 10, soi);
+                                                                     AOI_RADIUS, 10);
             start(simEntity, node, gateway, simRandom);
         }
         gatewayEntity.doSomething();
     }
 
-    public void start(SimEntity entity, Perceptron<Perceiving> node, Node<Perceiving> gateway, Random simRandom) {
+    public void start(SimEntity entity, Perceptron<Perceiving> node, Node gateway, Random simRandom) {
         Kronos.sleep(simRandom.nextInt(ENTRY_PERIOD));
         node.join(gateway);
         entity.doSomething();
