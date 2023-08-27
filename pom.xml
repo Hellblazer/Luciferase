@@ -213,7 +213,8 @@
                             <name>java.util.logging.config.file</name>
                             <value>logging.properties</value>
                         </property>
-                    </systemProperties>
+                    </systemProperties> 
+                    <argLine>--enable-preview</argLine> 
                 </configuration>
             </plugin>
             <plugin>
@@ -221,6 +222,9 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <release>20</release>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
