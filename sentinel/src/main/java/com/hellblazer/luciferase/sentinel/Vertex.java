@@ -286,7 +286,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      *         the plane, -1 if negative and 0 if the test point is coplanar
      */
     public final int orientation(Tuple3f a, Tuple3f b, Tuple3f c) {
-        double result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
+        double result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
         if (result > 0.0) {
             return 1;
         } else if (result < 0.0) {
