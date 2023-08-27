@@ -68,7 +68,7 @@ public class SentinelTest {
         var sentinel = new Sentinel();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : getRandomPoints(entropy, 512, 1000, true)) {
+        for (var p : getRandomPoints(entropy, 1024, 1000, true)) {
             sites.add(sentinel.track(p));
         }
         int iterations = 1000;
@@ -90,6 +90,6 @@ public class SentinelTest {
                                                                                                   iterations,
                                                                                                   total / iterations));
 
-        assertEquals(18, sites.get(50).getNeighbors().size());
+        assertEquals(10, sites.get(50).getNeighbors().size());
     }
 }

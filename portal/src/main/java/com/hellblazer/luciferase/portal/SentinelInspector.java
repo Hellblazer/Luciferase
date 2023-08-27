@@ -87,20 +87,20 @@ public class SentinelInspector extends Application {
         launch(args);
     }
 
-    final Xform             axisGroup     = new Xform();
-    final PerspectiveCamera camera        = new PerspectiveCamera(true);
-    final Xform             cameraXform   = new Xform();
-    final Xform             cameraXform2  = new Xform();
-    final Xform             cameraXform3  = new Xform();
-    final Xform             transformingGroup = new Xform();
+    final Xform             axisGroup         = new Xform();
+    final PerspectiveCamera camera            = new PerspectiveCamera(true);
+    final Xform             cameraXform       = new Xform();
+    final Xform             cameraXform2      = new Xform();
+    final Xform             cameraXform3      = new Xform();
     double                  mouseDeltaX;
     double                  mouseDeltaY;
     double                  mouseOldX;
     double                  mouseOldY;
     double                  mousePosX;
     double                  mousePosY;
-    final Group             root          = new Group();
-    final Xform             world         = new Xform();
+    final Group             root              = new Group();
+    final Xform             transformingGroup = new Xform();
+    final Xform             world             = new Xform();
     private SentinelView    view;
 
     @Override
@@ -117,7 +117,7 @@ public class SentinelInspector extends Application {
         build();
 
         Scene scene = new Scene(root, 1024, 768, true);
-        scene.setFill(Color.GREY);
+        scene.setFill(Color.LIGHTGRAY);
         handleKeyboard(scene, world);
         handleMouse(scene, world);
 
@@ -145,7 +145,7 @@ public class SentinelInspector extends Application {
     private void build() {
         final var random = new Random(666);
         final var tet = new Sentinel(random);
-        Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, false);
+        Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, true);
         for (var v : ourPoints) {
             tet.track(v);
         }
