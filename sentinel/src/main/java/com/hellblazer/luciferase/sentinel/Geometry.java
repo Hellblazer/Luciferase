@@ -227,6 +227,36 @@ public final class Geometry {
         centerSphere(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], po);
     }
 
+    /**
+     * Computes the center of the sphere defined by the points a, b, c, and d. The
+     * latter are assumed to be in CCW order, such that the method
+     * {@link #leftOfPlane} would return a positive number.
+     * 
+     * @param po array containing (x,y,z) coordinates of center.
+     */
+    public static void centerSphereFast(float xa, float ya, float za, float xb, float yb, float zb, float xc, float yc,
+                                        float zc, float xd, float yd, float zd, float[] po) {
+        double adx = xa - xd;
+        double bdx = xb - xd;
+        double cdx = xc - xd;
+        double ady = ya - yd;
+        double bdy = yb - yd;
+        double cdy = yc - yd;
+        double adz = za - zd;
+        double bdz = zb - zd;
+        double cdz = zc - zd;
+        double ads = adx * adx + ady * ady + adz * adz;
+        double bds = bdx * bdx + bdy * bdy + bdz * bdz;
+        double cds = cdx * cdx + cdy * cdy + cdz * cdz;
+        double scale = 0.5 / leftOfPlaneFast(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd);
+        po[0] = xd + (float) (scale
+        * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz - bdy * adz)));
+        po[1] = yd + (float) (scale
+        * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx - bdz * adx)));
+        po[2] = zd + (float) (scale
+        * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy - bdx * ady)));
+    }
+
     public static Point3d[] findLineSphereIntersections(Tuple3d linePoint0, Tuple3d linePoint1, Tuple3d circleCenter,
                                                         double circleRadius) {
         // http://www.codeproject.com/Articles/19799/Simple-Ray-Tracing-in-C-Part-II-Triangles-Intersec

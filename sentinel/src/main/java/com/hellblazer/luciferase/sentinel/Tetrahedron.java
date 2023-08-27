@@ -19,7 +19,7 @@
 
 package com.hellblazer.luciferase.sentinel;
 
-import static com.hellblazer.luciferase.sentinel.Geometry.centerSphere;
+import static com.hellblazer.luciferase.sentinel.Geometry.centerSphereFast;
 import static com.hellblazer.luciferase.sentinel.V.A;
 import static com.hellblazer.luciferase.sentinel.V.B;
 import static com.hellblazer.luciferase.sentinel.V.C;
@@ -668,7 +668,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     public Point3f center() {
         float[] center = new float[3];
-        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         return new Point3f(center[0], center[1], center[2]);
     }
 
@@ -1212,7 +1212,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             return;
         }
         float[] center = new float[3];
-        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V next = VORONOI_FACE_NEXT[ordinalOf(from).ordinal()][ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         Tetrahedron t = getNeighbor(next);
@@ -1234,7 +1234,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3f[]> faces) {
         ArrayList<Point3f> face = new ArrayList<>();
         float[] center = new float[3];
-        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V v = VORONOI_FACE_ORIGIN[ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         Tetrahedron next = getNeighbor(v);

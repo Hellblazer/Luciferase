@@ -68,9 +68,8 @@ public interface SphereOfInteraction {
      * insert a new site, the first inserted is myself
      *
      * @param id
-     * @param point3f
      */
-    void insert(Node id, Tuple3f point3f);
+    void insert(Node id);
 
     /**
      * check if the node is a boundary neighbor
@@ -99,7 +98,9 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean overlaps(Node node, Tuple3f center, float radiusSquared);
+    default boolean overlaps(Node node, Tuple3f center, float radiusSquared) {
+        return node.distanceSquared(center) <= radiusSquared;
+    }
 
     /**
      * remove a site

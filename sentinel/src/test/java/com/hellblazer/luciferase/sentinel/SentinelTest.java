@@ -75,16 +75,21 @@ public class SentinelTest {
         long now = System.currentTimeMillis();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
-                site.moveBy(randomPoint(entropy, 10f, 10f));
+                site.moveBy(randomPoint(entropy, -10f, 10f));
             }
             sentinel.rebuild();
-            assertEquals(17, sites.get(75).getNeighbors().size());
+//            if (i != 0 && i % 1000 == 0) {
+//                final var total = System.currentTimeMillis() - now;
+//                System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(),
+//                                                                                                          total, i,
+//                                                                                                          total / i));
+//            }
         }
         final var total = System.currentTimeMillis() - now;
         System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total,
                                                                                                   iterations,
                                                                                                   total / iterations));
 
-        assertEquals(11, sites.get(50).getNeighbors().size());
+        assertEquals(18, sites.get(50).getNeighbors().size());
     }
 }

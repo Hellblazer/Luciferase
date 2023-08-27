@@ -61,7 +61,7 @@ public class SOI implements SphereOfInteraction {
     }
 
     @Override
-    public void insert(Node id, Tuple3f point3f) {
+    public void insert(Node id) {
         // TODO Auto-generated method stub
 
     }
@@ -74,12 +74,6 @@ public class SOI implements SphereOfInteraction {
 
     @Override
     public boolean isEnclosing(Node node, Node center_node_id) {
-        // TODO Auto-generated method stub
-        return false;
-    }
-
-    @Override
-    public boolean overlaps(Node node, Tuple3f center, float radiusSquared) {
         // TODO Auto-generated method stub
         return false;
     }

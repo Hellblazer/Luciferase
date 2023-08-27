@@ -25,11 +25,13 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
 
+import com.hellblazer.luciferase.sentinel.Vertex;
 import com.hellblazer.luciferase.thoth.Movable;
 import com.hellblazer.luciferase.thoth.Perceiving;
 import com.hellblazer.primeMover.annotations.Entity;
@@ -55,8 +57,18 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
 
     @Override
     public Node closestTo(Tuple3f point3f) {
-        // TODO Auto-generated method stub
-        return null;
+        Vertex current = null;
+        float dSqur = 0;
+        for (var v : locate(point3f, ThreadLocalRandom.current()).getVertices()) {
+            var d = new Vector3f(point3f);
+            d.sub(v);
+            final var dist = d.lengthSquared();
+            if (current == null || dist < dSqur) {
+                current = v;
+                dSqur = dist;
+            }
+        }
+        return (Node) current;
     }
 
     @Override
@@ -66,7 +78,6 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
 
     @Override
     public Node getAliased(Node node) {
-        // TODO Auto-generated method stub
         return null;
     }
 
@@ -88,7 +99,7 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
     }
 
     @Override
-    public void insert(Node id, Tuple3f point3f) {
+    public void insert(Node id) {
         // TODO Auto-generated method stub
 
     }
@@ -148,7 +159,7 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
 
         if (!includes(neighbor)) {
             if (overlaps(this, neighbor.getLocation(), maxRadiusSquared)) {
-                insert(neighbor, neighbor.getLocation());
+                insert(neighbor);
             }
             return;
         }
@@ -182,18 +193,12 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
 
         for (var peer : nodes) {
             if (!includes(peer)) {
-                insert(peer.clone(), peer.getLocation());
+                insert(peer.clone());
                 if (overlaps(this, peer.getLocation(), peer.getMaximumRadiusSquared())) {
                     peer.perceive(this);
                 }
             }
         }
-    }
-
-    @Override
-    public boolean overlaps(Node node, Tuple3f center, float radiusSquared) {
-        // TODO Auto-generated method stub
-        return false;
     }
 
     @Override
@@ -242,7 +247,7 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
     }
 
     protected void add(Node node) {
-        insert(node.clone(), node.getLocation());
+        insert(node.clone());
     }
 
     protected void handshakeWith(Node node) {
@@ -305,7 +310,7 @@ public class Perceptron<E extends Perceiving> extends Node implements SphereOfIn
     protected Point3f update(Node node) {
         var neighbor = getAliased(node);
         if (neighbor == null) {
-            insert(node.clone(), node.getLocation());
+            insert(node.clone());
             return null;
         }
         Point3f oldLocation = new Point3f(neighbor.getLocation());
