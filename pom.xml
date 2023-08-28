@@ -37,8 +37,8 @@
         <module>grpc</module>
         <module>lucien</module>
         <module>e2e-test</module>
-        <module>sentinel</module>
         <module>portal</module>
+        <module>common</module>
     </modules>
 
     <dependencyManagement>
@@ -46,7 +46,7 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
-                <artifactId>sentinel</artifactId>
+                <artifactId>common</artifactId>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>
@@ -89,6 +89,11 @@
                 <groupId>com.h2database</groupId>
                 <artifactId>h2-mvstore</artifactId>
                 <version>${h2.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.fxyz3d</groupId>
+                <artifactId>fxyz3d-importers</artifactId>
+                <version>0.5.4</version>
             </dependency>
 
             <!-- GRPC/Proto Stuff-->
@@ -213,8 +218,8 @@
                             <name>java.util.logging.config.file</name>
                             <value>logging.properties</value>
                         </property>
-                    </systemProperties> 
-                    <argLine>--enable-preview</argLine> 
+                    </systemProperties>
+                    <argLine>--enable-preview</argLine>
                 </configuration>
             </plugin>
             <plugin>

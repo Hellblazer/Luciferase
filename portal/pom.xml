@@ -13,7 +13,7 @@
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>sentinel</artifactId>
+            <artifactId>lucien</artifactId>
         </dependency>
         <dependency>
             <groupId>org.openjfx</groupId>
@@ -26,6 +26,10 @@
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-swing</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.fxyz3d</groupId>
+            <artifactId>fxyz3d-importers</artifactId>
         </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
