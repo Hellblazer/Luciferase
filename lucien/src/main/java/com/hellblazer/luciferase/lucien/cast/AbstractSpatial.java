@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.sentinel.cast;
+package com.hellblazer.luciferase.lucien.cast;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;

@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 /**
  * @author hal.hildebrand
  */
-public class SentinelTest {
+public class MutableGridTest {
     private static final Point3f ORIGIN = new Point3f();
 
     public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {

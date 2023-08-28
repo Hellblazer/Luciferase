@@ -14,16 +14,16 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.sentinel.cast;
+package com.hellblazer.luciferase.lucien.cast;
 
 import javax.vecmath.Point3f;
 
 /**
  * @author hal.hildebrand
  */
-public class SpatialPublish extends AbstractSpatial {
+abstract public class SpatialSubscription extends AbstractSpatial {
 
-    public SpatialPublish(Point3f location) {
+    public SpatialSubscription(Point3f location) {
         super(location);
     }
 }

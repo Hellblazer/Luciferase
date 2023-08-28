@@ -14,18 +14,18 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.sentinel.cast;
+package com.hellblazer.luciferase.lucien.cast;
 
 import javax.vecmath.Point3f;
 
 /**
  * @author hal.hildebrand
  */
-public class SphericalPublish extends SpatialPublish {
+public class SphericalSubscription extends SpatialSubscription {
     protected float radius;
     protected float radiusSquared;
 
-    public SphericalPublish(Point3f location, float radius) {
+    public SphericalSubscription(Point3f location, float radius) {
         super(location);
         this.radius = radius;
         this.radiusSquared = radius * radius;
