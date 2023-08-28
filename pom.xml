@@ -90,11 +90,6 @@
                 <artifactId>h2-mvstore</artifactId>
                 <version>${h2.version}</version>
             </dependency>
-            <dependency>
-                <groupId>org.fxyz3d</groupId>
-                <artifactId>fxyz3d-importers</artifactId>
-                <version>0.5.4</version>
-            </dependency>
 
             <!-- GRPC/Proto Stuff-->
             <dependency>
@@ -175,6 +170,12 @@
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-swing</artifactId>
                 <version>${javafx.version}</version>
+            </dependency>
+            
+            <dependency>
+                <groupId>org.fxyz3d</groupId>
+                <artifactId>fxyz3d-importers</artifactId>
+                <version>0.5.4</version>
             </dependency>
 
             <!-- Test Only Dependencies Below This Line-->
