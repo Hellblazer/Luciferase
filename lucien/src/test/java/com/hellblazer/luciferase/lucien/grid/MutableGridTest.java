@@ -69,7 +69,7 @@ public class MutableGridTest {
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
         for (var p : getRandomPoints(entropy, 1024, 1000, true)) {
-            sites.add(sentinel.track(p));
+            sites.add(sentinel.track(p, entropy));
         }
         int iterations = 1000;
         long now = System.currentTimeMillis();
@@ -77,7 +77,7 @@ public class MutableGridTest {
             for (var site : sites) {
                 site.moveBy(randomPoint(entropy, -10f, 10f));
             }
-            sentinel.rebuild();
+            sentinel.rebuild(entropy);
 //            if (i != 0 && i % 1000 == 0) {
 //                final var total = System.currentTimeMillis() - now;
 //                System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(),
@@ -90,6 +90,6 @@ public class MutableGridTest {
                                                                                                   iterations,
                                                                                                   total / iterations));
 
-        assertEquals(10, sites.get(50).getNeighbors().size());
+        assertEquals(12, sites.get(50).getNeighbors().size());
     }
 }

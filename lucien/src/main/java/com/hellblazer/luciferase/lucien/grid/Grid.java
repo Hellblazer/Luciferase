@@ -98,7 +98,7 @@ public class Grid implements Iterable<Vertex> {
      *
      * @return
      */
-    public static Tetrahedron myOwnPrivateIdaho(MutableGrid s) {
+    public static Tetrahedron myOwnPrivateIdaho(Grid s) {
         Vertex[] U = new Vertex[4];
         int i = 0;
         for (Vertex v : s.extent()) {
@@ -116,21 +116,17 @@ public class Grid implements Iterable<Vertex> {
      */
     protected Vertex         head;
     /**
-     * A random number generator
-     */
-    protected final Random   random;
-    /**
-     * The number of points in this Sentinel
+     * The number of points in this Grid
      */
     protected int            size = 0;
-    /**
-     * Tail of the vertices list
-     */
-    protected Vertex         tail;
 
-    public Grid(Vertex[] fourCorners, Random random) {
+    Grid(Vertex[] fourCorners) {
         this.fourCorners = fourCorners;
-        this.random = random;
+    }
+
+    Grid(Vertex[] fourCorners, Vertex head) {
+        this(fourCorners);
+        this.head = head;
     }
 
     /**
@@ -164,14 +160,18 @@ public class Grid implements Iterable<Vertex> {
      * location without preprocessing in two- and three-dimensional Delaunay
      * triangulations", Computational Geometry 12 (1999) 63-83.
      *
-     * @param query - the query point
-     * @param start - the starting tetrahedron
+     * @param query  - the query point
+     * @param start  - the starting tetrahedron
+     * @param random - the source of entropy for the randomized algo
      * @return the Tetrahedron containing the query
      */
-    public Tetrahedron locate(Tuple3f query, Tetrahedron start) {
+    public Tetrahedron locate(Tuple3f query, Tetrahedron start, Random random) {
         assert query != null;
-
         return start.locate(query, random);
+    }
+
+    public int size() {
+        return size;
     }
 
     /**
@@ -202,5 +202,17 @@ public class Grid implements Iterable<Vertex> {
             }
         }
         return all;
+    }
+
+    Vertex getHead() {
+        return head;
+    }
+
+    void setHead(Vertex head) {
+        this.head = head;
+    }
+
+    void setSize(int size) {
+        this.size = size;
     }
 }

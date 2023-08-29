@@ -42,18 +42,18 @@ public class TestTimeInsert {
 
         Random random = new Random(666);
 
-        MutableGrid tet = new MutableGrid(random);
+        MutableGrid tet = new MutableGrid();
 
         Point3f[] cubicCrystalStructure = TestCases.getCubicCrystalStructure();
         for (var v : cubicCrystalStructure) {
-            tet.track(v);
+            tet.track(v, random);
         }
 
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new MutableGrid(random);
+            tet = new MutableGrid();
             for (var v : cubicCrystalStructure) {
-                tet.track(v);
+                tet.track(v, random);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
@@ -65,18 +65,18 @@ public class TestTimeInsert {
 
         Random random = new Random(666);
 
-        MutableGrid tet = new MutableGrid(random);
+        MutableGrid tet = new MutableGrid();
 
         Point3f[] grid = TestCases.getGrid();
         for (var v : grid) {
-            tet.track(v);
+            tet.track(v, random);
         }
 
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new MutableGrid(random);
+            tet = new MutableGrid();
             for (var v : grid) {
-                tet.track(v);
+                tet.track(v, random);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
@@ -88,16 +88,16 @@ public class TestTimeInsert {
         Random random = new Random(666);
         Point3f ourPoints[] = getRandomPoints(random, 600, 1.0F, false);
 
-        MutableGrid tet = new MutableGrid(random);
+        MutableGrid tet = new MutableGrid();
 
         for (var v : ourPoints) {
-            tet.track(v);
+            tet.track(v, random);
         }
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new MutableGrid(random);
+            tet = new MutableGrid();
             for (var v : ourPoints) {
-                tet.track(v);
+                tet.track(v, random);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;
@@ -109,16 +109,16 @@ public class TestTimeInsert {
         Random random = new Random(666);
         Point3f ourPoints[] = getRandomPoints(random, 6000, 10.0F, false);
 
-        MutableGrid tet = new MutableGrid(random);
+        MutableGrid tet = new MutableGrid();
 
         for (var v : ourPoints) {
-            tet.track(v);
+            tet.track(v, random);
         }
         long now = System.nanoTime();
         for (int i = 0; i < 2; i++) {
-            tet = new MutableGrid(random);
+            tet = new MutableGrid();
             for (var v : ourPoints) {
-                tet.track(v);
+                tet.track(v, random);
             }
         }
         long iter = (System.nanoTime() - now) / 2;
@@ -129,18 +129,18 @@ public class TestTimeInsert {
     public void testWorstCase() throws Exception {
         Random random = new Random(666);
 
-        MutableGrid tet = new MutableGrid(random);
+        MutableGrid tet = new MutableGrid();
 
         Point3f[] worstCase = TestCases.getWorstCase();
         for (var v : worstCase) {
-            tet.track(v);
+            tet.track(v, random);
         }
 
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            tet = new MutableGrid(random);
+            tet = new MutableGrid();
             for (var v : worstCase) {
-                tet.track(v);
+                tet.track(v, random);
             }
         }
         long iter = (System.nanoTime() - now) / iterations;

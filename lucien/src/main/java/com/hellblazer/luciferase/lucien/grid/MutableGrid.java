@@ -39,13 +39,11 @@ import javax.vecmath.Point3f;
  */
 
 public class MutableGrid extends Grid {
+    protected Vertex    tail;
     private Tetrahedron last;
 
-    /**
-     * Construct a new Sentinel with the default random number generator
-     */
     public MutableGrid() {
-        this(new Random());
+        this(getFourCorners());
     }
 
     /**
@@ -53,9 +51,8 @@ public class MutableGrid extends Grid {
      *
      * @param random
      */
-    public MutableGrid(Random random) {
-        super(getFourCorners(), random);
-        assert random != null;
+    public MutableGrid(Vertex[] fourCorners) {
+        super(fourCorners);
         last = new Tetrahedron(fourCorners);
     }
 
@@ -68,11 +65,11 @@ public class MutableGrid extends Grid {
         }
     }
 
-    public void rebuild() {
+    public void rebuild(Random entropy) {
         clear();
         last = new Tetrahedron(fourCorners);
         for (var v : head) {
-            insert(v, locate(v, last));
+            insert(v, locate(v, last, entropy));
         }
     }
 
@@ -84,10 +81,10 @@ public class MutableGrid extends Grid {
      * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
      */
-    public Vertex track(Point3f p) {
+    public Vertex track(Point3f p, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
-        add(v, locate(p, last));
+        add(v, locate(p, last, entropy));
         return v;
     }
 
@@ -100,10 +97,10 @@ public class MutableGrid extends Grid {
      * @param near - the nearby vertex
      * @return the new Vertex in the tetrahedralization
      */
-    public Vertex track(Point3f p, Vertex near) {
+    public Vertex track(Point3f p, Vertex near, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
-        add(v, near.locate(p, random));
+        add(v, near.locate(p, entropy));
         return v;
     }
 

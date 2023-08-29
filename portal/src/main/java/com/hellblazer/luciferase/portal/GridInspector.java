@@ -101,7 +101,7 @@ public class GridInspector extends Application {
     final Group             root              = new Group();
     final Xform             transformingGroup = new Xform();
     final Xform             world             = new Xform();
-    private GridView    view;
+    private GridView        view;
 
     @Override
     public void start(Stage primaryStage) {
@@ -144,10 +144,10 @@ public class GridInspector extends Application {
 
     private void build() {
         final var random = new Random(666);
-        final var tet = new MutableGrid(random);
+        final var tet = new MutableGrid();
         Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, true);
         for (var v : ourPoints) {
-            tet.track(v);
+            tet.track(v, random);
         }
         view = new GridView(tet);
         view.update(false, false, true, false, true);

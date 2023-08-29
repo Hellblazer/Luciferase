@@ -39,9 +39,10 @@ public class TetrahedralizationTest {
 
     @Test
     public void testCubic() {
-        MutableGrid T = new MutableGrid(new Random(0));
+        var random = new Random(0);
+        MutableGrid T = new MutableGrid();
         for (var v : TestCases.getCubicCrystalStructure()) {
-            T.track(v);
+            T.track(v, random);
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
@@ -50,18 +51,20 @@ public class TetrahedralizationTest {
 
     @Test
     public void testFlip4to1() {
-        MutableGrid T = new MutableGrid(new Random(0));
+        var random = new Random(0);
+        MutableGrid T = new MutableGrid();
         Point3f N = new Point3f(100, 100, 100);
-        var v = T.track(N);
+        var v = T.track(N, random);
         T.flip4to1(v);
         assertEquals(1, T.tetrahedrons().size());
     }
 
     @Test
     public void testGrid() {
-        MutableGrid T = new MutableGrid(new Random(0));
+        var random = new Random(0);
+        MutableGrid T = new MutableGrid();
         for (var v : TestCases.getGrid()) {
-            T.track(v);
+            T.track(v, random);
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
@@ -73,10 +76,10 @@ public class TetrahedralizationTest {
         Random random = new Random(666);
         Point3f ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
 
-        MutableGrid T = new MutableGrid(random);
+        MutableGrid T = new MutableGrid();
 
         for (var v : ourPoints) {
-            T.track(v);
+            T.track(v, random);
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
@@ -85,9 +88,10 @@ public class TetrahedralizationTest {
 
     @Test
     public void testWorstCase() {
-        MutableGrid T = new MutableGrid(new Random(0));
+        var random = new Random(0);
+        MutableGrid T = new MutableGrid();
         for (var v : TestCases.getWorstCase()) {
-            T.track(v);
+            T.track(v, random);
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
