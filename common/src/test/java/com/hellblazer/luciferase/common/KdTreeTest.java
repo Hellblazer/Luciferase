@@ -22,8 +22,6 @@ import java.util.Random;
 
 import javax.vecmath.Point3f;
 
-import com.hellblazer.luciferase.common.KdTree;
-
 /**
  * @author hal.hildebrand
  */
@@ -31,9 +29,7 @@ public class KdTreeTest {
     public static void main(String[] args) {
         testRandom(1000);
         System.out.println();
-        for (int i = 0; i < 100; i++) {
-            testRandom(100000);
-        }
+        testRandom(100000);
     }
 
     private static KdTree.Node randomPoint(Random random) {
@@ -51,12 +47,12 @@ public class KdTreeTest {
         long now = System.currentTimeMillis();
         KdTree tree = new KdTree(3, nodes);
         System.out.println("T: " + (System.currentTimeMillis() - now));
-//        KdTree.Node target = randomPoint(random);
-//        KdTree.Node nearest = tree.findNearest(target);
-//        System.out.println("Random data (" + points + " points):");
-//        System.out.println("target: " + target);
-//        System.out.println("nearest point: " + nearest);
-//        System.out.println("distance: " + tree.distance());
-//        System.out.println("nodes visited: " + tree.visited());
+        KdTree.Node target = randomPoint(random);
+        KdTree.Node nearest = tree.findNearest(target);
+        System.out.println("Random data (" + points + " points):");
+        System.out.println("target: " + target);
+        System.out.println("nearest point: " + nearest);
+        System.out.println("distance: " + tree.distance());
+        System.out.println("nodes visited: " + tree.visited());
     }
 }
