@@ -28,23 +28,6 @@
             <artifactId>javafx-swing</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>org.jogamp.gluegen</groupId>
-            <artifactId>gluegen-rt-main</artifactId> 
-        </dependency>
-        <dependency>
-            <groupId>org.jogamp.jogl</groupId>
-            <artifactId>jogl-all-main</artifactId> 
-        </dependency>
-        <dependency>
-            <groupId>org.jogamp.jocl</groupId>
-            <artifactId>jocl-main</artifactId> 
-        </dependency>
-        <dependency>
-            <groupId>org.jogamp.joal</groupId>
-            <artifactId>joal-main</artifactId> 
-        </dependency>
-
         <!-- Test Only Dependencies Below This Line-->
         <dependency>
             <groupId>ch.qos.logback</groupId>
