@@ -25,29 +25,11 @@ import javax.vecmath.Vector3f;
  */
 public class Rotor3f {
 
-    /**
-     * The Wedge operator on 3D vectors
-     *
-     * @param u
-     * @param v
-     * @return
-     */
-    public static Rotor3f wedge(Vector3f u, Vector3f v) {
-        return new Rotor3f(u.x * v.y - v.x * u.y, u.y * v.z - v.y * u.z, u.z * v.x - v.z * u.x);
-    }
-
-    public static Rotor3f wedge(Vector3f u, Vector3f v, Rotor3f r) {
-        r.xy = u.x * v.y - v.x * u.y;
-        r.yz = u.y * v.z - v.y * u.z;
-        r.zx = u.z * v.x - v.z * u.x;
-        return r;
-    }
-
     private static float lerp(float from, float to, float t) {
         return t * (to - from);
     }
 
-    float a, xy, yz, zx;
+    private float a, xy, yz, zx;
 
     public Rotor3f() {
     }
@@ -66,9 +48,17 @@ public class Rotor3f {
     }
 
     public Rotor3f(Vector3f from, Vector3f to) {
-        a = 1 + to.dot(from);
-        wedge(to, from, this);
-        normalize();
+        final var halfway = new Vector3f(from);
+        halfway.add(to);
+        halfway.normalize();
+
+        final var wedge = new Vector3f((halfway.x * from.y) - (halfway.y * from.x),
+                                       (halfway.y * from.z) - (halfway.z * from.y),
+                                       (halfway.z * from.x) - (halfway.x * from.z));
+        a = from.dot(halfway);
+        xy = wedge.x;
+        yz = wedge.y;
+        zx = wedge.z;
     }
 
     public Rotor3f combine(Rotor3f lhs, Rotor3f rhs) {
@@ -108,29 +98,6 @@ public class Rotor3f {
             return false;
 
         return true;
-    }
-
-    /**
-     * Answer the Rotor that interpolates the from vector to the to vector
-     *
-     * @param from
-     * @param to
-     * @return the Rotor that interpolates the from vector to the to vector
-     */
-    public Rotor3f fromTo(Vector3f from, Vector3f to) {
-        final var halfway = new Vector3f();
-        from.add(to);
-        from.normalize();
-
-        final var wedge = new Vector3f((halfway.x * from.y) - (halfway.y * from.x),
-                                       (halfway.y * from.z) - (halfway.z * from.y),
-                                       (halfway.z * from.x) - (halfway.x * from.z));
-        Rotor3f result = new Rotor3f();
-        result.a = from.dot(halfway);
-        result.xy = wedge.x;
-        result.yz = wedge.y;
-        result.zx = wedge.z;
-        return result;
     }
 
     public Rotor3f nlerp(Rotor3f to, float t) {
