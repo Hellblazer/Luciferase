@@ -36,33 +36,32 @@ import javafx.stage.Stage;
  */
 public abstract class Abstract3DApp extends Application {
 
-    private static final double AXIS_LENGTH             = 250.0;
-    private static final double CAMERA_FAR_CLIP         = 10000.0;
-    private static final double CAMERA_INITIAL_DISTANCE = -450;
-    private static final double CAMERA_INITIAL_X_ANGLE  = 70.0;
-    private static final double CAMERA_INITIAL_Y_ANGLE  = 320.0;
-    private static final double CAMERA_NEAR_CLIP        = 0.1;
-    private static final double CONTROL_MULTIPLIER      = 0.1;
-    private static final double MOUSE_SPEED             = 0.1;
-    private static final double ROTATION_SPEED          = 2.0;
-    private static final double SHIFT_MULTIPLIER        = 10.0;
-    private static final double TRACK_SPEED             = 0.3;
+    protected static final double AXIS_LENGTH             = 250.0;
+    protected static final double CAMERA_FAR_CLIP         = 10000.0;
+    protected static final double CAMERA_INITIAL_DISTANCE = -450;
+    protected static final double CAMERA_INITIAL_X_ANGLE  = 70.0;
+    protected static final double CAMERA_INITIAL_Y_ANGLE  = 320.0;
+    protected static final double CAMERA_NEAR_CLIP        = 0.1;
+    protected static final double CONTROL_MULTIPLIER      = 0.1;
+    protected static final double MOUSE_SPEED             = 0.1;
+    protected static final double ROTATION_SPEED          = 2.0;
+    protected static final double SHIFT_MULTIPLIER        = 10.0;
+    protected static final double TRACK_SPEED             = 0.3;
 
-    protected final Xform   axisGroup         = new Xform();
-    protected final Xform   transformingGroup = new Xform();
-    protected GridView      view;
-    protected final Xform   world             = new Xform();
-    final PerspectiveCamera camera            = new PerspectiveCamera(true);
-    final Xform             cameraXform       = new Xform();
-    final Xform             cameraXform2      = new Xform();
-    final Xform             cameraXform3      = new Xform();
-    double                  mouseDeltaX;
-    double                  mouseDeltaY;
-    double                  mouseOldX;
-    double                  mouseOldY;
-    double                  mousePosX;
-    double                  mousePosY;
-    final Group             root              = new Group();
+    protected final Xform             axisGroup         = new Xform();
+    protected final PerspectiveCamera camera            = new PerspectiveCamera(true);
+    protected final Xform             cameraXform       = new Xform();
+    protected final Xform             cameraXform2      = new Xform();
+    protected final Xform             cameraXform3      = new Xform();
+    protected double                  mouseDeltaX;
+    protected double                  mouseDeltaY;
+    protected double                  mouseOldX;
+    protected double                  mouseOldY;
+    protected double                  mousePosX;
+    protected double                  mousePosY;
+    protected final Group             root              = new Group();
+    protected final Xform             transformingGroup = new Xform();
+    protected final Xform             world             = new Xform();
 
     public Abstract3DApp() {
         super();
@@ -109,7 +108,7 @@ public abstract class Abstract3DApp extends Application {
 
     protected abstract void build();
 
-    private void buildAxes() {
+    protected void buildAxes() {
         final PhongMaterial redMaterial = new PhongMaterial();
         redMaterial.setDiffuseColor(Color.DARKRED);
         redMaterial.setSpecularColor(Color.RED);
@@ -135,7 +134,7 @@ public abstract class Abstract3DApp extends Application {
         world.getChildren().addAll(axisGroup);
     }
 
-    private void buildCamera() {
+    protected void buildCamera() {
         root.getChildren().add(cameraXform);
         cameraXform.getChildren().add(cameraXform2);
         cameraXform2.getChildren().add(cameraXform3);
@@ -149,7 +148,7 @@ public abstract class Abstract3DApp extends Application {
         cameraXform.rx.setAngle(CAMERA_INITIAL_X_ANGLE);
     }
 
-    private void handleKeyboard(Scene scene, final Node root) {
+    protected void handleKeyboard(Scene scene, final Node root) {
         scene.setOnKeyPressed(new EventHandler<KeyEvent>() {
             @Override
             public void handle(KeyEvent event) {
@@ -174,7 +173,7 @@ public abstract class Abstract3DApp extends Application {
         });
     }
 
-    private void handleMouse(Scene scene, final Node root) {
+    protected void handleMouse(Scene scene, final Node root) {
         scene.setOnMousePressed(new EventHandler<MouseEvent>() {
             @Override
             public void handle(MouseEvent me) {

@@ -62,36 +62,36 @@ public class CubicGrid {
         return new Point3D(vector.x, vector.y, vector.z);
     }
 
-    private final double                 intervalX;
-    private final double                 intervalY;
-    private final double                 intervalZ;
-    private final Neighborhood           neighborhood;
-    private Point3D                      origin;
-    private final Point3D                xAxis;
-    private final Pair<Integer, Integer> xExtent;
-    private final Point3D                yAxis;
-    private final Pair<Integer, Integer> yExtent;
-    private final Point3D                zAxis;
-    private final Pair<Integer, Integer> zExtent;
+    private final double               intervalX;
+    private final double               intervalY;
+    private final double               intervalZ;
+    private final Neighborhood         neighborhood;
+    private Point3D                    origin;
+    private final Point3D              xAxis;
+    private final Pair<Double, Double> xExtent;
+    private final Point3D              yAxis;
+    private final Pair<Double, Double> yExtent;
+    private final Point3D              zAxis;
+    private final Pair<Double, Double> zExtent;
 
     public CubicGrid(Neighborhood neighborhood) {
-        this(neighborhood, new Point3D(0, 0, 0), new Pair<>(5, 5), new Point3D(1, 0, 0), 1, new Pair<>(5, 5),
-             new Point3D(0, 1, 0), 1, new Pair<>(5, 5), new Point3D(0, 0, 1), 1);
+        this(neighborhood, new Point3D(0d, 0d, 0d), new Pair<>(5d, 5d), new Point3D(1d, 0d, 0d), 1d, new Pair<>(5d, 5d),
+             new Point3D(0d, 1d, 0d), 1d, new Pair<>(5d, 5d), new Point3D(0d, 0d, 1d), 1d);
     }
 
-    public CubicGrid(Neighborhood neighborhood, Cube cube, int extent) {
+    public CubicGrid(Neighborhood neighborhood, Cube cube, double extent) {
         this(neighborhood, cube, new Pair<>(extent, extent), new Pair<>(extent, extent), new Pair<>(extent, extent));
     }
 
-    public CubicGrid(Neighborhood neighborhood, Cube cube, Pair<Integer, Integer> xExtent,
-                     Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
+    public CubicGrid(Neighborhood neighborhood, Cube cube, Pair<Double, Double> xExtent, Pair<Double, Double> yExtent,
+                     Pair<Double, Double> zExtent) {
         this(neighborhood, new Point3D(0, 0, 0), xExtent, xAxis(cube), cube.getEdgeLength(), yExtent, yAxis(cube),
              cube.getEdgeLength(), zExtent, zAxis(cube), cube.getEdgeLength());
     }
 
-    public CubicGrid(Neighborhood neighborhood, Point3D origin, Pair<Integer, Integer> xExtent, Point3D xAxis,
-                     double intervalX, Pair<Integer, Integer> yExtent, Point3D yAxis, double intervalY,
-                     Pair<Integer, Integer> zExtent, Point3D zAxis, double intervalZ) {
+    public CubicGrid(Neighborhood neighborhood, Point3D origin, Pair<Double, Double> xExtent, Point3D xAxis,
+                     double intervalX, Pair<Double, Double> yExtent, Point3D yAxis, double intervalY,
+                     Pair<Double, Double> zExtent, Point3D zAxis, double intervalZ) {
         this.origin = origin;
         this.neighborhood = neighborhood;
         this.xExtent = xExtent;
@@ -161,7 +161,7 @@ public class CubicGrid {
         return xAxis;
     }
 
-    public Pair<Integer, Integer> getxExtent() {
+    public Pair<Double, Double> getxExtent() {
         return xExtent;
     }
 
@@ -169,7 +169,7 @@ public class CubicGrid {
         return yAxis;
     }
 
-    public Pair<Integer, Integer> getyExtent() {
+    public Pair<Double, Double> getyExtent() {
         return yExtent;
     }
 
@@ -177,7 +177,7 @@ public class CubicGrid {
         return zAxis;
     }
 
-    public Pair<Integer, Integer> getzExtent() {
+    public Pair<Double, Double> getzExtent() {
         return zExtent;
     }
 
@@ -234,8 +234,8 @@ public class CubicGrid {
         grid.getChildren().add(sphere);
     }
 
-    private void construct(Group grid, Point3D neg, Point3D pos, Integer a, Integer b, Material material,
-                           BiFunction<Integer, Point3D, Point3D> advanceA, Function<Point3D, Point3D> advanceB) {
+    private void construct(Group grid, Point3D neg, Point3D pos, double a, double b, Material material,
+                           BiFunction<Double, Point3D, Point3D> advanceA, Function<Point3D, Point3D> advanceB) {
         a = neighborhood == Neighborhood.SIX ? a + 1 : a;
         b = neighborhood == Neighborhood.SIX ? b + 1 : b;
         Point3D start = neg;
@@ -245,8 +245,8 @@ public class CubicGrid {
         axis.setMaterial(material);
         grid.getChildren().addAll(axis);
         for (int x = 0; x <= a; x++) {
-            start = advanceA.apply(x, neg);
-            end = advanceA.apply(x, pos);
+            start = advanceA.apply((double) x, neg);
+            end = advanceA.apply((double) x, pos);
             axis = new Line(0.015, start, end);
             axis.setMaterial(material);
             grid.getChildren().addAll(axis);

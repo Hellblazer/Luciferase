@@ -61,6 +61,8 @@ public class GridInspector extends Abstract3DApp {
         launch(args);
     }
 
+    private GridView view;
+
     @Override
     protected void build() {
         final var random = new Random(666);
