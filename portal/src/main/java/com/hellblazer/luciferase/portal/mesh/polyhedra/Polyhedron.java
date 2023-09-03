@@ -7,15 +7,15 @@ import java.util.Map;
 
 import javax.vecmath.Vector3d;
 
-import com.hellblazer.luciferase.portal.math.VectorMath;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
 import com.hellblazer.luciferase.portal.mesh.struct.EdgeToAdjacentFace;
 import com.hellblazer.luciferase.portal.mesh.struct.OrderedVertexToAdjacentEdge;
 import com.hellblazer.luciferase.portal.mesh.struct.OrderedVertexToAdjacentFace;
-import com.hellblazer.luciferase.portal.util.Canonicalize;
-import com.hellblazer.luciferase.portal.util.PolyhedraUtils;
+import com.hellblazer.luciferase.portal.mesh.util.Canonicalize;
+import com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils;
+import com.hellblazer.luciferase.portal.mesh.util.VectorMath;
 
 /**
  * A class for generic closed polyhedra meshes. The class contains several

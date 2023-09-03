@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.portal.util;
+package com.hellblazer.luciferase.portal.mesh.util;
 
 import javax.vecmath.Vector3d;
 

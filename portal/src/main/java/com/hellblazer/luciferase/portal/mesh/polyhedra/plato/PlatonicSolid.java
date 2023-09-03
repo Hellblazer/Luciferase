@@ -2,8 +2,8 @@ package com.hellblazer.luciferase.portal.mesh.polyhedra.plato;
 
 import javax.vecmath.Vector3d;
 
-import com.hellblazer.luciferase.portal.math.VectorMath;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
+import com.hellblazer.luciferase.portal.mesh.util.VectorMath;
 
 /**
  * Abstract class for a Platonic solid mesh centered at the origin.

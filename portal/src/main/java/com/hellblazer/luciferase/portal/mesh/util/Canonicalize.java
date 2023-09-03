@@ -1,11 +1,10 @@
-package com.hellblazer.luciferase.portal.util;
+package com.hellblazer.luciferase.portal.mesh.util;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import javax.vecmath.Vector3d;
 
-import com.hellblazer.luciferase.portal.math.VectorMath;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 

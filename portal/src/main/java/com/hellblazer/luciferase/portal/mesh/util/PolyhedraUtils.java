@@ -1,11 +1,10 @@
-package com.hellblazer.luciferase.portal.util;
+package com.hellblazer.luciferase.portal.mesh.util;
 
 import java.util.HashMap;
 import java.util.Map;
 
 import javax.vecmath.Vector3d;
 
-import com.hellblazer.luciferase.portal.math.VectorMath;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
@@ -74,7 +73,7 @@ public class PolyhedraUtils {
      * Generates rhombic faces in place of the edges in the source polyhedron. This
      * requires new vertices on each face. These new vertices are assumed to be
      * precomputed by
-     * {@link com.hellblazer.luciferase.portal.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron, Polyhedron)}
+     * {@link com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron, Polyhedron)}
      * and are inputs to this method as the third parameter.
      *
      * The new faces are added to the "modify" polyhedron (see params).
@@ -82,7 +81,7 @@ public class PolyhedraUtils {
      * @param source       The polyhedron whose edges to use as input.
      * @param modify       The polyhedron to add the new faces to.
      * @param edgeToVertex The map of new vertices, as returned by
-     *                     {@link com.hellblazer.luciferase.portal.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron, Polyhedron)}.
+     *                     {@link com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron, Polyhedron)}.
      */
     public static void addRhombicFacesAtEdges(Polyhedron source, Polyhedron modify,
                                               Map<Integer, Map<Integer, Integer>> edgeToVertex) {
