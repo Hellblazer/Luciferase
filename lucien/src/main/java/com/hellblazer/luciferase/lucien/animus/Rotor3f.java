@@ -16,6 +16,11 @@
  */
 package com.hellblazer.luciferase.lucien.animus;
 
+import static java.lang.Float.isNaN;
+import static java.lang.Math.acos;
+import static java.lang.Math.sin;
+import static java.lang.Math.sqrt;
+
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Quat4f;
 import javax.vecmath.Vector3f;
@@ -31,7 +36,7 @@ public class Rotor3f {
         return t * (to - from);
     }
 
-    private float a, xy, yz, zx;
+    private float a = 1, xy = 0, yz = 0, zx = 0;
 
     public Rotor3f(Quat4f q) {
         a = q.w;
@@ -57,6 +62,13 @@ public class Rotor3f {
         this.zx = zx;
     }
 
+    private Rotor3f(Rotor3f r) {
+        a = r.a;
+        xy = r.xy;
+        yz = r.yz;
+        zx = r.zx;
+    }
+
     public Rotor3f combine(Rotor3f rhs) {
         return new Rotor3f(a * rhs.a - xy * rhs.xy - yz * rhs.yz - zx * rhs.zx,
                            a * rhs.xy + xy * rhs.a - yz * rhs.zx + zx * rhs.yz,
@@ -68,25 +80,25 @@ public class Rotor3f {
         float diff;
 
         diff = xy - t1.xy;
-        if (Float.isNaN(diff))
+        if (isNaN(diff))
             return false;
         if ((diff < 0 ? -diff : diff) > epsilon)
             return false;
 
         diff = yz - t1.yz;
-        if (Float.isNaN(diff))
+        if (isNaN(diff))
             return false;
         if ((diff < 0 ? -diff : diff) > epsilon)
             return false;
 
         diff = zx - t1.zx;
-        if (Float.isNaN(diff))
+        if (isNaN(diff))
             return false;
         if ((diff < 0 ? -diff : diff) > epsilon)
             return false;
 
         diff = a - t1.a;
-        if (Float.isNaN(diff))
+        if (isNaN(diff))
             return false;
         if ((diff < 0 ? -diff : diff) > epsilon)
             return false;
@@ -109,7 +121,7 @@ public class Rotor3f {
     }
 
     public void normalize() {
-        var n = Math.sqrt(a * a + xy * xy + yz * yz + zx * zx);
+        var n = sqrt(a * a + xy * xy + yz * yz + zx * zx);
         a /= n;
         xy /= n;
         yz /= n;
@@ -123,7 +135,8 @@ public class Rotor3f {
     /**
      * Spherical Linear Interpolation.
      */
-    public Rotor3f slerp(Rotor3f to, float t) {
+    public Rotor3f slerp(Rotor3f dest, float t) {
+        var to = new Rotor3f(dest);
         double dot = a * to.a + xy * to.xy + yz * to.yz + zx * to.zx;
         if (dot < 0.0f) {
             to.a = -to.a;
@@ -145,9 +158,9 @@ public class Rotor3f {
         // then cos(theta) = dot(from, to)
         double cos_theta = dot;
 
-        double theta = Math.acos(cos_theta);
-        double from_factor = Math.sin((1.0f - t) * theta) / Math.sin(theta);
-        double to_factor = Math.sin(t * theta) / Math.sin(theta);
+        double theta = acos(cos_theta);
+        double from_factor = sin((1.0f - t) * theta) / sin(theta);
+        double to_factor = sin(t * theta) / sin(theta);
 
         return new Rotor3f((float) (from_factor * a + to_factor * to.a), (float) (from_factor * xy + to_factor * to.xy),
                            (float) (from_factor * yz + to_factor * to.yz),

@@ -56,7 +56,7 @@ import javafx.stage.Stage;
 
 /**
  * Neolithic 3D viewer, based on ye venerable JavaFX 3D sample app
- * 
+ *
  * @author hal.hildebrand
  * @author cmcastil
  */

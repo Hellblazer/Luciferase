@@ -16,8 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.animus;
 
-import javax.vecmath.Point3d;
-import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3d;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
@@ -36,24 +34,36 @@ public class Oriented extends Vector3f {
         super();
     }
 
-    public Oriented(float x, float y, float z) {
+    public Oriented(float x, float y, float z, float oX, float oY, float oZ) {
         super(x, y, z);
+        orientation.x = oX;
+        orientation.y = oY;
+        orientation.z = oZ;
     }
 
-    public Oriented(Point3d p1) {
-        super(p1);
-    }
-
-    public Oriented(Point3f p1) {
-        super(p1);
+    public Oriented(float[] v) {
+        super(v);
+        orientation.x = v[3];
+        orientation.y = v[4];
+        orientation.z = v[5];
     }
 
     public Oriented(Tuple3d t1) {
         super(t1);
     }
 
+    public Oriented(Tuple3d location, Tuple3d orientation) {
+        super(location);
+        this.orientation.set(orientation);
+    }
+
     public Oriented(Tuple3f t1) {
         super(t1);
+    }
+
+    public Oriented(Tuple3f location, Tuple3f orientation) {
+        super(location);
+        this.orientation.set(orientation);
     }
 
     @Override
@@ -86,5 +96,18 @@ public class Oriented extends Vector3f {
 
     public Vector3f orientation() {
         return orientation;
+    }
+
+    public void reorient(Rotor3f transform) {
+        orientation.set(transform.transform(orientation));
+    }
+
+    public void transform(Rotor3f transform) {
+        set(transform.transform(this));
+    }
+
+    public void transform(Rotor3f transform, Rotor3f oTransform) {
+        reorient(oTransform);
+        transform(transform);
     }
 }
