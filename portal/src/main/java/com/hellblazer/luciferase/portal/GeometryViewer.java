@@ -18,10 +18,14 @@ package com.hellblazer.luciferase.portal;
 
 import static com.hellblazer.luciferase.portal.Colors.blackMaterial;
 
-import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
-import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
+import java.util.Set;
 
-import javafx.scene.Group;
+import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
+import com.hellblazer.luciferase.portal.mesh.Edge;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.sphere.Goldberg;
+
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
 
@@ -44,17 +48,29 @@ public class GeometryViewer extends Abstract3DApp {
         launch(args);
     }
 
-    private Group view;
+    protected void add(final Polyhedron polyhedron) {
+        MeshView v = new MeshView(polyhedron.toTriangleMesh().constructMesh());
+        v.setMaterial(Colors.cyanMaterial);
+        v.setCullFace(CullFace.NONE);
+        transformingGroup.getChildren().add(v);
+    }
+
+    protected void add(Set<Edge> edges) {
+        final var children = transformingGroup.getChildren();
+        for (var e : edges) {
+            children.addAll(e.getEndpointSpheres(Math.sqrt(2) / 2, Colors.blueMaterial));
+        }
+    }
 
     @Override
     protected void build() {
-        view = new CubicGrid(Neighborhood.SIX).construct(blackMaterial, blackMaterial, blackMaterial);
+        var view = new CubicGrid(Neighborhood.EIGHT).construct(blackMaterial, blackMaterial, blackMaterial);
         transformingGroup.getChildren().add(view);
         world.getChildren().addAll(transformingGroup);
-
-        MeshView v = new MeshView(new Cuboctahedron(2).dual().toTriangleMesh().constructMesh());
-        v.setCullFace(CullFace.NONE);
-        transformingGroup.getChildren().add(v);
+        add(new Goldberg(Math.sqrt(2) / 2, 4));
+        final var polyhedron = new Cuboctahedron(Math.sqrt(2));
+//        add(polyhedron);
+        add(polyhedron.getEdges());
     }
 
     @Override
