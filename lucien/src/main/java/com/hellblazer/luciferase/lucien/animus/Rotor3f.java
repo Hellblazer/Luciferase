@@ -21,6 +21,8 @@ import javax.vecmath.Quat4f;
 import javax.vecmath.Vector3f;
 
 /**
+ * Geometric Algebra Rotor 3D
+ *
  * @author hal.hildebrand
  */
 public class Rotor3f {
@@ -30,15 +32,6 @@ public class Rotor3f {
     }
 
     private float a, xy, yz, zx;
-
-    public Rotor3f() {
-    }
-
-    public Rotor3f(float xy, float yz, float zx) {
-        this.xy = xy;
-        this.yz = yz;
-        this.zx = zx;
-    }
 
     public Rotor3f(Quat4f q) {
         a = q.w;
@@ -51,23 +44,24 @@ public class Rotor3f {
         final var halfway = new Vector3f(from);
         halfway.add(to);
         halfway.normalize();
-
-        final var wedge = new Vector3f((halfway.x * from.y) - (halfway.y * from.x),
-                                       (halfway.y * from.z) - (halfway.z * from.y),
-                                       (halfway.z * from.x) - (halfway.x * from.z));
         a = from.dot(halfway);
-        xy = wedge.x;
-        yz = wedge.y;
-        zx = wedge.z;
+        xy = (halfway.x * from.y) - (halfway.y * from.x);
+        yz = (halfway.y * from.z) - (halfway.z * from.y);
+        zx = (halfway.z * from.x) - (halfway.x * from.z);
     }
 
-    public Rotor3f combine(Rotor3f lhs, Rotor3f rhs) {
-        Rotor3f result = new Rotor3f();
-        result.a = lhs.a * rhs.a - lhs.xy * rhs.xy - lhs.yz * rhs.yz - lhs.zx * rhs.zx;
-        result.xy = lhs.a * rhs.xy + lhs.xy * rhs.a - lhs.yz * rhs.zx + lhs.zx * rhs.yz;
-        result.yz = lhs.a * rhs.yz + lhs.xy * rhs.zx + lhs.yz * rhs.a - lhs.zx * rhs.xy;
-        result.zx = lhs.a * rhs.zx - lhs.xy * rhs.yz + lhs.yz * rhs.xy + lhs.zx * rhs.a;
-        return result;
+    private Rotor3f(float a, float xy, float yz, float zx) {
+        this.a = a;
+        this.xy = xy;
+        this.yz = yz;
+        this.zx = zx;
+    }
+
+    public Rotor3f combine(Rotor3f rhs) {
+        return new Rotor3f(a * rhs.a - xy * rhs.xy - yz * rhs.yz - zx * rhs.zx,
+                           a * rhs.xy + xy * rhs.a - yz * rhs.zx + zx * rhs.yz,
+                           a * rhs.yz + xy * rhs.zx + yz * rhs.a - zx * rhs.xy,
+                           a * rhs.zx - xy * rhs.yz + yz * rhs.xy + zx * rhs.a);
     }
 
     public boolean epsilonEquals(Rotor3f t1, float epsilon) {
@@ -109,23 +103,11 @@ public class Rotor3f {
             to.zx = -to.zx;
         }
 
-        var r = new Rotor3f();
-        r.a = lerp(a, to.a, t);
-        r.xy = lerp(xy, to.xy, t);
-        r.yz = lerp(yz, to.yz, t);
-        r.zx = lerp(zx, to.zx, t);
-
-        var magnitude = Math.sqrt(r.a * r.a + r.xy * r.xy + r.yz * r.yz + r.zx * r.zx);
-        r.a /= magnitude;
-        r.xy /= magnitude;
-        r.yz /= magnitude;
-        r.zx /= magnitude;
+        var r = new Rotor3f(lerp(a, to.a, t), lerp(xy, to.xy, t), lerp(yz, to.yz, t), lerp(zx, to.zx, t));
+        r.normalize();
         return r;
     }
 
-    /**
-     * Normalize to the unit Rotor
-     */
     public void normalize() {
         var n = Math.sqrt(a * a + xy * xy + yz * yz + zx * zx);
         a /= n;
@@ -134,34 +116,12 @@ public class Rotor3f {
         zx /= n;
     }
 
-    /**
-     * Rotate the vector using the receiver
-     *
-     * @param vec
-     * @return the new Vector3f resulting from the rotation
-     */
-    public Vector3f rotate(Vector3f vec) {
-        var u = this;
-        var v = vec;
-        var q = new Vector3f(u.a * v.x + v.y * u.xy - v.z * u.zx, u.a * v.y + v.z * u.yz - v.x * u.xy,
-                             u.a * v.z + v.x * u.zx - v.y * u.yz);
-
-        var qxyz = -v.x * u.yz - v.y * u.zx - v.z * u.xy;
-        return new Vector3f(u.a * q.x + q.y * u.xy - q.z * u.zx - qxyz * u.yz,
-                            u.a * q.y + q.z * u.yz - q.x * u.xy - qxyz * u.zx,
-                            u.a * q.z + q.x * u.zx - q.y * u.yz - qxyz * u.xy);
+    public Rotor3f reverse() {
+        return new Rotor3f(a, -xy, -yz, -zx);
     }
 
     /**
      * Spherical Linear Interpolation.
-     * <p>
-     * Performs a great circle interpolation between the receiver and to returning
-     * the new Rotor at t
-     *
-     * @param t the rotor to interpolate to
-     * @param t the alpha interpolation parameter, between 0 and 1
-     * @return the Rotor representing the rotation of the receiver to the target at
-     *         t
      */
     public Rotor3f slerp(Rotor3f to, float t) {
         double dot = a * to.a + xy * to.xy + yz * to.yz + zx * to.zx;
@@ -189,12 +149,9 @@ public class Rotor3f {
         double from_factor = Math.sin((1.0f - t) * theta) / Math.sin(theta);
         double to_factor = Math.sin(t * theta) / Math.sin(theta);
 
-        Rotor3f result = new Rotor3f();
-        result.a = (float) (from_factor * a + to_factor * to.a);
-        result.xy = (float) (from_factor * xy + to_factor * to.xy);
-        result.yz = (float) (from_factor * yz + to_factor * to.yz);
-        result.zx = (float) (from_factor * zx + to_factor * to.zx);
-        return result;
+        return new Rotor3f((float) (from_factor * a + to_factor * to.a), (float) (from_factor * xy + to_factor * to.xy),
+                           (float) (from_factor * yz + to_factor * to.yz),
+                           (float) (from_factor * zx + to_factor * to.zx));
 
     }
 
@@ -202,9 +159,9 @@ public class Rotor3f {
      * @return the conventional rotation matrix corresponding to the receiver
      */
     public Matrix4f toMatrix() {
-        var new_x = rotate(new Vector3f(1.0f, 0.0f, 0.0f));
-        var new_y = rotate(new Vector3f(0.0f, 1.0f, 0.0f));
-        var new_z = rotate(new Vector3f(0.0f, 0.0f, 1.0f));
+        var new_x = transform(new Vector3f(1.0f, 0.0f, 0.0f));
+        var new_y = transform(new Vector3f(0.0f, 1.0f, 0.0f));
+        var new_z = transform(new Vector3f(0.0f, 0.0f, 1.0f));
 
         Matrix4f result = new Matrix4f();
         result.m00 = new_x.x;
@@ -229,13 +186,22 @@ public class Rotor3f {
         return result;
     }
 
-    Rotor3f reverse(Rotor3f r) {
-        Rotor3f result = new Rotor3f();
-        result.a = r.a;
-        result.xy = -r.xy;
-        result.yz = -r.yz;
-        result.zx = -r.zx;
-        return result;
+    /**
+     * Transform the vector using the receiver
+     *
+     * @param vec
+     * @return the new Vector3f resulting from the rotation
+     */
+    public Vector3f transform(Vector3f vec) {
+        var u = this;
+        var v = vec;
+        var q = new Vector3f(u.a * v.x + v.y * u.xy - v.z * u.zx, u.a * v.y + v.z * u.yz - v.x * u.xy,
+                             u.a * v.z + v.x * u.zx - v.y * u.yz);
+
+        var qxyz = -v.x * u.yz - v.y * u.zx - v.z * u.xy;
+        return new Vector3f(u.a * q.x + q.y * u.xy - q.z * u.zx - qxyz * u.yz,
+                            u.a * q.y + q.z * u.yz - q.x * u.xy - qxyz * u.zx,
+                            u.a * q.z + q.x * u.zx - q.y * u.yz - qxyz * u.xy);
     }
 
 }
