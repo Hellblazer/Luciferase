@@ -19,8 +19,11 @@ package com.hellblazer.luciferase.portal;
 import static com.hellblazer.luciferase.portal.Colors.blackMaterial;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
 
 import javafx.scene.Group;
+import javafx.scene.shape.CullFace;
+import javafx.scene.shape.MeshView;
 
 /**
  * @author hal.hildebrand
@@ -47,8 +50,15 @@ public class GeometryViewer extends Abstract3DApp {
     protected void build() {
         view = new CubicGrid(Neighborhood.SIX).construct(blackMaterial, blackMaterial, blackMaterial);
         transformingGroup.getChildren().add(view);
-
         world.getChildren().addAll(transformingGroup);
+
+        MeshView v = new MeshView(new Cuboctahedron(2).dual().toTriangleMesh().constructMesh());
+        v.setCullFace(CullFace.NONE);
+        transformingGroup.getChildren().add(v);
     }
 
+    @Override
+    protected String title() {
+        return "Geometry Viewer";
+    }
 }

@@ -77,4 +77,9 @@ public class GridInspector extends Abstract3DApp {
 
         world.getChildren().addAll(transformingGroup);
     }
+
+    @Override
+    protected String title() {
+        return "Grid Inspector";
+    }
 }

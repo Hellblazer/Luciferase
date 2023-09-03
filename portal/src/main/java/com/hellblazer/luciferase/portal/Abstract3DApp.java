@@ -85,7 +85,7 @@ public abstract class Abstract3DApp extends Application {
         handleKeyboard(scene, world);
         handleMouse(scene, world);
 
-        primaryStage.setTitle("Sentinel Inspector");
+        primaryStage.setTitle(title());
         primaryStage.setScene(scene);
         primaryStage.show();
 
@@ -218,5 +218,7 @@ public abstract class Abstract3DApp extends Application {
             }
         });
     }
+
+    abstract protected String title();
 
 }
