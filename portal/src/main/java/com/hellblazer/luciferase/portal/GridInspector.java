@@ -249,7 +249,11 @@ public class GridInspector extends Application {
                 if (me.isShiftDown()) {
                     modifier = SHIFT_MULTIPLIER;
                 }
-                if (me.isPrimaryButtonDown()) {
+
+                if (me.isMiddleButtonDown() || (me.isPrimaryButtonDown() && me.isSecondaryButtonDown())) {
+                    cameraXform2.t.setX(cameraXform2.t.getX() + mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED);
+                    cameraXform2.t.setY(cameraXform2.t.getY() + mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED);
+                } else if (me.isPrimaryButtonDown()) {
                     cameraXform.ry.setAngle(cameraXform.ry.getAngle()
                     - mouseDeltaX * MOUSE_SPEED * modifier * ROTATION_SPEED);
                     cameraXform.rx.setAngle(cameraXform.rx.getAngle()
@@ -258,9 +262,6 @@ public class GridInspector extends Application {
                     double z = camera.getTranslateZ();
                     double newZ = z + mouseDeltaX * MOUSE_SPEED * modifier;
                     camera.setTranslateZ(newZ);
-                } else if (me.isMiddleButtonDown()) {
-                    cameraXform2.t.setX(cameraXform2.t.getX() + mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED);
-                    cameraXform2.t.setY(cameraXform2.t.getY() + mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED);
                 }
             }
         });
