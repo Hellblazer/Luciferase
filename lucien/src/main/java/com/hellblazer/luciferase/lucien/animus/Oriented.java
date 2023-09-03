@@ -30,7 +30,7 @@ import javax.vecmath.Vector3f;
 public class Oriented extends Vector3f {
     private static final long serialVersionUID = 1L;
 
-    private final Rotor3f orientation = new Rotor3f();
+    private final Vector3f orientation = new Vector3f(1, 0, 0);
 
     public Oriented() {
         super();
@@ -59,10 +59,9 @@ public class Oriented extends Vector3f {
     @Override
     public Oriented clone() {
         final var clone = (Oriented) super.clone();
-        clone.orientation.a = orientation.a;
-        clone.orientation.xy = orientation.xy;
-        clone.orientation.yz = orientation.yz;
-        clone.orientation.zx = orientation.zx;
+        clone.orientation.x = orientation.x;
+        clone.orientation.y = orientation.y;
+        clone.orientation.z = orientation.z;
 
         return clone;
     }
@@ -85,7 +84,7 @@ public class Oriented extends Vector3f {
         return 31 * super.hashCode() + orientation.hashCode();
     }
 
-    public Rotor3f orientation() {
+    public Vector3f orientation() {
         return orientation;
     }
 }
