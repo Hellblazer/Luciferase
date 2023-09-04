@@ -22,9 +22,10 @@ import java.util.Set;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
+import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
-import com.hellblazer.luciferase.portal.mesh.polyhedra.sphere.Goldberg;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
@@ -44,6 +45,9 @@ public class GeometryViewer extends Abstract3DApp {
         }
     }
 
+    public static final double CUBE_EDGE_LENGTH = Math.sqrt(2) / 2;
+    public static final double TET_EDGE_LENGTH  = 1;
+
     public static void main(String[] args) {
         launch(args);
     }
@@ -55,22 +59,37 @@ public class GeometryViewer extends Abstract3DApp {
         transformingGroup.getChildren().add(v);
     }
 
-    protected void add(Set<Edge> edges) {
+    protected void addEdges(Set<Edge> edges) {
         final var children = transformingGroup.getChildren();
         for (var e : edges) {
-            children.addAll(e.getEndpointSpheres(Math.sqrt(2) / 2, Colors.blueMaterial));
+            var segment = e.getSegment();
+            final var line = new Line(0.01, segment[0], segment[1]);
+            line.setMaterial(blackMaterial);
+            children.addAll(line);
+        }
+    }
+
+    protected void addSpheres(Set<Edge> edges) {
+        final var children = transformingGroup.getChildren();
+        for (var e : edges) {
+            children.addAll(e.getEndpointSpheres(TET_EDGE_LENGTH / 2, Colors.blueMaterial));
         }
     }
 
     @Override
     protected void build() {
-        var view = new CubicGrid(Neighborhood.EIGHT).construct(blackMaterial, blackMaterial, blackMaterial);
-        transformingGroup.getChildren().add(view);
+
+        final var cubicGrid = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 2);
+        var view = cubicGrid.construct(blackMaterial, blackMaterial, blackMaterial, false);
+//        transformingGroup.getChildren().add(view);
         world.getChildren().addAll(transformingGroup);
-        add(new Goldberg(Math.sqrt(2) / 2, 4));
-        final var polyhedron = new Cuboctahedron(Math.sqrt(2));
+//        add(new Goldberg(TET_EDGE_LENGTH / 2, 4));
+        final var polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
+        final var edges = polyhedron.getEdges();
+        addSpheres(edges);
+//        addEdges(edges);
 //        add(polyhedron);
-        add(polyhedron.getEdges());
+        addEdges(polyhedron.dual().getEdges());
     }
 
     @Override

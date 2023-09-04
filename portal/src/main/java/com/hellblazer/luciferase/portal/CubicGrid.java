@@ -105,7 +105,7 @@ public class CubicGrid {
         this.intervalZ = intervalZ;
     }
 
-    public Group construct(Material xaxis, Material yaxis, Material zaxis) {
+    public Group construct(Material xaxis, Material yaxis, Material zaxis, boolean addAxis) {
         Group grid = new Group();
         Point3D pos;
         Point3D neg;
@@ -136,8 +136,9 @@ public class CubicGrid {
 
         construct(grid, neg, pos, xExtent.getKey() + xExtent.getValue(), yExtent.getKey() + yExtent.getValue(), zaxis,
                   (i, p) -> p.add(deltaX.multiply(i)), p -> p.add(deltaY));
-
-        addAxes(grid);
+        if (addAxis) {
+            addAxes(grid);
+        }
         return grid;
     }
 
@@ -196,38 +197,42 @@ public class CubicGrid {
     }
 
     private void addAxes(Group grid) {
+        addAxes(grid, 0.25, 0.025);
+    }
+
+    private void addAxes(Group grid, double sphereRadius, double lineRadius) {
         Point3D xPositive = xAxis.multiply(intervalX * xExtent.getKey());
-        Line axis = new Line(0.025, xAxis.multiply(-intervalX * xExtent.getKey()), xPositive);
+        Line axis = new Line(lineRadius, xAxis.multiply(-intervalX * xExtent.getKey()), xPositive);
         axis.setMaterial(redMaterial);
         grid.getChildren().addAll(axis);
 
         Sphere sphere = new Sphere();
         sphere.setMaterial(redMaterial);
-        sphere.setRadius(0.25);
+        sphere.setRadius(sphereRadius);
         sphere.setTranslateX(xPositive.getX());
         sphere.setTranslateY(xPositive.getY());
         sphere.setTranslateZ(xPositive.getZ());
         grid.getChildren().add(sphere);
 
         Point3D yPositive = yAxis.multiply(intervalY * yExtent.getKey());
-        axis = new Line(0.025, yAxis.multiply(-intervalY * yExtent.getKey()), yPositive);
+        axis = new Line(lineRadius, yAxis.multiply(-intervalY * yExtent.getKey()), yPositive);
         axis.setMaterial(blueMaterial);
         grid.getChildren().addAll(axis);
         sphere = new Sphere();
         sphere.setMaterial(blueMaterial);
-        sphere.setRadius(0.25);
+        sphere.setRadius(sphereRadius);
         sphere.setTranslateX(yPositive.getX());
         sphere.setTranslateY(yPositive.getY());
         sphere.setTranslateZ(yPositive.getZ());
         grid.getChildren().add(sphere);
 
         Point3D zPositive = zAxis.multiply(intervalZ * zExtent.getKey());
-        axis = new Line(0.025, zAxis.multiply(-intervalZ * zExtent.getKey()), zPositive);
+        axis = new Line(lineRadius, zAxis.multiply(-intervalZ * zExtent.getKey()), zPositive);
         axis.setMaterial(greenMaterial);
         grid.getChildren().addAll(axis);
         sphere = new Sphere();
         sphere.setMaterial(greenMaterial);
-        sphere.setRadius(0.25);
+        sphere.setRadius(sphereRadius);
         sphere.setTranslateX(zPositive.getX());
         sphere.setTranslateY(zPositive.getY());
         sphere.setTranslateZ(zPositive.getZ());

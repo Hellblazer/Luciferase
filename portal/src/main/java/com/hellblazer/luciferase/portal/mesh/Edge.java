@@ -127,6 +127,20 @@ public class Edge {
         return mesh.vertexPositions.get(getOtherEnd(end));
     }
 
+    /**
+     * Get the locations of the endpoints of this edge. setMesh() must have been
+     * called for this to succeed.
+     *
+     * @return The locations of the endpoints of this edge.
+     */
+    public Point3D[] getSegment() {
+        Point3D[] endLocations = new Point3D[2];
+        final var ends = getEndLocations();
+        endLocations[0] = new Point3D(ends[0].x, ends[0].y, ends[0].z);
+        endLocations[1] = new Point3D(ends[1].x, ends[1].y, ends[1].z);
+        return endLocations;
+    }
+
     @Override
     public int hashCode() {
         return Integer.valueOf(ends[0]).hashCode() * Integer.valueOf(ends[1]).hashCode();
