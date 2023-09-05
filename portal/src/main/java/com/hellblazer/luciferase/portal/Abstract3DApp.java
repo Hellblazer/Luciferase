@@ -78,7 +78,12 @@ public abstract class Abstract3DApp extends Application {
         // buildScene();
         buildCamera();
         buildAxes();
-        build();
+        var view = build();
+        var auto = new AutoScalingGroup(2);
+        auto.enabledProperty().set(true);
+        auto.getChildren().add(view);
+        transformingGroup.getChildren().add(auto);
+        world.getChildren().addAll(transformingGroup);
 
         Scene scene = new Scene(root, 1024, 768, true);
         scene.setFill(Color.LIGHTGRAY);
@@ -106,7 +111,7 @@ public abstract class Abstract3DApp extends Application {
         });
     }
 
-    protected abstract void build();
+    protected abstract Group build();
 
     protected void buildAxes() {
         final PhongMaterial redMaterial = new PhongMaterial();

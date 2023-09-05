@@ -16,17 +16,16 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.portal.Colors.blackMaterial;
-
 import java.util.Set;
 
-import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
-import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.sphere.Goldberg;
 
+import javafx.scene.Group;
+import javafx.scene.paint.Material;
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
 
@@ -52,44 +51,56 @@ public class GeometryViewer extends Abstract3DApp {
         launch(args);
     }
 
+    private final Group view = new Group();
+
     protected void add(final Polyhedron polyhedron) {
         MeshView v = new MeshView(polyhedron.toTriangleMesh().constructMesh());
         v.setMaterial(Colors.cyanMaterial);
         v.setCullFace(CullFace.NONE);
-        transformingGroup.getChildren().add(v);
+        view.getChildren().add(v);
     }
 
-    protected void addEdges(Set<Edge> edges) {
-        final var children = transformingGroup.getChildren();
+    protected void addEdges(Set<Edge> edges, Material material) {
+        final var children = view.getChildren();
         for (var e : edges) {
             var segment = e.getSegment();
             final var line = new Line(0.01, segment[0], segment[1]);
-            line.setMaterial(blackMaterial);
+            line.setMaterial(material);
             children.addAll(line);
         }
     }
 
     protected void addSpheres(Set<Edge> edges) {
-        final var children = transformingGroup.getChildren();
+        final var children = view.getChildren();
         for (var e : edges) {
-            children.addAll(e.getEndpointSpheres(TET_EDGE_LENGTH / 2, Colors.blueMaterial));
+            children.addAll(e.getEndpointSpheres(e.length() / 2, Colors.blueMaterial));
         }
     }
 
     @Override
-    protected void build() {
+    protected Group build() {
+//        view.getChildren()
+//            .add(new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 2).construct(Colors.blackMaterial,
+//                                                                                            Colors.blackMaterial,
+//                                                                                            Colors.blackMaterial,
+//                                                                                            false));
+        Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
+        var dual = polyhedron.dual();
 
-        final var cubicGrid = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 2);
-        var view = cubicGrid.construct(blackMaterial, blackMaterial, blackMaterial, false);
-//        transformingGroup.getChildren().add(view);
-        world.getChildren().addAll(transformingGroup);
-//        add(new Goldberg(TET_EDGE_LENGTH / 2, 4));
-        final var polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
-        final var edges = polyhedron.getEdges();
-        addSpheres(edges);
-//        addEdges(edges);
-//        add(polyhedron);
-        addEdges(polyhedron.dual().getEdges());
+        add(new Goldberg(polyhedron.getFaces().get(0).getEdges()[0].length() / 2, 4));
+
+        var edges = polyhedron.getEdges();
+        var dualEdges = dual.getEdges();
+
+//      add(polyhedron);
+
+        addEdges(edges, Colors.blueMaterial);
+//        add(new Goldberg(polyhedron.midsphereRadius(), 4));
+        addEdges(dualEdges, Colors.redMaterial);
+
+//        addSpheres(edges);
+//        addSpheres(dualEdges);
+        return view;
     }
 
     @Override

@@ -66,7 +66,7 @@ public class CubicGrid {
     private final double               intervalY;
     private final double               intervalZ;
     private final Neighborhood         neighborhood;
-    private Point3D                    origin;
+    private final Point3D              origin;
     private final Point3D              xAxis;
     private final Pair<Double, Double> xExtent;
     private final Point3D              yAxis;

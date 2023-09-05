@@ -41,7 +41,7 @@ public class GraphicsView extends Group {
 
             mesh.addVertexNormal(face.getFaceNormal());
             MeshView view = face.constructMeshView();
-            view.setCullFace(CullFace.BACK);
+            view.setCullFace(CullFace.NONE);
             view.setMaterial(color);
             group.getChildren().addAll(view);
         } else {

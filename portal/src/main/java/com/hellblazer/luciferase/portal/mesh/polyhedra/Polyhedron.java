@@ -486,6 +486,14 @@ public class Polyhedron extends Mesh {
         return medial(n, false);
     }
 
+    public double midsphereRadius() {
+        return faces.get(0).getEdges()[0].midpoint().length();
+    }
+
+    public double midsphereRadiusSquared() {
+        return faces.get(0).getEdges()[0].midpoint().lengthSquared();
+    }
+
     /**
      * Computes the "needle" polyhedron of this polyhedron. The centroid of each
      * face becomes a vertex, and for each edge, there are two triangular faces

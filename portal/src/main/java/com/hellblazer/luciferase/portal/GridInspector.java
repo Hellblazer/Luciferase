@@ -39,6 +39,8 @@ import javax.vecmath.Point3f;
 import com.hellblazer.luciferase.lucien.grid.MutableGrid;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
 
+import javafx.scene.Group;
+
 /**
  * Neolithic 3D viewer, based on ye venerable JavaFX 3D sample app
  *
@@ -64,7 +66,7 @@ public class GridInspector extends Abstract3DApp {
     private GridView view;
 
     @Override
-    protected void build() {
+    protected Group build() {
         final var random = new Random(666);
         final var tet = new MutableGrid();
         Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, true);
@@ -73,9 +75,7 @@ public class GridInspector extends Abstract3DApp {
         }
         view = new GridView(tet);
         view.update(false, false, true, false, true);
-        transformingGroup.getChildren().add(view);
-
-        world.getChildren().addAll(transformingGroup);
+        return view;
     }
 
     @Override
