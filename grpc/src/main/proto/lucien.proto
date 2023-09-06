@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.hellblazer.luciferase.lucien.proto";
+option java_outer_classname = "LucienProto";
+option objc_class_prefix = "Luc"; 
+
+package lucien;
+
+message Tetrahedralization_ {
+    repeated Vertex_ vertices = 1;
+}
+
+message Vertex_ {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+    int32 adjacent = 4;
+}

@@ -7,6 +7,7 @@ import java.util.List;
 import javax.vecmath.Vector3d;
 
 import javafx.geometry.Point3D;
+import javafx.scene.paint.Material;
 import javafx.scene.shape.Sphere;
 
 /**
@@ -29,15 +30,13 @@ public class Edge {
 
     private int[] ends;
 
-    private Mesh  mesh;
+    private Mesh mesh;
 
     /**
      * Create an edge whose endpoints are the specified vertices.
      *
-     * @param vertex0
-     *            Endpoint vertex.
-     * @param vertex1
-     *            Endpoint vertex.
+     * @param vertex0 Endpoint vertex.
+     * @param vertex1 Endpoint vertex.
      */
     public Edge(int vertex0, int vertex1) {
         ends = new int[2];
@@ -56,8 +55,8 @@ public class Edge {
     @Override
     public boolean equals(Object obj) {
         Edge other = (Edge) obj;
-        return (ends[0] == other.ends[0] && ends[1] == other.ends[1])
-               || (ends[0] == other.ends[1] && ends[1] == other.ends[0]);
+        return (ends[0] == other.ends[0] && ends[1] == other.ends[1]) ||
+               (ends[0] == other.ends[1] && ends[1] == other.ends[0]);
     }
 
     /**
@@ -73,7 +72,7 @@ public class Edge {
         return endLocations;
     }
 
-    public List<Sphere> getEndpointSpheres(double radius) {
+    public List<Sphere> getEndpointSpheres(double radius, Material m) {
         List<Sphere> spheres = new ArrayList<>();
         for (Vector3d vertex : getEndLocations()) {
             Sphere sphere = new Sphere();
@@ -81,6 +80,7 @@ public class Edge {
             sphere.setTranslateX(vertex.x);
             sphere.setTranslateY(vertex.y);
             sphere.setTranslateZ(vertex.z);
+            sphere.setMaterial(m);
             spheres.add(sphere);
         }
         return spheres;
@@ -96,14 +96,13 @@ public class Edge {
     }
 
     /**
-     * Given the vertex index of one of the endpoints, return the vertex index
-     * of the other endpoint.
+     * Given the vertex index of one of the endpoints, return the vertex index of
+     * the other endpoint.
      *
-     * @param end
-     *            The vertex index of one of the endpoints.
+     * @param end The vertex index of one of the endpoints.
      * @return The vertex index of the other endpoint.
-     * @throws IllegalArgumentException
-     *             If end is not one of the endpoints of this edge.
+     * @throws IllegalArgumentException If end is not one of the endpoints of this
+     *                                  edge.
      */
     public int getOtherEnd(int end) {
         if (ends[0] == end) {
@@ -111,69 +110,73 @@ public class Edge {
         } else if (ends[1] == end) {
             return ends[0];
         } else {
-            throw new IllegalArgumentException(String.format("Vertex %d is not"
-                                                             + " an endpoint of this edge.",
-                                                             end));
+            throw new IllegalArgumentException(String.format("Vertex %d is not" + " an endpoint of this edge.", end));
         }
     }
 
     /**
-     * Given the vertex index of one of the endpoints, return the position of
-     * the other endpoint. setMesh() must have been called for this to succeed.
+     * Given the vertex index of one of the endpoints, return the position of the
+     * other endpoint. setMesh() must have been called for this to succeed.
      *
-     * @param end
-     *            The vertex index of one of the endpoints.
+     * @param end The vertex index of one of the endpoints.
      * @return The 3D location of the other endpoint.
-     * @throws IllegalArgumentException
-     *             If end is not one of the endpoints of this edge.
+     * @throws IllegalArgumentException If end is not one of the endpoints of this
+     *                                  edge.
      */
     public Vector3d getOtherLocation(int end) {
         return mesh.vertexPositions.get(getOtherEnd(end));
     }
 
+    /**
+     * Get the locations of the endpoints of this edge. setMesh() must have been
+     * called for this to succeed.
+     *
+     * @return The locations of the endpoints of this edge.
+     */
+    public Point3D[] getSegment() {
+        Point3D[] endLocations = new Point3D[2];
+        final var ends = getEndLocations();
+        endLocations[0] = new Point3D(ends[0].x, ends[0].y, ends[0].z);
+        endLocations[1] = new Point3D(ends[1].x, ends[1].y, ends[1].z);
+        return endLocations;
+    }
+
     @Override
     public int hashCode() {
-        return Integer.valueOf(ends[0])
-                      .hashCode()
-               * Integer.valueOf(ends[1])
-                        .hashCode();
+        return Integer.valueOf(ends[0]).hashCode() * Integer.valueOf(ends[1]).hashCode();
     }
 
     /**
-     * Compute the length of this edge. This requires this edge's mesh to be
-     * set.
+     * Compute the length of this edge. This requires this edge's mesh to be set.
      *
      * @return The edge's length.
      */
     public double length() {
         Vector3d diff = new Vector3d();
-        diff.sub(mesh.vertexPositions.get(ends[0]),
-                 mesh.vertexPositions.get(ends[1]));
+        diff.sub(mesh.vertexPositions.get(ends[0]), mesh.vertexPositions.get(ends[1]));
         return diff.length();
     }
 
     /**
-     * Compute the midpoint along this edge (arithmetic mean of the coordinates
-     * of the edge's endpoints). This requires this edge's mesh to be set.
+     * Compute the midpoint along this edge (arithmetic mean of the coordinates of
+     * the edge's endpoints). This requires this edge's mesh to be set.
      *
      * @return The coordinate of the edge's midpoint.
      */
     public Vector3d midpoint() {
         Vector3d midpt = new Vector3d();
-        midpt.add(mesh.vertexPositions.get(ends[0]),
-                  mesh.vertexPositions.get(ends[1]));
+        midpt.add(mesh.vertexPositions.get(ends[0]), mesh.vertexPositions.get(ends[1]));
         midpt.scale(0.5);
         return midpt;
     }
 
     /**
      * Set the mesh that this edge points to. Just like with faces, this method
-     * needs to be called at some point for certain methods in this class and
-     * others to work properly, since Edge objects do not store any geometry;
-     * all geometry is stored in the Mesh.
+     * needs to be called at some point for certain methods in this class and others
+     * to work properly, since Edge objects do not store any geometry; all geometry
+     * is stored in the Mesh.
      *
-     * @param mesh
-     *            The mesh this edge will now point to.
+     * @param mesh The mesh this edge will now point to.
      */
     public void setMesh(Mesh mesh) {
         this.mesh = mesh;

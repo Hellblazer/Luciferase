@@ -7,10 +7,10 @@ import java.util.stream.Stream;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3d;
 
+import com.hellblazer.luciferase.lucien.grid.Vertex;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
 import com.hellblazer.luciferase.portal.mesh.PolyLine;
-import com.hellblazer.luciferase.sentinel.Vertex;
 
 import javafx.geometry.Point3D;
 import javafx.scene.Group;
@@ -41,7 +41,7 @@ public class GraphicsView extends Group {
 
             mesh.addVertexNormal(face.getFaceNormal());
             MeshView view = face.constructMeshView();
-            view.setCullFace(CullFace.BACK);
+            view.setCullFace(CullFace.NONE);
             view.setMaterial(color);
             group.getChildren().addAll(view);
         } else {
