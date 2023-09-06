@@ -28,31 +28,26 @@ import javax.vecmath.Vector3f;
 public class Oriented extends Vector3f {
     private static final long serialVersionUID = 1L;
 
-    private final Vector3f orientation = new Vector3f(1, 0, 0);
+    private final Rotor3f orientation = new Rotor3f();
 
     public Oriented() {
         super();
     }
 
-    public Oriented(float x, float y, float z, float oX, float oY, float oZ) {
+    public Oriented(float x, float y, float z, Rotor3f orientation) {
         super(x, y, z);
-        orientation.x = oX;
-        orientation.y = oY;
-        orientation.z = oZ;
+        orientation.set(orientation);
     }
 
     public Oriented(float[] v) {
         super(v);
-        orientation.x = v[3];
-        orientation.y = v[4];
-        orientation.z = v[5];
     }
 
     public Oriented(Tuple3d t1) {
         super(t1);
     }
 
-    public Oriented(Tuple3d location, Tuple3d orientation) {
+    public Oriented(Tuple3d location, Rotor3f orientation) {
         super(location);
         this.orientation.set(orientation);
     }
@@ -61,7 +56,7 @@ public class Oriented extends Vector3f {
         super(t1);
     }
 
-    public Oriented(Tuple3f location, Tuple3f orientation) {
+    public Oriented(Tuple3f location, Rotor3f orientation) {
         super(location);
         this.orientation.set(orientation);
     }
@@ -69,13 +64,20 @@ public class Oriented extends Vector3f {
     @Override
     public Oriented clone() {
         final var clone = (Oriented) super.clone();
-        clone.orientation.x = orientation.x;
-        clone.orientation.y = orientation.y;
-        clone.orientation.z = orientation.z;
+        clone.orientation.set(orientation);
 
         return clone;
     }
 
+    /**
+     * Returns true if the L-infinite distance between this tuple and tuple t1 is
+     * less than or equal to the epsilon parameter, otherwise returns false. The
+     * L-infinite distance is equal to MAX[abs(x1-x2), abs(y1-y2), abs(z1-z2)].
+     *
+     * @param t1      the tuple to be compared to this tuple
+     * @param epsilon the threshold value
+     * @return true or false
+     */
     public boolean epsilonEquals(Oriented t1, float epsilon) {
         return super.epsilonEquals(t1, epsilon) && orientation.epsilonEquals(t1.orientation, epsilon);
     }
@@ -94,20 +96,16 @@ public class Oriented extends Vector3f {
         return 31 * super.hashCode() + orientation.hashCode();
     }
 
-    public Vector3f orientation() {
+    public Rotor3f orientation() {
         return orientation;
     }
 
-    public void reorient(Rotor3f transform) {
-        orientation.set(transform.transform(orientation));
-    }
-
+    /**
+     * Transform the receiver's state with the supplied Rotor transform
+     *
+     * @param transform
+     */
     public void transform(Rotor3f transform) {
         set(transform.transform(this));
-    }
-
-    public void transform(Rotor3f transform, Rotor3f oTransform) {
-        reorient(oTransform);
-        transform(transform);
     }
 }

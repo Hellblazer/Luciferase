@@ -21,6 +21,8 @@ import static java.lang.Math.acos;
 import static java.lang.Math.sin;
 import static java.lang.Math.sqrt;
 
+import java.util.Objects;
+
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Quat4f;
 import javax.vecmath.Vector3f;
@@ -38,11 +40,28 @@ public class Rotor3f {
 
     private float a = 1, xy = 0, yz = 0, zx = 0;
 
+    public Rotor3f() {
+    }
+
+    public Rotor3f(float a, float xy, float yz, float zx) {
+        this.a = a;
+        this.xy = xy;
+        this.yz = yz;
+        this.zx = zx;
+    }
+
     public Rotor3f(Quat4f q) {
         a = q.w;
         xy = -q.z;
         yz = -q.x;
         zx = -q.y;
+    }
+
+    public Rotor3f(Rotor3f r) {
+        a = r.a;
+        xy = r.xy;
+        yz = r.yz;
+        zx = r.zx;
     }
 
     public Rotor3f(Vector3f from, Vector3f to) {
@@ -53,20 +72,6 @@ public class Rotor3f {
         xy = (halfway.x * from.y) - (halfway.y * from.x);
         yz = (halfway.y * from.z) - (halfway.z * from.y);
         zx = (halfway.z * from.x) - (halfway.x * from.z);
-    }
-
-    private Rotor3f(float a, float xy, float yz, float zx) {
-        this.a = a;
-        this.xy = xy;
-        this.yz = yz;
-        this.zx = zx;
-    }
-
-    private Rotor3f(Rotor3f r) {
-        a = r.a;
-        xy = r.xy;
-        yz = r.yz;
-        zx = r.zx;
     }
 
     public Rotor3f combine(Rotor3f rhs) {
@@ -106,6 +111,34 @@ public class Rotor3f {
         return true;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        Rotor3f other = (Rotor3f) obj;
+        return Float.floatToIntBits(a) == Float.floatToIntBits(other.a) &&
+               Float.floatToIntBits(xy) == Float.floatToIntBits(other.xy) &&
+               Float.floatToIntBits(yz) == Float.floatToIntBits(other.yz) &&
+               Float.floatToIntBits(zx) == Float.floatToIntBits(other.zx);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(a, xy, yz, zx);
+    }
+
+    /**
+     * Normalized linear interpolation
+     *
+     * @param to - the target
+     * @param t  - the parameterization value
+     * @return the Rotor3f corresponding to point (t) in the interpolation to the
+     *         target
+     */
     public Rotor3f nlerp(Rotor3f to, float t) {
         float dot = a * to.a + xy * to.xy + yz * to.yz + zx * to.zx;
         if (dot < 0.0f) {
@@ -120,6 +153,9 @@ public class Rotor3f {
         return r;
     }
 
+    /**
+     * normalize the receiver
+     */
     public void normalize() {
         var n = sqrt(a * a + xy * xy + yz * yz + zx * zx);
         a /= n;
@@ -128,12 +164,33 @@ public class Rotor3f {
         zx /= n;
     }
 
+    /**
+     * 
+     * @return the reversed Rotor3f
+     */
     public Rotor3f reverse() {
         return new Rotor3f(a, -xy, -yz, -zx);
     }
 
     /**
+     * Set the value of the receiver to match the supplied rotor
+     *
+     * @param r
+     */
+    public void set(Rotor3f r) {
+        a = r.a;
+        xy = r.xy;
+        yz = r.yz;
+        zx = r.zx;
+    }
+
+    /**
      * Spherical Linear Interpolation.
+     *
+     * @param dest - the target
+     * @param t    - the parameterization value
+     * @return the Rotor3f corresponding to point (t) in the interpolation to the
+     *         target
      */
     public Rotor3f slerp(Rotor3f dest, float t) {
         var to = new Rotor3f(dest);
@@ -216,5 +273,4 @@ public class Rotor3f {
                             u.a * q.y + q.z * u.yz - q.x * u.xy - qxyz * u.zx,
                             u.a * q.z + q.x * u.zx - q.y * u.yz - qxyz * u.xy);
     }
-
 }
