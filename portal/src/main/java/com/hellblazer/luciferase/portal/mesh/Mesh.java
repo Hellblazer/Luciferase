@@ -32,9 +32,9 @@ public class Mesh {
      * Create an empty mesh.
      */
     public Mesh() {
-        faces = new ArrayList<Face>();
-        vertexPositions = new ArrayList<Vector3d>();
-        vertexNormals = new ArrayList<Vector3d>();
+        faces = new ArrayList<>();
+        vertexPositions = new ArrayList<>();
+        vertexNormals = new ArrayList<>();
     }
 
     /**
