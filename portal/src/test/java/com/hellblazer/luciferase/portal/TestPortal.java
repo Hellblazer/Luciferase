@@ -16,10 +16,21 @@
  */
 package com.hellblazer.luciferase.portal;
 
+import java.util.Set;
+
+import com.hellblazer.luciferase.portal.mesh.Edge;
+import com.hellblazer.luciferase.portal.mesh.Line;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.sphere.Goldberg;
+
 import javafx.scene.Camera;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.PerspectiveCamera;
+import javafx.scene.paint.Material;
+import javafx.scene.shape.CullFace;
+import javafx.scene.shape.MeshView;
 
 /**
  * @author hal.hildebrand
@@ -36,18 +47,67 @@ public class TestPortal extends MagicMirror {
         }
     }
 
+    public static final double CUBE_EDGE_LENGTH = Math.sqrt(2) / 2;
+
+    public static final double TET_EDGE_LENGTH = 1;
+
+    public static void add(final Polyhedron polyhedron, Group view) {
+        MeshView v = new MeshView(polyhedron.toTriangleMesh().constructMesh());
+        v.setMaterial(Colors.cyanMaterial);
+        v.setCullFace(CullFace.NONE);
+        view.getChildren().add(v);
+    }
+
+    public static void addEdges(Set<Edge> edges, Material material, Group view) {
+        final var children = view.getChildren();
+        for (var e : edges) {
+            var segment = e.getSegment();
+            final var line = new Line(0.01, segment[0], segment[1]);
+            line.setMaterial(material);
+            children.addAll(line);
+        }
+    }
+
+    public static void addSpheres(Set<Edge> edges, Group view) {
+        final var children = view.getChildren();
+        for (var e : edges) {
+            children.addAll(e.getEndpointSpheres(e.length() / 2, Colors.blueMaterial));
+        }
+    }
+
     public static void main(String[] args) {
         launch(args);
     }
 
     @Override
     protected Node animus() {
-        return new Group();
+        var view = new Group();
+//        view.getChildren()
+//            .add(new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 2).construct(Colors.blackMaterial,
+//                                                                                            Colors.blackMaterial,
+//                                                                                            Colors.blackMaterial,
+//                                                                                            false));
+        Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
+        var dual = polyhedron.dual();
+
+        add(new Goldberg(polyhedron.getFaces().get(0).getEdges()[0].length() / 2, 4), view);
+
+        var edges = polyhedron.getEdges();
+        var dualEdges = dual.getEdges();
+
+//      add(polyhedron);
+
+        addEdges(edges, Colors.blueMaterial, view);
+//        add(new Goldberg(polyhedron.midsphereRadius(), 4));
+        addEdges(dualEdges, Colors.redMaterial, view);
+
+//        addSpheres(edges);
+//        addSpheres(dualEdges);
+        return view;
     }
 
     @Override
     protected Camera camera() {
         return new PerspectiveCamera();
     }
-
 }

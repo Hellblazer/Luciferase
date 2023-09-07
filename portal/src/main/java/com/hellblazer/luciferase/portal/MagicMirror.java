@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.lucien.animus.Rotor3f;
 import javafx.application.Application;
 import javafx.event.EventHandler;
 import javafx.scene.Camera;
+import javafx.scene.DepthTest;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -30,6 +31,8 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.PhongMaterial;
+import javafx.scene.shape.Box;
 import javafx.stage.Stage;
 
 /**
@@ -46,26 +49,22 @@ public abstract class MagicMirror extends Application {
         protected double mousePosY;
     }
 
+    protected static final double AXIS_LENGTH        = 250.0;
     protected static final double CONTROL_MULTIPLIER = 0.1;
-
-    protected static final double MOUSE_SPEED      = 0.1;
-    protected static final double ROTATION_SPEED   = 2.0;
-    protected static final double SHIFT_MULTIPLIER = 10.0;
-    protected static final double TRACK_SPEED      = 0.3;
+    protected static final double MOUSE_SPEED        = 0.1;
+    protected static final double ROTATION_SPEED     = 2.0;
+    protected static final double SHIFT_MULTIPLIER   = 10.0;
+    protected static final double TRACK_SPEED        = 0.3;
 
     public static void main(String[] args) {
         launch(args);
     }
 
-    protected final Group axisGroup = new Group();
-
-    protected Portal portal;
-
-    protected final Group root = new Group();
-
+    protected final Group axisGroup         = new Group();
+    protected Portal      portal;
+    protected final Group root              = new Group();
     protected final Xform transformingGroup = new Xform();
-
-    protected final Xform world = new Xform();
+    protected final Xform world             = new Xform();
 
     public MagicMirror() {
         super();
@@ -73,11 +72,16 @@ public abstract class MagicMirror extends Application {
 
     @Override
     public void start(Stage primaryStage) throws Exception {
+        root.getChildren().add(world);
+        root.setDepthTest(DepthTest.ENABLE);
         portal = portal();
+
+        world.getChildren().addAll(portal.getAvatar().getAnimated(), portal.getCamera().getAnimated());
+
         Scene scene = new Scene(root, 1024, 768, true);
         scene.setFill(Color.LIGHTGRAY);
-        handleKeyboard(scene, world);
-        handleMouse(scene, world);
+        handleKeyboard(scene);
+        handleMouse(scene);
 
         primaryStage.setTitle(title());
         primaryStage.setScene(scene);
@@ -105,9 +109,35 @@ public abstract class MagicMirror extends Application {
 
     abstract protected Node animus();
 
+    protected void buildAxes() {
+        final PhongMaterial redMaterial = new PhongMaterial();
+        redMaterial.setDiffuseColor(Color.DARKRED);
+        redMaterial.setSpecularColor(Color.RED);
+
+        final PhongMaterial greenMaterial = new PhongMaterial();
+        greenMaterial.setDiffuseColor(Color.DARKGREEN);
+        greenMaterial.setSpecularColor(Color.GREEN);
+
+        final PhongMaterial blueMaterial = new PhongMaterial();
+        blueMaterial.setDiffuseColor(Color.DARKBLUE);
+        blueMaterial.setSpecularColor(Color.BLUE);
+
+        final Box xAxis = new Box(AXIS_LENGTH, 1, 1);
+        final Box yAxis = new Box(1, AXIS_LENGTH, 1);
+        final Box zAxis = new Box(1, 1, AXIS_LENGTH);
+
+        xAxis.setMaterial(redMaterial);
+        yAxis.setMaterial(greenMaterial);
+        zAxis.setMaterial(blueMaterial);
+
+        axisGroup.getChildren().addAll(xAxis, yAxis, zAxis);
+        axisGroup.setVisible(false);
+        world.getChildren().addAll(axisGroup);
+    }
+
     abstract protected Camera camera();
 
-    protected void handleKeyboard(Scene scene, Node root) {
+    protected void handleKeyboard(Scene scene) {
         scene.setOnKeyPressed(new EventHandler<KeyEvent>() {
 
             @Override
@@ -134,7 +164,7 @@ public abstract class MagicMirror extends Application {
 
     }
 
-    protected MouseHandler handleMouse(Scene scene, Node root) {
+    protected MouseHandler handleMouse(Scene scene) {
         var h = new MouseHandler();
         final var position = portal.getCamera().getPosition();
         final var orientation = portal.getCamera().getOrientation();
