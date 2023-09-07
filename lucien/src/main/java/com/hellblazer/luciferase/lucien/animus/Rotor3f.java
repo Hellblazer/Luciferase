@@ -165,11 +165,20 @@ public class Rotor3f {
     }
 
     /**
-     * 
      * @return the reversed Rotor3f
      */
     public Rotor3f reverse() {
         return new Rotor3f(a, -xy, -yz, -zx);
+    }
+
+    public void rotateDeltaX(double d) {
+        // TODO Auto-generated method stub
+
+    }
+
+    public void rotateDeltaY(double d) {
+        // TODO Auto-generated method stub
+
     }
 
     /**

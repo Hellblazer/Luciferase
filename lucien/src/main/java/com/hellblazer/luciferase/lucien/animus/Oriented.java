@@ -28,7 +28,7 @@ import javax.vecmath.Vector3f;
 public class Oriented extends Vector3f {
     private static final long serialVersionUID = 1L;
 
-    private final Rotor3f orientation = new Rotor3f();
+    protected final Rotor3f orientation = new Rotor3f();
 
     public Oriented() {
         super();
