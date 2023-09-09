@@ -48,17 +48,17 @@ public class CubicGrid {
     }
 
     public static Point3D xAxis(Cube cube) {
-        Vector3d vector = cube.getFaces().get(0).centroid();
-        return new Point3D(vector.x, vector.y, vector.z);
-    }
-
-    public static Point3D yAxis(Cube cube) {
         Vector3d vector = cube.getFaces().get(1).centroid();
         return new Point3D(vector.x, vector.y, vector.z);
     }
 
-    public static Point3D zAxis(Cube cube) {
+    public static Point3D yAxis(Cube cube) {
         Vector3d vector = cube.getFaces().get(2).centroid();
+        return new Point3D(vector.x, vector.y, vector.z);
+    }
+
+    public static Point3D zAxis(Cube cube) {
+        Vector3d vector = cube.getFaces().get(0).centroid();
         return new Point3D(vector.x, vector.y, vector.z);
     }
 

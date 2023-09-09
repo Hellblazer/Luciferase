@@ -131,8 +131,8 @@ public abstract class Abstract3DApp extends Application {
         final Box zAxis = new Box(1, 1, AXIS_LENGTH);
 
         xAxis.setMaterial(redMaterial);
-        yAxis.setMaterial(greenMaterial);
-        zAxis.setMaterial(blueMaterial);
+        yAxis.setMaterial(blueMaterial);
+        zAxis.setMaterial(greenMaterial);
 
         axisGroup.getChildren().addAll(xAxis, yAxis, zAxis);
         axisGroup.setVisible(false);
@@ -144,7 +144,7 @@ public abstract class Abstract3DApp extends Application {
         cameraXform.getChildren().add(cameraXform2);
         cameraXform2.getChildren().add(cameraXform3);
         cameraXform3.getChildren().add(camera);
-        cameraXform3.setRotateZ(180.0);
+//        cameraXform3.setRotateZ(180.0);
 
         camera.setNearClip(CAMERA_NEAR_CLIP);
         camera.setFarClip(CAMERA_FAR_CLIP);

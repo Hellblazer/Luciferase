@@ -27,6 +27,7 @@ import javafx.scene.DepthTest;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.SceneAntialiasing;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
@@ -78,7 +79,7 @@ public abstract class MagicMirror extends Application {
 
         world.getChildren().addAll(portal.getAvatar().getAnimated(), portal.getCamera().getAnimated());
 
-        Scene scene = new Scene(root, 1024, 768, true);
+        Scene scene = new Scene(root, 1024, 768, true, SceneAntialiasing.BALANCED);
         scene.setFill(Color.LIGHTGRAY);
         handleKeyboard(scene);
         handleMouse(scene);
