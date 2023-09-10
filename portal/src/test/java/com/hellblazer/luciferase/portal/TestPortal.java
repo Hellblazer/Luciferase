@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.PITCH_BACK;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.PITCH_BACK;
 
 import java.util.Set;
 

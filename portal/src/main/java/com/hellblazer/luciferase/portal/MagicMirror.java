@@ -16,12 +16,12 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.PITCH_BACK;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.PITCH_FORWARD;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.ROLL_LEFT;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.ROLL_RIGHT;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.YAW_LEFT;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.YAW_RIGHT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.PITCH_BACK;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.PITCH_FORWARD;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.ROLL_LEFT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.ROLL_RIGHT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.YAW_LEFT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.YAW_RIGHT;
 
 import javax.vecmath.Point3f;
 

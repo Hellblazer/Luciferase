@@ -34,7 +34,7 @@ import javax.vecmath.Vector3f;
  */
 public class Rotor3f {
 
-    public enum PrincipalAxis {
+    public enum STANDARD_ROTATIONS {
         PITCH_BACK {
             @Override
             Vector3f from() {
