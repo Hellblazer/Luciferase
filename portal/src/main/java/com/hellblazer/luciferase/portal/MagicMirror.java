@@ -16,6 +16,13 @@
  */
 package com.hellblazer.luciferase.portal;
 
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.PITCH_BACK;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.PITCH_FORWARD;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.ROLL_LEFT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.ROLL_RIGHT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.YAW_LEFT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.YAW_RIGHT;
+
 import javax.vecmath.Point3f;
 
 import com.hellblazer.luciferase.lucien.animus.Rotor3f;
@@ -89,6 +96,7 @@ public abstract class MagicMirror extends Application {
         primaryStage.show();
 
         portal.setCamera(scene);
+        resetCameraDefault();
 
         // Attach a scroll listener
         primaryStage.addEventHandler(ScrollEvent.SCROLL, event -> {
@@ -108,7 +116,7 @@ public abstract class MagicMirror extends Application {
         });
     }
 
-    abstract protected Node animus();
+    abstract protected Animus<Node> animus();
 
     protected void buildAxes() {
         final PhongMaterial redMaterial = new PhongMaterial();
@@ -136,7 +144,7 @@ public abstract class MagicMirror extends Application {
         world.getChildren().addAll(axisGroup);
     }
 
-    abstract protected Camera camera();
+    abstract protected Animus<Camera> camera();
 
     protected void handleKeyboard(Scene scene) {
         scene.setOnKeyPressed(new EventHandler<KeyEvent>() {
@@ -145,11 +153,7 @@ public abstract class MagicMirror extends Application {
             public void handle(KeyEvent event) {
                 switch (event.getCode()) {
                 case Z:
-                    final var position = portal.getCamera().getPosition();
-                    var p = position.get();
-                    p.set(0, 0, 0);
-                    position.set(p);
-                    portal.getCamera().getOrientation().set(new Rotor3f());
+                    resetCameraDefault();
                     break;
                 case X:
                     axisGroup.setVisible(!axisGroup.isVisible());
@@ -162,7 +166,6 @@ public abstract class MagicMirror extends Application {
                 }
             }
         });
-
     }
 
     protected MouseHandler handleMouse(Scene scene) {
@@ -220,6 +223,20 @@ public abstract class MagicMirror extends Application {
 
     protected Portal portal() {
         return new Portal(animus(), camera());
+    }
+
+    abstract protected void resetCameraDefault();
+
+    protected Rotor3f rotation(KeyEvent event, float t) {
+        return switch (event.getCode()) {
+        case A -> YAW_LEFT.rotation(t);
+        case D -> YAW_RIGHT.rotation(t);
+        case W -> PITCH_BACK.rotation(t);
+        case S -> PITCH_FORWARD.rotation(t);
+        case Q -> ROLL_LEFT.rotation(t);
+        case E -> ROLL_RIGHT.rotation(t);
+        default -> throw new IllegalArgumentException("Unhandled key: %s".formatted(event.getCode()));
+        };
     }
 
     protected String title() {

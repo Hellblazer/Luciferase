@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.portal;
 
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.PITCH_BACK;
+
 import java.util.Set;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
@@ -48,8 +50,13 @@ public class TestPortal extends MagicMirror {
         }
     }
 
-    public static final double CUBE_EDGE_LENGTH = Math.sqrt(2) / 2;
-    public static final double TET_EDGE_LENGTH  = 1;
+    public static final float    CUBE_EDGE_LENGTH        = (float) (Math.sqrt(2) / 2);
+    public static final float    TET_EDGE_LENGTH         = 1;
+    protected static final float CAMERA_FAR_CLIP         = 10000.0f;
+    protected static final float CAMERA_INITIAL_DISTANCE = -450f;
+    protected static final float CAMERA_INITIAL_X_ANGLE  = 70.0f;
+    protected static final float CAMERA_INITIAL_Y_ANGLE  = 320.0f;
+    protected static final float CAMERA_NEAR_CLIP        = 0.1f;
 
     public static void add(final Polyhedron polyhedron, Group view) {
         MeshView v = new MeshView(polyhedron.toTriangleMesh().constructMesh());
@@ -80,7 +87,7 @@ public class TestPortal extends MagicMirror {
     }
 
     @Override
-    protected Node animus() {
+    protected Animus<Node> animus() {
         var view = new Group();
         view.getChildren()
             .add(new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1).construct(Colors.blackMaterial,
@@ -92,11 +99,27 @@ public class TestPortal extends MagicMirror {
         var dualEdges = dual.getEdges();
 
         addEdges(dualEdges, Colors.redMaterial, view);
-        return view;
+        return new Animus<>(view);
     }
 
     @Override
-    protected Camera camera() {
-        return new PerspectiveCamera();
+    protected Animus<Camera> camera() {
+        final var camera = new PerspectiveCamera();
+        final Animus<Camera> animus = new Animus<>(camera);
+        return animus;
+    }
+
+    @Override
+    protected void resetCameraDefault() {
+        final var camera = portal.getCamera();
+        camera.getAnimated().setNearClip(CAMERA_NEAR_CLIP);
+        camera.getAnimated().setFarClip(CAMERA_FAR_CLIP);
+        final var position = camera.getPosition();
+        var p = position.get();
+        p.set(0, 0, 0);
+        p.z = p.z + CAMERA_INITIAL_DISTANCE;
+        position.set(p);
+
+        camera.getOrientation().set(PITCH_BACK.rotation(2));
     }
 }

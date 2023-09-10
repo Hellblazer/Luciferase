@@ -34,6 +34,87 @@ import javax.vecmath.Vector3f;
  */
 public class Rotor3f {
 
+    public enum PrincipalAxis {
+        PITCH_BACK {
+            @Override
+            Vector3f from() {
+                return FWD;
+            }
+
+            @Override
+            Vector3f to() {
+                return UP;
+            }
+        },
+        PITCH_FORWARD {
+            @Override
+            Vector3f from() {
+                return UP;
+            }
+
+            @Override
+            Vector3f to() {
+                return FWD;
+            }
+        },
+        ROLL_LEFT {
+            @Override
+            Vector3f from() {
+                return RIGHT;
+            }
+
+            @Override
+            Vector3f to() {
+                return UP;
+            }
+        },
+        ROLL_RIGHT {
+            @Override
+            Vector3f from() {
+                return UP;
+            }
+
+            @Override
+            Vector3f to() {
+                return RIGHT;
+            }
+        },
+        YAW_LEFT {
+            @Override
+            Vector3f from() {
+                return RIGHT;
+            }
+
+            @Override
+            Vector3f to() {
+                return FWD;
+            }
+        },
+        YAW_RIGHT {
+            @Override
+            Vector3f from() {
+                return FWD;
+            }
+
+            @Override
+            Vector3f to() {
+                return RIGHT;
+            }
+        };
+
+        private static final Vector3f FWD   = new Vector3f(0, 0, 1);
+        private static final Vector3f RIGHT = new Vector3f(1, 0, 0);
+        private static final Vector3f UP    = new Vector3f(0, -1, 0);
+
+        public Rotor3f rotation(float t) {
+            return new Rotor3f(from(), to()).slerp(from(), t);
+        }
+
+        abstract Vector3f from();
+
+        abstract Vector3f to();
+    }
+
     private static float lerp(float from, float to, float t) {
         return t * (to - from);
     }
@@ -232,6 +313,33 @@ public class Rotor3f {
                            (float) (from_factor * yz + to_factor * to.yz),
                            (float) (from_factor * zx + to_factor * to.zx));
 
+    }
+
+    /**
+     * Spherical Linear Interpolation.
+     *
+     * @param dest - the target vector
+     * @param t    - the parameterization value
+     * @return the Rotor3f corresponding to point (t) in the interpolation to the
+     *         target
+     */
+    public Rotor3f slerp(Vector3f dest, float t) {
+        var r = new Rotor3f(dest, dest);
+        var d = a * r.a + xy * r.xy + yz * r.yz + zx * r.zx;
+        var a0 = Math.acos(d);
+        var sa0 = Math.sin(a0);
+        var at = a0 * t;
+        var sat = Math.sin(at);
+
+        var s0 = Math.cos(at) - d * sat / sa0;
+        var s1 = sat / sa0;
+
+        r.a = (float) (s0 * r.a + s1 * a);
+        r.xy = (float) (s0 * r.xy + s1 * xy);
+        r.yz = (float) (s0 * r.yz + s1 * yz);
+        r.zx = (float) (s0 * r.zx + s1 * zx);
+
+        return r;
     }
 
     /**

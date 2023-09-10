@@ -27,9 +27,13 @@ public class Portal {
     private final Animus<Node>   avatar;
     private final Animus<Camera> camera;
 
+    public Portal(Animus<Node> avatar, Animus<Camera> camera) {
+        this.avatar = avatar;
+        this.camera = camera;
+    }
+
     public Portal(Node avatar, Camera camera) {
-        this.avatar = new Animus<>(avatar);
-        this.camera = new Animus<>(camera);
+        this(new Animus<>(avatar), new Animus<>(camera));
     }
 
     public Animus<Node> getAvatar() {
