@@ -16,9 +16,9 @@
 
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.portal.Colors.blueMaterial;
-import static com.hellblazer.luciferase.portal.Colors.greenMaterial;
-import static com.hellblazer.luciferase.portal.Colors.redMaterial;
+import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.blueMaterial;
+import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.greenMaterial;
+import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.redMaterial;
 
 import java.util.function.BiFunction;
 import java.util.function.Function;

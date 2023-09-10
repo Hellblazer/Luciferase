@@ -14,10 +14,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.portal;
+package com.hellblazer.luciferase.portal.mesh.explorer;
 
 import javax.vecmath.Point3i;
 
+import com.hellblazer.luciferase.portal.CubicGrid;
+import com.hellblazer.luciferase.portal.IvmGrid;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 

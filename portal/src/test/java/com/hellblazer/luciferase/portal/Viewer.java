@@ -21,6 +21,8 @@ import static com.hellblazer.luciferase.portal.TestPortal.TET_EDGE_LENGTH;
 import static com.hellblazer.luciferase.portal.TestPortal.addEdges;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
+import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
+import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;

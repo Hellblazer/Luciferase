@@ -23,6 +23,7 @@ import java.util.Set;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
+import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
