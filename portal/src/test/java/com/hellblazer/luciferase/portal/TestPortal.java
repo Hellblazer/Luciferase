@@ -120,7 +120,7 @@ public class TestPortal extends MagicMirror {
         p.z = p.z + CAMERA_INITIAL_DISTANCE;
         position.set(p);
 
-        camera.getOrientation().set(Z.rotation(0.5f));
+        camera.getOrientation().set(Z.slerp(0.5f));
     }
 
     @Override

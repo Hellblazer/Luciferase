@@ -52,7 +52,8 @@ public class Viewer extends Abstract3DApp {
         launch(args);
     }
 
-    private Animus<Node> animus;
+    private Animus<Node>  animus;
+    private Animus<Group> fauxCamera;
 
     protected Node animus() {
         var view = new Group();
@@ -65,10 +66,10 @@ public class Viewer extends Abstract3DApp {
         addEdges(dualEdges, Colors.redMaterial, view);
         animus = new Animus<Node>(view);
 
-        animus.getOrientation().set(PrincipalAxis.Z.rotation(0.5f));
         var p = new Vector3f();
-        p.z = p.z - 2;
+        p.z = p.z + 2;
         animus.getPosition().set(p);
+        animus.getOrientation().set(PrincipalAxis.Y.slerp(0.5f));
 
         return animus.getAnimated();
     }
@@ -79,6 +80,13 @@ public class Viewer extends Abstract3DApp {
         g.getChildren().add(animus());
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
         cubic.addAxes(g, 0.1, 0.2, 0.008, 20);
+
+        fauxCamera = new Animus<>(new Group());
+        cubic.addAxes(fauxCamera.getAnimated(), 0.1, 0.2, 0.008, 20);
+        g.getChildren().add(fauxCamera.getAnimated());
+
+        fauxCamera.getPosition().set(new Vector3f(0, 0, -2));
+        fauxCamera.getOrientation().set(PrincipalAxis.Y.slerp(0.5f));
         return g;
     }
 

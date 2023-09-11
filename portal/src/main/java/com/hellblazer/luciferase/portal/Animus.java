@@ -81,15 +81,15 @@ public class Animus<N extends Node> {
      * Used to update the properties on state change
      */
     protected void update() {
-        tracking.orientation().set(new Rotor3f(tracking.orientation()));
-        position.set(new Vector3f(tracking));
         updateTransforms();
+        position.set(new Vector3f(tracking));
+        tracking.orientation().set(new Rotor3f(tracking.orientation()));
     }
 
     protected void updateTransforms() {
         final var t = animated.getTransforms();
         t.clear();
-        t.addAll(transform(), translate());
+        t.addAll(translate(), transform());
     }
 
     private Affine transform() {

@@ -21,6 +21,7 @@ import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Y;
 import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 
 import com.hellblazer.luciferase.lucien.animus.Rotor3f;
 
@@ -199,17 +200,17 @@ public abstract class MagicMirror extends Application {
                 }
 
                 if (me.isMiddleButtonDown() || (me.isPrimaryButtonDown() && me.isSecondaryButtonDown())) {
-                    var p = position.get();
+                    var p = new Vector3f(position.get());
                     p.add(new Point3f((float) (h.mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED),
                                       (float) (h.mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED), 0f));
                     position.set(p);
                 } else if (me.isPrimaryButtonDown()) {
-                    var o = orientation.get();
-                    o.rotateDeltaX(-h.mouseDeltaX * MOUSE_SPEED * modifier * ROTATION_SPEED);
-                    o.rotateDeltaY(h.mouseDeltaY * MOUSE_SPEED * modifier * ROTATION_SPEED);
+                    var o = new Rotor3f(orientation.get());
+                    o.combine(X.slerp((float) (-h.mouseDeltaX * MOUSE_SPEED * modifier * ROTATION_SPEED)))
+                     .combine(Y.slerp((float) (h.mouseDeltaY * MOUSE_SPEED * modifier * ROTATION_SPEED)));
                     orientation.set(o);
                 } else if (me.isSecondaryButtonDown()) {
-                    var p = position.get();
+                    var p = new Vector3f(position.get());
                     p.z = (float) (p.z + h.mouseDeltaX * MOUSE_SPEED * modifier);
                     position.set(p);
                 }
@@ -226,12 +227,12 @@ public abstract class MagicMirror extends Application {
 
     protected Rotor3f rotation(KeyEvent event, float t) {
         return switch (event.getCode()) {
-        case A -> X.rotation(t);
-        case D -> X.rotation(-t);
-        case W -> Y.rotation(t);
-        case S -> Y.rotation(-t);
-        case Q -> Z.rotation(t);
-        case E -> Z.rotation(-t);
+        case A -> X.slerp(t);
+        case D -> X.slerp(-t);
+        case W -> Y.slerp(t);
+        case S -> Y.slerp(-t);
+        case Q -> Z.slerp(t);
+        case E -> Z.slerp(-t);
         default -> throw new IllegalArgumentException("Unhandled rotation key: %s".formatted(event.getCode()));
         };
     }

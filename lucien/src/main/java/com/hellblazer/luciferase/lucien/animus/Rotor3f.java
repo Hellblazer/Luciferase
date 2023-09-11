@@ -83,21 +83,26 @@ public class Rotor3f {
         private static final Vector3f POS_Z = new Vector3f(0, 0, 1);
 
         /**
-         * Rotate from axis A in the direction of axis B
-         *
-         * @param t - 0 is no change from axis A and 1.0 is aligned with axis B
-         * @return the rotor for the transformation
+         * Spherical Linear Interpolation from axis A to axis B.
+         * 
+         * @param t - the parameterization value
+         * @return the Rotor3f corresponding to point (t) in the interpolation from a()
+         *         to b()
          */
-        public Rotor3f rotation(float t) {
+        public Rotor3f slerp(float t) {
             return new Rotor3f(a(), b()).slerp(a(), t);
         }
 
         /**
+         * the "from" axis
+         *
          * @return the "from" axis
          */
         abstract Vector3f a();
 
         /**
+         * the "to" axis
+         *
          * @return the "to" axis
          */
         abstract Vector3f b();
@@ -238,16 +243,6 @@ public class Rotor3f {
      */
     public Rotor3f reverse() {
         return new Rotor3f(a, -xy, -yz, -zx);
-    }
-
-    public void rotateDeltaX(double d) {
-        // TODO Auto-generated method stub
-
-    }
-
-    public void rotateDeltaY(double d) {
-        // TODO Auto-generated method stub
-
     }
 
     /**

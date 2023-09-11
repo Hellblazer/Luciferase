@@ -162,7 +162,7 @@ public class CubicGrid {
         cone.setTranslateX(xPositive.getX() - height);
         cone.setTranslateY(xPositive.getY());
         cone.setTranslateZ(xPositive.getZ());
-        cone.getTransforms().add(affine(PrincipalAxis.Z.rotation(-1f).toMatrix()));
+        cone.getTransforms().add(affine(PrincipalAxis.Z.slerp(-1f).toMatrix()));
         grid.getChildren().add(cone);
 
         Point3D yPositive = yAxis.multiply(intervalY * yExtent.getKey());
@@ -185,7 +185,7 @@ public class CubicGrid {
         cone.setTranslateX(zPositive.getX());
         cone.setTranslateY(zPositive.getY());
         cone.setTranslateZ(zPositive.getZ() - height);
-        cone.getTransforms().add(affine(PrincipalAxis.X.rotation(1f).toMatrix()));
+        cone.getTransforms().add(affine(PrincipalAxis.X.slerp(1f).toMatrix()));
         grid.getChildren().add(cone);
     }
 
