@@ -19,8 +19,8 @@ package com.hellblazer.luciferase.portal.mesh.explorer;
 import javax.vecmath.Point3i;
 
 import com.hellblazer.luciferase.portal.CubicGrid;
-import com.hellblazer.luciferase.portal.IvmGrid;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
+import com.hellblazer.luciferase.portal.IvmGrid;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.scene.Group;
@@ -53,8 +53,7 @@ public class IvmGridViewer extends Abstract3DApp {
     protected Group build() {
         final var cube = new Cube(TET_EDGE_LENGTH);
         final var cubic = new CubicGrid(Neighborhood.SIX, cube, 2);
-        view.getChildren()
-            .add(cubic.construct(Colors.blackMaterial, Colors.blackMaterial, Colors.blackMaterial, false));
+        view.getChildren().add(cubic.construct(Colors.blackMaterial, Colors.blackMaterial, Colors.blackMaterial));
         IvmGrid g = new IvmGrid(new Point3i(5, 5, 5), false);
         view.getChildren().add(g.populate(Colors.redMaterial, TET_EDGE_LENGTH / 2, cubic));
 

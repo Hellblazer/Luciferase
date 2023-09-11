@@ -16,9 +16,11 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.PITCH_BACK;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
 
 import java.util.Set;
+
+import javax.vecmath.Vector3f;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
@@ -90,17 +92,14 @@ public class TestPortal extends MagicMirror {
     @Override
     protected Animus<Node> animus() {
         var view = new Group();
-        view.getChildren()
-            .add(new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1).construct(Colors.blackMaterial,
-                                                                                            Colors.blackMaterial,
-                                                                                            Colors.blackMaterial,
-                                                                                            true));
+        final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
+        cubic.addAxes(view, 0.1, 0.2, 0.008, 20);
         Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
         var dual = polyhedron.dual();
         var dualEdges = dual.getEdges();
 
         addEdges(dualEdges, Colors.redMaterial, view);
-        return new Animus<>(view);
+        return new Animus<Node>(view);
     }
 
     @Override
@@ -116,11 +115,16 @@ public class TestPortal extends MagicMirror {
         camera.getAnimated().setNearClip(CAMERA_NEAR_CLIP);
         camera.getAnimated().setFarClip(CAMERA_FAR_CLIP);
         final var position = camera.getPosition();
-        var p = position.get();
+        var p = new Vector3f(position.get());
         p.set(0, 0, 0);
         p.z = p.z + CAMERA_INITIAL_DISTANCE;
         position.set(p);
 
-        camera.getOrientation().set(PITCH_BACK.rotation(2));
+        camera.getOrientation().set(Z.rotation(0.5f));
+    }
+
+    @Override
+    protected String title() {
+        return "Test Portal";
     }
 }

@@ -24,6 +24,7 @@ import com.hellblazer.luciferase.lucien.animus.Rotor3f;
 import javafx.beans.Observable;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.value.ObservableValue;
 import javafx.scene.Node;
 import javafx.scene.transform.Affine;
 import javafx.scene.transform.Translate;
@@ -104,12 +105,16 @@ public class Animus<N extends Node> {
     }
 
     private void updateOrientation(Observable r) {
-        tracking.orientation().set(orientation.getValue());
+        if (r instanceof ObservableValue o) {
+            tracking.orientation().set((Rotor3f) o.getValue());
+        }
         updateTransforms();
     }
 
     private void updatePosition(Observable p) {
-        tracking.set(position.getValue());
+        if (p instanceof ObservableValue o) {
+            tracking.set((Vector3f) o.getValue());
+        }
         updateTransforms();
     }
 }

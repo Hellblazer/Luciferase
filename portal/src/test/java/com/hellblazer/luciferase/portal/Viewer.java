@@ -20,6 +20,9 @@ import static com.hellblazer.luciferase.portal.TestPortal.CUBE_EDGE_LENGTH;
 import static com.hellblazer.luciferase.portal.TestPortal.TET_EDGE_LENGTH;
 import static com.hellblazer.luciferase.portal.TestPortal.addEdges;
 
+import javax.vecmath.Vector3f;
+
+import com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
@@ -53,17 +56,20 @@ public class Viewer extends Abstract3DApp {
 
     protected Node animus() {
         var view = new Group();
-        view.getChildren()
-            .add(new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1).construct(Colors.blackMaterial,
-                                                                                            Colors.blackMaterial,
-                                                                                            Colors.blackMaterial,
-                                                                                            true));
+        final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
+        cubic.addAxes(view, 0.1, 0.2, 0.008, 20);
         Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
         var dual = polyhedron.dual();
         var dualEdges = dual.getEdges();
 
         addEdges(dualEdges, Colors.redMaterial, view);
         animus = new Animus<Node>(view);
+
+        animus.getOrientation().set(PrincipalAxis.Z.rotation(0.5f));
+        var p = new Vector3f();
+        p.z = p.z - 2;
+        animus.getPosition().set(p);
+
         return animus.getAnimated();
     }
 
@@ -71,13 +77,14 @@ public class Viewer extends Abstract3DApp {
     protected Group build() {
         var g = new Group();
         g.getChildren().add(animus());
+        final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
+        cubic.addAxes(g, 0.1, 0.2, 0.008, 20);
         return g;
     }
 
     @Override
     protected String title() {
-        // TODO Auto-generated method stub
-        return null;
+        return "Test Viewer";
     }
 
 }

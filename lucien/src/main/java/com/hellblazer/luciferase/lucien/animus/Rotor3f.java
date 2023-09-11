@@ -34,85 +34,73 @@ import javax.vecmath.Vector3f;
  */
 public class Rotor3f {
 
-    public enum STANDARD_ROTATIONS {
-        PITCH_BACK {
+    public enum PrincipalAxis {
+        /**
+         * Rotation around the X axis from Y axis towards Z axis
+         */
+        X {
             @Override
-            Vector3f from() {
-                return FWD;
+            Vector3f a() {
+                return POS_Y;
             }
 
             @Override
-            Vector3f to() {
-                return UP;
+            Vector3f b() {
+                return POS_Z;
             }
         },
-        PITCH_FORWARD {
+        /**
+         * Rotation around the Y axis from Z axis towards X axis
+         */
+        Y {
             @Override
-            Vector3f from() {
-                return UP;
+            Vector3f a() {
+                return POS_Z;
             }
 
             @Override
-            Vector3f to() {
-                return FWD;
+            Vector3f b() {
+                return POS_X;
             }
         },
-        ROLL_LEFT {
+        /**
+         * Rotation around the Z axis from X axis towards Y axis
+         */
+        Z {
             @Override
-            Vector3f from() {
-                return RIGHT;
+            Vector3f a() {
+                return POS_X;
             }
 
             @Override
-            Vector3f to() {
-                return UP;
-            }
-        },
-        ROLL_RIGHT {
-            @Override
-            Vector3f from() {
-                return UP;
-            }
-
-            @Override
-            Vector3f to() {
-                return RIGHT;
-            }
-        },
-        YAW_LEFT {
-            @Override
-            Vector3f from() {
-                return RIGHT;
-            }
-
-            @Override
-            Vector3f to() {
-                return FWD;
-            }
-        },
-        YAW_RIGHT {
-            @Override
-            Vector3f from() {
-                return FWD;
-            }
-
-            @Override
-            Vector3f to() {
-                return RIGHT;
+            Vector3f b() {
+                return POS_Y;
             }
         };
 
-        private static final Vector3f FWD   = new Vector3f(0, 0, 1);
-        private static final Vector3f RIGHT = new Vector3f(1, 0, 0);
-        private static final Vector3f UP    = new Vector3f(0, -1, 0);
+        private static final Vector3f POS_X = new Vector3f(1, 0, 0);
+        private static final Vector3f POS_Y = new Vector3f(0, 1, 0);
+        private static final Vector3f POS_Z = new Vector3f(0, 0, 1);
 
+        /**
+         * Rotate from axis A in the direction of axis B
+         *
+         * @param t - 0 is no change from axis A and 1.0 is aligned with axis B
+         * @return the rotor for the transformation
+         */
         public Rotor3f rotation(float t) {
-            return new Rotor3f(from(), to()).slerp(from(), t);
+            return new Rotor3f(a(), b()).slerp(a(), t);
         }
 
-        abstract Vector3f from();
+        /**
+         * @return the "from" axis
+         */
+        abstract Vector3f a();
 
-        abstract Vector3f to();
+        /**
+         * @return the "to" axis
+         */
+        abstract Vector3f b();
     }
 
     private static float lerp(float from, float to, float t) {

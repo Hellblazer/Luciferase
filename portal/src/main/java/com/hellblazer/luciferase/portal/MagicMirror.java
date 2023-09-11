@@ -16,12 +16,9 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.PITCH_BACK;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.PITCH_FORWARD;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.ROLL_LEFT;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.ROLL_RIGHT;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.YAW_LEFT;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.STANDARD_ROTATIONS.YAW_RIGHT;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
 
 import javax.vecmath.Point3f;
 
@@ -229,13 +226,13 @@ public abstract class MagicMirror extends Application {
 
     protected Rotor3f rotation(KeyEvent event, float t) {
         return switch (event.getCode()) {
-        case A -> YAW_LEFT.rotation(t);
-        case D -> YAW_RIGHT.rotation(t);
-        case W -> PITCH_BACK.rotation(t);
-        case S -> PITCH_FORWARD.rotation(t);
-        case Q -> ROLL_LEFT.rotation(t);
-        case E -> ROLL_RIGHT.rotation(t);
-        default -> throw new IllegalArgumentException("Unhandled key: %s".formatted(event.getCode()));
+        case A -> X.rotation(t);
+        case D -> X.rotation(-t);
+        case W -> Y.rotation(t);
+        case S -> Y.rotation(-t);
+        case Q -> Z.rotation(t);
+        case E -> Z.rotation(-t);
+        default -> throw new IllegalArgumentException("Unhandled rotation key: %s".formatted(event.getCode()));
         };
     }
 
