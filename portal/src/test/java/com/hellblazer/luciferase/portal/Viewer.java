@@ -16,8 +16,7 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.portal.TestPortal.CUBE_EDGE_LENGTH;
-import static com.hellblazer.luciferase.portal.TestPortal.TET_EDGE_LENGTH;
+import static com.hellblazer.luciferase.portal.MagicMirror.TET_EDGE_LENGTH;
 import static com.hellblazer.luciferase.portal.TestPortal.addEdges;
 
 import javax.vecmath.Vector3f;
@@ -69,7 +68,7 @@ public class Viewer extends Abstract3DApp {
         var p = new Vector3f();
         p.z = p.z + 2;
         animus.getPosition().set(p);
-        animus.getOrientation().set(PrincipalAxis.Y.slerp(0.5f));
+//        animus.getOrientation().set(PrincipalAxis.Y.slerp(-0.5f).combine(PrincipalAxis.Z.slerp(0.5f)));
 
         return animus.getAnimated();
     }
@@ -79,14 +78,14 @@ public class Viewer extends Abstract3DApp {
         var g = new Group();
         g.getChildren().add(animus());
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
-        cubic.addAxes(g, 0.1, 0.2, 0.008, 20);
+//        cubic.addAxes(g, 0.1, 0.2, 0.008, 20);
 
         fauxCamera = new Animus<>(new Group());
         cubic.addAxes(fauxCamera.getAnimated(), 0.1, 0.2, 0.008, 20);
         g.getChildren().add(fauxCamera.getAnimated());
 
-        fauxCamera.getPosition().set(new Vector3f(0, 0, -2));
-        fauxCamera.getOrientation().set(PrincipalAxis.Y.slerp(0.5f));
+        fauxCamera.getPosition().set(new Vector3f(0, 0, -5));
+        fauxCamera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
         return g;
     }
 

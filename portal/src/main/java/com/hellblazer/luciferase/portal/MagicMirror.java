@@ -24,6 +24,8 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
 import com.hellblazer.luciferase.lucien.animus.Rotor3f;
+import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.application.Application;
 import javafx.event.EventHandler;
@@ -37,8 +39,6 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.paint.Color;
-import javafx.scene.paint.PhongMaterial;
-import javafx.scene.shape.Box;
 import javafx.stage.Stage;
 
 /**
@@ -55,6 +55,8 @@ public abstract class MagicMirror extends Application {
         protected double mousePosY;
     }
 
+    public static final float     CUBE_EDGE_LENGTH   = (float) (Math.sqrt(2) / 2);
+    public static final float     TET_EDGE_LENGTH    = 1;
     protected static final double AXIS_LENGTH        = 250.0;
     protected static final double CONTROL_MULTIPLIER = 0.1;
     protected static final double MOUSE_SPEED        = 0.1;
@@ -83,6 +85,8 @@ public abstract class MagicMirror extends Application {
         portal = portal();
 
         world.getChildren().addAll(portal.getAvatar().getAnimated(), portal.getCamera().getAnimated());
+
+        buildAxes();
 
         Scene scene = new Scene(root, 1024, 768, true, SceneAntialiasing.BALANCED);
         scene.setFill(Color.LIGHTGRAY);
@@ -117,27 +121,8 @@ public abstract class MagicMirror extends Application {
     abstract protected Animus<Node> animus();
 
     protected void buildAxes() {
-        final PhongMaterial redMaterial = new PhongMaterial();
-        redMaterial.setDiffuseColor(Color.DARKRED);
-        redMaterial.setSpecularColor(Color.RED);
-
-        final PhongMaterial greenMaterial = new PhongMaterial();
-        greenMaterial.setDiffuseColor(Color.DARKGREEN);
-        greenMaterial.setSpecularColor(Color.GREEN);
-
-        final PhongMaterial blueMaterial = new PhongMaterial();
-        blueMaterial.setDiffuseColor(Color.DARKBLUE);
-        blueMaterial.setSpecularColor(Color.BLUE);
-
-        final Box xAxis = new Box(AXIS_LENGTH, 1, 1);
-        final Box yAxis = new Box(1, AXIS_LENGTH, 1);
-        final Box zAxis = new Box(1, 1, AXIS_LENGTH);
-
-        xAxis.setMaterial(redMaterial);
-        yAxis.setMaterial(greenMaterial);
-        zAxis.setMaterial(blueMaterial);
-
-        axisGroup.getChildren().addAll(xAxis, yAxis, zAxis);
+        final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
+        cubic.addAxes(axisGroup, 0.1, 0.2, 0.008, 20);
         axisGroup.setVisible(false);
         world.getChildren().addAll(axisGroup);
     }

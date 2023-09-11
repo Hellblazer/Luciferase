@@ -16,12 +16,11 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
-
 import java.util.Set;
 
 import javax.vecmath.Vector3f;
 
+import com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
@@ -53,8 +52,6 @@ public class TestPortal extends MagicMirror {
         }
     }
 
-    public static final float    CUBE_EDGE_LENGTH        = (float) (Math.sqrt(2) / 2);
-    public static final float    TET_EDGE_LENGTH         = 1;
     protected static final float CAMERA_FAR_CLIP         = 10000.0f;
     protected static final float CAMERA_INITIAL_DISTANCE = -450f;
     protected static final float CAMERA_INITIAL_X_ANGLE  = 70.0f;
@@ -99,7 +96,14 @@ public class TestPortal extends MagicMirror {
         var dualEdges = dual.getEdges();
 
         addEdges(dualEdges, Colors.redMaterial, view);
-        return new Animus<Node>(view);
+        var animus = new Animus<Node>(view);
+
+        var p = new Vector3f();
+        p.z = p.z + 2;
+        animus.getPosition().set(p);
+//        animus.getOrientation().set(PrincipalAxis.Y.slerp(-0.5f).combine(PrincipalAxis.Z.slerp(0.5f)));
+
+        return animus;
     }
 
     @Override
@@ -114,13 +118,9 @@ public class TestPortal extends MagicMirror {
         final var camera = portal.getCamera();
         camera.getAnimated().setNearClip(CAMERA_NEAR_CLIP);
         camera.getAnimated().setFarClip(CAMERA_FAR_CLIP);
-        final var position = camera.getPosition();
-        var p = new Vector3f(position.get());
-        p.set(0, 0, 0);
-        p.z = p.z + CAMERA_INITIAL_DISTANCE;
-        position.set(p);
 
-        camera.getOrientation().set(Z.slerp(0.5f));
+        camera.getPosition().set(new Vector3f(0, 0, -20));
+        camera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
     }
 
     @Override

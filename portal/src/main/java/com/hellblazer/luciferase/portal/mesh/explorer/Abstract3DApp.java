@@ -16,7 +16,10 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
+import com.hellblazer.luciferase.portal.CubicGrid;
+import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.Xform;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.application.Application;
 import javafx.event.EventHandler;
@@ -29,8 +32,6 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.paint.Color;
-import javafx.scene.paint.PhongMaterial;
-import javafx.scene.shape.Box;
 import javafx.stage.Stage;
 
 /**
@@ -38,6 +39,7 @@ import javafx.stage.Stage;
  */
 public abstract class Abstract3DApp extends Application {
 
+    public static final float     CUBE_EDGE_LENGTH        = (float) (Math.sqrt(2) / 2);
     protected static final double AXIS_LENGTH             = 250.0;
     protected static final double CAMERA_FAR_CLIP         = 10000.0;
     protected static final double CAMERA_INITIAL_DISTANCE = -450;
@@ -48,8 +50,8 @@ public abstract class Abstract3DApp extends Application {
     protected static final double MOUSE_SPEED             = 0.1;
     protected static final double ROTATION_SPEED          = 2.0;
     protected static final double SHIFT_MULTIPLIER        = 10.0;
-    protected static final double TRACK_SPEED             = 0.3;
 
+    protected static final double     TRACK_SPEED       = 0.3;
     protected final Xform             axisGroup         = new Xform();
     protected final PerspectiveCamera camera            = new PerspectiveCamera(true);
     protected final Xform             cameraXform       = new Xform();
@@ -63,7 +65,8 @@ public abstract class Abstract3DApp extends Application {
     protected double                  mousePosY;
     protected final Group             root              = new Group();
     protected final Xform             transformingGroup = new Xform();
-    protected final Xform             world             = new Xform();
+
+    protected final Xform world = new Xform();
 
     public Abstract3DApp() {
         super();
@@ -116,27 +119,8 @@ public abstract class Abstract3DApp extends Application {
     protected abstract Group build();
 
     protected void buildAxes() {
-        final PhongMaterial redMaterial = new PhongMaterial();
-        redMaterial.setDiffuseColor(Color.DARKRED);
-        redMaterial.setSpecularColor(Color.RED);
-
-        final PhongMaterial greenMaterial = new PhongMaterial();
-        greenMaterial.setDiffuseColor(Color.DARKGREEN);
-        greenMaterial.setSpecularColor(Color.GREEN);
-
-        final PhongMaterial blueMaterial = new PhongMaterial();
-        blueMaterial.setDiffuseColor(Color.DARKBLUE);
-        blueMaterial.setSpecularColor(Color.BLUE);
-
-        final Box xAxis = new Box(AXIS_LENGTH, 1, 1);
-        final Box yAxis = new Box(1, AXIS_LENGTH, 1);
-        final Box zAxis = new Box(1, 1, AXIS_LENGTH);
-
-        xAxis.setMaterial(redMaterial);
-        yAxis.setMaterial(blueMaterial);
-        zAxis.setMaterial(greenMaterial);
-
-        axisGroup.getChildren().addAll(xAxis, yAxis, zAxis);
+        final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
+        cubic.addAxes(axisGroup, 0.1, 0.2, 0.008, 20);
         axisGroup.setVisible(false);
         world.getChildren().addAll(axisGroup);
     }
