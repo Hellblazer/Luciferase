@@ -20,7 +20,6 @@ import java.util.Set;
 
 import javax.vecmath.Vector3f;
 
-import com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
@@ -86,6 +85,12 @@ public class TestPortal extends MagicMirror {
         launch(args);
     }
 
+    protected final Xform cameraXform = new Xform();
+
+    protected final Xform cameraXform2 = new Xform();
+
+    protected final Xform cameraXform3 = new Xform();
+
     @Override
     protected Animus<Node> animus() {
         var view = new Group();
@@ -108,19 +113,33 @@ public class TestPortal extends MagicMirror {
 
     @Override
     protected Animus<Camera> camera() {
-        final var camera = new PerspectiveCamera();
+        final var camera = new PerspectiveCamera(true);
         final Animus<Camera> animus = new Animus<>(camera);
         return animus;
     }
 
     @Override
     protected void resetCameraDefault() {
-        final var camera = portal.getCamera();
-        camera.getAnimated().setNearClip(CAMERA_NEAR_CLIP);
-        camera.getAnimated().setFarClip(CAMERA_FAR_CLIP);
+        final var camera = portal.getCamera().getAnimated();
+        root.getChildren().add(cameraXform);
+        cameraXform.getChildren().add(cameraXform2);
+        cameraXform2.getChildren().add(cameraXform3);
+        cameraXform3.getChildren().add(camera);
+        cameraXform3.setRotateZ(180.0);
 
-        camera.getPosition().set(new Vector3f(0, 0, -20));
-        camera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
+        camera.setNearClip(CAMERA_NEAR_CLIP);
+        camera.setFarClip(CAMERA_FAR_CLIP);
+        camera.setTranslateZ(CAMERA_INITIAL_DISTANCE / 4);
+        cameraXform.ry.setAngle(CAMERA_INITIAL_Y_ANGLE);
+        cameraXform.rx.setAngle(CAMERA_INITIAL_X_ANGLE);
+
+//        final var camera = portal.getCamera();
+//        root.getChildren().add(camera.getAnimated());
+//        camera.getAnimated().setNearClip(CAMERA_NEAR_CLIP);
+//        camera.getAnimated().setFarClip(CAMERA_FAR_CLIP);
+//
+//        camera.getPosition().set(new Vector3f(0, 0, -CAMERA_INITIAL_DISTANCE / 4));
+//        camera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
     }
 
     @Override

@@ -21,7 +21,6 @@ import static com.hellblazer.luciferase.portal.TestPortal.addEdges;
 
 import javax.vecmath.Vector3f;
 
-import com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
@@ -84,8 +83,8 @@ public class Viewer extends Abstract3DApp {
         cubic.addAxes(fauxCamera.getAnimated(), 0.1, 0.2, 0.008, 20);
         g.getChildren().add(fauxCamera.getAnimated());
 
-        fauxCamera.getPosition().set(new Vector3f(0, 0, -5));
-        fauxCamera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
+        fauxCamera.getPosition().set(new Vector3f(0, 0, -20));
+//        fauxCamera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
         return g;
     }
 
