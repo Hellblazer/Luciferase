@@ -78,15 +78,31 @@ public class Rotor3f {
             }
         };
 
-        private static final Vector3f POS_X = new Vector3f(1, 0, 0);
-        private static final Vector3f POS_Y = new Vector3f(0, 1, 0);
-        private static final Vector3f POS_Z = new Vector3f(0, 0, 1);
+        private static final float    HALF_PI = (float) (Math.PI / 2);
+        private static final Vector3f POS_X   = new Vector3f(1, 0, 0);
+        private static final Vector3f POS_Y   = new Vector3f(0, 1, 0);
+        private static final Vector3f POS_Z   = new Vector3f(0, 0, 1);
+
+        public Rotor3f angle(float theta) {
+            return slerp(theta / 90);
+        }
 
         /**
-         * Spherical Linear Interpolation from axis A to axis B.
+         * Spherical Linear Interpolation around the axis by the supplied radians
          * 
-         * @param t - the parameterization value
-         * @return the Rotor3f corresponding to point (t) in the interpolation from a()
+         * @param theta - the radians of rotation about the axis
+         * @return the Rotor3f corresponding to rotation in the interpolation from a()
+         *         to b()
+         */
+        public Rotor3f radians(float theta) {
+            return slerp(theta / HALF_PI);
+        }
+
+        /**
+         * Spherical Linear Interpolation around the axis by the supplied angle
+         * 
+         * @param theta - the angle of rotation about the axis
+         * @return the Rotor3f corresponding to rotation in the interpolation from a()
          *         to b()
          */
         public Rotor3f slerp(float t) {
@@ -354,6 +370,11 @@ public class Rotor3f {
         result.m32 = 0.0f;
         result.m33 = 1.0f;
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Rotor3f [a=%s, xy=%s, yz=%s, zx=%s]", a, xy, yz, zx);
     }
 
     /**

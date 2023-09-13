@@ -20,32 +20,32 @@ import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.X;
 import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Y;
 import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
 
-import javax.vecmath.Point3f;
-import javax.vecmath.Vector3f;
-
 import com.hellblazer.luciferase.lucien.animus.Rotor3f;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
+import com.hellblazer.luciferase.portal.mesh.explorer.Xform;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.application.Application;
 import javafx.event.EventHandler;
+import javafx.geometry.Point3D;
 import javafx.scene.Camera;
 import javafx.scene.DepthTest;
 import javafx.scene.Group;
-import javafx.scene.Node;
+import javafx.scene.PerspectiveCamera;
 import javafx.scene.Scene;
 import javafx.scene.SceneAntialiasing;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.paint.Color;
+import javafx.scene.transform.Rotate;
+import javafx.scene.transform.Translate;
 import javafx.stage.Stage;
 
 /**
  * @author hal.hildebrand
  */
 public abstract class MagicMirror extends Application {
-
     public static class MouseHandler {
         protected double mouseDeltaX;
         protected double mouseDeltaY;
@@ -53,39 +53,71 @@ public abstract class MagicMirror extends Application {
         protected double mouseOldY;
         protected double mousePosX;
         protected double mousePosY;
+        protected float  rx;
+        protected float  ry;
     }
 
-    public static final float     CUBE_EDGE_LENGTH   = (float) (Math.sqrt(2) / 2);
-    public static final float     TET_EDGE_LENGTH    = 1;
-    protected static final double AXIS_LENGTH        = 250.0;
-    protected static final double CONTROL_MULTIPLIER = 0.1;
-    protected static final double MOUSE_SPEED        = 0.1;
-    protected static final double ROTATION_SPEED     = 2.0;
-    protected static final double SHIFT_MULTIPLIER   = 10.0;
-    protected static final double TRACK_SPEED        = 0.3;
+    public static final float CUBE_EDGE_LENGTH = (float) (Math.sqrt(2) / 2);
+
+    public static final float    TET_EDGE_LENGTH         = 1;
+    protected static final float AXIS_LENGTH             = 250.0f;
+    protected static final float CAMERA_FAR_CLIP         = 10000.0f;
+    protected static final float CAMERA_INITIAL_DISTANCE = -450f;
+    protected static final float CAMERA_INITIAL_X_ANGLE  = 70.0f;
+    protected static final float CAMERA_INITIAL_Y_ANGLE  = 320.0f;
+    protected static final float CAMERA_NEAR_CLIP        = 0.1f;
+    protected static final float CONTROL_MULTIPLIER      = 0.1f;
+    protected static final float MOUSE_SPEED             = 0.1f;
+    protected static final float ROTATION_SPEED          = 2.0f;
+    protected static final float SHIFT_MULTIPLIER        = 10.0f;
+    protected static final float TRACK_SPEED             = 0.3f;
+
+    public static void lookAt(Point3D cameraPosition, Point3D lookAtPos, Camera cam) {
+        // Create direction vector
+        Point3D camDirection = lookAtPos.subtract(cameraPosition.getX(), cameraPosition.getY(), cameraPosition.getZ());
+        camDirection = camDirection.normalize();
+        double xRotation = Math.toDegrees(Math.asin(-camDirection.getY()));
+        double yRotation = Math.toDegrees(Math.atan2(camDirection.getX(), camDirection.getZ()));
+        Rotate rx = new Rotate(xRotation, cameraPosition.getX(), cameraPosition.getY(), cameraPosition.getZ(),
+                               Rotate.X_AXIS);
+        Rotate ry = new Rotate(yRotation, cameraPosition.getX(), cameraPosition.getY(), cameraPosition.getZ(),
+                               Rotate.Y_AXIS);
+        cam.getTransforms()
+           .addAll(ry, rx, new Translate(cameraPosition.getX(), cameraPosition.getY(), cameraPosition.getZ()));
+    }
 
     public static void main(String[] args) {
         launch(args);
     }
 
-    protected final Group axisGroup         = new Group();
-    protected Portal      portal;
-    protected final Group root              = new Group();
-    protected final Xform transformingGroup = new Xform();
-    protected final Xform world             = new Xform();
+    protected final Group             axisGroup         = new Group();
+    protected final PerspectiveCamera camera;
+    protected final OrientedGroup     cameraTransform;
+    protected final Group             root              = new Group();
+    protected final Xform             transformingGroup = new Xform();
+    protected final Xform             world             = new Xform();
 
     public MagicMirror() {
         super();
+
+        var t = new OrientedTxfm();
+        t.next(new OrientedTxfm()).next(new OrientedTxfm()).setRotate(0, 0, 180.0f);
+        t.setRotate(CAMERA_INITIAL_X_ANGLE, CAMERA_INITIAL_Y_ANGLE, 0);
+
+        cameraTransform = new OrientedGroup(t);
+        camera = new PerspectiveCamera(true);
+        cameraTransform.getChildren().add(camera);
     }
 
     @Override
     public void start(Stage primaryStage) throws Exception {
         root.getChildren().add(world);
         root.setDepthTest(DepthTest.ENABLE);
-        portal = portal();
+        root.getChildren().add(cameraTransform);
 
-        world.getChildren().addAll(portal.getAvatar().getAnimated(), portal.getCamera().getAnimated());
-
+        camera.setNearClip(CAMERA_NEAR_CLIP);
+        camera.setFarClip(CAMERA_FAR_CLIP);
+        camera.setTranslateZ(CAMERA_INITIAL_DISTANCE / 4);
         buildAxes();
 
         Scene scene = new Scene(root, 1024, 768, true, SceneAntialiasing.BALANCED);
@@ -97,8 +129,7 @@ public abstract class MagicMirror extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        portal.setCamera(scene);
-        resetCameraDefault();
+        scene.setCamera(camera);
 
         // Attach a scroll listener
         primaryStage.addEventHandler(ScrollEvent.SCROLL, event -> {
@@ -110,15 +141,11 @@ public abstract class MagicMirror extends Application {
             if (event.isShiftDown()) {
                 modifier = 100.0f;
             }
-            var position = portal.getCamera().getPosition();
-
-            final var p = position.get();
-            p.z = (float) (p.z + event.getDeltaY() * modifierFactor * modifier);
-            position.set(p);
+            double z = camera.getTranslateZ();
+            double newZ = z + event.getDeltaY() * modifierFactor * modifier;
+            camera.setTranslateZ(newZ);
         });
     }
-
-    abstract protected Animus<Node> animus();
 
     protected void buildAxes() {
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
@@ -127,8 +154,6 @@ public abstract class MagicMirror extends Application {
         world.getChildren().addAll(axisGroup);
     }
 
-    abstract protected Animus<Camera> camera();
-
     protected void handleKeyboard(Scene scene) {
         scene.setOnKeyPressed(new EventHandler<KeyEvent>() {
 
@@ -136,7 +161,7 @@ public abstract class MagicMirror extends Application {
             public void handle(KeyEvent event) {
                 switch (event.getCode()) {
                 case Z:
-                    resetCameraDefault();
+                    cameraTransform.getTransform().reset();
                     break;
                 case X:
                     axisGroup.setVisible(!axisGroup.isVisible());
@@ -153,8 +178,6 @@ public abstract class MagicMirror extends Application {
 
     protected MouseHandler handleMouse(Scene scene) {
         var h = new MouseHandler();
-        final var position = portal.getCamera().getPosition();
-        final var orientation = portal.getCamera().getOrientation();
 
         scene.setOnMousePressed(new EventHandler<MouseEvent>() {
             @Override
@@ -183,32 +206,23 @@ public abstract class MagicMirror extends Application {
                 if (me.isShiftDown()) {
                     modifier = SHIFT_MULTIPLIER;
                 }
-
+                var t = cameraTransform.getTransform();
                 if (me.isMiddleButtonDown() || (me.isPrimaryButtonDown() && me.isSecondaryButtonDown())) {
-                    var p = new Vector3f(position.get());
-                    p.add(new Point3f((float) (h.mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED),
-                                      (float) (h.mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED), 0f));
-                    position.set(p);
+                    t.t.setX((float) (t.t.getX() + h.mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED));
+                    t.next.t.setY(t.next.t.getY() + h.mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED);
                 } else if (me.isPrimaryButtonDown()) {
-                    var o = new Rotor3f(orientation.get());
-                    o.combine(X.slerp((float) (-h.mouseDeltaX * MOUSE_SPEED * modifier * ROTATION_SPEED)))
-                     .combine(Y.slerp((float) (h.mouseDeltaY * MOUSE_SPEED * modifier * ROTATION_SPEED)));
-                    orientation.set(o);
+                    h.ry = (float) (h.ry - h.mouseDeltaX * MOUSE_SPEED * modifier * ROTATION_SPEED);
+                    h.rx = (float) (h.rx + h.mouseDeltaY * MOUSE_SPEED * modifier * ROTATION_SPEED);
+                    t.setRotate(h.rx, h.ry, 0);
                 } else if (me.isSecondaryButtonDown()) {
-                    var p = new Vector3f(position.get());
-                    p.z = (float) (p.z + h.mouseDeltaX * MOUSE_SPEED * modifier);
-                    position.set(p);
+                    double z = camera.getTranslateZ();
+                    double newZ = z + h.mouseDeltaX * MOUSE_SPEED * modifier;
+                    camera.setTranslateZ(newZ);
                 }
             }
         });
         return h;
     }
-
-    protected Portal portal() {
-        return new Portal(animus(), camera());
-    }
-
-    abstract protected void resetCameraDefault();
 
     protected Rotor3f rotation(KeyEvent event, float t) {
         return switch (event.getCode()) {

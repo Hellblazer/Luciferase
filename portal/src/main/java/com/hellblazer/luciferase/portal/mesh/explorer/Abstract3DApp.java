@@ -18,7 +18,6 @@ package com.hellblazer.luciferase.portal.mesh.explorer;
 
 import com.hellblazer.luciferase.portal.CubicGrid;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
-import com.hellblazer.luciferase.portal.Xform;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.application.Application;
@@ -39,17 +38,17 @@ import javafx.stage.Stage;
  */
 public abstract class Abstract3DApp extends Application {
 
-    public static final float     CUBE_EDGE_LENGTH        = (float) (Math.sqrt(2) / 2);
-    protected static final double AXIS_LENGTH             = 250.0;
-    protected static final double CAMERA_FAR_CLIP         = 10000.0;
-    protected static final double CAMERA_INITIAL_DISTANCE = -450;
-    protected static final double CAMERA_INITIAL_X_ANGLE  = 70.0;
-    protected static final double CAMERA_INITIAL_Y_ANGLE  = 320.0;
-    protected static final double CAMERA_NEAR_CLIP        = 0.1;
-    protected static final double CONTROL_MULTIPLIER      = 0.1;
-    protected static final double MOUSE_SPEED             = 0.1;
-    protected static final double ROTATION_SPEED          = 2.0;
-    protected static final double SHIFT_MULTIPLIER        = 10.0;
+    public static final float    CUBE_EDGE_LENGTH        = (float) (Math.sqrt(2) / 2);
+    protected static final float AXIS_LENGTH             = 250.0f;
+    protected static final float CAMERA_FAR_CLIP         = 10000.0f;
+    protected static final float CAMERA_INITIAL_DISTANCE = -450;
+    protected static final float CAMERA_INITIAL_X_ANGLE  = 70.0f;
+    protected static final float CAMERA_INITIAL_Y_ANGLE  = 320.0f;
+    protected static final float CAMERA_NEAR_CLIP        = 0.1f;
+    protected static final float CONTROL_MULTIPLIER      = 0.1f;
+    protected static final float MOUSE_SPEED             = 0.1f;
+    protected static final float ROTATION_SPEED          = 2.0f;
+    protected static final float SHIFT_MULTIPLIER        = 10.0f;
 
     protected static final double     TRACK_SPEED       = 0.3;
     protected final Xform             axisGroup         = new Xform();

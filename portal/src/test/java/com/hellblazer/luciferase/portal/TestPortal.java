@@ -18,7 +18,7 @@ package com.hellblazer.luciferase.portal;
 
 import java.util.Set;
 
-import javax.vecmath.Vector3f;
+import javax.vecmath.Point3f;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
@@ -28,10 +28,8 @@ import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
-import javafx.scene.Camera;
 import javafx.scene.Group;
 import javafx.scene.Node;
-import javafx.scene.PerspectiveCamera;
 import javafx.scene.paint.Material;
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
@@ -50,12 +48,6 @@ public class TestPortal extends MagicMirror {
             TestPortal.main(argv);
         }
     }
-
-    protected static final float CAMERA_FAR_CLIP         = 10000.0f;
-    protected static final float CAMERA_INITIAL_DISTANCE = -450f;
-    protected static final float CAMERA_INITIAL_X_ANGLE  = 70.0f;
-    protected static final float CAMERA_INITIAL_Y_ANGLE  = 320.0f;
-    protected static final float CAMERA_NEAR_CLIP        = 0.1f;
 
     public static void add(final Polyhedron polyhedron, Group view) {
         MeshView v = new MeshView(polyhedron.toTriangleMesh().constructMesh());
@@ -85,61 +77,19 @@ public class TestPortal extends MagicMirror {
         launch(args);
     }
 
-    protected final Xform cameraXform = new Xform();
+    protected Node content() {
+        OrientedTxfm txfm = new OrientedTxfm();
+        txfm.setTranslate(new Point3f(0, 0, 2));
+        txfm.setRotate(45, 45, -45);
+        var view = new OrientedGroup(txfm);
 
-    protected final Xform cameraXform2 = new Xform();
-
-    protected final Xform cameraXform3 = new Xform();
-
-    @Override
-    protected Animus<Node> animus() {
-        var view = new Group();
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
         cubic.addAxes(view, 0.1, 0.2, 0.008, 20);
         Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
         var dual = polyhedron.dual();
         var dualEdges = dual.getEdges();
-
         addEdges(dualEdges, Colors.redMaterial, view);
-        var animus = new Animus<Node>(view);
-
-        var p = new Vector3f();
-        p.z = p.z + 2;
-        animus.getPosition().set(p);
-//        animus.getOrientation().set(PrincipalAxis.Y.slerp(-0.5f).combine(PrincipalAxis.Z.slerp(0.5f)));
-
-        return animus;
-    }
-
-    @Override
-    protected Animus<Camera> camera() {
-        final var camera = new PerspectiveCamera(true);
-        final Animus<Camera> animus = new Animus<>(camera);
-        return animus;
-    }
-
-    @Override
-    protected void resetCameraDefault() {
-        final var camera = portal.getCamera().getAnimated();
-        root.getChildren().add(cameraXform);
-        cameraXform.getChildren().add(cameraXform2);
-        cameraXform2.getChildren().add(cameraXform3);
-        cameraXform3.getChildren().add(camera);
-        cameraXform3.setRotateZ(180.0);
-
-        camera.setNearClip(CAMERA_NEAR_CLIP);
-        camera.setFarClip(CAMERA_FAR_CLIP);
-        camera.setTranslateZ(CAMERA_INITIAL_DISTANCE / 4);
-        cameraXform.ry.setAngle(CAMERA_INITIAL_Y_ANGLE);
-        cameraXform.rx.setAngle(CAMERA_INITIAL_X_ANGLE);
-
-//        final var camera = portal.getCamera();
-//        root.getChildren().add(camera.getAnimated());
-//        camera.getAnimated().setNearClip(CAMERA_NEAR_CLIP);
-//        camera.getAnimated().setFarClip(CAMERA_FAR_CLIP);
-//
-//        camera.getPosition().set(new Vector3f(0, 0, -CAMERA_INITIAL_DISTANCE / 4));
-//        camera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
+        return view;
     }
 
     @Override

@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.portal;
 import static com.hellblazer.luciferase.portal.MagicMirror.TET_EDGE_LENGTH;
 import static com.hellblazer.luciferase.portal.TestPortal.addEdges;
 
+import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
@@ -50,11 +51,11 @@ public class Viewer extends Abstract3DApp {
         launch(args);
     }
 
-    private Animus<Node>  animus;
-    private Animus<Group> fauxCamera;
-
     protected Node animus() {
-        var view = new Group();
+        OrientedTxfm txfm = new OrientedTxfm();
+        txfm.setTranslate(new Point3f(0, 0, 2));
+        txfm.setRotate(45, 45, -45);
+        var view = new OrientedGroup(txfm);
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
         cubic.addAxes(view, 0.1, 0.2, 0.008, 20);
         Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
@@ -62,14 +63,7 @@ public class Viewer extends Abstract3DApp {
         var dualEdges = dual.getEdges();
 
         addEdges(dualEdges, Colors.redMaterial, view);
-        animus = new Animus<Node>(view);
-
-        var p = new Vector3f();
-        p.z = p.z + 2;
-        animus.getPosition().set(p);
-//        animus.getOrientation().set(PrincipalAxis.Y.slerp(-0.5f).combine(PrincipalAxis.Z.slerp(0.5f)));
-
-        return animus.getAnimated();
+        return view;
     }
 
     @Override
@@ -77,14 +71,17 @@ public class Viewer extends Abstract3DApp {
         var g = new Group();
         g.getChildren().add(animus());
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
-//        cubic.addAxes(g, 0.1, 0.2, 0.008, 20);
 
-        fauxCamera = new Animus<>(new Group());
-        cubic.addAxes(fauxCamera.getAnimated(), 0.1, 0.2, 0.008, 20);
-        g.getChildren().add(fauxCamera.getAnimated());
+        var fauxCamera = new Group();
+        cubic.addAxes(fauxCamera, 0.1, 0.2, 0.008, 20);
+        g.getChildren().add(fauxCamera);
 
-        fauxCamera.getPosition().set(new Vector3f(0, 0, -20));
-//        fauxCamera.getOrientation().set(PrincipalAxis.Y.slerp(2f));
+        var t = new OrientedTxfm();
+        t.next(new OrientedTxfm()).next(new OrientedTxfm()).setRotate(0, 0, 180.0f);
+        t.setRotate(CAMERA_INITIAL_X_ANGLE, CAMERA_INITIAL_Y_ANGLE, 0);
+        t.setTranslate(new Vector3f(0, 0, 20));
+
+        t.accept(fauxCamera);
         return g;
     }
 

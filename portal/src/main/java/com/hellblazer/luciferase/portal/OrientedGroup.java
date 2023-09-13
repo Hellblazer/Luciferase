@@ -16,35 +16,26 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import javafx.scene.Camera;
-import javafx.scene.Node;
-import javafx.scene.Scene;
+import javafx.scene.Group;
 
 /**
+ * A group that encapsulates a chain of oriented transforms
+ *
  * @author hal.hildebrand
  */
-public class Portal {
-    private final Animus<Node>   avatar;
-    private final Animus<Camera> camera;
+public class OrientedGroup extends Group {
+    private final OrientedTxfm txfm;
 
-    public Portal(Animus<Node> avatar, Animus<Camera> camera) {
-        this.avatar = avatar;
-        this.camera = camera;
+    public OrientedGroup(OrientedTxfm txfm) {
+        this.txfm = txfm;
+        apply();
     }
 
-    public Portal(Node avatar, Camera camera) {
-        this(new Animus<>(avatar), new Animus<>(camera));
+    public void apply() {
+        txfm.accept(this);
     }
 
-    public Animus<Node> getAvatar() {
-        return avatar;
-    }
-
-    public Animus<Camera> getCamera() {
-        return camera;
-    }
-
-    public void setCamera(Scene scene) {
-        scene.setCamera(camera.getAnimated());
+    public OrientedTxfm getTransform() {
+        return txfm;
     }
 }
