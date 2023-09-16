@@ -16,11 +16,12 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.X;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Y;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Z;
+import static com.hellblazer.luciferase.geometry.Rotor3f.RotationOrder.ZYX;
 
-import com.hellblazer.luciferase.lucien.animus.Rotor3f;
+import com.hellblazer.luciferase.geometry.Rotor3f;
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.explorer.Xform;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
@@ -58,8 +59,8 @@ public abstract class MagicMirror extends Application {
     }
 
     public static final float CUBE_EDGE_LENGTH = (float) (Math.sqrt(2) / 2);
+    public static final float TET_EDGE_LENGTH  = 1;
 
-    public static final float    TET_EDGE_LENGTH         = 1;
     protected static final float AXIS_LENGTH             = 250.0f;
     protected static final float CAMERA_FAR_CLIP         = 10000.0f;
     protected static final float CAMERA_INITIAL_DISTANCE = -450f;
@@ -101,8 +102,8 @@ public abstract class MagicMirror extends Application {
         super();
 
         var t = new OrientedTxfm();
-        t.next(new OrientedTxfm()).next(new OrientedTxfm()).setRotate(0, 0, 180.0f);
-        t.setRotate(CAMERA_INITIAL_X_ANGLE, CAMERA_INITIAL_Y_ANGLE, 0);
+        t.next(new OrientedTxfm()).next(new OrientedTxfm()).rotate(ZYX, 180, 0, 0);
+        t.rotate(ZYX, CAMERA_INITIAL_X_ANGLE, CAMERA_INITIAL_Y_ANGLE, 0);
 
         cameraTransform = new OrientedGroup(t);
         camera = new PerspectiveCamera(true);
@@ -208,16 +209,20 @@ public abstract class MagicMirror extends Application {
                 }
                 var t = cameraTransform.getTransform();
                 if (me.isMiddleButtonDown() || (me.isPrimaryButtonDown() && me.isSecondaryButtonDown())) {
-                    t.t.setX((float) (t.t.getX() + h.mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED));
-                    t.next.t.setY(t.next.t.getY() + h.mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED);
+                    t.next()
+                     .translation()
+                     .setX(t.next().translation().getX() + h.mouseDeltaX * MOUSE_SPEED * modifier * TRACK_SPEED);
+                    t.next()
+                     .translation()
+                     .setY(t.next().translation().getY() + h.mouseDeltaY * MOUSE_SPEED * modifier * TRACK_SPEED);
                 } else if (me.isPrimaryButtonDown()) {
                     h.ry = (float) (h.ry - h.mouseDeltaX * MOUSE_SPEED * modifier * ROTATION_SPEED);
                     h.rx = (float) (h.rx + h.mouseDeltaY * MOUSE_SPEED * modifier * ROTATION_SPEED);
-                    t.setRotate(h.rx, h.ry, 0);
+                    t.rotate(ZYX, h.rx, h.ry, 0);
                 } else if (me.isSecondaryButtonDown()) {
-                    double z = camera.getTranslateZ();
-                    double newZ = z + h.mouseDeltaX * MOUSE_SPEED * modifier;
-                    camera.setTranslateZ(newZ);
+                    float z = (float) t.translation().getZ();
+                    float newZ = (float) (z + h.mouseDeltaX * MOUSE_SPEED * modifier);
+                    t.translate(0, 0, newZ);
                 }
             }
         });

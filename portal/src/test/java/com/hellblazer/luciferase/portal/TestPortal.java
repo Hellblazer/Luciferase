@@ -16,9 +16,11 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import java.util.Set;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Z;
 
-import javax.vecmath.Point3f;
+import java.util.Set;
 
 import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
@@ -79,8 +81,8 @@ public class TestPortal extends MagicMirror {
 
     protected Node content() {
         OrientedTxfm txfm = new OrientedTxfm();
-        txfm.setTranslate(new Point3f(0, 0, 2));
-        txfm.setRotate(45, 45, -45);
+        txfm.translation().setZ(2);
+        txfm.orientation().set(Z.angle(45).combine(Y.angle(45)).combine(X.angle(45)));
         var view = new OrientedGroup(txfm);
 
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);

@@ -26,7 +26,7 @@ import java.util.function.Function;
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3d;
 
-import com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis;
+import com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis;
 import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 

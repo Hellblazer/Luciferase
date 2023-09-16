@@ -16,15 +16,16 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.X;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Y;
-import static com.hellblazer.luciferase.lucien.animus.Rotor3f.PrincipalAxis.Z;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Z;
 
 import java.util.function.Consumer;
 
 import javax.vecmath.Tuple3f;
 
-import com.hellblazer.luciferase.lucien.animus.Rotor3f;
+import com.hellblazer.luciferase.geometry.Rotor3f;
+import com.hellblazer.luciferase.geometry.Rotor3f.RotationOrder;
 
 import javafx.scene.Node;
 import javafx.scene.transform.Affine;
@@ -40,10 +41,12 @@ import javafx.scene.transform.Translate;
  * @author hal.hildebrand
  */
 public class OrientedTxfm implements Consumer<Node> {
-    OrientedTxfm    next;
-    final Rotor3f   orientation = new Rotor3f();
-    final Scale     s           = new Scale();
-    final Translate t           = new Translate();
+
+    private OrientedTxfm    next;
+    private final Rotor3f   orientation = new Rotor3f();
+    private final Scale     s           = new Scale();
+    private final Translate t           = new Translate();
+    private final Affine    transform   = new Affine();
 
     @Override
     public void accept(Node node) {
@@ -51,9 +54,13 @@ public class OrientedTxfm implements Consumer<Node> {
         transforms.clear();
         var current = this;
         while (current != null) {
-            transforms.addAll(current.t, current.transform(), current.s);
+            transforms.addAll(current.t, current.transform, current.s);
             current = current.next;
         }
+    }
+
+    public OrientedTxfm next() {
+        return next;
     }
 
     /**
@@ -67,6 +74,16 @@ public class OrientedTxfm implements Consumer<Node> {
         return txfm;
     }
 
+    public Rotor3f orientation() {
+        return orientation;
+    }
+
+    public void pivot(Tuple3f pivot) {
+        s.setPivotX(pivot.x);
+        s.setPivotY(pivot.y);
+        s.setPivotZ(pivot.z);
+    }
+
     /**
      * Reset to zero'd state
      */
@@ -78,107 +95,86 @@ public class OrientedTxfm implements Consumer<Node> {
         s.setX(1.0);
         s.setY(1.0);
         s.setZ(1.0);
+        s.setPivotX(0);
+        s.setPivotY(0);
+        s.setPivotZ(0);
     }
 
-    /**
-     * Reset translate and scale
-     */
-    public void resetTS() {
-        t.setX(0.0);
-        t.setY(0.0);
-        t.setZ(0.0);
-        s.setX(1.0);
-        s.setY(1.0);
-        s.setZ(1.0);
+    public void rotate(RotationOrder order, float x, float y, float z) {
+        switch (order) {
+        case XYZ:
+            orientation.set(X.angle(x).combine(Y.angle(y)).combine(Z.angle(z)));
+            break;
+        case XZY:
+            orientation.set(X.angle(x).combine(Z.angle(z)).combine(Y.angle(y)));
+            break;
+        case YXZ:
+            orientation.set(Y.angle(y).combine(X.angle(x).combine(Z.angle(z))));
+            break;
+        case YZX:
+            orientation.set(Y.angle(y).combine(Z.angle(z)).combine(X.angle(x)));
+            break;
+        case ZXY:
+            orientation.set(Z.angle(z).combine(X.angle(x)).combine(Y.angle(y)));
+            break;
+        case ZYX:
+            orientation.set(Z.angle(z).combine(Y.angle(y)).combine(X.angle(x)));
+            break;
+        default:
+            throw new IllegalArgumentException("Unknown rotation order: " + order);
+
+        }
+        transform();
     }
 
-    public void setOrientation(Rotor3f orientation) {
-        this.orientation.set(orientation);
+    public void rotate(RotationOrder order, Tuple3f angle) {
+        rotate(order, angle.x, angle.y, angle.z);
     }
 
-    /**
-     * set the orientation to the supplied angles rotation around the primary axis
-     *
-     * @param x
-     * @param y
-     * @param z
-     */
-    public void setRotate(float x, float y, float z) {
-        orientation.set(X.angle(-x).combine(Y.angle(-y)).combine(Z.angle(z)));
+    public Scale scale() {
+        return s;
     }
 
-    /**
-     * scale everything
-     *
-     * @param scaleFactor
-     */
-    public void setScale(double scaleFactor) {
-        s.setX(scaleFactor);
-        s.setY(scaleFactor);
-        s.setZ(scaleFactor);
-    }
-
-    /**
-     * Scale by component
-     */
-    public void setScale(double x, double y, double z) {
+    public void scale(float x, float y, float z) {
         s.setX(x);
         s.setY(y);
         s.setZ(z);
     }
 
-    public void setScaleX(double x) {
-        s.setX(x);
+    public void scale(Tuple3f scale) {
+        s.setX(scale.x);
+        s.setY(scale.y);
+        s.setZ(scale.z);
     }
 
-    public void setScaleY(double y) {
-        s.setY(y);
+    public void scale(Tuple3f scale, Tuple3f pivot) {
+        s.setX(scale.x);
+        s.setY(scale.y);
+        s.setZ(scale.z);
+        s.setPivotX(pivot.x);
+        s.setPivotY(pivot.y);
+        s.setPivotZ(pivot.z);
     }
 
-    public void setScaleZ(double z) {
-        s.setZ(z);
-    }
-
-    public void setTranslate(double x, double y) {
-        t.setX(x);
-        t.setY(y);
-    }
-
-    public void setTranslate(double x, double y, double z) {
-        t.setX(x);
-        t.setY(y);
-        t.setZ(z);
-    }
-
-    public void setTranslate(Tuple3f p) {
-        t.setX(p.x);
-        t.setY(p.y);
-        t.setZ(p.z);
-    }
-
-    public void setTranslateX(double x) {
-        t.setX(x);
-    }
-
-    public void setTranslateY(double y) {
-        t.setY(y);
-    }
-
-    public void setTranslateZ(double z) {
-        t.setZ(z);
-    }
-
-    @Override
-    public String toString() {
-        return "OrientedTxfm[t = (" + t.getX() + ", " + t.getY() + ", " + t.getZ() + ")  " + "r = (" + orientation
-        + ") " + "s = (" + s.getX() + ", " + s.getY() + ", " + s.getZ() + ")]";
-    }
-
-    private Affine transform() {
+    public void transform() {
         final var m = orientation.toMatrix();
-        var t = new Affine();
-        t.setToTransform(m.getM00(), m.getM10(), m.getM20(), m.getM30(), m.getM01(), m.getM11(), m.getM21(), m.getM31(),
-                         m.getM02(), m.getM12(), m.getM22(), m.getM32());
+        transform.setToTransform(m.getM00(), m.getM10(), m.getM20(), m.getM30(), m.getM01(), m.getM11(), m.getM21(),
+                                 m.getM31(), m.getM02(), m.getM12(), m.getM22(), m.getM32());
+    }
+
+    public void translate(float x, float y, float z) {
+        t.setX(x);
+        t.setY(y);
+        t.setZ(z);
+    }
+
+    public void translate(Tuple3f translation) {
+        t.setX(translation.x);
+        t.setY(translation.y);
+        t.setZ(translation.z);
+    }
+
+    public Translate translation() {
         return t;
     }
 }

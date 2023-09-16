@@ -14,8 +14,11 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.animus;
+package com.hellblazer.luciferase.geometry;
 
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Z;
 import static java.lang.Float.isNaN;
 import static java.lang.Math.acos;
 import static java.lang.Math.sin;
@@ -25,6 +28,7 @@ import java.util.Objects;
 
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Quat4f;
+import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
 
 /**
@@ -122,6 +126,10 @@ public class Rotor3f {
          * @return the "to" axis
          */
         abstract Vector3f b();
+    }
+
+    public enum RotationOrder {
+        XYZ, XZY, YXZ, YZX, ZXY, ZYX
     }
 
     private static float lerp(float from, float to, float t) {
@@ -259,6 +267,29 @@ public class Rotor3f {
      */
     public Rotor3f reverse() {
         return new Rotor3f(a, -xy, -yz, -zx);
+    }
+
+    public Rotor3f rotate(RotationOrder order, float x, float y, float z) {
+        return switch (order) {
+        case XYZ -> combine(X.angle(x)).combine(Y.angle(y)).combine(Z.angle(z));
+        case XZY -> combine(X.angle(x)).combine(Z.angle(z)).combine(Y.angle(y));
+        case YXZ -> combine(Y.angle(y)).combine(X.angle(x)).combine(Z.angle(z));
+        case YZX -> combine(Y.angle(y)).combine(Z.angle(z)).combine(X.angle(x));
+        case ZXY -> combine(Z.angle(z)).combine(X.angle(x)).combine(Y.angle(y));
+        case ZYX -> combine(Z.angle(z)).combine(Y.angle(y)).combine(X.angle(x));
+        default -> throw new IllegalArgumentException("Unknown rotation order: " + order);
+        };
+    }
+
+    public void rotate(RotationOrder order, Tuple3f angle) {
+        rotate(order, angle.x, angle.y, angle.z);
+    }
+
+    public void set(float a, float xy, float yz, float zx) {
+        this.a = a;
+        this.xy = xy;
+        this.yz = yz;
+        this.zx = zx;
     }
 
     /**
