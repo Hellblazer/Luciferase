@@ -118,7 +118,6 @@ public class CubicGrid {
     private final Point3D              yAxis;
     private final Pair<Double, Double> yExtent;
     private final Point3D              zAxis;
-
     private final Pair<Double, Double> zExtent;
 
     public CubicGrid(Neighborhood neighborhood) {
