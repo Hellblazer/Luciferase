@@ -14,8 +14,11 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.animus;
+package com.hellblazer.luciferase.geometry;
 
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Z;
 import static java.lang.Float.isNaN;
 import static java.lang.Math.acos;
 import static java.lang.Math.sin;
@@ -25,6 +28,7 @@ import java.util.Objects;
 
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Quat4f;
+import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
 
 /**
@@ -33,6 +37,100 @@ import javax.vecmath.Vector3f;
  * @author hal.hildebrand
  */
 public class Rotor3f {
+
+    public enum PrincipalAxis {
+        /**
+         * Rotation around the X axis from Y axis towards Z axis
+         */
+        X {
+            @Override
+            Vector3f a() {
+                return POS_Y;
+            }
+
+            @Override
+            Vector3f b() {
+                return POS_Z;
+            }
+        },
+        /**
+         * Rotation around the Y axis from Z axis towards X axis
+         */
+        Y {
+            @Override
+            Vector3f a() {
+                return POS_Z;
+            }
+
+            @Override
+            Vector3f b() {
+                return POS_X;
+            }
+        },
+        /**
+         * Rotation around the Z axis from X axis towards Y axis
+         */
+        Z {
+            @Override
+            Vector3f a() {
+                return POS_X;
+            }
+
+            @Override
+            Vector3f b() {
+                return POS_Y;
+            }
+        };
+
+        private static final float    HALF_PI = (float) (Math.PI / 2);
+        private static final Vector3f POS_X   = new Vector3f(1, 0, 0);
+        private static final Vector3f POS_Y   = new Vector3f(0, 1, 0);
+        private static final Vector3f POS_Z   = new Vector3f(0, 0, 1);
+
+        public Rotor3f angle(float theta) {
+            return slerp(theta / 90);
+        }
+
+        /**
+         * Spherical Linear Interpolation around the axis by the supplied radians
+         * 
+         * @param theta - the radians of rotation about the axis
+         * @return the Rotor3f corresponding to rotation in the interpolation from a()
+         *         to b()
+         */
+        public Rotor3f radians(float theta) {
+            return slerp(theta / HALF_PI);
+        }
+
+        /**
+         * Spherical Linear Interpolation around the axis by the supplied angle
+         * 
+         * @param theta - the angle of rotation about the axis
+         * @return the Rotor3f corresponding to rotation in the interpolation from a()
+         *         to b()
+         */
+        public Rotor3f slerp(float t) {
+            return new Rotor3f(a(), b()).slerp(a(), t);
+        }
+
+        /**
+         * the "from" axis
+         *
+         * @return the "from" axis
+         */
+        abstract Vector3f a();
+
+        /**
+         * the "to" axis
+         *
+         * @return the "to" axis
+         */
+        abstract Vector3f b();
+    }
+
+    public enum RotationOrder {
+        XYZ, XZY, YXZ, YZX, ZXY, ZYX
+    }
 
     private static float lerp(float from, float to, float t) {
         return t * (to - from);
@@ -165,11 +263,33 @@ public class Rotor3f {
     }
 
     /**
-     * 
      * @return the reversed Rotor3f
      */
     public Rotor3f reverse() {
         return new Rotor3f(a, -xy, -yz, -zx);
+    }
+
+    public Rotor3f rotate(RotationOrder order, float x, float y, float z) {
+        return switch (order) {
+        case XYZ -> combine(X.angle(x)).combine(Y.angle(y)).combine(Z.angle(z));
+        case XZY -> combine(X.angle(x)).combine(Z.angle(z)).combine(Y.angle(y));
+        case YXZ -> combine(Y.angle(y)).combine(X.angle(x)).combine(Z.angle(z));
+        case YZX -> combine(Y.angle(y)).combine(Z.angle(z)).combine(X.angle(x));
+        case ZXY -> combine(Z.angle(z)).combine(X.angle(x)).combine(Y.angle(y));
+        case ZYX -> combine(Z.angle(z)).combine(Y.angle(y)).combine(X.angle(x));
+        default -> throw new IllegalArgumentException("Unknown rotation order: " + order);
+        };
+    }
+
+    public void rotate(RotationOrder order, Tuple3f angle) {
+        rotate(order, angle.x, angle.y, angle.z);
+    }
+
+    public void set(float a, float xy, float yz, float zx) {
+        this.a = a;
+        this.xy = xy;
+        this.yz = yz;
+        this.zx = zx;
     }
 
     /**
@@ -226,6 +346,33 @@ public class Rotor3f {
     }
 
     /**
+     * Spherical Linear Interpolation.
+     *
+     * @param dest - the target vector
+     * @param t    - the parameterization value
+     * @return the Rotor3f corresponding to point (t) in the interpolation to the
+     *         target
+     */
+    public Rotor3f slerp(Vector3f dest, float t) {
+        var r = new Rotor3f(dest, dest);
+        var d = a * r.a + xy * r.xy + yz * r.yz + zx * r.zx;
+        var a0 = Math.acos(d);
+        var sa0 = Math.sin(a0);
+        var at = a0 * t;
+        var sat = Math.sin(at);
+
+        var s0 = Math.cos(at) - d * sat / sa0;
+        var s1 = sat / sa0;
+
+        r.a = (float) (s0 * r.a + s1 * a);
+        r.xy = (float) (s0 * r.xy + s1 * xy);
+        r.yz = (float) (s0 * r.yz + s1 * yz);
+        r.zx = (float) (s0 * r.zx + s1 * zx);
+
+        return r;
+    }
+
+    /**
      * @return the conventional rotation matrix corresponding to the receiver
      */
     public Matrix4f toMatrix() {
@@ -254,6 +401,11 @@ public class Rotor3f {
         result.m32 = 0.0f;
         result.m33 = 1.0f;
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Rotor3f [a=%s, xy=%s, yz=%s, zx=%s]", a, xy, yz, zx);
     }
 
     /**

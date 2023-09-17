@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.hellblazer.luciferase.portal;
+package com.hellblazer.luciferase.portal.mesh.explorer;
 
 import static javafx.scene.paint.Color.BLACK;
 import static javafx.scene.paint.Color.BLUE;

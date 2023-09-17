@@ -30,7 +30,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package com.hellblazer.luciferase.portal;
+package com.hellblazer.luciferase.portal.mesh.explorer;
 
 import javafx.scene.Group;
 import javafx.scene.transform.Rotate;

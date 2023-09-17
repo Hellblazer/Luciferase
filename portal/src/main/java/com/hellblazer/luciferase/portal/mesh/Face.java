@@ -40,23 +40,19 @@ public class Face {
     /**
      * Copy constructor.
      *
-     * @param face
-     *            The face to copy.
+     * @param face The face to copy.
      */
     public Face(Face face) {
         this(face.numVertices);
-        System.arraycopy(face.vertexIndices, 0, vertexIndices, 0,
-                         face.numVertices);
-        System.arraycopy(face.normalIndices, 0, normalIndices, 0,
-                         face.numVertices);
+        System.arraycopy(face.vertexIndices, 0, vertexIndices, 0, face.numVertices);
+        System.arraycopy(face.normalIndices, 0, normalIndices, 0, face.numVertices);
     }
 
     /**
      * Create a face with enough space to store data for the specified number of
      * vertices.
      *
-     * @param numVertices
-     *            The number of vertices this face has.
+     * @param numVertices The number of vertices this face has.
      */
     public Face(int numVertices) {
         if (numVertices < 3) {
@@ -69,8 +65,8 @@ public class Face {
 
     /**
      * Compute the centroid of this face. This method will not succeed unless
-     * setMesh() has been called on this face; this can be done implicitly by
-     * adding this face to a mesh (see addFace() in Mesh).
+     * setMesh() has been called on this face; this can be done implicitly by adding
+     * this face to a mesh (see addFace() in Mesh).
      *
      * @return The centroid location.
      */
@@ -123,11 +119,9 @@ public class Face {
         }
         TriangleMesh newMesh = new TriangleMesh();
         int i;
-        newMesh.getPoints()
-               .addAll(mesh.constructMeshPoints());
-        //add dummy Texture Coordinate
-        newMesh.getTexCoords()
-               .addAll(0, 0);
+        newMesh.getPoints().addAll(mesh.constructMeshPoints());
+        // add dummy Texture Coordinate
+        newMesh.getTexCoords().addAll(0, 0);
         int[] facesAndTexCoords = new int[texIndicesCount * 2];
         i = 0;
         for (Face f : faces) {
@@ -137,18 +131,17 @@ public class Face {
                 facesAndTexCoords[i++] = 0;
             }
         }
-        newMesh.getFaces()
-               .addAll(facesAndTexCoords);
+        newMesh.getFaces().addAll(facesAndTexCoords);
         MeshView view = new MeshView(newMesh);
         view.setCullFace(CullFace.NONE);
         return view;
     }
 
     /**
-     * Converts this polygon face into an array of triangular faces whose union
-     * has the same geometry as this face. If this face is a triangle, the array
-     * will only have one face. In general, the number of triangular faces in
-     * the returned array is numVertices - 2.
+     * Converts this polygon face into an array of triangular faces whose union has
+     * the same geometry as this face. If this face is a triangle, the array will
+     * only have one face. In general, the number of triangular faces in the
+     * returned array is numVertices - 2.
      *
      * @return The triangular faces whose union is this one.
      */
@@ -160,23 +153,21 @@ public class Face {
             int v0 = i;
             int v1 = i + 1;
             Face triangle = new Face(3);
-            triangle.setAllVertexIndices(vertexIndices[v0], vertexIndices[v1],
-                                         vertexIndices[v2]);
-            triangle.setAllNormalIndices(normalIndices[v0], normalIndices[v1],
-                                         normalIndices[v2]);
+            triangle.setAllVertexIndices(vertexIndices[v0], vertexIndices[v1], vertexIndices[v2]);
+            triangle.setAllNormalIndices(normalIndices[v0], normalIndices[v1], normalIndices[v2]);
             triangles[i] = triangle;
         }
         return triangles;
     }
 
     /**
-     * Compute the edges which bound this face. The edges will be specified in
-     * the order that the vertices are specified. If convention is followed,
-     * such that the face's vertices are specified in counterclockwise order,
-     * then the edges will also be in counterclockwise order.
+     * Compute the edges which bound this face. The edges will be specified in the
+     * order that the vertices are specified. If convention is followed, such that
+     * the face's vertices are specified in counterclockwise order, then the edges
+     * will also be in counterclockwise order.
      *
-     * Each returned edge will have setMesh() called on it, with the same mesh
-     * this face points to (which could be null).
+     * Each returned edge will have setMesh() called on it, with the same mesh this
+     * face points to (which could be null).
      *
      * @return An array of edges bounding this face.
      */
@@ -192,10 +183,10 @@ public class Face {
     }
 
     /**
-     * Compute the unit normal vector perpendicular to the plane this face lies
-     * in. This requires this face to be assigned to a mesh (see addFace() in
-     * Mesh), and assumes that the vertices of this face are specified in
-     * counterclockwise order.
+     * Compute the unit normal vector perpendicular to the plane this face lies in.
+     * This requires this face to be assigned to a mesh (see addFace() in Mesh), and
+     * assumes that the vertices of this face are specified in counterclockwise
+     * order.
      *
      * @return The 3D vector containing the normal to the face.
      */
@@ -203,8 +194,7 @@ public class Face {
         Vector3d v0 = new Vector3d(mesh.vertexPositions.get(vertexIndices[0]));
         Vector3d diff01 = new Vector3d(mesh.vertexPositions.get(vertexIndices[1]));
         diff01.sub(v0);
-        Vector3d diff0n = new Vector3d(mesh.vertexPositions.get(vertexIndices[numVertices
-                                                                              - 1]));
+        Vector3d diff0n = new Vector3d(mesh.vertexPositions.get(vertexIndices[numVertices - 1]));
         diff0n.sub(v0);
 
         Vector3d norm = new Vector3d();
@@ -214,9 +204,8 @@ public class Face {
     }
 
     /**
-     * @param vertex
-     *            The index 0 <= vertex < numVertices of the vertex whose normal
-     *            (index) to retrieve.
+     * @param vertex The index 0 <= vertex < numVertices of the vertex whose normal
+     *               (index) to retrieve.
      * @return The index of the specified vertex's normal.
      */
     public int getNormalIndex(int vertex) {
@@ -231,9 +220,8 @@ public class Face {
     }
 
     /**
-     * @param vertex
-     *            The index 0 <= vertex < numVertices of the vertex whose
-     *            position (index) to retrieve.
+     * @param vertex The index 0 <= vertex < numVertices of the vertex whose
+     *               position (index) to retrieve.
      * @return The index of the specified vertex's position.
      */
     public int getVertexIndex(int vertex) {
@@ -250,8 +238,7 @@ public class Face {
     public List<Vector3d> getVertices() {
         List<Vector3d> vertices = new ArrayList<>();
         for (int i = 0; i < numVertices; i++) {
-            vertices.add(mesh.getVertexPositions()
-                             .get(vertexIndices[i]));
+            vertices.add(mesh.getVertexPositions().get(vertexIndices[i]));
         }
         return vertices;
     }
@@ -278,53 +265,50 @@ public class Face {
     }
 
     /**
-     * Sets the vertex normal indices for this face, in the order given. The
-     * first normal specified corresponds to the vertex at the first position
-     * stored in this face.
+     * Sets the vertex normal indices for this face, in the order given. The first
+     * normal specified corresponds to the vertex at the first position stored in
+     * this face.
      *
-     * @param normalIndices
-     *            Set the normal indices to the contents of the provided array.
+     * @param normalIndices Set the normal indices to the contents of the provided
+     *                      array.
      */
-    public void setAllNormalIndices(int... normalIndices) {
-        System.arraycopy(normalIndices, 0, normalIndices, 0,
-                         normalIndices.length);
+    public Face setAllNormalIndices(int... normalIndices) {
+        System.arraycopy(normalIndices, 0, normalIndices, 0, normalIndices.length);
+        return this;
     }
 
     /**
      * Sets the vertex position indices for this face, in the order given.
      *
-     * @param positionIndices
-     *            Set the position indices to the contents of the provided
-     *            array.
+     * @param positionIndices Set the position indices to the contents of the
+     *                        provided array.
      */
-    public void setAllVertexIndices(int... positionIndices) {
-        System.arraycopy(positionIndices, 0, vertexIndices, 0,
-                         vertexIndices.length);
+    public Face setAllVertexIndices(int... positionIndices) {
+        System.arraycopy(positionIndices, 0, vertexIndices, 0, vertexIndices.length);
+        return this;
     }
 
     /**
      * Set all vertex normals to the specified index.
      *
-     * @param normalIndex
-     *            The index of the normal all vertices will use.
+     * @param normalIndex The index of the normal all vertices will use.
      */
-    public void setAllVertexIndicesTo(int normalIndex) {
+    public Face setAllVertexIndicesTo(int normalIndex) {
         for (int i = 0; i < numVertices; i++) {
             normalIndices[i] = normalIndex;
         }
+        return this;
     }
 
     /**
-     * Set the mesh that this face points to. By default, this is called when
-     * this face is added to a mesh using one of addFace() or similar methods in
-     * Mesh.
+     * Set the mesh that this face points to. By default, this is called when this
+     * face is added to a mesh using one of addFace() or similar methods in Mesh.
      *
      * This method needs to be called at some point for certain methods in this
      * class and others to work properly, since Face objects do not store any
      * geometry; all geometry is stored in the Mesh.
      *
-     * @param mesh
-     *            The mesh this face will now point to.
+     * @param mesh The mesh this face will now point to.
      */
     public void setMesh(Mesh mesh) {
         this.mesh = mesh;
@@ -332,15 +316,12 @@ public class Face {
 
     /**
      * Set the position and normal for the vertex of this face stored at index
-     * "vertex" (the data of this Face is stored in arrays; the index
-     * corresponds to the index of the vertex in these arrays).
+     * "vertex" (the data of this Face is stored in arrays; the index corresponds to
+     * the index of the vertex in these arrays).
      *
-     * @param vertex
-     *            The vertex whose data we want to set.
-     * @param positionIndex
-     *            The index of the vertex's position in the mesh.
-     * @param normalIndex
-     *            The index of the vertex's normal in the mesh.
+     * @param vertex        The vertex whose data we want to set.
+     * @param positionIndex The index of the vertex's position in the mesh.
+     * @param normalIndex   The index of the vertex's normal in the mesh.
      */
     public void setVertexData(int vertex, int positionIndex, int normalIndex) {
         setVertexIndex(vertex, positionIndex);
@@ -348,28 +329,24 @@ public class Face {
     }
 
     /**
-     * Set the position for the vertex of this face stored at index "vertex"
-     * (the data of this Face is stored in arrays; the "vertex" corresponds to
-     * the index of the vertex in these arrays).
+     * Set the position for the vertex of this face stored at index "vertex" (the
+     * data of this Face is stored in arrays; the "vertex" corresponds to the index
+     * of the vertex in these arrays).
      *
-     * @param vertex
-     *            The vertex whose position we want to set.
-     * @param positionIndex
-     *            The index of the vertex's position in the mesh.
+     * @param vertex        The vertex whose position we want to set.
+     * @param positionIndex The index of the vertex's position in the mesh.
      */
     public void setVertexIndex(int vertex, int positionIndex) {
         vertexIndices[vertex] = positionIndex;
     }
 
     /**
-     * Set the normal for the vertex of this face stored at index "vertex" (the
-     * data of this Face is stored in arrays; the index corresponds to the index
-     * of the vertex in these arrays).
+     * Set the normal for the vertex of this face stored at index "vertex" (the data
+     * of this Face is stored in arrays; the index corresponds to the index of the
+     * vertex in these arrays).
      *
-     * @param vertex
-     *            The vertex whose normal we want to set.
-     * @param normalIndex
-     *            The index of the vertex's normal in the mesh.
+     * @param vertex      The vertex whose normal we want to set.
+     * @param normalIndex The index of the vertex's normal in the mesh.
      */
     public void setVertexNormal(int vertex, int normalIndex) {
         normalIndices[vertex] = normalIndex;
@@ -383,8 +360,7 @@ public class Face {
     public String toOBJString() {
         StringBuilder builder = new StringBuilder("f ");
         for (int i = 0; i < vertexIndices.length; i++) {
-            builder.append(String.format("%d//%d ", vertexIndices[i] + 1,
-                                         normalIndices[i] + 1));
+            builder.append(String.format("%d//%d ", vertexIndices[i] + 1, normalIndices[i] + 1));
         }
         builder.deleteCharAt(builder.length() - 1);
         return builder.toString();

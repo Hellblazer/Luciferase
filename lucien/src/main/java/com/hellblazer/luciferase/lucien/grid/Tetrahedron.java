@@ -19,7 +19,7 @@
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import static com.hellblazer.luciferase.common.Geometry.centerSphereFast;
+import static com.hellblazer.luciferase.geometry.Geometry.centerSphereFast;
 import static com.hellblazer.luciferase.lucien.grid.V.A;
 import static com.hellblazer.luciferase.lucien.grid.V.B;
 import static com.hellblazer.luciferase.lucien.grid.V.C;
@@ -35,8 +35,8 @@ import java.util.Stack;
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 
-import com.hellblazer.luciferase.common.Geometry;
 import com.hellblazer.luciferase.common.IdentitySet;
+import com.hellblazer.luciferase.geometry.Geometry;
 
 /**
  * An oriented, delaunay tetrahedral cell. The vertices of the tetrahedron are

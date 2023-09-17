@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.animus;
+package com.hellblazer.luciferase.geometry;
 
 import javax.vecmath.Tuple3d;
 import javax.vecmath.Tuple3f;
@@ -28,7 +28,7 @@ import javax.vecmath.Vector3f;
 public class Oriented extends Vector3f {
     private static final long serialVersionUID = 1L;
 
-    private final Rotor3f orientation = new Rotor3f();
+    protected final Rotor3f orientation = new Rotor3f();
 
     public Oriented() {
         super();

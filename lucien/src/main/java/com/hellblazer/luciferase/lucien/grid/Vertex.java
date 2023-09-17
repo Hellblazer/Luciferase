@@ -33,8 +33,8 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
 
-import com.hellblazer.luciferase.common.Geometry;
 import com.hellblazer.luciferase.common.IdentitySet;
+import com.hellblazer.luciferase.geometry.Geometry;
 
 /**
  *

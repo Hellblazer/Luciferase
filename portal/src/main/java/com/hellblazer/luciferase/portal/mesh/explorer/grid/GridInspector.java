@@ -30,7 +30,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package com.hellblazer.luciferase.portal;
+package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
 import java.util.Random;
 
@@ -38,6 +38,7 @@ import javax.vecmath.Point3f;
 
 import com.hellblazer.luciferase.lucien.grid.MutableGrid;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 
 import javafx.scene.Group;
 
