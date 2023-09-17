@@ -27,6 +27,8 @@ import java.util.function.Function;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
+import javax.vecmath.Tuple3i;
+import javax.vecmath.Vector3f;
 
 import com.hellblazer.luciferase.portal.mesh.Line;
 
@@ -34,70 +36,172 @@ import javafx.geometry.Point3D;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.paint.Material;
-import javafx.scene.shape.Sphere;
 import javafx.scene.transform.Transform;
 import javafx.scene.transform.Translate;
 import javafx.util.Pair;;
 
 /**
- * Functional interface for a Rhombic Dodecahedron Grid (RDG). This grid is
- * based on a a non-orthogonal coordinate system to represent the RDG where each
- * grid point represents the centroid of a rhombic dodecahedron cell. The
- * novelty of this system is that every single one of the integer coordinate
- * points is the centroid of a dodecahedron. The RDG uses integer points,
- * Point3i, to represent coordinates of cells of the grid.
+ * Functional grid for a Rhombic Dodecahedron Grid (RDG). This is the Face
+ * Center Cubic Grid. This grid encapsulates how to convert from cubic to and
+ * from a rhombohedral isometric lattice. All integer coordinates in this
+ * lattice correspond to a center of a cell and are thus valid coordinates. This
+ * lattice is equivalent to tetrahedral / octahedral packing, but without the
+ * headache of having to manage two separate primitives or interlaced grid
+ * structures as with the face-centered cubic lattice, which produces an
+ * equivalent structure.
  * <p>
- * The image below shows the transformation of the original cubic basis vectors
- * in (a) to the basis vectors used for the RDG in (c).
+ * This implementation is based off the
+ * <a href="https://gist.github.com/paniq/3afdb420b5d94bf99e36">python gist by
+ * Leonard Ritter</a>
  * <p>
- * <img src=
- * "https://media.springernature.com/lw685/springer-static/image/chp%3A10.1007%2F978-3-030-14085-4_3/MediaObjects/481128_1_En_3_Fig2_HTML.png?as=webp"
- * />
- * 
- * <p>
- * These grid functions are implementations from the paper <a href=
+ * There is another good grid mapping that uses a non orthogonal basis described
+ * in the paper <a href=
  * "https://www.researchgate.net/publication/347616453_Digital_Objects_in_Rhombic_Dodecahedron_Grid/fulltext/609b5f7a458515d31513fb0a/Digital-Objects-in-Rhombic-Dodecahedron-Grid.pdf">Rhombic
- * Dodecahedron Grid—Coordinate System and 3D Digital Object Definitions</a>
- * <p>
+ * Dodecahedron Grid—Coordinate System and 3D Digital Object Definitions</a>. I
+ * like the simplicity of the Tetrahedral coordinates, although having 2 basis
+ * vectors be orthogonal would be pretty sweet.
  *
  * @author hal.hildebrand
  */
 public class RDG {
 
-    static float                 DIVR2  = (float) (1 / Math.sqrt(2));
-    static float                 MULR2  = (float) Math.pow(2, -0.5);
+    private static final float   DIVR2  = (float) (1 / Math.sqrt(2));
+    private static final float   MULR2  = (float) Math.pow(2, -0.5);
     private static final Point3D X_AXIS = new Point3D(1, 0, 0);
-
     private static final Point3D Y_AXIS = new Point3D(0, 1, 0);
-
     private static final Point3D Z_AXIS = new Point3D(0, 0, 1);
 
-    public static Point3D toCartesian(Point3D rdg) {
-        var x = rdg.getX();
-        var y = rdg.getY();
-        var z = rdg.getZ();
-        return new Point3D(x + y - z, -x + y, z);
+    /**
+     * Calculate the cross product of the two vectors, u and v, in tetrahedral
+     * coordinates
+     *
+     * @param u
+     * @param v
+     * @return the Point3f representing the cross product in tetrahedral coordinates
+     */
+    public static Point3f cross(Tuple3f u, Tuple3f v) {
+        return new Point3f((-u.x * (v.y - v.z) + u.y * (3 * v.z + v.x) - u.z * (v.x + 3 * v.y)) * (DIVR2 / 2),
+                           (-u.x * (v.y + 3 * v.z) - u.y * (v.z - v.x) + u.z * (3 * v.x + v.y)) * (DIVR2 / 2),
+                           (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (DIVR2 / 2));
     }
 
-    public static Point3i toCartesian(Point3i rdg) {
-        var x = rdg.x;
-        var y = rdg.y;
-        var z = rdg.z;
-        return new Point3i(x + y - z, -x + y, z);
+    /**
+     * 
+     * Calculate the dot product of the two vectors, u and v, in tetrahedral
+     * coordinates
+     *
+     * @param u
+     * @param v
+     * @return the dot product of the two vectors
+     */
+    public static float dot(Vector3f u, Vector3f v) {
+        return (u.x * (v.x + v.y) + u.y * (v.x + v.x) + u.z * (v.y + v.x)) / 2 + u.x * v.x + u.y * v.y + u.z * v.x;
     }
 
-    public static Point3D toRDG(Point3D cartesian) {
-        var x = cartesian.getX();
-        var y = cartesian.getY();
-        var z = cartesian.getZ();
-        return new Point3D((x - y + z) / 2, (x + y + z) / 2, z);
+    /**
+     * Answer the euclidean length of the tetrahedral vector
+     *
+     * @param tetrahedral
+     * @return the legth of the vector
+     */
+    public static float euclideanNorm(Vector3f tetrahedral) {
+        return (float) Math.sqrt(tetrahedral.x * (tetrahedral.x + tetrahedral.y + tetrahedral.z)
+        + tetrahedral.y * (tetrahedral.y + tetrahedral.z) + tetrahedral.z * tetrahedral.z);
     }
 
-    public static Point3i toRDG(Point3i cartesian) {
-        var x = cartesian.x;
-        var y = cartesian.y;
-        var z = cartesian.z;
-        return new Point3i((x - y + z) / 2, (x + y + z) / 2, z);
+    /**
+     * Answer the 12 face connected neighbors in the RDB
+     *
+     * @param cell - the target cell
+     * @return the array of Point3i vertex neighbor coordinates of the cell
+     */
+    public static Point3i[] faceConnectedNeighbors(Point3i cell) {
+        var x = cell.x;
+        var y = cell.y;
+        var z = cell.z;
+        var neighbors = new Point3i[12];
+        neighbors[0] = new Point3i(x + 1, y, z);
+        neighbors[1] = new Point3i(x - 1, y, z);
+        neighbors[2] = new Point3i(x, y + 1, z);
+        neighbors[3] = new Point3i(x, y - 1, z);
+        neighbors[4] = new Point3i(x, y, z + 1);
+        neighbors[5] = new Point3i(x, y, z - 1);
+
+        neighbors[6] = new Point3i(x, y + 1, z - 1);
+        neighbors[7] = new Point3i(x, y - 1, z + 1);
+        neighbors[8] = new Point3i(x - 1, y, z + 1);
+        neighbors[9] = new Point3i(x + 1, y, z - 1);
+        neighbors[10] = new Point3i(x + 1, y - 1, z);
+        neighbors[11] = new Point3i(x - 1, y + 1, z);
+        return neighbors;
+    }
+
+    /**
+     * Answer the manhattan distance
+     *
+     * @param tetrahedral
+     * @return the manhatten distance to the vector
+     */
+    public static float l1(Vector3f tetrahedral) {
+        return Math.abs(tetrahedral.x) + Math.abs(tetrahedral.y) + Math.abs(tetrahedral.z);
+    }
+
+    /**
+     * convert the tetrahedral point to the equivalent cartesian point
+     *
+     * @param point3d
+     * @return
+     */
+    public static Point3D toCartesian(Point3D tetrahedral) {
+        return new Point3D((tetrahedral.getY() + tetrahedral.getZ()) * DIVR2,
+                           (tetrahedral.getZ() + tetrahedral.getX()) * DIVR2,
+                           (tetrahedral.getX() + tetrahedral.getY()) * DIVR2);
+    }
+
+    /**
+     * convert the tetrahedral point to the equivalent cartesian point, preserving
+     * edge length
+     *
+     * @param tetrahedral
+     * @return
+     */
+    public static Point3D toCartesian(Tuple3i tetrahedral) {
+        return new Point3D((tetrahedral.y + tetrahedral.z) * DIVR2, (tetrahedral.z + tetrahedral.x) * DIVR2,
+                           (tetrahedral.x + tetrahedral.y) * DIVR2);
+    }
+
+    /**
+     * convert the cartesian point to the equivalent tetrahedral point, preserving
+     * edge length
+     *
+     * @param cartesian
+     * @return
+     */
+    public static Point3i toTetrahedral(Tuple3f cartesian) {
+        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * MULR2),
+                           (int) ((cartesian.x - cartesian.y + cartesian.z) * MULR2),
+                           (int) ((cartesian.x + cartesian.y - cartesian.z) * MULR2));
+    }
+
+    /**
+     * 
+     * Answer the 6 vertex connected neighbors in the RDB
+     *
+     * @param cell - the target cell
+     * @return the array of Point3i vertex neighbor coordinates of the cell
+     */
+    public static Point3i[] vertexConnectedNeighbors(Point3i cell) {
+        var x = cell.x;
+        var y = cell.y;
+        var z = cell.z;
+        var neighbors = new Point3i[6];
+        neighbors[0] = new Point3i(x + 1, y + 1, z);
+        neighbors[1] = new Point3i(x + 1, y - 1, z);
+        neighbors[2] = new Point3i(x - 1, y + 1, z);
+        neighbors[3] = new Point3i(x - 1, y - 1, z);
+        neighbors[4] = new Point3i(x, y - 1, z + 1);
+        neighbors[5] = new Point3i(x, y + 1, z - 1);
+        return neighbors;
     }
 
     private final double intervalX, intervalY, intervalZ;
@@ -214,81 +318,11 @@ public class RDG {
         return grid;
     }
 
-    /**
-     * Answer the norm distance between two RDG points u and v
-     *
-     * @param u - point in RDG coordinates
-     * @param v - point in RDG coordinates
-     * @return the norm distance between u and v
-     */
-    public double distance(Point3f u, Point3f v) {
-        var dx = u.x - v.x;
-        var dy = u.y - v.y;
-        var dz = u.z - v.z;
-        var dx2 = dx * dx;
-        var dy2 = dy * dy;
-        var dz2 = dz * dz;
-        var squared = dx2 + dy2 + dz2;
-        var dxDz = dx * dz;
-        var dyDz = dy * dz;
-
-        return Math.sqrt(squared - dxDz - dyDz);
-    }
-
-    /**
-     * Answer the euclidaean distance betwwen two RDG points u and v
-     *
-     * @param u - point in RDG coordinates
-     * @param v - point in RDG coordinates
-     * @return the euclidian distance between u and v
-     */
-    public double euclideanDistance(Point3f u, Point3f v) {
-        var dx = u.x - v.x;
-        var dy = u.y - v.y;
-        var dz = u.z - v.z;
-        var dx2 = dx * dx;
-        var dy2 = dy * dy;
-        var dz2 = dz * dz;
-        var squared = dx2 + dy2 + dz2;
-        var dxDz = dx * dz;
-        var dyDz = dy * dz;
-
-        return Math.sqrt(2 * (squared - dxDz - dyDz));
-    }
-
-    /**
-     * Answer the 12 face connected neighbors in the RDB
-     *
-     * @param cell - the target cell
-     * @return the array of Point3i vertex neighbor coordinates of the cell
-     */
-    public Point3i[] faceConnectedNeighbors(Point3i cell) {
-        var x = cell.x;
-        var y = cell.y;
-        var z = cell.z;
-        var neighbors = new Point3i[12];
-        neighbors[0] = new Point3i(x + 1, y, z);
-        neighbors[1] = new Point3i(x - 1, y, z);
-        neighbors[2] = new Point3i(x, y + 1, 1);
-        neighbors[3] = new Point3i(x, y - 1, z);
-        neighbors[4] = new Point3i(x, y, z + 1);
-        neighbors[5] = new Point3i(x, y, z - 1);
-        neighbors[6] = new Point3i(x + 1, y + 1, z + 1);
-        neighbors[7] = new Point3i(x - 1, y - 1, z - 1);
-        neighbors[8] = new Point3i(x, y + 1, z + 1);
-        neighbors[9] = new Point3i(x + 1, y, z + 1);
-        neighbors[10] = new Point3i(x - 1, y, z - 1);
-        neighbors[11] = new Point3i(x, y - 1, z - 1);
-        return neighbors;
-    }
-
     public void forEach(Consumer<? super Point3i> action) {
         for (int i = xExtent.getKey(); i <= xExtent.getValue(); i++) {
             for (int j = yExtent.getKey(); j <= yExtent.getValue(); j++) {
                 for (int k = zExtent.getKey(); k <= zExtent.getValue(); k++) {
-                    if ((i + j + k) % 2 == 0) {
-                        action.accept(new Point3i(i, j, k));
-                    }
+                    action.accept(new Point3i(i, j, k));
                 }
             }
         }
@@ -334,247 +368,13 @@ public class RDG {
         return zExtent;
     }
 
-    public Group populate(Material material, double radius) {
-        var group = new Group();
-        forEach(location -> {
-
-            Transform position = postitionTransform(location.x - Math.ceil(intervalX / 2),
-                                                    location.y - Math.ceil(intervalY / 2),
-                                                    location.z - Math.ceil(intervalZ / 2));
-            var sphere = new Sphere(radius);
-            sphere.setMaterial(material);
-            sphere.getTransforms().clear();
-            sphere.getTransforms().addAll(position);
-            group.getChildren().add(sphere);
-        });
-        return group;
+    public void postition(int i, int j, int k, Node node) {
+        node.getTransforms().add(postitionTransform(i, j, k));
     }
 
-    public void postition(double i, double j, double k, Node node) {
-        Point3D vector = toCartesian(xAxis.multiply(i * intervalX)
-                                          .add(yAxis.multiply(j * intervalY))
-                                          .add(zAxis.multiply(k * intervalZ)));
-        node.getTransforms().add(new Translate(vector.getX(), vector.getY(), vector.getZ()));
-    }
-
-    public Transform postitionTransform(double i, double j, double k) {
-        Point3D vector = toCartesian(xAxis.multiply(i * intervalX)
-                                          .add(yAxis.multiply(j * intervalY))
-                                          .add(zAxis.multiply(k * intervalZ)));
+    public Transform postitionTransform(int i, int j, int k) {
+        Point3D vector = toCartesian(new Point3i(i, j, k));
         return new Translate(vector.getX(), vector.getY(), vector.getZ());
-    }
-
-    /**
-     * Answer the symmetric point v corresponding to point u in the symmetry group
-     *
-     * @param group - the symmetry group
-     * @param u     - the point in rdg coordinates
-     * @return the symmetric Point3i of u in the symmetry group in rdg coordinates
-     */
-    public Point3i symmetry(int group, Point3i u) {
-        var x = u.x;
-        var y = u.y;
-        var z = u.z;
-        var mx = -x;
-        var my = -y;
-        var mz = -z;
-
-        return switch (group) {
-        case 0 -> u;
-        case 1 -> new Point3i(mx + z, y, mx + y);
-        case 2 -> new Point3i(y, mx + z, z);
-        case 3 -> new Point3i(y, x, z);
-        case 4 -> new Point3i(my + z, x, x + my);
-        case 5 -> new Point3i(mx, y + mz, mz);
-        case 6 -> new Point3i(mx + z, my + z, z);
-        case 7 -> new Point3i(x, my + z, x + my);
-        case 8 -> new Point3i(my, x + mz, mz);
-        case 9 -> new Point3i(my, mx, mz);
-        case 10 -> new Point3i(y + mz, mx, mx + y);
-        case 11 -> new Point3i(x + mz, my, mz);
-
-        case 12 -> new Point3i(y + mz, y, mx + y);
-        case 13 -> new Point3i(x, y, x + y + mz);
-        case 14 -> new Point3i(mx, mx + z, mx - y + z);
-        case 15 -> new Point3i(x + mz, x, x + my);
-        case 16 -> new Point3i(y, x, x + y + mz);
-        case 17 -> new Point3i(y, y + mz, x + y + mz);
-        case 18 -> new Point3i(my, my + z, x + my);
-        case 19 -> new Point3i(mx + z, my + z, mx + my + z);
-        case 20 -> new Point3i(x, x + mz, x + y + mz);
-        case 21 -> new Point3i(mx + z, mx, mx + y);
-        case 22 -> new Point3i(my, mx, mx + my + z);
-        case 23 -> new Point3i(my + z, my, mx + my + z);
-
-        case 24 -> new Point3i(mx + z, y, z);
-        case 25 -> new Point3i(my + z, mx + z, z);
-        case 26 -> new Point3i(y, mx + z, mx + y);
-        case 27 -> new Point3i(my + z, x, z);
-        case 28 -> new Point3i(x + mz, y + mz, mz);
-        case 29 -> new Point3i(mx, y + mz, mx + y);
-        case 30 -> new Point3i(x, my + z, z);
-        case 31 -> new Point3i(y + mz, x + mz, mz);
-        case 32 -> new Point3i(my, x + mz, x + my);
-        case 33 -> new Point3i(y + mz, mx, mz);
-        case 34 -> new Point3i(mx, my, mz);
-        case 35 -> new Point3i(x + mz, my, x + my);
-
-        case 36 -> new Point3i(y + mz, y, x + y + mz);
-        case 37 -> new Point3i(mx, mx + z, mx + y);
-        case 38 -> new Point3i(my + z, mx + z, mx + my + z);
-        case 39 -> new Point3i(x + mz, x, x + y + mz);
-        case 40 -> new Point3i(y, y + mz, mx + y);
-        case 41 -> new Point3i(x + mz, y + mz, x + y + mz);
-        case 42 -> new Point3i(my, my + z, mx + my + z);
-        case 43 -> new Point3i(x, x + mz, x + my);
-        case 44 -> new Point3i(y + mz, x + mz, x + y + mz);
-        case 45 -> new Point3i(mx + z, mx, mx + my + z);
-        case 46 -> new Point3i(my + z, my, x + my);
-        case 47 -> new Point3i(mx, my, mx + my + z);
-
-        default -> throw new IllegalArgumentException("Invalid symmetry group: " + group);
-        };
-    }
-
-    /**
-     * Answer the symmetric point v corresponding to u in the symmetry group
-     *
-     * @param group - the symmetry group
-     * @param u     - the point in orthogonal coordinates
-     * @return the symmetric Point3i of u in the symmetry group in orthogonal
-     *         coordinates
-     */
-    public Point3i symmetryOrtho(int group, Point3i u) {
-        var x = u.x;
-        var y = u.y;
-        var z = u.z;
-        var mx = -x;
-        var my = -y;
-        var mz = -z;
-
-        return switch (group) {
-        case 0 -> u;
-        case 1 -> new Point3i(z, x, y);
-        case 2 -> new Point3i(y, mx, z);
-        case 3 -> new Point3i(x, my, z);
-        case 4 -> new Point3i(z, x, my);
-        case 5 -> new Point3i(y, x, mz);
-        case 6 -> new Point3i(mx, my, z);
-        case 7 -> new Point3i(z, mx, my);
-        case 8 -> new Point3i(my, x, mz);
-        case 9 -> new Point3i(mx, y, mz);
-        case 10 -> new Point3i(mz, mx, y);
-        case 11 -> new Point3i(my, mx, mz);
-
-        case 12 -> new Point3i(x, z, y);
-        case 13 -> new Point3i(z, y, x);
-        case 14 -> new Point3i(y, z, mx);
-        case 15 -> new Point3i(x, z, my);
-        case 16 -> new Point3i(z, my, x);
-        case 17 -> new Point3i(y, mz, x);
-        case 18 -> new Point3i(mx, z, my);
-        case 19 -> new Point3i(z, my, mx);
-        case 20 -> new Point3i(my, mz, x);
-        case 21 -> new Point3i(mx, mz, y);
-        case 22 -> new Point3i(mz, y, mx);
-        case 23 -> new Point3i(my, mz, mx);
-
-        case 24 -> new Point3i(y, x, z);
-        case 25 -> new Point3i(mx, y, z);
-        case 26 -> new Point3i(z, mx, y);
-        case 27 -> new Point3i(my, x, z);
-        case 28 -> new Point3i(x, y, mz);
-        case 29 -> new Point3i(mz, x, y);
-        case 30 -> new Point3i(my, mx, z);
-        case 31 -> new Point3i(x, my, mz);
-        case 32 -> new Point3i(mz, x, my);
-        case 33 -> new Point3i(y, mx, mz);
-        case 34 -> new Point3i(mx, my, mz);
-        case 35 -> new Point3i(mz, mx, my);
-
-        case 36 -> new Point3i(y, z, x);
-        case 37 -> new Point3i(mx, z, y);
-        case 38 -> new Point3i(z, y, mx);
-        case 39 -> new Point3i(my, z, x);
-        case 40 -> new Point3i(x, mz, y);
-        case 41 -> new Point3i(mz, y, x);
-        case 42 -> new Point3i(my, z, mx);
-        case 43 -> new Point3i(x, mz, my);
-        case 44 -> new Point3i(mz, my, x);
-        case 45 -> new Point3i(y, mz, mx);
-        case 46 -> new Point3i(mx, mz, my);
-        case 47 -> new Point3i(mz, my, mx);
-
-        default -> throw new IllegalArgumentException("Invalid symmetry group: " + group);
-        };
-    }
-
-    /**
-     * convert the tetrahedral point to the equivalent cartesian point
-     *
-     * @param tetrahedral
-     * @return
-     */
-    public Point3f toCartesian(Tuple3f tetrahedral) {
-        return new Point3f(tetrahedral.y + tetrahedral.z, tetrahedral.z + tetrahedral.x, tetrahedral.x + tetrahedral.y);
-    }
-
-    /**
-     * convert the tetrahedral point to the equivalent cartesian point, preserving
-     * edge length
-     *
-     * @param tetrahedral
-     * @return
-     */
-    public Point3f toCartesianUnit(Tuple3f tetrahedral) {
-        return new Point3f((tetrahedral.y + tetrahedral.z) * DIVR2, (tetrahedral.z + tetrahedral.x) * DIVR2,
-                           (tetrahedral.x + tetrahedral.y) * DIVR2);
-    }
-
-    /**
-     * convert the cartesian point to the equivalent tetrahedral point
-     *
-     * @param cartesian
-     * @return
-     */
-    public Point3f toTetrahedral(Tuple3f cartesian) {
-        return new Point3f((-cartesian.x + cartesian.y + cartesian.z) / 2,
-                           (cartesian.x - cartesian.y + cartesian.z) / 2,
-                           (cartesian.x + cartesian.y - cartesian.z) / 2);
-    }
-
-    /**
-     * convert the cartesian point to the equivalent tetrahedral point, preserving
-     * edge length
-     *
-     * @param cartesian
-     * @return
-     */
-    public Point3f toTetrahedralUnit(Tuple3f cartesian) {
-        return new Point3f((-cartesian.x + cartesian.y + cartesian.z) * DIVR2,
-                           (cartesian.x - cartesian.y + cartesian.z) * DIVR2,
-                           (cartesian.x + cartesian.y - cartesian.z) * DIVR2);
-    }
-
-    /**
-     * 
-     * Answer the 6 vertex connected neighbors in the RDB
-     *
-     * @param cell - the target cell
-     * @return the array of Point3i vertex neighbor coordinates of the cell
-     */
-    public Point3i[] vertexConnectedNeighbors(Point3i cell) {
-        var x = cell.x;
-        var y = cell.y;
-        var z = cell.z;
-        var neighbors = new Point3i[6];
-        neighbors[0] = new Point3i(x + 1, y + 1, z);
-        neighbors[1] = new Point3i(x + 1, y - 1, z);
-        neighbors[2] = new Point3i(x - 1, y + 1, z);
-        neighbors[3] = new Point3i(x - 1, y - 1, z);
-        neighbors[4] = new Point3i(x + 1, y + 1, z + 2);
-        neighbors[5] = new Point3i(x - 1, y - 1, z - 2);
-        return neighbors;
     }
 
     private void construct(Group grid, Point3D neg, Point3D pos, double a, double b, Material material,
