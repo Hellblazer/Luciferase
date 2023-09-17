@@ -4,7 +4,7 @@ This program and accompanying materials are made available under the terms of
 the Common Public License - v1.0, which accompanies this distribution, and is
 available at http://www.eclipse.org/legal/cpl-v10.html
  ****************************************************************************/
-package com.hellblazer.luciferase.common;
+package com.hellblazer.luciferase.geometry;
 
 import javax.vecmath.Point3d;
 import javax.vecmath.Tuple3d;

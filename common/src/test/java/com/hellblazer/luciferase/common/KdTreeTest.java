@@ -22,6 +22,8 @@ import java.util.Random;
 
 import javax.vecmath.Point3f;
 
+import com.hellblazer.luciferase.geometry.KdTree;
+
 /**
  * @author hal.hildebrand
  */

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.common;
+package com.hellblazer.luciferase.geometry;
 
 import java.util.Comparator;
 import java.util.List;

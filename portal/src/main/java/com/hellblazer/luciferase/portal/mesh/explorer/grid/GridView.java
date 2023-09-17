@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.portal;
+package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
 import java.util.HashSet;
 import java.util.List;
@@ -29,6 +29,8 @@ import com.hellblazer.luciferase.lucien.grid.Grid;
 import com.hellblazer.luciferase.lucien.grid.MutableGrid;
 import com.hellblazer.luciferase.lucien.grid.Tetrahedron;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
+import com.hellblazer.luciferase.portal.mesh.explorer.GraphicsView;
 
 import javafx.scene.Group;
 import javafx.scene.paint.PhongMaterial;

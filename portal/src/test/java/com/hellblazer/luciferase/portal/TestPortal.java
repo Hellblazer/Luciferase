@@ -16,15 +16,22 @@
  */
 package com.hellblazer.luciferase.portal;
 
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.X;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Y;
+import static com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis.Z;
+
 import java.util.Set;
 
+import com.hellblazer.luciferase.portal.CubicGrid.Neighborhood;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
+import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.Cuboctahedron;
-import com.hellblazer.luciferase.portal.mesh.polyhedra.sphere.Goldberg;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
 import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.paint.Material;
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
@@ -32,7 +39,7 @@ import javafx.scene.shape.MeshView;
 /**
  * @author hal.hildebrand
  */
-public class GeometryViewer extends Abstract3DApp {
+public class TestPortal extends MagicMirror {
 
     /**
      * This is the main() you want to run from your IDE
@@ -40,27 +47,18 @@ public class GeometryViewer extends Abstract3DApp {
     public static class Launcher {
 
         public static void main(String[] argv) {
-            GeometryViewer.main(argv);
+            TestPortal.main(argv);
         }
     }
 
-    public static final double CUBE_EDGE_LENGTH = Math.sqrt(2) / 2;
-    public static final double TET_EDGE_LENGTH  = 1;
-
-    public static void main(String[] args) {
-        launch(args);
-    }
-
-    private final Group view = new Group();
-
-    protected void add(final Polyhedron polyhedron) {
+    public static void add(final Polyhedron polyhedron, Group view) {
         MeshView v = new MeshView(polyhedron.toTriangleMesh().constructMesh());
         v.setMaterial(Colors.cyanMaterial);
         v.setCullFace(CullFace.NONE);
         view.getChildren().add(v);
     }
 
-    protected void addEdges(Set<Edge> edges, Material material) {
+    public static void addEdges(Set<Edge> edges, Material material, Group view) {
         final var children = view.getChildren();
         for (var e : edges) {
             var segment = e.getSegment();
@@ -70,41 +68,34 @@ public class GeometryViewer extends Abstract3DApp {
         }
     }
 
-    protected void addSpheres(Set<Edge> edges) {
+    public static void addSpheres(Set<Edge> edges, Group view) {
         final var children = view.getChildren();
         for (var e : edges) {
             children.addAll(e.getEndpointSpheres(e.length() / 2, Colors.blueMaterial));
         }
     }
 
-    @Override
-    protected Group build() {
-//        view.getChildren()
-//            .add(new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 2).construct(Colors.blackMaterial,
-//                                                                                            Colors.blackMaterial,
-//                                                                                            Colors.blackMaterial,
-//                                                                                            false));
+    public static void main(String[] args) {
+        launch(args);
+    }
+
+    protected Node content() {
+        OrientedTxfm txfm = new OrientedTxfm();
+        txfm.translation().setZ(2);
+        txfm.orientation().set(Z.angle(45).combine(Y.angle(45)).combine(X.angle(45)));
+        var view = new OrientedGroup(txfm);
+
+        final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
+        cubic.addAxes(view, 0.1, 0.2, 0.008, 20);
         Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
         var dual = polyhedron.dual();
-
-        add(new Goldberg(polyhedron.getFaces().get(0).getEdges()[0].length() / 2, 4));
-
-        var edges = polyhedron.getEdges();
         var dualEdges = dual.getEdges();
-
-//      add(polyhedron);
-
-        addEdges(edges, Colors.blueMaterial);
-//        add(new Goldberg(polyhedron.midsphereRadius(), 4));
-        addEdges(dualEdges, Colors.redMaterial);
-
-//        addSpheres(edges);
-//        addSpheres(dualEdges);
+        addEdges(dualEdges, Colors.redMaterial, view);
         return view;
     }
 
     @Override
     protected String title() {
-        return "Geometry Viewer";
+        return "Test Portal";
     }
 }
