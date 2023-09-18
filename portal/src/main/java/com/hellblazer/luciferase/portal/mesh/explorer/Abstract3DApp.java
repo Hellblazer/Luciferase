@@ -119,7 +119,7 @@ public abstract class Abstract3DApp extends Application {
 
     protected void buildAxes() {
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
-        cubic.addAxes(axisGroup, 0.1, 0.2, 0.008, 20);
+        cubic.addAxes(axisGroup, 0.1f, 0.2f, 0.008f, 20);
         axisGroup.setVisible(false);
         world.getChildren().addAll(axisGroup);
     }

@@ -16,6 +16,8 @@
 
 package com.hellblazer.luciferase.portal;
 
+import static com.hellblazer.luciferase.portal.RDG.cone;
+import static com.hellblazer.luciferase.portal.RDG.extend;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.blueMaterial;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.greenMaterial;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.redMaterial;
@@ -26,7 +28,6 @@ import java.util.function.Function;
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3d;
 
-import com.hellblazer.luciferase.geometry.Rotor3f.PrincipalAxis;
 import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
 
@@ -35,7 +36,6 @@ import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.paint.Material;
 import javafx.scene.shape.MeshView;
-import javafx.scene.shape.TriangleMesh;
 import javafx.scene.transform.Affine;
 import javafx.scene.transform.Transform;
 import javafx.scene.transform.Translate;
@@ -57,40 +57,6 @@ public class CubicGrid {
         t.setToTransform(m.getM00(), m.getM10(), m.getM20(), m.getM30(), m.getM01(), m.getM11(), m.getM21(), m.getM31(),
                          m.getM02(), m.getM12(), m.getM22(), m.getM32());
         return t;
-    }
-
-    public static TriangleMesh cone(double radius, double height, int divisions) {
-        var mesh = new TriangleMesh();
-        // Start with the top of the cone, later we will build our faces from these
-        mesh.getPoints().addAll(0, 0, 0); // Point 0: Top of the Cone
-        // Generate the segments of the bottom circle (Cone Base)
-        double segment_angle = 2.0 * Math.PI / divisions;
-        float x, z;
-        double angle;
-        double halfCount = (Math.PI / 2 - Math.PI / (divisions / 2));
-        // Reverse loop for speed!! der
-        for (int i = divisions + 1; --i >= 0;) {
-            angle = segment_angle * i;
-            x = (float) (radius * Math.cos(angle - halfCount));
-            z = (float) (radius * Math.sin(angle - halfCount));
-            mesh.getPoints().addAll(x, (float) height, z);
-        }
-        mesh.getPoints().addAll(0, (float) height, 0); // Point N: Center of the Cone Base
-
-        // @TODO Birdasaur for now we'll just make an empty texCoordinate group
-        // @DUB HELP ME DUBi Wan Kanobi, you are my only hope!
-        // I'm not good at determining Texture Coordinates
-        mesh.getTexCoords().addAll(0, 0);
-        // Add the faces "winding" the points generally counter clock wise
-        // Must loop through each face, not including first and last points
-        for (int i = 1; i <= divisions; i++) {
-            mesh.getFaces()
-                .addAll( // use dummy texCoords, @TODO Upgrade face code to be real
-                        0, 0, i + 1, 0, i, 0, // Vertical Faces "wind" counter clockwise
-                        divisions + 2, 0, i, 0, i + 1, 0 // Base Faces "wind" clockwise
-                );
-        }
-        return mesh;
     }
 
     public static Point3D xAxis(Cube cube) {
@@ -151,40 +117,35 @@ public class CubicGrid {
         this.intervalZ = intervalZ;
     }
 
-    public void addAxes(Group grid, double radius, double height, double lineRadius, int divisions) {
+    public void addAxes(Group grid, float radius, float height, double lineRadius, int divisions) {
+        // X Axis
         Point3D xPositive = xAxis.multiply(intervalX * xExtent.getKey());
         Line axis = new Line(lineRadius, xAxis.multiply(-intervalX * xExtent.getKey()), xPositive);
         axis.setMaterial(redMaterial);
         grid.getChildren().addAll(axis);
-        var cone = new MeshView(cone(radius / 2, height, divisions));
+
+        var cone = new MeshView(cone(radius / 2f, xPositive, extend(origin, xPositive, height), divisions));
         cone.setMaterial(redMaterial);
-        cone.setTranslateX(xPositive.getX() - height);
-        cone.setTranslateY(xPositive.getY());
-        cone.setTranslateZ(xPositive.getZ());
-        cone.getTransforms().add(affine(PrincipalAxis.Z.slerp(-1f).toMatrix()));
         grid.getChildren().add(cone);
 
+        // Y Axis
         Point3D yPositive = yAxis.multiply(intervalY * yExtent.getKey());
         axis = new Line(lineRadius, yAxis.multiply(-intervalY * yExtent.getKey()), yPositive);
         axis.setMaterial(blueMaterial);
         grid.getChildren().addAll(axis);
-        cone = new MeshView(cone(radius / 2, height, divisions));
+
+        cone = new MeshView(cone(radius / 2f, yPositive, extend(origin, yPositive, height), divisions));
         cone.setMaterial(blueMaterial);
-        cone.setTranslateX(yPositive.getX());
-        cone.setTranslateY(yPositive.getY() - height);
-        cone.setTranslateZ(yPositive.getZ());
         grid.getChildren().add(cone);
 
+        // Z Axis
         Point3D zPositive = zAxis.multiply(intervalZ * zExtent.getKey());
         axis = new Line(lineRadius, zAxis.multiply(-intervalZ * zExtent.getKey()), zPositive);
         axis.setMaterial(greenMaterial);
         grid.getChildren().addAll(axis);
-        cone = new MeshView(cone(radius / 2, height, divisions));
+
+        cone = new MeshView(cone(radius / 2f, zPositive, extend(origin, zPositive, height), divisions));
         cone.setMaterial(greenMaterial);
-        cone.setTranslateX(zPositive.getX());
-        cone.setTranslateY(zPositive.getY());
-        cone.setTranslateZ(zPositive.getZ() - height);
-        cone.getTransforms().add(affine(PrincipalAxis.X.slerp(1f).toMatrix()));
         grid.getChildren().add(cone);
     }
 

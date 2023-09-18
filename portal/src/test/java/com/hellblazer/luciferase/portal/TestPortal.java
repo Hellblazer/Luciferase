@@ -86,7 +86,7 @@ public class TestPortal extends MagicMirror {
         var view = new OrientedGroup(txfm);
 
         final var cubic = new CubicGrid(Neighborhood.EIGHT, new Cube(CUBE_EDGE_LENGTH), 1);
-        cubic.addAxes(view, 0.1, 0.2, 0.008, 20);
+        cubic.addAxes(view, 0.1f, 0.2f, 0.008f, 20);
         Polyhedron polyhedron = new Cuboctahedron(TET_EDGE_LENGTH);
         var dual = polyhedron.dual();
         var dualEdges = dual.getEdges();
