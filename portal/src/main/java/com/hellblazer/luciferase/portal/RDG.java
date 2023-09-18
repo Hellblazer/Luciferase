@@ -19,6 +19,12 @@ package com.hellblazer.luciferase.portal;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.blueMaterial;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.greenMaterial;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.redMaterial;
+import static java.lang.Math.abs;
+import static java.lang.Math.cos;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+import static java.lang.Math.sin;
+import static java.lang.Math.sqrt;
 
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -32,10 +38,13 @@ import javax.vecmath.Vector3f;
 
 import com.hellblazer.luciferase.portal.mesh.Line;
 
+import javafx.collections.ObservableFloatArray;
 import javafx.geometry.Point3D;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.paint.Material;
+import javafx.scene.shape.MeshView;
+import javafx.scene.shape.TriangleMesh;
 import javafx.scene.transform.Transform;
 import javafx.scene.transform.Translate;
 import javafx.util.Pair;;
@@ -70,6 +79,123 @@ public class RDG {
     private static final Point3D X_AXIS = new Point3D(1, 0, 0);
     private static final Point3D Y_AXIS = new Point3D(0, 1, 0);
     private static final Point3D Z_AXIS = new Point3D(0, 0, 1);
+
+    public static void addConeBaseSegments(Point3D centerBase, int divisions, Point3D top, float radius,
+                                           ObservableFloatArray mesh) {
+        var diff = top.subtract(centerBase);
+
+        // P1 & P2 represent vectors that form the line.
+        var dx = diff.getX();
+        var dy = diff.getY();
+        var dz = diff.getZ();
+
+        var d = sqrt(dx * dx + dy * dy + dz * dz);
+
+        // Normalized vector
+        var v3x = dx / d;
+        var v3y = dy / d;
+        var v3z = dz / d;
+
+        // Store vector elements in an array
+        var p = new double[] { v3x, v3y, v3z };
+
+        // Store vector elements in second array, this time with absolute value
+        var p_abs = new double[] { abs(v3x), abs(v3y), abs(v3z) };
+
+        // Find elements with MAX and MIN magnitudes
+        var maxval = max(max(p_abs[0], p_abs[1]), p_abs[2]);
+        var minval = min(min(p_abs[0], p_abs[1]), p_abs[2]);
+
+        // Initialise 3 variables to store which array indexes contain the (max, medium,
+        // min) vector magnitudes.
+        var maxindex = 0;
+        var medindex = 0;
+        var minindex = 0;
+
+        // Loop through p_abs array to find which magnitudes are equal to maxval &
+        // minval. Store their indexes for use later.
+        for (var i = 0; i < 3; i++) {
+            if (p_abs[i] == maxval)
+                maxindex = i;
+            else if (p_abs[i] == minval)
+                minindex = i;
+        }
+
+        // Find the remaining index which has the medium magnitude
+        for (var i = 0; i < 3; i++) {
+            if (i != maxindex && i != minindex) {
+                medindex = i;
+                break;
+            }
+        }
+
+        // Store the maximum magnitude for now.
+        var storemax = (p[maxindex]);
+
+        // Swap the 2 indexes that contain the maximum & medium magnitudes, negating
+        // maximum. Set minimum magnitude to zero.
+        p[maxindex] = (p[medindex]);
+        p[medindex] = -storemax;
+        p[minindex] = 0;
+
+        // Calculate v1. Perpendicular to v3.
+        var s = sqrt(v3x * v3x + v3z * v3z + v3y * v3y);
+        var v1x = s * p[0];
+        var v1y = s * p[1];
+        var v1z = s * p[2];
+
+        // Calculate v2 as cross product of v3 and v1.
+        var v2x = v3y * v1z - v3z * v1y;
+        var v2y = v3z * v1x - v3x * v1z;
+        var v2z = v3x * v1y - v3y * v1x;
+
+        double segment_angle = 2.0 * Math.PI / divisions;
+
+        // Reverse loop for speed!! der
+        for (int i = divisions + 1; --i >= 0;) {
+            var angle = segment_angle * i;
+            var circlepointx = (float) (top.getX() + radius * (v1x * cos(angle) + v2x * sin(angle)));
+            var circlepointy = (float) (top.getY() + radius * (v1y * cos(angle) + v2y * sin(angle)));
+            var circlepointz = (float) (top.getZ() + radius * (v1z * cos(angle) + v2z * sin(angle)));
+            mesh.addAll(circlepointx, circlepointy, circlepointz);
+        }
+    }
+
+    public static Point3f axisAngle(float radians, Vector3f u, Vector3f w) {
+        var sin = (float) Math.sin(radians);
+        var cos = (float) Math.cos(radians);
+        var cross = cross(w, u);
+        var t = (1 - cos) * dot(w, u);
+
+        var vx = cos * u.x + sin * cross.x + t * w.x;
+        var vy = cos * u.y + sin * cross.y + t * w.y;
+        var vz = cos * u.z + sin * cross.z + t * w.z;
+        return new Point3f(vx, vy, vz);
+    }
+
+    public static TriangleMesh cone(float radius, Point3D top, Point3D centerBase, int divisions) {
+        var mesh = new TriangleMesh();
+        // Start with the top of the cone, later we will build our faces from these
+        mesh.getPoints().addAll((float) top.getX(), (float) top.getY(), (float) top.getZ()); // Point 0: Top of the Cone
+        addConeBaseSegments(centerBase, divisions, top, radius, mesh.getPoints());
+        // Point N: Center of the Cone Base
+        mesh.getPoints().addAll((float) centerBase.getX(), (float) centerBase.getY(), (float) centerBase.getZ());
+
+        // @TODO Birdasaur for now we'll just make an empty texCoordinate group
+        // @DUB HELP ME DUBi Wan Kanobi, you are my only hope!
+        // I'm not good at determining Texture Coordinates
+        mesh.getTexCoords().addAll(0, 0);
+        // Add the faces "winding" the points generally counter clock wise
+        // Must loop through each face, not including first and last points
+        for (int i = 1; i <= divisions; i++) {
+            mesh.getFaces()
+                .addAll( // use dummy texCoords, @TODO Upgrade face code to be real
+                        0, 0, i + 1, 0, i, 0, // Vertical Faces "wind" counter clockwise
+                        divisions + 2, 0, i, 0, i + 1, 0 // Base Faces "wind" clockwise
+                );
+        }
+        return mesh;
+    }
 
     /**
      * Calculate the cross product of the two vectors, u and v, in tetrahedral
@@ -109,6 +235,13 @@ public class RDG {
         + tetrahedral.y * (tetrahedral.y + tetrahedral.z) + tetrahedral.z * tetrahedral.z);
     }
 
+    public static Point3D extend(Point3D from, Point3D to, float additional) {
+        var oldLength = to.distance(from);
+        var diff = to.subtract(from);
+        float lengthFraction = oldLength != 0.0f ? (float) ((additional + oldLength) / oldLength) : 0.0f;
+        return diff.multiply(lengthFraction);
+    }
+
     /**
      * Answer the 12 face connected neighbors in the RDB
      *
@@ -144,6 +277,24 @@ public class RDG {
      */
     public static float l1(Vector3f tetrahedral) {
         return Math.abs(tetrahedral.x) + Math.abs(tetrahedral.y) + Math.abs(tetrahedral.z);
+    }
+
+    public static Vector3f rotateVectorCC(Vector3f vec, Vector3f axis, double theta) {
+        float x, y, z;
+        float u, v, w;
+        x = vec.getX();
+        y = vec.getY();
+        z = vec.getZ();
+        u = axis.getX();
+        v = axis.getY();
+        w = axis.getZ();
+        float xPrime = (float) (u * (u * x + v * y + w * z) * (1d - Math.cos(theta)) + x * Math.cos(theta)
+        + (-w * y + v * z) * Math.sin(theta));
+        float yPrime = (float) (v * (u * x + v * y + w * z) * (1d - Math.cos(theta)) + y * Math.cos(theta)
+        + (w * x - u * z) * Math.sin(theta));
+        float zPrime = (float) (w * (u * x + v * y + w * z) * (1d - Math.cos(theta)) + z * Math.cos(theta)
+        + (-v * x + u * y) * Math.sin(theta));
+        return new Vector3f(xPrime, yPrime, zPrime);
     }
 
     /**
@@ -237,52 +388,36 @@ public class RDG {
         this.intervalZ = intervalZ;
     }
 
-    public void addAxes(Group grid, double radius, double height, double lineRadius, int divisions) {
+    public void addAxes(Group grid, float radius, float height, float lineRadius, int divisions) {
+        // X Axis
         Point3D xPositive = xAxis.multiply(intervalX * xExtent.getKey());
         Line axis = new Line(lineRadius, xAxis.multiply(-intervalX * xExtent.getKey()), xPositive);
         axis.setMaterial(redMaterial);
         grid.getChildren().addAll(axis);
-//        var cone = new MeshView(cone(radius / 2, height, divisions));
-//        cone.setMaterial(redMaterial);
-//        cone.setTranslateX(xPositive.getX() - height);
-//        cone.setTranslateY(xPositive.getY());
-//        cone.setTranslateZ(xPositive.getZ());
-//        cone.getTransforms()
-//            .add(affine(PrincipalAxis.Z.angle((90 + 45))
-//                                       .combine(new Rotor3f(new Vector3f(0, 1, 0),
-//                                                            new Vector3f((float) xAxis.getX(), (float) xAxis.getY(),
-//                                                                         -(float) xAxis.getZ())))
-//                                       .toMatrix()));
-//        grid.getChildren().add(cone);
 
+        var cone = new MeshView(cone(radius / 2f, xPositive, extend(origin, xPositive, height), divisions));
+        cone.setMaterial(redMaterial);
+        grid.getChildren().add(cone);
+
+        // Y Axis
         Point3D yPositive = yAxis.multiply(intervalY * yExtent.getKey());
         axis = new Line(lineRadius, yAxis.multiply(-intervalY * yExtent.getKey()), yPositive);
         axis.setMaterial(blueMaterial);
         grid.getChildren().addAll(axis);
-//        cone = new MeshView(cone(radius / 2, height, divisions));
-//        cone.setMaterial(blueMaterial);
-//        cone.setTranslateX(yPositive.getX());
-//        cone.setTranslateY(yPositive.getY() - height);
-//        cone.setTranslateZ(yPositive.getZ());
-//        grid.getChildren().add(cone);
-//        cone.getTransforms()
-//            .add(affine(PrincipalAxis.Z.angle((-180))
-//                                       .combine(new Rotor3f(new Vector3f(0, 1, 0),
-//                                                            new Vector3f((float) yAxis.getX(), (float) yAxis.getY(),
-//                                                                         -(float) yAxis.getZ())))
-//                                       .toMatrix()));
 
+        cone = new MeshView(cone(radius / 2f, yPositive, extend(origin, yPositive, height), divisions));
+        cone.setMaterial(blueMaterial);
+        grid.getChildren().add(cone);
+
+        // Z Axis
         Point3D zPositive = zAxis.multiply(intervalZ * zExtent.getKey());
         axis = new Line(lineRadius, zAxis.multiply(-intervalZ * zExtent.getKey()), zPositive);
         axis.setMaterial(greenMaterial);
         grid.getChildren().addAll(axis);
-//        cone = new MeshView(cone(radius / 2, height, divisions));
-//        cone.setMaterial(greenMaterial);
-//        cone.setTranslateX(zPositive.getX());
-//        cone.setTranslateY(zPositive.getY());
-//        cone.setTranslateZ(zPositive.getZ() - height);
-//        cone.getTransforms().add(affine(PrincipalAxis.X.slerp(1f).toMatrix()));
-//        grid.getChildren().add(cone);
+
+        cone = new MeshView(cone(radius / 2f, zPositive, extend(origin, zPositive, height), divisions));
+        cone.setMaterial(greenMaterial);
+        grid.getChildren().add(cone);
     }
 
     public Group construct(Material xaxis, Material yaxis, Material zaxis) {
