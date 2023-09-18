@@ -111,22 +111,22 @@ public class RDGridViewer extends Abstract3DApp {
 
         final var rdg = new RDG(CUBE_EDGE_LENGTH, 1);
         rdg.addAxes(view, 0.1f, 0.2f, 0.008f, 20);
-//        final var children = view.getChildren();
-//
-//        final var radius = TET_EDGE_LENGTH / 2;
-//        children.add(populate(Colors.redMaterial, radius, rdg));
-//        final var cell = new Point3i();
-//        children.add(neighbors(cell, Colors.blueMaterial, radius, rdg));
-//
-//        final var triangleMesh = RhombicDodecahedron.createRhombicDodecahedron(TET_EDGE_LENGTH);
-//        Transform p = rdg.postitionTransform(cell.x, cell.y, cell.z);
-//
-//        var polyhedron = new MeshView(triangleMesh);
-//        polyhedron.setMaterial(Colors.greenMaterial);
-//        polyhedron.setCullFace(CullFace.BACK);
-//        polyhedron.getTransforms().clear();
-//        polyhedron.getTransforms().addAll(p);
-//        view.getChildren().add(polyhedron);
+        final var children = view.getChildren();
+
+        final var radius = TET_EDGE_LENGTH / 2;
+        children.add(populate(Colors.redMaterial, radius, rdg));
+        final var cell = new Point3i();
+        children.add(neighbors(cell, Colors.blueMaterial, radius, rdg));
+
+        final var triangleMesh = RhombicDodecahedron.createRhombicDodecahedron(TET_EDGE_LENGTH);
+        Transform p = rdg.postitionTransform(cell.x, cell.y, cell.z);
+
+        var polyhedron = new MeshView(triangleMesh);
+        polyhedron.setMaterial(Colors.greenMaterial);
+        polyhedron.setCullFace(CullFace.BACK);
+        polyhedron.getTransforms().clear();
+        polyhedron.getTransforms().addAll(p);
+        view.getChildren().add(polyhedron);
         return view;
     }
 
