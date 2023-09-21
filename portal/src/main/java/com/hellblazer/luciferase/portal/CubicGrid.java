@@ -16,8 +16,8 @@
 
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.portal.RDG.cone;
-import static com.hellblazer.luciferase.portal.RDG.extend;
+import static com.hellblazer.luciferase.portal.RDGCS.cone;
+import static com.hellblazer.luciferase.portal.RDGCS.extend;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.blueMaterial;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.greenMaterial;
 import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.redMaterial;
