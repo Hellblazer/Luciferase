@@ -37,7 +37,8 @@ public abstract class Grid {
     protected final Pair<Integer, Integer> yExtent;
     protected final Pair<Integer, Integer> zExtent;
 
-    public Grid(double intervalX, double intervalY, double intervalZ, Point3D origin, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
+    public Grid(double intervalX, double intervalY, double intervalZ, Point3D origin, Pair<Integer, Integer> xExtent,
+                Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
         this.intervalX = intervalX;
         this.intervalY = intervalY;
         this.intervalZ = intervalZ;
