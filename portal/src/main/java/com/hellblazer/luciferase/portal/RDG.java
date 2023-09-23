@@ -29,9 +29,6 @@ import javax.vecmath.*;
  * @author hal.hildebrand
  **/
 public class RDG extends RDGCS {
-    public RDG(double intervalX, double intervalY, double intervalZ, Point3D origin, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
-        super(intervalX, intervalY, intervalZ, origin, xExtent, yExtent, zExtent);
-    }
 
     public RDG() {
     }

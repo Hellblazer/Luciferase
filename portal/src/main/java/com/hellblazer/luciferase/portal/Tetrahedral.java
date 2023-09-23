@@ -16,15 +16,10 @@
  */
 package com.hellblazer.luciferase.portal;
 
-import com.hellblazer.luciferase.portal.mesh.Line;
 import javafx.geometry.Point3D;
-import javafx.scene.Group;
-import javafx.scene.shape.MeshView;
 import javafx.util.Pair;
 
 import javax.vecmath.*;
-
-import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.*;
 
 ;
 
@@ -142,17 +137,17 @@ public class Tetrahedral extends RDGCS {
 
     @Override
     public Point3D toCartesian(Point3D rdg) {
-        return new Point3D((rdg.getY() + rdg.getZ()) * DIVR2, (rdg.getZ() + rdg.getX()) * DIVR2, (rdg.getX() + rdg.getY()) * DIVR2);
+        return new Point3D((rdg.getY() + rdg.getZ()) * DIVIDE_ROOT_2, (rdg.getZ() + rdg.getX()) * DIVIDE_ROOT_2, (rdg.getX() + rdg.getY()) * DIVIDE_ROOT_2);
     }
 
     @Override
     public Point3D toCartesian(Tuple3i rdg) {
-        return new Point3D((rdg.y + rdg.z) * DIVR2, (rdg.z + rdg.x) * DIVR2, (rdg.x + rdg.y) * DIVR2);
+        return new Point3D((rdg.y + rdg.z) * DIVIDE_ROOT_2, (rdg.z + rdg.x) * DIVIDE_ROOT_2, (rdg.x + rdg.y) * DIVIDE_ROOT_2);
     }
 
     @Override
     public Point3i toRDG(Tuple3f cartesian) {
-        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * MULR2), (int) ((cartesian.x - cartesian.y + cartesian.z) * MULR2), (int) ((cartesian.x + cartesian.y - cartesian.z) * MULR2));
+        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2), (int) ((cartesian.x - cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2), (int) ((cartesian.x + cartesian.y - cartesian.z) * MULTIPLICATIVE_ROOT_2));
     }
 
     @Override
@@ -172,6 +167,6 @@ public class Tetrahedral extends RDGCS {
 
     @Override
     public Point3f cross(Tuple3f u, Tuple3f v) {
-        return new Point3f((-u.x * (v.y - v.z) + u.y * (3 * v.z + v.x) - u.z * (v.x + 3 * v.y)) * (RDGCS.DIVR2 / 2), (-u.x * (v.y + 3 * v.z) - u.y * (v.z - v.x) + u.z * (3 * v.x + v.y)) * (RDGCS.DIVR2 / 2), (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (RDGCS.DIVR2 / 2));
+        return new Point3f((-u.x * (v.y - v.z) + u.y * (3 * v.z + v.x) - u.z * (v.x + 3 * v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2), (-u.x * (v.y + 3 * v.z) - u.y * (v.z - v.x) + u.z * (3 * v.x + v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2), (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2));
     }
 }
