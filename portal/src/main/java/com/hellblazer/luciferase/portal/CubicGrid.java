@@ -1,12 +1,12 @@
 /**
- * Copyright (c) 2016 Chiral Behaviors, LLC, all rights reserved.
- *
+ * Copyright (c) 2016 Hal Hildebrand, all rights reserved.
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,47 +16,61 @@
 
 package com.hellblazer.luciferase.portal;
 
-import static com.hellblazer.luciferase.portal.RDG.cone;
-import static com.hellblazer.luciferase.portal.RDG.extend;
-import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.blueMaterial;
-import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.greenMaterial;
-import static com.hellblazer.luciferase.portal.mesh.explorer.Colors.redMaterial;
-
-import java.util.function.BiFunction;
-import java.util.function.Function;
-
-import javax.vecmath.Matrix4f;
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
-
 import javafx.geometry.Point3D;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.paint.Material;
-import javafx.scene.shape.MeshView;
-import javafx.scene.transform.Affine;
 import javafx.scene.transform.Transform;
 import javafx.scene.transform.Translate;
 import javafx.util.Pair;
 
+import javax.vecmath.Point3i;
+import javax.vecmath.Vector3d;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+
 /**
- * @author halhildebrand
- *
+ * The trad cubic grid
+ * @author hal.hildebrand
  */
-public class CubicGrid {
+public class CubicGrid extends Grid {
+    private final Neighborhood neighborhood;
+    private final Point3D xAxis;
+    private final Point3D yAxis;
+    private final Point3D zAxis;
 
-    public static enum Neighborhood {
-        EIGHT, SIX
-
+    public CubicGrid(Neighborhood neighborhood) {
+        this(neighborhood, new Cube(1), 5);
     }
 
-    public static Affine affine(Matrix4f m) {
-        var t = new Affine();
-        t.setToTransform(m.getM00(), m.getM10(), m.getM20(), m.getM30(), m.getM01(), m.getM11(), m.getM21(), m.getM31(),
-                         m.getM02(), m.getM12(), m.getM22(), m.getM32());
-        return t;
+    public CubicGrid(Neighborhood neighborhood, Cube cube, Integer extent) {
+        this(neighborhood, cube, new Pair<>(extent, extent), new Pair<>(extent, extent), new Pair<>(extent, extent));
+    }
+
+    public CubicGrid(Neighborhood neighborhood, Cube cube, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent,
+                     Pair<Integer, Integer> zExtent) {
+        this(new Point3D(0, 0, 0), neighborhood, new Cube(1), xExtent, yExtent,
+                zExtent);
+    }
+
+    public CubicGrid(Point3D origin, Neighborhood neighborhood, Cube cube, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent,
+                     Pair<Integer, Integer> zExtent) {
+        this(origin, xExtent, xAxis(cube), cube.getEdgeLength(), yExtent, yAxis(cube),
+                cube.getEdgeLength(), zExtent, zAxis(cube), cube.getEdgeLength(), neighborhood);
+    }
+
+    public CubicGrid(Point3D origin, Pair<Integer, Integer> xExtent, Point3D xAxis, double intervalX, Pair<Integer,
+            Integer> yExtent, Point3D yAxis, double intervalY, Pair<Integer, Integer> zExtent,
+                     Point3D zAxis, double intervalZ, Neighborhood neighborhood) {
+
+        super(intervalX, intervalY, intervalZ, origin, xExtent,
+                yExtent, zExtent);
+        this.xAxis = xAxis;
+        this.yAxis = yAxis;
+        this.zAxis = zAxis;
+        this.neighborhood = neighborhood;
     }
 
     public static Point3D xAxis(Cube cube) {
@@ -74,79 +88,42 @@ public class CubicGrid {
         return new Point3D(vector.x, vector.y, vector.z);
     }
 
-    private final double               intervalX;
-    private final double               intervalY;
-    private final double               intervalZ;
-    private final Neighborhood         neighborhood;
-    private final Point3D              origin;
-    private final Point3D              xAxis;
-    private final Pair<Double, Double> xExtent;
-    private final Point3D              yAxis;
-    private final Pair<Double, Double> yExtent;
-    private final Point3D              zAxis;
-    private final Pair<Double, Double> zExtent;
-
-    public CubicGrid(Neighborhood neighborhood) {
-        this(neighborhood, new Point3D(0d, 0d, 0d), new Pair<>(5d, 5d), new Point3D(1d, 0d, 0d), 1d, new Pair<>(5d, 5d),
-             new Point3D(0d, 1d, 0d), 1d, new Pair<>(5d, 5d), new Point3D(0d, 0d, 1d), 1d);
+    @Override
+    public Point3D xAxis() {
+        return xAxis;
     }
 
-    public CubicGrid(Neighborhood neighborhood, Cube cube, double extent) {
-        this(neighborhood, cube, new Pair<>(extent, extent), new Pair<>(extent, extent), new Pair<>(extent, extent));
+    @Override
+    public Point3D yAxis() {
+        return yAxis;
     }
 
-    public CubicGrid(Neighborhood neighborhood, Cube cube, Pair<Double, Double> xExtent, Pair<Double, Double> yExtent,
-                     Pair<Double, Double> zExtent) {
-        this(neighborhood, new Point3D(0, 0, 0), xExtent, xAxis(cube), cube.getEdgeLength(), yExtent, yAxis(cube),
-             cube.getEdgeLength(), zExtent, zAxis(cube), cube.getEdgeLength());
+    @Override
+    public Point3D zAxis() {
+        return zAxis;
     }
 
-    public CubicGrid(Neighborhood neighborhood, Point3D origin, Pair<Double, Double> xExtent, Point3D xAxis,
-                     double intervalX, Pair<Double, Double> yExtent, Point3D yAxis, double intervalY,
-                     Pair<Double, Double> zExtent, Point3D zAxis, double intervalZ) {
-        this.origin = origin;
-        this.neighborhood = neighborhood;
-        this.xExtent = xExtent;
-        this.xAxis = xAxis.subtract(origin).normalize();
-        this.intervalX = intervalX;
-        this.yExtent = yExtent;
-        this.yAxis = yAxis.subtract(origin).normalize();
-        this.intervalY = intervalY;
-        this.zExtent = zExtent;
-        this.zAxis = zAxis.subtract(origin).normalize();
-        this.intervalZ = intervalZ;
+    @Override
+    public Point3i[] faceConnectedNeighbors(Point3i cell) {
+        return new Point3i[0];
     }
 
-    public void addAxes(Group grid, float radius, float height, double lineRadius, int divisions) {
-        // X Axis
-        Point3D xPositive = xAxis.multiply(intervalX * xExtent.getKey());
-        Line axis = new Line(lineRadius, xAxis.multiply(-intervalX * xExtent.getKey()), xPositive);
-        axis.setMaterial(redMaterial);
-        grid.getChildren().addAll(axis);
+    @Override
+    public void position(int i, int j, int k, Node node) {
 
-        var cone = new MeshView(cone(radius / 2f, xPositive, extend(origin, xPositive, height), divisions));
-        cone.setMaterial(redMaterial);
-        grid.getChildren().add(cone);
+    }
 
-        // Y Axis
-        Point3D yPositive = yAxis.multiply(intervalY * yExtent.getKey());
-        axis = new Line(lineRadius, yAxis.multiply(-intervalY * yExtent.getKey()), yPositive);
-        axis.setMaterial(blueMaterial);
-        grid.getChildren().addAll(axis);
+    @Override
+    public Transform positionTransform(int i, int j, int k) {
+        Point3D vector = xAxis.multiply(i * intervalX)
+                .add(yAxis.multiply(j * intervalY))
+                .add(zAxis.multiply(k * intervalZ));
+        return new Translate(vector.getX(), vector.getY(), vector.getZ());
+    }
 
-        cone = new MeshView(cone(radius / 2f, yPositive, extend(origin, yPositive, height), divisions));
-        cone.setMaterial(blueMaterial);
-        grid.getChildren().add(cone);
-
-        // Z Axis
-        Point3D zPositive = zAxis.multiply(intervalZ * zExtent.getKey());
-        axis = new Line(lineRadius, zAxis.multiply(-intervalZ * zExtent.getKey()), zPositive);
-        axis.setMaterial(greenMaterial);
-        grid.getChildren().addAll(axis);
-
-        cone = new MeshView(cone(radius / 2f, zPositive, extend(origin, zPositive, height), divisions));
-        cone.setMaterial(greenMaterial);
-        grid.getChildren().add(cone);
+    @Override
+    public Point3i[] vertexConnectedNeighbors(Point3i cell) {
+        return new Point3i[0];
     }
 
     public Group construct(Material xaxis, Material yaxis, Material zaxis) {
@@ -165,76 +142,22 @@ public class CubicGrid {
         pos = xAxis.multiply(intervalX * (xExtent.getValue() + bodyOffset)).subtract(corner);
 
         construct(grid, neg, pos, yExtent.getKey() + yExtent.getValue(), zExtent.getKey() + zExtent.getValue(), xaxis,
-                  (i, p) -> p.add(deltaY.multiply(i)), p -> p.add(deltaZ));
+                (i, p) -> p.add(deltaY.multiply(i)), p -> p.add(deltaZ));
 
         corner = deltaX.multiply(xExtent.getKey() + bodyOffset).add(deltaZ.multiply(zExtent.getKey() + bodyOffset));
         neg = yAxis.multiply(-intervalY * (yExtent.getKey() + bodyOffset)).subtract(corner);
         pos = yAxis.multiply(intervalY * (yExtent.getValue() + bodyOffset)).subtract(corner);
 
         construct(grid, neg, pos, xExtent.getKey() + xExtent.getValue(), zExtent.getKey() + zExtent.getValue(), yaxis,
-                  (i, p) -> p.add(deltaX.multiply(i)), p -> p.add(deltaZ));
+                (i, p) -> p.add(deltaX.multiply(i)), p -> p.add(deltaZ));
 
         corner = deltaX.multiply(xExtent.getKey() + bodyOffset).add(deltaY.multiply(yExtent.getKey() + bodyOffset));
         neg = zAxis.multiply(-intervalZ * (zExtent.getKey() + bodyOffset)).subtract(corner);
         pos = zAxis.multiply(intervalZ * (zExtent.getValue() + bodyOffset)).subtract(corner);
 
         construct(grid, neg, pos, xExtent.getKey() + xExtent.getValue(), yExtent.getKey() + yExtent.getValue(), zaxis,
-                  (i, p) -> p.add(deltaX.multiply(i)), p -> p.add(deltaY));
+                (i, p) -> p.add(deltaX.multiply(i)), p -> p.add(deltaY));
         return grid;
-    }
-
-    public double getIntervalX() {
-        return intervalX;
-    }
-
-    public double getIntervalY() {
-        return intervalY;
-    }
-
-    public double getIntervalZ() {
-        return intervalZ;
-    }
-
-    public Point3D getOrigin() {
-        return origin;
-    }
-
-    public Point3D getxAxis() {
-        return xAxis;
-    }
-
-    public Pair<Double, Double> getxExtent() {
-        return xExtent;
-    }
-
-    public Point3D getyAxis() {
-        return yAxis;
-    }
-
-    public Pair<Double, Double> getyExtent() {
-        return yExtent;
-    }
-
-    public Point3D getzAxis() {
-        return zAxis;
-    }
-
-    public Pair<Double, Double> getzExtent() {
-        return zExtent;
-    }
-
-    public void postition(double i, double j, double k, Node node) {
-        Point3D vector = xAxis.multiply(i * intervalX)
-                              .add(yAxis.multiply(j * intervalY))
-                              .add(zAxis.multiply(k * intervalZ));
-        node.getTransforms().add(new Translate(vector.getX(), vector.getY(), vector.getZ()));
-    }
-
-    public Transform postitionTransform(double i, double j, double k) {
-        Point3D vector = xAxis.multiply(i * intervalX)
-                              .add(yAxis.multiply(j * intervalY))
-                              .add(zAxis.multiply(k * intervalZ));
-        return new Translate(vector.getX(), vector.getY(), vector.getZ());
     }
 
     private void construct(Group grid, Point3D neg, Point3D pos, double a, double b, Material material,
@@ -268,5 +191,10 @@ public class CubicGrid {
             axis.setMaterial(material);
             grid.getChildren().addAll(axis);
         }
+    }
+
+    public static enum Neighborhood {
+        EIGHT, SIX
+
     }
 }
