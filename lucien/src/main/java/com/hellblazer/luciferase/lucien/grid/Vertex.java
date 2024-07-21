@@ -3,38 +3,27 @@
  *
  * This file is part of the 3D Incremental Voronoi system
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Deque;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Random;
-import java.util.Set;
+import com.hellblazer.luciferase.common.IdentitySet;
+import com.hellblazer.luciferase.geometry.Geometry;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
-
-import com.hellblazer.luciferase.common.IdentitySet;
-import com.hellblazer.luciferase.geometry.Geometry;
+import java.util.*;
 
 /**
  *
@@ -42,12 +31,27 @@ import com.hellblazer.luciferase.geometry.Geometry;
  *
  */
 public class Vertex extends Vector3f implements Iterable<Vertex> {
+    static final         Point3f ORIGIN           = new Point3f(0, 0, 0);
+    private static final long    serialVersionUID = 1L;
     /**
-     * Minimal zero
+     * One of the tetrahedra adjacent to the vertex
      */
-    static final double       EPSILON          = Math.pow(10F, -20F);
-    static final Point3f      ORIGIN           = new Point3f(0, 0, 0);
-    private static final long serialVersionUID = 1L;
+    private Tetrahedron adjacent;
+    private Vertex next; // linked list o' vertices
+
+    public Vertex(float i, float j, float k) {
+        x = i;
+        y = j;
+        z = k;
+    }
+
+    public Vertex(float i, float j, float k, float scale) {
+        this(i * scale, j * scale, k * scale);
+    }
+
+    public Vertex(Tuple3f p) {
+        this(p.x, p.y, p.z);
+    }
 
     /**
      * Create some random points in a sphere
@@ -107,27 +111,6 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
     }
 
     /**
-     * One of the tetrahedra adjacent to the vertex
-     */
-    private Tetrahedron adjacent;
-
-    private Vertex next; // linked list o' vertices
-
-    public Vertex(float i, float j, float k) {
-        x = i;
-        y = j;
-        z = k;
-    }
-
-    public Vertex(float i, float j, float k, float scale) {
-        this(i * scale, j * scale, k * scale);
-    }
-
-    public Vertex(Tuple3f p) {
-        this(p.x, p.y, p.z);
-    }
-
-    /**
      * Answer the component model of the receiver corresponding to the model class
      *
      * @param <T>   - type of model
@@ -154,6 +137,16 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      */
     public final Tetrahedron getAdjacent() {
         return adjacent;
+    }
+
+    /**
+     * Note one of the adjacent tetrahedron
+     * <p>
+     *
+     * @param tetrahedron
+     */
+    final void setAdjacent(Tetrahedron tetrahedron) {
+        adjacent = tetrahedron;
     }
 
     public final List<OrientedFace> getEars() {
@@ -193,7 +186,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
 
     /**
      * Answer the faces of the voronoi region around the receiver
-     * 
+     *
      * @return the list of faces defining the voronoi region defined by the receiver
      */
     public final List<Tuple3f[]> getVoronoiRegion() {
@@ -219,7 +212,7 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      * Return +1 if the receiver lies inside the sphere passing through a, b, c, and
      * d; -1 if it lies outside; and 0 if the five points are cospherical. The
      * vertices a, b, c, and d must be ordered so that they have a positive
-     * orientation (as defined by {@link #orientation(Vertex, Vertex, Vertex)}), or
+     * orientation (as defined by {@link #orientation(Tuple3f, Tuple3f, Tuple3f)}), or
      * the sign of the result will be reversed.
      * <p>
      *
@@ -338,16 +331,6 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
 
     void reset() {
         adjacent = null;
-    }
-
-    /**
-     * Note one of the adjacent tetrahedron
-     * <p>
-     *
-     * @param tetrahedron
-     */
-    final void setAdjacent(Tetrahedron tetrahedron) {
-        adjacent = tetrahedron;
     }
 
 }

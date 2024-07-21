@@ -36,7 +36,7 @@ public class RhombicDodecahedron extends ArchimedeanSolid {
 
         mesh.getPoints()
             .addAll(
-                    // in ascending z order and counter clockwise from the x axis as 0degrees
+                    // in ascending z order and counter-clockwise from the x-axis as 0degrees
                     0, 0, -r, // A0 -z axis
                     s, -s, -s, // B1
                     -s, -s, -s, // C2
