@@ -78,12 +78,6 @@ public class MutableGridTest {
                 site.moveBy(randomPoint(entropy, -10f, 10f));
             }
             sentinel.rebuild(entropy);
-//            if (i != 0 && i % 1000 == 0) {
-//                final var total = System.currentTimeMillis() - now;
-//                System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(),
-//                                                                                                          total, i,
-//                                                                                                          total / i));
-//            }
         }
         final var total = System.currentTimeMillis() - now;
         System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total,

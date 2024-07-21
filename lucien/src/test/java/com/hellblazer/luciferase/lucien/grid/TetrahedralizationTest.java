@@ -19,7 +19,6 @@
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import static com.hellblazer.luciferase.lucien.grid.Vertex.getRandomPoints;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Random;
@@ -36,6 +35,31 @@ import org.junit.jupiter.api.Test;
  */
 
 public class TetrahedralizationTest {
+
+    /**
+     * Create some random points in a sphere
+     *
+     * @param random
+     * @param numberOfPoints
+     * @param radius
+     * @param inSphere
+     * @return
+     */
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        double radiusSquared = radius * radius;
+        Point3f ourPoints[] = new Point3f[numberOfPoints];
+        for (int i = 0; i < ourPoints.length; i++) {
+            if (inSphere) {
+                do {
+                    ourPoints[i] = Vertex.randomPoint(random, -radius, radius);
+                } while (ourPoints[i].distanceSquared(Vertex.ORIGIN) >= radiusSquared);
+            } else {
+                ourPoints[i] = Vertex.randomPoint(random, -radius, radius);
+            }
+        }
+
+        return ourPoints;
+    }
 
     @Test
     public void testCubic() {

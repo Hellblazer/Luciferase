@@ -54,31 +54,6 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
     }
 
     /**
-     * Create some random points in a sphere
-     *
-     * @param random
-     * @param numberOfPoints
-     * @param radius
-     * @param inSphere
-     * @return
-     */
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
-        double radiusSquared = radius * radius;
-        Point3f ourPoints[] = new Point3f[numberOfPoints];
-        for (int i = 0; i < ourPoints.length; i++) {
-            if (inSphere) {
-                do {
-                    ourPoints[i] = randomPoint(random, -radius, radius);
-                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
-            } else {
-                ourPoints[i] = randomPoint(random, -radius, radius);
-            }
-        }
-
-        return ourPoints;
-    }
-
-    /**
      * Generate a bounded random double
      *
      * @param random

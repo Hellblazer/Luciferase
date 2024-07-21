@@ -9,15 +9,15 @@
     <name>Luciferase - A Bright Spark</name>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>22</maven.compiler.source>
+        <maven.compiler.target>22</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.9.1</junit.version>
         <logback.version>1.2.12</logback.version>
         <grpc.version>1.54.0</grpc.version>
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
-        <javafx.version>20</javafx.version>
+        <javafx.version>22</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
     </properties>
 
@@ -283,7 +283,7 @@
                                 </requireMavenVersion>
                                 <dependencyConvergence />
                                 <requireJavaVersion>
-                                    <version>[21,)</version>
+                                    <version>[22,)</version>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>

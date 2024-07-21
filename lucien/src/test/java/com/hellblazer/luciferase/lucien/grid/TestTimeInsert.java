@@ -19,7 +19,7 @@
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import static com.hellblazer.luciferase.lucien.grid.Vertex.getRandomPoints;
+import static com.hellblazer.luciferase.lucien.grid.TetrahedralizationTest.getRandomPoints;
 
 import java.util.Random;
 

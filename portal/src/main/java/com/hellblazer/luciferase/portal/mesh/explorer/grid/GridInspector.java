@@ -32,15 +32,14 @@
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
-import java.util.Random;
+import com.hellblazer.luciferase.lucien.grid.MutableGrid;
+import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
+import javafx.scene.Group;
 
 import javax.vecmath.Point3f;
+import java.util.Random;
 
-import com.hellblazer.luciferase.lucien.grid.MutableGrid;
-import com.hellblazer.luciferase.lucien.grid.Vertex;
-import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
-
-import javafx.scene.Group;
+import static com.hellblazer.luciferase.lucien.grid.Vertex.randomPoint;
 
 /**
  * Neolithic 3D viewer, based on ye venerable JavaFX 3D sample app
@@ -49,28 +48,38 @@ import javafx.scene.Group;
  * @author cmcastil
  */
 public class GridInspector extends Abstract3DApp {
+    private static final Point3f ORIGIN = new Point3f(0, 0, 0);
+
+    private GridView view;
 
     /**
-     * This is the main() you want to run from your IDE
+     * Create some random points in a sphere
      */
-    public static class Launcher {
-
-        public static void main(String[] argv) {
-            GridInspector.main(argv);
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        double radiusSquared = radius * radius;
+        Point3f[] ourPoints = new Point3f[numberOfPoints];
+        for (int i = 0; i < ourPoints.length; i++) {
+            if (inSphere) {
+                do {
+                    ourPoints[i] = randomPoint(random, -radius, radius);
+                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
+            } else {
+                ourPoints[i] = randomPoint(random, -radius, radius);
+            }
         }
+
+        return ourPoints;
     }
 
     public static void main(String[] args) {
         launch(args);
     }
 
-    private GridView view;
-
     @Override
     protected Group build() {
         final var random = new Random(666);
         final var tet = new MutableGrid();
-        Point3f ourPoints[] = Vertex.getRandomPoints(random, 200, 10.0f, true);
+        Point3f[] ourPoints = getRandomPoints(random, 200, 10.0f, true);
         for (var v : ourPoints) {
             tet.track(v, random);
         }
@@ -82,5 +91,15 @@ public class GridInspector extends Abstract3DApp {
     @Override
     protected String title() {
         return "Grid Inspector";
+    }
+
+    /**
+     * This is the main() you want to run from your IDE
+     */
+    public static class Launcher {
+
+        public static void main(String[] argv) {
+            GridInspector.main(argv);
+        }
     }
 }
