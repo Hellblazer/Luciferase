@@ -19,13 +19,12 @@
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import static com.hellblazer.luciferase.lucien.grid.Vertex.getRandomPoints;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Random;
 import java.util.Set;
 
-import javax.vecmath.Point3f;
+import javax.vecmath.Point3d;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +35,31 @@ import org.junit.jupiter.api.Test;
  */
 
 public class TetrahedralizationTest {
+
+    /**
+     * Create some random points in a sphere
+     *
+     * @param random
+     * @param numberOfPoints
+     * @param radius
+     * @param inSphere
+     * @return
+     */
+    public static Point3d[] getRandomPoints(Random random, int numberOfPoints, double radius, boolean inSphere) {
+        double radiusSquared = radius * radius;
+        Point3d ourPoints[] = new Point3d[numberOfPoints];
+        for (int i = 0; i < ourPoints.length; i++) {
+            if (inSphere) {
+                do {
+                    ourPoints[i] = Vertex.randomPoint(random, -radius, radius);
+                } while (ourPoints[i].distanceSquared(Vertex.ORIGIN) >= radiusSquared);
+            } else {
+                ourPoints[i] = Vertex.randomPoint(random, -radius, radius);
+            }
+        }
+
+        return ourPoints;
+    }
 
     @Test
     public void testCubic() {
@@ -53,7 +77,7 @@ public class TetrahedralizationTest {
     public void testFlip4to1() {
         var random = new Random(0);
         MutableGrid T = new MutableGrid();
-        Point3f N = new Point3f(100, 100, 100);
+        Point3d N = new Point3d(100, 100, 100);
         var v = T.track(N, random);
         T.flip4to1(v);
         assertEquals(1, T.tetrahedrons().size());
@@ -74,7 +98,7 @@ public class TetrahedralizationTest {
     @Test
     public void testLargeRandom() {
         Random random = new Random(666);
-        Point3f ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
+        Point3d ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
 
         MutableGrid T = new MutableGrid();
 
@@ -83,7 +107,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(402808, L.size());
+        assertEquals(403089, L.size());
     }
 
     @Test

@@ -3,27 +3,19 @@
  *
  * This file is part of the 3D Incremental Voronoi GUI
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
-
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
-import javax.vecmath.Tuple3f;
 
 import com.hellblazer.luciferase.lucien.grid.Grid;
 import com.hellblazer.luciferase.lucien.grid.MutableGrid;
@@ -31,9 +23,13 @@ import com.hellblazer.luciferase.lucien.grid.Tetrahedron;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
 import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
 import com.hellblazer.luciferase.portal.mesh.explorer.GraphicsView;
-
 import javafx.scene.Group;
 import javafx.scene.paint.PhongMaterial;
+
+import javax.vecmath.Tuple3d;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  *
@@ -47,7 +43,7 @@ public class GridView extends GraphicsView {
 
     private final Group        delaunay           = new Group();
     private final Group        delaunayFaces      = new Group();
-    private final Set<Tuple3f> fourCorners        = new HashSet<>();
+    private final Set<Tuple3d> fourCorners        = new HashSet<>();
     private final Grid         grid;
     private final Group        highlightedRegions = new Group();
     private final Group        vertexes           = new Group();
@@ -78,7 +74,7 @@ public class GridView extends GraphicsView {
             for (Vertex v : vertices) {
                 render(v.getVoronoiRegion(), COLOR_OF_HIGHLIGHTED_REGION, true, highlightedRegions);
             }
-            displaySpheres(vertices.stream(), 0.03F, COLOR_OF_HIGHLIGHTED_REGION, highlightedRegions);
+            displaySpheres(vertices.stream(), 0.03d, COLOR_OF_HIGHLIGHTED_REGION, highlightedRegions);
         }
         getChildren().add(highlightedRegions);
     }
@@ -126,7 +122,7 @@ public class GridView extends GraphicsView {
     }
 
     @Override
-    protected boolean isAuxillary(Tuple3f[] face) {
+    protected boolean isAuxillary(Tuple3d[] face) {
         if (face.length < 3) {
             return true;
         }

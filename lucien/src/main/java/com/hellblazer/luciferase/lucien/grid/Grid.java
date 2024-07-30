@@ -16,7 +16,7 @@ package com.hellblazer.luciferase.lucien.grid;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 
-import javax.vecmath.Tuple3f;
+import javax.vecmath.Tuple3d;
 import java.util.*;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -24,26 +24,19 @@ import java.util.stream.StreamSupport;
 import static com.hellblazer.luciferase.lucien.grid.V.*;
 
 /**
- * A Delaunay tetrahedralization. This implementation is optimized for
- * Luciferase, not for any other particular use. As such, it is based on floats,
- * not doubles - although predicates are evaluated with doubles to ensure
- * nothing horrible blows up. The extent of the "Big Tetrahedron" that defines
- * the maximum extent of the universe for this tetrahedralization is thus {-32k,
- * +32k}. This implementation also uses the "fast" version of the inSphere
- * predicate, rather than the exact. The exact version is most expensive so made
- * the call here. The result is that the generated mesh isn't precisely exact.
- * As long as it doesn't blow up, for the purposes of kinetic point tracking,
- * we're happy.
+ * A Delaunay tetrahedralization. This implementation is optimized for Luciferase, not for any other particular use. As
+ * such, it is based on floats, not doubles - although predicates are evaluated with doubles to ensure nothing horrible
+ * blows up. The extent of the "Big Tetrahedron" that defines the maximum extent of the universe for this
+ * tetrahedralization is thus {-32k, +32k}. This implementation also uses the "fast" version of the inSphere predicate,
+ * rather than the exact. The exact version is most expensive so made the call here. The result is that the generated
+ * mesh isn't precisely exact. As long as it doesn't blow up, for the purposes of kinetic point tracking, we're happy.
  * <p>
- * We are largely concerned with the topology of the tracked points, and their
- * relative location, not the precise form of the mesh that encodes the
- * topology. Because we throw the tetrahedra away on every rebuild, there's
- * really little need for an index and so random walk is used. It is assumed
- * that the vast majority, if not damn near entirety of operations concerning
- * the Grid and its tracked components and topology will be operating with a
- * vertex after the tetrahedralization has occurred. Consequently, operations on
- * Vertex and Tetrahedron are the de facto operation origination rather at the
- * Grid level.
+ * We are largely concerned with the topology of the tracked points, and their relative location, not the precise form
+ * of the mesh that encodes the topology. Because we throw the tetrahedra away on every rebuild, there's really little
+ * need for an index and so random walk is used. It is assumed that the vast majority, if not damn near entirety of
+ * operations concerning the Grid and its tracked components and topology will be operating with a vertex after the
+ * tetrahedralization has occurred. Consequently, operations on Vertex and Tetrahedron are the de facto operation
+ * origination rather at the Grid level.
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
@@ -52,12 +45,11 @@ public class Grid implements Iterable<Vertex> {
     /**
      * Cannonical enumeration of the vertex ordinals
      */
-    public static final    V[]     VERTICES = { A, B, C, D };
+    public static final    V[]      VERTICES = { A, B, C, D };
     /**
-     * A pre-built table of all the permutations of remaining faces to check in
-     * location.
+     * A pre-built table of all the permutations of remaining faces to check in location.
      */
-    protected static final V[][][] ORDER    = new V[][][] {
+    protected static final V[][][]  ORDER    = new V[][][] {
     { { B, C, D }, { C, B, D }, { C, D, B }, { B, D, C }, { D, B, C }, { D, C, B } },
 
     { { A, C, D }, { C, A, D }, { C, D, A }, { A, D, C }, { D, A, C }, { D, C, A } },
@@ -68,22 +60,24 @@ public class Grid implements Iterable<Vertex> {
     /**
      * Scale of the universe
      */
-    private static         float   SCALE    = (float) Math.pow(2, 16);
+    private static         float    SCALE    = (float) Math.pow(2, 16);
     /**
      * The four corners of the maximally bounding tetrahedron
      */
-    protected final Vertex[] fourCorners;
+    protected final        Vertex[] fourCorners;
     /**
      * the Head of the vertices list
      */
-    protected       Vertex   head;
+    protected              Vertex   head;
     /**
      * The number of points in this Grid
      */
-    protected       int      size = 0;
+    protected              int      size     = 0;
+
     Grid(Vertex[] fourCorners) {
         this.fourCorners = fourCorners;
     }
+
     Grid(Vertex[] fourCorners, Vertex head) {
         this(fourCorners);
         this.head = head;
@@ -137,18 +131,17 @@ public class Grid implements Iterable<Vertex> {
     }
 
     /**
-     * Locate the tetrahedron which contains the query point via a stochastic walk
-     * through the delaunay triangulation. This location algorithm is a slight
-     * variation of the 3D jump and walk algorithm found in: "Fast randomized point
-     * location without preprocessing in two- and three-dimensional Delaunay
-     * triangulations", Computational Geometry 12 (1999) 63-83.
+     * Locate the tetrahedron which contains the query point via a stochastic walk through the delaunay triangulation.
+     * This location algorithm is a slight variation of the 3D jump and walk algorithm found in: "Fast randomized point
+     * location without preprocessing in two- and three-dimensional Delaunay triangulations", Computational Geometry 12
+     * (1999) 63-83.
      *
      * @param query  - the query point
      * @param start  - the starting tetrahedron
      * @param random - the source of entropy for the randomized algo
      * @return the Tetrahedron containing the query
      */
-    public Tetrahedron locate(Tuple3f query, Tetrahedron start, Random random) {
+    public Tetrahedron locate(Tuple3d query, Tetrahedron start, Random random) {
         assert query != null;
         return start.locate(query, random);
     }

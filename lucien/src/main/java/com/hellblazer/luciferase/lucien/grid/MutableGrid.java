@@ -17,6 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.grid;
 
+import javax.vecmath.Point3d;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -43,7 +44,6 @@ public class MutableGrid extends Grid {
     /**
      * Construct a Sentinel using the supplied random number generator
      *
-     * @param random
      */
     public MutableGrid(Vertex[] fourCorners) {
         super(fourCorners);
@@ -75,7 +75,7 @@ public class MutableGrid extends Grid {
      * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
      */
-    public Vertex track(Point3f p, Random entropy) {
+    public Vertex track(Point3d p, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
         add(v, locate(p, last, entropy));
@@ -91,7 +91,7 @@ public class MutableGrid extends Grid {
      * @param near - the nearby vertex
      * @return the new Vertex in the tetrahedralization
      */
-    public Vertex track(Point3f p, Vertex near, Random entropy) {
+    public Vertex track(Point3d p, Vertex near, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
         add(v, near.locate(p, entropy));
