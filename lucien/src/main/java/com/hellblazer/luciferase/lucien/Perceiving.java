@@ -17,22 +17,20 @@
 
 package com.hellblazer.luciferase.lucien;
 
-import javax.vecmath.Point3f;
-import javax.vecmath.Vector3f;
+import javax.vecmath.Point3d;
+import javax.vecmath.Vector3d;
 
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
 public interface Perceiving {
 
     void fade(Perceiving neighbor);
 
-    void move(Perceiving neighbor, Point3f location, Vector3f velocity);
+    void move(Perceiving neighbor, Point3d location, Vector3d velocity);
 
-    void notice(Perceiving neighbor, Point3f location);
+    void notice(Perceiving neighbor, Point3d location);
 
     void setCursor(Cursor cursor);
 }

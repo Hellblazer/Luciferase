@@ -4,7 +4,9 @@ import com.hellblazer.luciferase.lucien.Cursor;
 import com.hellblazer.luciferase.lucien.Perceiving;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
 
+import javax.vecmath.Point3d;
 import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3d;
 import javax.vecmath.Tuple3f;
 
 /**
@@ -28,12 +30,12 @@ public class AbstractCursor<E extends Perceiving> implements Cursor, Cloneable {
     }
 
     @Override
-    public Point3f getLocation() {
-        return new Point3f(location);
+    public Point3d getLocation() {
+        return new Point3d(location);
     }
 
     @Override
-    public void moveBy(Tuple3f velocity) {
+    public void moveBy(Tuple3d velocity) {
         location.moveBy(velocity);
     }
 }

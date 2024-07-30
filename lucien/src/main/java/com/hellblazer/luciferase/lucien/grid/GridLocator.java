@@ -14,7 +14,7 @@
  */
 package com.hellblazer.luciferase.lucien.grid;
 
-import javax.vecmath.Tuple3f;
+import javax.vecmath.Tuple3d;
 import java.util.Random;
 
 /**
@@ -36,7 +36,7 @@ public class GridLocator {
      * @param query - the query point
      * @return the Tetrahedron containing the query
      */
-    public Tetrahedron locate(Tuple3f query, Random entropy) {
+    public Tetrahedron locate(Tuple3d query, Random entropy) {
         return last = last.locate(query, entropy);
     }
 }

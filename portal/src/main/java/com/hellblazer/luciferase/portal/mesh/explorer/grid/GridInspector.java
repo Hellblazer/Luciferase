@@ -36,7 +36,7 @@ import com.hellblazer.luciferase.lucien.grid.MutableGrid;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 import javafx.scene.Group;
 
-import javax.vecmath.Point3f;
+import javax.vecmath.Point3d;
 import java.util.Random;
 
 import static com.hellblazer.luciferase.lucien.grid.Vertex.randomPoint;
@@ -48,16 +48,16 @@ import static com.hellblazer.luciferase.lucien.grid.Vertex.randomPoint;
  * @author cmcastil
  */
 public class GridInspector extends Abstract3DApp {
-    private static final Point3f ORIGIN = new Point3f(0, 0, 0);
+    private static final Point3d ORIGIN = new Point3d(0, 0, 0);
 
     private GridView view;
 
     /**
      * Create some random points in a sphere
      */
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+    public static Point3d[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
         double radiusSquared = radius * radius;
-        Point3f[] ourPoints = new Point3f[numberOfPoints];
+        Point3d[] ourPoints = new Point3d[numberOfPoints];
         for (int i = 0; i < ourPoints.length; i++) {
             if (inSphere) {
                 do {
@@ -79,7 +79,7 @@ public class GridInspector extends Abstract3DApp {
     protected Group build() {
         final var random = new Random(666);
         final var tet = new MutableGrid();
-        Point3f[] ourPoints = getRandomPoints(random, 200, 10.0f, true);
+        Point3d[] ourPoints = getRandomPoints(random, 200, 10.0f, true);
         for (var v : ourPoints) {
             tet.track(v, random);
         }

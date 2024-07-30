@@ -17,17 +17,14 @@
 
 package com.hellblazer.luciferase.lucien;
 
-import javax.vecmath.Tuple3f;
-import javax.vecmath.Tuple3i;
+import javax.vecmath.Tuple3d;
 
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
 public interface Movable {
 
-    void moveBy(Tuple3f velocity);
+    void moveBy(Tuple3d velocity);
 
 }

@@ -21,9 +21,9 @@ import com.hellblazer.luciferase.lucien.Perceiving;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
 
 import javax.vecmath.Point2d;
-import javax.vecmath.Point3f;
-import javax.vecmath.Tuple3f;
-import javax.vecmath.Vector3f;
+import javax.vecmath.Point3d;
+import javax.vecmath.Tuple3d;
+import javax.vecmath.Vector3d;
 import java.util.*;
 
 /**
@@ -121,7 +121,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void moveBy(Tuple3f velocity) {
+    public void moveBy(Tuple3d velocity) {
         super.moveBy(velocity);
         removeNonOverlapped();
         for (Peer peer : soi.getPeers()) {
@@ -195,17 +195,17 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         }
     }
 
-    protected void notifySimMove(Peer neighbor, Point3f oldLocation) {
+    protected void notifySimMove(Peer neighbor, Point3d oldLocation) {
         if (oldLocation == null || !soiSet.containsKey(neighbor.id)) {
             notifySimNotice(neighbor);
             return;
         }
-        Vector3f distance = new Vector3f(location);
+        Vector3d distance = new Vector3d(location);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
-            Vector3f velocity = new Vector3f();
+            Vector3d velocity = new Vector3d();
             velocity.sub(neighbor.getLocation(), oldLocation);
-            Point3f nLocation = neighbor.getLocation();
+            Point3d nLocation = neighbor.getLocation();
             sim.move(neighbor.getSim(), nLocation, velocity);
         } else {
             soiSet.remove(neighbor.getId());
@@ -214,7 +214,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     protected void notifySimNotice(Peer neighbor) {
-        Vector3f distance = new Vector3f(location);
+        Vector3d distance = new Vector3d(location);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
             soiSet.put(neighbor.id, neighbor.getSim());
@@ -249,13 +249,13 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         }
     }
 
-    protected Point3f update(Peer node) {
+    protected Point3d update(Peer node) {
         Peer neighbor = soi.getAliased(node);
         if (neighbor == null) {
             soi.insert(node.clone(), node.getLocation());
             return null;
         }
-        Point3f oldLocation = new Point3f(neighbor.getLocation());
+        Point3d oldLocation = new Point3d(neighbor.getLocation());
         soi.update(neighbor, node.getLocation());
         return oldLocation;
     }

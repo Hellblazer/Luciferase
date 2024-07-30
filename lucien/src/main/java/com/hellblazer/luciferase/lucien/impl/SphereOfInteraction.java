@@ -18,15 +18,13 @@
 package com.hellblazer.luciferase.lucien.impl;
 
 import javax.vecmath.Point2d;
-import javax.vecmath.Point3f;
-import javax.vecmath.Tuple3f;
+import javax.vecmath.Point3d;
+import javax.vecmath.Tuple3d;
 import java.util.Collection;
 import java.util.List;
 
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
 public interface SphereOfInteraction {
@@ -37,7 +35,7 @@ public interface SphereOfInteraction {
      * @param coord
      * @return
      */
-    Peer closestTo(Point3f coord);
+    Peer closestTo(Point3d coord);
 
     /**
      * Answer the Peer aliased to the Peer
@@ -76,7 +74,7 @@ public interface SphereOfInteraction {
      * @param id
      * @param coord
      */
-    void insert(Peer id, Point3f coord);
+    void insert(Peer id, Point3d coord);
 
     /**
      * check if the node is a boundary neighbor
@@ -86,7 +84,7 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean isBoundary(Peer peer, Tuple3f center, float radiusSquared);
+    boolean isBoundary(Peer peer, Tuple3d center, float radiusSquared);
 
     /**
      * check if the node 'id' is an enclosing neighbor of 'center_node_id'
@@ -105,7 +103,7 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean overlaps(Peer peer, Point3f center, float radiusSquared);
+    boolean overlaps(Peer peer, Point3d center, float radiusSquared);
 
     /**
      * remove a site
@@ -120,6 +118,6 @@ public interface SphereOfInteraction {
      * @param peer
      * @param coord
      */
-    void update(Peer peer, Point3f coord);
+    void update(Peer peer, Point3d coord);
 
 }
