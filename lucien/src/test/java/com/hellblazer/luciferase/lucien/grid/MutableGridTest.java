@@ -1,39 +1,36 @@
 /**
  * Copyright (C) 2023 Hal Hildebrand. All rights reserved.
- * 
- * This program is free software: you can redistribute it and/or modify it under
- * the terms of the GNU Affero General Public License as published by the Free
- * Software Foundation, either version 3 of the License, or (at your option) any
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
  * later version.
- * 
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
- * 
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 package com.hellblazer.luciferase.lucien.grid;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3d;
 import java.util.ArrayList;
 import java.util.Random;
 
-import javax.vecmath.Point3f;
-
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * @author hal.hildebrand
  */
 public class MutableGridTest {
-    private static final Point3f ORIGIN = new Point3f();
+    private static final Point3d ORIGIN = new Point3d();
 
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
-        float radiusSquared = radius * radius;
-        Point3f ourPoints[] = new Point3f[numberOfPoints];
+    public static Point3d[] getRandomPoints(Random random, int numberOfPoints, double radius, boolean inSphere) {
+        double radiusSquared = radius * radius;
+        Point3d ourPoints[] = new Point3d[numberOfPoints];
         for (int i = 0; i < ourPoints.length; i++) {
             if (inSphere) {
                 do {
@@ -47,8 +44,8 @@ public class MutableGridTest {
         return ourPoints;
     }
 
-    public static float random(Random random, float min, float max) {
-        float result = random.nextFloat();
+    public static double random(Random random, double min, double max) {
+        double result = random.nextDouble();
         if (min > max) {
             result *= min - max;
             result += max;
@@ -59,8 +56,8 @@ public class MutableGridTest {
         return result;
     }
 
-    public static Point3f randomPoint(Random random, float min, float max) {
-        return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
+    public static Point3d randomPoint(Random random, double min, double max) {
+        return new Point3d(random(random, min, max), random(random, min, max), random(random, min, max));
     }
 
     @Test
@@ -75,21 +72,15 @@ public class MutableGridTest {
         long now = System.currentTimeMillis();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
-                site.moveBy(randomPoint(entropy, -10f, 10f));
+                site.moveBy(randomPoint(entropy, -10d, 10d));
             }
             sentinel.rebuild(entropy);
-//            if (i != 0 && i % 1000 == 0) {
-//                final var total = System.currentTimeMillis() - now;
-//                System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(),
-//                                                                                                          total, i,
-//                                                                                                          total / i));
-//            }
         }
         final var total = System.currentTimeMillis() - now;
-        System.out.println("sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total,
-                                                                                                  iterations,
-                                                                                                  total / iterations));
+        System.out.println(
+        "sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total, iterations,
+                                                                               total / iterations));
 
-        assertEquals(12, sites.get(50).getNeighbors().size());
+        assertEquals(17, sites.get(50).getNeighbors().size());
     }
 }
