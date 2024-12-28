@@ -55,13 +55,6 @@ public interface SphereOfInteraction {
     Iterable<Node> getPeers();
 
     /**
-     * TODO temporary
-     *
-     * @return
-     */
-    List<Point3d[]> getVoronoiDomainEdges();
-
-    /**
      * @param peer
      * @return
      */

@@ -27,7 +27,6 @@ import javax.vecmath.Tuple3d;
 import javax.vecmath.Vector3d;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -50,17 +49,13 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     public Collection<Node> getNeighbors() {
-        final ArrayList<Node> neighbors = new ArrayList<>();
-        for (Node peer : soi.getPeers()) {
+        final var neighbors = new ArrayList<Node>();
+        for (var peer : soi.getPeers()) {
             if (!peer.equals(this)) {
                 neighbors.add(peer);
             }
         }
         return neighbors;
-    }
-
-    public List<Point3d[]> getVoronoiDomainEdges() {
-        return soi.getVoronoiDomainEdges();
     }
 
     public void join(Node gateway) {
@@ -71,7 +66,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
 
     public void leave() {
         active = false;
-        for (Node peer : soi.getPeers()) {
+        for (var peer : soi.getPeers()) {
             if (!peer.equals(this)) {
                 peer.fadeFrom(this);
             }
@@ -80,7 +75,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
 
     @Override
     public void leave(Node leaving) {
-        for (Node enclosing : soi.getEnclosingNeighbors(leaving)) {
+        for (var enclosing : soi.getEnclosingNeighbors(leaving)) {
             enclosing.leave(leaving);
         }
         remove(leaving);
@@ -119,7 +114,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     public void moveBy(Tuple3d velocity) {
         super.moveBy(velocity);
         removeNonOverlapped();
-        for (Node peer : soi.getPeers()) {
+        for (var peer : soi.getPeers()) {
             if (!peer.equals(this)) {
                 if (soi.isBoundary(peer, location, maxRadiusSquared)) {
                     peer.moveBoundary(this);
@@ -136,7 +131,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
             return;
         }
 
-        for (Node peer : peers) {
+        for (var peer : peers) {
             if (!soi.includes(peer)) {
                 soi.insert(peer, peer.getLocation());
                 if (soi.overlaps(this, peer.getLocation(), peer.getMaximumRadiusSquared())) {
@@ -166,7 +161,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
             return;
         }
 
-        Node closest = soi.closestTo(joiner.getLocation());
+        var closest = soi.closestTo(joiner.getLocation());
         if (closest != null && !closest.equals(this) && !closest.equals(from)) {
             closest.query(this, joiner);
         } else {
@@ -184,7 +179,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         if (node.equals(this)) {
             return;
         }
-        Collection<Node> peers = soi.getEnclosingNeighbors(node);
+        var peers = soi.getEnclosingNeighbors(node);
         if (peers.size() > 0) {
             node.noticePeers(peers);
         }
@@ -195,12 +190,12 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
             notifySimNotice(neighbor);
             return;
         }
-        Vector3d distance = new Vector3d(location);
+        var distance = new Vector3d(location);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
-            Vector3d velocity = new Vector3d();
+            var velocity = new Vector3d();
             velocity.sub(neighbor.getLocation(), oldLocation);
-            Point3d nLocation = neighbor.getLocation();
+            var nLocation = neighbor.getLocation();
             sim.move(neighbor.getSim(), nLocation, velocity);
         } else {
             sim.fade(neighbor.getSim());
@@ -208,7 +203,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     protected void notifySimNotice(Node neighbor) {
-        Vector3d distance = new Vector3d(location);
+        var distance = new Vector3d(location);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
             sim.notice(neighbor.getSim(), neighbor.getLocation());
@@ -225,8 +220,8 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
      * disconnect neighbors no longer relevant (within AOI or is an enclosing neighbor)
      */
     protected void removeNonOverlapped() {
-        ArrayList<Node> removed = new ArrayList<>();
-        for (Node neighbor : soi.getPeers()) {
+        var removed = new ArrayList<Node>();
+        for (var neighbor : soi.getPeers()) {
             if (!this.equals(neighbor)) {
                 if (!soi.overlaps((Node) this, neighbor.getLocation(),
                                   Math.max(maxRadiusSquared, neighbor.getMaximumRadiusSquared()))) {
@@ -236,19 +231,19 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
                 }
             }
         }
-        for (Node neighbor : removed) {
+        for (var neighbor : removed) {
             remove(neighbor);
             neighbor.fadeFrom(this);
         }
     }
 
     protected Point3d update(Node node) {
-        Node neighbor = soi.getAliased(node);
+        var neighbor = soi.getAliased(node);
         if (neighbor == null) {
             soi.insert(node, node.getLocation());
             return null;
         }
-        Point3d oldLocation = new Point3d(neighbor.getLocation());
+        var oldLocation = new Point3d(neighbor.getLocation());
         soi.update(neighbor, node.getLocation());
         return oldLocation;
     }
