@@ -551,7 +551,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return
      */
     V ordinalOf(Tetrahedron neighbor) {
-        clear();
         if (nA == neighbor) {
             return A;
         }
