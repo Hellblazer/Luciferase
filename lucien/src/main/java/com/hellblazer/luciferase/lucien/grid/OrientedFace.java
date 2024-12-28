@@ -35,16 +35,6 @@ import static com.hellblazer.luciferase.lucien.grid.V.*;
 public abstract class OrientedFace implements Iterable<Vertex> {
 
     /**
-     * The vertex in the adjacent tetrahedron opposite of this face
-     */
-    protected final V adjacentVertexOrdinal;
-
-    public OrientedFace() {
-        Tetrahedron adjacent = getAdjacent();
-        adjacentVertexOrdinal = adjacent == null ? null : adjacent.ordinalOf(getIncident());
-    }
-
-    /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
      * an ear of the star set of tetrahedra adjacent to v.
      * <p>
@@ -156,7 +146,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return the three created tetrahedron
      */
     public Tetrahedron[] flip2to3() {
-        assert adjacentVertexOrdinal != null;
+        assert getAdjacentVertexOrdinal() != null;
         Tetrahedron incident = getIncident();
 
         Vertex opposingVertex = getAdjacentVertex();
@@ -225,7 +215,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return the two created tetrahedron
      */
     public Tetrahedron[] flip3to2(int reflexEdge) {
-        assert adjacentVertexOrdinal != null;
+        assert getAdjacentVertexOrdinal() != null;
         Tetrahedron incident = getIncident();
         Tetrahedron o2 = getIncident().getNeighbor(getVertex(reflexEdge));
 
@@ -297,19 +287,23 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public Vertex getAdjacentVertex() {
-        if (adjacentVertexOrdinal == null) {
+        if (getAdjacentVertexOrdinal() == null) {
             return null;
         }
-        return getAdjacent().getVertex(adjacentVertexOrdinal);
+        return getAdjacent().getVertex(getAdjacentVertexOrdinal());
     }
 
+    /**
+     * The vertex in the adjacent tetrahedron opposite of this face
+     */
     /**
      * Answer the canonical ordinal of the vertex in the adjacent tetrahedron which is opposite of this face.
      *
      * @return
      */
     public V getAdjacentVertexOrdinal() {
-        return adjacentVertexOrdinal;
+        Tetrahedron adjacent = getAdjacent();
+        return adjacent == null ? null : adjacent.ordinalOf(getIncident());
     }
 
     /**
@@ -343,7 +337,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     abstract public Vertex getVertex(int anIndex);
 
     public boolean hasAdjacent() {
-        return adjacentVertexOrdinal != null;
+        return getAdjacentVertexOrdinal() != null;
     }
 
     abstract public boolean includes(Vertex v);

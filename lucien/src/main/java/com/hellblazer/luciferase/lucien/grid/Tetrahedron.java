@@ -48,6 +48,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     private static final V[][]       VORONOI_FACE_ORIGIN = { { null, C, D, B }, { C, null, D, A }, { D, A, null, B },
                                                              { B, C, A, null } };
+    private final        FaceCBD     faceCBD;
+    private final        FaceDAC     faceDAC;
+    private final        FaceADB     faceADB;
+    private final        FaceBCA     faceBCA;
     /**
      * Vertex A
      */
@@ -101,6 +105,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         b.setAdjacent(this);
         c.setAdjacent(this);
         d.setAdjacent(this);
+        faceCBD = new FaceCBD();
+        faceDAC = new FaceDAC();
+        faceADB = new FaceADB();
+        faceBCA = new FaceBCA();
     }
 
     /**
@@ -214,16 +222,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public OrientedFace getFace(V v) {
         if (v == A) {
-            return new FaceCBD();
+            return faceCBD;
         }
         if (v == B) {
-            return new FaceDAC();
+            return faceDAC;
         }
         if (v == C) {
-            return new FaceADB();
+            return faceADB;
         }
         if (v == D) {
-            return new FaceBCA();
+            return faceBCA;
         }
         throw new IllegalArgumentException("Invalid vertex: " + v);
     }
@@ -592,33 +600,33 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     void removeAnyDegenerateTetrahedronPair() {
         if (nA != null) {
             if (nA == nB) {
-                removeDegenerateTetrahedronPair(V.A, V.B, V.C, V.D);
+                removeDegenerateTetrahedronPair(A, B, C, D);
                 return;
             }
             if (nA == nC) {
-                removeDegenerateTetrahedronPair(V.A, V.C, V.B, V.D);
+                removeDegenerateTetrahedronPair(A, C, B, D);
                 return;
             }
             if (nA == nD) {
-                removeDegenerateTetrahedronPair(V.A, V.D, V.B, V.C);
+                removeDegenerateTetrahedronPair(A, D, B, C);
                 return;
             }
         }
 
         if (nB != null) {
             if (nB == nC) {
-                removeDegenerateTetrahedronPair(V.B, V.C, V.A, V.D);
+                removeDegenerateTetrahedronPair(B, C, A, D);
                 return;
             }
             if (nB == nD) {
-                removeDegenerateTetrahedronPair(V.B, V.D, V.A, V.C);
+                removeDegenerateTetrahedronPair(B, D, A, C);
                 return;
             }
         }
 
         if (nC != null) {
             if (nC == nD) {
-                removeDegenerateTetrahedronPair(V.C, V.D, V.A, V.B);
+                removeDegenerateTetrahedronPair(C, D, A, B);
                 return;
             }
         }

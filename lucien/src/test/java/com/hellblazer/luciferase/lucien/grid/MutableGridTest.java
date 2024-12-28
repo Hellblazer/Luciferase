@@ -63,10 +63,10 @@ public class MutableGridTest {
         var sentinel = new MutableGrid();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : getRandomPoints(entropy, 128, 10, true)) {
+        for (var p : getRandomPoints(entropy, 256, 10, true)) {
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 100_000;
+        int iterations = 1_000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
