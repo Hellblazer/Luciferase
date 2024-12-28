@@ -42,6 +42,7 @@
         <module>e2e-test</module>
         <module>portal</module>
         <module>common</module>
+        <module>von</module>
     </modules>
 
     <dependencyManagement>
@@ -66,6 +67,11 @@
                 <version>${project.version}</version>
                 <artifactId>portal</artifactId>
             </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>von</artifactId>
+            </dependency>
 
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
@@ -77,6 +83,7 @@
                 <artifactId>maven-plugin</artifactId>
                 <version>${prime-mover.version}</version>
             </dependency>
+
             <dependency>
                 <groupId>com.chiralbehaviors</groupId>
                 <artifactId>janus</artifactId>
@@ -596,14 +603,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <artifactId>maven-deploy-plugin</artifactId>
-                <configuration>
-                    <altDeploymentRepository>
-                        internal.repo::default::file://${env.INTERNAL_REPOSITORY}
-                    </altDeploymentRepository>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -15,76 +15,71 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.impl;
+package com.hellblazer.luciferase.lucien.von.impl;
 
-import com.hellblazer.luciferase.lucien.Perceiving;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.luciferase.lucien.von.Node;
+import com.hellblazer.luciferase.lucien.von.Perceiving;
+import com.hellblazer.luciferase.lucien.von.SphereOfInteraction;
 
-import javax.vecmath.Point2d;
 import javax.vecmath.Point3d;
 import javax.vecmath.Tuple3d;
 import javax.vecmath.Vector3d;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 
 public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
-    protected final SphereOfInteraction   soi;
-    protected final Map<UUID, Perceiving> soiSet = new HashMap<>();
-    protected final Peer                  thisAsPeer;
-    protected       boolean               active = true;
+    protected final SphereOfInteraction soi;
+    protected       boolean             active = true;
 
-    public Perceptron(E entity, UUID id, Vertex location, float aoiRadius, float maximumVelocity,
-                      SphereOfInteraction soi) {
-        super(entity, id, location, aoiRadius, maximumVelocity);
+    public Perceptron(E entity, Vertex location, float aoiRadius, float maximumVelocity, SphereOfInteraction soi) {
+        super(entity, location, aoiRadius, maximumVelocity);
         this.aoiRadius = aoiRadius;
         entity.setCursor(this);
         this.soi = soi;
-        thisAsPeer = new Peer(this, sim, id, location, aoiRadius, maximumVelocity);
     }
 
     @Override
-    public void fadeFrom(Peer neighbor) {
+    public void fadeFrom(Node neighbor) {
         remove(neighbor);
     }
 
-    public Collection<Peer> getNeighbors() {
-        final ArrayList<Peer> neighbors = new ArrayList<>();
-        for (Peer peer : soi.getPeers()) {
-            if (!peer.equals(thisAsPeer)) {
+    public Collection<Node> getNeighbors() {
+        final ArrayList<Node> neighbors = new ArrayList<>();
+        for (Node peer : soi.getPeers()) {
+            if (!peer.equals(this)) {
                 neighbors.add(peer);
             }
         }
         return neighbors;
     }
 
-    public Peer getThisAsPeer() {
-        return thisAsPeer;
-    }
-
-    public List<Point2d[]> getVoronoiDomainEdges() {
+    public List<Point3d[]> getVoronoiDomainEdges() {
         return soi.getVoronoiDomainEdges();
     }
 
     public void join(Node gateway) {
         if (!gateway.equals(this)) {
-            gateway.query(thisAsPeer, thisAsPeer);
+            gateway.query(this, this);
         }
     }
 
     public void leave() {
         active = false;
-        for (Peer peer : soi.getPeers()) {
-            if (!peer.equals(thisAsPeer)) {
-                peer.fadeFrom(thisAsPeer);
+        for (Node peer : soi.getPeers()) {
+            if (!peer.equals(this)) {
+                peer.fadeFrom(this);
             }
         }
     }
 
     @Override
-    public void leave(Peer leaving) {
+    public void leave(Node leaving) {
         for (Node enclosing : soi.getEnclosingNeighbors(leaving)) {
             enclosing.leave(leaving);
         }
@@ -92,9 +87,9 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void move(Peer neighbor) {
+    public void move(Node neighbor) {
         if (!active) {
-            neighbor.leave(thisAsPeer);
+            neighbor.leave(this);
             return;
         }
 
@@ -103,14 +98,14 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void moveBoundary(Peer neighbor) {
+    public void moveBoundary(Node neighbor) {
         if (!active) {
-            neighbor.leave(thisAsPeer);
+            neighbor.leave(this);
             return;
         }
 
         if (!soi.includes(neighbor)) {
-            if (soi.overlaps(thisAsPeer, neighbor.getLocation(), maxRadiusSquared)) {
+            if (soi.overlaps(this, neighbor.getLocation(), maxRadiusSquared)) {
                 soi.insert(neighbor, neighbor.getLocation());
             }
             return;
@@ -124,37 +119,37 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     public void moveBy(Tuple3d velocity) {
         super.moveBy(velocity);
         removeNonOverlapped();
-        for (Peer peer : soi.getPeers()) {
-            if (!peer.equals(thisAsPeer)) {
+        for (Node peer : soi.getPeers()) {
+            if (!peer.equals(this)) {
                 if (soi.isBoundary(peer, location, maxRadiusSquared)) {
-                    peer.moveBoundary(thisAsPeer);
+                    peer.moveBoundary(this);
                 } else {
-                    peer.move(thisAsPeer);
+                    peer.move(this);
                 }
             }
         }
     }
 
     @Override
-    public void noticePeers(Collection<Peer> peers) {
+    public void noticePeers(Collection<Node> peers) {
         if (!active) {
             return;
         }
 
-        for (Peer peer : peers) {
+        for (Node peer : peers) {
             if (!soi.includes(peer)) {
-                soi.insert(peer.clone(), peer.getLocation());
-                if (soi.overlaps(thisAsPeer, peer.getLocation(), peer.getMaximumRadiusSquared())) {
-                    peer.perceive(thisAsPeer);
+                soi.insert(peer, peer.getLocation());
+                if (soi.overlaps(this, peer.getLocation(), peer.getMaximumRadiusSquared())) {
+                    peer.perceive(this);
                 }
             }
         }
     }
 
     @Override
-    public void perceive(Peer neighbor) {
+    public void perceive(Node neighbor) {
         if (!active) {
-            neighbor.leave(thisAsPeer);
+            neighbor.leave(this);
             return;
         }
 
@@ -164,39 +159,39 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void query(Peer from, Peer joiner) {
+    public void query(Node from, Node joiner) {
         if (!active) {
-            from.leave(thisAsPeer);
+            from.leave(this);
             from.query(joiner, joiner);
             return;
         }
 
-        Peer closest = soi.closestTo(joiner.getLocation());
-        if (closest != null && !closest.equals(thisAsPeer) && !closest.equals(from)) {
-            closest.query(thisAsPeer, joiner);
+        Node closest = soi.closestTo(joiner.getLocation());
+        if (closest != null && !closest.equals(this) && !closest.equals(from)) {
+            closest.query(this, joiner);
         } else {
             add(joiner);
-            joiner.perceive(thisAsPeer);
+            joiner.perceive(this);
             handshakeWith(joiner);
         }
     }
 
-    protected void add(Peer node) {
-        soi.insert(node.clone(), node.getLocation());
+    protected void add(Node node) {
+        soi.insert(node, node.getLocation());
     }
 
-    protected void handshakeWith(Peer node) {
-        if (node.equals(thisAsPeer)) {
+    protected void handshakeWith(Node node) {
+        if (node.equals(this)) {
             return;
         }
-        Collection<Peer> peers = soi.getEnclosingNeighbors(node);
+        Collection<Node> peers = soi.getEnclosingNeighbors(node);
         if (peers.size() > 0) {
             node.noticePeers(peers);
         }
     }
 
-    protected void notifySimMove(Peer neighbor, Point3d oldLocation) {
-        if (oldLocation == null || !soiSet.containsKey(neighbor.id)) {
+    protected void notifySimMove(Node neighbor, Point3d oldLocation) {
+        if (oldLocation == null || !soi.includes(neighbor)) {
             notifySimNotice(neighbor);
             return;
         }
@@ -208,25 +203,21 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
             Point3d nLocation = neighbor.getLocation();
             sim.move(neighbor.getSim(), nLocation, velocity);
         } else {
-            soiSet.remove(neighbor.getId());
             sim.fade(neighbor.getSim());
         }
     }
 
-    protected void notifySimNotice(Peer neighbor) {
+    protected void notifySimNotice(Node neighbor) {
         Vector3d distance = new Vector3d(location);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
-            soiSet.put(neighbor.id, neighbor.getSim());
             sim.notice(neighbor.getSim(), neighbor.getLocation());
         }
     }
 
-    protected void remove(Peer neighbor) {
-        soi.remove(neighbor);
-        Perceiving node = soiSet.remove(neighbor.id);
-        if (node != null) {
-            sim.fade(node);
+    protected void remove(Node neighbor) {
+        if (soi.remove(neighbor)) {
+            sim.fade(neighbor.getSim());
         }
     }
 
@@ -234,25 +225,27 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
      * disconnect neighbors no longer relevant (within AOI or is an enclosing neighbor)
      */
     protected void removeNonOverlapped() {
-        ArrayList<Peer> removed = new ArrayList<>();
-        for (Peer neighbor : soi.getPeers()) {
-            if (!thisAsPeer.equals(neighbor) && !soi.overlaps(thisAsPeer, neighbor.getLocation(),
-                                                              Math.max(maxRadiusSquared,
-                                                                       neighbor.getMaximumRadiusSquared()))
-            && !soi.isEnclosing(neighbor, thisAsPeer)) {
-                removed.add(neighbor);
+        ArrayList<Node> removed = new ArrayList<>();
+        for (Node neighbor : soi.getPeers()) {
+            if (!this.equals(neighbor)) {
+                if (!soi.overlaps((Node) this, neighbor.getLocation(),
+                                  Math.max(maxRadiusSquared, neighbor.getMaximumRadiusSquared()))) {
+                    if (!soi.isEnclosing(neighbor, this)) {
+                        removed.add(neighbor);
+                    }
+                }
             }
         }
-        for (Peer neighbor : removed) {
+        for (Node neighbor : removed) {
             remove(neighbor);
-            neighbor.fadeFrom(thisAsPeer);
+            neighbor.fadeFrom(this);
         }
     }
 
-    protected Point3d update(Peer node) {
-        Peer neighbor = soi.getAliased(node);
+    protected Point3d update(Node node) {
+        Node neighbor = soi.getAliased(node);
         if (neighbor == null) {
-            soi.insert(node.clone(), node.getLocation());
+            soi.insert(node, node.getLocation());
             return null;
         }
         Point3d oldLocation = new Point3d(neighbor.getLocation());

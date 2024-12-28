@@ -15,12 +15,11 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.impl;
+package com.hellblazer.luciferase.lucien.von.impl;
 
-import com.hellblazer.luciferase.lucien.Perceiving;
+import com.hellblazer.luciferase.lucien.von.Node;
+import com.hellblazer.luciferase.lucien.von.Perceiving;
 import com.hellblazer.luciferase.lucien.grid.Vertex;
-
-import java.util.UUID;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -28,54 +27,36 @@ import java.util.UUID;
 
 abstract public class AbstractNode<E extends Perceiving> extends AbstractCursor<E> implements Node {
 
-    protected final UUID  id;
-    protected       float aoiRadius;
-    protected       float maximumVelocity;
-    protected       float maxRadiusSquared;
-    protected       E     sim;
+    protected float aoiRadius;
+    protected float maximumVelocity;
+    protected float maxRadiusSquared;
+    protected E     sim;
 
-    public AbstractNode(E entity, UUID id, Vertex location, float aoiRadius, float maximumVelocity) {
+    public AbstractNode(E entity, Vertex location, float aoiRadius, float maximumVelocity) {
         super(location);
         this.sim = entity;
         this.aoiRadius = aoiRadius;
-        this.id = id;
         this.maximumVelocity = maximumVelocity;
         float maxExtent = aoiRadius + maximumVelocity * BUFFER_MULTIPLIER;
         this.maxRadiusSquared = maxExtent * maxExtent;
     }
 
     @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (!(obj instanceof AbstractNode)) {
-            return false;
-        }
-        return id.equals(((AbstractNode<?>) obj).id);
-    }
-
-    @Override
-    public int hashCode() {
-        return id.hashCode();
-    }
-
     public float getAoiRadius() {
         return aoiRadius;
     }
 
-    public UUID getId() {
-        return id;
-    }
-
+    @Override
     public float getMaximumRadiusSquared() {
         return maxRadiusSquared;
     }
 
+    @Override
     public float getMaximumVelocity() {
         return maximumVelocity;
     }
 
+    @Override
     public E getSim() {
         return sim;
     }
@@ -84,8 +65,6 @@ abstract public class AbstractNode<E extends Perceiving> extends AbstractCursor<
     public String toString() {
         String className = getClass().getCanonicalName();
         int index = className.lastIndexOf('.');
-        return className.substring(index + 1) + " [" + id + "] (" + location.x + ", " + location.y + ") aoi: "
-        + getAoiRadius();
+        return className.substring(index + 1) + " (" + location.x + ", " + location.y + ") aoi: " + getAoiRadius();
     }
-
 }

@@ -25,23 +25,20 @@ import javax.vecmath.Tuple3d;
 import java.util.*;
 
 import static com.hellblazer.luciferase.geometry.Geometry.centerSphere;
-import static com.hellblazer.luciferase.geometry.Geometry.centerSphereFast;
 import static com.hellblazer.luciferase.lucien.grid.V.*;
 
 /**
- * An oriented, delaunay tetrahedral cell. The vertices of the tetrahedron are
- * A, B, C and D. The vertices {A, B, C} are positively oriented with respect to
- * the fourth vertex D.
+ * An oriented, delaunay tetrahedral cell. The vertices of the tetrahedron are A, B, C and D. The vertices {A, B, C} are
+ * positively oriented with respect to the fourth vertex D.
  * <p>
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 public class Tetrahedron implements Iterable<OrientedFace> {
     /**
      * Matrix used to determine the next neighbor in a voronoi face traversal
      */
-    private static final V[][][] VORONOI_FACE_NEXT = {
+    private static final V[][][]     VORONOI_FACE_NEXT   = {
     { null, { null, null, D, C }, { null, D, null, B }, { null, C, B, null } },
     { { null, null, D, C }, null, { D, null, null, A }, { C, null, A, null } },
     { { null, D, null, B }, { D, null, null, A }, null, { B, A, null, null } },
@@ -49,40 +46,40 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     /**
      * Matrix used to determine the origin neighbor in a vororoni face traversal
      */
-    private static final V[][] VORONOI_FACE_ORIGIN = { { null, C, D, B }, { C, null, D, A }, { D, A, null, B },
-                                                       { B, C, A, null } };
+    private static final V[][]       VORONOI_FACE_ORIGIN = { { null, C, D, B }, { C, null, D, A }, { D, A, null, B },
+                                                             { B, C, A, null } };
     /**
      * Vertex A
      */
-    private Vertex a;
+    private              Vertex      a;
     /**
      * Vertx B
      */
-    private Vertex b;
+    private              Vertex      b;
     /**
      * Vertex C
      */
-    private Vertex c;
+    private              Vertex      c;
     /**
      * Vertex D
      */
-    private Vertex d;
+    private              Vertex      d;
     /**
      * The neighboring tetrahedron opposite of vertex A
      */
-    private Tetrahedron nA;
+    private              Tetrahedron nA;
     /**
      * The neighboring tetrahedron opposite of vertex B
      */
-    private Tetrahedron nB;
+    private              Tetrahedron nB;
     /**
      * The neighboring tetrahedron opposite of vertex C
      */
-    private Tetrahedron nC;
+    private              Tetrahedron nC;
     /**
      * The neighboring tetrahedron opposite of vertex D
      */
-    private Tetrahedron nD;
+    private              Tetrahedron nD;
 
     /**
      * Construct a tetrahedron from the four vertices
@@ -117,25 +114,19 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Answer +1 if the orientation of the query is positive with respect to the
-     * plane defined by {a, b, c}, -1 if negative, or 0 if the test point is
-     * coplanar
+     * Answer +1 if the orientation of the query is positive with respect to the plane defined by {a, b, c}, -1 if
+     * negative, or 0 if the test point is coplanar
      * <p>
      *
      * @param query - the point to query
      * @param a     , b, c - the points defining the plane
-     * @return +1 if the orientation of the query point is positive with respect to
-     *         the plane, -1 if negative and 0 if the test point is coplanar
+     * @return +1 if the orientation of the query point is positive with respect to the plane, -1 if negative and 0 if
+     * the test point is coplanar
      */
-    public static int orientation(Tuple3d query, Tuple3d a, Tuple3d b, Tuple3d c) {
+    public static double orientation(Tuple3d query, Tuple3d a, Tuple3d b, Tuple3d c) {
         double result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y,
                                                  query.z);
-        if (result > 0.0) {
-            return 1;
-        } else if (result < 0.0) {
-            return -1;
-        }
-        return 0;
+        return Math.signum(result);
     }
 
     /**
@@ -157,16 +148,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     *
-     * Perform the 1 -> 4 bistellar flip. This produces 4 new tetrahedron from the
-     * original tetrahdron, by inserting the new point in the interior of the
-     * receiver tetrahedron. The star set of the newly inserted point is pushed onto
+     * Perform the 1 -> 4 bistellar flip. This produces 4 new tetrahedron from the original tetrahdron, by inserting the
+     * new point in the interior of the receiver tetrahedron. The star set of the newly inserted point is pushed onto
      * the supplied stack.
      * <p>
      *
      * @param n    - the inserted point
-     * @param ears - the stack of oriented faces that make up the ears of the
-     *             inserted point
+     * @param ears - the stack of oriented faces that make up the ears of the inserted point
      * @return one of the four new tetrahedra
      */
     public Tetrahedron flip1to4(Vertex n, List<OrientedFace> ears) {
@@ -225,19 +213,19 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return the OrientedFace
      */
     public OrientedFace getFace(V v) {
-        // return new OrientedFace(this, v);
-        switch (v) {
-        case A:
+        if (v == A) {
             return new FaceCBD();
-        case B:
-            return new FaceDAC();
-        case C:
-            return new FaceADB();
-        case D:
-            return new FaceBCA();
-        default:
-            throw new IllegalArgumentException("Invalid vertex: " + v);
         }
+        if (v == B) {
+            return new FaceDAC();
+        }
+        if (v == C) {
+            return new FaceADB();
+        }
+        if (v == D) {
+            return new FaceBCA();
+        }
+        throw new IllegalArgumentException("Invalid vertex: " + v);
     }
 
     /**
@@ -267,18 +255,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return the neighboring tetrahedron, or null if none.
      */
     public Tetrahedron getNeighbor(V v) {
-        switch (v) {
-        case A:
+        if (v == A) {
             return nA;
-        case B:
-            return nB;
-        case C:
-            return nC;
-        case D:
-            return nD;
-        default:
-            throw new IllegalArgumentException("Invalid opposing vertex: " + v);
         }
+        if (v == B) {
+            return nB;
+        }
+        if (v == C) {
+            return nC;
+        }
+        return nD;
     }
 
     /**
@@ -299,18 +285,19 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return the vertex
      */
     public Vertex getVertex(V v) {
-        switch (v) {
-        case A:
+        if (v == A) {
             return a;
-        case B:
-            return b;
-        case C:
-            return c;
-        case D:
-            return d;
-        default:
-            throw new IllegalStateException("No such point");
         }
+        if (v == B) {
+            return b;
+        }
+        if (v == C) {
+            return c;
+        }
+        if (v == D) {
+            return d;
+        }
+        throw new IllegalStateException("No such point");
     }
 
     /**
@@ -327,8 +314,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Answer true if the query point is contained in the circumsphere of the
-     * tetrahedron
+     * Answer true if the query point is contained in the circumsphere of the tetrahedron
      *
      * @param query
      * @return
@@ -341,14 +327,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Answer the iterator over the faces of the tetrahedron
      * <p>
      *
-     * @return the iterator of the faces, in the order of the index their opposite
-     *         vertex
+     * @return the iterator of the faces, in the order of the index their opposite vertex
      */
     @Override
     public Iterator<OrientedFace> iterator() {
         return new Iterator<>() {
             OrientedFace[] faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
-            int i = 0;
+            int            i     = 0;
 
             @Override
             public boolean hasNext() {
@@ -406,8 +391,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Answer the vertex indicator of the the point
      *
      * @param v - the vertex
-     * @return the indicator of this vertex or null if not a vertex of this
-     *         tetrahedron or the supplied vertex is null
+     * @return the indicator of this vertex or null if not a vertex of this tetrahedron or the supplied vertex is null
      */
     public V ordinalOf(Vertex v) {
         if (v == null) {
@@ -415,82 +399,81 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         }
         if (v == a) {
             return A;
-        } else if (v == b) {
-            return B;
-        } else if (v == c) {
-            return C;
-        } else if (v == d) {
-            return D;
-        } else {
-            return null;
         }
+        if (v == b) {
+            return B;
+        }
+        if (v == c) {
+            return C;
+        }
+        return D;
     }
 
     /**
-     * Answer > 0 if the query point is positively oriented with respect to the face
-     * opposite the vertex, < 0 if negatively oriented, 0 if the query point is
-     * coplanar to the face
+     * Answer > 0 if the query point is positively oriented with respect to the face opposite the vertex, < 0 if
+     * negatively oriented, 0 if the query point is coplanar to the face
      *
      * @param face
      * @param query
      * @return
      */
-    public int orientationWrt(V face, Tuple3d query) {
-        switch (face) {
-        case A:
+    public double orientationWrt(V face, Tuple3d query) {
+        if (face == A) {
             return orientationWrtCBD(query);
-        case B:
-            return orientationWrtDAC(query);
-        case C:
-            return orientationWrtADB(query);
-        case D:
-            return orientationWrtBCA(query);
-        default:
-            throw new IllegalArgumentException("Invalid face: " + face);
         }
+        if (face == B) {
+            return orientationWrtDAC(query);
+        }
+        if (face == C) {
+            return orientationWrtADB(query);
+        }
+        if (face == D) {
+            return orientationWrtBCA(query);
+        }
+        throw new IllegalArgumentException("Invalid face: " + face);
     }
 
     /**
-     * Answer > 0 if the query point is positively oriented with respect to the face
-     * ADB, < 0 if negatively oriented, 0 if the query point is coplanar to the face
+     * Answer > 0 if the query point is positively oriented with respect to the face ADB, < 0 if negatively oriented, 0
+     * if the query point is coplanar to the face
      *
      * @param query
      * @return
      */
-    public int orientationWrtADB(Tuple3d query) {
+    public double orientationWrtADB(Tuple3d query) {
         return orientation(query, a, d, b);
     }
 
     /**
-     * Answer 1 if the query point is positively oriented with respect to the face
-     * BCA, -1 if negatively oriented, 0 if the query point is coplanar to the face
+     * Answer 1 if the query point is positively oriented with respect to the face BCA, -1 if negatively oriented, 0 if
+     * the query point is coplanar to the face
      *
      * @param query
      * @return
      */
-    public int orientationWrtBCA(Tuple3d query) {
+    public double orientationWrtBCA(Tuple3d query) {
         return orientation(query, b, c, a);
     }
 
     /**
-     * Answer 1 if the query point is positively oriented with respect to the face
-     * CBD, -1 if negatively oriented, 0 if the query point is coplanar to the face
+     * Answer 1 if the query point is positively oriented with respect to the face CBD, -1 if negatively oriented, 0 if
+     * the query point is coplanar to the face
      *
      * @param query
      * @return
      */
-    public int orientationWrtCBD(Tuple3d query) {
+    public double orientationWrtCBD(Tuple3d query) {
         return orientation(query, c, b, d);
     }
 
     /**
-     * Answer 1 if the query point is positively oriented with respect to the face
-     * DAC, -1 if negatively oriented, 0 if the query point is coplanar to the face
+     * Answer 1 if the query point is positively oriented with respect to the face DAC, -1 if negatively oriented, 0 if
+     * the query point is coplanar to the face
      *
      * @param query
      * @return
      */
-    public int orientationWrtDAC(Tuple3d query) {
+    public double orientationWrtDAC(Tuple3d query) {
         return orientation(query, d, a, c);
     }
 
@@ -554,18 +537,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Answer the canonical ordinal of the opposite vertex of the neighboring
-     * tetrahedron
+     * Answer the canonical ordinal of the opposite vertex of the neighboring tetrahedron
      *
      * @param neighbor
      * @return
      */
     V ordinalOf(Tetrahedron neighbor) {
-        if (neighbor == null) {
-            return null;
-        }
         if (nA == neighbor) {
             return A;
+        }
+        if (nD == neighbor) {
+            return D;
         }
         if (nB == neighbor) {
             return B;
@@ -573,21 +555,19 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (nC == neighbor) {
             return C;
         }
-        if (nD == neighbor) {
-            return D;
+        if (neighbor == null) {
+            return null;
         }
         throw new IllegalArgumentException("Not a neighbor: " + neighbor);
     }
 
     /**
-     * Patch the new tetrahedron created by a flip of the receiver by seting the
-     * neighbor to the value in the receiver
+     * Patch the new tetrahedron created by a flip of the receiver by seting the neighbor to the value in the receiver
      * <p>
      *
      * @param vOld - the opposing vertex the neighboring tetrahedron in the receiver
      * @param n    - the new tetrahedron to patch
-     * @param vNew - the opposing vertex of the neighbor to assign in the new
-     *             tetrahedron
+     * @param vNew - the opposing vertex of the neighbor to assign in the new tetrahedron
      */
     void patch(V vOld, Tetrahedron n, V vNew) {
         Tetrahedron neighbor = getNeighbor(vOld);
@@ -598,8 +578,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Patch the new tetrahedron created by a flip of the receiver by seting the
-     * neighbor to the value in the receiver
+     * Patch the new tetrahedron created by a flip of the receiver by seting the neighbor to the value in the receiver
      * <p>
      *
      * @param old
@@ -637,29 +616,30 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             }
         }
 
-        if (nC != null)
+        if (nC != null) {
             if (nC == nD) {
                 removeDegenerateTetrahedronPair(V.C, V.D, V.A, V.B);
                 return;
             }
+        }
     }
 
     void setNeighbor(V v, Tetrahedron n) {
-        switch (v) {
-        case A:
+        if (v == A) {
             nA = n;
-            break;
-        case B:
+            return;
+        }
+        if (v == B) {
             nB = n;
-            break;
-        case C:
+            return;
+        }
+        if (v == C) {
             nC = n;
-            break;
-        case D:
+            return;
+        }
+        if (v == D) {
             nD = n;
-            break;
-        default:
-            throw new IllegalArgumentException("Invalid vertex: " + v);
+            return;
         }
     }
 
@@ -680,9 +660,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Traverse the points which define the voronoi face defined by the dual of the
-     * line segement defined by the center point and the axis. Terminate the
-     * traversal if we have returned to the originating tetrahedron.
+     * Traverse the points which define the voronoi face defined by the dual of the line segement defined by the center
+     * point and the axis. Terminate the traversal if we have returned to the originating tetrahedron.
      * <p>
      *
      * @param origin
@@ -707,8 +686,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
-     * Traverse the points which define the voronoi face defined by the dual of the
-     * line segement defined by the center point and the axis.
+     * Traverse the points which define the voronoi face defined by the dual of the line segement defined by the center
+     * point and the axis.
      * <p>
      *
      * @param vC
@@ -737,56 +716,56 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     void visit(Vertex vC, StarVisitor visitor, Stack<Tetrahedron> stack, Set<Tetrahedron> visited) {
         switch (ordinalOf(vC)) {
-        case A:
-            visitor.visit(A, this, c, b, d);
-            if (nC != null) {
-                stack.push(nC);
-            }
-            if (nB != null) {
-                stack.push(nC);
-            }
-            if (nD != null) {
-                stack.push(nD);
-            }
-            break;
-        case B:
-            visitor.visit(B, this, d, a, c);
-            if (nD != null) {
-                stack.push(nD);
-            }
-            if (nA != null) {
-                stack.push(nA);
-            }
-            if (nC != null) {
-                stack.push(nC);
-            }
-            break;
-        case C:
-            visitor.visit(C, this, a, d, b);
-            if (nA != null) {
-                stack.push(nA);
-            }
-            if (nD != null) {
-                stack.push(nD);
-            }
-            if (nB != null) {
-                stack.push(nB);
-            }
-            break;
-        case D:
-            visitor.visit(D, this, b, c, a);
-            if (nB != null) {
-                stack.push(nB);
-            }
-            if (nA != null) {
-                stack.push(nB);
-            }
-            if (nC != null) {
-                stack.push(nC);
-            }
-            break;
-        default:
-            throw new IllegalArgumentException("Invalid center vertex: " + vC);
+            case A:
+                visitor.visit(A, this, c, b, d);
+                if (nC != null) {
+                    stack.push(nC);
+                }
+                if (nB != null) {
+                    stack.push(nC);
+                }
+                if (nD != null) {
+                    stack.push(nD);
+                }
+                break;
+            case B:
+                visitor.visit(B, this, d, a, c);
+                if (nD != null) {
+                    stack.push(nD);
+                }
+                if (nA != null) {
+                    stack.push(nA);
+                }
+                if (nC != null) {
+                    stack.push(nC);
+                }
+                break;
+            case C:
+                visitor.visit(C, this, a, d, b);
+                if (nA != null) {
+                    stack.push(nA);
+                }
+                if (nD != null) {
+                    stack.push(nD);
+                }
+                if (nB != null) {
+                    stack.push(nB);
+                }
+                break;
+            case D:
+                visitor.visit(D, this, b, c, a);
+                if (nB != null) {
+                    stack.push(nB);
+                }
+                if (nA != null) {
+                    stack.push(nB);
+                }
+                if (nC != null) {
+                    stack.push(nC);
+                }
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid center vertex: " + vC);
         }
     }
 
@@ -834,7 +813,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Represents the oriented face opposite vertex C
      *
      * @author hhildebrand
-     *
      */
     private class FaceADB extends OrientedFace {
 
@@ -845,19 +823,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex[] getEdge(Vertex v) {
-            switch (ordinalOf(v)) {
-            case A: {
+            var ordinal = ordinalOf(v);
+            if (ordinal == A) {
                 return new Vertex[] { d, b };
             }
-            case D: {
+            if (ordinal == D) {
                 return new Vertex[] { b, a };
             }
-            case B: {
+            if (ordinal == B) {
                 return new Vertex[] { a, d };
             }
-            default:
-                throw new IllegalArgumentException("Invalid vertex ordinal");
-            }
+            throw new IllegalArgumentException("Invalid vertex ordinal");
         }
 
         @Override
@@ -872,16 +848,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex getVertex(int v) {
-            switch (v) {
-            case 0:
+            if (v == 0) {
                 return a;
-            case 1:
-                return d;
-            case 2:
-                return b;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + v);
             }
+            if (v == 1) {
+                return d;
+            }
+            if (v == 2) {
+                return b;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + v);
         }
 
         @Override
@@ -912,16 +888,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(c, d, b) == -1;
-            case 1:
-                return adjacentVertex.orientation(a, c, b) == -1;
-            case 2:
-                return adjacentVertex.orientation(a, d, c) == -1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(c, d, b) < 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(a, c, b) < 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(a, d, c) < 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
@@ -930,20 +906,20 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(c, d, b) == 1;
-            case 1:
-                return adjacentVertex.orientation(a, c, b) == 1;
-            case 2:
-                return adjacentVertex.orientation(a, d, c) == 1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(c, d, b) > 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(a, c, b) > 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(a, d, c) > 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
-        public int orientationOf(Vertex query) {
+        public double orientationOf(Vertex query) {
             return orientationWrtADB(query);
         }
 
@@ -958,7 +934,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Represents the oriented face opposite of vertex D
      *
      * @author hhildebrand
-     *
      */
     private class FaceBCA extends OrientedFace {
 
@@ -969,19 +944,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex[] getEdge(Vertex v) {
-            switch (ordinalOf(v)) {
-            case B: {
+            var ordinal = ordinalOf(v);
+            if (ordinal == B) {
                 return new Vertex[] { c, a };
             }
-            case C: {
+            if (ordinal == C) {
                 return new Vertex[] { a, b };
             }
-            case A: {
+            if (ordinal == A) {
                 return new Vertex[] { b, c };
             }
-            default:
-                throw new IllegalArgumentException("Invalid vertex ordinal");
-            }
+            throw new IllegalArgumentException("Invalid vertex ordinal");
         }
 
         @Override
@@ -996,16 +969,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex getVertex(int v) {
-            switch (v) {
-            case 0:
+            if (v == 0) {
                 return b;
-            case 1:
-                return c;
-            case 2:
-                return a;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + v);
             }
+            if (v == 1) {
+                return c;
+            }
+            if (v == 2) {
+                return a;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + v);
         }
 
         @Override
@@ -1036,17 +1009,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(d, c, a) == -1;
-            case 1:
-                return adjacentVertex.orientation(b, d, a) == -1;
-            case 2:
-                return adjacentVertex.orientation(b, c, d) == -1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(d, c, a) < 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(b, d, a) < 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(b, c, d) < 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
@@ -1055,21 +1027,20 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(d, c, a) == 1;
-            case 1:
-                return adjacentVertex.orientation(b, d, a) == 1;
-            case 2:
-                return adjacentVertex.orientation(b, c, d) == 1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(d, c, a) > 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(b, d, a) > 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(b, c, d) > 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
-        public int orientationOf(Vertex query) {
+        public double orientationOf(Vertex query) {
             return orientationWrtBCA(query);
         }
 
@@ -1084,7 +1055,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Represents the oriented face opposite of vertex A
      *
      * @author hhildebrand
-     *
      */
     private class FaceCBD extends OrientedFace {
 
@@ -1095,19 +1065,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex[] getEdge(Vertex v) {
-            switch (ordinalOf(v)) {
-            case C: {
+            var ordinal = ordinalOf(v);
+            if (ordinal == C) {
                 return new Vertex[] { b, d };
             }
-            case B: {
+            if (ordinal == B) {
                 return new Vertex[] { d, c };
             }
-            case D: {
+            if (ordinal == D) {
                 return new Vertex[] { c, b };
             }
-            default:
-                throw new IllegalArgumentException("Invalid vertex ordinal");
-            }
+            throw new IllegalArgumentException("Invalid vertex ordinal");
         }
 
         @Override
@@ -1122,16 +1090,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex getVertex(int v) {
-            switch (v) {
-            case 0:
+            if (v == 0) {
                 return c;
-            case 1:
-                return b;
-            case 2:
-                return d;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + v);
             }
+            if (v == 1) {
+                return b;
+            }
+            if (v == 2) {
+                return d;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + v);
         }
 
         @Override
@@ -1162,16 +1130,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(a, b, d) == -1;
-            case 1:
-                return adjacentVertex.orientation(c, a, d) == -1;
-            case 2:
-                return adjacentVertex.orientation(c, b, a) == -1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(a, b, d) < 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(c, a, d) < 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(c, b, a) < 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
@@ -1180,20 +1148,20 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(a, b, d) == 1;
-            case 1:
-                return adjacentVertex.orientation(c, a, d) == 1;
-            case 2:
-                return adjacentVertex.orientation(c, b, a) == 1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(a, b, d) > 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(c, a, d) > 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(c, b, a) > 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
-        public int orientationOf(Vertex query) {
+        public double orientationOf(Vertex query) {
             return orientationWrtCBD(query);
         }
 
@@ -1208,7 +1176,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Represents the oriented face opposite of vertex B
      *
      * @author hhildebrand
-     *
      */
     private class FaceDAC extends OrientedFace {
 
@@ -1219,19 +1186,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex[] getEdge(Vertex v) {
-            switch (ordinalOf(v)) {
-            case D: {
+            var ordinal = ordinalOf(v);
+            if (ordinal == D) {
                 return new Vertex[] { a, c };
             }
-            case A: {
+            if (ordinal == A) {
                 return new Vertex[] { c, d };
             }
-            case C: {
+            if (ordinal == C) {
                 return new Vertex[] { d, a };
             }
-            default:
-                throw new IllegalArgumentException("Invalid vertex ordinal");
-            }
+            throw new IllegalArgumentException("Invalid vertex ordinal");
         }
 
         @Override
@@ -1246,16 +1211,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public Vertex getVertex(int v) {
-            switch (v) {
-            case 0:
+            if (v == 0) {
                 return d;
-            case 1:
-                return a;
-            case 2:
-                return c;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + v);
             }
+            if (v == 1) {
+                return a;
+            }
+            if (v == 2) {
+                return c;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + v);
         }
 
         @Override
@@ -1286,16 +1251,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(b, a, c) == -1;
-            case 1:
-                return adjacentVertex.orientation(d, b, c) == -1;
-            case 2:
-                return adjacentVertex.orientation(d, a, b) == -1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(b, a, c) < 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(d, b, c) < 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(d, a, b) < 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
@@ -1304,20 +1269,20 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             if (adjacentVertex == null) {
                 return false;
             }
-            switch (vertex) {
-            case 0:
-                return adjacentVertex.orientation(b, a, c) == 1;
-            case 1:
-                return adjacentVertex.orientation(d, b, c) == 1;
-            case 2:
-                return adjacentVertex.orientation(d, a, b) == 1;
-            default:
-                throw new IllegalArgumentException("Invalid vertex index: " + vertex);
+            if (vertex == 0) {
+                return adjacentVertex.orientation(b, a, c) > 0;
             }
+            if (vertex == 1) {
+                return adjacentVertex.orientation(d, b, c) > 0;
+            }
+            if (vertex == 2) {
+                return adjacentVertex.orientation(d, a, b) > 0;
+            }
+            throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
 
         @Override
-        public int orientationOf(Vertex query) {
+        public double orientationOf(Vertex query) {
             return orientationWrtDAC(query);
         }
 

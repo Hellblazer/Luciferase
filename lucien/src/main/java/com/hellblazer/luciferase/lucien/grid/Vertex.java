@@ -124,13 +124,6 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
         adjacent = tetrahedron;
     }
 
-    public final List<OrientedFace> getEars() {
-        assert adjacent != null;
-        EarSet aggregator = new EarSet();
-        adjacent.visitStar(this, aggregator);
-        return aggregator.getEars();
-    }
-
     /**
      * Answer the collection of neighboring vertices around the receiver.
      *
@@ -193,14 +186,9 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @return +1 if the receiver lies inside the sphere passing through a, b, c, and d; -1 if it lies outside; and 0 if
      * the five points are cospherical
      */
-    public final int inSphere(Tuple3d a, Tuple3d b, Tuple3d c, Tuple3d d) {
-        double result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
-        if (result > 0.0) {
-            return 1;
-        } else if (result < 0.0) {
-            return -1;
-        }
-        return 0;
+    public final double inSphere(Tuple3d a, Tuple3d b, Tuple3d c, Tuple3d d) {
+        double result = Geometry.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
+        return Math.signum(result);
     }
 
     @Override
@@ -252,14 +240,9 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @return +1 if the orientation of the query point is positive with respect to the plane, -1 if negative and 0 if
      * the test point is coplanar
      */
-    public final int orientation(Tuple3d a, Tuple3d b, Tuple3d c) {
+    public final double orientation(Tuple3d a, Tuple3d b, Tuple3d c) {
         double result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
-        if (result > 0.0) {
-            return 1;
-        } else if (result < 0.0) {
-            return -1;
-        }
-        return 0;
+        return Math.signum(result);
     }
 
     @Override

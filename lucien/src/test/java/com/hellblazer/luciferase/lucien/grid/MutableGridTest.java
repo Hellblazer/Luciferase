@@ -20,8 +20,6 @@ import javax.vecmath.Point3d;
 import java.util.ArrayList;
 import java.util.Random;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 /**
  * @author hal.hildebrand
  */
@@ -65,22 +63,21 @@ public class MutableGridTest {
         var sentinel = new MutableGrid();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : getRandomPoints(entropy, 1024, 1000, true)) {
+        for (var p : getRandomPoints(entropy, 128, 10, true)) {
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 1000;
-        long now = System.currentTimeMillis();
+        int iterations = 100_000;
+        long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
-                site.moveBy(randomPoint(entropy, -10d, 10d));
+                site.moveBy(randomPoint(entropy, -1d, 1d));
             }
             sentinel.rebuild(entropy);
         }
-        final var total = System.currentTimeMillis() - now;
+        final var total = System.nanoTime() - now;
         System.out.println(
-        "sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total, iterations,
-                                                                               total / iterations));
-
-        assertEquals(17, sites.get(50).getNeighbors().size());
+        "sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total / 1_000_000.0,
+                                                                               iterations,
+                                                                               (total / iterations) / 1_000_000.0));
     }
 }

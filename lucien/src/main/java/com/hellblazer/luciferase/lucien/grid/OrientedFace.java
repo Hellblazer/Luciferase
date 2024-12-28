@@ -30,7 +30,6 @@ import static com.hellblazer.luciferase.lucien.grid.V.*;
  * <p>
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
 public abstract class OrientedFace implements Iterable<Vertex> {
@@ -46,9 +45,8 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     }
 
     /**
-     * Perform a flip for deletion of the vertex from the tetrahedralization. The
-     * incident and adjacent tetrahedra form an ear of the star set of tetrahedra
-     * adjacent to v.
+     * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
+     * an ear of the star set of tetrahedra adjacent to v.
      * <p>
      *
      * @param index - the index of the receiver in the list of ears
@@ -99,8 +97,8 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     }
 
     /**
-     * Perform the flip which incrementally restores the delaunay condition after
-     * the vertex has been inserted into the tetrahedralization.
+     * Perform the flip which incrementally restores the delaunay condition after the vertex has been inserted into the
+     * tetrahedralization.
      * <p>
      *
      * @param n    - the inserted vertex
@@ -152,8 +150,8 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     }
 
     /**
-     * Perform the bistellar flip 2 -> 3. This produces three new tetrahedra from
-     * the receiver and a tetrahdron that shares the receiver face
+     * Perform the bistellar flip 2 -> 3. This produces three new tetrahedra from the receiver and a tetrahdron that
+     * shares the receiver face
      *
      * @return the three created tetrahedron
      */
@@ -193,31 +191,34 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         t1.removeAnyDegenerateTetrahedronPair();
         t2.removeAnyDegenerateTetrahedronPair();
 
-        if (t0.isDeleted())
-            if (t1.isDeleted())
-                if (t2.isDeleted())
+        if (t0.isDeleted()) {
+            if (t1.isDeleted()) {
+                if (t2.isDeleted()) {
                     return new Tetrahedron[] {};
-                else
+                } else {
                     return new Tetrahedron[] { t2 };
-            else if (t2.isDeleted())
+                }
+            } else if (t2.isDeleted()) {
                 return new Tetrahedron[] { t1 };
-            else
+            } else {
                 return new Tetrahedron[] { t1, t2 };
-        else if (t1.isDeleted())
-            if (t2.isDeleted())
+            }
+        } else if (t1.isDeleted()) {
+            if (t2.isDeleted()) {
                 return new Tetrahedron[] { t0 };
-            else
+            } else {
                 return new Tetrahedron[] { t0, t2 };
-        else if (t2.isDeleted())
+            }
+        } else if (t2.isDeleted()) {
             return new Tetrahedron[] { t0, t1 };
-        else
+        } else {
             return new Tetrahedron[] { t0, t1, t2 };
+        }
     }
 
     /**
-     * Perform the bistellar 3->2 flip. This flip constructs two new tetrahedra from
-     * the two tetraheda determined by the incident and adjacent neighbor of the
-     * face, along with the tetrahedron on the reflexive edge of the face.
+     * Perform the bistellar 3->2 flip. This flip constructs two new tetrahedra from the two tetraheda determined by the
+     * incident and adjacent neighbor of the face, along with the tetrahedron on the reflexive edge of the face.
      * <p>
      *
      * @param reflexEdge - the vertex opposite the reflex edge of the face
@@ -232,20 +233,20 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         Vertex top1 = null;
 
         switch (reflexEdge) {
-        case 0:
-            top0 = getVertex(1);
-            top1 = getVertex(2);
-            break;
-        case 1:
-            top0 = getVertex(0);
-            top1 = getVertex(2);
-            break;
-        case 2:
-            top0 = getVertex(0);
-            top1 = getVertex(1);
-            break;
-        default:
-            throw new IllegalArgumentException("Invalid reflex edge index: " + reflexEdge);
+            case 0:
+                top0 = getVertex(1);
+                top1 = getVertex(2);
+                break;
+            case 1:
+                top0 = getVertex(0);
+                top1 = getVertex(2);
+                break;
+            case 2:
+                top0 = getVertex(0);
+                top1 = getVertex(1);
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid reflex edge index: " + reflexEdge);
         }
 
         Vertex x = getVertex(reflexEdge);
@@ -303,8 +304,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     }
 
     /**
-     * Answer the canonical ordinal of the vertex in the adjacent tetrahedron which
-     * is opposite of this face.
+     * Answer the canonical ordinal of the vertex in the adjacent tetrahedron which is opposite of this face.
      *
      * @return
      */
@@ -357,30 +357,26 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     abstract public int indexOf(Vertex v);
 
     /**
-     * Answer true if the faces joined by the edge are concave when viewed from the
-     * originating tetrahedron.
+     * Answer true if the faces joined by the edge are concave when viewed from the originating tetrahedron.
      * <p>
      *
      * @param vertex - the vertex of the face that is opposite of the edge
-     * @return true if the faces joined by the edge are convex, false if these faces
-     *         are not convex
+     * @return true if the faces joined by the edge are convex, false if these faces are not convex
      */
     abstract public boolean isConvex(int vertex);
 
     /**
-     * Answer true if the faces joined by the edge are not concave when viewed from
-     * the originating tetrahedron.
+     * Answer true if the faces joined by the edge are not concave when viewed from the originating tetrahedron.
      * <p>
      *
      * @param vertex - the vertex of the face that is opposite of the edge
-     * @return true if the faces joined by the edge are reflex, false if these faces
-     *         are not reflex
+     * @return true if the faces joined by the edge are reflex, false if these faces are not reflex
      */
     abstract public boolean isReflex(int vertex);
 
     /**
-     * Answer true if the vertex in the adjacent tetrahedron is not contained in the
-     * circumsphere of the incident tetrahedron
+     * Answer true if the vertex in the adjacent tetrahedron is not contained in the circumsphere of the incident
+     * tetrahedron
      *
      * @return
      */
@@ -414,14 +410,14 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     }
 
     /**
-     * Answer +1 if the orientation of the query point is positive with respect to
-     * this face, -1 if negative and 0 if the test point is coplanar with the face
+     * Answer +1 if the orientation of the query point is positive with respect to this face, -1 if negative and 0 if
+     * the test point is coplanar with the face
      *
      * @param query - the point to be tested
-     * @return +1 if the orientation of the query point is positive with respect to
-     *         the face, -1 if negative and 0 if the query point is coplanar
+     * @return +1 if the orientation of the query point is positive with respect to the face, -1 if negative and 0 if
+     * the query point is coplanar
      */
-    abstract public int orientationOf(Vertex query);
+    abstract public double orientationOf(Vertex query);
 
     private boolean inSphere(Vertex query, Vertex b, Vertex c, Vertex d) {
         Vertex a = getIncidentVertex();
@@ -443,12 +439,12 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     private boolean isLocallyDelaunay(int index, Vertex v, LinkedList<OrientedFace> ears) {
         Function<Vertex, Boolean> circumSphere = query -> {
             switch (indexOf(v)) {
-            case 0:
-                return inSphere(query, getVertex(1), getVertex(2), getVertex(0));
-            case 1:
-                return inSphere(query, getVertex(0), getVertex(2), getVertex(1));
-            default:
-                return inSphere(query, getVertex(0), getVertex(1), getVertex(2));
+                case 0:
+                    return inSphere(query, getVertex(1), getVertex(2), getVertex(0));
+                case 1:
+                    return inSphere(query, getVertex(0), getVertex(2), getVertex(1));
+                default:
+                    return inSphere(query, getVertex(0), getVertex(1), getVertex(2));
             }
         };
         for (int i = 0; i < ears.size(); i++) {

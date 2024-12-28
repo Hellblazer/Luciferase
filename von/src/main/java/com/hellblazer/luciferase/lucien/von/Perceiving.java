@@ -15,30 +15,22 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.impl;
+package com.hellblazer.luciferase.lucien.von;
 
-import java.util.Collection;
+import javax.vecmath.Point3d;
+import javax.vecmath.Vector3d;
 
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
-public interface Node {
-    int BUFFER_MULTIPLIER = 2;
+public interface Perceiving {
 
-    void fadeFrom(Peer neighbor);
+    void fade(Perceiving neighbor);
 
-    void leave(Peer leaving);
+    void move(Perceiving neighbor, Point3d location, Vector3d velocity);
 
-    void move(Peer neighbor);
+    void notice(Perceiving neighbor, Point3d location);
 
-    void moveBoundary(Peer neighbor);
-
-    void noticePeers(Collection<Peer> peers);
-
-    void perceive(Peer neighbor);
-
-    void query(Peer from, Peer joiner);
+    void setCursor(Cursor cursor);
 }

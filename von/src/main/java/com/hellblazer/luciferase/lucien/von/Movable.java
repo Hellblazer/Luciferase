@@ -15,22 +15,16 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.von;
 
-import javax.vecmath.Point3d;
-import javax.vecmath.Vector3d;
+import javax.vecmath.Tuple3d;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 
-public interface Perceiving {
+public interface Movable {
 
-    void fade(Perceiving neighbor);
+    void moveBy(Tuple3d velocity);
 
-    void move(Perceiving neighbor, Point3d location, Vector3d velocity);
-
-    void notice(Perceiving neighbor, Point3d location);
-
-    void setCursor(Cursor cursor);
 }

@@ -15,16 +15,36 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.von;
 
-import javax.vecmath.Tuple3d;
+import java.util.Collection;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 
-public interface Movable {
+public interface Node extends Locatable {
+    int BUFFER_MULTIPLIER = 2;
 
-    void moveBy(Tuple3d velocity);
+    void fadeFrom(Node neighbor);
 
+    void leave(Node leaving);
+
+    void move(Node neighbor);
+
+    void moveBoundary(Node neighbor);
+
+    void noticePeers(Collection<Node> nodes);
+
+    void perceive(Node neighbor);
+
+    void query(Node from, Node joiner);
+
+    float getAoiRadius();
+
+    float getMaximumRadiusSquared();
+
+    float getMaximumVelocity();
+
+    Perceiving getSim();
 }

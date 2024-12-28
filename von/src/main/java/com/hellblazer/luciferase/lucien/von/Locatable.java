@@ -15,9 +15,9 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.von;
 
-import javax.vecmath.Tuple3d;
+import javax.vecmath.Point3d;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -25,5 +25,5 @@ import javax.vecmath.Tuple3d;
 
 public interface Locatable {
 
-    Tuple3d getLocation();
+    Point3d getLocation();
 }

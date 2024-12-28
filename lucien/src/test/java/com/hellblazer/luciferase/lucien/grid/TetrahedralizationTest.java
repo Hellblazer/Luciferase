@@ -92,7 +92,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(378, L.size());
+        assertEquals(375, L.size());
     }
 
     @Test

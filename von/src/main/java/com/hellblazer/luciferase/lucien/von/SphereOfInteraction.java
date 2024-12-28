@@ -15,9 +15,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.impl;
+package com.hellblazer.luciferase.lucien.von;
 
-import javax.vecmath.Point2d;
 import javax.vecmath.Point3d;
 import javax.vecmath.Tuple3d;
 import java.util.Collection;
@@ -35,15 +34,15 @@ public interface SphereOfInteraction {
      * @param coord
      * @return
      */
-    Peer closestTo(Point3d coord);
+    Node closestTo(Point3d coord);
 
     /**
-     * Answer the Peer aliased to the Peer
+     * Answer the Node aliased to the Node
      *
      * @param peer
      * @return
      */
-    Peer getAliased(Peer peer);
+    Node getAliased(Node peer);
 
     /**
      * get a list of enclosing neighbors
@@ -51,22 +50,22 @@ public interface SphereOfInteraction {
      * @param id
      * @return
      */
-    Collection<Peer> getEnclosingNeighbors(Peer id);
+    Collection<Node> getEnclosingNeighbors(Node id);
 
-    Iterable<Peer> getPeers();
+    Iterable<Node> getPeers();
 
     /**
      * TODO temporary
      *
      * @return
      */
-    List<Point2d[]> getVoronoiDomainEdges();
+    List<Point3d[]> getVoronoiDomainEdges();
 
     /**
      * @param peer
      * @return
      */
-    boolean includes(Peer peer);
+    boolean includes(Node peer);
 
     /**
      * insert a new site, the first inserted is myself
@@ -74,7 +73,7 @@ public interface SphereOfInteraction {
      * @param id
      * @param coord
      */
-    void insert(Peer id, Point3d coord);
+    void insert(Node id, Point3d coord);
 
     /**
      * check if the node is a boundary neighbor
@@ -84,7 +83,7 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean isBoundary(Peer peer, Tuple3d center, float radiusSquared);
+    boolean isBoundary(Node peer, Tuple3d center, float radiusSquared);
 
     /**
      * check if the node 'id' is an enclosing neighbor of 'center_node_id'
@@ -93,7 +92,7 @@ public interface SphereOfInteraction {
      * @param center_node_id
      * @return
      */
-    boolean isEnclosing(Peer peer, Peer center_node_id);
+    boolean isEnclosing(Node peer, Node center_node_id);
 
     /**
      * check if a circle overlaps with a particular node
@@ -103,14 +102,14 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean overlaps(Peer peer, Point3d center, float radiusSquared);
+    boolean overlaps(Node peer, Point3d center, float radiusSquared);
 
     /**
      * remove a site
      *
      * @param peer
      */
-    void remove(Peer peer);
+    boolean remove(Node peer);
 
     /**
      * modify the coordinates of a site
@@ -118,6 +117,6 @@ public interface SphereOfInteraction {
      * @param peer
      * @param coord
      */
-    void update(Peer peer, Point3d coord);
+    void update(Node peer, Point3d coord);
 
 }
