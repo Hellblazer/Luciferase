@@ -34,6 +34,12 @@ import static com.hellblazer.luciferase.lucien.grid.V.*;
 
 public abstract class OrientedFace implements Iterable<Vertex> {
 
+    private volatile V adjacentVertexOrdinal;
+
+    void clear() {
+        adjacentVertexOrdinal = null;
+    }
+
     /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
      * an ear of the star set of tetrahedra adjacent to v.
@@ -287,23 +293,25 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public Vertex getAdjacentVertex() {
-        if (getAdjacentVertexOrdinal() == null) {
+        var current = getAdjacentVertexOrdinal();
+        if (current == null) {
             return null;
         }
-        return getAdjacent().getVertex(getAdjacentVertexOrdinal());
+        return getAdjacent().getVertex(current);
     }
 
-    /**
-     * The vertex in the adjacent tetrahedron opposite of this face
-     */
     /**
      * Answer the canonical ordinal of the vertex in the adjacent tetrahedron which is opposite of this face.
      *
      * @return
      */
     public V getAdjacentVertexOrdinal() {
-        Tetrahedron adjacent = getAdjacent();
-        return adjacent == null ? null : adjacent.ordinalOf(getIncident());
+        var current = adjacentVertexOrdinal;
+        if (current == null) {
+            Tetrahedron adjacent = getAdjacent();
+            current = adjacentVertexOrdinal = adjacent == null ? null : adjacent.ordinalOf(getIncident());
+        }
+        return current;
     }
 
     /**

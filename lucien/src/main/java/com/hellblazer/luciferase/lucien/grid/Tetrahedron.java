@@ -551,6 +551,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return
      */
     V ordinalOf(Tetrahedron neighbor) {
+        clear();
         if (nA == neighbor) {
             return A;
         }
@@ -567,6 +568,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             return null;
         }
         throw new IllegalArgumentException("Not a neighbor: " + neighbor);
+    }
+
+    private void clear() {
+        faceADB.clear();
+        faceBCA.clear();
+        faceCBD.clear();
+        faceDAC.clear();
     }
 
     /**
@@ -633,6 +641,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     void setNeighbor(V v, Tetrahedron n) {
+        clear();
         if (v == A) {
             nA = n;
             return;
@@ -645,25 +654,26 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             nC = n;
             return;
         }
-        if (v == D) {
-            nD = n;
-            return;
-        }
+        nD = n;
     }
 
     void setNeighborA(Tetrahedron t) {
+        clear();
         nA = t;
     }
 
     void setNeighborB(Tetrahedron t) {
+        clear();
         nB = t;
     }
 
     void setNeighborC(Tetrahedron t) {
+        clear();
         nC = t;
     }
 
     void setNeighborD(Tetrahedron t) {
+        clear();
         nD = t;
     }
 
