@@ -166,10 +166,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return one of the four new tetrahedra
      */
     public Tetrahedron flip1to4(Vertex n, List<OrientedFace> ears) {
-        Tetrahedron t0 = new Tetrahedron(a, b, c, n);
-        Tetrahedron t1 = new Tetrahedron(a, d, b, n);
-        Tetrahedron t2 = new Tetrahedron(a, c, d, n);
-        Tetrahedron t3 = new Tetrahedron(b, d, c, n);
+        var t0 = new Tetrahedron(a, b, c, n);
+        var t1 = new Tetrahedron(a, d, b, n);
+        var t2 = new Tetrahedron(a, c, d, n);
+        var t3 = new Tetrahedron(b, d, c, n);
 
         t0.setNeighborA(t3);
         t0.setNeighborB(t2);
@@ -194,7 +194,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         delete();
 
-        OrientedFace newFace = t0.getFace(D);
+        var newFace = t0.getFace(D);
         if (newFace.hasAdjacent()) {
             ears.add(newFace);
         }
@@ -247,7 +247,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     public List<Vertex[]> getFaces() {
-        List<Vertex[]> faces = new ArrayList<>();
+        var faces = new ArrayList<Vertex[]>();
         faces.add(new Vertex[] { a, d, b });
         faces.add(new Vertex[] { b, c, a });
         faces.add(new Vertex[] { c, b, d });
@@ -340,8 +340,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     @Override
     public Iterator<OrientedFace> iterator() {
         return new Iterator<>() {
-            OrientedFace[] faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
-            int            i     = 0;
+            var faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
+            int i     = 0;
 
             @Override
             public boolean hasNext() {
@@ -375,10 +375,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             return this;
         }
 
-        Tetrahedron current = this;
+        var current = this;
         while (true) {
             // get the tetrahedron on the other side of the face
-            Tetrahedron tetrahedron = current.getNeighbor(o);
+            var tetrahedron = current.getNeighbor(o);
             int i = 0;
             for (V v : Grid.ORDER[tetrahedron.ordinalOf(current).ordinal()][entropy.nextInt(6)]) {
                 o = v;
@@ -487,13 +487,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     @Override
     public String toString() {
-        StringBuffer buf = new StringBuffer();
+        var buf = new StringBuffer();
         buf.append("Tetrahedron [");
         if (isDeleted()) {
             buf.append("DELETED]");
             return buf.toString();
         }
-        for (Vertex v : getVertices()) {
+        for (var v : getVertices()) {
             buf.append(v);
             buf.append(", ");
         }
@@ -585,7 +585,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param vNew - the opposing vertex of the neighbor to assign in the new tetrahedron
      */
     void patch(V vOld, Tetrahedron n, V vNew) {
-        Tetrahedron neighbor = getNeighbor(vOld);
+        var neighbor = getNeighbor(vOld);
         if (neighbor != null) {
             neighbor.setNeighbor(neighbor.ordinalOf(this), n);
             n.setNeighbor(vNew, neighbor);
@@ -691,11 +691,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (origin == this) {
             return;
         }
-        double[] center = new double[3];
+        var center = new double[3];
         centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3d(center[0], center[1], center[2]));
         V next = VORONOI_FACE_NEXT[ordinalOf(from).ordinal()][ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
-        Tetrahedron t = getNeighbor(next);
+        var t = getNeighbor(next);
         if (t != null) {
             t.traverseVoronoiFace(origin, this, vC, axis, face);
         }
@@ -712,12 +712,12 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param faces
      */
     void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3d[]> faces) {
-        ArrayList<Point3d> face = new ArrayList<>();
-        double[] center = new double[3];
+        var face = new ArrayList<>();
+        var center = new double[3];
         centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3d(center[0], center[1], center[2]));
         V v = VORONOI_FACE_ORIGIN[ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
-        Tetrahedron next = getNeighbor(v);
+        var next = getNeighbor(v);
         if (next != null) {
             next.traverseVoronoiFace(this, this, vC, axis, face);
         }
@@ -793,7 +793,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param visitor - the visitor to invoke for each tetrahedron in the star
      */
     void visitStar(Vertex vC, StarVisitor visitor) {
-        Set<Tetrahedron> tetrahedrons = new IdentitySet<>(10);
+        var tetrahedrons = new IdentitySet<>(10);
         var stack = new Stack<Tetrahedron>();
         stack.push(this);
         while (!stack.isEmpty()) {
@@ -805,17 +805,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     private void removeDegenerateTetrahedronPair(V ve1, V ve2, V vf1, V vf2) {
-        Tetrahedron nE = getNeighbor(ve1);
-        Tetrahedron nF1_that = nE.getNeighbor(getVertex(vf1));
-        Tetrahedron nF2_that = nE.getNeighbor(getVertex(vf2));
+        var nE = getNeighbor(ve1);
+        var nF1_that = nE.getNeighbor(getVertex(vf1));
+        var nF2_that = nE.getNeighbor(getVertex(vf2));
 
         patch(vf1, nF1_that, nF1_that.ordinalOf(nE));
         patch(vf2, nF2_that, nF2_that.ordinalOf(nE));
 
-        Vertex e1 = getVertex(ve1);
-        Vertex e2 = getVertex(ve2);
-        Vertex f1 = getVertex(vf1);
-        Vertex f2 = getVertex(vf2);
+        var e1 = getVertex(ve1);
+        var e2 = getVertex(ve2);
+        var f1 = getVertex(vf1);
+        var f2 = getVertex(vf2);
 
         delete();
         nE.delete();
@@ -901,7 +901,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isConvex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -919,7 +919,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isReflex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1022,7 +1022,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isConvex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1040,7 +1040,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isReflex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1143,7 +1143,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isConvex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1161,7 +1161,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isReflex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1264,7 +1264,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isConvex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1282,7 +1282,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isReflex(int vertex) {
-            Vertex adjacentVertex = getAdjacentVertex();
+            var adjacentVertex = getAdjacentVertex();
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1307,6 +1307,5 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         public String toString() {
             return "Face DAC";
         }
-
     }
 }

@@ -62,7 +62,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @return
      */
     public static double random(Random random, double min, double max) {
-        double result = random.nextDouble();
+        var result = random.nextDouble();
         if (min > max) {
             result *= min - max;
             result += max;
@@ -132,7 +132,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
     public final Collection<Vertex> getNeighbors() {
         assert adjacent != null;
 
-        final Set<Vertex> neighbors = new IdentitySet<>();
+        final var neighbors = new IdentitySet<Vertex>();
         adjacent.visitStar(this, (vertex, t, x, y, z) -> {
             neighbors.add(x);
             neighbors.add(y);
@@ -144,7 +144,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
     public final Deque<OrientedFace> getStar() {
         assert adjacent != null;
 
-        final Deque<OrientedFace> star = new ArrayDeque<>();
+        final var star = new ArrayDeque<OrientedFace>();
         adjacent.visitStar(this, (vertex, t, x, y, z) -> {
             star.push(t.getFace(vertex));
         });
@@ -159,8 +159,8 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
     public final List<Tuple3d[]> getVoronoiRegion() {
         assert adjacent != null;
 
-        final List<Tuple3d[]> faces = new ArrayList<>();
-        Set<Vertex> neighbors = new IdentitySet<>(10);
+        final var faces = new ArrayList<Tuple3d[]>();
+        var neighbors = new IdentitySet<Tuple3d>(10);
         adjacent.visitStar(this, (vertex, t, x, y, z) -> {
             if (neighbors.add(x)) {
                 t.traverseVoronoiFace(this, x, faces);
@@ -187,7 +187,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * the five points are cospherical
      */
     public final double inSphere(Tuple3d a, Tuple3d b, Tuple3d c, Tuple3d d) {
-        double result = Geometry.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
+        var result = Geometry.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
         return Math.signum(result);
     }
 
@@ -241,7 +241,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * the test point is coplanar
      */
     public final double orientation(Tuple3d a, Tuple3d b, Tuple3d c) {
-        double result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
+        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
         return Math.signum(result);
     }
 
@@ -262,7 +262,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
 
     void clear() {
         adjacent = null;
-        Vertex n = next;
+        var n = next;
         while (n != null) {
             n.adjacent = null;
             n = n.next;
@@ -270,12 +270,14 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
     }
 
     void detach(Vertex v) {
-        if (next == null) {
-            throw new NoSuchElementException();
+        var n = next;
+        while (n != null) {
+            if (v == next) {
+                next = v.next;
+                return;
+            }
         }
-        if (v == next) {
-            next = v.next;
-        }
+        throw new NoSuchElementException();
     }
 
     void freshenAdjacent(Tetrahedron tetrahedron) {
