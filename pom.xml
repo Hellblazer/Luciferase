@@ -430,31 +430,7 @@
                 </os>
             </activation>
             <properties>
-                <lwjgl.natives>natives-windows</lwjgl.natives>
-            </properties>
-        </profile>
-        <profile>
-            <id>linux-x86</id>
-            <activation>
-                <os>
-                    <family>Linux</family>
-                    <arch>x86</arch>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-linux-x86</lwjgl.natives>
-            </properties>
-        </profile>
-        <profile>
-            <id>linux-amd64</id>
-            <activation>
-                <os>
-                    <family>Linux</family>
-                    <arch>amd64</arch>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-linux-amd64</lwjgl.natives>
+                <lwjgl.natives>natives-windows-${os.arch}</lwjgl.natives>
             </properties>
         </profile>
         <profile>
@@ -465,7 +441,7 @@
                 </os>
             </activation>
             <properties>
-                <lwjgl.natives>natives-linux</lwjgl.natives>
+                <lwjgl.natives>natives-linux-arm64</lwjgl.natives>
             </properties>
         </profile>
         <profile>
