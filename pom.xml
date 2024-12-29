@@ -271,7 +271,7 @@
                                 </requireMavenVersion>
                                 <dependencyConvergence/>
                                 <requireJavaVersion>
-                                    <version>[22,)</version>
+                                    <version>[23,)</version>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>

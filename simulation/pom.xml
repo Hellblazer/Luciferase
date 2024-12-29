@@ -12,4 +12,11 @@
     <artifactId>simulation</artifactId>
     <name>Simulation: DES</name>
 
+    <dependencies>
+        <dependency>
+            <groupId>com.hellblazer.primeMover</groupId>
+            <artifactId>runtime</artifactId>
+        </dependency>
+    </dependencies>
+
 </project>
