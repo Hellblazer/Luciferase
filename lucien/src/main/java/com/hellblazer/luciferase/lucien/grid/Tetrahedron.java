@@ -340,8 +340,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     @Override
     public Iterator<OrientedFace> iterator() {
         return new Iterator<>() {
-            var faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
-            int i     = 0;
+            OrientedFace[] faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
+            int            i     = 0;
 
             @Override
             public boolean hasNext() {
@@ -712,7 +712,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param faces
      */
     void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3d[]> faces) {
-        var face = new ArrayList<>();
+        var face = new ArrayList<Point3d>();
         var center = new double[3];
         centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3d(center[0], center[1], center[2]));
@@ -793,7 +793,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param visitor - the visitor to invoke for each tetrahedron in the star
      */
     void visitStar(Vertex vC, StarVisitor visitor) {
-        var tetrahedrons = new IdentitySet<>(10);
+        var tetrahedrons = new IdentitySet<Tetrahedron>(10);
         var stack = new Stack<Tetrahedron>();
         stack.push(this);
         while (!stack.isEmpty()) {
