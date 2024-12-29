@@ -441,7 +441,7 @@
                 </os>
             </activation>
             <properties>
-                <lwjgl.natives>natives-linux-arm64</lwjgl.natives>
+                <lwjgl.natives>natives-linux</lwjgl.natives>
             </properties>
         </profile>
         <profile>
@@ -452,7 +452,7 @@
                 </os>
             </activation>
             <properties>
-                <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
+                <lwjgl.natives>natives-macos</lwjgl.natives>
             </properties>
         </profile>
     </profiles>
