@@ -129,7 +129,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      *
      * @return the collection of neighboring vertices
      */
-    public final Collection<Vertex> getNeighbors() {
+    public Collection<Vertex> getNeighbors() {
         assert adjacent != null;
 
         final var neighbors = new IdentitySet<Vertex>();

@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.lucien.von;
 
+import com.hellblazer.luciferase.lucien.grid.Vertex;
+
 import javax.vecmath.Point3d;
 import javax.vecmath.Tuple3d;
 import java.util.Collection;
@@ -37,20 +39,12 @@ public interface SphereOfInteraction {
     Node closestTo(Point3d coord);
 
     /**
-     * Answer the Node aliased to the Node
-     *
-     * @param peer
-     * @return
-     */
-    Node getAliased(Node peer);
-
-    /**
      * get a list of enclosing neighbors
      *
      * @param id
      * @return
      */
-    Collection<Node> getEnclosingNeighbors(Node id);
+    List<Node> getEnclosingNeighbors(Node id);
 
     Iterable<Node> getPeers();
 
@@ -76,7 +70,7 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean isBoundary(Node peer, Tuple3d center, float radiusSquared);
+    boolean isBoundary(Node peer, Vertex center, float radiusSquared);
 
     /**
      * check if the node 'id' is an enclosing neighbor of 'center_node_id'

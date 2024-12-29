@@ -27,6 +27,7 @@ import javax.vecmath.Tuple3d;
 import javax.vecmath.Vector3d;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -46,16 +47,6 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     @Override
     public void fadeFrom(Node neighbor) {
         remove(neighbor);
-    }
-
-    public Collection<Node> getNeighbors() {
-        final var neighbors = new ArrayList<Node>();
-        for (var peer : soi.getPeers()) {
-            if (!peer.equals(this)) {
-                neighbors.add(peer);
-            }
-        }
-        return neighbors;
     }
 
     public void join(Node gateway) {
@@ -116,7 +107,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         removeNonOverlapped();
         for (var peer : soi.getPeers()) {
             if (!peer.equals(this)) {
-                if (soi.isBoundary(peer, location, maxRadiusSquared)) {
+                if (soi.isBoundary(peer, this, maxRadiusSquared)) {
                     peer.moveBoundary(this);
                 } else {
                     peer.move(this);
@@ -190,7 +181,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
             notifySimNotice(neighbor);
             return;
         }
-        var distance = new Vector3d(location);
+        var distance = new Vector3d(x, y, z);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
             var velocity = new Vector3d();
@@ -203,7 +194,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     protected void notifySimNotice(Node neighbor) {
-        var distance = new Vector3d(location);
+        var distance = new Vector3d(x, y, z);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
             sim.notice(neighbor.getSim(), neighbor.getLocation());
@@ -238,13 +229,12 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     protected Point3d update(Node node) {
-        var neighbor = soi.getAliased(node);
-        if (neighbor == null) {
+        if (!soi.includes(node)) {
             soi.insert(node, node.getLocation());
             return null;
         }
-        var oldLocation = new Point3d(neighbor.getLocation());
-        soi.update(neighbor, node.getLocation());
+        var oldLocation = new Point3d(node.getLocation());
+        soi.update(node, node.getLocation());
         return oldLocation;
     }
 }

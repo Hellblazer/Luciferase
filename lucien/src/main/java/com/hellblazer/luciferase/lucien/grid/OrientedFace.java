@@ -34,12 +34,6 @@ import static com.hellblazer.luciferase.lucien.grid.V.*;
 
 public abstract class OrientedFace implements Iterable<Vertex> {
 
-    private volatile V adjacentVertexOrdinal;
-
-    void clear() {
-        adjacentVertexOrdinal = null;
-    }
-
     /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
      * an ear of the star set of tetrahedra adjacent to v.
@@ -119,7 +113,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         Tetrahedron returned = null;
         if (reflexEdges == 0 && !isRegular()) {
             // Only one face of the opposing tetrahedron is visible
-            for (Tetrahedron t : flip2to3()) {
+            for (var t : flip2to3()) {
                 var f = t.getFace(n);
                 if (f.hasAdjacent()) {
                     ears.add(f);
@@ -132,7 +126,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             var t1 = getIncident().getNeighbor(opposingVertex);
             var t2 = getAdjacent().getNeighbor(opposingVertex);
             if (t1 != null && t1 == t2) {
-                for (Tetrahedron t : flip3to2(reflexEdge)) {
+                for (var t : flip3to2(reflexEdge)) {
                     OrientedFace f = t.getFace(n);
                     if (f.hasAdjacent()) {
                         ears.add(f);
@@ -152,14 +146,18 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return the three created tetrahedron
      */
     public Tetrahedron[] flip2to3() {
-        assert getAdjacentVertexOrdinal() != null;
         var incident = getIncident();
 
         var opposingVertex = getAdjacentVertex();
         var incidentVertex = getIncidentVertex();
-        var t0 = new Tetrahedron(getVertex(0), incidentVertex, getVertex(1), opposingVertex);
-        var t1 = new Tetrahedron(getVertex(1), incidentVertex, getVertex(2), opposingVertex);
-        var t2 = new Tetrahedron(getVertex(0), getVertex(2), incidentVertex, opposingVertex);
+
+        var vertex0 = getVertex(0);
+        var vertex1 = getVertex(1);
+        var vertex2 = getVertex(2);
+
+        var t0 = new Tetrahedron(vertex0, incidentVertex, vertex1, opposingVertex);
+        var t1 = new Tetrahedron(vertex1, incidentVertex, vertex2, opposingVertex);
+        var t2 = new Tetrahedron(vertex0, vertex2, incidentVertex, opposingVertex);
 
         t0.setNeighborA(t1);
         t0.setNeighborC(t2);
@@ -170,15 +168,15 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         t2.setNeighborA(t1);
         t2.setNeighborB(t0);
 
-        incident.patch(getVertex(2), t0, D);
-        incident.patch(getVertex(0), t1, D);
-        incident.patch(getVertex(1), t2, D);
+        incident.patch(vertex2, t0, D);
+        incident.patch(vertex0, t1, D);
+        incident.patch(vertex1, t2, D);
 
         var adjacent = getAdjacent();
 
-        adjacent.patch(getVertex(0), t1, B);
-        adjacent.patch(getVertex(1), t2, C);
-        adjacent.patch(getVertex(2), t0, B);
+        adjacent.patch(vertex0, t1, B);
+        adjacent.patch(vertex1, t2, C);
+        adjacent.patch(vertex2, t0, B);
 
         incident.delete();
         adjacent.delete();
@@ -221,7 +219,6 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return the two created tetrahedron
      */
     public Tetrahedron[] flip3to2(int reflexEdge) {
-        assert getAdjacentVertexOrdinal() != null;
         var incident = getIncident();
         var o2 = getIncident().getNeighbor(getVertex(reflexEdge));
 
@@ -293,11 +290,12 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public Vertex getAdjacentVertex() {
-        var current = getAdjacentVertexOrdinal();
+        Tetrahedron adjacent = getAdjacent();
+        var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
         if (current == null) {
             return null;
         }
-        return getAdjacent().getVertex(current);
+        return adjacent.getVertex(current);
     }
 
     /**
@@ -306,12 +304,8 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public V getAdjacentVertexOrdinal() {
-        var current = adjacentVertexOrdinal;
-        if (current == null) {
-            Tetrahedron adjacent = getAdjacent();
-            current = adjacentVertexOrdinal = adjacent == null ? null : adjacent.ordinalOf(getIncident());
-        }
-        return current;
+        Tetrahedron adjacent = getAdjacent();
+        return adjacent == null ? null : adjacent.ordinalOf(getIncident());
     }
 
     /**
@@ -428,13 +422,13 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             b = a;
             a = tmp;
         }
-        return query.inSphere(a, b, c, d) > 0;
+        return query.inSphere(a, b, c, d) > 0.0;
     }
 
     private boolean isFlippable3ear(Vertex n) {
         var opposingFace = getIncident().getFace(n);
         opposingFace.getAdjacent().getFace(opposingFace.getAdjacentVertex());
-        return opposingFace.orientationOf(n) > 0;
+        return opposingFace.orientationOf(n) > 0.0;
 
     }
 

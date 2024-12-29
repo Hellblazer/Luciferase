@@ -18,7 +18,6 @@
 package com.hellblazer.luciferase.lucien.grid;
 
 import javax.vecmath.Point3d;
-import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
@@ -30,7 +29,6 @@ import static com.hellblazer.luciferase.lucien.grid.V.*;
  * The dynamic, mutable version of the Grid
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
 public class MutableGrid extends Grid {
@@ -43,7 +41,6 @@ public class MutableGrid extends Grid {
 
     /**
      * Construct a Sentinel using the supplied random number generator
-     *
      */
     public MutableGrid(Vertex[] fourCorners) {
         super(fourCorners);
@@ -68,8 +65,8 @@ public class MutableGrid extends Grid {
     }
 
     /**
-     * Track the point into the tetrahedralization. See "Computing the 3D Voronoi
-     * Diagram Robustly: An Easy Explanation", by Hugo Ledoux
+     * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
+     * Explanation", by Hugo Ledoux
      * <p>
      *
      * @param p - the point to be inserted
@@ -78,13 +75,17 @@ public class MutableGrid extends Grid {
     public Vertex track(Point3d p, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
-        add(v, locate(p, last, entropy));
+        add(v, locate(p, entropy));
         return v;
     }
 
+    public Tetrahedron locate(Point3d p, Random entropy) {
+        return locate(p, last, entropy);
+    }
+
     /**
-     * Track the point into the tetrahedralization. See "Computing the 3D Voronoi
-     * Diagram Robustly: An Easy Explanation", by Hugo Ledoux
+     * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
+     * Explanation", by Hugo Ledoux
      * <p>
      *
      * @param p    - the point to be inserted
@@ -109,7 +110,6 @@ public class MutableGrid extends Grid {
      * Perform the 4->1 bistellar flip. This flip is the inverse of the 1->4 flip.
      *
      * @param n - the vertex who's star defines the 4 tetrahedron
-     *
      * @return the tetrahedron created from the flip
      */
     protected Tetrahedron flip4to1(Vertex n) {

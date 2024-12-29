@@ -94,8 +94,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param w
      */
     public Tetrahedron(Vertex x, Vertex y, Vertex z, Vertex w) {
-        assert x != null & y != null & z != null & w != null;
-
         a = x;
         b = y;
         c = z;
@@ -118,7 +116,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public Tetrahedron(Vertex[] vertices) {
         this(vertices[0], vertices[1], vertices[2], vertices[3]);
-        assert vertices.length == 4;
     }
 
     /**
@@ -328,7 +325,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return
      */
     public boolean inSphere(Vertex query) {
-        return query.inSphere(a, b, c, d) > 0;
+        return query.inSphere(a, b, c, d) > 0.0;
     }
 
     /**
@@ -361,11 +358,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     public Tetrahedron locate(Tuple3d query, Random entropy) {
-        assert query != null;
-
+        var order = Arrays.asList(Grid.VERTICES);
         V o = null;
-        for (V face : Grid.VERTICES) {
-            if (orientationWrt(face, query) < 0) {
+        Collections.shuffle(order);
+        for (V face : order) {
+            if (orientationWrt(face, query) < 0.0) {
                 o = face;
                 break;
             }
@@ -383,7 +380,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             for (V v : Grid.ORDER[tetrahedron.ordinalOf(current).ordinal()][entropy.nextInt(6)]) {
                 o = v;
                 current = tetrahedron;
-                if (tetrahedron.orientationWrt(v, query) < 0) {
+                if (tetrahedron.orientationWrt(v, query) < 0.0) {
                     // we have found a face which the query point is on the other side
                     break;
                 }
@@ -569,13 +566,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         throw new IllegalArgumentException("Not a neighbor: " + neighbor);
     }
 
-    private void clear() {
-        faceADB.clear();
-        faceBCA.clear();
-        faceCBD.clear();
-        faceDAC.clear();
-    }
-
     /**
      * Patch the new tetrahedron created by a flip of the receiver by seting the neighbor to the value in the receiver
      * <p>
@@ -640,7 +630,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     void setNeighbor(V v, Tetrahedron n) {
-        clear();
         if (v == A) {
             nA = n;
             return;
@@ -657,22 +646,18 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     void setNeighborA(Tetrahedron t) {
-        clear();
         nA = t;
     }
 
     void setNeighborB(Tetrahedron t) {
-        clear();
         nB = t;
     }
 
     void setNeighborC(Tetrahedron t) {
-        clear();
         nC = t;
     }
 
     void setNeighborD(Tetrahedron t) {
-        clear();
         nD = t;
     }
 
@@ -906,13 +891,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(c, d, b) < 0;
+                return adjacentVertex.orientation(c, d, b) < 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(a, c, b) < 0;
+                return adjacentVertex.orientation(a, c, b) < 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(a, d, c) < 0;
+                return adjacentVertex.orientation(a, d, c) < 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -924,13 +909,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(c, d, b) > 0;
+                return adjacentVertex.orientation(c, d, b) > 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(a, c, b) > 0;
+                return adjacentVertex.orientation(a, c, b) > 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(a, d, c) > 0;
+                return adjacentVertex.orientation(a, d, c) > 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -1027,13 +1012,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(d, c, a) < 0;
+                return adjacentVertex.orientation(d, c, a) < 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(b, d, a) < 0;
+                return adjacentVertex.orientation(b, d, a) < 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(b, c, d) < 0;
+                return adjacentVertex.orientation(b, c, d) < 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -1045,13 +1030,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(d, c, a) > 0;
+                return adjacentVertex.orientation(d, c, a) > 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(b, d, a) > 0;
+                return adjacentVertex.orientation(b, d, a) > 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(b, c, d) > 0;
+                return adjacentVertex.orientation(b, c, d) > 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -1148,13 +1133,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(a, b, d) < 0;
+                return adjacentVertex.orientation(a, b, d) < 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(c, a, d) < 0;
+                return adjacentVertex.orientation(c, a, d) < 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(c, b, a) < 0;
+                return adjacentVertex.orientation(c, b, a) < 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -1166,13 +1151,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(a, b, d) > 0;
+                return adjacentVertex.orientation(a, b, d) > 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(c, a, d) > 0;
+                return adjacentVertex.orientation(c, a, d) > 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(c, b, a) > 0;
+                return adjacentVertex.orientation(c, b, a) > 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -1269,13 +1254,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(b, a, c) < 0;
+                return adjacentVertex.orientation(b, a, c) < 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(d, b, c) < 0;
+                return adjacentVertex.orientation(d, b, c) < 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(d, a, b) < 0;
+                return adjacentVertex.orientation(d, a, b) < 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }
@@ -1287,13 +1272,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
                 return false;
             }
             if (vertex == 0) {
-                return adjacentVertex.orientation(b, a, c) > 0;
+                return adjacentVertex.orientation(b, a, c) > 0.0;
             }
             if (vertex == 1) {
-                return adjacentVertex.orientation(d, b, c) > 0;
+                return adjacentVertex.orientation(d, b, c) > 0.0;
             }
             if (vertex == 2) {
-                return adjacentVertex.orientation(d, a, b) > 0;
+                return adjacentVertex.orientation(d, a, b) > 0.0;
             }
             throw new IllegalArgumentException("Invalid vertex index: " + vertex);
         }

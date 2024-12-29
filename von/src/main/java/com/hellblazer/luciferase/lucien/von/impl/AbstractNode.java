@@ -17,16 +17,18 @@
 
 package com.hellblazer.luciferase.lucien.von.impl;
 
+import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.luciferase.lucien.von.Cursor;
 import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.Perceiving;
-import com.hellblazer.luciferase.lucien.grid.Vertex;
+
+import javax.vecmath.Point3d;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 
-abstract public class AbstractNode<E extends Perceiving> extends AbstractCursor<E> implements Node {
-
+abstract public class AbstractNode<E extends Perceiving> extends Vertex implements Node, Cursor {
     protected float aoiRadius;
     protected float maximumVelocity;
     protected float maxRadiusSquared;
@@ -39,6 +41,11 @@ abstract public class AbstractNode<E extends Perceiving> extends AbstractCursor<
         this.maximumVelocity = maximumVelocity;
         float maxExtent = aoiRadius + maximumVelocity * BUFFER_MULTIPLIER;
         this.maxRadiusSquared = maxExtent * maxExtent;
+    }
+
+    @Override
+    public Point3d getLocation() {
+        return new Point3d(x, y, z);
     }
 
     @Override
@@ -65,6 +72,6 @@ abstract public class AbstractNode<E extends Perceiving> extends AbstractCursor<
     public String toString() {
         String className = getClass().getCanonicalName();
         int index = className.lastIndexOf('.');
-        return className.substring(index + 1) + " (" + location.x + ", " + location.y + ") aoi: " + getAoiRadius();
+        return className.substring(index + 1) + " (" + x + ", " + y + ", " + z + ") aoi: " + getAoiRadius();
     }
 }
