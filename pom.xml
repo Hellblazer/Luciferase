@@ -19,8 +19,6 @@
         <h2.version>2.1.212</h2.version>
         <javafx.version>23</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
-
-        <lwjgl.version>3.3.5</lwjgl.version>
     </properties>
 
     <licenses>
@@ -182,14 +180,22 @@
                 <artifactId>javafx-swing</artifactId>
                 <version>${javafx.version}</version>
             </dependency>
-
             <dependency>
-                <groupId>org.lwjgl</groupId>
-                <artifactId>lwjgl-bom</artifactId>
-                <version>${lwjgl.version}</version>
-                <scope>import</scope>
-                <type>pom</type>
+                <groupId>org.jzy3d</groupId>
+                <artifactId>panama-gl-ui-javafx</artifactId>
+                <version>1.2.0-SNAPSHOT</version>
             </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>30.1.1-jre</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.12.0</version>
+            </dependency>
+
 
             <!-- Test Only Dependencies Below This Line-->
             <dependency>
@@ -403,11 +409,16 @@
             </snapshots>
         </repository>
         <repository>
-            <id>jogamp-remote</id>
-            <name>jogamp test mirror</name>
-            <url>https://www.jogamp.org/deployment/maven/</url>
-            <layout>default</layout>
+            <id>jzy3d-snapshots</id>
+            <name>Jzy3d Snapshots</name>
+            <url>https://maven.jzy3d.org/snapshots/</url>
         </repository>
+        <repository>
+            <id>jzy3d-releases</id>
+            <name>Jzy3d Releases</name>
+            <url>https://maven.jzy3d.org/releases/</url>
+        </repository>
+
     </repositories>
 
     <pluginRepositories>
@@ -421,40 +432,4 @@
             </snapshots>
         </pluginRepository>
     </pluginRepositories>
-
-    <profiles>
-        <profile>
-            <id>windows</id>
-            <activation>
-                <os>
-                    <family>Windows</family>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-windows-${os.arch}</lwjgl.natives>
-            </properties>
-        </profile>
-        <profile>
-            <id>linux</id>
-            <activation>
-                <os>
-                    <family>Linux</family>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-linux</lwjgl.natives>
-            </properties>
-        </profile>
-        <profile>
-            <id>mac</id>
-            <activation>
-                <os>
-                    <family>Mac</family>
-                </os>
-            </activation>
-            <properties>
-                <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
-            </properties>
-        </profile>
-    </profiles>
 </project>
