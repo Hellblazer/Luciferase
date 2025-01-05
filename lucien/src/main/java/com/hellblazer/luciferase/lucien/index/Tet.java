@@ -8,7 +8,7 @@ import javax.vecmath.Tuple3i;
  *
  * @author hal.hildebrand
  **/
-public record Tet(int x, int y, int z, byte l, byte type) {
+public record Tet(int x1, int x2, int x3, byte l, byte type) {
 
     private static final byte[][] PARENT_2D = new byte[][] { { 0, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
     private static final byte[][] PARENT_3D = new byte[][] { { 0, 1, 2, 3, 4, 5 }, { 0, 1, 1, 1, 0, 0 },
@@ -47,11 +47,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c5.coords(), CORNER.c7.coords() } };
 
     /**
-     * @param l - level
      * @param L - maximum refinement level
      * @return the length of a triangle at the given level, in integer coordinates
      */
-    public static int lengthAtLevel(byte l, int L) {
+    public int lengthAtLevel(int L) {
         return 1 << (L - l);
     }
 
@@ -63,10 +62,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the 3D coordinates of the vertex
      */
     public Tuple3i coordinates(int L, int vertex) {
-        int h = lengthAtLevel(l, L);
+        int h = lengthAtLevel(L);
         int ei = type / 2;
 
-        var coords = new int[] { x, y, z };
+        var coords = new int[] { x1, x2, x3 };
         if (vertex == 0) {
             return new Point3i(coords[0], coords[1], coords[2]);
         }
@@ -92,10 +91,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return 0;
         }
         int i = 0;
-        int h = lengthAtLevel(l, L);
-        i |= (x & h) > 0 ? 1 : 0;
-        i |= (y & h) > 0 ? 2 : 0;
-        i |= (z & h) > 0 ? 4 : 0;
+        int h = lengthAtLevel(L);
+        i |= (x1 & h) > 0 ? 1 : 0;
+        i |= (x2 & h) > 0 ? 2 : 0;
+        i |= (x3 & h) > 0 ? 4 : 0;
         return i;
     }
 
@@ -104,8 +103,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the parent Tet
      */
     public Tet parent(int L) {
-        int h = lengthAtLevel(l, L);
-        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), PARENT_3D[cubeId(L)][type]);
+        int h = lengthAtLevel(L);
+        return new Tet(x1 & ~h, x2 & ~h, x3 & ~h, (byte) (l - 1), PARENT_3D[cubeId(L)][type]);
     }
 
     /**
@@ -113,19 +112,19 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the i-th child (in Bey's order) of the receiver
      */
     public Tet child(int i, int L) {
-        var coords = new int[] { x, y, z };
+        var coords = new int[] { x1, x2, x3 };
         var bey = TRI_INDEX_TO_BEYS[type][i];
         if (bey == 0) {
-            coords[0] = x;
-            coords[1] = y;
-            coords[2] = z;
+            coords[0] = x1;
+            coords[1] = x2;
+            coords[2] = x3;
         } else {
             /* i-th anchor coordinate of child is (X_(0,i)+X_(vertex,i))/2
              * where X_(i,j) is the j-th coordinate of t's ith node */
             var coordinates = coordinates(L, TRI_BEY_ID_TO_VERTEX[bey]);
-            coords[0] = x + coordinates.x >> 1;
-            coords[1] = y + coordinates.y >> 1;
-            coords[2] = x + coordinates.z >> 1;
+            coords[0] = x1 + coordinates.x >> 1;
+            coords[1] = x2 + coordinates.y >> 1;
+            coords[2] = x1 + coordinates.z >> 1;
         }
         return new Tet(coords[0], coords[1], coords[2], (byte) (l - 1), TRI_TYPE_OF_CHILD[type][bey]);
     }
