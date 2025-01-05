@@ -36,31 +36,6 @@ import org.junit.jupiter.api.Test;
 
 public class TetrahedralizationTest {
 
-    /**
-     * Create some random points in a sphere
-     *
-     * @param random
-     * @param numberOfPoints
-     * @param radius
-     * @param inSphere
-     * @return
-     */
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
-        float radiusSquared = radius * radius;
-        Point3f ourPoints[] = new Point3f[numberOfPoints];
-        for (int i = 0; i < ourPoints.length; i++) {
-            if (inSphere) {
-                do {
-                    ourPoints[i] = Vertex.randomPoint(random, -radius, radius);
-                } while (ourPoints[i].distanceSquared(Vertex.ORIGIN) >= radiusSquared);
-            } else {
-                ourPoints[i] = Vertex.randomPoint(random, -radius, radius);
-            }
-        }
-
-        return ourPoints;
-    }
-
     @Test
     public void testCubic() {
         var random = new Random(0);
@@ -70,7 +45,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(184, L.size());
+        assertEquals(186, L.size());
     }
 
     @Test
@@ -92,13 +67,13 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(378, L.size());
+        assertEquals(384, L.size());
     }
 
     @Test
     public void testLargeRandom() {
         Random random = new Random(666);
-        Point3f ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
+        Point3f ourPoints[] = Vertex.getRandomPoints(random, 60000, 100.0f, false);
 
         MutableGrid T = new MutableGrid();
 
@@ -107,7 +82,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(402808, L.size());
+        assertEquals(402893, L.size());
     }
 
     @Test

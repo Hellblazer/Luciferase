@@ -39,9 +39,6 @@ public class MutableGrid extends Grid {
         this(getFourCorners());
     }
 
-    /**
-     * Construct a Sentinel using the supplied random number generator
-     */
     public MutableGrid(Vertex[] fourCorners) {
         super(fourCorners);
         last = new Tetrahedron(fourCorners);
@@ -205,7 +202,7 @@ public class MutableGrid extends Grid {
     }
 
     private void insert(Vertex v, final Tetrahedron target) {
-        List<OrientedFace> ears = new ArrayList<>();
+        List<OrientedFace> ears = new ArrayList<>(20);
         last = target.flip1to4(v, ears);
         while (!ears.isEmpty()) {
             Tetrahedron l = ears.remove(ears.size() - 1).flip(v, ears);

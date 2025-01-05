@@ -24,53 +24,20 @@ import java.util.Random;
  * @author hal.hildebrand
  */
 public class MutableGridTest {
-    private static final Point3f ORIGIN = new Point3f();
-
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
-        float radiusSquared = radius * radius;
-        Point3f ourPoints[] = new Point3f[numberOfPoints];
-        for (int i = 0; i < ourPoints.length; i++) {
-            if (inSphere) {
-                do {
-                    ourPoints[i] = randomPoint(random, -radius, radius);
-                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
-            } else {
-                ourPoints[i] = randomPoint(random, -radius, radius);
-            }
-        }
-
-        return ourPoints;
-    }
-
-    public static float random(Random random, float min, float max) {
-        float result = random.nextFloat();
-        if (min > max) {
-            result *= min - max;
-            result += max;
-        } else {
-            result *= max - min;
-            result += min;
-        }
-        return result;
-    }
-
-    public static Point3f randomPoint(Random random, float min, float max) {
-        return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
-    }
 
     @Test
     public void smokin() throws Exception {
         var sentinel = new MutableGrid();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : getRandomPoints(entropy, 256, 10, true)) {
+        for (var p : Vertex.getRandomPoints(entropy, 256, 10, true)) {
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 1_000;
+        int iterations = 10_000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
-                site.moveBy(randomPoint(entropy, -1f, 1f));
+                site.moveBy(Vertex.randomPoint(entropy, -1f, 1f));
             }
             sentinel.rebuild(entropy);
         }

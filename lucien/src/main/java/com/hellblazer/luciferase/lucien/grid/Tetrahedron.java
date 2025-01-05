@@ -358,10 +358,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     public Tetrahedron locate(Tuple3f query, Random entropy) {
-        var order = Arrays.asList(Grid.VERTICES);
         V o = null;
-        Collections.shuffle(order, entropy);
-        for (V face : order) {
+        for (V face : Grid.VERTICES) {
             if (orientationWrt(face, query) < 0.0d) {
                 o = face;
                 break;
@@ -380,7 +378,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             for (V v : Grid.ORDER[tetrahedron.ordinalOf(current).ordinal()][entropy.nextInt(6)]) {
                 o = v;
                 current = tetrahedron;
-                if (tetrahedron.orientationWrt(v, query) < 0.0) {
+                if (tetrahedron.orientationWrt(v, query) < 0.0d) {
                     // we have found a face which the query point is on the other side
                     break;
                 }

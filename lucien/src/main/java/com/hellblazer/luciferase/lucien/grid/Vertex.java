@@ -85,6 +85,30 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
     }
 
+    public static Point3f randomPoint(float radius, Random random) {
+        var x = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var y = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var z = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+
+        return new Point3f(x * radius, y * radius, z * radius);
+    }
+
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        float radiusSquared = radius * radius;
+        Point3f ourPoints[] = new Point3f[numberOfPoints];
+        for (int i = 0; i < ourPoints.length; i++) {
+            if (inSphere) {
+                do {
+                    ourPoints[i] = randomPoint(radius, random);
+                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
+            } else {
+                ourPoints[i] = randomPoint(radius, random);
+            }
+        }
+
+        return ourPoints;
+    }
+
     /**
      * Answer the component model of the receiver corresponding to the model class
      *

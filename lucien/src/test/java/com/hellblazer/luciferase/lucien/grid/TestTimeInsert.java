@@ -3,29 +3,24 @@
  *
  * This file is part of the 3D Incremental Voronoi system
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License, or (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+ * details.
  *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import static com.hellblazer.luciferase.lucien.grid.TetrahedralizationTest.getRandomPoints;
-
-import java.util.Random;
+import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
-
-import org.junit.jupiter.api.Test;
+import java.util.Random;
 
 /**
  *
@@ -86,7 +81,7 @@ public class TestTimeInsert {
     @Test
     public void testLargeRandom() {
         Random random = new Random(666);
-        Point3f ourPoints[] = getRandomPoints(random, 600, 1.0F, false);
+        Point3f ourPoints[] = Vertex.getRandomPoints(random, 600, 1.0F, false);
 
         MutableGrid tet = new MutableGrid();
 
@@ -107,7 +102,7 @@ public class TestTimeInsert {
     @Test
     public void testSuperLargeRandom() {
         Random random = new Random(666);
-        Point3f ourPoints[] = getRandomPoints(random, 6000, 10.0F, false);
+        Point3f ourPoints[] = Vertex.getRandomPoints(random, 6000, 10.0F, false);
 
         MutableGrid tet = new MutableGrid();
 

@@ -45,11 +45,12 @@ public class Grid implements Iterable<Vertex> {
     /**
      * Cannonical enumeration of the vertex ordinals
      */
-    public static final    V[]      VERTICES = { A, B, C, D };
+    public static final    V[]      VERTICES     = { A, B, C, D };
+    public static final    Vertex[] FOUR_CORNERS = new Vertex[4];
     /**
      * A pre-built table of all the permutations of remaining faces to check in location.
      */
-    protected static final V[][][]  ORDER    = new V[][][] {
+    protected static final V[][][]  ORDER        = new V[][][] {
     { { B, C, D }, { C, B, D }, { C, D, B }, { B, D, C }, { D, B, C }, { D, C, B } },
 
     { { A, C, D }, { C, A, D }, { C, D, A }, { A, D, C }, { D, A, C }, { D, C, A } },
@@ -60,19 +61,27 @@ public class Grid implements Iterable<Vertex> {
     /**
      * Scale of the universe
      */
-    private static         float    SCALE    = (float) Math.pow(2, 16);
+    private static         float    SCALE        = (float) Math.pow(2, 24);
+
+    static {
+        FOUR_CORNERS[0] = new Vertex(-1, 1, -1, SCALE);
+        FOUR_CORNERS[1] = new Vertex(1, 1, 1, SCALE);
+        FOUR_CORNERS[2] = new Vertex(1, -1, -1, SCALE);
+        FOUR_CORNERS[3] = new Vertex(-1, -1, 1, SCALE);
+    }
+
     /**
      * The four corners of the maximally bounding tetrahedron
      */
-    protected final        Vertex[] fourCorners;
+    protected final Vertex[] fourCorners;
     /**
      * the Head of the vertices list
      */
-    protected              Vertex   head;
+    protected       Vertex   head;
     /**
      * The number of points in this Grid
      */
-    protected              int      size     = 0;
+    protected       int      size = 0;
 
     Grid(Vertex[] fourCorners) {
         this.fourCorners = fourCorners;
@@ -84,12 +93,7 @@ public class Grid implements Iterable<Vertex> {
     }
 
     public static Vertex[] getFourCorners() {
-        Vertex[] fourCorners = new Vertex[4];
-        fourCorners[0] = new Vertex(-1, 1, -1, SCALE);
-        fourCorners[1] = new Vertex(1, 1, 1, SCALE);
-        fourCorners[2] = new Vertex(1, -1, -1, SCALE);
-        fourCorners[3] = new Vertex(-1, -1, 1, SCALE);
-        return fourCorners;
+        return FOUR_CORNERS;
     }
 
     /**
