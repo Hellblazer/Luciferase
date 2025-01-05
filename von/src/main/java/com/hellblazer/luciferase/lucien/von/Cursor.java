@@ -17,12 +17,16 @@
 
 package com.hellblazer.luciferase.lucien.von;
 
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
+
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
-public interface Cursor extends Movable, Locatable {
+public interface Cursor {
 
+    void moveBy(Tuple3f velocity);
+
+    Point3f getLocation();
 }

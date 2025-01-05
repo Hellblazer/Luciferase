@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Random;
 import java.util.Set;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 
 import org.junit.jupiter.api.Test;
 
@@ -45,9 +45,9 @@ public class TetrahedralizationTest {
      * @param inSphere
      * @return
      */
-    public static Point3d[] getRandomPoints(Random random, int numberOfPoints, double radius, boolean inSphere) {
-        double radiusSquared = radius * radius;
-        Point3d ourPoints[] = new Point3d[numberOfPoints];
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        float radiusSquared = radius * radius;
+        Point3f ourPoints[] = new Point3f[numberOfPoints];
         for (int i = 0; i < ourPoints.length; i++) {
             if (inSphere) {
                 do {
@@ -77,7 +77,7 @@ public class TetrahedralizationTest {
     public void testFlip4to1() {
         var random = new Random(0);
         MutableGrid T = new MutableGrid();
-        Point3d N = new Point3d(100, 100, 100);
+        Point3f N = new Point3f(100, 100, 100);
         var v = T.track(N, random);
         T.flip4to1(v);
         assertEquals(1, T.tetrahedrons().size());
@@ -92,13 +92,13 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(375, L.size());
+        assertEquals(378, L.size());
     }
 
     @Test
     public void testLargeRandom() {
         Random random = new Random(666);
-        Point3d ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
+        Point3f ourPoints[] = getRandomPoints(random, 60000, 100.0f, false);
 
         MutableGrid T = new MutableGrid();
 
@@ -107,7 +107,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(403089, L.size());
+        assertEquals(402808, L.size());
     }
 
     @Test

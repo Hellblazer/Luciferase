@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.lucien.von;
 
 import com.hellblazer.luciferase.lucien.grid.Vertex;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3d;
 import java.util.Collection;
 import java.util.List;
@@ -36,7 +36,7 @@ public interface SphereOfInteraction {
      * @param coord
      * @return
      */
-    Node closestTo(Point3d coord);
+    Node closestTo(Point3f coord);
 
     /**
      * get a list of enclosing neighbors
@@ -60,7 +60,7 @@ public interface SphereOfInteraction {
      * @param id
      * @param coord
      */
-    void insert(Node id, Point3d coord);
+    void insert(Node id, Point3f coord);
 
     /**
      * check if the node is a boundary neighbor
@@ -89,7 +89,7 @@ public interface SphereOfInteraction {
      * @param radiusSquared
      * @return
      */
-    boolean overlaps(Node peer, Point3d center, float radiusSquared);
+    boolean overlaps(Node peer, Point3f center, float radiusSquared);
 
     /**
      * remove a site
@@ -104,6 +104,6 @@ public interface SphereOfInteraction {
      * @param peer
      * @param coord
      */
-    void update(Node peer, Point3d coord);
+    void update(Node peer, Point3f coord);
 
 }

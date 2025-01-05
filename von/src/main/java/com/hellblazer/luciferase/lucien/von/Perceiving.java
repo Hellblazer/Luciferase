@@ -17,8 +17,9 @@
 
 package com.hellblazer.luciferase.lucien.von;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import javax.vecmath.Vector3d;
+import javax.vecmath.Vector3f;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -28,9 +29,9 @@ public interface Perceiving {
 
     void fade(Perceiving neighbor);
 
-    void move(Perceiving neighbor, Point3d location, Vector3d velocity);
+    void move(Perceiving neighbor, Point3f location, Vector3f velocity);
 
-    void notice(Perceiving neighbor, Point3d location);
+    void notice(Perceiving neighbor, Point3f location);
 
     void setCursor(Cursor cursor);
 }

@@ -22,12 +22,11 @@ import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.Perceiving;
 import com.hellblazer.luciferase.lucien.von.SphereOfInteraction;
 
-import javax.vecmath.Point3d;
-import javax.vecmath.Tuple3d;
-import javax.vecmath.Vector3d;
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
+import javax.vecmath.Vector3f;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -102,7 +101,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void moveBy(Tuple3d velocity) {
+    public void moveBy(Tuple3f velocity) {
         super.moveBy(velocity);
         removeNonOverlapped();
         for (var peer : soi.getPeers()) {
@@ -176,15 +175,15 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         }
     }
 
-    protected void notifySimMove(Node neighbor, Point3d oldLocation) {
+    protected void notifySimMove(Node neighbor, Point3f oldLocation) {
         if (oldLocation == null || !soi.includes(neighbor)) {
             notifySimNotice(neighbor);
             return;
         }
-        var distance = new Vector3d(x, y, z);
+        var distance = new Vector3f(x, y, z);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
-            var velocity = new Vector3d();
+            var velocity = new Vector3f();
             velocity.sub(neighbor.getLocation(), oldLocation);
             var nLocation = neighbor.getLocation();
             sim.move(neighbor.getSim(), nLocation, velocity);
@@ -194,7 +193,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     protected void notifySimNotice(Node neighbor) {
-        var distance = new Vector3d(x, y, z);
+        var distance = new Vector3f(x, y, z);
         distance.sub(neighbor.getLocation());
         if (distance.lengthSquared() <= maxRadiusSquared) {
             sim.notice(neighbor.getSim(), neighbor.getLocation());
@@ -228,12 +227,12 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         }
     }
 
-    protected Point3d update(Node node) {
+    protected Point3f update(Node node) {
         if (!soi.includes(node)) {
             soi.insert(node, node.getLocation());
             return null;
         }
-        var oldLocation = new Point3d(node.getLocation());
+        var oldLocation = new Point3f(node.getLocation());
         soi.update(node, node.getLocation());
         return oldLocation;
     }

@@ -20,8 +20,8 @@ package com.hellblazer.luciferase.lucien.grid;
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
 
-import javax.vecmath.Point3d;
-import javax.vecmath.Tuple3d;
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
 import java.util.*;
 
 import static com.hellblazer.luciferase.geometry.Geometry.centerSphere;
@@ -128,8 +128,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return +1 if the orientation of the query point is positive with respect to the plane, -1 if negative and 0 if
      * the test point is coplanar
      */
-    public static double orientation(Tuple3d query, Tuple3d a, Tuple3d b, Tuple3d c) {
-        double result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y,
+    public static double orientation(Tuple3f query, Tuple3f a, Tuple3f b, Tuple3f c) {
+        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y,
                                                  query.z);
         return Math.signum(result);
     }
@@ -146,10 +146,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         faces.add(new Vertex[] { d, a, c });
     }
 
-    public Point3d center() {
-        double[] center = new double[3];
+    public Point3f center() {
+        float[] center = new float[3];
         centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
-        return new Point3d(center[0], center[1], center[2]);
+        return new Point3f(center[0], center[1], center[2]);
     }
 
     /**
@@ -357,12 +357,12 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         };
     }
 
-    public Tetrahedron locate(Tuple3d query, Random entropy) {
+    public Tetrahedron locate(Tuple3f query, Random entropy) {
         var order = Arrays.asList(Grid.VERTICES);
         V o = null;
-        Collections.shuffle(order);
+        Collections.shuffle(order, entropy);
         for (V face : order) {
-            if (orientationWrt(face, query) < 0.0) {
+            if (orientationWrt(face, query) < 0.0d) {
                 o = face;
                 break;
             }
@@ -422,7 +422,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param query
      * @return
      */
-    public double orientationWrt(V face, Tuple3d query) {
+    public double orientationWrt(V face, Tuple3f query) {
         if (face == A) {
             return orientationWrtCBD(query);
         }
@@ -445,7 +445,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param query
      * @return
      */
-    public double orientationWrtADB(Tuple3d query) {
+    public double orientationWrtADB(Tuple3f query) {
         return orientation(query, a, d, b);
     }
 
@@ -456,7 +456,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param query
      * @return
      */
-    public double orientationWrtBCA(Tuple3d query) {
+    public double orientationWrtBCA(Tuple3f query) {
         return orientation(query, b, c, a);
     }
 
@@ -467,7 +467,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param query
      * @return
      */
-    public double orientationWrtCBD(Tuple3d query) {
+    public double orientationWrtCBD(Tuple3f query) {
         return orientation(query, c, b, d);
     }
 
@@ -478,7 +478,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param query
      * @return
      */
-    public double orientationWrtDAC(Tuple3d query) {
+    public double orientationWrtDAC(Tuple3f query) {
         return orientation(query, d, a, c);
     }
 
@@ -672,13 +672,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param axis
      * @param face
      */
-    void traverseVoronoiFace(Tetrahedron origin, Tetrahedron from, Vertex vC, Vertex axis, List<Point3d> face) {
+    void traverseVoronoiFace(Tetrahedron origin, Tetrahedron from, Vertex vC, Vertex axis, List<Point3f> face) {
         if (origin == this) {
             return;
         }
-        var center = new double[3];
+        var center = new float[3];
         centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
-        face.add(new Point3d(center[0], center[1], center[2]));
+        face.add(new Point3f(center[0], center[1], center[2]));
         V next = VORONOI_FACE_NEXT[ordinalOf(from).ordinal()][ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var t = getNeighbor(next);
         if (t != null) {
@@ -696,17 +696,17 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param axis
      * @param faces
      */
-    void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3d[]> faces) {
-        var face = new ArrayList<Point3d>();
-        var center = new double[3];
+    void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3f[]> faces) {
+        var face = new ArrayList<Point3f>();
+        var center = new float[3];
         centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
-        face.add(new Point3d(center[0], center[1], center[2]));
+        face.add(new Point3f(center[0], center[1], center[2]));
         V v = VORONOI_FACE_ORIGIN[ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var next = getNeighbor(v);
         if (next != null) {
             next.traverseVoronoiFace(this, this, vC, axis, face);
         }
-        faces.add(face.toArray(new Point3d[face.size()]));
+        faces.add(face.toArray(new Point3f[face.size()]));
     }
 
     /**

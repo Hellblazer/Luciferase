@@ -16,7 +16,7 @@ package com.hellblazer.luciferase.lucien.grid;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 
-import javax.vecmath.Tuple3d;
+import javax.vecmath.Tuple3f;
 import java.util.*;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -141,7 +141,7 @@ public class Grid implements Iterable<Vertex> {
      * @param random - the source of entropy for the randomized algo
      * @return the Tetrahedron containing the query
      */
-    public Tetrahedron locate(Tuple3d query, Tetrahedron start, Random random) {
+    public Tetrahedron locate(Tuple3f query, Tetrahedron start, Random random) {
         assert query != null;
         return start.locate(query, random);
     }

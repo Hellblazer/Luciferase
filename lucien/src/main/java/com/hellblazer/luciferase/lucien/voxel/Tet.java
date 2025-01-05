@@ -8,13 +8,15 @@ import javax.vecmath.Tuple3i;
  *
  * @author hal.hildebrand
  **/
-public record Tet(int l, int x, int y, int z, byte type) {
+public record Tet(int x, int y, int z, byte l, byte type) {
 
     private static final byte[][] PARENT_2D = new byte[][] { { 0, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
     private static final byte[][] PARENT_3D = new byte[][] { { 0, 1, 2, 3, 4, 5 }, { 0, 1, 1, 1, 0, 0 },
                                                              { 2, 2, 2, 3, 3, 3 }, { 1, 1, 2, 2, 2, 1 },
                                                              { 5, 5, 4, 4, 4, 5 }, { 0, 0, 0, 5, 5, 5 },
                                                              { 4, 3, 3, 3, 4, 4 }, { 0, 1, 2, 3, 4, 5 } };
+
+    private static final byte[][] CHILD_TYPE_TO_PARENT_TYPE = new byte[][] { { 0, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
 
     private static final byte[][] CHILD_2D = new byte[][] { { 0, 1, 3, 2 }, { 0, 2, 3, 1 } };
     private static final byte[][] CHILD_3D = new byte[][] { { 0, 1, 4, 7, 2, 3, 6, 5 }, { 0, 1, 5, 7, 2, 3, 6, 4 },
@@ -34,15 +36,24 @@ public record Tet(int l, int x, int y, int z, byte type) {
     private static final byte[][] TRI_TYPE_OF_CHILD_MORTON = { { 0, 0, 1, 0 }, { 1, 0, 1, 1 } };
 
     private static final Tuple3i[][] BASIC_TYPE_2D = new Tuple3i[][] {
-    { CORNER.c0.base(), CORNER.c1.base(), CORNER.c3.base() },
-    { CORNER.c0.base(), CORNER.c2.base(), CORNER.c3.base() } };
+    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c3.coords() },
+    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords() } };
     private static final Tuple3i[][] BASIC_TYPE_3D = new Tuple3i[][] {
-    { CORNER.c0.base(), CORNER.c1.base(), CORNER.c5.base(), CORNER.c7.base() },
-    { CORNER.c0.base(), CORNER.c1.base(), CORNER.c3.base(), CORNER.c7.base() },
-    { CORNER.c0.base(), CORNER.c2.base(), CORNER.c3.base(), CORNER.c7.base() },
-    { CORNER.c0.base(), CORNER.c2.base(), CORNER.c6.base(), CORNER.c7.base() },
-    { CORNER.c0.base(), CORNER.c4.base(), CORNER.c6.base(), CORNER.c7.base() },
-    { CORNER.c0.base(), CORNER.c4.base(), CORNER.c5.base(), CORNER.c7.base() } };
+    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c5.coords(), CORNER.c7.coords() } };
+
+    /**
+     * @param l - level
+     * @param L - maximum refinement level
+     * @return the length of a triangle at the given level, in integer coordinates
+     */
+    public static int lengthAtLevel(byte l, int L) {
+        return 1 << (L - l);
+    }
 
     /**
      * Answer the 3D coordinates of the vertex
@@ -52,7 +63,7 @@ public record Tet(int l, int x, int y, int z, byte type) {
      * @return the 3D coordinates of the vertex
      */
     public Tuple3i coordinates(int L, int vertex) {
-        int h = (int) Math.pow(2, L - l);
+        int h = lengthAtLevel(l, L);
         int ei = type / 2;
 
         var coords = new int[] { x, y, z };
@@ -77,8 +88,11 @@ public record Tet(int l, int x, int y, int z, byte type) {
      * @return the cube id of the receiver
      */
     public int cubeId(int L) {
+        if (l == 0) {
+            return 0;
+        }
         int i = 0;
-        int h = (int) Math.pow(2, L - l);
+        int h = lengthAtLevel(l, L);
         i |= (x & h) > 0 ? 1 : 0;
         i |= (y & h) > 0 ? 2 : 0;
         i |= (z & h) > 0 ? 4 : 0;
@@ -90,8 +104,8 @@ public record Tet(int l, int x, int y, int z, byte type) {
      * @return the parent Tet
      */
     public Tet parent(int L) {
-        int h = (int) Math.pow(2, L - l);
-        return new Tet(l - 1, x & ~h, y & ~h, z & ~h, PARENT_3D[cubeId(L)][type]);
+        int h = lengthAtLevel(l, L);
+        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), PARENT_3D[cubeId(L)][type]);
     }
 
     /**
@@ -100,21 +114,20 @@ public record Tet(int l, int x, int y, int z, byte type) {
      */
     public Tet child(int i, int L) {
         var coords = new int[] { x, y, z };
-        int Bey_cid;
-        Bey_cid = TRI_INDEX_TO_BEYS[type][i];
-        if (Bey_cid == 0) {
+        var bey = TRI_INDEX_TO_BEYS[type][i];
+        if (bey == 0) {
             coords[0] = x;
             coords[1] = y;
             coords[2] = z;
         } else {
             /* i-th anchor coordinate of child is (X_(0,i)+X_(vertex,i))/2
              * where X_(i,j) is the j-th coordinate of t's ith node */
-            var coordinates = coordinates(L, TRI_BEY_ID_TO_VERTEX[Bey_cid]);
+            var coordinates = coordinates(L, TRI_BEY_ID_TO_VERTEX[bey]);
             coords[0] = x + coordinates.x >> 1;
             coords[1] = y + coordinates.y >> 1;
             coords[2] = x + coordinates.z >> 1;
         }
-        return new Tet(l - 1, coords[0], coords[1], coords[2], TRI_TYPE_OF_CHILD[type][Bey_cid]);
+        return new Tet(coords[0], coords[1], coords[2], (byte) (l - 1), TRI_TYPE_OF_CHILD[type][bey]);
     }
 
     /**
@@ -122,68 +135,53 @@ public record Tet(int l, int x, int y, int z, byte type) {
      * @return the i-th child (in Tet Morton order) of the receiver
      */
     public Tet childTM(int i, int L) {
-        var coords = new int[] { x, y, z };
-        int Bey_cid;
-        Bey_cid = TRI_INDEX_TO_BEYS[type][i];
-        if (Bey_cid == 0) {
-            coords[0] = x;
-            coords[1] = y;
-            coords[2] = z;
-        } else {
-            /* i-th anchor coordinate of child is (X_(0,i)+X_(vertex,i))/2
-             * where X_(i,j) is the j-th coordinate of t's ith node */
-            var coordinates = coordinates(L, TRI_BEY_ID_TO_VERTEX[Bey_cid]);
-            coords[0] = x + coordinates.x >> 1;
-            coords[1] = y + coordinates.y >> 1;
-            coords[2] = x + coordinates.z >> 1;
-        }
-        return new Tet(l - 1, coords[0], coords[1], coords[2], TRI_TYPE_OF_CHILD[type][Bey_cid]);
+        return child(TRI_TYPE_OF_CHILD_MORTON[type][i], L);
     }
 
     // The corners of a cube
     private enum CORNER {
         c0 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(0, 0, 0);
             }
         }, c1 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(1, 0, 0);
             }
         }, c2 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(0, 1, 0);
             }
         }, c3 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(1, 1, 0);
             }
         }, c4 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(0, 0, 1);
             }
         }, c5 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(1, 0, 1);
             }
         }, c6 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(0, 1, 1);
             }
         }, c7 {
             @Override
-            public Tuple3i base() {
+            public Tuple3i coords() {
                 return new Point3i(1, 1, 1);
             }
         };
 
-        abstract public Tuple3i base();
+        abstract public Tuple3i coords();
     }
 }

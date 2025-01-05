@@ -23,7 +23,7 @@ import static com.hellblazer.luciferase.lucien.grid.TetrahedralizationTest.getRa
 
 import java.util.Random;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 
 import org.junit.jupiter.api.Test;
 
@@ -44,7 +44,7 @@ public class TestTimeInsert {
 
         MutableGrid tet = new MutableGrid();
 
-        Point3d[] cubicCrystalStructure = TestCases.getCubicCrystalStructure();
+        Point3f[] cubicCrystalStructure = TestCases.getCubicCrystalStructure();
         for (var v : cubicCrystalStructure) {
             tet.track(v, random);
         }
@@ -67,7 +67,7 @@ public class TestTimeInsert {
 
         MutableGrid tet = new MutableGrid();
 
-        Point3d[] grid = TestCases.getGrid();
+        Point3f[] grid = TestCases.getGrid();
         for (var v : grid) {
             tet.track(v, random);
         }
@@ -86,7 +86,7 @@ public class TestTimeInsert {
     @Test
     public void testLargeRandom() {
         Random random = new Random(666);
-        Point3d ourPoints[] = getRandomPoints(random, 600, 1.0F, false);
+        Point3f ourPoints[] = getRandomPoints(random, 600, 1.0F, false);
 
         MutableGrid tet = new MutableGrid();
 
@@ -107,7 +107,7 @@ public class TestTimeInsert {
     @Test
     public void testSuperLargeRandom() {
         Random random = new Random(666);
-        Point3d ourPoints[] = getRandomPoints(random, 6000, 10.0F, false);
+        Point3f ourPoints[] = getRandomPoints(random, 6000, 10.0F, false);
 
         MutableGrid tet = new MutableGrid();
 
@@ -131,7 +131,7 @@ public class TestTimeInsert {
 
         MutableGrid tet = new MutableGrid();
 
-        Point3d[] worstCase = TestCases.getWorstCase();
+        Point3f[] worstCase = TestCases.getWorstCase();
         for (var v : worstCase) {
             tet.track(v, random);
         }

@@ -22,7 +22,7 @@ import com.hellblazer.luciferase.lucien.von.Cursor;
 import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.Perceiving;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -44,8 +44,8 @@ abstract public class AbstractNode<E extends Perceiving> extends Vertex implemen
     }
 
     @Override
-    public Point3d getLocation() {
-        return new Point3d(x, y, z);
+    public Point3f getLocation() {
+        return new Point3f(x, y, z);
     }
 
     @Override

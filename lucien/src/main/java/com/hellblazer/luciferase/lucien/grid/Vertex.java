@@ -20,17 +20,17 @@ package com.hellblazer.luciferase.lucien.grid;
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
 
-import javax.vecmath.Point3d;
-import javax.vecmath.Tuple3d;
-import javax.vecmath.Vector3d;
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
+import javax.vecmath.Vector3f;
 import java.io.Serial;
 import java.util.*;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3d implements Iterable<Vertex> {
-    static final         Point3d     ORIGIN           = new Point3d(0, 0, 0);
+public class Vertex extends Vector3f implements Iterable<Vertex> {
+    static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
     /**
@@ -39,30 +39,30 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
     private              Tetrahedron adjacent;
     private              Vertex      next; // linked list o' vertices
 
-    public Vertex(double i, double j, double k) {
+    public Vertex(float i, float j, float k) {
         x = i;
         y = j;
         z = k;
     }
 
-    public Vertex(double i, double j, double k, double scale) {
+    public Vertex(float i, float j, float k, float scale) {
         this(i * scale, j * scale, k * scale);
     }
 
-    public Vertex(Tuple3d p) {
+    public Vertex(Tuple3f p) {
         this(p.x, p.y, p.z);
     }
 
     /**
-     * Generate a bounded random double
+     * Generate a bounded random float
      *
      * @param random
      * @param min
      * @param max
      * @return
      */
-    public static double random(Random random, double min, double max) {
-        var result = random.nextDouble();
+    public static float random(Random random, float min, float max) {
+        var result = random.nextFloat();
         if (min > max) {
             result *= min - max;
             result += max;
@@ -81,8 +81,8 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @param max
      * @return
      */
-    public static Point3d randomPoint(Random random, double min, double max) {
-        return new Point3d(random(random, min, max), random(random, min, max), random(random, min, max));
+    public static Point3f randomPoint(Random random, float min, float max) {
+        return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
     }
 
     /**
@@ -96,8 +96,8 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
         return null;
     }
 
-    public final double distanceSquared(Tuple3d p1) {
-        double dx, dy, dz;
+    public final float distanceSquared(Tuple3f p1) {
+        float dx, dy, dz;
 
         dx = x - p1.x;
         dy = y - p1.y;
@@ -156,11 +156,11 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      *
      * @return the list of faces defining the voronoi region defined by the receiver
      */
-    public final List<Tuple3d[]> getVoronoiRegion() {
+    public final List<Tuple3f[]> getVoronoiRegion() {
         assert adjacent != null;
 
-        final var faces = new ArrayList<Tuple3d[]>();
-        var neighbors = new IdentitySet<Tuple3d>(10);
+        final var faces = new ArrayList<Tuple3f[]>();
+        var neighbors = new IdentitySet<Tuple3f>(10);
         adjacent.visitStar(this, (vertex, t, x, y, z) -> {
             if (neighbors.add(x)) {
                 t.traverseVoronoiFace(this, x, faces);
@@ -178,7 +178,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
     /**
      * Return +1 if the receiver lies inside the sphere passing through a, b, c, and d; -1 if it lies outside; and 0 if
      * the five points are cospherical. The vertices a, b, c, and d must be ordered so that they have a positive
-     * orientation (as defined by {@link #orientation(Tuple3d, Tuple3d, Tuple3d)}), or the sign of the result will be
+     * orientation (as defined by {@link #orientation(Tuple3f, Tuple3f, Tuple3f)}), or the sign of the result will be
      * reversed.
      * <p>
      *
@@ -186,8 +186,8 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @return +1 if the receiver lies inside the sphere passing through a, b, c, and d; -1 if it lies outside; and 0 if
      * the five points are cospherical
      */
-    public final double inSphere(Tuple3d a, Tuple3d b, Tuple3d c, Tuple3d d) {
-        var result = Geometry.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
+    public final double inSphere(Tuple3f a, Tuple3f b, Tuple3f c, Tuple3f d) {
+        var result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
         return Math.signum(result);
     }
 
@@ -220,12 +220,12 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @param entropy - entropy used for randomization of search
      * @return the Tetrahedron that encompasses the query point
      */
-    public final Tetrahedron locate(Tuple3d query, Random entropy) {
+    public final Tetrahedron locate(Tuple3f query, Random entropy) {
         assert adjacent != null;
         return adjacent.locate(query, entropy);
     }
 
-    public void moveBy(Tuple3d delta) {
+    public void moveBy(Tuple3f delta) {
         x = x + delta.x;
         y = y + delta.y;
         z = z + delta.z;
@@ -240,7 +240,7 @@ public class Vertex extends Vector3d implements Iterable<Vertex> {
      * @return +1 if the orientation of the query point is positive with respect to the plane, -1 if negative and 0 if
      * the test point is coplanar
      */
-    public final double orientation(Tuple3d a, Tuple3d b, Tuple3d c) {
+    public final double orientation(Tuple3f a, Tuple3f b, Tuple3f c) {
         var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
         return Math.signum(result);
     }

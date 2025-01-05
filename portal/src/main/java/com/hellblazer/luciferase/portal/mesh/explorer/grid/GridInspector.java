@@ -1,33 +1,18 @@
-/*
- * Copyright (c) 2013, 2014 Oracle and/or its affiliates.
- * All rights reserved. Use is subject to license terms.
+/**
+ * Copyright (C) 2009 Hal Hildebrand. All rights reserved.
  *
- * This file is available and licensed under the following license:
+ * This file is part of the 3D Incremental Voronoi GUI
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
  *
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the distribution.
- *  - Neither the name of Oracle nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+ * details.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
@@ -37,6 +22,7 @@ import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 import javafx.scene.Group;
 
 import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import java.util.Random;
 
 import static com.hellblazer.luciferase.lucien.grid.Vertex.randomPoint;
@@ -48,16 +34,16 @@ import static com.hellblazer.luciferase.lucien.grid.Vertex.randomPoint;
  * @author cmcastil
  */
 public class GridInspector extends Abstract3DApp {
-    private static final Point3d ORIGIN = new Point3d(0, 0, 0);
+    private static final Point3f ORIGIN = new Point3f(0, 0, 0);
 
     private GridView view;
 
     /**
      * Create some random points in a sphere
      */
-    public static Point3d[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
         double radiusSquared = radius * radius;
-        Point3d[] ourPoints = new Point3d[numberOfPoints];
+        Point3f[] ourPoints = new Point3f[numberOfPoints];
         for (int i = 0; i < ourPoints.length; i++) {
             if (inSphere) {
                 do {
@@ -79,7 +65,7 @@ public class GridInspector extends Abstract3DApp {
     protected Group build() {
         final var random = new Random(666);
         final var tet = new MutableGrid();
-        Point3d[] ourPoints = getRandomPoints(random, 200, 10.0f, true);
+        Point3f[] ourPoints = getRandomPoints(random, 200, 10.0f, true);
         for (var v : ourPoints) {
             tet.track(v, random);
         }

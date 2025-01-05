@@ -23,7 +23,7 @@ import java.util.Collection;
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 
-public interface Node extends Locatable {
+public interface Node extends Cursor {
     int BUFFER_MULTIPLIER = 2;
 
     void fadeFrom(Node neighbor);

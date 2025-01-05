@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.lucien.grid;
 
 import org.junit.jupiter.api.Test;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,7 +49,7 @@ public class VertexTest {
     @Test
     public void testModel() {
         var m = "Give me food or give me Slack or kill me";
-        var v = new Vertex(new Point3d()) {
+        var v = new Vertex(new Point3f()) {
             private static final long serialVersionUID = 1L;
 
             @Override

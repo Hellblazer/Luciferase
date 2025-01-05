@@ -26,15 +26,13 @@ import com.hellblazer.luciferase.portal.mesh.explorer.GraphicsView;
 import javafx.scene.Group;
 import javafx.scene.paint.PhongMaterial;
 
-import javax.vecmath.Tuple3d;
+import javax.vecmath.Tuple3f;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 
 public class GridView extends GraphicsView {
@@ -43,7 +41,7 @@ public class GridView extends GraphicsView {
 
     private final Group        delaunay           = new Group();
     private final Group        delaunayFaces      = new Group();
-    private final Set<Tuple3d> fourCorners        = new HashSet<>();
+    private final Set<Tuple3f> fourCorners        = new HashSet<>();
     private final Grid         grid;
     private final Group        highlightedRegions = new Group();
     private final Group        vertexes           = new Group();
@@ -122,7 +120,7 @@ public class GridView extends GraphicsView {
     }
 
     @Override
-    protected boolean isAuxillary(Tuple3d[] face) {
+    protected boolean isAuxillary(Tuple3f[] face) {
         if (face.length < 3) {
             return true;
         }

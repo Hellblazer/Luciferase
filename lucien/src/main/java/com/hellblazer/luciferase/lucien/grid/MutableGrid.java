@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.grid;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
@@ -72,14 +72,14 @@ public class MutableGrid extends Grid {
      * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
      */
-    public Vertex track(Point3d p, Random entropy) {
+    public Vertex track(Point3f p, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
         add(v, locate(p, entropy));
         return v;
     }
 
-    public Tetrahedron locate(Point3d p, Random entropy) {
+    public Tetrahedron locate(Point3f p, Random entropy) {
         return locate(p, last, entropy);
     }
 
@@ -92,7 +92,7 @@ public class MutableGrid extends Grid {
      * @param near - the nearby vertex
      * @return the new Vertex in the tetrahedralization
      */
-    public Vertex track(Point3d p, Vertex near, Random entropy) {
+    public Vertex track(Point3f p, Vertex near, Random entropy) {
         assert p != null;
         final var v = new Vertex(p);
         add(v, near.locate(p, entropy));

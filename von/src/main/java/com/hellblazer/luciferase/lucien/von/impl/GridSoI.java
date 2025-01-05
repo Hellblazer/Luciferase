@@ -5,7 +5,7 @@ import com.hellblazer.luciferase.lucien.grid.Vertex;
 import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.SphereOfInteraction;
 
-import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import java.util.List;
 import java.util.Random;
 
@@ -22,7 +22,7 @@ public class GridSoI implements SphereOfInteraction {
     }
 
     @Override
-    public Node closestTo(Point3d coord) {
+    public Node closestTo(Point3f coord) {
         record dist(Vertex v, double distSquared) {
         }
         var tet = foci.locate(coord, entropy);
@@ -61,7 +61,7 @@ public class GridSoI implements SphereOfInteraction {
     }
 
     @Override
-    public void insert(Node id, Point3d coord) {
+    public void insert(Node id, Point3f coord) {
 
     }
 
@@ -76,7 +76,7 @@ public class GridSoI implements SphereOfInteraction {
     }
 
     @Override
-    public boolean overlaps(Node peer, Point3d center, float radiusSquared) {
+    public boolean overlaps(Node peer, Point3f center, float radiusSquared) {
         return false;
     }
 
@@ -86,7 +86,7 @@ public class GridSoI implements SphereOfInteraction {
     }
 
     @Override
-    public void update(Node peer, Point3d coord) {
+    public void update(Node peer, Point3f coord) {
 
     }
 }
