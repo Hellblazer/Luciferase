@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien.voxel;
+package com.hellblazer.luciferase.lucien.index;
 
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3i;

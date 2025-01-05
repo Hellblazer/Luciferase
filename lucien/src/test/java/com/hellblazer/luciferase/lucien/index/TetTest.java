@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien.voxel;
+package com.hellblazer.luciferase.lucien.index;
 
 import org.junit.jupiter.api.Test;
 
