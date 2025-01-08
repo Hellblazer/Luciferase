@@ -339,7 +339,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     abstract public Vertex getVertex(int anIndex);
 
     public boolean hasAdjacent() {
-        return getAdjacentVertexOrdinal() != null;
+        return getAdjacent() != null;
     }
 
     abstract public boolean includes(Vertex v);
@@ -422,13 +422,13 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             b = a;
             a = tmp;
         }
-        return query.inSphere(a, b, c, d) > 0.0;
+        return query.inSphere(a, b, c, d) > 0.0d;
     }
 
     private boolean isFlippable3ear(Vertex n) {
         var opposingFace = getIncident().getFace(n);
         opposingFace.getAdjacent().getFace(opposingFace.getAdjacentVertex());
-        return opposingFace.orientationOf(n) > 0.0;
+        return opposingFace.orientationOf(n) > 0.0d;
 
     }
 

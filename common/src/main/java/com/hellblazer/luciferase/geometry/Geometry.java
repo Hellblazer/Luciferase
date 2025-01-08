@@ -823,6 +823,52 @@ public final class Geometry {
         return inSphere(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
                         pe[1], pe[2]);
     }
+    /**
+     * Determines if a point e is inside the sphere defined by the points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method
+     * {@link #leftOfPlane} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere;
+     *         zero, otherwise.
+     */
+    public static float inSphereFast(float xa, float ya, float za, float xb, float yb, float zb, float xc,
+                                      float yc, float zc, float xd, float yd, float zd, float xe, float ye,
+                                      float ze) {
+        float aex = xa - xe;
+        float bex = xb - xe;
+        float cex = xc - xe;
+        float dex = xd - xe;
+        float aey = ya - ye;
+        float bey = yb - ye;
+        float cey = yc - ye;
+        float dey = yd - ye;
+        float aez = za - ze;
+        float bez = zb - ze;
+        float cez = zc - ze;
+        float dez = zd - ze;
+
+        float ab = aex * bey - bex * aey;
+        float bc = bex * cey - cex * bey;
+        float cd = cex * dey - dex * cey;
+        float da = dex * aey - aex * dey;
+
+        float ac = aex * cey - cex * aey;
+        float bd = bex * dey - dex * bey;
+
+        float abc = aez * bc - bez * ac + cez * ab;
+        float bcd = bez * cd - cez * bd + dez * bc;
+        float cda = cez * da + dez * ac + aez * cd;
+        float dab = dez * ab + aez * bd + bez * da;
+
+        float alift = aex * aex + aey * aey + aez * aez;
+        float blift = bex * bex + bey * bey + bez * bez;
+        float clift = cex * cex + cey * cey + cez * cez;
+        float dlift = dex * dex + dey * dey + dez * dez;
+
+        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
+    }
 
     /**
      * Determines if a point e is inside the sphere defined by the points a, b, c,
@@ -1135,6 +1181,47 @@ public final class Geometry {
 
         return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
     }
+
+
+    public static float leftOfPlaneFastFloat(float xa, float ya, float za, float xb, float yb, float zb, float xc,
+                                         float yc, float zc, float xd, float yd, float zd) {
+        float adx = xa - xd;
+        float bdx = xb - xd;
+        float cdx = xc - xd;
+        float ady = ya - yd;
+        float bdy = yb - yd;
+        float cdy = yc - yd;
+        float adz = za - zd;
+        float bdz = zb - zd;
+        float cdz = zc - zd;
+
+        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+    }
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and
+     * c. The latter are assumed to be in CCW order, as viewed from the right side
+     * of the plane.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero,
+     *         otherwise.
+     */
+//    public static float leftOfPlaneFast(float xa, float ya, float za, float xb, float yb, float zb, float xc,
+//                                         float yc, float zc, float xd, float yd, float zd) {
+//        float adx = xa - xd;
+//        float bdx = xb - xd;
+//        float cdx = xc - xd;
+//        float ady = ya - yd;
+//        float bdy = yb - yd;
+//        float cdy = yc - yd;
+//        float adz = za - zd;
+//        float bdz = zb - zd;
+//        float cdz = zc - zd;
+//
+//        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+//    }
 
     /**
      * Determines if a point d is left of the plane defined by the points a, b, and

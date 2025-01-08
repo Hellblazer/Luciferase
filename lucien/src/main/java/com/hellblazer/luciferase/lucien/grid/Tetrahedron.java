@@ -325,7 +325,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return
      */
     public boolean inSphere(Vertex query) {
-        return query.inSphere(a, b, c, d) > 0.0;
+        return query.inSphere(a, b, c, d) > 0.0d;
     }
 
     /**
@@ -1144,7 +1144,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isReflex(int vertex) {
-            var adjacentVertex = getAdjacentVertex();
+            Tetrahedron adjacent = getAdjacent();
+            var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
+            if (current == null) {
+                return false;
+            }
+
+            var adjacentVertex = adjacent.getVertex(current);
             if (adjacentVertex == null) {
                 return false;
             }
@@ -1265,7 +1271,12 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean isReflex(int vertex) {
-            var adjacentVertex = getAdjacentVertex();
+            Tetrahedron adjacent = getAdjacent();
+            var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
+            if (current == null) {
+                return false;
+            }
+            var adjacentVertex = adjacent.getVertex(current);
             if (adjacentVertex == null) {
                 return false;
             }
