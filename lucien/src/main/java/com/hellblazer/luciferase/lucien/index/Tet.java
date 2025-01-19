@@ -6,30 +6,54 @@ import javax.vecmath.Tuple3i;
 import static com.hellblazer.luciferase.lucien.index.TetConstants.*;
 
 /**
- * A tetrahedron in the mesh
+ * A tetrahedron in the mesh from the paper:
+ * <a href="https://arxiv.org/abs/1509.04627">A tetrahedral space-filling curve for non-conforming adaptive meshes</a>
  *
  * @author hal.hildebrand
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
 
     /**
-     * @param L - maximum refinement level
+     * @param index - the consecutive index of the tetrahedron
+     * @return the Tet corresponding to the consecutive index
+     */
+    public static Tet tetrahedron(long index, int l) {
+        int offsetCoords, offsetIndex, localIndex, cid = 0;
+        byte type = 0;
+        int childrenM1 = 7;
+        var coordinates = new int[3];
+
+        for (int i = 1; i <= l; i++) {
+            offsetCoords = MAX_REFINEMENT_LEVEL - i;
+            offsetIndex = l - i;
+            // Get the local index of T's ancestor on level i
+            localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
+            // get the type and cube-id of T's ancestor on level i
+            cid = TYPE_CUBE_ID_TO_LOCAL_INDEX[type][localIndex];
+            type = CUBE_ID_TO_LOCAL_INDEX[type][localIndex];
+            coordinates[0] |= (cid & 1) > 0 ? 1 << offsetCoords : 0;
+            coordinates[1] |= (cid & 2) > 0 ? 1 << offsetCoords : 0;
+            coordinates[2] |= (cid & 4) > 0 ? 1 << offsetCoords : 0;
+        }
+        return new Tet(coordinates[0], coordinates[1], coordinates[2], (byte) l, type);
+    }
+
+    /**
      * @return the length of a triangle at the given level, in integer coordinates
      */
-    public int lengthAtLevel(int L) {
-        return 1 << (L - l);
+    public int lengthAtLevel() {
+        return 1 << (MAX_REFINEMENT_LEVEL - l);
     }
 
     /**
      * Answer the 3D coordinates of the tetrahedron represented by the receiver
      *
-     * @param L - max refinement level
      * @return the 3D coordinates of the tetrahedron described by the receiver in CCW order
      */
-    public Tuple3i[] coordinates(int L) {
+    public Tuple3i[] coordinates() {
         var coords = new Point3i[4];
         coords[0] = new Point3i(x, y, z);
-        var h = lengthAtLevel(L);
+        var h = lengthAtLevel();
         var i = type / 2;
         var j = 0;
         if (type / 2 == 0) {
@@ -59,36 +83,34 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * @param L - max refinement level
-     * @return the cube id of the receiver
+     * @return the cube id of t's ancestor of level "level"
      */
-    public int cubeId(int L) {
-        if (l == 0) {
+    public int cubeId(int level) {
+        if (level == 0) {
             return 0;
         }
-        int h = lengthAtLevel(L);
-        int i = 0;
-        i |= (x & h) > 0 ? 1 : 0;
-        i |= (y & h) > 0 ? 2 : 0;
-        i |= (z & h) > 0 ? 4 : 0;
-        return i;
+        int h = 1 << (MAX_REFINEMENT_LEVEL - level);
+        int id = 0;
+        id |= (x & h) > 0 ? 1 : 0;
+        id |= (y & h) > 0 ? 2 : 0;
+        id |= (z & h) > 0 ? 4 : 0;
+        return id;
     }
 
     /**
-     * @param L - max refinement level
      * @return the parent Tet
      */
-    public Tet parent(int L) {
-        int h = lengthAtLevel(L);
-        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), PARENT_3D[cubeId(L)][type]);
+    public Tet parent() {
+        int h = lengthAtLevel();
+        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), PARENT_3D[cubeId(l)][type]);
     }
 
     /**
      * @param i - the Morton child id
      * @return the i-th child (in Bey's order) of the receiver
      */
-    public Tet child(int i, int L) {
-        var coords = coordinates(L);
+    public Tet child(int i) {
+        var coords = coordinates();
         var j = 0;
         if (i == 1 || i == 4 || i == 5) {
             j = 1;
@@ -106,7 +128,25 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @param i - the Tet Morton child id
      * @return the i-th child (in Tet Morton order) of the receiver
      */
-    public Tet childTM(int i, int L) {
-        return child(CHILD_TYPE_3D_MORTON[type][i], L);
+    public Tet childTM(int i) {
+        return child(CHILD_TYPE_3D_MORTON[type][i]);
+    }
+
+    /**
+     * @return the consecutive index of the receiver on the space filling curve
+     */
+    public long index() {
+        var I = 0L;
+        var b = type;
+        for (var i = l; i >= 1; i--) {
+            var c = cubeId(i);
+            I = (long) ((I + Math.pow(8, i)) * TYPE_CUBE_ID_TO_LOCAL_INDEX[b][c]);
+            b = PARENT_3D[c][b];
+        }
+        return I;
+    }
+
+    public int localIndex() {
+        return 0;
     }
 }

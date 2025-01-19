@@ -9,6 +9,7 @@ import javax.vecmath.Tuple3i;
  * @author hal.hildebrand
  **/
 public class TetConstants {
+    public static int MAX_REFINEMENT_LEVEL = 21;
     public static final byte[][] PARENT_2D = new byte[][] { { 0, 1 }, { 0, 0 }, { 1, 1 }, { 0, 1 } };
     public static final byte[][] PARENT_3D = new byte[][] { { 0, 1, 2, 3, 4, 5 }, { 0, 1, 1, 1, 0, 0 },
                                                             { 2, 2, 2, 3, 3, 3 }, { 1, 1, 2, 2, 2, 1 },
@@ -31,7 +32,6 @@ public class TetConstants {
                                                                 { 4, 4, 4, 4, 2, 3, 0, 5 },
                                                                 { 5, 5, 5, 5, 1, 0, 3, 4 } };
 
-
     public static final Tuple3i[][] BASIC_TYPE_2D = new Tuple3i[][] {
     { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c3.coords() },
     { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords() } };
@@ -42,6 +42,22 @@ public class TetConstants {
     { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c5.coords(), CORNER.c7.coords() } };
+
+    public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 1, 1, 4, 1, 4, 4, 7 },
+                                                                        { 1, 2, 5, 2, 5, 4, 7 },
+                                                                        { 2, 3, 4, 1, 6, 5, 7 },
+                                                                        { 3, 1, 5, 2, 4, 6, 7 },
+                                                                        { 2, 2, 6, 3, 5, 5, 7 },
+                                                                        { 3, 3, 6, 3, 6, 6, 7 } };
+    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] {
+
+    };
+    public static byte[][] CUBE_ID_TO_LOCAL_INDEX      = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
+                                                                      { 1, 1, 2, 3, 0, 1, 5, 1 },
+                                                                      { 2, 0, 1, 2, 2, 3, 4, 2 },
+                                                                      { 3, 3, 4, 5, 1, 2, 3, 3 },
+                                                                      { 4, 2, 3, 4, 0, 4, 5, 4 },
+                                                                      { 5, 0, 1, 5, 3, 4, 5, 5 } };
 
     // The corners of a cube
     public enum CORNER {
