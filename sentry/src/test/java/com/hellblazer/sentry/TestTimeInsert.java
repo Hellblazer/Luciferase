@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import org.junit.jupiter.api.Test;
 

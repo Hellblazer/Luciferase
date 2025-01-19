@@ -15,8 +15,9 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -54,7 +55,7 @@ public class VertexTest {
 
             @Override
             public <T> T as(Class<T> model) {
-                assertEquals(String.class, model);
+                Assertions.assertEquals(String.class, model);
                 @SuppressWarnings("unchecked")
                 final var m2 = (T) m;
                 return m2;
@@ -62,7 +63,7 @@ public class VertexTest {
 
         };
         final String model = v.as(String.class);
-        assertEquals(m, model);
+        Assertions.assertEquals(m, model);
     }
 
     @Test

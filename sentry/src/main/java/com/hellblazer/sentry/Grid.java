@@ -12,7 +12,7 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 
@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import static com.hellblazer.luciferase.lucien.grid.V.*;
+import static com.hellblazer.sentry.V.*;
 
 /**
  * A Delaunay tetrahedralization. This implementation is optimized for Luciferase, not for any other particular use. As

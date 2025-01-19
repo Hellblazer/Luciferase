@@ -15,7 +15,7 @@
     <dependencies>
         <dependency>
             <groupId>com.hellblazer.luciferase</groupId>
-            <artifactId>lucien</artifactId>
+            <artifactId>sentry</artifactId>
         </dependency>
     </dependencies>
 

@@ -42,6 +42,7 @@
         <module>von</module>
         <module>portal-2</module>
         <module>simulation</module>
+        <module>sentry</module>
     </modules>
 
     <dependencyManagement>
@@ -55,6 +56,11 @@
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>lucien</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>sentry</artifactId>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>

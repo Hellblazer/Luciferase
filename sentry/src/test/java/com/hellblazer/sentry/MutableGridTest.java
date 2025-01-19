@@ -12,11 +12,10 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import org.junit.jupiter.api.Test;
 
-import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Random;
 
@@ -30,10 +29,10 @@ public class MutableGridTest {
         var sentinel = new MutableGrid();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : Vertex.getRandomPoints(entropy, 256, 10, true)) {
+        for (var p : Vertex.getRandomPoints(entropy, 2048, 10, true)) {
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 10_000;
+        int iterations = 1000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {

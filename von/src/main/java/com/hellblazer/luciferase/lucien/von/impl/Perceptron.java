@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.lucien.von.impl;
 
-import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.sentry.Vertex;
 import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.Perceiving;
 import com.hellblazer.luciferase.lucien.von.SphereOfInteraction;

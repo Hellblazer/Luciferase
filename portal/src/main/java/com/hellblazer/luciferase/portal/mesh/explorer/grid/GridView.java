@@ -17,10 +17,10 @@
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
-import com.hellblazer.luciferase.lucien.grid.Grid;
-import com.hellblazer.luciferase.lucien.grid.MutableGrid;
-import com.hellblazer.luciferase.lucien.grid.Tetrahedron;
-import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.sentry.Grid;
+import com.hellblazer.sentry.MutableGrid;
+import com.hellblazer.sentry.Tetrahedron;
+import com.hellblazer.sentry.Vertex;
 import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
 import com.hellblazer.luciferase.portal.mesh.explorer.GraphicsView;
 import javafx.scene.Group;

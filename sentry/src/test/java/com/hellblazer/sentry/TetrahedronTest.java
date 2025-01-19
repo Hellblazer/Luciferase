@@ -17,12 +17,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
-import static com.hellblazer.luciferase.lucien.grid.V.A;
-import static com.hellblazer.luciferase.lucien.grid.V.B;
-import static com.hellblazer.luciferase.lucien.grid.V.C;
-import static com.hellblazer.luciferase.lucien.grid.V.D;
+import static com.hellblazer.sentry.V.A;
+import static com.hellblazer.sentry.V.B;
+import static com.hellblazer.sentry.V.C;
+import static com.hellblazer.sentry.V.D;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -44,28 +45,28 @@ public class TetrahedronTest {
     @Test
     public void testCreateUniverse() {
         Tetrahedron idaho = MutableGrid.myOwnPrivateIdaho(new MutableGrid());
-        assertNotNull(idaho);
+        Assertions.assertNotNull(idaho);
         Vertex[] vertices = idaho.getVertices();
-        assertNotNull(vertices);
-        assertEquals(4, vertices.length);
-        assertNotSame(vertices[0], vertices[1]);
-        assertNotSame(vertices[0], vertices[2]);
-        assertNotSame(vertices[0], vertices[3]);
-        assertNotSame(vertices[1], vertices[2]);
-        assertNotSame(vertices[1], vertices[3]);
-        assertNotSame(vertices[2], vertices[3]);
+        Assertions.assertNotNull(vertices);
+        Assertions.assertEquals(4, vertices.length);
+        Assertions.assertNotSame(vertices[0], vertices[1]);
+        Assertions.assertNotSame(vertices[0], vertices[2]);
+        Assertions.assertNotSame(vertices[0], vertices[3]);
+        Assertions.assertNotSame(vertices[1], vertices[2]);
+        Assertions.assertNotSame(vertices[1], vertices[3]);
+        Assertions.assertNotSame(vertices[2], vertices[3]);
 
         // There can only be one
-        assertNull(idaho.getNeighbor(A));
-        assertNull(idaho.getNeighbor(B));
-        assertNull(idaho.getNeighbor(C));
-        assertNull(idaho.getNeighbor(D));
+        Assertions.assertNull(idaho.getNeighbor(A));
+        Assertions.assertNull(idaho.getNeighbor(B));
+        Assertions.assertNull(idaho.getNeighbor(C));
+        Assertions.assertNull(idaho.getNeighbor(D));
 
         // Check our faces
         for (OrientedFace face : idaho) {
-            assertNotNull(face);
-            assertSame(idaho, face.getIncident());
-            assertNull(face.getAdjacent());
+            Assertions.assertNotNull(face);
+            Assertions.assertSame(idaho, face.getIncident());
+            Assertions.assertNull(face.getAdjacent());
         }
     }
 
@@ -82,32 +83,32 @@ public class TetrahedronTest {
         List<OrientedFace> unlinkedFacets = new ArrayList<>();
 
         Tetrahedron tIV = U.flip1to4(N, unlinkedFacets);
-        assertNotNull(tIV);
-        assertEquals(0, unlinkedFacets.size());
+        Assertions.assertNotNull(tIV);
+        Assertions.assertEquals(0, unlinkedFacets.size());
 
         Tetrahedron tI = tIV.getNeighbor(C);
         Tetrahedron tII = tIV.getNeighbor(B);
         Tetrahedron tIII = tIV.getNeighbor(A);
 
-        assertSame(tIII, tI.getNeighbor(A));
-        assertSame(tIV, tI.getNeighbor(B));
-        assertSame(tII, tI.getNeighbor(C));
-        assertSame(null, tI.getNeighbor(D));
+        Assertions.assertSame(tIII, tI.getNeighbor(A));
+        Assertions.assertSame(tIV, tI.getNeighbor(B));
+        Assertions.assertSame(tII, tI.getNeighbor(C));
+        Assertions.assertSame(null, tI.getNeighbor(D));
 
-        assertSame(tIII, tII.getNeighbor(A));
-        assertSame(tI, tII.getNeighbor(B));
-        assertSame(tIV, tII.getNeighbor(C));
-        assertSame(null, tII.getNeighbor(D));
+        Assertions.assertSame(tIII, tII.getNeighbor(A));
+        Assertions.assertSame(tI, tII.getNeighbor(B));
+        Assertions.assertSame(tIV, tII.getNeighbor(C));
+        Assertions.assertSame(null, tII.getNeighbor(D));
 
-        assertSame(tI, tIII.getNeighbor(A));
-        assertSame(tII, tIII.getNeighbor(B));
-        assertSame(tIV, tIII.getNeighbor(C));
-        assertSame(null, tIII.getNeighbor(D));
+        Assertions.assertSame(tI, tIII.getNeighbor(A));
+        Assertions.assertSame(tII, tIII.getNeighbor(B));
+        Assertions.assertSame(tIV, tIII.getNeighbor(C));
+        Assertions.assertSame(null, tIII.getNeighbor(D));
 
-        assertSame(tIII, tIV.getNeighbor(A));
-        assertSame(tII, tIV.getNeighbor(B));
-        assertSame(tI, tIV.getNeighbor(C));
-        assertSame(null, tIV.getNeighbor(D));
+        Assertions.assertSame(tIII, tIV.getNeighbor(A));
+        Assertions.assertSame(tII, tIV.getNeighbor(B));
+        Assertions.assertSame(tI, tIV.getNeighbor(C));
+        Assertions.assertSame(null, tIV.getNeighbor(D));
 
         assertEquals(a, tI.getVertex(A));
         assertEquals(c, tI.getVertex(B));

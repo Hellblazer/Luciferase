@@ -14,32 +14,33 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.cast;
+package com.hellblazer.sentry.cast;
 
 import javax.vecmath.Point3f;
-import javax.vecmath.Tuple3f;
 
 /**
  * @author hal.hildebrand
  */
-public class AbstractSpatial {
+public class SphericalPublish extends SpatialPublish {
+    protected float radius;
+    protected float radiusSquared;
 
-    protected Point3f location;
-
-    public AbstractSpatial(Point3f location) {
-        this.location = location;
+    public SphericalPublish(Point3f location, float radius) {
+        super(location);
+        this.radius = radius;
+        this.radiusSquared = radius * radius;
     }
 
-    public Point3f getLocation() {
-        return location;
+    public float getRadius() {
+        return radius;
     }
 
-    public Point3f moveBy(Tuple3f delta) {
-        location.add(delta);
-        return location;
+    public float getRadiusSquared() {
+        return radiusSquared;
     }
 
-    public void setLocation(Point3f location) {
-        this.location = location;
+    public void setRadius(float radius) {
+        this.radius = radius;
+        radiusSquared = radius * radius;
     }
 }

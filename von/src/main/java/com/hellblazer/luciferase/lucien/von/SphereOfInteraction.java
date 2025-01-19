@@ -17,11 +17,9 @@
 
 package com.hellblazer.luciferase.lucien.von;
 
-import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.sentry.Vertex;
 
 import javax.vecmath.Point3f;
-import javax.vecmath.Tuple3d;
-import java.util.Collection;
 import java.util.List;
 
 /**

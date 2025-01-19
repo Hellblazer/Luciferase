@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
@@ -25,7 +25,7 @@ import javax.vecmath.Tuple3f;
 import java.util.*;
 
 import static com.hellblazer.luciferase.geometry.Geometry.centerSphere;
-import static com.hellblazer.luciferase.lucien.grid.V.*;
+import static com.hellblazer.sentry.V.*;
 
 /**
  * An oriented, delaunay tetrahedral cell. The vertices of the tetrahedron are A, B, C and D. The vertices {A, B, C} are
@@ -148,7 +148,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     public Point3f center() {
         float[] center = new float[3];
-        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         return new Point3f(center[0], center[1], center[2]);
     }
 
@@ -675,7 +675,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             return;
         }
         var center = new float[3];
-        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V next = VORONOI_FACE_NEXT[ordinalOf(from).ordinal()][ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var t = getNeighbor(next);
@@ -697,7 +697,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3f[]> faces) {
         var face = new ArrayList<Point3f>();
         var center = new float[3];
-        centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V v = VORONOI_FACE_ORIGIN[ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var next = getNeighbor(v);

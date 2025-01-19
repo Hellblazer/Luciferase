@@ -14,16 +14,32 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.cast;
+package com.hellblazer.sentry.cast;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
 
 /**
  * @author hal.hildebrand
  */
-abstract public class SpatialSubscription extends AbstractSpatial {
+public class AbstractSpatial {
 
-    public SpatialSubscription(Point3f location) {
-        super(location);
+    protected Point3f location;
+
+    public AbstractSpatial(Point3f location) {
+        this.location = location;
+    }
+
+    public Point3f getLocation() {
+        return location;
+    }
+
+    public Point3f moveBy(Tuple3f delta) {
+        location.add(delta);
+        return location;
+    }
+
+    public void setLocation(Point3f location) {
+        this.location = location;
     }
 }

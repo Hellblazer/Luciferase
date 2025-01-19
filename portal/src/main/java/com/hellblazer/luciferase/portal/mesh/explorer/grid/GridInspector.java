@@ -17,15 +17,14 @@
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
-import com.hellblazer.luciferase.lucien.grid.MutableGrid;
+import com.hellblazer.sentry.MutableGrid;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 import javafx.scene.Group;
 
-import javax.vecmath.Point3d;
 import javax.vecmath.Point3f;
 import java.util.Random;
 
-import static com.hellblazer.luciferase.lucien.grid.Vertex.randomPoint;
+import static com.hellblazer.sentry.Vertex.randomPoint;
 
 /**
  * Neolithic 3D viewer, based on ye venerable JavaFX 3D sample app

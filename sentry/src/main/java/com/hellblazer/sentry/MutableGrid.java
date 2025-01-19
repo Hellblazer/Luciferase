@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
@@ -23,7 +23,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Random;
 
-import static com.hellblazer.luciferase.lucien.grid.V.*;
+import static com.hellblazer.sentry.V.*;
 
 /**
  * The dynamic, mutable version of the Grid

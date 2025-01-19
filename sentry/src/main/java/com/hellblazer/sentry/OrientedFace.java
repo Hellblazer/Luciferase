@@ -15,7 +15,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
 
-import static com.hellblazer.luciferase.lucien.grid.V.*;
+import static com.hellblazer.sentry.V.*;
 
 /**
  * An oriented face of a tetrahedron.

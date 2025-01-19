@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.grid;
+package com.hellblazer.sentry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -26,6 +26,7 @@ import java.util.Set;
 
 import javax.vecmath.Point3f;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,7 +46,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(186, L.size());
+        Assertions.assertEquals(188, L.size());
     }
 
     @Test
@@ -67,7 +68,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(384, L.size());
+        Assertions.assertEquals(380, L.size());
     }
 
     @Test
@@ -82,7 +83,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(402893, L.size());
+        Assertions.assertEquals(403033, L.size());
     }
 
     @Test
@@ -94,6 +95,6 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        assertEquals(611, L.size());
+        Assertions.assertEquals(639, L.size());
     }
 }

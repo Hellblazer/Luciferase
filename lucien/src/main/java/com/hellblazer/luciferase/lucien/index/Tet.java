@@ -29,8 +29,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             // Get the local index of T's ancestor on level i
             localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
             // get the type and cube-id of T's ancestor on level i
-            cid = TYPE_CUBE_ID_TO_LOCAL_INDEX[type][localIndex];
-            type = CUBE_ID_TO_LOCAL_INDEX[type][localIndex];
+            cid = PARENT_TYPE_LOCAL_INDEX_TO_CID[type][localIndex];
+            type = PARENT_TYPE_LOCAL_INDEX_TO_TYPE[type][localIndex];
             coordinates[0] |= (cid & 1) > 0 ? 1 << offsetCoords : 0;
             coordinates[1] |= (cid & 2) > 0 ? 1 << offsetCoords : 0;
             coordinates[2] |= (cid & 4) > 0 ? 1 << offsetCoords : 0;
