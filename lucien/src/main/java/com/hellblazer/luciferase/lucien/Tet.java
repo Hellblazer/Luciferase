@@ -1,9 +1,9 @@
-package com.hellblazer.luciferase.lucien.index;
+package com.hellblazer.luciferase.lucien;
 
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3i;
 
-import static com.hellblazer.luciferase.lucien.index.TetConstants.*;
+import static com.hellblazer.luciferase.lucien.TetConstants.*;
 
 /**
  * A tetrahedron in the mesh from the paper:
@@ -17,7 +17,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
      */
-    public static Tet tetrahedron(long index, int l) {
+    public static Tet tetrahedron(long index, byte l) {
         int offsetCoords, offsetIndex, localIndex, cid = 0;
         byte type = 0;
         int childrenM1 = 7;
@@ -51,7 +51,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the 3D coordinates of the tetrahedron described by the receiver in CCW order
      */
     public Tuple3i[] coordinates() {
-        var coords = new Point3i[4];
+        var coords = new Point3i[] { new Point3i(), new Point3i(), new Point3i(), new Point3i() };
         coords[0] = new Point3i(x, y, z);
         var h = lengthAtLevel();
         var i = type / 2;
@@ -85,7 +85,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     /**
      * @return the cube id of t's ancestor of level "level"
      */
-    public int cubeId(int level) {
+    public int cubeId(byte level) {
         if (level == 0) {
             return 0;
         }
@@ -109,7 +109,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @param i - the Morton child id
      * @return the i-th child (in Bey's order) of the receiver
      */
-    public Tet child(int i) {
+    public Tet child(byte i) {
         var coords = coordinates();
         var j = 0;
         if (i == 1 || i == 4 || i == 5) {
@@ -128,7 +128,11 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @param i - the Tet Morton child id
      * @return the i-th child (in Tet Morton order) of the receiver
      */
-    public Tet childTM(int i) {
+    public Tet childTM(byte i) {
+        if (l == MAX_REFINEMENT_LEVEL) {
+            throw new IllegalArgumentException(
+            "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
+        }
         return child(CHILD_TYPE_3D_MORTON[type][i]);
     }
 
@@ -144,9 +148,5 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             b = PARENT_3D[c][b];
         }
         return I;
-    }
-
-    public int localIndex() {
-        return 0;
     }
 }
