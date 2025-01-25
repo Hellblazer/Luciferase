@@ -4,13 +4,14 @@ import com.hellblazer.luciferase.lucien.Tet;
 import com.hellblazer.luciferase.lucien.TetConstants;
 import org.junit.jupiter.api.Test;
 
-import static com.hellblazer.luciferase.lucien.TetConstants.MAX_COORD;
 import static com.hellblazer.luciferase.lucien.TetConstants.MAX_REFINEMENT_LEVEL;
 
 /**
  * @author hal.hildebrand
  **/
 public class TetTest {
+    public static final int MAX_COORD = 1 << MAX_REFINEMENT_LEVEL;
+
     @Test
     public void smokin() {
         byte z = 0;
@@ -25,7 +26,7 @@ public class TetTest {
         System.out.println("consecutive index: %s".formatted(unitSimplex.index()));
         System.out.println("edge length: %s".formatted(unitSimplex.lengthAtLevel()));
 
-        var finalSimplex = TetConstants.FINAL_SIMPLEX;
+        var finalSimplex = new Tet(MAX_COORD, MAX_COORD, MAX_COORD, MAX_REFINEMENT_LEVEL, (byte) 5);
         System.out.println("\nFinal simplex: " + finalSimplex);
         System.out.println("consecutive index: %s".formatted(finalSimplex.index()));
         System.out.println("edge length: %s".formatted(finalSimplex.lengthAtLevel()));

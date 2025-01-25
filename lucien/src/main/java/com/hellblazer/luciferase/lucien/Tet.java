@@ -17,25 +17,25 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
      */
-    public static Tet tetrahedron(long index, byte l) {
-        int offsetCoords, offsetIndex, localIndex, cid = 0;
+    public static Tet tetrahedron(long index, byte level) {
+
         byte type = 0;
         int childrenM1 = 7;
         var coordinates = new int[3];
 
-        for (int i = 1; i <= l; i++) {
-            offsetCoords = MAX_REFINEMENT_LEVEL - i;
-            offsetIndex = l - i;
+        for (int i = 1; i <= level; i++) {
+            var offsetCoords = MAX_REFINEMENT_LEVEL - i;
+            var offsetIndex = level - i;
             // Get the local index of T's ancestor on level i
-            localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
+            var localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
             // get the type and cube-id of T's ancestor on level i
-            cid = PARENT_TYPE_LOCAL_INDEX_TO_CID[type][localIndex];
+            var cid = PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[type][localIndex];
             type = PARENT_TYPE_LOCAL_INDEX_TO_TYPE[type][localIndex];
             coordinates[0] |= (cid & 1) > 0 ? 1 << offsetCoords : 0;
             coordinates[1] |= (cid & 2) > 0 ? 1 << offsetCoords : 0;
             coordinates[2] |= (cid & 4) > 0 ? 1 << offsetCoords : 0;
         }
-        return new Tet(coordinates[0], coordinates[1], coordinates[2], (byte) l, type);
+        return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
 
     /**
@@ -85,15 +85,15 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     /**
      * @return the cube id of t's ancestor of level "level"
      */
-    public int cubeId(byte level) {
+    public byte cubeId(byte level) {
         if (level == 0) {
             return 0;
         }
         int h = 1 << (MAX_REFINEMENT_LEVEL - level);
-        int id = 0;
-        id |= (x & h) > 0 ? 1 : 0;
-        id |= (y & h) > 0 ? 2 : 0;
-        id |= (z & h) > 0 ? 4 : 0;
+        byte id = 0;
+        id |= (x & h) > 0 ? (byte) 1 : 0;
+        id |= (y & h) > 0 ? (byte) 2 : 0;
+        id |= (z & h) > 0 ? (byte) 4 : 0;
         return id;
     }
 
@@ -102,7 +102,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public Tet parent() {
         int h = lengthAtLevel();
-        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), PARENT_3D[cubeId(l)][type]);
+        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(l)][type]);
     }
 
     /**
@@ -121,7 +121,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             j = 3;
         }
         return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].x + coords[j].x) / 2,
-                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), CHILD_TYPE_3D[type][i]);
+                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_OF_CHILD[type][i]);
     }
 
     /**
@@ -133,7 +133,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalArgumentException(
             "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
         }
-        return child(CHILD_TYPE_3D_MORTON[type][i]);
+        return child(TYPE_OF_CHILD_MORTON[type][i]);
     }
 
     /**
@@ -141,12 +141,46 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public long index() {
         var I = 0L;
-        var b = type;
+        var exponent = 0;
+        var b = computeType(l);
         for (var i = l; i >= 1; i--) {
             var c = cubeId(i);
-            I = (long) ((I + Math.pow(8, i)) * TYPE_CUBE_ID_TO_LOCAL_INDEX[b][c]);
-            b = PARENT_3D[c][b];
+            I |= TYPE_CUBE_ID_TO_LOCAL_INDEX[b][c] << exponent;
+            exponent += 8;
+            b = CUBE_ID_TYPE_TO_PARENT_TYPE[c][b];
         }
         return I;
+    }
+
+    public byte computeType(byte level) {
+        return computeType(level, type, l);
+    }
+
+    /* A routine to compute the type of t's ancestor of level "level",
+     * if its type at an intermediate level is already known.
+     * If "level" equals t's level then t's type is returned.
+     * It is not allowed to call this function with "level" greater than t->level.
+     * This method runs in O(t->level - level).
+     */
+    public byte computeType(byte level, byte known_type, byte known_level) {
+        byte type = known_type;
+        byte cid;
+
+        //        T8_ASSERT(0 <= level && level <= known_level);
+        //        T8_ASSERT(known_level <= t -> level);
+        if (level == known_level) {
+            return known_type;
+        }
+        if (level == 0) {
+            /* TODO: the type of the root tet is hardcoded to 0
+             *       maybe once we want to allow the root tet to have different types */
+            return 0;
+        }
+        for (byte i = known_level; i > level; i--) {
+            cid = cubeId(i);
+            /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
+            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type];
+        }
+        return type;
     }
 }
