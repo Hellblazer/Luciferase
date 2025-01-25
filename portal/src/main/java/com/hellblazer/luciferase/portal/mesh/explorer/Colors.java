@@ -57,19 +57,43 @@ public class Colors {
 
     static {
         redMaterial = new PhongMaterial(RED);
+        redMaterial.setSpecularColor(RED);
+
         blueMaterial = new PhongMaterial(BLUE);
+        blueMaterial.setSpecularColor(BLUE);
+
         greenMaterial = new PhongMaterial(GREEN);
+        greenMaterial.setSpecularColor(GREEN);
+
         yellowMaterial = new PhongMaterial(YELLOW);
+        yellowMaterial.setSpecularColor(YELLOW);
+
         violetMaterial = new PhongMaterial(VIOLET);
+        violetMaterial.setSpecularColor(VIOLET);
+
         orangeMaterial = new PhongMaterial(ORANGE);
+        orangeMaterial.setSpecularColor(ORANGE);
+
         cyanMaterial = new PhongMaterial(CYAN);
+        cyanMaterial.setSpecularColor(CYAN);
+
         purpleMaterial = new PhongMaterial(PURPLE);
+        purpleMaterial.setSpecularColor(PURPLE);
+
         magentaMaterial = new PhongMaterial(MAGENTA);
+        magentaMaterial.setSpecularColor(MAGENTA);
+
         lavenderMaterial = new PhongMaterial(LAVENDER);
+        lavenderMaterial.setSpecularColor(LAVENDER);
+
         oliveMaterial = new PhongMaterial(OLIVE);
+        oliveMaterial.setSpecularColor(OLIVE);
+
         limeMaterial = new PhongMaterial(LIME);
+        limeMaterial.setSpecularColor(LIME);
 
         blackMaterial = new PhongMaterial(BLACK);
+        blackMaterial.setSpecularColor(BLACK);
 
         materials = new PhongMaterial[] { redMaterial, blueMaterial,
                                           greenMaterial, yellowMaterial,
