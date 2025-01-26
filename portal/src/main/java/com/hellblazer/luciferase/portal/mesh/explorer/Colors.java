@@ -58,42 +58,55 @@ public class Colors {
     static {
         redMaterial = new PhongMaterial(RED);
         redMaterial.setSpecularColor(RED);
+        redMaterial.setDiffuseColor(RED);
 
         blueMaterial = new PhongMaterial(BLUE);
         blueMaterial.setSpecularColor(BLUE);
+        blueMaterial.setDiffuseColor(BLUE);
 
         greenMaterial = new PhongMaterial(GREEN);
         greenMaterial.setSpecularColor(GREEN);
+        greenMaterial.setDiffuseColor(GREEN);
 
         yellowMaterial = new PhongMaterial(YELLOW);
         yellowMaterial.setSpecularColor(YELLOW);
+        yellowMaterial.setDiffuseColor(YELLOW);
 
         violetMaterial = new PhongMaterial(VIOLET);
         violetMaterial.setSpecularColor(VIOLET);
+        violetMaterial.setDiffuseColor(VIOLET);
 
         orangeMaterial = new PhongMaterial(ORANGE);
         orangeMaterial.setSpecularColor(ORANGE);
+        orangeMaterial.setDiffuseColor(ORANGE);
 
         cyanMaterial = new PhongMaterial(CYAN);
         cyanMaterial.setSpecularColor(CYAN);
+        cyanMaterial.setDiffuseColor(CYAN);
 
         purpleMaterial = new PhongMaterial(PURPLE);
         purpleMaterial.setSpecularColor(PURPLE);
+        purpleMaterial.setDiffuseColor(PURPLE);
 
         magentaMaterial = new PhongMaterial(MAGENTA);
         magentaMaterial.setSpecularColor(MAGENTA);
+        magentaMaterial.setDiffuseColor(MAGENTA);
 
         lavenderMaterial = new PhongMaterial(LAVENDER);
         lavenderMaterial.setSpecularColor(LAVENDER);
+        lavenderMaterial.setDiffuseColor(LAVENDER);
 
         oliveMaterial = new PhongMaterial(OLIVE);
         oliveMaterial.setSpecularColor(OLIVE);
+        oliveMaterial.setDiffuseColor(OLIVE);
 
         limeMaterial = new PhongMaterial(LIME);
         limeMaterial.setSpecularColor(LIME);
+        limeMaterial.setDiffuseColor(LIME);
 
         blackMaterial = new PhongMaterial(BLACK);
         blackMaterial.setSpecularColor(BLACK);
+        blackMaterial.setDiffuseColor(BLACK);
 
         materials = new PhongMaterial[] { redMaterial, blueMaterial,
                                           greenMaterial, yellowMaterial,

@@ -5,20 +5,21 @@ import com.hellblazer.luciferase.portal.mesh.Face;
 import javax.vecmath.Vector3d;
 
 /**
+ * Represents the six Irregular Tetrahedrons that reprsent the characteristic of the cube
  * @author hal.hildebrand
  **/
-public class QuadrirectangularTetrahedron extends Polyhedron {
+public class ThreeOrthoscheme extends Polyhedron {
 
     /** The Tetrahedrons in Bey's order */
     public static final Vector3d[][] SIMPLEX = new Vector3d[][] {
     { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
-    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c3.coords(), CORNER.c1.coords() },
     { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
-    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c6.coords(), CORNER.c2.coords() },
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
-    { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c5.coords(), CORNER.c7.coords() } };
+    { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c5.coords(), CORNER.c4.coords() } };
 
-    public QuadrirectangularTetrahedron(int simplex, double scale) {
+    public ThreeOrthoscheme(int simplex, double scale) {
         var vectors = SIMPLEX[simplex];
         var v0 = new Vector3d(vectors[0]);
         var v1 = new Vector3d(vectors[1]);
