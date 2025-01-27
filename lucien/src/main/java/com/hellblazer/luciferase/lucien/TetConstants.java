@@ -32,7 +32,7 @@ public class TetConstants {
                                                                 { 5, 5, 5, 5, 1, 0, 3, 4 } };
 
     /** maximum level we can accommodate without overflow **/
-    public static byte MAX_REFINEMENT_LEVEL = 20;
+    public static byte MAX_REFINEMENT_LEVEL = 21;
 
     /** Tetrahedron type and Cube ID to local index **/
     public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },

@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.google.common.math.IntMath;
+
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3i;
 
@@ -86,14 +88,17 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the cube id of t's ancestor of level "level"
      */
     public byte cubeId(byte level) {
-        if (level == 0) {
+        if (level < 0 || level >= MAX_REFINEMENT_LEVEL) {
+            throw new IllegalArgumentException("Illegal level: " + level);
+        }
+        if (level == 0 || level > l) {
             return 0;
         }
         int h = 1 << (MAX_REFINEMENT_LEVEL - level);
         byte id = 0;
-        id |= (x & h) > 0 ? (byte) 1 : 0;
-        id |= (y & h) > 0 ? (byte) 2 : 0;
-        id |= (z & h) > 0 ? (byte) 4 : 0;
+        id |= ((x & h) > 0 ? (byte) 1 : 0);
+        id |= ((y & h) > 0 ? (byte) 2 : 0);
+        id |= ((z & h) > 0 ? (byte) 4 : 0);
         return id;
     }
 
@@ -140,16 +145,14 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the consecutive index of the receiver on the space filling curve
      */
     public long index() {
-        var I = 0L;
-        var exponent = 0;
+        var index = 0L;
         var b = computeType(l);
         for (var i = l; i >= 1; i--) {
-            var c = cubeId(i);
-            I |= TYPE_CUBE_ID_TO_LOCAL_INDEX[b][c] << exponent;
-            exponent += 8;
-            b = CUBE_ID_TYPE_TO_PARENT_TYPE[c][b];
+            var cid = cubeId(i);
+            index += (long) IntMath.pow(8, i) * TYPE_CUBE_ID_TO_LOCAL_INDEX[b][cid];
+            b = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][b];
         }
-        return I;
+        return index;
     }
 
     public byte computeType(byte level) {
