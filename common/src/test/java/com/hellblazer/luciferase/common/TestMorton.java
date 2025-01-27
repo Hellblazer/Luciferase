@@ -4,6 +4,7 @@ import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -37,18 +38,20 @@ public class TestMorton {
                                                 { 15, 15, 11 }, { 15, 15, 12 }, { 15, 15, 13 }, { 15, 15, 14 },
                                                 { 15, 15, 15 } };
     protected MortonCurve mortonTest;
+    private Random random;
 
     @Test
     public void setUp() {
         mortonTest = new MortonCurve();
+        random = new Random(0x1638);
     }
 
     public void testEncode() {
         try {
             for (int i = 0; i < 1024; i++) {
-                int x = (int) (Math.random() * 2097151);
-                int y = (int) (Math.random() * 2097151);
-                int z = (int) (Math.random() * 2097151);
+                int x = (int) (random.nextDouble() * 2097151);
+                int y = (int) (random.nextDouble() * 2097151);
+                int z = (int) (random.nextDouble() * 2097151);
 
                 mortonTest.encode(x, y, z);
             }
@@ -64,7 +67,7 @@ public class TestMorton {
     public void testDecode() {
         try {
             for (int i = 0; i < 1024; i++) {
-                int c = (int) (Math.random() * Math.pow(2, 64));
+                int c = (int) (random.nextDouble() * Math.pow(2, 64));
                 mortonTest.decode(c);
             }
             fail("My method didn't throw when I expected it to");
