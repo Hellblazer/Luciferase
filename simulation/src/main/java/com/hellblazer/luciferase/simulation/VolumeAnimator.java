@@ -34,4 +34,5 @@ public class VolumeAnimator {
     public VolumeAnimator(RealTimeController controller) {
         this.controller = controller;
     }
+
 }

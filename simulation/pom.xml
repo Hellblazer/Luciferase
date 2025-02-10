@@ -17,6 +17,13 @@
             <groupId>com.hellblazer.primeMover</groupId>
             <artifactId>runtime</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>lucien</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>sentry</artifactId>
+        </dependency>
     </dependencies>
-
 </project>

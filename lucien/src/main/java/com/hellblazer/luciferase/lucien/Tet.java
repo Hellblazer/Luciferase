@@ -1,7 +1,5 @@
 package com.hellblazer.luciferase.lucien;
 
-import com.google.common.math.IntMath;
-
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3i;
 
@@ -43,7 +41,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     /**
      * @return the length of a triangle at the given level, in integer coordinates
      */
-    public int lengthAtLevel() {
+    public int length() {
         return 1 << (MAX_REFINEMENT_LEVEL - l);
     }
 
@@ -55,14 +53,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     public Tuple3i[] coordinates() {
         var coords = new Point3i[] { new Point3i(), new Point3i(), new Point3i(), new Point3i() };
         coords[0] = new Point3i(x, y, z);
-        var h = lengthAtLevel();
+        var h = length();
         var i = type / 2;
-        var j = 0;
-        if (type / 2 == 0) {
-            j = (i + 2) % 3;
-        } else {
-            j = (i + 1) % 3;
-        }
+        var j = (i + ((type % 2 == 0) ? 2 : 1)) % 3;
 
         if (i == 0) {
             coords[1] = new Point3i(coords[0].x + h, coords[0].y, coords[0].z);
@@ -88,7 +81,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the cube id of t's ancestor of level "level"
      */
     public byte cubeId(byte level) {
-        if (level < 0 || level >= MAX_REFINEMENT_LEVEL) {
+        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
             throw new IllegalArgumentException("Illegal level: " + level);
         }
         if (level == 0 || level > l) {
@@ -106,12 +99,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the parent Tet
      */
     public Tet parent() {
-        int h = lengthAtLevel();
+        int h = length();
         return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(l)][type]);
     }
 
     /**
-     * @param i - the Morton child id
+     * @param i - the child id
      * @return the i-th child (in Bey's order) of the receiver
      */
     public Tet child(byte i) {
@@ -126,7 +119,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             j = 3;
         }
         return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].x + coords[j].x) / 2,
-                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_OF_CHILD[type][i]);
+                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
     }
 
     /**
@@ -138,21 +131,41 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalArgumentException(
             "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
         }
-        return child(TYPE_OF_CHILD_MORTON[type][i]);
+        return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
     }
 
     /**
      * @return the consecutive index of the receiver on the space filling curve
      */
     public long index() {
-        var index = 0L;
-        var b = computeType(l);
-        for (var i = l; i >= 1; i--) {
-            var cid = cubeId(i);
-            index += (long) IntMath.pow(8, i) * TYPE_CUBE_ID_TO_LOCAL_INDEX[b][cid];
-            b = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][b];
+        return index(l);
+    }
+
+    public long index(byte level) {
+        long id = 0;
+        byte type_temp = 0;
+        byte cid;
+        int exponent;
+        byte my_level;
+
+        assert (0 <= level && level <= MAX_REFINEMENT_LEVEL);
+        my_level = l;
+        exponent = 0;
+        /* If the given level is bigger than t's level
+         * we first fill up with the ids of t's descendants at t's
+         * origin with the same type as t */
+        if (level > my_level) {
+            exponent = (level - my_level) * 3;
         }
-        return index;
+        level = my_level;
+        type_temp = computeType(level);
+        for (byte i = level; i > 0; i--) {
+            cid = cubeId(i);
+            id |= (TYPE_CUBE_ID_TO_LOCAL_INDEX[type_temp][cid]) << exponent;
+            exponent += 8;    /* multiply with 4 (2d) resp. 8  (3d) */
+            type_temp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type_temp];
+        }
+        return id;
     }
 
     public byte computeType(byte level) {

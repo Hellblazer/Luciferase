@@ -7,29 +7,31 @@ package com.hellblazer.luciferase.lucien;
  **/
 public class TetConstants {
     /** Cube ID and Type to Parent Type **/
-    public static final byte[][] CUBE_ID_TYPE_TO_PARENT_TYPE = new byte[][] { { 0, 1, 2, 3, 4, 5 },
-                                                                              { 0, 1, 1, 1, 0, 0 },
-                                                                              { 2, 2, 2, 3, 3, 3 },
-                                                                              { 1, 1, 2, 2, 2, 1 },
-                                                                              { 5, 5, 4, 4, 4, 5 },
-                                                                              { 0, 0, 0, 5, 5, 5 },
-                                                                              { 4, 3, 3, 3, 4, 4 },
-                                                                              { 0, 1, 2, 3, 4, 5 } };
+    public static final byte[][] CUBE_ID_TYPE_TO_PARENT_TYPE  = new byte[][] { { 0, 1, 2, 3, 4, 5 },
+                                                                               { 0, 1, 1, 1, 0, 0 },
+                                                                               { 2, 2, 2, 3, 3, 3 },
+                                                                               { 1, 1, 2, 2, 2, 1 },
+                                                                               { 5, 5, 4, 4, 4, 5 },
+                                                                               { 0, 0, 0, 5, 5, 5 },
+                                                                               { 4, 3, 3, 3, 4, 4 },
+                                                                               { 0, 1, 2, 3, 4, 5 } };
     /* in dependence of a type x give the type of
      * the child with Morton number y */
-    public static final byte[][] TYPE_OF_CHILD_MORTON        = new byte[][] { { 0, 1, 4, 7, 2, 3, 6, 5 },
-                                                                              { 0, 1, 5, 7, 2, 3, 6, 4 },
-                                                                              { 0, 3, 4, 7, 1, 2, 6, 5 },
-                                                                              { 0, 1, 6, 7, 2, 3, 4, 5 },
-                                                                              { 0, 3, 5, 7, 1, 2, 4, 6 },
-                                                                              { 0, 3, 6, 7, 2, 1, 4, 5 } };
+    public static final byte[][] TYPE_TO_TYPE_OF_CHILD_MORTON = new byte[][] { { 0, 1, 4, 7, 2, 3, 6, 5 },
+                                                                               { 0, 1, 5, 7, 2, 3, 6, 4 },
+                                                                               { 0, 3, 4, 7, 1, 2, 6, 5 },
+                                                                               { 0, 1, 6, 7, 2, 3, 4, 5 },
+                                                                               { 0, 3, 5, 7, 1, 2, 4, 6 },
+                                                                               { 0, 3, 6, 7, 2, 1, 4, 5 } };
 
     /* In dependence of a type x give the type of
      * the child with Bey number y */
-    public static final byte[][] TYPE_OF_CHILD = new byte[][] { { 0, 0, 0, 0, 4, 5, 2, 1 }, { 1, 1, 1, 1, 3, 2, 5, 0 },
-                                                                { 2, 2, 2, 2, 0, 1, 4, 3 }, { 3, 3, 3, 3, 5, 4, 1, 2 },
-                                                                { 4, 4, 4, 4, 2, 3, 0, 5 },
-                                                                { 5, 5, 5, 5, 1, 0, 3, 4 } };
+    public static final byte[][] TYPE_TO_TYPE_OF_CHILD = new byte[][] { { 0, 0, 0, 0, 4, 5, 2, 1 },
+                                                                        { 1, 1, 1, 1, 3, 2, 5, 0 },
+                                                                        { 2, 2, 2, 2, 0, 1, 4, 3 },
+                                                                        { 3, 3, 3, 3, 5, 4, 1, 2 },
+                                                                        { 4, 4, 4, 4, 2, 3, 0, 5 },
+                                                                        { 5, 5, 5, 5, 1, 0, 3, 4 } };
 
     /** maximum level we can accommodate without overflow **/
     public static byte MAX_REFINEMENT_LEVEL = 21;
