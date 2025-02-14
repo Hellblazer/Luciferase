@@ -7,7 +7,7 @@ import javax.vecmath.Tuple3i;
  */
 public interface Spatial {
 
-    boolean containedBy(aabt aabp);
+    boolean containedBy(aabt aabt);
 
     /**
      * Answer true if the axis aligned bounding tetrahedral volume intersects the receiver's volume
