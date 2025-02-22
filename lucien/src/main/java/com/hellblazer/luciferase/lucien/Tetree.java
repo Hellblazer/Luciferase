@@ -7,98 +7,42 @@ import java.util.stream.Stream;
 /**
  * A recursive spatial data structure based on the red refinement of a tetrahedral volume
  */
-public interface Tetree {
-
-    /** The Tetrahedrons in Bey's order */
-    public static final Vector3d[][] SIMPLEX = new Vector3d[][] {
-    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
-    { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c3.coords(), CORNER.c1.coords() },
-    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
-    { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c6.coords(), CORNER.c2.coords() },
-    { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
-    { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c5.coords(), CORNER.c4.coords() } };
-
-    Simplex intersecting(Spatial volume);
-
-    /**
-     * @param volume - the volume to enclose
-     * @return - minimum Simplex enclosing the volume
-     */
-    Simplex enclosing(Spatial volume);
-
-    /**
-     * @param volume the volume to contain
-     * @return the Stream of simplexes that minimally bound the volume
-     */
-    Stream<Simplex> bounding(Spatial volume);
+public interface Tetree<Content> {
 
     /**
      * @param volume - the enclosing volume
      * @return the Stream of simplexes bounded by the volume
      */
-    Stream<Simplex> boundedBy(Spatial volume);
+    Stream<Simplex<Content>> boundedBy(Spatial volume);
+
+    /**
+     * @param volume the volume to contain
+     * @return the Stream of simplexes that minimally bound the volume
+     */
+    Stream<Simplex<Content>> bounding(Spatial volume);
+
+    /**
+     * @param volume - the volume to enclose
+     * @return - minimum Simplex enclosing the volume
+     */
+    Simplex<Content> enclosing(Spatial volume);
 
     /**
      * @param point - the point to enclose
-     * @param level - refinement level
+     * @param level - refinement level for enclosure
      * @return the simplex at the provided
      */
-    Simplex enclosing(Tuple3i point, byte level);
+    Simplex<Content> enclosing(Tuple3i point, byte level);
 
     /**
      * @param linearIndex - the index in the space filling curve
      * @return the Simplex at the linear index
      */
-    Simplex get(int linearIndex);
+    Simplex<Content> get(int linearIndex);
 
-    // The corners of a cube
-    public enum CORNER {
-        c0 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(0, 0, 0);
-            }
-        }, c1 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(1, 0, 0);
-            }
-        }, c2 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(0, 1, 0);
-            }
-        }, c3 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(1, 1, 0);
-            }
-        }, c4 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(0, 0, 1);
-            }
-        }, c5 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(1, 0, 1);
-            }
-        }, c6 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(0, 1, 1);
-            }
-        }, c7 {
-            @Override
-            public Vector3d coords() {
-                return new Vector3d(1, 1, 1);
-            }
-        };
+    Simplex<Content> intersecting(Spatial volume);
 
-        abstract public Vector3d coords();
-    }
-
-    public record Simplex<Data>(long index, Data cell) implements Spatial {
+    record Simplex<Data>(long index, Data cell) implements Spatial {
         @Override
         public boolean containedBy(aabt aabt) {
             return false;
@@ -111,12 +55,14 @@ public interface Tetree {
 
         public Vector3d[] vertices() {
             var tet = Tet.tetrahedron(index, (byte) 5);
-            var simplex = SIMPLEX[tet.type()];
-            for (int i = 0; i < simplex.length; i++) {
-                simplex[i] = new Vector3d(simplex[i].x, simplex[i].y, simplex[i].z);
-                simplex[i].scale(tet.length());
+            var vertices = new Vector3d[4];
+            var i = 0;
+            for (var vertex : TetConstants.SIMPLEX[tet.type()]) {
+                vertices[i] = new Vector3d(vertex.x, vertex.y, vertex.z);
+                vertices[i].scale(tet.length());
+                i++;
             }
-            return new Vector3d[] { simplex[0], simplex[1], simplex[2], simplex[3] };
+            return vertices;
         }
     }
 }

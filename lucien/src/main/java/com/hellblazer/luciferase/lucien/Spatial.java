@@ -20,7 +20,7 @@ public interface Spatial {
         return intersects(aabp.originX, aabp.originY, aabp.originZ, aabp.extentX, aabp.extentY, aabp.extentZ);
     }
 
-    public record Sphere(int centerX, int centerY, int centerZ, int radius) implements Spatial {
+    record Sphere(int centerX, int centerY, int centerZ, int radius) implements Spatial {
         @Override
         public boolean containedBy(aabt aabp) {
             return false;
@@ -42,7 +42,7 @@ public interface Spatial {
      * @param extentY
      * @param extentZ
      */
-    public record Parallelepiped(int originX, int originY, int originZ, int extentX, int extentY, int extentZ)
+    record Parallelepiped(int originX, int originY, int originZ, int extentX, int extentY, int extentZ)
     implements Spatial {
         @Override
         public boolean containedBy(aabt aabp) {
@@ -55,7 +55,7 @@ public interface Spatial {
         }
     }
 
-    public record Tetrahedron(Tuple3i a, Tuple3i b, Tuple3i c, Tuple3i d) implements Spatial {
+    record Tetrahedron(Tuple3i a, Tuple3i b, Tuple3i c, Tuple3i d) implements Spatial {
         @Override
         public boolean containedBy(aabt aabp) {
             return false;

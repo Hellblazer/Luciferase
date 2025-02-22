@@ -1,7 +1,10 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.Geometry;
+
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3i;
+import java.util.stream.Stream;
 
 import static com.hellblazer.luciferase.lucien.TetConstants.*;
 
@@ -12,6 +15,21 @@ import static com.hellblazer.luciferase.lucien.TetConstants.*;
  * @author hal.hildebrand
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
+
+    private static double determinant(Tuple3i v1, Tuple3i v2, Tuple3i v3, Tuple3i v4) {
+        return
+        v1.x * (v2.y * (v3.z - v4.z) + v3.y * (v4.z - v2.z) + v4.y * (v2.z - v3.z)) - v1.y * (v2.x * (v3.z - v4.z)
+                                                                                              + v3.x * (v4.z - v2.z)
+                                                                                              + v4.x * (v2.z - v3.z))
+        + v1.z * (v2.x * (v3.y - v4.y) + v3.x * (v4.y - v2.y) + v4.x * (v2.y - v3.y)) - (
+        v1.x * (v2.y * (v3.z + v4.z) - v2.z * (v3.y + v4.y)) - v1.y * (v2.x * (v3.z + v4.z) - v2.z * (v3.x + v4.x))
+        + v1.z * (v2.x * (v3.y + v4.y) - v2.y * (v3.x + v4.x)));
+    }
+
+    public static double orientation(Tuple3i query, Tuple3i a, Tuple3i b, Tuple3i c) {
+        var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
+        return Math.signum(result);
+    }
 
     /**
      * @param index - the consecutive index of the tetrahedron
@@ -39,10 +57,101 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * @return the length of a triangle at the given level, in integer coordinates
+     * @param volume - the enclosing volume
+     * @return the Stream of indexes in the SFC locating the Tets bounded by the volume
      */
-    public int length() {
-        return 1 << (MAX_REFINEMENT_LEVEL - l);
+    public Stream<Long> boundedBy(Spatial volume) {
+        return null;
+    }
+
+    /**
+     * @param volume the volume to contain
+     * @return the Stream of indexes in the SFC locating the Tets that minimally bound the volume
+     */
+    public Stream<Long> bounding(Spatial volume) {
+        return null;
+    }
+
+    /**
+     * @param i - the child id
+     * @return the i-th child (in Bey's order) of the receiver
+     */
+    public Tet child(byte i) {
+        var coords = coordinates();
+        var j = 0;
+        if (i == 1 || i == 4 || i == 5) {
+            j = 1;
+        } else if (i == 2 || i == 6 || i == 7) {
+            j = 2;
+        }
+        if (i == 3) {
+            j = 3;
+        }
+        return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].x + coords[j].x) / 2,
+                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
+    }
+
+    /**
+     * @param i - the Tet Morton child id
+     * @return the i-th child (in Tet Morton order) of the receiver
+     */
+    public Tet childTM(byte i) {
+        if (l == MAX_REFINEMENT_LEVEL) {
+            throw new IllegalArgumentException(
+            "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
+        }
+        return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
+    }
+
+    public byte computeType(byte level) {
+        return computeType(level, type, l);
+    }
+
+    /* A routine to compute the type of t's ancestor of level "level",
+     * if its type at an intermediate level is already known.
+     * If "level" equals t's level then t's type is returned.
+     * It is not allowed to call this function with "level" greater than t->level.
+     * This method runs in O(t->level - level).
+     */
+    public byte computeType(byte level, byte known_type, byte known_level) {
+        byte type = known_type;
+        byte cid;
+
+        assert (0 <= level && level <= known_level);
+        assert known_level <= l;
+
+        if (level == known_level) {
+            return known_type;
+        }
+        if (level == 0) {
+            /* TODO: the type of the root tet is hardcoded to 0
+             *       maybe once we want to allow the root tet to have different types */
+            return 0;
+        }
+        for (byte i = known_level; i > level; i--) {
+            cid = cubeId(i);
+            /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
+            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type];
+        }
+        return type;
+    }
+
+    public boolean contains(Tuple3i point) {
+        var vertices = vertices();
+        // wrt face CBD
+        if (orientation(point, vertices[1], vertices[2], vertices[3]) > 0) {
+            return false;
+        }
+        // wrt face CDA
+        if (orientation(point, vertices[2], vertices[3], vertices[0]) > 0) {
+            return false;
+        }
+        // wrt face ADB
+        if (orientation(point, vertices[0], vertices[3], vertices[1]) > 0) {
+            return false;
+        }
+        // wrt face BCA
+        return orientation(point, vertices[0], vertices[2], vertices[1]) <= 0;
     }
 
     /**
@@ -96,42 +205,20 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * @return the parent Tet
+     * @param volume - the volume to enclose
+     * @return - index in the SFC of the minimum Tet enclosing the volume
      */
-    public Tet parent() {
-        int h = length();
-        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(l)][type]);
+    public long enclosing(Spatial volume) {
+        return 0L;
     }
 
     /**
-     * @param i - the child id
-     * @return the i-th child (in Bey's order) of the receiver
+     * @param point - the point to enclose
+     * @param level - refinement level for enclosure
+     * @return the simplex at the provided
      */
-    public Tet child(byte i) {
-        var coords = coordinates();
-        var j = 0;
-        if (i == 1 || i == 4 || i == 5) {
-            j = 1;
-        } else if (i == 2 || i == 6 || i == 7) {
-            j = 2;
-        }
-        if (i == 3) {
-            j = 3;
-        }
-        return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].x + coords[j].x) / 2,
-                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
-    }
-
-    /**
-     * @param i - the Tet Morton child id
-     * @return the i-th child (in Tet Morton order) of the receiver
-     */
-    public Tet childTM(byte i) {
-        if (l == MAX_REFINEMENT_LEVEL) {
-            throw new IllegalArgumentException(
-            "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
-        }
-        return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
+    public long enclosing(Tuple3i point, byte level) {
+        return 0L;
     }
 
     /**
@@ -146,57 +233,54 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         byte type_temp = 0;
         byte cid;
         int exponent;
-        byte my_level;
 
         assert (0 <= level && level <= MAX_REFINEMENT_LEVEL);
-        my_level = l;
         exponent = 0;
         /* If the given level is bigger than t's level
          * we first fill up with the ids of t's descendants at t's
          * origin with the same type as t */
-        if (level > my_level) {
-            exponent = (level - my_level) * 3;
+        if (level > l) {
+            exponent = (level - l) * 3;
         }
-        level = my_level;
+        level = l;
         type_temp = computeType(level);
         for (byte i = level; i > 0; i--) {
             cid = cubeId(i);
-            id |= (TYPE_CUBE_ID_TO_LOCAL_INDEX[type_temp][cid]) << exponent;
+            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[type_temp][cid]) << exponent;
             exponent += 8;    /* multiply with 4 (2d) resp. 8  (3d) */
             type_temp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type_temp];
         }
         return id;
     }
 
-    public byte computeType(byte level) {
-        return computeType(level, type, l);
+    public long intersecting(Spatial volume) {
+        return 0L;
     }
 
-    /* A routine to compute the type of t's ancestor of level "level",
-     * if its type at an intermediate level is already known.
-     * If "level" equals t's level then t's type is returned.
-     * It is not allowed to call this function with "level" greater than t->level.
-     * This method runs in O(t->level - level).
+    /**
+     * @return the length of a triangle at the given level, in integer coordinates
      */
-    public byte computeType(byte level, byte known_type, byte known_level) {
-        byte type = known_type;
-        byte cid;
+    public int length() {
+        return 1 << (MAX_REFINEMENT_LEVEL - l);
+    }
 
-        //        T8_ASSERT(0 <= level && level <= known_level);
-        //        T8_ASSERT(known_level <= t -> level);
-        if (level == known_level) {
-            return known_type;
+    /**
+     * @return the parent Tet
+     */
+    public Tet parent() {
+        int h = length();
+        return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(l)][type]);
+    }
+
+    public Point3i[] vertices() {
+        var origin = new Point3i(x, y, z);
+        var vertices = new Point3i[4];
+        int i = 0;
+        for (var vertex : TetConstants.SIMPLEX[type()]) {
+            vertices[i] = new Point3i(vertex.x, vertex.y, vertex.z);
+            vertices[i].scaleAdd(length(), origin);
+            i++;
         }
-        if (level == 0) {
-            /* TODO: the type of the root tet is hardcoded to 0
-             *       maybe once we want to allow the root tet to have different types */
-            return 0;
-        }
-        for (byte i = known_level; i > level; i--) {
-            cid = cubeId(i);
-            /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
-            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type];
-        }
-        return type;
+        return vertices;
     }
 }

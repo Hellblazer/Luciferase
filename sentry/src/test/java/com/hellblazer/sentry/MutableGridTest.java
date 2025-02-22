@@ -41,9 +41,7 @@ public class MutableGridTest {
             sentinel.rebuild(entropy);
         }
         final var total = System.nanoTime() - now;
-        System.out.println(
-        "sites: %s total time: %s ms iterations: %s avg time: %s ms".formatted(sites.size(), total / 1_000_000.0,
-                                                                               iterations,
-                                                                               (total / iterations) / 1_000_000.0));
+        System.out.printf("sites: %s total time: %s ms iterations: %s avg time: %s ms%n", sites.size(),
+                          total / 1_000_000.0, iterations, (total / iterations) / 1_000_000.0);
     }
 }
