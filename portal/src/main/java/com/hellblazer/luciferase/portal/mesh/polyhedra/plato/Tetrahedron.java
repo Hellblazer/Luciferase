@@ -28,7 +28,7 @@ public class Tetrahedron extends PlatonicSolid {
 
     public Tetrahedron(boolean inverse, Vector3d... vectors) {
         super(PlatonicSolid.edgeLength(vectors));
-        assert vectors != null && vectors.length == 4;
+        assert vectors.length == 4;
         addVertexPositions(vectors[0], vectors[1], vectors[2], vectors[3]);
 
         Face f0 = new Face(3);
