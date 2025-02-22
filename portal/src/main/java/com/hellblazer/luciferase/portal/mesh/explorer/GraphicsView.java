@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import com.hellblazer.luciferase.lucien.grid.Vertex;
+import com.hellblazer.sentry.Vertex;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
 import com.hellblazer.luciferase.portal.mesh.PolyLine;
@@ -13,7 +13,7 @@ import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.Sphere;
 
-import javax.vecmath.Tuple3d;
+import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3d;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,11 +21,11 @@ import java.util.stream.Stream;
 
 public class GraphicsView extends Group {
 
-    public static Point3D p(Tuple3d v) {
+    public static Point3D p(Tuple3f v) {
         return new Point3D(v.x, v.y, v.z);
     }
 
-    public void newFace(Tuple3d[] verts, PhongMaterial color, boolean showFace, Group group) {
+    public void newFace(Tuple3f[] verts, PhongMaterial color, boolean showFace, Group group) {
         List<Point3D> vertices;
         if (showFace) {
             Mesh mesh = new Mesh();
@@ -66,17 +66,17 @@ public class GraphicsView extends Group {
         });
     }
 
-    protected boolean isAuxillary(Tuple3d[] face) {
+    protected boolean isAuxillary(Tuple3f[] face) {
         return false;
     }
 
-    protected void render(List<Tuple3d[]> region, PhongMaterial color, boolean showFaces, Group group) {
+    protected void render(List<Tuple3f[]> region, PhongMaterial color, boolean showFaces, Group group) {
         for (var face : region) {
             color = render(face, color, showFaces, group);
         }
     }
 
-    protected PhongMaterial render(Tuple3d[] face, PhongMaterial color, boolean showFaces, Group group) {
+    protected PhongMaterial render(Tuple3f[] face, PhongMaterial color, boolean showFaces, Group group) {
         if (!isAuxillary(face)) {
             final var c = color.getDiffuseColor();
             color = new PhongMaterial(new Color(c.getRed(), c.getGreen(), c.getBlue(), 0.1));
