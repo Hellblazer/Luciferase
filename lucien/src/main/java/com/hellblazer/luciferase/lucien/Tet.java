@@ -2,11 +2,13 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.Geometry;
 
+import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
+import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
 import java.util.stream.Stream;
 
-import static com.hellblazer.luciferase.lucien.TetConstants.*;
+import static com.hellblazer.luciferase.lucien.Constants.*;
 
 /**
  * A tetrahedron in the mesh from the paper:
@@ -16,19 +18,42 @@ import static com.hellblazer.luciferase.lucien.TetConstants.*;
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
 
-    private static double determinant(Tuple3i v1, Tuple3i v2, Tuple3i v3, Tuple3i v4) {
-        return
-        v1.x * (v2.y * (v3.z - v4.z) + v3.y * (v4.z - v2.z) + v4.y * (v2.z - v3.z)) - v1.y * (v2.x * (v3.z - v4.z)
-                                                                                              + v3.x * (v4.z - v2.z)
-                                                                                              + v4.x * (v2.z - v3.z))
-        + v1.z * (v2.x * (v3.y - v4.y) + v3.x * (v4.y - v2.y) + v4.x * (v2.y - v3.y)) - (
-        v1.x * (v2.y * (v3.z + v4.z) - v2.z * (v3.y + v4.y)) - v1.y * (v2.x * (v3.z + v4.z) - v2.z * (v3.x + v4.x))
-        + v1.z * (v2.x * (v3.y + v4.y) - v2.y * (v3.x + v4.x)));
+    public Tet(Point3i cubeId, byte level, byte type) {
+        this(cubeId.x, cubeId.y, cubeId.z, level, type);
+    }
+
+    public static boolean contains(Point3i[] vertices, Tuple3f point) {
+        // wrt face CDB
+        if (orientation(point, vertices[2], vertices[3], vertices[1]) > 0) {
+            return false;
+        }
+        // wrt face DCA
+        if (orientation(point, vertices[3], vertices[2], vertices[0]) > 0) {
+            return false;
+        }
+        // wrt face BDA
+        if (orientation(point, vertices[1], vertices[3], vertices[0]) > 0.0d) {
+            return false;
+        }
+        // wrt face BAC
+        return orientation(point, vertices[1], vertices[0], vertices[2]) <= 0;
     }
 
     public static double orientation(Tuple3i query, Tuple3i a, Tuple3i b, Tuple3i c) {
+        return orientation(new Point3f(query.x, query.y, query.z), a, b, c);
+    }
+
+    public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
         var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
         return Math.signum(result);
+    }
+
+    /**
+     * @param index - the consecutive index of the tetrahedron
+     * @return the Tet corresponding to the consecutive index
+     */
+    public static Tet tetrahedron(long index) {
+        return tetrahedron(index, toLevel(index));
     }
 
     /**
@@ -136,22 +161,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return type;
     }
 
-    public boolean contains(Tuple3i point) {
-        var vertices = vertices();
-        // wrt face CBD
-        if (orientation(point, vertices[1], vertices[2], vertices[3]) > 0) {
-            return false;
-        }
-        // wrt face CDA
-        if (orientation(point, vertices[2], vertices[3], vertices[0]) > 0) {
-            return false;
-        }
-        // wrt face ADB
-        if (orientation(point, vertices[0], vertices[3], vertices[1]) > 0) {
-            return false;
-        }
-        // wrt face BCA
-        return orientation(point, vertices[0], vertices[2], vertices[1]) <= 0;
+    public boolean contains(Tuple3f point) {
+        return contains(vertices(), point);
     }
 
     /**
@@ -159,8 +170,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      *
      * @return the 3D coordinates of the tetrahedron described by the receiver in CCW order
      */
-    public Tuple3i[] coordinates() {
-        var coords = new Point3i[] { new Point3i(), new Point3i(), new Point3i(), new Point3i() };
+    public Point3i[] coordinates() {
+        var coords = new Point3i[4];
         coords[0] = new Point3i(x, y, z);
         var h = length();
         var i = type / 2;
@@ -171,7 +182,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         } else if (i == 1) {
             coords[1] = new Point3i(coords[0].x, coords[0].y + h, coords[0].z);
         } else if (i == 2) {
-            coords[2] = new Point3i(coords[0].x, coords[0].y, coords[0].z + h);
+            coords[1] = new Point3i(coords[0].x, coords[0].y, coords[0].z + h);
         }
 
         if (j == 0) {
@@ -258,7 +269,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * @return the length of a triangle at the given level, in integer coordinates
+     * @return the length of an edge at the given level, in integer coordinates
      */
     public int length() {
         return 1 << (MAX_REFINEMENT_LEVEL - l);
@@ -276,7 +287,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         var origin = new Point3i(x, y, z);
         var vertices = new Point3i[4];
         int i = 0;
-        for (var vertex : TetConstants.SIMPLEX[type()]) {
+        for (var vertex : Constants.SIMPLEX_STANDARD[type()]) {
             vertices[i] = new Point3i(vertex.x, vertex.y, vertex.z);
             vertices[i].scaleAdd(length(), origin);
             i++;
