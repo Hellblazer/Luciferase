@@ -2,7 +2,6 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.Geometry;
 
-import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
@@ -17,6 +16,18 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  * @author hal.hildebrand
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
+
+    public Tet(int level, int type) {
+        this((byte) level, (byte) type);
+    }
+
+    public Tet(byte level, byte type) {
+        this(ROOT_SIMPLEX.x, ROOT_SIMPLEX.y, ROOT_SIMPLEX.z, level, type);
+    }
+
+    public Tet(Point3i cubeId, int level, int type) {
+        this(cubeId, (byte) level, (byte) type);
+    }
 
     public Tet(Point3i cubeId, byte level, byte type) {
         this(cubeId.x, cubeId.y, cubeId.z, level, type);
@@ -40,7 +51,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     public static double orientation(Tuple3i query, Tuple3i a, Tuple3i b, Tuple3i c) {
-        return orientation(new Point3f(query.x, query.y, query.z), a, b, c);
+        var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
+        return Math.signum(result);
     }
 
     public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
@@ -228,7 +240,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @param level - refinement level for enclosure
      * @return the simplex at the provided
      */
-    public long enclosing(Tuple3i point, byte level) {
+    public long enclosing(Tuple3f point, byte level) {
         return 0L;
     }
 

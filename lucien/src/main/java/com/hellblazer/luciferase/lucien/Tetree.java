@@ -183,7 +183,7 @@ public class Tetree<Content> {
         }
     }
 
-    public record Simplex<Data>(long index, Data cell, byte level) implements Spatial {
+    public record Simplex<Data>(long index, Data cell) implements Spatial {
         @Override
         public boolean containedBy(aabt aabt) {
             return false;

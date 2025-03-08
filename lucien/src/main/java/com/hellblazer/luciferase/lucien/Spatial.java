@@ -83,6 +83,21 @@ public interface Spatial {
         }
     }
 
+    record aabb(float originX, float originY, float originZ, float extentX, float extentY, float extentZ)
+    implements Spatial {
+        @Override
+        public boolean containedBy(aabt aabp) {
+            return false;
+        }
+
+        @Override
+        public boolean intersects(float originX, float originY, float originZ, float extentX, float extentY,
+                                  float extentZ) {
+            return !(this.extentX < originX || this.originX > extentX || this.extentY < originY
+                     || this.originY > extentY || this.extentZ < originZ || this.originZ > extentZ);
+        }
+    }
+
     /**
      * Axis aligned bounding tetrahedron.  A tetrahedral volume in tetrahedral coordinates
      *
