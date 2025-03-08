@@ -3,11 +3,11 @@ package com.hellblazer.luciferase.lucien;
 import javax.vecmath.Point3i;
 
 /**
- * Tables o' data for Tet spatial indexing z
+ * Tables o' data for Tetree and Octree spatial indexing z
  *
  * @author hal.hildebrand
  **/
-public class TetConstants {
+public class Constants {
     /** Cube ID and Type to Parent Type **/
     public static final byte[][] CUBE_ID_TYPE_TO_PARENT_TYPE  = new byte[][] { { 0, 1, 2, 3, 4, 5 },
                                                                                { 0, 1, 1, 1, 0, 0 },
@@ -34,8 +34,17 @@ public class TetConstants {
                                                                            { 3, 3, 3, 3, 5, 4, 1, 2 },
                                                                            { 4, 4, 4, 4, 2, 3, 0, 5 },
                                                                            { 5, 5, 5, 5, 1, 0, 3, 4 } };
-    /** The Tetrahedrons in Bey's order */
+    /** The Tetrahedrons in Bey's order, corners ordered z,y,x */
     public static final Point3i[][] SIMPLEX               = new Point3i[][] {
+    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
+    { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c5.coords(), CORNER.c7.coords() } };
+
+    /** The Tetrahedrons in Bey's order, corners ordered in standard position */
+    public static final Point3i[][] SIMPLEX_STANDARD = new Point3i[][] {
     { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c3.coords(), CORNER.c1.coords() },
     { CORNER.c0.coords(), CORNER.c2.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
@@ -45,6 +54,8 @@ public class TetConstants {
 
     /** maximum level we can accommodate without overflow **/
     public static byte MAX_REFINEMENT_LEVEL = 21;
+
+    public static int MAX_EXTENT = 1 << MAX_REFINEMENT_LEVEL;
 
     /** Tetrahedron type and Cube ID to local index **/
     public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
@@ -75,6 +86,25 @@ public class TetConstants {
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
     public static Tet UNIT_SIMPLEX = new Tet(0, 0, 0, MAX_REFINEMENT_LEVEL, (byte) 0);
+
+    /**
+     * @return the length of an edge at the given level, in integer coordinates
+     */
+    public static int lengthAtLevel(byte level) {
+        return 1 << (MAX_REFINEMENT_LEVEL - level);
+    }
+
+    public static byte toLevel(long mortonCode) {
+        if (mortonCode == 0) {
+            return 0;
+        }
+        byte level = 0;
+        while (mortonCode > 0) {
+            mortonCode >>= 3; // pop the octet
+            level++;
+        }
+        return level;
+    }
 
     // The corners of a cube
     public enum CORNER {
