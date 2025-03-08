@@ -35,8 +35,8 @@ public class VolumeAnimator {
     private static final Logger log = Logger.getLogger(VolumeAnimator.class.getCanonicalName());
 
     private final RealTimeController controller;
-    private       Tetree.Simplex     cell;
-    private       Grid               grid;
+    private final Tetree.Simplex     cell;
+    private final Grid               grid;
 
     public VolumeAnimator(RealTimeController controller, Tetree.Simplex cell) {
         this.controller = controller;
