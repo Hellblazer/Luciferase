@@ -53,39 +53,53 @@ public class Constants {
     { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c5.coords(), CORNER.c4.coords() } };
 
     /** maximum level we can accommodate without overflow **/
-    public static byte MAX_REFINEMENT_LEVEL = 21;
+    public static final byte MAX_REFINEMENT_LEVEL = 21;
 
-    public static int MAX_EXTENT = 1 << MAX_REFINEMENT_LEVEL;
+    public static final int MAX_EXTENT = 1 << MAX_REFINEMENT_LEVEL;
 
     /** Tetrahedron type and Cube ID to local index **/
-    public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
-                                                                        { 0, 1, 2, 5, 2, 5, 4, 7 },
-                                                                        { 0, 2, 3, 4, 1, 6, 5, 7 },
-                                                                        { 0, 3, 1, 5, 2, 4, 6, 7 },
-                                                                        { 0, 2, 2, 6, 3, 5, 5, 7 },
-                                                                        { 0, 3, 3, 6, 3, 6, 6, 7 } };
+    public static final byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
+                                                                              { 0, 1, 2, 5, 2, 5, 4, 7 },
+                                                                              { 0, 2, 3, 4, 1, 6, 5, 7 },
+                                                                              { 0, 3, 1, 5, 2, 4, 6, 7 },
+                                                                              { 0, 2, 2, 6, 3, 5, 5, 7 },
+                                                                              { 0, 3, 3, 6, 3, 6, 6, 7 } };
 
     /** Parent type and local index to cube id **/
-    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
-                                                                               { 0, 1, 1, 1, 3, 3, 3, 7 },
-                                                                               { 0, 2, 2, 2, 3, 3, 3, 7 },
-                                                                               { 0, 2, 2, 2, 6, 6, 6, 7 },
-                                                                               { 0, 4, 4, 4, 6, 6, 6, 7 },
-                                                                               { 0, 4, 4, 4, 5, 5, 5, 7 } };
+    public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
+                                                                                     { 0, 1, 1, 1, 3, 3, 3, 7 },
+                                                                                     { 0, 2, 2, 2, 3, 3, 3, 7 },
+                                                                                     { 0, 2, 2, 2, 6, 6, 6, 7 },
+                                                                                     { 0, 4, 4, 4, 6, 6, 6, 7 },
+                                                                                     { 0, 4, 4, 4, 5, 5, 5, 7 } };
 
     /** Parent type and local index to type **/
-    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
-                                                                            { 1, 1, 2, 3, 0, 1, 5, 1 },
-                                                                            { 2, 0, 1, 2, 2, 3, 4, 2 },
-                                                                            { 3, 3, 4, 5, 1, 2, 3, 3 },
-                                                                            { 4, 2, 3, 4, 0, 4, 5, 4 },
-                                                                            { 5, 0, 1, 5, 3, 4, 5, 5 } };
+    public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
+                                                                                  { 1, 1, 2, 3, 0, 1, 5, 1 },
+                                                                                  { 2, 0, 1, 2, 2, 3, 4, 2 },
+                                                                                  { 3, 3, 4, 5, 1, 2, 3, 3 },
+                                                                                  { 4, 2, 3, 4, 0, 4, 5, 4 },
+                                                                                  { 5, 0, 1, 5, 3, 4, 5, 5 } };
 
     /** Tet ID of the Root Simplex **/
-    public static Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+    public static final Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
-    public static Tet UNIT_SIMPLEX = new Tet(0, 0, 0, MAX_REFINEMENT_LEVEL, (byte) 0);
+    public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, MAX_REFINEMENT_LEVEL, (byte) 0);
+
+    /** The coordinates of the 8 corners of the cube **/
+    public static final Point3i[] CORNERS = new Point3i[] { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c2.coords(),
+                                                            CORNER.c3.coords(), CORNER.c4.coords(), CORNER.c5.coords(),
+                                                            CORNER.c6.coords(), CORNER.c7.coords() };
+
+    public static final int[][] CORNER_COORDINATES = new int[][] {};
+
+    {
+        for (int i = 0; i < CORNERS.length; i++) {
+            var coords = CORNERS[i];
+            CORNER_COORDINATES[i] = new int[] { coords.x, coords.y, coords.z };
+        }
+    }
 
     /**
      * @return the length of an edge at the given level, in integer coordinates

@@ -19,6 +19,9 @@
         <h2.version>2.1.212</h2.version>
         <javafx.version>23</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
+
+        <lwjgl.version>3.3.6</lwjgl.version>
+        <lwjgl.natives>natives-macos</lwjgl.natives>
     </properties>
 
     <licenses>
@@ -40,7 +43,6 @@
         <module>portal</module>
         <module>common</module>
         <module>von</module>
-        <!--        <module>portal-2</module>-->
         <module>simulation</module>
         <module>sentry</module>
     </modules>
@@ -187,19 +189,14 @@
                 <version>${javafx.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.jzy3d</groupId>
-                <artifactId>panama-gl-ui-javafx</artifactId>
-                <version>1.2.0-SNAPSHOT</version>
+                <groupId>org.openjfx</groupId>
+                <artifactId>javafx-web</artifactId>
+                <version>${javafx.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>32.0.1-jre</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>3.12.0</version>
             </dependency>
 
 
@@ -415,6 +412,11 @@
             <id>jzy3d-releases</id>
             <name>Jzy3d Releases</name>
             <url>https://maven.jzy3d.org/releases/</url>
+        </repository>
+        <repository>
+            <id>MyWorldLLC</id>
+            <name>MyWorldLLC</name>
+            <url>https://github.com/MyWorldLLC/Packages/packages/2097504</url>
         </repository>
 
     </repositories>

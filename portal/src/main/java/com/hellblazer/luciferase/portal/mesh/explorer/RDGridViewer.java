@@ -1,22 +1,19 @@
 /**
  * Copyright (C) 2023 Hal Hildebrand. All rights reserved.
  * <p>
- * This program is free software: you can redistribute it and/or modify it under
- * the terms of the GNU Affero General Public License as published by the Free
- * Software Foundation, either version 3 of the License, or (at your option) any
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
  * later version.
  * <p>
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  * <p>
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import com.hellblazer.luciferase.portal.RDG;
 import com.hellblazer.luciferase.portal.RDGCS;
 import com.hellblazer.luciferase.portal.Tetrahedral;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
@@ -35,8 +32,8 @@ import javax.vecmath.Point3i;
 public class RDGridViewer extends Abstract3DApp {
 
     public static final double CUBE_EDGE_LENGTH = Math.sqrt(2) / 2;
-    public static final double TET_EDGE_LENGTH = Math.sqrt(2);
-    private final Group view = new Group();
+    public static final double TET_EDGE_LENGTH  = Math.sqrt(2);
+    private final       Group  view             = new Group();
 
     public static void main(String[] args) {
         launch(args);
@@ -104,9 +101,9 @@ public class RDGridViewer extends Abstract3DApp {
         final var children = view.getChildren();
 
         final var radius = TET_EDGE_LENGTH / 2;
-        children.add(populate(Colors.redMaterial, radius, rdg));
+        //        children.add(populate(Colors.redMaterial, radius, rdg));
         final var cell = new Point3i();
-        children.add(neighbors(cell, Colors.blueMaterial, radius, rdg));
+        //        children.add(neighbors(cell, Colors.blueMaterial, radius, rdg));
 
         final var triangleMesh = RhombicDodecahedron.createRhombicDodecahedron(TET_EDGE_LENGTH);
         Transform p = rdg.positionTransform(cell.x, cell.y, cell.z);

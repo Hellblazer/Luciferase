@@ -2,12 +2,13 @@ package com.hellblazer.luciferase.portal.tree;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Octant;
+import com.hellblazer.luciferase.lucien.Tet;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
 import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
-import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Cube;
+import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Tetrahedron;
 import javafx.scene.Group;
 import javafx.scene.effect.Glow;
 import javafx.scene.paint.Color;
@@ -16,17 +17,20 @@ import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
 
+import javax.vecmath.Point3i;
+import javax.vecmath.Vector3d;
+
 /**
  * @author hal.hildebrand
  **/
-public class OctreeInspector extends Abstract3DApp {
+public class TetreeInspector extends Abstract3DApp {
     public static final double OPACITY_PER_LEVEL = 1.0d / Constants.MAX_REFINEMENT_LEVEL;
 
     private final Group           view   = new Group();
     private final PhongMaterial[] levels = new PhongMaterial[Constants.MAX_REFINEMENT_LEVEL];
     private final Octant          root;
 
-    public OctreeInspector() {
+    public TetreeInspector() {
         root = new Octant(0, 0, 0, 20);
         var darkgreen = Color.DARKGREEN;
         for (byte i = 0; i < levels.length; i++) {
@@ -39,8 +43,8 @@ public class OctreeInspector extends Abstract3DApp {
         launch(args);
     }
 
-    public void add(Octant octant) {
-        add(new Cube(octant.vertices()), levels[octant.level() - 1], octant.level());
+    public void add(Tet tet) {
+        add(new Tetrahedron(false, toVector3d(tet.vertices())), levels[tet.l() - 1], tet.l());
     }
 
     public double opacity(byte level) {
@@ -63,9 +67,9 @@ public class OctreeInspector extends Abstract3DApp {
 
     @Override
     protected Group build() {
-        var octant = new Octant(10, 1, 0, 15);
-        add(octant);
-        var subdivision = octant.split()[0];
+        var tet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        add(tet);
+        var subdivision = tet.split()[0];
         add(subdivision);
         add(subdivision.split()[0]);
         return view;
@@ -76,13 +80,22 @@ public class OctreeInspector extends Abstract3DApp {
         return "Grid Inspector";
     }
 
+    private Vector3d[] toVector3d(Point3i[] vertices) {
+        var result = new Vector3d[4];
+        for (var i = 0; i < 4; i++) {
+            var vertex = vertices[i];
+            result[i] = new Vector3d(vertex.getX(), vertex.getY(), vertex.getZ());
+        }
+        return result;
+    }
+
     /**
      * This is the main() you want to run from your IDE
      */
     public static class Launcher {
 
         public static void main(String[] argv) {
-            OctreeInspector.main(argv);
+            TetreeInspector.main(argv);
         }
     }
 }

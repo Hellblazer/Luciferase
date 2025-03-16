@@ -295,6 +295,19 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(l)][type]);
     }
 
+    public Tet[] split() {
+        var splits = new Tet[8];
+        splits[0] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[1] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[2] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[3] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[4] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[5] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[6] = new Tet(x, y, z, (byte) (l + 1), type);
+        splits[7] = new Tet(x, y, z, (byte) (l + 1), type);
+        return splits;
+    }
+
     public Point3i[] vertices() {
         var origin = new Point3i(x, y, z);
         var vertices = new Point3i[4];
