@@ -140,35 +140,28 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
     }
 
-    public byte computeType(byte level) {
-        return computeType(level, type, l);
-    }
-
     /* A routine to compute the type of t's ancestor of level "level",
      * if its type at an intermediate level is already known.
      * If "level" equals t's level then t's type is returned.
      * It is not allowed to call this function with "level" greater than t->level.
      * This method runs in O(t->level - level).
      */
-    public byte computeType(byte level, byte known_type, byte known_level) {
-        byte type = known_type;
-        byte cid;
+    public byte computeType(byte level) {
+        assert (0 <= level && level <= l);
 
-        assert (0 <= level && level <= known_level);
-        assert known_level <= l;
-
-        if (level == known_level) {
-            return known_type;
+        if (level == l) {
+            return l;
         }
         if (level == 0) {
             /* TODO: the type of the root tet is hardcoded to 0
              *       maybe once we want to allow the root tet to have different types */
             return 0;
         }
-        for (byte i = known_level; i > level; i--) {
-            cid = cubeId(i);
+
+        byte type = this.type;
+        for (byte i = l; i > level; i--) {
             /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
-            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type];
+            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(i)][type];
         }
         return type;
     }
@@ -253,7 +246,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public long index(byte level) {
         long id = 0;
-        byte type_temp = 0;
+        byte computedType = 0;
         byte cid;
         int exponent;
 
@@ -266,12 +259,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             exponent = (level - l) * 3;
         }
         level = l;
-        type_temp = computeType(level);
+        computedType = computeType(level);
         for (byte i = level; i > 0; i--) {
             cid = cubeId(i);
-            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[type_temp][cid]) << exponent;
-            exponent += 8;    /* multiply with 4 (2d) resp. 8  (3d) */
-            type_temp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type_temp];
+            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[computedType][cid]) << exponent;
+            exponent += 8;    /* multiply 8 (3d) */
+            computedType = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][computedType];
         }
         return id;
     }

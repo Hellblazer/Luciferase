@@ -17,6 +17,8 @@
 
 package com.hellblazer.luciferase.lucien.von;
 
+import com.hellblazer.sentry.Cursor;
+
 import java.util.Collection;
 
 /**
@@ -27,6 +29,12 @@ public interface Node extends Cursor {
     int BUFFER_MULTIPLIER = 2;
 
     void fadeFrom(Node neighbor);
+
+    float getAoiRadius();
+
+    float getMaximumRadiusSquared();
+
+    Perceiving getSim();
 
     void leave(Node leaving);
 
@@ -39,12 +47,4 @@ public interface Node extends Cursor {
     void perceive(Node neighbor);
 
     void query(Node from, Node joiner);
-
-    float getAoiRadius();
-
-    float getMaximumRadiusSquared();
-
-    float getMaximumVelocity();
-
-    Perceiving getSim();
 }

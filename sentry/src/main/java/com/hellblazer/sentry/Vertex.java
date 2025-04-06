@@ -25,11 +25,13 @@ import javax.vecmath.Tuple3f;
 import javax.vecmath.Vector3f;
 import java.io.Serial;
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3f implements Iterable<Vertex> {
+public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
     static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
@@ -53,6 +55,22 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         this(p.x, p.y, p.z);
     }
 
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        float radiusSquared = radius * radius;
+        Point3f[] ourPoints = new Point3f[numberOfPoints];
+        for (int i = 0; i < ourPoints.length; i++) {
+            if (inSphere) {
+                do {
+                    ourPoints[i] = randomPoint(radius, random);
+                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
+            } else {
+                ourPoints[i] = randomPoint(radius, random);
+            }
+        }
+
+        return ourPoints;
+    }
+
     /**
      * Generate a bounded random float
      *
@@ -73,6 +91,14 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return result;
     }
 
+    public static Point3f randomPoint(float radius, Random random) {
+        var x = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var y = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var z = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+
+        return new Point3f(x * radius, y * radius, z * radius);
+    }
+
     /**
      * Generate a random point
      *
@@ -83,30 +109,6 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      */
     public static Point3f randomPoint(Random random, float min, float max) {
         return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
-    }
-
-    public static Point3f randomPoint(float radius, Random random) {
-        var x = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
-        var y = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
-        var z = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
-
-        return new Point3f(x * radius, y * radius, z * radius);
-    }
-
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
-        float radiusSquared = radius * radius;
-        Point3f ourPoints[] = new Point3f[numberOfPoints];
-        for (int i = 0; i < ourPoints.length; i++) {
-            if (inSphere) {
-                do {
-                    ourPoints[i] = randomPoint(radius, random);
-                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
-            } else {
-                ourPoints[i] = randomPoint(radius, random);
-            }
-        }
-
-        return ourPoints;
     }
 
     /**
@@ -146,6 +148,10 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      */
     final void setAdjacent(Tetrahedron tetrahedron) {
         adjacent = tetrahedron;
+    }
+
+    public Point3f getLocation() {
+        return new Point3f(x, y, z);
     }
 
     /**
@@ -255,6 +261,11 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         z = z + delta.z;
     }
 
+    @Override
+    public Stream<Cursor> neighbors() {
+        return getNeighbors().stream().map(e -> e);
+    }
+
     /**
      * Answer +1 if the orientation of the receiver is positive with respect to the plane defined by {a, b, c}, -1 if
      * negative, or 0 if the test point is coplanar
@@ -272,6 +283,22 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
     @Override
     public String toString() {
         return "{" + x + ", " + y + ", " + z + "}";
+    }
+
+    @Override
+    public void visitNeighbors(Consumer<Cursor> consumer) {
+        final var neighbors = new IdentitySet<Vertex>();
+        visitNeighbors((vertex, t, x, y, z) -> {
+            if (neighbors.add(x)) {
+                consumer.accept(x);
+            }
+            if (neighbors.add(y)) {
+                consumer.accept(y);
+            }
+            if (neighbors.add(z)) {
+                consumer.accept(z);
+            }
+        });
     }
 
     public final void visitNeighbors(StarVisitor visitor) {
