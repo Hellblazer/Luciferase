@@ -237,6 +237,55 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return 0L;
     }
 
+    public FaceNeighbor faceNeighbor(int face) {
+        final var h = length();
+        return switch (type) {
+            case 0 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 4));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 5));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 1));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 2));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 1 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 3));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 2));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 0));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 5));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 2 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 0));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 1));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 3));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 4));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 3 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 5));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 4));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 2));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 1));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 4 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 2));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 3));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 5));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 0));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 5 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 1));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 0));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 4));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 3));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            default -> throw new IllegalStateException("type must be {0..5}: %s".formatted(type));
+        };
+    }
+
     /**
      * @return the consecutive index of the receiver on the space filling curve
      */
@@ -298,5 +347,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             i++;
         }
         return vertices;
+    }
+
+    public record FaceNeighbor(byte face, Tet tet) {
     }
 }

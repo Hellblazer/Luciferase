@@ -18,7 +18,7 @@
 package com.hellblazer.luciferase.simulation;
 
 import com.hellblazer.luciferase.lucien.Tet;
-import com.hellblazer.primeMover.controllers.RealTimeController;
+import com.hellblazer.primeMover.Controller;
 import com.hellblazer.primeMover.runtime.Kairos;
 import com.hellblazer.sentry.Grid;
 import com.hellblazer.sentry.MutableGrid;
@@ -34,14 +34,18 @@ import java.util.logging.Logger;
 public class VolumeAnimator {
     private static final Logger log = Logger.getLogger(VolumeAnimator.class.getCanonicalName());
 
-    private final Tet                cell;
-    private final Grid               grid;
-    private final RealTimeController controler;
+    private final Tet        cell;
+    private final Grid       grid;
+    private final Controller controller;
 
-    public VolumeAnimator(String name, Tet cell) {
-        controler = new RealTimeController(name);
+    public VolumeAnimator(Controller controller, Tet cell) {
+        this.controller = controller;
         this.cell = cell;
         this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
-        Kairos.setController(controler);
+        Kairos.setController(controller);
+    }
+
+    public static class Configuration {
+        
     }
 }
