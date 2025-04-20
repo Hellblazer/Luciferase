@@ -17,13 +17,12 @@
 
 package com.hellblazer.luciferase.simulation;
 
-import com.hellblazer.luciferase.lucien.Tetree;
+import com.hellblazer.luciferase.lucien.Tet;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.sentry.Grid;
 import com.hellblazer.sentry.MutableGrid;
 import com.hellblazer.sentry.Vertex;
 
-import javax.vecmath.Vector3d;
 import java.util.logging.Logger;
 
 /**
@@ -35,21 +34,13 @@ public class VolumeAnimator {
     private static final Logger log = Logger.getLogger(VolumeAnimator.class.getCanonicalName());
 
     private final RealTimeController controller;
-    private final Tetree.Simplex     cell;
+    private final Tet                cell;
     private final Grid               grid;
 
-    public VolumeAnimator(RealTimeController controller, Tetree.Simplex cell) {
-        this.controller = controller;
+    public VolumeAnimator(String name, Tet cell) {
+        this.controller = new RealTimeController(name) {
+        };
         this.cell = cell;
-        this.grid = new MutableGrid(vertices(cell.vertices()));
-    }
-
-    public static Vertex[] vertices(Vector3d[] vertices) {
-        Vertex[] result = new Vertex[vertices.length];
-        for (int i = 0; i < vertices.length; i++) {
-            var vertex = vertices[i];
-            result[i] = new Vertex((float) vertex.x, (float) vertex.y, (float) vertex.z);
-        }
-        return result;
+        this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
     }
 }

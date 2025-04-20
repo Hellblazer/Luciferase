@@ -107,8 +107,8 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void moveBy(Tuple3f velocity) {
-        super.moveBy(velocity);
+    public void moveBy(Tuple3f delta) {
+        super.moveBy(delta);
         removeNonOverlapped();
         for (var peer : soi.getPeers()) {
             if (!peer.equals(this)) {

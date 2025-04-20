@@ -30,7 +30,9 @@ public interface Cursor {
 
     Point3f getLocation();
 
-    void moveBy(Tuple3f velocity);
+    void moveBy(Tuple3f delta);
+
+    void moveTo(Tuple3f position);
 
     Stream<Cursor> neighbors();
 

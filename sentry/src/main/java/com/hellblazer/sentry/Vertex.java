@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.geometry.Geometry;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
+import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
 import java.io.Serial;
 import java.util.*;
@@ -109,6 +110,15 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
      */
     public static Point3f randomPoint(Random random, float min, float max) {
         return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
+    }
+
+    public static Vertex[] vertices(Tuple3i[] vertices) {
+        Vertex[] result = new Vertex[vertices.length];
+        for (int i = 0; i < vertices.length; i++) {
+            var vertex = vertices[i];
+            result[i] = new Vertex((float) vertex.x, (float) vertex.y, (float) vertex.z);
+        }
+        return result;
     }
 
     /**
@@ -259,6 +269,13 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
         x = x + delta.x;
         y = y + delta.y;
         z = z + delta.z;
+    }
+
+    @Override
+    public void moveTo(Tuple3f position) {
+        x = position.x;
+        y = position.y;
+        z = position.z;
     }
 
     @Override
