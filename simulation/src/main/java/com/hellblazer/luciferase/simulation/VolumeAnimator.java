@@ -38,8 +38,7 @@ public class VolumeAnimator {
     private final Grid               grid;
 
     public VolumeAnimator(String name, Tet cell) {
-        this.controller = new RealTimeController(name) {
-        };
+        this.controller = new RealTimeController(name);
         this.cell = cell;
         this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
     }
