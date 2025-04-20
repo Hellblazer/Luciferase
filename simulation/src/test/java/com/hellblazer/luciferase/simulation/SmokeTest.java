@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.simulation;
 
 import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.primeMover.controllers.SteppingController;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -9,7 +10,8 @@ import org.junit.jupiter.api.Test;
 public class SmokeTest {
     @Test
     public void smokin() {
-        var animator = new VolumeAnimator("reanimator", Constants.ROOT_SIMPLEX);
-
+        var controller = new SteppingController();
+        var animator = new VolumeAnimator(controller, Constants.ROOT_SIMPLEX);
+    
     }
 }

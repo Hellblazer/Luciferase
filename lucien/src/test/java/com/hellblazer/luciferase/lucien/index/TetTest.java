@@ -25,8 +25,9 @@ public class TetTest {
 
     @Test
     public void faceNeighbor() {
-        var h = 1 << (MAX_REFINEMENT_LEVEL - 10);
-        var tet = new Tet(3 * h, 0, 2 * h, (byte) 10, (byte) 0);
+        var level = 10;
+        var h = 1 << (MAX_REFINEMENT_LEVEL - level);
+        var tet = new Tet(3 * h, 0, 2 * h, (byte) level, (byte) 0);
         var n0 = tet.faceNeighbor(0);
         assertEquals((byte) 4, n0.tet().type());
         assertNotNull(n0);
