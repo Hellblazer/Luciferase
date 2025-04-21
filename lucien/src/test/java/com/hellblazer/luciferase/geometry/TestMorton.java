@@ -1,6 +1,6 @@
-package com.hellblazer.luciferase.lucien.index;
+package com.hellblazer.luciferase.geometry;
 
-import com.hellblazer.luciferase.lucien.MortonCurve;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Random;
@@ -40,20 +40,22 @@ public class TestMorton {
     protected     MortonCurve mortonTest;
     private       Random      random;
 
-    @Test
+    @BeforeEach
     public void setUp() {
         mortonTest = new MortonCurve();
         random = new Random(0x1638);
     }
 
+    @Test
     public void testDecode() {
         try {
             for (int i = 0; i < 1024; i++) {
-                int c = (int) (random.nextDouble() * Math.pow(2, 64));
+                long c = (long) (random.nextDouble() * Math.pow(2, 64));
                 MortonCurve.decode(c);
             }
             fail("My method didn't throw when I expected it to");
         } catch (Throwable ex) {
+            System.out.printf("Caught %s%n", ex);
         }
         for (int i = 0; i < 63; i++) {
             assertArrayEquals(MortonCurve.decode(control_3D_Encode[i]),
@@ -61,18 +63,8 @@ public class TestMorton {
         }
     }
 
+    @Test
     public void testEncode() {
-        try {
-            for (int i = 0; i < 1024; i++) {
-                int x = (int) (random.nextDouble() * 2097151);
-                int y = (int) (random.nextDouble() * 2097151);
-                int z = (int) (random.nextDouble() * 2097151);
-
-                MortonCurve.encode(x, y, z);
-            }
-            fail("My method didn't throw when I expected it to");
-        } catch (Throwable ex) {
-        }
         for (int i = 0; i < 63; i++) {
             assertEquals(MortonCurve.encode(control_3D_Decode[i][0], control_3D_Decode[i][1], control_3D_Decode[i][2]),
                          control_3D_Encode[i]);

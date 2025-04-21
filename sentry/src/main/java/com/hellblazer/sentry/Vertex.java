@@ -32,7 +32,7 @@ import java.util.stream.Stream;
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
+public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Comparable<Vertex> {
     static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
@@ -56,6 +56,18 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
         this(p.x, p.y, p.z);
     }
 
+    public static long getMantissa(double num) {
+        long bits = Double.doubleToLongBits(num);
+        long mantissa = bits & 0x000FFFFFFFFFFFFFL;
+        return mantissa;
+    }
+
+    public static int getMantissa(float value) {
+        int floatBits = Float.floatToIntBits(value);
+        int mantissa = floatBits & 0x007FFFFF;
+        return mantissa;
+    }
+
     public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
         float radiusSquared = radius * radius;
         Point3f[] ourPoints = new Point3f[numberOfPoints];
@@ -70,6 +82,24 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
         }
 
         return ourPoints;
+    }
+
+    public static int mostSignificantDifferingBit(long a, long b) {
+        var xorResult = a ^ b;
+        if (xorResult == 0) {
+            return -1;
+        }
+        int msbIndex = 64 - Long.numberOfLeadingZeros(xorResult);
+        return msbIndex;
+    }
+
+    public static int mostSignificantDifferingBit(int a, int b) {
+        var xorResult = a ^ b;
+        if (xorResult == 0) {
+            return -1;
+        }
+        int msbIndex = 31 - Integer.numberOfLeadingZeros(xorResult);
+        return msbIndex;
     }
 
     /**
@@ -130,6 +160,42 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
      */
     public <T> T as(Class<T> model) {
         return null;
+    }
+
+    /**
+     * Compare the vertices using their morton order
+     *
+     * From <a href="Fast Construction of k-Nearest Neighbor Graphs for Point
+     * Clouds">https://www.computer.org/csdl/journal/tg/2010/04/ttg2010040599/13rRUNvyate</a>
+     *
+     * <pre>
+     * Procedure COMPARE (point p; point q)
+     *   x = 0; dim = 0
+     *  for all j = 0 to d do
+     *      y = XORMSB(p(j),q(j))
+     *      If x < y then
+     *          x = y; dim = j
+     *      end if
+     *  end for
+     *  return p(dim) < q (dim)
+     *  end procedure
+     * </pre>
+     *
+     * @param b the vertex to be compared.
+     * @return 1 if >, 0 if =, -1 if <
+     */
+    @Override
+    public int compareTo(Vertex b) {
+        var x = 0;
+        var dim = 0;
+        for (var j = 0; j < 3; j++) {
+            var y = xormsb(coordinate(j), b.coordinate(j));
+            if (x < y) {
+                x = y;
+                dim = j;
+            }
+        }
+        return Float.compare(coordinate(dim), b.coordinate(dim));
     }
 
     public final float distanceSquared(Tuple3f p1) {
@@ -323,6 +389,50 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
         adjacent.visitStar(this, visitor);
     }
 
+    /**
+     * From <a href="Fast Construction of k-Nearest Neighbor Graphs for Point
+     * Clouds">https://www.computer.org/csdl/journal/tg/2010/04/ttg2010040599/13rRUNvyate</a>
+     * <pre>
+     * procedure XORMSB(double a, double b)
+     *   x = EXPONENT(a); y = EXPONENT(b)
+     *   if x == y then
+     *      z = MSDB(MANTISSA(a), MANTISSA(b))
+     *      x = x - z
+     *      return x
+     *   end if
+     *   if y < x then return x
+     *   else return y
+     *  end Procedure
+     *  </pre>
+     */
+    public final int xormsb(double a, double b) {
+        var x = Math.getExponent(a);
+        var y = Math.getExponent(b);
+        if (x == y) {
+            var z = mostSignificantDifferingBit(getMantissa(a), getMantissa(b));
+            x = x - z;
+            return x;
+        }
+        if (y < x) {
+            return x;
+        }
+        return y;
+    }
+
+    public final int xormsb(float a, float b) {
+        var x = Math.getExponent(a);
+        var y = Math.getExponent(b);
+        if (x == y) {
+            var z = mostSignificantDifferingBit(getMantissa(a), getMantissa(b));
+            x = x - z;
+            return x;
+        }
+        if (y < x) {
+            return x;
+        }
+        return y;
+    }
+
     void append(Vertex v) {
         assert next == null : "Next is not null";
         next = v;
@@ -356,6 +466,15 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
 
     void reset() {
         adjacent = null;
+    }
+
+    private float coordinate(int d) {
+        return switch (d) {
+            case 0 -> x;
+            case 1 -> y;
+            case 2 -> z;
+            default -> throw new IllegalArgumentException();
+        };
     }
 
 }

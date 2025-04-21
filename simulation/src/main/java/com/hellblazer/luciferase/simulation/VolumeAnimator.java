@@ -44,8 +44,4 @@ public class VolumeAnimator {
         this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
         Kairos.setController(controller);
     }
-
-    public static class Configuration {
-        
-    }
 }
