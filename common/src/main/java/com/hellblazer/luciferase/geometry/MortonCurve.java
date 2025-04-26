@@ -1,6 +1,8 @@
 package com.hellblazer.luciferase.geometry;
 
+import javax.vecmath.Tuple3d;
 import javax.vecmath.Tuple3f;
+import java.util.Comparator;
 
 /**
  * @author hal.hildebrand
@@ -166,7 +168,29 @@ public class MortonCurve {
         return Float.compare(coordinate(a, dim), coordinate(b, dim));
     }
 
+    public static int compareTo(Tuple3d a, Tuple3d b) {
+        var x = 0;
+        var dim = 0;
+        for (var j = 0; j < 3; j++) {
+            var y = xormsb(coordinate(a, j), coordinate(b, j));
+            if (x < y) {
+                x = y;
+                dim = j;
+            }
+        }
+        return Double.compare(coordinate(a, dim), coordinate(b, dim));
+    }
+
     public static float coordinate(Tuple3f t, int d) {
+        return switch (d) {
+            case 0 -> t.x;
+            case 1 -> t.y;
+            case 2 -> t.z;
+            default -> throw new IllegalArgumentException();
+        };
+    }
+
+    public static double coordinate(Tuple3d t, int d) {
         return switch (d) {
             case 0 -> t.x;
             case 1 -> t.y;
@@ -208,6 +232,10 @@ public class MortonCurve {
         return (int) a;
     }
 
+    public static Comparator<Tuple3d> doubleComparator() {
+        return (o1, o2) -> compareTo(o1, o2);
+    }
+
     /**
      * Morton (z-ordering) encoding with Lookup Table method
      *
@@ -225,6 +253,10 @@ public class MortonCurve {
         }
 
         return result;
+    }
+
+    public static Comparator<Tuple3f> floatComparator() {
+        return (o1, o2) -> compareTo(o1, o2);
     }
 
     public static long getMantissa(double num) {

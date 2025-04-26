@@ -4,7 +4,12 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
+import java.util.ArrayList;
 import java.util.Random;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Morton 3D test
@@ -39,6 +44,28 @@ public class TestMorton {
     protected     MortonCurve mortonTest;
     private       Random      random;
 
+    @Test
+    public void comparison() {
+        var entropy = new Random(0x1638);
+        var points = new ArrayList<Tuple3f>();
+        for (int i = 0; i < 1024; i++) {
+            long c = (long) (entropy.nextDouble() * Math.pow(2, 64));
+            int[] p = MortonCurve.decode(c);
+            points.add(new Point3f(p[0], p[1], p[2]));
+        }
+        var mortonSorted = new ArrayList<>(points);
+        mortonSorted.sort((o1, o2) -> {
+            var a = MortonCurve.encode((int) o1.x, (int) o1.y, (int) o1.z);
+            var b = MortonCurve.encode((int) o2.x, (int) o2.y, (int) o2.z);
+            return Long.compareUnsigned(a, b);
+        });
+
+        var mortonCompared = new ArrayList<>(points);
+        mortonCompared.sort(MortonCurve.floatComparator());
+
+        assertEquals(mortonSorted, mortonCompared);
+    }
+
     @BeforeEach
     public void setUp() {
         mortonTest = new MortonCurve();
@@ -66,10 +93,8 @@ public class TestMorton {
     @Test
     public void testEncode() {
         for (int i = 0; i < 63; i++) {
-            Assertions.assertEquals(
-            MortonCurve.encode(control_3D_Decode[i][0], control_3D_Decode[i][1], control_3D_Decode[i][2]),
-            control_3D_Encode[i]);
+            assertEquals(MortonCurve.encode(control_3D_Decode[i][0], control_3D_Decode[i][1], control_3D_Decode[i][2]),
+                         control_3D_Encode[i]);
         }
     }
-
 }
