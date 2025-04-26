@@ -165,7 +165,15 @@ public class MortonCurve {
                 dim = j;
             }
         }
-        return Float.compare(coordinate(a, dim), coordinate(b, dim));
+        var ap = coordinate(a, dim);
+        var bp = coordinate(b, dim);
+        if (ap < bp) {
+            return -1;
+        }
+        if (a.equals(b)) {
+            return 0;
+        }
+        return 1;
     }
 
     public static int compareTo(Tuple3d a, Tuple3d b) {
@@ -178,7 +186,15 @@ public class MortonCurve {
                 dim = j;
             }
         }
-        return Double.compare(coordinate(a, dim), coordinate(b, dim));
+        var ap = coordinate(a, dim);
+        var bp = coordinate(b, dim);
+        if (ap < bp) {
+            return -1;
+        }
+        if (a.equals(b)) {
+            return 0;
+        }
+        return 1;
     }
 
     public static float coordinate(Tuple3f t, int d) {

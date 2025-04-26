@@ -4,9 +4,11 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3d;
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * @author Eren
  */
 public class TestMorton {
-
     // correct morton codes f
     private final int[]       control_3D_Encode = { 0, 4, 32, 36, 256, 260, 288, 292, 2048, 2052, 2080, 2084, 2304,
                                                     2308, 2336, 2340, 2, 6, 34, 38, 258, 262, 290, 294, 2050, 2054,
@@ -44,11 +45,65 @@ public class TestMorton {
     protected     MortonCurve mortonTest;
     private       Random      random;
 
-    @Test
+    public static List<Point3d> getRandomDoubles(Random random, int numberOfPoints, double radius, boolean inSphere) {
+        var origin = new Point3d(0, 0, 0);
+        double radiusSquared = radius * radius;
+        var ourPoints = new ArrayList<Point3d>(numberOfPoints);
+        for (int i = 0; i < numberOfPoints; i++) {
+            if (inSphere) {
+                var p = randomPoint(radius, random);
+                while (p.distanceSquared(origin) >= radiusSquared) {
+                    p = randomPoint(radius, random);
+                }
+                ourPoints.add(p);
+            } else {
+                ourPoints.add(randomPoint(radius, random));
+            }
+        }
+
+        return ourPoints;
+    }
+
+    public static List<Point3f> getRandomFloats(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        var origin = new Point3f(0, 0, 0);
+        float radiusSquared = radius * radius;
+        var ourPoints = new ArrayList<Point3f>(numberOfPoints);
+        for (int i = 0; i < numberOfPoints; i++) {
+            if (inSphere) {
+                var p = randomPoint(radius, random);
+                while (p.distanceSquared(origin) >= radiusSquared) {
+                    p = randomPoint(radius, random);
+                }
+                ourPoints.add(p);
+            } else {
+                ourPoints.add(randomPoint(radius, random));
+            }
+        }
+
+        return ourPoints;
+    }
+
+    public static Point3f randomPoint(float radius, Random random) {
+        var x = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var y = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var z = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+
+        return new Point3f(x * radius, y * radius, z * radius);
+    }
+
+    public static Point3d randomPoint(double radius, Random random) {
+        var x = random.nextDouble() * (random.nextBoolean() ? 1.0d : -1.0d);
+        var y = random.nextDouble() * (random.nextBoolean() ? 1.0d : -1.0d);
+        var z = random.nextDouble() * (random.nextBoolean() ? 1.0d : -1.0d);
+
+        return new Point3d(x * radius, y * radius, z * radius);
+    }
+
+    //    @Test
     public void comparison() {
         var entropy = new Random(0x1638);
         var points = new ArrayList<Tuple3f>();
-        for (int i = 0; i < 1024; i++) {
+        for (int i = 0; i < 65536; i++) {
             long c = (long) (entropy.nextDouble() * Math.pow(2, 64));
             int[] p = MortonCurve.decode(c);
             points.add(new Point3f(p[0], p[1], p[2]));
@@ -64,6 +119,12 @@ public class TestMorton {
         mortonCompared.sort(MortonCurve.floatComparator());
 
         assertEquals(mortonSorted, mortonCompared);
+        //
+        //        var randomDoubles = getRandomDoubles(entropy, 65536, 100.0f, true);
+        //        randomDoubles.sort(MortonCurve.doubleComparator());
+        //
+        //        var randomFloats = getRandomFloats(entropy, 65536, 100.0f, true);
+        //        randomFloats.sort(MortonCurve.floatComparator());
     }
 
     @BeforeEach

@@ -37,16 +37,61 @@ import java.util.RandomAccess;
 /**
  * Chopped down implementation specialized for sentry
  */
-public final class IntArrayList implements RandomAccess {
+public class IntArrayList implements RandomAccess {
 
-    private static final IntArrayList EMPTY_LIST       = new IntArrayList(new int[0], 0);
+    private static final IntArrayList EMPTY_LIST       = new IntArrayList(new int[0], 0) {
+        @Override
+        public boolean add(Integer element) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void add(int index, Integer element) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean addAll(Collection<? extends Integer> collection) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean addAll(IntArrayList list) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void addInt(int element) {
+            super.addInt(element);
+        }
+
+        @Override
+        public Integer remove(int index) {
+            return super.remove(index);
+        }
+
+        @Override
+        public void removeRange(int fromIndex, int toIndex) {
+            super.removeRange(fromIndex, toIndex);
+        }
+
+        @Override
+        public Integer set(int index, Integer element) {
+            return super.set(index, element);
+        }
+
+        @Override
+        public int setInt(int index, int element) {
+            return super.setInt(index, element);
+        }
+    };
     private static final int          DEFAULT_CAPACITY = 10;
 
     /** The backing store for the list. */
     private int[] array;
     private int   size;
 
-    IntArrayList() {
+    public IntArrayList() {
         this(new int[DEFAULT_CAPACITY], 0);
     }
 
