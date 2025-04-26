@@ -1,11 +1,10 @@
 package com.hellblazer.luciferase.geometry;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Random;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Morton 3D test
@@ -53,21 +52,23 @@ public class TestMorton {
                 long c = (long) (random.nextDouble() * Math.pow(2, 64));
                 MortonCurve.decode(c);
             }
-            fail("My method didn't throw when I expected it to");
+            Assertions.fail("My method didn't throw when I expected it to");
         } catch (Throwable ex) {
             System.out.printf("Caught %s%n", ex);
         }
         for (int i = 0; i < 63; i++) {
-            assertArrayEquals(MortonCurve.decode(control_3D_Encode[i]),
-                              new int[] { control_3D_Decode[i][0], control_3D_Decode[i][1], control_3D_Decode[i][2] });
+            Assertions.assertArrayEquals(MortonCurve.decode(control_3D_Encode[i]),
+                                         new int[] { control_3D_Decode[i][0], control_3D_Decode[i][1],
+                                                     control_3D_Decode[i][2] });
         }
     }
 
     @Test
     public void testEncode() {
         for (int i = 0; i < 63; i++) {
-            assertEquals(MortonCurve.encode(control_3D_Decode[i][0], control_3D_Decode[i][1], control_3D_Decode[i][2]),
-                         control_3D_Encode[i]);
+            Assertions.assertEquals(
+            MortonCurve.encode(control_3D_Decode[i][0], control_3D_Decode[i][1], control_3D_Decode[i][2]),
+            control_3D_Encode[i]);
         }
     }
 

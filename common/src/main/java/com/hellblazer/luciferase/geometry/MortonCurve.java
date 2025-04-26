@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.geometry;
 
+import javax.vecmath.Tuple3f;
+
 /**
  * @author hal.hildebrand
  **/
@@ -130,6 +132,50 @@ public class MortonCurve {
                                                   6, 6, 7, 7, 7, 7 };
 
     /**
+     * Compare the vertices using their morton order
+     *
+     * From <a href="Fast Construction of k-Nearest Neighbor Graphs for Point
+     * Clouds">https://www.computer.org/csdl/journal/tg/2010/04/ttg2010040599/13rRUNvyate</a>
+     *
+     * <pre>
+     * Procedure COMPARE (point p; point q)
+     *   x = 0; dim = 0
+     *  for all j = 0 to d do
+     *      y = XORMSB(p(j),q(j))
+     *      If x < y then
+     *          x = y; dim = j
+     *      end if
+     *  end for
+     *  return p(dim) < q (dim)
+     *  end procedure
+     * </pre>
+     *
+     * @param b the vertex to be compared.
+     * @return 1 if >, 0 if =, -1 if <
+     */
+    public static int compareTo(Tuple3f a, Tuple3f b) {
+        var x = 0;
+        var dim = 0;
+        for (var j = 0; j < 3; j++) {
+            var y = xormsb(coordinate(a, j), coordinate(b, j));
+            if (x < y) {
+                x = y;
+                dim = j;
+            }
+        }
+        return Float.compare(coordinate(a, dim), coordinate(b, dim));
+    }
+
+    public static float coordinate(Tuple3f t, int d) {
+        return switch (d) {
+            case 0 -> t.x;
+            case 1 -> t.y;
+            case 2 -> t.z;
+            default -> throw new IllegalArgumentException();
+        };
+    }
+
+    /**
      * Decode Morton (z-ordering)
      *
      * @param c morton code up to 64 bits
@@ -179,5 +225,79 @@ public class MortonCurve {
         }
 
         return result;
+    }
+
+    public static long getMantissa(double num) {
+        long bits = Double.doubleToLongBits(num);
+        long mantissa = bits & 0x000FFFFFFFFFFFFFL;
+        return mantissa;
+    }
+
+    public static int getMantissa(float value) {
+        int floatBits = Float.floatToIntBits(value);
+        int mantissa = floatBits & 0x007FFFFF;
+        return mantissa;
+    }
+
+    public static int mostSignificantDifferingBit(long a, long b) {
+        var xorResult = a ^ b;
+        if (xorResult == 0) {
+            return -1;
+        }
+        int msbIndex = 64 - Long.numberOfLeadingZeros(xorResult);
+        return msbIndex;
+    }
+
+    public static int mostSignificantDifferingBit(int a, int b) {
+        var xorResult = a ^ b;
+        if (xorResult == 0) {
+            return -1;
+        }
+        int msbIndex = 31 - Integer.numberOfLeadingZeros(xorResult);
+        return msbIndex;
+    }
+
+    /**
+     * From <a href="Fast Construction of k-Nearest Neighbor Graphs for Point
+     * Clouds">https://www.computer.org/csdl/journal/tg/2010/04/ttg2010040599/13rRUNvyate</a>
+     * <pre>
+     * procedure XORMSB(double a, double b)
+     *   x = EXPONENT(a); y = EXPONENT(b)
+     *   if x == y then
+     *      z = MSDB(MANTISSA(a), MANTISSA(b))
+     *      x = x - z
+     *      return x
+     *   end if
+     *   if y < x then return x
+     *   else return y
+     *  end Procedure
+     *  </pre>
+     */
+    public static final int xormsb(double a, double b) {
+        var x = Math.getExponent(a);
+        var y = Math.getExponent(b);
+        if (x == y) {
+            var z = mostSignificantDifferingBit(getMantissa(a), getMantissa(b));
+            x = x - z;
+            return x;
+        }
+        if (y < x) {
+            return x;
+        }
+        return y;
+    }
+
+    public static final int xormsb(float a, float b) {
+        var x = Math.getExponent(a);
+        var y = Math.getExponent(b);
+        if (x == y) {
+            var z = mostSignificantDifferingBit(getMantissa(a), getMantissa(b));
+            x = x - z;
+            return x;
+        }
+        if (y < x) {
+            return x;
+        }
+        return y;
     }
 }

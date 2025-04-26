@@ -28,7 +28,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-package com.hellblazer.sentry.nouveau;
+package com.hellblazer.luciferase.common;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -37,44 +37,44 @@ import java.util.RandomAccess;
 /**
  * Chopped down implementation specialized for sentry
  */
-public final class FloatArrayList implements RandomAccess {
+public final class IntArrayList implements RandomAccess {
 
-    private static final FloatArrayList EMPTY_LIST       = new FloatArrayList(new float[0], 0);
-    private static final int            DEFAULT_CAPACITY = 10;
+    private static final IntArrayList EMPTY_LIST       = new IntArrayList(new int[0], 0);
+    private static final int          DEFAULT_CAPACITY = 10;
 
     /** The backing store for the list. */
-    private float[] array;
-    private int     size;
+    private int[] array;
+    private int   size;
 
-    FloatArrayList() {
-        this(new float[DEFAULT_CAPACITY], 0);
+    IntArrayList() {
+        this(new int[DEFAULT_CAPACITY], 0);
     }
 
-    private FloatArrayList(float[] other, int size) {
+    private IntArrayList(int[] other, int size) {
         array = other;
         this.size = size;
     }
 
-    public static FloatArrayList emptyList() {
+    public static IntArrayList emptyList() {
         return EMPTY_LIST;
     }
 
-    public boolean add(Float element) {
-        addFloat(element);
+    public boolean add(Integer element) {
+        addInt(element);
         return true;
     }
 
-    public void add(int index, Float element) {
-        addFloat(index, element);
+    public void add(int index, Integer element) {
+        addInt(index, element);
     }
 
-    public boolean addAll(Collection<? extends Float> collection) {
+    public boolean addAll(Collection<? extends Integer> collection) {
         for (var e : collection)
             add(e);
         return true;
     }
 
-    public boolean addAll(FloatArrayList list) {
+    public boolean addAll(IntArrayList list) {
         if (list.size == 0) {
             return false;
         }
@@ -95,13 +95,13 @@ public final class FloatArrayList implements RandomAccess {
         return true;
     }
 
-    /** Like {@link #add(Float)} but more efficient in that it doesn't box the element. */
+    /** Like {@link #add(Integer)} but more efficient in that it doesn't box the element. */
 
-    public void addFloat(float element) {
+    public void addInt(int element) {
         if (size == array.length) {
             // Resize to 1.5x the size
             int length = ((size * 3) / 2) + 1;
-            float[] newArray = new float[length];
+            int[] newArray = new int[length];
 
             System.arraycopy(array, 0, newArray, 0, size);
             array = newArray;
@@ -119,16 +119,16 @@ public final class FloatArrayList implements RandomAccess {
         if (this == o) {
             return true;
         }
-        if (!(o instanceof final FloatArrayList other)) {
+        if (!(o instanceof final IntArrayList other)) {
             return super.equals(o);
         }
         if (size != other.size) {
             return false;
         }
 
-        final float[] arr = other.array;
+        final int[] arr = other.array;
         for (int i = 0; i < size; i++) {
-            if (Float.floatToIntBits(array[i]) != Float.floatToIntBits(arr[i])) {
+            if (array[i] != arr[i]) {
                 return false;
             }
         }
@@ -136,11 +136,11 @@ public final class FloatArrayList implements RandomAccess {
         return true;
     }
 
-    public Float get(int index) {
-        return getFloat(index);
+    public Integer get(int index) {
+        return getInt(index);
     }
 
-    public float getFloat(int index) {
+    public int getInt(int index) {
         ensureIndexInRange(index);
         return array[index];
     }
@@ -149,16 +149,16 @@ public final class FloatArrayList implements RandomAccess {
     public int hashCode() {
         int result = 1;
         for (int i = 0; i < size; i++) {
-            result = (31 * result) + Float.floatToIntBits(array[i]);
+            result = (31 * result) + array[i];
         }
         return result;
     }
 
     public int indexOf(Object element) {
-        if (!(element instanceof Float)) {
+        if (!(element instanceof Integer)) {
             return -1;
         }
-        float unboxedElement = (Float) element;
+        int unboxedElement = (Integer) element;
         int numElems = size();
         for (int i = 0; i < numElems; i++) {
             if (array[i] == unboxedElement) {
@@ -168,9 +168,9 @@ public final class FloatArrayList implements RandomAccess {
         return -1;
     }
 
-    public Float remove(int index) {
+    public Integer remove(int index) {
         ensureIndexInRange(index);
-        float value = array[index];
+        int value = array[index];
         if (index < size - 1) {
             System.arraycopy(array, index + 1, array, index, size - index - 1);
         }
@@ -187,13 +187,13 @@ public final class FloatArrayList implements RandomAccess {
         size -= (toIndex - fromIndex);
     }
 
-    public Float set(int index, Float element) {
-        return setFloat(index, element);
+    public Integer set(int index, Integer element) {
+        return setInt(index, element);
     }
 
-    public float setFloat(int index, float element) {
+    public int setInt(int index, int element) {
         ensureIndexInRange(index);
-        float previousValue = array[index];
+        int previousValue = array[index];
         array[index] = element;
         return previousValue;
     }
@@ -202,7 +202,7 @@ public final class FloatArrayList implements RandomAccess {
         return size;
     }
 
-    private void addFloat(int index, float element) {
+    private void addInt(int index, int element) {
         if (index < 0 || index > size) {
             throw new IndexOutOfBoundsException(makeOutOfBoundsExceptionMessage(index));
         }
@@ -213,7 +213,7 @@ public final class FloatArrayList implements RandomAccess {
         } else {
             // Resize to 1.5x the size
             int length = ((size * 3) / 2) + 1;
-            float[] newArray = new float[length];
+            int[] newArray = new int[length];
 
             System.arraycopy(array, 0, newArray, 0, index);
 
