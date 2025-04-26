@@ -14,9 +14,7 @@
  */
 package com.hellblazer.sentry;
 
-import com.hellblazer.luciferase.common.FloatArrayList;
 import com.hellblazer.luciferase.common.IdentitySet;
-import com.hellblazer.luciferase.common.ShortArrayList;
 
 import javax.vecmath.Tuple3f;
 import java.util.*;
@@ -71,9 +69,6 @@ public class Grid implements Iterable<Vertex> {
         FOUR_CORNERS[2] = new Vertex(1, -1, -1, SCALE);
         FOUR_CORNERS[3] = new Vertex(-1, -1, 1, SCALE);
     }
-
-    protected final FloatArrayList vertices     = new FloatArrayList();
-    protected final ShortArrayList tetrahedrons = new ShortArrayList();
 
     /**
      * The four corners of the maximally bounding tetrahedron
