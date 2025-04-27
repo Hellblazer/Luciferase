@@ -79,7 +79,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         var coordinates = new int[3];
 
         for (int i = 1; i <= level; i++) {
-            var offsetCoords = MAX_REFINEMENT_LEVEL - i;
+            var offsetCoords = getMaxRefinementLevel() - i;
             var offsetIndex = level - i;
             // Get the local index of T's ancestor on level i
             var localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
@@ -133,9 +133,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the i-th child (in Tet Morton order) of the receiver
      */
     public Tet childTM(byte i) {
-        if (l == MAX_REFINEMENT_LEVEL) {
+        if (l == getMaxRefinementLevel()) {
             throw new IllegalArgumentException(
-            "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
+            "No children at maximum refinement level: %s".formatted(getMaxRefinementLevel()));
         }
         return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
     }
@@ -206,13 +206,13 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the cube id of t's ancestor of level "level"
      */
     public byte cubeId(byte level) {
-        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
+        if (level < 0 || level > getMaxRefinementLevel()) {
             throw new IllegalArgumentException("Illegal level: " + level);
         }
         if (level == 0 || level > l) {
             return 0;
         }
-        int h = 1 << (MAX_REFINEMENT_LEVEL - level);
+        int h = 1 << (getMaxRefinementLevel() - level);
         byte id = 0;
         id |= ((x & h) > 0 ? (byte) 1 : 0);
         id |= ((y & h) > 0 ? (byte) 2 : 0);
@@ -299,7 +299,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         byte cid;
         int exponent;
 
-        assert (0 <= level && level <= MAX_REFINEMENT_LEVEL);
+        assert (0 <= level && level <= getMaxRefinementLevel());
         exponent = 0;
         /* If the given level is bigger than t's level
          * we first fill up with the ids of t's descendants at t's
@@ -326,7 +326,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the length of an edge at the given level, in integer coordinates
      */
     public int length() {
-        return 1 << (MAX_REFINEMENT_LEVEL - l);
+        return 1 << (getMaxRefinementLevel() - l);
     }
 
     /**

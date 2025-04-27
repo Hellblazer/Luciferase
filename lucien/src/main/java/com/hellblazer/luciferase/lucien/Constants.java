@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 import javax.vecmath.Point3i;
 
 /**
@@ -52,10 +54,7 @@ public class Constants {
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c5.coords(), CORNER.c4.coords() } };
 
-    /** maximum level we can accommodate without overflow **/
-    public static byte MAX_REFINEMENT_LEVEL = 21;
-
-    public static int MAX_EXTENT = 1 << MAX_REFINEMENT_LEVEL;
+    public static int MAX_EXTENT = 1 << getMaxRefinementLevel();
 
     /** Tetrahedron type and Cube ID to local index **/
     public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
@@ -85,13 +84,18 @@ public class Constants {
     public static Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
-    public static Tet UNIT_SIMPLEX = new Tet(0, 0, 0, MAX_REFINEMENT_LEVEL, (byte) 0);
+    public static Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+
+    /** maximum level we can accommodate without overflow **/
+    public static byte getMaxRefinementLevel() {
+        return MortonCurve.MAX_REFINEMENT_LEVEL;
+    }
 
     /**
      * @return the length of an edge at the given level, in integer coordinates
      */
     public static int lengthAtLevel(byte level) {
-        return 1 << (MAX_REFINEMENT_LEVEL - level);
+        return 1 << (getMaxRefinementLevel() - level);
     }
 
     public static byte toLevel(long mortonCode) {

@@ -115,16 +115,6 @@ public class TestMorton {
             return Long.compareUnsigned(a, b);
         });
 
-        var mortonCompared = new ArrayList<>(points);
-        mortonCompared.sort(MortonCurve.floatComparator());
-
-        assertEquals(mortonSorted, mortonCompared);
-        //
-        //        var randomDoubles = getRandomDoubles(entropy, 65536, 100.0f, true);
-        //        randomDoubles.sort(MortonCurve.doubleComparator());
-        //
-        //        var randomFloats = getRandomFloats(entropy, 65536, 100.0f, true);
-        //        randomFloats.sort(MortonCurve.floatComparator());
     }
 
     @BeforeEach

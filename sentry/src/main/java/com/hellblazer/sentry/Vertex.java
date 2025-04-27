@@ -19,6 +19,7 @@ package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.geometry.MortonCurve;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -32,7 +33,7 @@ import java.util.stream.Stream;
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
+public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Comparable<Vertex> {
     static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
@@ -130,6 +131,13 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
      */
     public <T> T as(Class<T> model) {
         return null;
+    }
+
+    @Override
+    public int compareTo(Vertex o) {
+        var a = MortonCurve.encode((int) x, (int) y, (int) z);
+        var b = MortonCurve.encode((int) o.x, (int) o.y, (int) o.z);
+        return Long.compare(a, b);
     }
 
     public final float distanceSquared(Tuple3f p1) {
@@ -258,7 +266,8 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex> {
      *
      * @param query
      * @param entropy - entropy used for randomization of search
-     * @return the Tetrahedron that encompasses the query point
+     * @return the Tetrahedron that encompasses the query point or null if point falls outside of the
+     * tetrahedralization.
      */
     public final Tetrahedron locate(Tuple3f query, Random entropy) {
         assert adjacent != null;

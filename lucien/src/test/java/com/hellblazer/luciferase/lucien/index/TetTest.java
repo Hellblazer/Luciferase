@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 
-import static com.hellblazer.luciferase.lucien.Constants.MAX_REFINEMENT_LEVEL;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -26,7 +25,7 @@ public class TetTest {
     @Test
     public void faceNeighbor() {
         var level = 10;
-        var h = 1 << (MAX_REFINEMENT_LEVEL - level);
+        var h = 1 << (Constants.getMaxRefinementLevel() - level);
         var tet = new Tet(3 * h, 0, 2 * h, (byte) level, (byte) 0);
         var n0 = tet.faceNeighbor(0);
         assertEquals((byte) 4, n0.tet().type());
