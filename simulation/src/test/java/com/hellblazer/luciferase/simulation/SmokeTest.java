@@ -42,8 +42,9 @@ public class SmokeTest {
         }
 
         animator.start();
-        Thread.sleep(10_000);
-        System.out.printf("frame count: %s%n", animator.getFrameCount());
+        var duration = 10;
+        Thread.sleep(TimeUnit.SECONDS.toMillis(duration));
+        System.out.printf("frame rate: %s%n", animator.getFrameCount() / duration);
     }
 
     @Entity
