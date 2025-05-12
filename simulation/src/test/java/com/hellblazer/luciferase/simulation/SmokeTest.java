@@ -44,7 +44,11 @@ public class SmokeTest {
         animator.start();
         var duration = 10;
         Thread.sleep(TimeUnit.SECONDS.toMillis(duration));
-        System.out.printf("frame rate: %s%n", animator.getFrameCount() / duration);
+        var frame = animator.getFrame();
+        System.out.printf("average frame rate: %s", frame.getFrameCount() / duration).println();
+        System.out.printf("average frame rebuild: %s ms",
+                          (frame.getCumulativeDurations() / frame.getFrameCount()) / 1E6).println();
+        System.out.printf("average delay: %s ms", (frame.getCumulativeDelay() / frame.getFrameCount()) / 1E6).println();
     }
 
     @Entity

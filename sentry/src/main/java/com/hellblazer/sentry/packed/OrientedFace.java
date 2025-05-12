@@ -1,21 +1,6 @@
-/**
- * Copyright (C) 2009 Hal Hildebrand. All rights reserved.
- *
- * This file is part of the 3D Incremental Voronoi system
- *
- * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
- * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
- * later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
- * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
- * details.
- *
- * You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
- * <http://www.gnu.org/licenses/>.
- */
+package com.hellblazer.sentry.packed;
 
-package com.hellblazer.sentry;
+import com.hellblazer.sentry.packed.PackedGrid.PackedTetrahedron;
 
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -23,16 +8,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
 
-import static com.hellblazer.sentry.V.*;
-
-/**
- * An oriented face of a tetrahedron.
- * <p>
- *
- * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- */
-
-public abstract class OrientedFace implements Iterable<Vertex> {
+public abstract class OrientedFace implements Iterable<Integer> {
 
     /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
@@ -44,7 +20,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @param n     - the vertex to be deleted
      * @return true if the receiver is to be deleted from the list of ears
      */
-    public boolean flip(int index, LinkedList<OrientedFace> ears, Vertex n) {
+    public boolean flip(int index, LinkedList<OrientedFace> ears, int n) {
         if (!isValid()) {
             return true;
         }
@@ -74,7 +50,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             return true;
         } else if (reflexEdges == 1) {
             // Two faces of the opposing tetrahedron are visible
-            Vertex opposingVertex = getVertex(reflexEdge);
+            var opposingVertex = getVertex(reflexEdge);
             var t1 = getIncident().getNeighbor(opposingVertex);
             var t2 = getAdjacent().getNeighbor(opposingVertex);
             if (t1 != null && t1 == t2 && isFlippable3ear(n) && isLocallyDelaunay(index, n, ears)) {
@@ -95,7 +71,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @param ears - the stack of oriented faces left to process
      * @return - the last valid tetrahedron noted, or null if no flip was performed.
      */
-    public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
+    public PackedTetrahedron flip(int n, List<OrientedFace> ears) {
         if (!isValid()) {
             return null;
         }
@@ -110,7 +86,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             }
         }
 
-        Tetrahedron returned = null;
+        PackedTetrahedron returned = null;
         var regular = isRegular();
         if (reflexEdges == 0 && !regular) {
             // Only one face of the opposing tetrahedron is visible
@@ -146,7 +122,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      *
      * @return the three created tetrahedron
      */
-    public Tetrahedron[] flip2to3() {
+    public PackedTetrahedron[] flip2to3() {
         var incident = getIncident();
 
         var opposingVertex = getAdjacentVertex();
@@ -156,9 +132,9 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var vertex1 = getVertex(1);
         var vertex2 = getVertex(2);
 
-        var t0 = new Tetrahedron(vertex0, incidentVertex, vertex1, opposingVertex);
-        var t1 = new Tetrahedron(vertex1, incidentVertex, vertex2, opposingVertex);
-        var t2 = new Tetrahedron(vertex0, vertex2, incidentVertex, opposingVertex);
+        var t0 = newTetrahedron(vertex0, incidentVertex, vertex1, opposingVertex);
+        var t1 = newTetrahedron(vertex1, incidentVertex, vertex2, opposingVertex);
+        var t2 = newTetrahedron(vertex0, vertex2, incidentVertex, opposingVertex);
 
         t0.setNeighborA(t1);
         t0.setNeighborC(t2);
@@ -169,15 +145,15 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         t2.setNeighborA(t1);
         t2.setNeighborB(t0);
 
-        incident.patch(vertex2, t0, D);
-        incident.patch(vertex0, t1, D);
-        incident.patch(vertex1, t2, D);
+        incident.patch(vertex2, t0, 3);
+        incident.patch(vertex0, t1, 3);
+        incident.patch(vertex1, t2, 3);
 
         var adjacent = getAdjacent();
 
-        adjacent.patch(vertex0, t1, B);
-        adjacent.patch(vertex1, t2, C);
-        adjacent.patch(vertex2, t0, B);
+        adjacent.patch(vertex0, t1, 1);
+        adjacent.patch(vertex1, t2, 2);
+        adjacent.patch(vertex2, t0, 1);
 
         incident.delete();
         adjacent.delete();
@@ -189,25 +165,25 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         if (t0.isDeleted()) {
             if (t1.isDeleted()) {
                 if (t2.isDeleted()) {
-                    return new Tetrahedron[] {};
+                    return new PackedTetrahedron[] {};
                 } else {
-                    return new Tetrahedron[] { t2 };
+                    return new PackedTetrahedron[] { t2 };
                 }
             } else if (t2.isDeleted()) {
-                return new Tetrahedron[] { t1 };
+                return new PackedTetrahedron[] { t1 };
             } else {
-                return new Tetrahedron[] { t1, t2 };
+                return new PackedTetrahedron[] { t1, t2 };
             }
         } else if (t1.isDeleted()) {
             if (t2.isDeleted()) {
-                return new Tetrahedron[] { t0 };
+                return new PackedTetrahedron[] { t0 };
             } else {
-                return new Tetrahedron[] { t0, t2 };
+                return new PackedTetrahedron[] { t0, t2 };
             }
         } else if (t2.isDeleted()) {
-            return new Tetrahedron[] { t0, t1 };
+            return new PackedTetrahedron[] { t0, t1 };
         } else {
-            return new Tetrahedron[] { t0, t1, t2 };
+            return new PackedTetrahedron[] { t0, t1, t2 };
         }
     }
 
@@ -219,42 +195,39 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @param reflexEdge - the vertex opposite the reflex edge of the face
      * @return the two created tetrahedron
      */
-    public Tetrahedron[] flip3to2(int reflexEdge) {
+    public PackedTetrahedron[] flip3to2(int reflexEdge) {
         var incident = getIncident();
         var o2 = getIncident().getNeighbor(getVertex(reflexEdge));
 
-        Vertex top0 = null;
-        Vertex top1 = null;
-
-        switch (reflexEdge) {
-            case 0:
+        int top0;
+        int top1 = switch (reflexEdge) {
+            case 0 -> {
                 top0 = getVertex(1);
-                top1 = getVertex(2);
-                break;
-            case 1:
+                yield getVertex(2);
+            }
+            case 1 -> {
                 top0 = getVertex(0);
-                top1 = getVertex(2);
-                break;
-            case 2:
+                yield getVertex(2);
+            }
+            case 2 -> {
                 top0 = getVertex(0);
-                top1 = getVertex(1);
-                break;
-            default:
-                throw new IllegalArgumentException("Invalid reflex edge index: " + reflexEdge);
-        }
+                yield getVertex(1);
+            }
+            default -> throw new IllegalArgumentException("Invalid reflex edge index: " + reflexEdge);
+        };
 
         var x = getVertex(reflexEdge);
         var y = getIncidentVertex();
         var z = getAdjacentVertex();
 
-        Tetrahedron t0;
-        Tetrahedron t1;
-        if (top0.orientation(x, y, z) > 0) {
-            t0 = new Tetrahedron(x, y, z, top0);
-            t1 = new Tetrahedron(y, x, z, top1);
+        PackedTetrahedron t0;
+        PackedTetrahedron t1;
+        if (orientation(top0, x, y, z) > 0) {
+            t0 = newTetrahedron(x, y, z, top0);
+            t1 = newTetrahedron(y, x, z, top1);
         } else {
-            t0 = new Tetrahedron(x, y, z, top1);
-            t1 = new Tetrahedron(y, x, z, top0);
+            t0 = newTetrahedron(x, y, z, top1);
+            t1 = newTetrahedron(y, x, z, top0);
         }
 
         t0.setNeighborD(t1);
@@ -263,7 +236,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         incident.patch(t0.getD(), t1, t1.ordinalOf(getAdjacentVertex()));
         incident.patch(t1.getD(), t0, t0.ordinalOf(getAdjacentVertex()));
 
-        Tetrahedron adjacent = getAdjacent();
+        PackedTetrahedron adjacent = getAdjacent();
 
         adjacent.patch(t0.getD(), t1, t1.ordinalOf(getIncidentVertex()));
         adjacent.patch(t1.getD(), t0, t0.ordinalOf(getIncidentVertex()));
@@ -275,75 +248,54 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         adjacent.delete();
         o2.delete();
 
-        return new Tetrahedron[] { t0, t1 };
+        return new PackedTetrahedron[] { t0, t1 };
     }
 
     /**
      * Answer the adjacent tetrahedron to the face
-     *
-     * @return
      */
-    abstract public Tetrahedron getAdjacent();
+    abstract public PackedTetrahedron getAdjacent();
 
     /**
      * Answer the vertex in the adjacent tetrahedron which is opposite of this face.
-     *
-     * @return
      */
-    public Vertex getAdjacentVertex() {
-        Tetrahedron adjacent = getAdjacent();
+    public int getAdjacentVertex() {
+        PackedTetrahedron adjacent = getAdjacent();
         var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
         if (current == null) {
-            return null;
+            return -1;
         }
         return adjacent.getVertex(current);
     }
 
     /**
      * Answer the canonical ordinal of the vertex in the adjacent tetrahedron which is opposite of this face.
-     *
-     * @return
      */
-    public V getAdjacentVertexOrdinal() {
-        Tetrahedron adjacent = getAdjacent();
-        return adjacent == null ? null : adjacent.ordinalOf(getIncident());
+    public int getAdjacentVertexOrdinal() {
+        PackedTetrahedron adjacent = getAdjacent();
+        return adjacent == null ? -1 : adjacent.ordinalOf(getIncident());
     }
 
     /**
-     * Answer the two vertices defining the edge opposite of the vertex v
-     *
-     * @param v - the vertex defining the edge
-     * @return the array of two vertices defining the edge
-     */
-    abstract public Vertex[] getEdge(Vertex v);
-
-    /**
      * Answer the tetrahedron which is incident with this face
-     *
-     * @return
      */
-    abstract public Tetrahedron getIncident();
+    abstract public PackedTetrahedron getIncident();
 
     /**
      * Answer the vertex in the tetrahedron which is opposite of this face
-     *
-     * @return
      */
-    abstract public Vertex getIncidentVertex();
+    abstract public int getIncidentVertex();
 
     /**
      * Answer the canonical vertex for this face
-     *
-     * @param anIndex
-     * @return
      */
-    abstract public Vertex getVertex(int anIndex);
+    abstract public int getVertex(int anIndex);
 
     public boolean hasAdjacent() {
         return getAdjacent() != null;
     }
 
-    abstract public boolean includes(Vertex v);
+    abstract public boolean includes(int v);
 
     /**
      * Answer the edge index corresponding to the vertex
@@ -351,7 +303,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @param v - the vertex
      * @return the index of the edge
      */
-    abstract public int indexOf(Vertex v);
+    abstract public int indexOf(int v);
 
     /**
      * Answer true if the faces joined by the edge are concave when viewed from the originating tetrahedron.
@@ -374,15 +326,13 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     /**
      * Answer true if the vertex in the adjacent tetrahedron is not contained in the circumsphere of the incident
      * tetrahedron
-     *
-     * @return
      */
     public boolean isRegular() {
         return !getIncident().inSphere(getAdjacentVertex());
     }
 
     @Override
-    public Iterator<Vertex> iterator() {
+    public Iterator<Integer> iterator() {
         return new Iterator<>() {
             int i = 0;
 
@@ -392,7 +342,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             }
 
             @Override
-            public Vertex next() {
+            public Integer next() {
                 if (i == 3) {
                     throw new NoSuchElementException("No vertices left on this face");
                 }
@@ -414,42 +364,43 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return +1 if the orientation of the query point is positive with respect to the face, -1 if negative and 0 if
      * the query point is coplanar
      */
-    abstract public double orientationOf(Vertex query);
+    abstract public double orientationOf(int query);
 
-    private boolean inSphere(Vertex query, Vertex b, Vertex c, Vertex d) {
+    abstract double inSphere(int query, int a, int b, int c, int d);
+
+    abstract PackedTetrahedron newTetrahedron(int a, int b, int c, int d);
+
+    abstract double orientation(int d, int a, int b, int c);
+
+    private boolean inSphere(int query, int b, int c, int d) {
         var a = getIncidentVertex();
-        if (d.orientation(a, b, c) < 0) {
-            Vertex tmp = b;
+        if (orientation(d, a, b, c) < 0.0f) {
+            var tmp = b;
             b = a;
             a = tmp;
         }
-        return query.inSphere(a, b, c, d) > 0.0d;
+        return inSphere(query, a, b, c, d) > 0.0d;
     }
 
-    private boolean isFlippable3ear(Vertex n) {
+    private boolean isFlippable3ear(int n) {
         var opposingFace = getIncident().getFace(n);
         opposingFace.getAdjacent().getFace(opposingFace.getAdjacentVertex());
         return opposingFace.orientationOf(n) > 0.0d;
 
     }
 
-    private boolean isLocallyDelaunay(int index, Vertex v, LinkedList<OrientedFace> ears) {
-        Function<Vertex, Boolean> circumSphere = query -> {
-            switch (indexOf(v)) {
-                case 0:
-                    return inSphere(query, getVertex(1), getVertex(2), getVertex(0));
-                case 1:
-                    return inSphere(query, getVertex(0), getVertex(2), getVertex(1));
-                default:
-                    return inSphere(query, getVertex(0), getVertex(1), getVertex(2));
-            }
+    private boolean isLocallyDelaunay(int index, int v, LinkedList<OrientedFace> ears) {
+        Function<Integer, Boolean> circumsphere = query -> switch (indexOf(v)) {
+            case 0 -> inSphere(query, getVertex(1), getVertex(2), getVertex(0));
+            case 1 -> inSphere(query, getVertex(0), getVertex(2), getVertex(1));
+            default -> inSphere(query, getVertex(0), getVertex(1), getVertex(2));
         };
         for (int i = 0; i < ears.size(); i++) {
             if (index != i) {
                 OrientedFace ear = ears.get(i);
                 if (ear != this && ear.isValid()) {
-                    for (Vertex e : ear) {
-                        if (e != v && circumSphere.apply(e)) {
+                    for (var e : ear) {
+                        if (e != v && circumsphere.apply(e)) {
                             return false;
                         }
                     }

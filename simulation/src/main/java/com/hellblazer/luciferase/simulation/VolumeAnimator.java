@@ -53,8 +53,9 @@ public class VolumeAnimator {
         Kairos.setController(controller);
     }
 
-    public long getFrameCount() {
-        return frame.getFrameCount();
+    @NonEvent
+    public AnimationFrame getFrame() {
+        return frame;
     }
 
     public void start() {
@@ -67,12 +68,25 @@ public class VolumeAnimator {
     }
 
     @Entity
-    private class AnimationFrame {
+    public class AnimationFrame {
         private final long frameRateNs;
-        private       long frameCount = 0;
+        private       long frameCount          = 0;
+        private       long cumulativeDurations = 0;
+        private       long cumulativeDelay     = 0;
+        private       long lastActive          = System.nanoTime();
 
         public AnimationFrame(int frameRate) {
-            this.frameRateNs = TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / frameRate;
+            this.frameRateNs = (TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / frameRate);
+        }
+
+        @NonEvent
+        public long getCumulativeDelay() {
+            return cumulativeDelay;
+        }
+
+        @NonEvent
+        public long getCumulativeDurations() {
+            return cumulativeDurations;
         }
 
         @NonEvent
@@ -80,16 +94,17 @@ public class VolumeAnimator {
             return frameCount;
         }
 
-        @NonEvent
-        public long getFrameRateNs() {
-            return frameRateNs;
-        }
-
         public void track() {
             frameCount++;
+            long start = System.nanoTime();
+            cumulativeDelay += start - lastActive;
             grid.rebuild(entropy);
-            Kronos.sleep(frameRateNs);
+            var now = System.nanoTime();
+            var duration = now - start;
+            cumulativeDurations += duration;
+            Kronos.sleep(frameRateNs - duration);
             this.track();
+            lastActive = now;
         }
     }
 }

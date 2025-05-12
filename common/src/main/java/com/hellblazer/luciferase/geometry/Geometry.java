@@ -1879,9 +1879,6 @@ public final class Geometry {
     }
 
     ///////////////////////////////////////////////////////////////////////////
-    // private
-
-    ///////////////////////////////////////////////////////////////////////////
     // Java implementation of Jonathan Shewchuk's functions for arbitrary
     // floating-point arithmetic and fast robust geometric predicates.
     // Only Shewchuk's "slow" exact methods are implemented here.
@@ -2283,7 +2280,6 @@ public final class Geometry {
      * err1-(alo*bhi); double err3 = err2-(ahi*blo); t.x = x; t.y = (alo*blo)-err3;
      * }
      */
-
     public static float leftOfPlaneFastFloat(float xa, float ya, float za, float xb, float yb, float zb, float xc,
                                              float yc, float zc, float xd, float yd, float zd) {
         float adx = xa - xd;

@@ -44,7 +44,7 @@ import static com.hellblazer.sentry.V.*;
 public class Grid implements Iterable<Vertex> {
 
     /**
-     * Cannonical enumeration of the vertex ordinals
+     * Canonical enumeration of the vertex ordinals
      */
     public static final    V[]      VERTICES     = { A, B, C, D };
     public static final    Vertex[] FOUR_CORNERS = new Vertex[4];
