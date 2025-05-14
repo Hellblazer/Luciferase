@@ -188,12 +188,8 @@ public class PackedGrid {
         vertices.add(p.x);
         vertices.add(p.z);
         PackedTetrahedron locate = locate(p, entropy);
-        add(v, locate);
+        insert(v, locate);
         return v;
-    }
-
-    private void add(int v, final PackedTetrahedron target) {
-        insert(v, target);
     }
 
     private void insert(int v, final PackedTetrahedron target) {
