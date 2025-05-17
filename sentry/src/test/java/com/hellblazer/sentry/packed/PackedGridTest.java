@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Random;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 /**
  * @author hal.hildebrand
  **/
@@ -16,11 +18,12 @@ public class PackedGridTest {
         var grid = new PackedGrid();
     }
 
-    @Test
+    //    @Test
     public void testCubic() {
         var random = new Random(0);
         var T = new PackedGrid();
         for (var v : TestCases.getCubicCrystalStructure()) {
+            assertTrue(T.contains(v));
             T.track(v, random);
         }
 

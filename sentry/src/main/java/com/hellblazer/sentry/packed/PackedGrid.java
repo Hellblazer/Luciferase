@@ -59,14 +59,13 @@ public class PackedGrid {
         FOUR_CORNERS[3] = new Vertex(-1, -1, 1, SCALE);
     }
 
-    private final Deque<PackedTetrahedron> stack       = new ArrayDeque<>();
-    private final Deque<Integer>           freed       = new ArrayDeque<>();
-    private final IntArrayList             adjacent    = new IntArrayList();
-    private final IntArrayList             tetrahedra  = new IntArrayList();
-    private final FloatArrayList           vertices    = new FloatArrayList();
-    private final Tuple3f[]                fourCorners = new Tuple3f[4];
+    private final Deque<Integer>    freed       = new ArrayDeque<>();
+    private final IntArrayList      adjacent    = new IntArrayList();
+    private final IntArrayList      tetrahedra  = new IntArrayList();
+    private final FloatArrayList    vertices    = new FloatArrayList();
+    private final Tuple3f[]         fourCorners = new Tuple3f[4];
     // for location
-    private       PackedTetrahedron        last;
+    private       PackedTetrahedron last;
 
     public PackedGrid() {
         this(FOUR_CORNERS[0], FOUR_CORNERS[1], FOUR_CORNERS[2], FOUR_CORNERS[3]);
@@ -111,12 +110,7 @@ public class PackedGrid {
         if (index < 0) {
             return null;
         }
-        var freed = stack.pollFirst();
-        if (freed == null) {
-            return new PackedTetrahedron(index);
-        }
-        freed.index = index;
-        return freed;
+        return new PackedTetrahedron(index);
     }
 
     public PackedTetrahedron locate(Tuple3f p, Random entropy) {
@@ -140,18 +134,19 @@ public class PackedGrid {
     }
 
     public PackedTetrahedron newTetrahedron(int a, int b, int c, int d) {
-        var inst = stack.pollFirst();
-        var tetrahedron = inst == null ? new PackedTetrahedron(tetrahedra.size()) : inst;
         var idx = freed.pollLast();
         if (idx == null) {
-            tetrahedron.index = tetrahedra.size();
+            var tetrahedron = new PackedTetrahedron(tetrahedra.size() / 4);
             tetrahedra.add(a);
             tetrahedra.add(b);
             tetrahedra.add(c);
             tetrahedra.add(d);
+            for (int i = 0; i < 4; i++) {
+                adjacent.add(-1);
+            }
             return tetrahedron;
         }
-        tetrahedron.index = idx;
+        var tetrahedron = new PackedTetrahedron(idx);
         tetrahedra.setInt(tetrahedron.index * 4, a);
         tetrahedra.setInt(tetrahedron.index * 4 + 1, b);
         tetrahedra.setInt(tetrahedron.index * 4 + 2, c);
@@ -213,12 +208,14 @@ public class PackedGrid {
         private final OrientedFace faceCBD;
         private final OrientedFace faceDAC;
         private final OrientedFace faceADB;
+        private final OrientedFace faceBCA;
         private       int          index;
 
         {
             faceADB = new FaceADB();
             faceDAC = new FaceDAC();
             faceCBD = new FaceCBD();
+            faceBCA = new FaceBCA();
         }
 
         public PackedTetrahedron(int index) {
@@ -237,7 +234,6 @@ public class PackedGrid {
             tetrahedra.setInt(index * 4 + 3, -1);
             freed.addLast(index);
             index = -1;
-            stack.addLast(this);
         }
 
         /**
@@ -272,10 +268,10 @@ public class PackedGrid {
             adjacent.setInt(t3.index * 4 + 1, t0.index);
             adjacent.setInt(t3.index * 4 + 2, t1.index);
 
-            patch(3, t0, 3);
-            patch(2, t1, 3);
-            patch(2, t2, 3);
-            patch(0, t3, 3);
+            patchTet(3, t0, 3);
+            patchTet(2, t1, 3);
+            patchTet(2, t2, 3);
+            patchTet(0, t3, 3);
 
             delete();
 
@@ -304,7 +300,6 @@ public class PackedGrid {
 
         public OrientedFace getFace(int vertex) {
             final var tets = tetrahedra;
-            final var i = index;
             return switch (vertex) {
                 //faceCBD
                 case 0 -> {
@@ -319,7 +314,9 @@ public class PackedGrid {
                     yield faceADB;
                 }
                 // faceBCA
-                case 3 -> null;
+                case 3 -> {
+                    yield faceBCA;
+                }
                 default -> throw new IllegalArgumentException("Invalid vertex: " + vertex);
             };
         }
@@ -332,6 +329,7 @@ public class PackedGrid {
          * @return the neighboring tetrahedron, or null if none.
          */
         public PackedTetrahedron getNeighbor(int v) {
+            assert v >= 0 && v < 4;
             return getTetrahedron(adjacent.getInt(index * 4 + v));
         }
 
@@ -435,7 +433,10 @@ public class PackedGrid {
             if (v == tetrahedra.getInt(index * 4 + 2)) {
                 return 2;
             }
-            return 3;
+            if (v == tetrahedra.getInt(index * 4 + 3)) {
+                return 3;
+            }
+            throw new IllegalArgumentException("Not a vertex: " + v);
         }
 
         /**
@@ -450,15 +451,15 @@ public class PackedGrid {
          */
         public double orientation(Tuple3f query, int a, int b, int c) {
             var ax = vertices.getFloat(a * 3);
-            var ay = vertices.getFloat(a * 3) + 1;
+            var ay = vertices.getFloat(a * 3 + 1);
             var az = vertices.getFloat(a * 3 + 2);
 
             var bx = vertices.getFloat(b * 3);
-            var by = vertices.getFloat(b * 3) + 1;
+            var by = vertices.getFloat(b * 3 + 1);
             var bz = vertices.getFloat(b * 3 + 2);
 
             var cx = vertices.getFloat(c * 3);
-            var cy = vertices.getFloat(c * 3) + 1;
+            var cy = vertices.getFloat(c * 3 + 1);
             var cz = vertices.getFloat(c * 3 + 2);
 
             var result = Geometry.leftOfPlaneFast(ax, ay, az, bx, by, bz, cx, cy, cz, query.x, query.y, query.z);
@@ -537,6 +538,11 @@ public class PackedGrid {
             adjacent.setInt(index * 4 + 3, t.index);
         }
 
+        @Override
+        public String toString() {
+            return "PackedTetrahedron{" + index + '}';
+        }
+
         /**
          * Answer the canonical ordinal of the opposite vertex of the neighboring tetrahedron
          */
@@ -584,7 +590,24 @@ public class PackedGrid {
          * <p>
          */
         void patch(int old, PackedTetrahedron n, int vNew) {
-            patch(ordinalOf(old), n, vNew);
+            patchTet(ordinalOf(old), n, vNew);
+        }
+
+        /**
+         * Patch the new tetrahedron created by a flip of the receiver by seting the neighbor to the value in the
+         * receiver
+         * <p>
+         *
+         * @param vOld - the opposing vertex the neighboring tetrahedron in the receiver
+         * @param n    - the new tetrahedron to patch
+         * @param vNew - the opposing vertex of the neighbor to assign in the new tetrahedron
+         */
+        void patchTet(int vOld, PackedTetrahedron n, int vNew) {
+            var neighbor = getNeighbor(vOld);
+            if (neighbor != null) {
+                neighbor.setNeighbor(neighbor.ordinalOf(this), n);
+                n.setNeighbor(vNew, neighbor);
+            }
         }
 
         void removeAnyDegenerateTetrahedronPair() {
@@ -621,6 +644,25 @@ public class PackedGrid {
             }
         }
 
+        void setNeighbor(int v, PackedTetrahedron t) {
+            switch (v) {
+                case 0:
+                    adjacent.setInt(index * 4, t.index);
+                    break;
+                case 1:
+                    adjacent.setInt(index * 4 + 1, t.index);
+                    break;
+                case 2:
+                    adjacent.setInt(index * 4 + 2, t.index);
+                    break;
+                case 3:
+                    adjacent.setInt(index * 4 + 3, t.index);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid vertex index: " + v);
+            }
+        }
+
         private int a() {
             return tetrahedra.getInt(index * 4);
         }
@@ -639,8 +681,8 @@ public class PackedGrid {
 
         private void removeDegenerateTetrahedronPair(int ve1, int vf1, int vf2) {
             var nE = getNeighbor(ve1);
-            var nF1_that = nE.getNeighbor(getVertex(vf1));
-            var nF2_that = nE.getNeighbor(getVertex(vf2));
+            var nF1_that = nE.getNeighbor(vf1);
+            var nF2_that = nE.getNeighbor(vf2);
 
             patch(vf1, nF1_that, nF1_that.ordinalOf(nE));
             patch(vf2, nF2_that, nF2_that.ordinalOf(nE));
