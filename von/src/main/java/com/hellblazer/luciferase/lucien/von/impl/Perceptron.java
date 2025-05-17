@@ -17,10 +17,10 @@
 
 package com.hellblazer.luciferase.lucien.von.impl;
 
-import com.hellblazer.sentry.Vertex;
 import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.Perceiving;
 import com.hellblazer.luciferase.lucien.von.SphereOfInteraction;
+import com.hellblazer.sentry.Vertex;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
@@ -35,17 +35,23 @@ import java.util.Collection;
 public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     protected final SphereOfInteraction soi;
     protected       boolean             active = true;
+    protected       E                   sim;
 
     public Perceptron(E entity, Vertex location, float aoiRadius, float maximumVelocity, SphereOfInteraction soi) {
-        super(entity, location, aoiRadius, maximumVelocity);
-        this.aoiRadius = aoiRadius;
+        super(entity, location, aoiRadius, aoiRadius + maximumVelocity * BUFFER_MULTIPLIER);
         entity.setCursor(this);
         this.soi = soi;
+        this.sim = entity;
     }
 
     @Override
     public void fadeFrom(Node neighbor) {
         remove(neighbor);
+    }
+
+    @Override
+    public E getSim() {
+        return sim;
     }
 
     public void join(Node gateway) {
@@ -101,8 +107,8 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
     }
 
     @Override
-    public void moveBy(Tuple3f velocity) {
-        super.moveBy(velocity);
+    public void moveBy(Tuple3f delta) {
+        super.moveBy(delta);
         removeNonOverlapped();
         for (var peer : soi.getPeers()) {
             if (!peer.equals(this)) {
@@ -213,7 +219,7 @@ public class Perceptron<E extends Perceiving> extends AbstractNode<E> {
         var removed = new ArrayList<Node>();
         for (var neighbor : soi.getPeers()) {
             if (!this.equals(neighbor)) {
-                if (!soi.overlaps((Node) this, neighbor.getLocation(),
+                if (!soi.overlaps(this, neighbor.getLocation(),
                                   Math.max(maxRadiusSquared, neighbor.getMaximumRadiusSquared()))) {
                     if (!soi.isEnclosing(neighbor, this)) {
                         removed.add(neighbor);

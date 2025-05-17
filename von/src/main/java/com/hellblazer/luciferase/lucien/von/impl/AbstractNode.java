@@ -17,12 +17,10 @@
 
 package com.hellblazer.luciferase.lucien.von.impl;
 
-import com.hellblazer.sentry.Vertex;
-import com.hellblazer.luciferase.lucien.von.Cursor;
 import com.hellblazer.luciferase.lucien.von.Node;
 import com.hellblazer.luciferase.lucien.von.Perceiving;
-
-import javax.vecmath.Point3f;
+import com.hellblazer.sentry.Cursor;
+import com.hellblazer.sentry.Vertex;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -30,22 +28,12 @@ import javax.vecmath.Point3f;
 
 abstract public class AbstractNode<E extends Perceiving> extends Vertex implements Node, Cursor {
     protected float aoiRadius;
-    protected float maximumVelocity;
     protected float maxRadiusSquared;
-    protected E     sim;
 
-    public AbstractNode(E entity, Vertex location, float aoiRadius, float maximumVelocity) {
+    public AbstractNode(E entity, Vertex location, float aoiRadius, float maxExtent) {
         super(location);
-        this.sim = entity;
         this.aoiRadius = aoiRadius;
-        this.maximumVelocity = maximumVelocity;
-        float maxExtent = aoiRadius + maximumVelocity * BUFFER_MULTIPLIER;
         this.maxRadiusSquared = maxExtent * maxExtent;
-    }
-
-    @Override
-    public Point3f getLocation() {
-        return new Point3f(x, y, z);
     }
 
     @Override
@@ -56,16 +44,6 @@ abstract public class AbstractNode<E extends Perceiving> extends Vertex implemen
     @Override
     public float getMaximumRadiusSquared() {
         return maxRadiusSquared;
-    }
-
-    @Override
-    public float getMaximumVelocity() {
-        return maximumVelocity;
-    }
-
-    @Override
-    public E getSim() {
-        return sim;
     }
 
     @Override

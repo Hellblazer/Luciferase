@@ -19,17 +19,21 @@ package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.geometry.MortonCurve;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
+import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
 import java.io.Serial;
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3f implements Iterable<Vertex> {
+public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Comparable<Vertex> {
     static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
@@ -53,6 +57,22 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         this(p.x, p.y, p.z);
     }
 
+    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
+        float radiusSquared = radius * radius;
+        Point3f[] ourPoints = new Point3f[numberOfPoints];
+        for (int i = 0; i < ourPoints.length; i++) {
+            if (inSphere) {
+                do {
+                    ourPoints[i] = randomPoint(radius, random);
+                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
+            } else {
+                ourPoints[i] = randomPoint(radius, random);
+            }
+        }
+
+        return ourPoints;
+    }
+
     /**
      * Generate a bounded random float
      *
@@ -73,6 +93,14 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return result;
     }
 
+    public static Point3f randomPoint(float radius, Random random) {
+        var x = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var y = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+        var z = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
+
+        return new Point3f(x * radius, y * radius, z * radius);
+    }
+
     /**
      * Generate a random point
      *
@@ -85,28 +113,13 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         return new Point3f(random(random, min, max), random(random, min, max), random(random, min, max));
     }
 
-    public static Point3f randomPoint(float radius, Random random) {
-        var x = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
-        var y = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
-        var z = random.nextFloat() * (random.nextBoolean() ? 1.0f : -1.0f);
-
-        return new Point3f(x * radius, y * radius, z * radius);
-    }
-
-    public static Point3f[] getRandomPoints(Random random, int numberOfPoints, float radius, boolean inSphere) {
-        float radiusSquared = radius * radius;
-        Point3f ourPoints[] = new Point3f[numberOfPoints];
-        for (int i = 0; i < ourPoints.length; i++) {
-            if (inSphere) {
-                do {
-                    ourPoints[i] = randomPoint(radius, random);
-                } while (ourPoints[i].distanceSquared(ORIGIN) >= radiusSquared);
-            } else {
-                ourPoints[i] = randomPoint(radius, random);
-            }
+    public static Vertex[] vertices(Tuple3i[] vertices) {
+        Vertex[] result = new Vertex[vertices.length];
+        for (int i = 0; i < vertices.length; i++) {
+            var vertex = vertices[i];
+            result[i] = new Vertex((float) vertex.x, (float) vertex.y, (float) vertex.z);
         }
-
-        return ourPoints;
+        return result;
     }
 
     /**
@@ -118,6 +131,13 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      */
     public <T> T as(Class<T> model) {
         return null;
+    }
+
+    @Override
+    public int compareTo(Vertex o) {
+        var a = MortonCurve.encode((int) x, (int) y, (int) z);
+        var b = MortonCurve.encode((int) o.x, (int) o.y, (int) o.z);
+        return Long.compare(a, b);
     }
 
     public final float distanceSquared(Tuple3f p1) {
@@ -146,6 +166,10 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      */
     final void setAdjacent(Tetrahedron tetrahedron) {
         adjacent = tetrahedron;
+    }
+
+    public Point3f getLocation() {
+        return new Point3f(x, y, z);
     }
 
     /**
@@ -242,7 +266,8 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
      *
      * @param query
      * @param entropy - entropy used for randomization of search
-     * @return the Tetrahedron that encompasses the query point
+     * @return the Tetrahedron that encompasses the query point or null if point falls outside of the
+     * tetrahedralization.
      */
     public final Tetrahedron locate(Tuple3f query, Random entropy) {
         assert adjacent != null;
@@ -253,6 +278,18 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
         x = x + delta.x;
         y = y + delta.y;
         z = z + delta.z;
+    }
+
+    @Override
+    public void moveTo(Tuple3f position) {
+        x = position.x;
+        y = position.y;
+        z = position.z;
+    }
+
+    @Override
+    public Stream<Cursor> neighbors() {
+        return getNeighbors().stream().map(e -> e);
     }
 
     /**
@@ -272,6 +309,22 @@ public class Vertex extends Vector3f implements Iterable<Vertex> {
     @Override
     public String toString() {
         return "{" + x + ", " + y + ", " + z + "}";
+    }
+
+    @Override
+    public void visitNeighbors(Consumer<Cursor> consumer) {
+        final var neighbors = new IdentitySet<Vertex>();
+        visitNeighbors((vertex, t, x, y, z) -> {
+            if (neighbors.add(x)) {
+                consumer.accept(x);
+            }
+            if (neighbors.add(y)) {
+                consumer.accept(y);
+            }
+            if (neighbors.add(z)) {
+                consumer.accept(z);
+            }
+        });
     }
 
     public final void visitNeighbors(StarVisitor visitor) {

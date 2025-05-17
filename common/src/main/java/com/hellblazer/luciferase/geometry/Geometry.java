@@ -1,70 +1,74 @@
 /****************************************************************************
-Copyright (c) 2006, Colorado School of Mines and others. All rights reserved.
-This program and accompanying materials are made available under the terms of
-the Common Public License - v1.0, which accompanies this distribution, and is
-available at http://www.eclipse.org/legal/cpl-v10.html
+ Copyright (c) 2006, Colorado School of Mines and others. All rights reserved.
+ This program and accompanying materials are made available under the terms of
+ the Common Public License - v1.0, which accompanies this distribution, and is
+ available at http://www.eclipse.org/legal/cpl-v10.html
  ****************************************************************************/
 package com.hellblazer.luciferase.geometry;
 
 import javax.vecmath.Point3d;
+import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3d;
+import javax.vecmath.Tuple3f;
 
 /**
  * Robust geometric predicates.
  * <p>
- * These geometric predicates are notoriously susceptible to roundoff error. For
- * example, the simplest and fastest test to determine whether a point c is left
- * of a line defined by two points a and b may fail when all three points are
+ * These geometric predicates are notoriously susceptible to roundoff error. For example, the simplest and fastest test
+ * to determine whether a point c is left of a line defined by two points a and b may fail when all three points are
  * nearly co-linear.
  * <p>
- * Therefore, each predicate is implemented by two types of methods. One method
- * is fast, but may yield incorrect answers. The other method is slower, because
- * it (1) computes a bound on the roundoff error and (2) reverts to an exact
- * algorithm if the fast method might yield the wrong answer.
+ * Therefore, each predicate is implemented by two types of methods. One method is fast, but may yield incorrect
+ * answers. The other method is slower, because it (1) computes a bound on the roundoff error and (2) reverts to an
+ * exact algorithm if the fast method might yield the wrong answer.
  * <p>
- * Most applications should use the slower exact methods. The fast methods are
- * provided only for comparison.
+ * Most applications should use the slower exact methods. The fast methods are provided only for comparison.
  * <p>
- * These predicates are adapted from those developed by Jonathan Shewchuk, 1997,
- * Delaunay Refinement Mesh Generation: Ph.D. dissertation, Carnegie Mellon
- * University. (Currently, the methods here do not use Shewchuk's adaptive
- * four-stage pipeline. Instead, only two - the fastest and the exact stages -
- * are used.)
- * 
+ * These predicates are adapted from those developed by Jonathan Shewchuk, 1997, Delaunay Refinement Mesh Generation:
+ * Ph.D. dissertation, Carnegie Mellon University. (Currently, the methods here do not use Shewchuk's adaptive
+ * four-stage pipeline. Instead, only two - the fastest and the exact stages - are used.)
+ *
  * @author Dave Hale, Colorado School of Mines
  * @version 2001.04.03, 2006.08.02
  */
 public final class Geometry {
 
     /**
-     * Two doubles.
-     */
-    private static class Two {
-        double x, y;
-    }
-
-    /**
      * Constants.
      */
     private static final double EPSILON;
-
     private static final double INCERRBOUND;
-
     private static final double INSERRBOUND;
-
     private static final double IOSERRBOUND;
-
     private static final double O2DERRBOUND;
-
     private static final double O3DERRBOUND;
-
     private static final double SPLITTER;
 
+    static {
+        double epsilon = 1.0;
+        double splitter = 1.0;
+        boolean everyOther = true;
+        do {
+            epsilon *= 0.5;
+            if (everyOther) {
+                splitter *= 2.0;
+            }
+            everyOther = !everyOther;
+        } while (1.0 + epsilon != 1.0);
+        splitter += 1.0;
+        EPSILON = epsilon;
+        SPLITTER = splitter;
+        O2DERRBOUND = 4.0 * EPSILON;
+        O3DERRBOUND = 8.0 * EPSILON;
+        INCERRBOUND = 11.0 * EPSILON;
+        INSERRBOUND = 17.0 * EPSILON;
+        IOSERRBOUND = 19.0 * EPSILON;
+    }
+
     /**
-     * Computes the center of the circle defined by the points a, b, and c. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
+     * Computes the center of the circle defined by the points a, b, and c. The latter are assumed to be in CCW order,
+     * such that the method {@link #leftOfLine} would return a positive number.
+     *
      * @param po array containing (x,y) coordinates of center.
      */
     public static void centerCircle(double xa, double ya, double xb, double yb, double xc, double yc, double[] po) {
@@ -80,10 +84,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the circle defined by the points a, b, and c. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
+     * Computes the center of the circle defined by the points a, b, and c. The latter are assumed to be in CCW order,
+     * such that the method {@link #leftOfLine} would return a positive number.
+     *
      * @param po array containing (x,y) coordinates of center.
      */
     public static void centerCircle(double[] pa, double[] pb, double[] pc, double[] po) {
@@ -91,10 +94,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the circle defined by the points a, b, and c. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
+     * Computes the center of the circle defined by the points a, b, and c. The latter are assumed to be in CCW order,
+     * such that the method {@link #leftOfLine} would return a positive number.
+     *
      * @param po array containing (x,y) coordinates of center.
      */
     public static void centerCircle(float xa, float ya, float xb, float yb, float xc, float yc, float[] po) {
@@ -110,10 +112,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the circle defined by the points a, b, and c. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
+     * Computes the center of the circle defined by the points a, b, and c. The latter are assumed to be in CCW order,
+     * such that the method {@link #leftOfLine} would return a positive number.
+     *
      * @param po array containing (x,y) coordinates of center.
      */
     public static void centerCircle(float[] pa, float[] pb, float[] pc, float[] po) {
@@ -121,9 +122,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the circle defined by the 3-D points a, b, and c.
-     * Because the points have 3-D coordinates, they may specified in any order.
-     * 
+     * Computes the center of the circle defined by the 3-D points a, b, and c. Because the points have 3-D coordinates,
+     * they may specified in any order.
+     *
      * @param po array containing (x,y,z) coordinates of center.
      */
     public static void centerCircle3D(double xa, double ya, double za, double xb, double yb, double zb, double xc,
@@ -146,10 +147,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the sphere defined by the points a, b, c, and d. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
+     * Computes the center of the sphere defined by the points a, b, c, and d. The latter are assumed to be in CCW
+     * order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
      * @param po array containing (x,y,z) coordinates of center.
      */
     public static void centerSphere(double xa, double ya, double za, double xb, double yb, double zb, double xc,
@@ -167,19 +167,18 @@ public final class Geometry {
         double bds = bdx * bdx + bdy * bdy + bdz * bdz;
         double cds = cdx * cdx + cdy * cdy + cdz * cdz;
         double scale = 0.5 / leftOfPlane(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd);
-        po[0] = xd
-        + scale * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz - bdy * adz));
-        po[1] = yd
-        + scale * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx - bdz * adx));
-        po[2] = zd
-        + scale * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy - bdx * ady));
+        po[0] = xd + scale * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz
+                                                                                                     - bdy * adz));
+        po[1] = yd + scale * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx
+                                                                                                     - bdz * adx));
+        po[2] = zd + scale * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy
+                                                                                                     - bdx * ady));
     }
 
     /**
-     * Computes the center of the sphere defined by the points a, b, c, and d. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
+     * Computes the center of the sphere defined by the points a, b, c, and d. The latter are assumed to be in CCW
+     * order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
      * @param po array containing (x,y,z) coordinates of center.
      */
     public static void centerSphere(double[] pa, double[] pb, double[] pc, double[] pd, double[] po) {
@@ -187,10 +186,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the sphere defined by the points a, b, c, and d. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
+     * Computes the center of the sphere defined by the points a, b, c, and d. The latter are assumed to be in CCW
+     * order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
      * @param po array containing (x,y,z) coordinates of center.
      */
     public static void centerSphere(float xa, float ya, float za, float xb, float yb, float zb, float xc, float yc,
@@ -208,19 +206,21 @@ public final class Geometry {
         double bds = bdx * bdx + bdy * bdy + bdz * bdz;
         double cds = cdx * cdx + cdy * cdy + cdz * cdz;
         double scale = 0.5 / leftOfPlane(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd);
-        po[0] = xd + (float) (scale
-        * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz - bdy * adz)));
-        po[1] = yd + (float) (scale
-        * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx - bdz * adx)));
-        po[2] = zd + (float) (scale
-        * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy - bdx * ady)));
+        po[0] = xd + (float) (scale * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz
+                                                                                                              - bdy
+        * adz)));
+        po[1] = yd + (float) (scale * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx
+                                                                                                              - bdz
+        * adx)));
+        po[2] = zd + (float) (scale * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy
+                                                                                                              - bdx
+        * ady)));
     }
 
     /**
-     * Computes the center of the sphere defined by the points a, b, c, and d. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
+     * Computes the center of the sphere defined by the points a, b, c, and d. The latter are assumed to be in CCW
+     * order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
      * @param po array containing (x,y,z) coordinates of center.
      */
     public static void centerSphere(float[] pa, float[] pb, float[] pc, float[] pd, float[] po) {
@@ -228,10 +228,9 @@ public final class Geometry {
     }
 
     /**
-     * Computes the center of the sphere defined by the points a, b, c, and d. The
-     * latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
+     * Computes the center of the sphere defined by the points a, b, c, and d. The latter are assumed to be in CCW
+     * order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
      * @param po array containing (x,y,z) coordinates of center.
      */
     public static void centerSphereFast(float xa, float ya, float za, float xb, float yb, float zb, float xc, float yc,
@@ -249,1014 +248,27 @@ public final class Geometry {
         double bds = bdx * bdx + bdy * bdy + bdz * bdz;
         double cds = cdx * cdx + cdy * cdy + cdz * cdz;
         double scale = 0.5 / leftOfPlaneFast(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd);
-        po[0] = xd + (float) (scale
-        * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz - bdy * adz)));
-        po[1] = yd + (float) (scale
-        * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx - bdz * adx)));
-        po[2] = zd + (float) (scale
-        * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy - bdx * ady)));
+        po[0] = xd + (float) (scale * (ads * (bdy * cdz - cdy * bdz) + bds * (cdy * adz - ady * cdz) + cds * (ady * bdz
+                                                                                                              - bdy
+        * adz)));
+        po[1] = yd + (float) (scale * (ads * (bdz * cdx - cdz * bdx) + bds * (cdz * adx - adz * cdx) + cds * (adz * bdx
+                                                                                                              - bdz
+        * adx)));
+        po[2] = zd + (float) (scale * (ads * (bdx * cdy - cdx * bdy) + bds * (cdx * ady - adx * cdy) + cds * (adx * bdy
+                                                                                                              - bdx
+        * ady)));
     }
 
-    public static Point3d[] findLineSphereIntersections(Tuple3d linePoint0, Tuple3d linePoint1, Tuple3d circleCenter,
-                                                        double circleRadius) {
-        // http://www.codeproject.com/Articles/19799/Simple-Ray-Tracing-in-C-Part-II-Triangles-Intersec
-
-        double cx = circleCenter.x;
-        double cy = circleCenter.y;
-        double cz = circleCenter.z;
-
-        double px = linePoint0.x;
-        double py = linePoint0.y;
-        double pz = linePoint0.z;
-
-        double vx = linePoint1.x - px;
-        double vy = linePoint1.y - py;
-        double vz = linePoint1.z - pz;
-
-        double A = vx * vx + vy * vy + vz * vz;
-        double B = 2.0 * (px * vx + py * vy + pz * vz - vx * cx - vy * cy - vz * cz);
-        double C = px * px - 2 * px * cx + cx * cx + py * py - 2 * py * cy + cy * cy + pz * pz - 2 * pz * cz + cz * cz
-        - circleRadius * circleRadius;
-
-        // discriminant
-        double D = B * B - 4 * A * C;
-
-        if (D < 0) {
-            return new Point3d[0];
-        }
-
-        double t1 = (-B - Math.sqrt(D)) / (2.0 * A);
-
-        Point3d solution1 = new Point3d(linePoint0.x * (1 - t1) + t1 * linePoint1.x,
-                                        linePoint0.y * (1 - t1) + t1 * linePoint1.y,
-                                        linePoint0.z * (1 - t1) + t1 * linePoint1.z);
-        if (D == 0) {
-            return new Point3d[] { solution1 };
-        }
-
-        double t2 = (-B + Math.sqrt(D)) / (2.0 * A);
-        Point3d solution2 = new Point3d(linePoint0.x * (1 - t2) + t2 * linePoint1.x,
-                                        linePoint0.y * (1 - t2) + t2 * linePoint1.y,
-                                        linePoint0.z * (1 - t2) + t2 * linePoint1.z);
-
-        // prefer a solution that's on the line segment itself
-
-        if (Math.abs(t1 - 0.5) < Math.abs(t2 - 0.5)) {
-            return new Point3d[] { solution1, solution2 };
-        }
-
-        return new Point3d[] { solution2, solution1 };
+    private static float det3x3(Tuple3f b, Tuple3f c, Tuple3f d) {
+        return b.x * c.y * d.z + c.x * d.y * b.z + d.x * b.y * c.z - d.x * c.y * b.z - c.x * b.y * d.z
+        - b.x * d.y * c.z;
     }
 
     /**
-     * Determines if a point d is inside the circle defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
-     * @return positive, if inside the circle; negative, if outside the circle;
-     *         zero, otherwise.
-     */
-    public static double inCircle(double xa, double ya, double xb, double yb, double xc, double yc, double xd,
-                                  double yd) {
-        double adx = xa - xd;
-        double bdx = xb - xd;
-        double cdx = xc - xd;
-        double ady = ya - yd;
-        double bdy = yb - yd;
-        double cdy = yc - yd;
-
-        double bdxcdy = bdx * cdy;
-        double cdxbdy = cdx * bdy;
-        double alift = adx * adx + ady * ady;
-
-        double cdxady = cdx * ady;
-        double adxcdy = adx * cdy;
-        double blift = bdx * bdx + bdy * bdy;
-
-        double adxbdy = adx * bdy;
-        double bdxady = bdx * ady;
-        double clift = cdx * cdx + cdy * cdy;
-
-        double det = alift * (bdxcdy - cdxbdy) + blift * (cdxady - adxcdy) + clift * (adxbdy - bdxady);
-
-        if (bdxcdy < 0.0) {
-            bdxcdy = -bdxcdy;
-        }
-        if (cdxbdy < 0.0) {
-            cdxbdy = -cdxbdy;
-        }
-        if (adxcdy < 0.0) {
-            adxcdy = -adxcdy;
-        }
-        if (cdxady < 0.0) {
-            cdxady = -cdxady;
-        }
-        if (adxbdy < 0.0) {
-            adxbdy = -adxbdy;
-        }
-        if (bdxady < 0.0) {
-            bdxady = -bdxady;
-        }
-
-        double permanent = alift * (bdxcdy + cdxbdy) + blift * (cdxady + adxcdy) + clift * (adxbdy + bdxady);
-        double errbound = INCERRBOUND * permanent;
-        if (det > errbound || -det > errbound) {
-            return det;
-        }
-
-        return inCircleExact(xa, ya, xb, yb, xc, yc, xd, yd);
-    }
-
-    /**
-     * Determines if a point d is inside the circle defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
-     * @return positive, if inside the circle; negative, if outside the circle;
-     *         zero, otherwise.
-     */
-    public static double inCircle(double[] pa, double[] pb, double[] pc, double[] pd) {
-        return inCircle(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
-    }
-
-    /**
-     * Determines if a point d is inside the circle defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * 
-     * @return positive, if inside the circle; negative, if outside the circle;
-     *         zero, otherwise.
-     */
-    public static double inCircle(float[] pa, float[] pb, float[] pc, float[] pd) {
-        return inCircle(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
-    }
-
-    /**
-     * Determines if a point d is inside the circle defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if inside the circle; negative, if outside the circle;
-     *         zero, otherwise.
-     */
-    public static double inCircleFast(double xa, double ya, double xb, double yb, double xc, double yc, double xd,
-                                      double yd) {
-        double adx = xa - xd;
-        double ady = ya - yd;
-        double bdx = xb - xd;
-        double bdy = yb - yd;
-        double cdx = xc - xd;
-        double cdy = yc - yd;
-
-        double abdet = adx * bdy - bdx * ady;
-        double bcdet = bdx * cdy - cdx * bdy;
-        double cadet = cdx * ady - adx * cdy;
-        double alift = adx * adx + ady * ady;
-        double blift = bdx * bdx + bdy * bdy;
-        double clift = cdx * cdx + cdy * cdy;
-
-        return alift * bcdet + blift * cadet + clift * abdet;
-    }
-
-    /**
-     * Determines if a point d is inside the circle defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if inside the circle; negative, if outside the circle;
-     *         zero, otherwise.
-     */
-    public static double inCircleFast(double[] pa, double[] pb, double[] pc, double[] pd) {
-        return inCircleFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
-    }
-
-    /**
-     * Determines if a point d is inside the circle defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfLine} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if inside the circle; negative, if outside the circle;
-     *         zero, otherwise.
-     */
-    public static double inCircleFast(float[] pa, float[] pb, float[] pc, float[] pd) {
-        return inCircleFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
-    }
-
-    /**
-     * Determines whether or not a weighted point e is inside the ortho-sphere
-     * defined by the weighted points a, b, c, and d. The latter are assumed to be
-     * in CCW order, such that the method {@link #leftOfPlane} would return a
-     * positive number.
-     * <p>
-     * The weights wa, wb, wc, wd equal the squared radii of spheres associated with
-     * the corresponding points a, b, c, and d. The ortho-sphere is orthogonal to
-     * each of these four spheres.
-     * <p>
-     * If all four weights (and radii) equal zero, then the ortho-sphere is the
-     * circumsphere. In this case, the method {@link #inSphere} is more efficient.
-     */
-    public static double inOrthoSphere(double xa, double ya, double za, double wa, double xb, double yb, double zb,
-                                       double wb, double xc, double yc, double zc, double wc, double xd, double yd,
-                                       double zd, double wd, double xe, double ye, double ze, double we) {
-        double aex = xa - xe;
-        double bex = xb - xe;
-        double cex = xc - xe;
-        double dex = xd - xe;
-        double aey = ya - ye;
-        double bey = yb - ye;
-        double cey = yc - ye;
-        double dey = yd - ye;
-        double aez = za - ze;
-        double bez = zb - ze;
-        double cez = zc - ze;
-        double dez = zd - ze;
-        double aew = wa - we;
-        double bew = wb - we;
-        double cew = wc - we;
-        double dew = wd - we;
-
-        double aexbey = aex * bey;
-        double bexaey = bex * aey;
-        double ab = aexbey - bexaey;
-        double bexcey = bex * cey;
-        double cexbey = cex * bey;
-        double bc = bexcey - cexbey;
-        double cexdey = cex * dey;
-        double dexcey = dex * cey;
-        double cd = cexdey - dexcey;
-        double dexaey = dex * aey;
-        double aexdey = aex * dey;
-        double da = dexaey - aexdey;
-
-        double aexcey = aex * cey;
-        double cexaey = cex * aey;
-        double ac = aexcey - cexaey;
-        double bexdey = bex * dey;
-        double dexbey = dex * bey;
-        double bd = bexdey - dexbey;
-
-        double abc = aez * bc - bez * ac + cez * ab;
-        double bcd = bez * cd - cez * bd + dez * bc;
-        double cda = cez * da + dez * ac + aez * cd;
-        double dab = dez * ab + aez * bd + bez * da;
-
-        double alift = aex * aex + aey * aey + aez * aez;
-        double blift = bex * bex + bey * bey + bez * bez;
-        double clift = cex * cex + cey * cey + cez * cez;
-        double dlift = dex * dex + dey * dey + dez * dez;
-
-        double det = (dlift - dew) * abc - (clift - cew) * dab + ((blift - bew) * cda - (alift - aew) * bcd);
-
-        if (aez < 0.0) {
-            aez = -aez;
-        }
-        if (bez < 0.0) {
-            bez = -bez;
-        }
-        if (cez < 0.0) {
-            cez = -cez;
-        }
-        if (dez < 0.0) {
-            dez = -dez;
-        }
-        if (aew < 0.0) {
-            aew = -aew;
-        }
-        if (bew < 0.0) {
-            bew = -bew;
-        }
-        if (cew < 0.0) {
-            cew = -cew;
-        }
-        if (dew < 0.0) {
-            dew = -dew;
-        }
-        if (aexbey < 0.0) {
-            aexbey = -aexbey;
-        }
-        if (bexaey < 0.0) {
-            bexaey = -bexaey;
-        }
-        if (bexcey < 0.0) {
-            bexcey = -bexcey;
-        }
-        if (cexbey < 0.0) {
-            cexbey = -cexbey;
-        }
-        if (cexdey < 0.0) {
-            cexdey = -cexdey;
-        }
-        if (dexcey < 0.0) {
-            dexcey = -dexcey;
-        }
-        if (dexaey < 0.0) {
-            dexaey = -dexaey;
-        }
-        if (aexdey < 0.0) {
-            aexdey = -aexdey;
-        }
-        if (aexcey < 0.0) {
-            aexcey = -aexcey;
-        }
-        if (cexaey < 0.0) {
-            cexaey = -cexaey;
-        }
-        if (bexdey < 0.0) {
-            bexdey = -bexdey;
-        }
-        if (dexbey < 0.0) {
-            dexbey = -dexbey;
-        }
-        double permanent = ((cexdey + dexcey) * bez + (dexbey + bexdey) * cez + (bexcey + cexbey) * dez) * (alift + aew)
-        + ((dexaey + aexdey) * cez + (aexcey + cexaey) * dez + (cexdey + dexcey) * aez) * (blift + bew)
-        + ((aexbey + bexaey) * dez + (bexdey + dexbey) * aez + (dexaey + aexdey) * bez) * (clift + cew)
-        + ((bexcey + cexbey) * aez + (cexaey + aexcey) * bez + (aexbey + bexaey) * cez) * (dlift + dew);
-        double errbound = IOSERRBOUND * permanent;
-        if (det > errbound || -det > errbound) {
-            return det;
-        }
-
-        return inOrthoSphereExact(xa, ya, za, wa, xb, yb, zb, wb, xc, yc, zc, wc, xd, yd, zd, wd, xe, ye, ze, we);
-    }
-
-    /**
-     * Determines whether or not a weighted point e is inside the ortho-sphere
-     * defined by the weighted points a, b, c, and d. The latter are assumed to be
-     * in CCW order, such that the method {@link #leftOfPlane} would return a
-     * positive number.
-     */
-    public static double inOrthoSphere(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
-        return inOrthoSphere(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3], pd[0],
-                             pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
-    }
-
-    /**
-     * Determines whether or not a weighted point e is inside the ortho-sphere
-     * defined by the weighted points a, b, c, and d. The latter are assumed to be
-     * in CCW order, such that the method {@link #leftOfPlane} would return a
-     * positive number.
-     */
-    public static double inOrthoSphere(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
-        return inOrthoSphere(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3], pd[0],
-                             pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
-    }
-
-    /**
-     * Determines whether or not a weighted point e is inside the ortho-sphere
-     * defined by the weighted points a, b, c, and d. The latter are assumed to be
-     * in CCW order, such that the method {@link #leftOfPlane} would return a
-     * positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     */
-    public static double inOrthoSphereFast(double xa, double ya, double za, double wa, double xb, double yb, double zb,
-                                           double wb, double xc, double yc, double zc, double wc, double xd, double yd,
-                                           double zd, double wd, double xe, double ye, double ze, double we) {
-        double aex = xa - xe;
-        double bex = xb - xe;
-        double cex = xc - xe;
-        double dex = xd - xe;
-        double aey = ya - ye;
-        double bey = yb - ye;
-        double cey = yc - ye;
-        double dey = yd - ye;
-        double aez = za - ze;
-        double bez = zb - ze;
-        double cez = zc - ze;
-        double dez = zd - ze;
-        double aew = wa - we;
-        double bew = wb - we;
-        double cew = wc - we;
-        double dew = wd - we;
-
-        double ab = aex * bey - bex * aey;
-        double bc = bex * cey - cex * bey;
-        double cd = cex * dey - dex * cey;
-        double da = dex * aey - aex * dey;
-
-        double ac = aex * cey - cex * aey;
-        double bd = bex * dey - dex * bey;
-
-        double abc = aez * bc - bez * ac + cez * ab;
-        double bcd = bez * cd - cez * bd + dez * bc;
-        double cda = cez * da + dez * ac + aez * cd;
-        double dab = dez * ab + aez * bd + bez * da;
-
-        double alift = aex * aex + aey * aey + aez * aez - aew;
-        double blift = bex * bex + bey * bey + bez * bez - bew;
-        double clift = cex * cex + cey * cey + cez * cez - cew;
-        double dlift = dex * dex + dey * dey + dez * dez - dew;
-
-        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
-    }
-
-    /**
-     * Determines whether or not a weighted point e is inside the ortho-sphere
-     * defined by the weighted points a, b, c, and d. The latter are assumed to be
-     * in CCW order, such that the method {@link #leftOfPlane} would return a
-     * positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     */
-    public static double inOrthoSphereFast(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
-        return inOrthoSphereFast(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3],
-                                 pd[0], pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
-    }
-
-    /**
-     * Determines whether or not a weighted point e is inside the ortho-sphere
-     * defined by the weighted points a, b, c, and d. The latter are assumed to be
-     * in CCW order, such that the method {@link #leftOfPlane} would return a
-     * positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     */
-    public static double inOrthoSphereFast(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
-        return inOrthoSphereFast(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3],
-                                 pd[0], pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
-    }
-
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static double inSphere(double xa, double ya, double za, double xb, double yb, double zb, double xc,
-                                  double yc, double zc, double xd, double yd, double zd, double xe, double ye,
-                                  double ze) {
-        double aex = xa - xe;
-        double bex = xb - xe;
-        double cex = xc - xe;
-        double dex = xd - xe;
-        double aey = ya - ye;
-        double bey = yb - ye;
-        double cey = yc - ye;
-        double dey = yd - ye;
-        double aez = za - ze;
-        double bez = zb - ze;
-        double cez = zc - ze;
-        double dez = zd - ze;
-
-        double aexbey = aex * bey;
-        double bexaey = bex * aey;
-        double ab = aexbey - bexaey;
-        double bexcey = bex * cey;
-        double cexbey = cex * bey;
-        double bc = bexcey - cexbey;
-        double cexdey = cex * dey;
-        double dexcey = dex * cey;
-        double cd = cexdey - dexcey;
-        double dexaey = dex * aey;
-        double aexdey = aex * dey;
-        double da = dexaey - aexdey;
-
-        double aexcey = aex * cey;
-        double cexaey = cex * aey;
-        double ac = aexcey - cexaey;
-        double bexdey = bex * dey;
-        double dexbey = dex * bey;
-        double bd = bexdey - dexbey;
-
-        double abc = aez * bc - bez * ac + cez * ab;
-        double bcd = bez * cd - cez * bd + dez * bc;
-        double cda = cez * da + dez * ac + aez * cd;
-        double dab = dez * ab + aez * bd + bez * da;
-
-        double alift = aex * aex + aey * aey + aez * aez;
-        double blift = bex * bex + bey * bey + bez * bez;
-        double clift = cex * cex + cey * cey + cez * cez;
-        double dlift = dex * dex + dey * dey + dez * dez;
-
-        double det = dlift * abc - clift * dab + (blift * cda - alift * bcd);
-
-        if (aez < 0.0) {
-            aez = -aez;
-        }
-        if (bez < 0.0) {
-            bez = -bez;
-        }
-        if (cez < 0.0) {
-            cez = -cez;
-        }
-        if (dez < 0.0) {
-            dez = -dez;
-        }
-        if (aexbey < 0.0) {
-            aexbey = -aexbey;
-        }
-        if (bexaey < 0.0) {
-            bexaey = -bexaey;
-        }
-        if (bexcey < 0.0) {
-            bexcey = -bexcey;
-        }
-        if (cexbey < 0.0) {
-            cexbey = -cexbey;
-        }
-        if (cexdey < 0.0) {
-            cexdey = -cexdey;
-        }
-        if (dexcey < 0.0) {
-            dexcey = -dexcey;
-        }
-        if (dexaey < 0.0) {
-            dexaey = -dexaey;
-        }
-        if (aexdey < 0.0) {
-            aexdey = -aexdey;
-        }
-        if (aexcey < 0.0) {
-            aexcey = -aexcey;
-        }
-        if (cexaey < 0.0) {
-            cexaey = -cexaey;
-        }
-        if (bexdey < 0.0) {
-            bexdey = -bexdey;
-        }
-        if (dexbey < 0.0) {
-            dexbey = -dexbey;
-        }
-        double permanent = ((cexdey + dexcey) * bez + (dexbey + bexdey) * cez + (bexcey + cexbey) * dez) * alift
-        + ((dexaey + aexdey) * cez + (aexcey + cexaey) * dez + (cexdey + dexcey) * aez) * blift
-        + ((aexbey + bexaey) * dez + (bexdey + dexbey) * aez + (dexaey + aexdey) * bez) * clift
-        + ((bexcey + cexbey) * aez + (cexaey + aexcey) * bez + (aexbey + bexaey) * cez) * dlift;
-        double errbound = INSERRBOUND * permanent;
-        if (det > errbound || -det > errbound) {
-            return det;
-        }
-
-        return inSphereExact(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd, xe, ye, ze);
-    }
-
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static double inSphere(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
-        return inSphere(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
-                        pe[1], pe[2]);
-    }
-
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * 
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static double inSphere(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
-        return inSphere(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
-                        pe[1], pe[2]);
-    }
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     *
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static float inSphereFast(float xa, float ya, float za, float xb, float yb, float zb, float xc,
-                                      float yc, float zc, float xd, float yd, float zd, float xe, float ye,
-                                      float ze) {
-        float aex = xa - xe;
-        float bex = xb - xe;
-        float cex = xc - xe;
-        float dex = xd - xe;
-        float aey = ya - ye;
-        float bey = yb - ye;
-        float cey = yc - ye;
-        float dey = yd - ye;
-        float aez = za - ze;
-        float bez = zb - ze;
-        float cez = zc - ze;
-        float dez = zd - ze;
-
-        float ab = aex * bey - bex * aey;
-        float bc = bex * cey - cex * bey;
-        float cd = cex * dey - dex * cey;
-        float da = dex * aey - aex * dey;
-
-        float ac = aex * cey - cex * aey;
-        float bd = bex * dey - dex * bey;
-
-        float abc = aez * bc - bez * ac + cez * ab;
-        float bcd = bez * cd - cez * bd + dez * bc;
-        float cda = cez * da + dez * ac + aez * cd;
-        float dab = dez * ab + aez * bd + bez * da;
-
-        float alift = aex * aex + aey * aey + aez * aez;
-        float blift = bex * bex + bey * bey + bez * bez;
-        float clift = cex * cex + cey * cey + cez * cez;
-        float dlift = dex * dex + dey * dey + dez * dez;
-
-        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
-    }
-
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static double inSphereFast(double xa, double ya, double za, double xb, double yb, double zb, double xc,
-                                      double yc, double zc, double xd, double yd, double zd, double xe, double ye,
-                                      double ze) {
-        double aex = xa - xe;
-        double bex = xb - xe;
-        double cex = xc - xe;
-        double dex = xd - xe;
-        double aey = ya - ye;
-        double bey = yb - ye;
-        double cey = yc - ye;
-        double dey = yd - ye;
-        double aez = za - ze;
-        double bez = zb - ze;
-        double cez = zc - ze;
-        double dez = zd - ze;
-
-        double ab = aex * bey - bex * aey;
-        double bc = bex * cey - cex * bey;
-        double cd = cex * dey - dex * cey;
-        double da = dex * aey - aex * dey;
-
-        double ac = aex * cey - cex * aey;
-        double bd = bex * dey - dex * bey;
-
-        double abc = aez * bc - bez * ac + cez * ab;
-        double bcd = bez * cd - cez * bd + dez * bc;
-        double cda = cez * da + dez * ac + aez * cd;
-        double dab = dez * ab + aez * bd + bez * da;
-
-        double alift = aex * aex + aey * aey + aez * aez;
-        double blift = bex * bex + bey * bey + bez * bez;
-        double clift = cex * cex + cey * cey + cez * cez;
-        double dlift = dex * dex + dey * dey + dez * dez;
-
-        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
-    }
-
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static double inSphereFast(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
-        return inSphereFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
-                            pe[1], pe[2]);
-    }
-
-    /**
-     * Determines if a point e is inside the sphere defined by the points a, b, c,
-     * and d. The latter are assumed to be in CCW order, such that the method
-     * {@link #leftOfPlane} would return a positive number.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if inside the sphere; negative, if outside the sphere;
-     *         zero, otherwise.
-     */
-    public static double inSphereFast(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
-        return inSphereFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
-                            pe[1], pe[2]);
-    }
-
-    /**
-     * Determines if a point c is left of the line defined by the points a and b.
-     * This is equivalent to determining whether the points a, b, and c are in
-     * counter-clockwise (CCW) order.
-     * 
-     * @return positive, if left of line; negative, if right of line; zero,
-     *         otherwise.
-     */
-    public static double leftOfLine(double xa, double ya, double xb, double yb, double xc, double yc) {
-        double detleft = (xa - xc) * (yb - yc);
-        double detright = (ya - yc) * (xb - xc);
-        double det = detleft - detright;
-        double detsum;
-        if (detleft > 0.0) {
-            if (detright <= 0.0) {
-                return det;
-            } else {
-                detsum = detleft + detright;
-            }
-        } else if (detleft < 0.0) {
-            if (detright >= 0.0) {
-                return det;
-            } else {
-                detsum = -detleft - detright;
-            }
-        } else {
-            return det;
-        }
-        double errbound = O2DERRBOUND * detsum;
-        if (det >= errbound || -det >= errbound) {
-            return det;
-        }
-
-        return leftOfLineExact(xa, ya, xb, yb, xc, yc);
-    }
-
-    /**
-     * Determines if a point c is left of the line defined by the points a and b.
-     * This is equivalent to determining whether the points a, b, and c are in
-     * counter-clockwise (CCW) order.
-     * 
-     * @return positive, if left of line; negative, if right of line; zero,
-     *         otherwise.
-     */
-    public static double leftOfLine(double[] pa, double[] pb, double[] pc) {
-        return leftOfLine(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
-    }
-
-    /**
-     * Determines if a point c is left of the line defined by the points a and b.
-     * This is equivalent to determining whether the points a, b, and c are in
-     * counter-clockwise (CCW) order.
-     * 
-     * @return positive, if left of line; negative, if right of line; zero,
-     *         otherwise.
-     */
-    public static double leftOfLine(float[] pa, float[] pb, float[] pc) {
-        return leftOfLine(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
-    }
-
-    /**
-     * Determines if a point c is left of the line defined by the points a and b.
-     * This is equivalent to determining whether the points a, b, and c are in
-     * counter-clockwise (CCW) order.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if left of line; negative, if right of line; zero,
-     *         otherwise.
-     */
-    public static double leftOfLineFast(double xa, double ya, double xb, double yb, double xc, double yc) {
-        double acx = xa - xc;
-        double bcx = xb - xc;
-        double acy = ya - yc;
-        double bcy = yb - yc;
-        return acx * bcy - acy * bcx;
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    // private
-
-    ///////////////////////////////////////////////////////////////////////////
-    // Java implementation of Jonathan Shewchuk's functions for arbitrary
-    // floating-point arithmetic and fast robust geometric predicates.
-    // Only Shewchuk's "slow" exact methods are implemented here.
-    // If the methods above lack sufficient precision, then they call
-    // the slow methods below. This is equivalent to using only stages A
-    // and D of Shewchuk's adaptive methods with stages A, B, C, and D.
-    // Note that the error bounds used here to determine whether an fast
-    // method is accurate are simpler and more conservative than Shewchuk's.
-
-    /**
-     * Determines if a point c is left of the line defined by the points a and b.
-     * This is equivalent to determining whether the points a, b, and c are in
-     * counter-clockwise (CCW) order.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if left of line; negative, if right of line; zero,
-     *         otherwise.
-     */
-    public static double leftOfLineFast(double[] pa, double[] pb, double[] pc) {
-        return leftOfLineFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
-    }
-
-    /**
-     * Determines if a point c is left of the line defined by the points a and b.
-     * This is equivalent to determining whether the points a, b, and c are in
-     * counter-clockwise (CCW) order.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if left of line; negative, if right of line; zero,
-     *         otherwise.
-     */
-    public static double leftOfLineFast(float[] pa, float[] pb, float[] pc) {
-        return leftOfLineFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
-    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * 
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-    public static double leftOfPlane(double xa, double ya, double za, double xb, double yb, double zb, double xc,
-                                     double yc, double zc, double xd, double yd, double zd) {
-        double adx = xa - xd;
-        double bdx = xb - xd;
-        double cdx = xc - xd;
-        double ady = ya - yd;
-        double bdy = yb - yd;
-        double cdy = yc - yd;
-        double adz = za - zd;
-        double bdz = zb - zd;
-        double cdz = zc - zd;
-
-        double bdxcdy = bdx * cdy;
-        double cdxbdy = cdx * bdy;
-
-        double cdxady = cdx * ady;
-        double adxcdy = adx * cdy;
-
-        double adxbdy = adx * bdy;
-        double bdxady = bdx * ady;
-
-        double det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
-
-        if (adz < 0.0) {
-            adz = -adz;
-        }
-        if (bdz < 0.0) {
-            bdz = -bdz;
-        }
-        if (cdz < 0.0) {
-            cdz = -cdz;
-        }
-        if (bdxcdy < 0.0) {
-            bdxcdy = -bdxcdy;
-        }
-        if (cdxbdy < 0.0) {
-            cdxbdy = -cdxbdy;
-        }
-        if (cdxady < 0.0) {
-            cdxady = -cdxady;
-        }
-        if (adxcdy < 0.0) {
-            adxcdy = -adxcdy;
-        }
-        if (adxbdy < 0.0) {
-            adxbdy = -adxbdy;
-        }
-        if (bdxady < 0.0) {
-            bdxady = -bdxady;
-        }
-        double permanent = (bdxcdy + cdxbdy) * adz + (cdxady + adxcdy) * bdz + (adxbdy + bdxady) * cdz;
-        double errbound = O3DERRBOUND * permanent;
-        if (det > errbound || -det > errbound) {
-            return det;
-        }
-
-        return leftOfPlaneExact(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd);
-    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * 
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-    public static double leftOfPlane(double[] pa, double[] pb, double[] pc, double[] pd) {
-        return leftOfPlane(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
-    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * 
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-    public static double leftOfPlane(float[] pa, float[] pb, float[] pc, float[] pd) {
-        return leftOfPlane(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
-    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-    public static double leftOfPlaneFast(double xa, double ya, double za, double xb, double yb, double zb, double xc,
-                                         double yc, double zc, double xd, double yd, double zd) {
-        double adx = xa - xd;
-        double bdx = xb - xd;
-        double cdx = xc - xd;
-        double ady = ya - yd;
-        double bdy = yb - yd;
-        double cdy = yc - yd;
-        double adz = za - zd;
-        double bdz = zb - zd;
-        double cdz = zc - zd;
-
-        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-    }
-
-
-    public static float leftOfPlaneFastFloat(float xa, float ya, float za, float xb, float yb, float zb, float xc,
-                                         float yc, float zc, float xd, float yd, float zd) {
-        float adx = xa - xd;
-        float bdx = xb - xd;
-        float cdx = xc - xd;
-        float ady = ya - yd;
-        float bdy = yb - yd;
-        float cdy = yc - yd;
-        float adz = za - zd;
-        float bdz = zb - zd;
-        float cdz = zc - zd;
-
-        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     *
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-//    public static float leftOfPlaneFast(float xa, float ya, float za, float xb, float yb, float zb, float xc,
-//                                         float yc, float zc, float xd, float yd, float zd) {
-//        float adx = xa - xd;
-//        float bdx = xb - xd;
-//        float cdx = xc - xd;
-//        float ady = ya - yd;
-//        float bdy = yb - yd;
-//        float cdy = yc - yd;
-//        float adz = za - zd;
-//        float bdz = zb - zd;
-//        float cdz = zc - zd;
-//
-//        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
-//    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-    public static double leftOfPlaneFast(double[] pa, double[] pb, double[] pc, double[] pd) {
-        return leftOfPlaneFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
-    }
-
-    /**
-     * Determines if a point d is left of the plane defined by the points a, b, and
-     * c. The latter are assumed to be in CCW order, as viewed from the right side
-     * of the plane.
-     * <p>
-     * <em>Note: this fast method may return an incorrect result.</em>
-     * 
-     * @return positive, if left of plane; negative, if right of plane; zero,
-     *         otherwise.
-     */
-    public static double leftOfPlaneFast(float[] pa, float[] pb, float[] pc, float[] pd) {
-        return leftOfPlaneFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
-    }
-
-    /**
-     * Computes the sum of two expansions h = e+f, eliminating zero components from
-     * output expansion. If round-to-even is used (as with IEEE 754), maintains the
-     * strongly nonoverlapping property. (That is, if e is strongly nonoverlapping,
-     * h will be also.) Does NOT maintain the nonoverlapping or nonadjacent
-     * properties. The expansion h cannot be aliased with e or f.
+     * Computes the sum of two expansions h = e+f, eliminating zero components from output expansion. If round-to-even
+     * is used (as with IEEE 754), maintains the strongly nonoverlapping property. (That is, if e is strongly
+     * nonoverlapping, h will be also.) Does NOT maintain the nonoverlapping or nonadjacent properties. The expansion h
+     * cannot be aliased with e or f.
      */
     private static int expansionSumZeroElimFast(int elen, double[] e, int flen, double[] f, double[] h) {
         double q, qnew, hh;
@@ -1357,12 +369,138 @@ public final class Geometry {
         return hindex;
     }
 
+    public static Point3d[] findLineSphereIntersections(Tuple3d linePoint0, Tuple3d linePoint1, Tuple3d circleCenter,
+                                                        double circleRadius) {
+        // http://www.codeproject.com/Articles/19799/Simple-Ray-Tracing-in-C-Part-II-Triangles-Intersec
+
+        double cx = circleCenter.x;
+        double cy = circleCenter.y;
+        double cz = circleCenter.z;
+
+        double px = linePoint0.x;
+        double py = linePoint0.y;
+        double pz = linePoint0.z;
+
+        double vx = linePoint1.x - px;
+        double vy = linePoint1.y - py;
+        double vz = linePoint1.z - pz;
+
+        double A = vx * vx + vy * vy + vz * vz;
+        double B = 2.0 * (px * vx + py * vy + pz * vz - vx * cx - vy * cy - vz * cz);
+        double C = px * px - 2 * px * cx + cx * cx + py * py - 2 * py * cy + cy * cy + pz * pz - 2 * pz * cz + cz * cz
+        - circleRadius * circleRadius;
+
+        // discriminant
+        double D = B * B - 4 * A * C;
+
+        if (D < 0) {
+            return new Point3d[0];
+        }
+
+        double t1 = (-B - Math.sqrt(D)) / (2.0 * A);
+
+        Point3d solution1 = new Point3d(linePoint0.x * (1 - t1) + t1 * linePoint1.x,
+                                        linePoint0.y * (1 - t1) + t1 * linePoint1.y,
+                                        linePoint0.z * (1 - t1) + t1 * linePoint1.z);
+        if (D == 0) {
+            return new Point3d[] { solution1 };
+        }
+
+        double t2 = (-B + Math.sqrt(D)) / (2.0 * A);
+        Point3d solution2 = new Point3d(linePoint0.x * (1 - t2) + t2 * linePoint1.x,
+                                        linePoint0.y * (1 - t2) + t2 * linePoint1.y,
+                                        linePoint0.z * (1 - t2) + t2 * linePoint1.z);
+
+        // prefer a solution that's on the line segment itself
+
+        if (Math.abs(t1 - 0.5) < Math.abs(t2 - 0.5)) {
+            return new Point3d[] { solution1, solution2 };
+        }
+
+        return new Point3d[] { solution2, solution1 };
+    }
+
     /**
-     * Slow exact in-circle test. Returns a positive value if the point pd lies
-     * inside the circle passing through pa, pb, and pc; a negative value if it lies
-     * outside; and zero if the four points are cocircular. The points pa, pb, and
-     * pc must be in counterclockwise order, or the sign of the result will be
-     * reversed.
+     * Determines if a point d is inside the circle defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, such that the method {@link #leftOfLine} would return a positive number.
+     *
+     * @return positive, if inside the circle; negative, if outside the circle; zero, otherwise.
+     */
+    public static double inCircle(double xa, double ya, double xb, double yb, double xc, double yc, double xd,
+                                  double yd) {
+        double adx = xa - xd;
+        double bdx = xb - xd;
+        double cdx = xc - xd;
+        double ady = ya - yd;
+        double bdy = yb - yd;
+        double cdy = yc - yd;
+
+        double bdxcdy = bdx * cdy;
+        double cdxbdy = cdx * bdy;
+        double alift = adx * adx + ady * ady;
+
+        double cdxady = cdx * ady;
+        double adxcdy = adx * cdy;
+        double blift = bdx * bdx + bdy * bdy;
+
+        double adxbdy = adx * bdy;
+        double bdxady = bdx * ady;
+        double clift = cdx * cdx + cdy * cdy;
+
+        double det = alift * (bdxcdy - cdxbdy) + blift * (cdxady - adxcdy) + clift * (adxbdy - bdxady);
+
+        if (bdxcdy < 0.0) {
+            bdxcdy = -bdxcdy;
+        }
+        if (cdxbdy < 0.0) {
+            cdxbdy = -cdxbdy;
+        }
+        if (adxcdy < 0.0) {
+            adxcdy = -adxcdy;
+        }
+        if (cdxady < 0.0) {
+            cdxady = -cdxady;
+        }
+        if (adxbdy < 0.0) {
+            adxbdy = -adxbdy;
+        }
+        if (bdxady < 0.0) {
+            bdxady = -bdxady;
+        }
+
+        double permanent = alift * (bdxcdy + cdxbdy) + blift * (cdxady + adxcdy) + clift * (adxbdy + bdxady);
+        double errbound = INCERRBOUND * permanent;
+        if (det > errbound || -det > errbound) {
+            return det;
+        }
+
+        return inCircleExact(xa, ya, xb, yb, xc, yc, xd, yd);
+    }
+
+    /**
+     * Determines if a point d is inside the circle defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, such that the method {@link #leftOfLine} would return a positive number.
+     *
+     * @return positive, if inside the circle; negative, if outside the circle; zero, otherwise.
+     */
+    public static double inCircle(double[] pa, double[] pb, double[] pc, double[] pd) {
+        return inCircle(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
+    }
+
+    /**
+     * Determines if a point d is inside the circle defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, such that the method {@link #leftOfLine} would return a positive number.
+     *
+     * @return positive, if inside the circle; negative, if outside the circle; zero, otherwise.
+     */
+    public static double inCircle(float[] pa, float[] pb, float[] pc, float[] pd) {
+        return inCircle(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
+    }
+
+    /**
+     * Slow exact in-circle test. Returns a positive value if the point pd lies inside the circle passing through pa,
+     * pb, and pc; a negative value if it lies outside; and zero if the four points are cocircular. The points pa, pb,
+     * and pc must be in counterclockwise order, or the sign of the result will be reversed.
      */
     private static double inCircleExact(double xa, double ya, double xb, double yb, double xc, double yc, double xd,
                                         double yd) {
@@ -1507,12 +645,216 @@ public final class Geometry {
     }
 
     /**
-     * Slow exact 3D in-ortho-sphere test. Returns a positive value if the weighted
-     * point pe lies inside the ortho-sphere defined by the weighted points pa, pb,
-     * pc, and pd; a negative value if it lies outside; and zero if the five points
-     * lie on the same ortho-sphere. The points pa, pb, pc, and pd must be ordered
-     * so that they have a positive orientation (as defined by leftOfPlaneExact), or
-     * the sign of the result will be reversed.
+     * Determines if a point d is inside the circle defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, such that the method {@link #leftOfLine} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the circle; negative, if outside the circle; zero, otherwise.
+     */
+    public static double inCircleFast(double xa, double ya, double xb, double yb, double xc, double yc, double xd,
+                                      double yd) {
+        double adx = xa - xd;
+        double ady = ya - yd;
+        double bdx = xb - xd;
+        double bdy = yb - yd;
+        double cdx = xc - xd;
+        double cdy = yc - yd;
+
+        double abdet = adx * bdy - bdx * ady;
+        double bcdet = bdx * cdy - cdx * bdy;
+        double cadet = cdx * ady - adx * cdy;
+        double alift = adx * adx + ady * ady;
+        double blift = bdx * bdx + bdy * bdy;
+        double clift = cdx * cdx + cdy * cdy;
+
+        return alift * bcdet + blift * cadet + clift * abdet;
+    }
+
+    /**
+     * Determines if a point d is inside the circle defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, such that the method {@link #leftOfLine} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the circle; negative, if outside the circle; zero, otherwise.
+     */
+    public static double inCircleFast(double[] pa, double[] pb, double[] pc, double[] pd) {
+        return inCircleFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
+    }
+
+    /**
+     * Determines if a point d is inside the circle defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, such that the method {@link #leftOfLine} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the circle; negative, if outside the circle; zero, otherwise.
+     */
+    public static double inCircleFast(float[] pa, float[] pb, float[] pc, float[] pd) {
+        return inCircleFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1], pd[0], pd[1]);
+    }
+
+    /**
+     * Determines whether or not a weighted point e is inside the ortho-sphere defined by the weighted points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method {@link #leftOfPlane} would return a
+     * positive number.
+     * <p>
+     * The weights wa, wb, wc, wd equal the squared radii of spheres associated with the corresponding points a, b, c,
+     * and d. The ortho-sphere is orthogonal to each of these four spheres.
+     * <p>
+     * If all four weights (and radii) equal zero, then the ortho-sphere is the circumsphere. In this case, the method
+     * {@link #inSphere} is more efficient.
+     */
+    public static double inOrthoSphere(double xa, double ya, double za, double wa, double xb, double yb, double zb,
+                                       double wb, double xc, double yc, double zc, double wc, double xd, double yd,
+                                       double zd, double wd, double xe, double ye, double ze, double we) {
+        double aex = xa - xe;
+        double bex = xb - xe;
+        double cex = xc - xe;
+        double dex = xd - xe;
+        double aey = ya - ye;
+        double bey = yb - ye;
+        double cey = yc - ye;
+        double dey = yd - ye;
+        double aez = za - ze;
+        double bez = zb - ze;
+        double cez = zc - ze;
+        double dez = zd - ze;
+        double aew = wa - we;
+        double bew = wb - we;
+        double cew = wc - we;
+        double dew = wd - we;
+
+        double aexbey = aex * bey;
+        double bexaey = bex * aey;
+        double ab = aexbey - bexaey;
+        double bexcey = bex * cey;
+        double cexbey = cex * bey;
+        double bc = bexcey - cexbey;
+        double cexdey = cex * dey;
+        double dexcey = dex * cey;
+        double cd = cexdey - dexcey;
+        double dexaey = dex * aey;
+        double aexdey = aex * dey;
+        double da = dexaey - aexdey;
+
+        double aexcey = aex * cey;
+        double cexaey = cex * aey;
+        double ac = aexcey - cexaey;
+        double bexdey = bex * dey;
+        double dexbey = dex * bey;
+        double bd = bexdey - dexbey;
+
+        double abc = aez * bc - bez * ac + cez * ab;
+        double bcd = bez * cd - cez * bd + dez * bc;
+        double cda = cez * da + dez * ac + aez * cd;
+        double dab = dez * ab + aez * bd + bez * da;
+
+        double alift = aex * aex + aey * aey + aez * aez;
+        double blift = bex * bex + bey * bey + bez * bez;
+        double clift = cex * cex + cey * cey + cez * cez;
+        double dlift = dex * dex + dey * dey + dez * dez;
+
+        double det = (dlift - dew) * abc - (clift - cew) * dab + ((blift - bew) * cda - (alift - aew) * bcd);
+
+        if (aez < 0.0) {
+            aez = -aez;
+        }
+        if (bez < 0.0) {
+            bez = -bez;
+        }
+        if (cez < 0.0) {
+            cez = -cez;
+        }
+        if (dez < 0.0) {
+            dez = -dez;
+        }
+        if (aew < 0.0) {
+            aew = -aew;
+        }
+        if (bew < 0.0) {
+            bew = -bew;
+        }
+        if (cew < 0.0) {
+            cew = -cew;
+        }
+        if (dew < 0.0) {
+            dew = -dew;
+        }
+        if (aexbey < 0.0) {
+            aexbey = -aexbey;
+        }
+        if (bexaey < 0.0) {
+            bexaey = -bexaey;
+        }
+        if (bexcey < 0.0) {
+            bexcey = -bexcey;
+        }
+        if (cexbey < 0.0) {
+            cexbey = -cexbey;
+        }
+        if (cexdey < 0.0) {
+            cexdey = -cexdey;
+        }
+        if (dexcey < 0.0) {
+            dexcey = -dexcey;
+        }
+        if (dexaey < 0.0) {
+            dexaey = -dexaey;
+        }
+        if (aexdey < 0.0) {
+            aexdey = -aexdey;
+        }
+        if (aexcey < 0.0) {
+            aexcey = -aexcey;
+        }
+        if (cexaey < 0.0) {
+            cexaey = -cexaey;
+        }
+        if (bexdey < 0.0) {
+            bexdey = -bexdey;
+        }
+        if (dexbey < 0.0) {
+            dexbey = -dexbey;
+        }
+        double permanent = ((cexdey + dexcey) * bez + (dexbey + bexdey) * cez + (bexcey + cexbey) * dez) * (alift + aew)
+        + ((dexaey + aexdey) * cez + (aexcey + cexaey) * dez + (cexdey + dexcey) * aez) * (blift + bew)
+        + ((aexbey + bexaey) * dez + (bexdey + dexbey) * aez + (dexaey + aexdey) * bez) * (clift + cew)
+        + ((bexcey + cexbey) * aez + (cexaey + aexcey) * bez + (aexbey + bexaey) * cez) * (dlift + dew);
+        double errbound = IOSERRBOUND * permanent;
+        if (det > errbound || -det > errbound) {
+            return det;
+        }
+
+        return inOrthoSphereExact(xa, ya, za, wa, xb, yb, zb, wb, xc, yc, zc, wc, xd, yd, zd, wd, xe, ye, ze, we);
+    }
+
+    /**
+     * Determines whether or not a weighted point e is inside the ortho-sphere defined by the weighted points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method {@link #leftOfPlane} would return a
+     * positive number.
+     */
+    public static double inOrthoSphere(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
+        return inOrthoSphere(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3], pd[0],
+                             pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
+    }
+
+    /**
+     * Determines whether or not a weighted point e is inside the ortho-sphere defined by the weighted points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method {@link #leftOfPlane} would return a
+     * positive number.
+     */
+    public static double inOrthoSphere(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
+        return inOrthoSphere(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3], pd[0],
+                             pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
+    }
+
+    /**
+     * Slow exact 3D in-ortho-sphere test. Returns a positive value if the weighted point pe lies inside the
+     * ortho-sphere defined by the weighted points pa, pb, pc, and pd; a negative value if it lies outside; and zero if
+     * the five points lie on the same ortho-sphere. The points pa, pb, pc, and pd must be ordered so that they have a
+     * positive orientation (as defined by leftOfPlaneExact), or the sign of the result will be reversed.
      */
     private static double inOrthoSphereExact(double xa, double ya, double za, double wa, double xb, double yb,
                                              double zb, double wb, double xc, double yc, double zc, double wc,
@@ -1868,11 +1210,218 @@ public final class Geometry {
     }
 
     /**
-     * Slow exact 3D in-sphere test. Returns a positive value if the point pe lies
-     * inside the sphere passing through pa, pb, pc, and pd; a negative value if it
-     * lies outside; and zero if the five points are cospherical. The points pa, pb,
-     * pc, and pd must be ordered so that they have a positive orientation (as
-     * defined by leftOfPlaneExact), or the sign of the result will be reversed.
+     * Determines whether or not a weighted point e is inside the ortho-sphere defined by the weighted points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method {@link #leftOfPlane} would return a
+     * positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     */
+    public static double inOrthoSphereFast(double xa, double ya, double za, double wa, double xb, double yb, double zb,
+                                           double wb, double xc, double yc, double zc, double wc, double xd, double yd,
+                                           double zd, double wd, double xe, double ye, double ze, double we) {
+        double aex = xa - xe;
+        double bex = xb - xe;
+        double cex = xc - xe;
+        double dex = xd - xe;
+        double aey = ya - ye;
+        double bey = yb - ye;
+        double cey = yc - ye;
+        double dey = yd - ye;
+        double aez = za - ze;
+        double bez = zb - ze;
+        double cez = zc - ze;
+        double dez = zd - ze;
+        double aew = wa - we;
+        double bew = wb - we;
+        double cew = wc - we;
+        double dew = wd - we;
+
+        double ab = aex * bey - bex * aey;
+        double bc = bex * cey - cex * bey;
+        double cd = cex * dey - dex * cey;
+        double da = dex * aey - aex * dey;
+
+        double ac = aex * cey - cex * aey;
+        double bd = bex * dey - dex * bey;
+
+        double abc = aez * bc - bez * ac + cez * ab;
+        double bcd = bez * cd - cez * bd + dez * bc;
+        double cda = cez * da + dez * ac + aez * cd;
+        double dab = dez * ab + aez * bd + bez * da;
+
+        double alift = aex * aex + aey * aey + aez * aez - aew;
+        double blift = bex * bex + bey * bey + bez * bez - bew;
+        double clift = cex * cex + cey * cey + cez * cez - cew;
+        double dlift = dex * dex + dey * dey + dez * dez - dew;
+
+        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
+    }
+
+    /**
+     * Determines whether or not a weighted point e is inside the ortho-sphere defined by the weighted points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method {@link #leftOfPlane} would return a
+     * positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     */
+    public static double inOrthoSphereFast(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
+        return inOrthoSphereFast(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3],
+                                 pd[0], pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
+    }
+
+    /**
+     * Determines whether or not a weighted point e is inside the ortho-sphere defined by the weighted points a, b, c,
+     * and d. The latter are assumed to be in CCW order, such that the method {@link #leftOfPlane} would return a
+     * positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     */
+    public static double inOrthoSphereFast(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
+        return inOrthoSphereFast(pa[0], pa[1], pa[2], pa[3], pb[0], pb[1], pb[2], pb[3], pc[0], pc[1], pc[2], pc[3],
+                                 pd[0], pd[1], pd[2], pd[3], pe[0], pe[1], pe[2], pe[3]);
+    }
+
+    /**
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
+     */
+    public static double inSphere(double xa, double ya, double za, double xb, double yb, double zb, double xc,
+                                  double yc, double zc, double xd, double yd, double zd, double xe, double ye,
+                                  double ze) {
+        double aex = xa - xe;
+        double bex = xb - xe;
+        double cex = xc - xe;
+        double dex = xd - xe;
+        double aey = ya - ye;
+        double bey = yb - ye;
+        double cey = yc - ye;
+        double dey = yd - ye;
+        double aez = za - ze;
+        double bez = zb - ze;
+        double cez = zc - ze;
+        double dez = zd - ze;
+
+        double aexbey = aex * bey;
+        double bexaey = bex * aey;
+        double ab = aexbey - bexaey;
+        double bexcey = bex * cey;
+        double cexbey = cex * bey;
+        double bc = bexcey - cexbey;
+        double cexdey = cex * dey;
+        double dexcey = dex * cey;
+        double cd = cexdey - dexcey;
+        double dexaey = dex * aey;
+        double aexdey = aex * dey;
+        double da = dexaey - aexdey;
+
+        double aexcey = aex * cey;
+        double cexaey = cex * aey;
+        double ac = aexcey - cexaey;
+        double bexdey = bex * dey;
+        double dexbey = dex * bey;
+        double bd = bexdey - dexbey;
+
+        double abc = aez * bc - bez * ac + cez * ab;
+        double bcd = bez * cd - cez * bd + dez * bc;
+        double cda = cez * da + dez * ac + aez * cd;
+        double dab = dez * ab + aez * bd + bez * da;
+
+        double alift = aex * aex + aey * aey + aez * aez;
+        double blift = bex * bex + bey * bey + bez * bez;
+        double clift = cex * cex + cey * cey + cez * cez;
+        double dlift = dex * dex + dey * dey + dez * dez;
+
+        double det = dlift * abc - clift * dab + (blift * cda - alift * bcd);
+
+        if (aez < 0.0) {
+            aez = -aez;
+        }
+        if (bez < 0.0) {
+            bez = -bez;
+        }
+        if (cez < 0.0) {
+            cez = -cez;
+        }
+        if (dez < 0.0) {
+            dez = -dez;
+        }
+        if (aexbey < 0.0) {
+            aexbey = -aexbey;
+        }
+        if (bexaey < 0.0) {
+            bexaey = -bexaey;
+        }
+        if (bexcey < 0.0) {
+            bexcey = -bexcey;
+        }
+        if (cexbey < 0.0) {
+            cexbey = -cexbey;
+        }
+        if (cexdey < 0.0) {
+            cexdey = -cexdey;
+        }
+        if (dexcey < 0.0) {
+            dexcey = -dexcey;
+        }
+        if (dexaey < 0.0) {
+            dexaey = -dexaey;
+        }
+        if (aexdey < 0.0) {
+            aexdey = -aexdey;
+        }
+        if (aexcey < 0.0) {
+            aexcey = -aexcey;
+        }
+        if (cexaey < 0.0) {
+            cexaey = -cexaey;
+        }
+        if (bexdey < 0.0) {
+            bexdey = -bexdey;
+        }
+        if (dexbey < 0.0) {
+            dexbey = -dexbey;
+        }
+        double permanent = ((cexdey + dexcey) * bez + (dexbey + bexdey) * cez + (bexcey + cexbey) * dez) * alift
+        + ((dexaey + aexdey) * cez + (aexcey + cexaey) * dez + (cexdey + dexcey) * aez) * blift
+        + ((aexbey + bexaey) * dez + (bexdey + dexbey) * aez + (dexaey + aexdey) * bez) * clift
+        + ((bexcey + cexbey) * aez + (cexaey + aexcey) * bez + (aexbey + bexaey) * cez) * dlift;
+        double errbound = INSERRBOUND * permanent;
+        if (det > errbound || -det > errbound) {
+            return det;
+        }
+
+        return inSphereExact(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd, xe, ye, ze);
+    }
+
+    /**
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
+     */
+    public static double inSphere(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
+        return inSphere(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
+                        pe[1], pe[2]);
+    }
+
+    /**
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
+     */
+    public static double inSphere(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
+        return inSphere(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
+                        pe[1], pe[2]);
+    }
+
+    /**
+     * Slow exact 3D in-sphere test. Returns a positive value if the point pe lies inside the sphere passing through pa,
+     * pb, pc, and pd; a negative value if it lies outside; and zero if the five points are cospherical. The points pa,
+     * pb, pc, and pd must be ordered so that they have a positive orientation (as defined by leftOfPlaneExact), or the
+     * sign of the result will be reversed.
      */
     private static double inSphereExact(double xa, double ya, double za, double xb, double yb, double zb, double xc,
                                         double yc, double zc, double xd, double yd, double zd, double xe, double ye,
@@ -2194,20 +1743,209 @@ public final class Geometry {
     }
 
     /**
-     * Computes difference a-b, assuming that |a|&gt;=|b|. Puts result in x and
-     * error in y.
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
      */
-    /*
-     * private strictfp static void twoDiffFast(double a, double b, Two t) { double
-     * x = a-b; double bvirt = a-x; t.x = x; t.y = bvirt-b; }
-     */
+    public static float inSphereFast(float xa, float ya, float za, float xb, float yb, float zb, float xc, float yc,
+                                     float zc, float xd, float yd, float zd, float xe, float ye, float ze) {
+        float aex = xa - xe;
+        float bex = xb - xe;
+        float cex = xc - xe;
+        float dex = xd - xe;
+        float aey = ya - ye;
+        float bey = yb - ye;
+        float cey = yc - ye;
+        float dey = yd - ye;
+        float aez = za - ze;
+        float bez = zb - ze;
+        float cez = zc - ze;
+        float dez = zd - ze;
+
+        float ab = aex * bey - bex * aey;
+        float bc = bex * cey - cex * bey;
+        float cd = cex * dey - dex * cey;
+        float da = dex * aey - aex * dey;
+
+        float ac = aex * cey - cex * aey;
+        float bd = bex * dey - dex * bey;
+
+        float abc = aez * bc - bez * ac + cez * ab;
+        float bcd = bez * cd - cez * bd + dez * bc;
+        float cda = cez * da + dez * ac + aez * cd;
+        float dab = dez * ab + aez * bd + bez * da;
+
+        float alift = aex * aex + aey * aey + aez * aez;
+        float blift = bex * bex + bey * bey + bez * bez;
+        float clift = cex * cex + cey * cey + cez * cez;
+        float dlift = dex * dex + dey * dey + dez * dez;
+
+        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
+    }
 
     /**
-     * Slow exact 2D orientation test. Returns a positive value if the points pa,
-     * pb, and pc occur in counterclockwise order; a negative value if they occur in
-     * clockwise order; and zero if they are collinear. The result is also a rough
-     * approximation of twice the signed area of the triangle defined by the three
-     * points.
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
+     */
+    public static double inSphereFast(double xa, double ya, double za, double xb, double yb, double zb, double xc,
+                                      double yc, double zc, double xd, double yd, double zd, double xe, double ye,
+                                      double ze) {
+        double aex = xa - xe;
+        double bex = xb - xe;
+        double cex = xc - xe;
+        double dex = xd - xe;
+        double aey = ya - ye;
+        double bey = yb - ye;
+        double cey = yc - ye;
+        double dey = yd - ye;
+        double aez = za - ze;
+        double bez = zb - ze;
+        double cez = zc - ze;
+        double dez = zd - ze;
+
+        double ab = aex * bey - bex * aey;
+        double bc = bex * cey - cex * bey;
+        double cd = cex * dey - dex * cey;
+        double da = dex * aey - aex * dey;
+
+        double ac = aex * cey - cex * aey;
+        double bd = bex * dey - dex * bey;
+
+        double abc = aez * bc - bez * ac + cez * ab;
+        double bcd = bez * cd - cez * bd + dez * bc;
+        double cda = cez * da + dez * ac + aez * cd;
+        double dab = dez * ab + aez * bd + bez * da;
+
+        double alift = aex * aex + aey * aey + aez * aez;
+        double blift = bex * bex + bey * bey + bez * bez;
+        double clift = cex * cex + cey * cey + cez * cez;
+        double dlift = dex * dex + dey * dey + dez * dez;
+
+        return dlift * abc - clift * dab + (blift * cda - alift * bcd);
+    }
+
+    /**
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
+     */
+    public static double inSphereFast(double[] pa, double[] pb, double[] pc, double[] pd, double[] pe) {
+        return inSphereFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
+                            pe[1], pe[2]);
+    }
+
+    /**
+     * Determines if a point e is inside the sphere defined by the points a, b, c, and d. The latter are assumed to be
+     * in CCW order, such that the method {@link #leftOfPlane} would return a positive number.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if inside the sphere; negative, if outside the sphere; zero, otherwise.
+     */
+    public static double inSphereFast(float[] pa, float[] pb, float[] pc, float[] pd, float[] pe) {
+        return inSphereFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2], pe[0],
+                            pe[1], pe[2]);
+    }
+
+    public static boolean insideTetrahedron(Tuple3f testPoint, Tuple3f v0, Tuple3f v1, Tuple3f v2, Tuple3f v3) {
+        var a = new Point3f(v0);
+        a.sub(testPoint);
+        var b = new Point3f(v1);
+        b.sub(testPoint);
+        var c = new Point3f(v2);
+        c.sub(testPoint);
+        var d = new Point3f(v3);
+        d.sub(testPoint);
+
+        float detA = det3x3(b, c, d);
+        float detB = det3x3(a, c, d);
+        float detC = det3x3(a, b, d);
+        float detD = det3x3(a, b, c);
+
+        boolean condition1 = detA > 0.0f && detB < 0.0f && detC > 0.0f && detD < 0.0f;
+        boolean condition2 = detA < 0.0f && detB > 0.0f && detC < 0.0f && detD > 0.0f;
+
+        return condition1 || condition2;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+    // Java implementation of Jonathan Shewchuk's functions for arbitrary
+    // floating-point arithmetic and fast robust geometric predicates.
+    // Only Shewchuk's "slow" exact methods are implemented here.
+    // If the methods above lack sufficient precision, then they call
+    // the slow methods below. This is equivalent to using only stages A
+    // and D of Shewchuk's adaptive methods with stages A, B, C, and D.
+    // Note that the error bounds used here to determine whether an fast
+    // method is accurate are simpler and more conservative than Shewchuk's.
+
+    /**
+     * Determines if a point c is left of the line defined by the points a and b. This is equivalent to determining
+     * whether the points a, b, and c are in counter-clockwise (CCW) order.
+     *
+     * @return positive, if left of line; negative, if right of line; zero, otherwise.
+     */
+    public static double leftOfLine(double xa, double ya, double xb, double yb, double xc, double yc) {
+        double detleft = (xa - xc) * (yb - yc);
+        double detright = (ya - yc) * (xb - xc);
+        double det = detleft - detright;
+        double detsum;
+        if (detleft > 0.0) {
+            if (detright <= 0.0) {
+                return det;
+            } else {
+                detsum = detleft + detright;
+            }
+        } else if (detleft < 0.0) {
+            if (detright >= 0.0) {
+                return det;
+            } else {
+                detsum = -detleft - detright;
+            }
+        } else {
+            return det;
+        }
+        double errbound = O2DERRBOUND * detsum;
+        if (det >= errbound || -det >= errbound) {
+            return det;
+        }
+
+        return leftOfLineExact(xa, ya, xb, yb, xc, yc);
+    }
+
+    /**
+     * Determines if a point c is left of the line defined by the points a and b. This is equivalent to determining
+     * whether the points a, b, and c are in counter-clockwise (CCW) order.
+     *
+     * @return positive, if left of line; negative, if right of line; zero, otherwise.
+     */
+    public static double leftOfLine(double[] pa, double[] pb, double[] pc) {
+        return leftOfLine(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
+    }
+
+    /**
+     * Determines if a point c is left of the line defined by the points a and b. This is equivalent to determining
+     * whether the points a, b, and c are in counter-clockwise (CCW) order.
+     *
+     * @return positive, if left of line; negative, if right of line; zero, otherwise.
+     */
+    public static double leftOfLine(float[] pa, float[] pb, float[] pc) {
+        return leftOfLine(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
+    }
+
+    /**
+     * Slow exact 2D orientation test. Returns a positive value if the points pa, pb, and pc occur in counterclockwise
+     * order; a negative value if they occur in clockwise order; and zero if they are collinear. The result is also a
+     * rough approximation of twice the signed area of the triangle defined by the three points.
      */
     private static double leftOfLineExact(double xa, double ya, double xb, double yb, double xc, double yc) {
         Two t = new Two();
@@ -2238,23 +1976,160 @@ public final class Geometry {
     }
 
     /**
-     * Computes the product a*b. Puts the product in x and the error in y.
+     * Determines if a point c is left of the line defined by the points a and b. This is equivalent to determining
+     * whether the points a, b, and c are in counter-clockwise (CCW) order.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of line; negative, if right of line; zero, otherwise.
      */
-    /*
-     * private strictfp static void twoProduct(double a, double b, Two t) { double x
-     * = a*b; split(a,t); double ahi = t.x; double alo = t.y; split(b,t); double bhi
-     * = t.x; double blo = t.y; double err1 = x-(ahi*bhi); double err2 =
-     * err1-(alo*bhi); double err3 = err2-(ahi*blo); t.x = x; t.y = (alo*blo)-err3;
-     * }
-     */
+    public static double leftOfLineFast(double xa, double ya, double xb, double yb, double xc, double yc) {
+        double acx = xa - xc;
+        double bcx = xb - xc;
+        double acy = ya - yc;
+        double bcy = yb - yc;
+        return acx * bcy - acy * bcx;
+    }
 
     /**
-     * Slow exact 3D orientation test. Returns a positive value if the point d lies
-     * left of the plane passing through pa, pb, and pc; here, "left" is defined so
-     * that pa, pb, and pc appear in counterclockwise order when viewed from right
-     * of the plane. Returns zero if the points are coplanar. The result is also a
-     * rough approximation of six times the signed volume of the tetrahedron defined
-     * by the four points.
+     * Determines if a point c is left of the line defined by the points a and b. This is equivalent to determining
+     * whether the points a, b, and c are in counter-clockwise (CCW) order.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of line; negative, if right of line; zero, otherwise.
+     */
+    public static double leftOfLineFast(double[] pa, double[] pb, double[] pc) {
+        return leftOfLineFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
+    }
+
+    /**
+     * Determines if a point c is left of the line defined by the points a and b. This is equivalent to determining
+     * whether the points a, b, and c are in counter-clockwise (CCW) order.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of line; negative, if right of line; zero, otherwise.
+     */
+    public static double leftOfLineFast(float[] pa, float[] pb, float[] pc) {
+        return leftOfLineFast(pa[0], pa[1], pb[0], pb[1], pc[0], pc[1]);
+    }
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and
+     * c. The latter are assumed to be in CCW order, as viewed from the right side
+     * of the plane.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero,
+     *         otherwise.
+     */
+    //    public static float leftOfPlaneFast(float xa, float ya, float za, float xb, float yb, float zb, float xc,
+    //                                         float yc, float zc, float xd, float yd, float zd) {
+    //        float adx = xa - xd;
+    //        float bdx = xb - xd;
+    //        float cdx = xc - xd;
+    //        float ady = ya - yd;
+    //        float bdy = yb - yd;
+    //        float cdy = yc - yd;
+    //        float adz = za - zd;
+    //        float bdz = zb - zd;
+    //        float cdz = zc - zd;
+    //
+    //        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+    //    }
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, as viewed from the right side of the plane.
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero, otherwise.
+     */
+    public static double leftOfPlane(double xa, double ya, double za, double xb, double yb, double zb, double xc,
+                                     double yc, double zc, double xd, double yd, double zd) {
+        double adx = xa - xd;
+        double bdx = xb - xd;
+        double cdx = xc - xd;
+        double ady = ya - yd;
+        double bdy = yb - yd;
+        double cdy = yc - yd;
+        double adz = za - zd;
+        double bdz = zb - zd;
+        double cdz = zc - zd;
+
+        double bdxcdy = bdx * cdy;
+        double cdxbdy = cdx * bdy;
+
+        double cdxady = cdx * ady;
+        double adxcdy = adx * cdy;
+
+        double adxbdy = adx * bdy;
+        double bdxady = bdx * ady;
+
+        double det = adz * (bdxcdy - cdxbdy) + bdz * (cdxady - adxcdy) + cdz * (adxbdy - bdxady);
+
+        if (adz < 0.0) {
+            adz = -adz;
+        }
+        if (bdz < 0.0) {
+            bdz = -bdz;
+        }
+        if (cdz < 0.0) {
+            cdz = -cdz;
+        }
+        if (bdxcdy < 0.0) {
+            bdxcdy = -bdxcdy;
+        }
+        if (cdxbdy < 0.0) {
+            cdxbdy = -cdxbdy;
+        }
+        if (cdxady < 0.0) {
+            cdxady = -cdxady;
+        }
+        if (adxcdy < 0.0) {
+            adxcdy = -adxcdy;
+        }
+        if (adxbdy < 0.0) {
+            adxbdy = -adxbdy;
+        }
+        if (bdxady < 0.0) {
+            bdxady = -bdxady;
+        }
+        double permanent = (bdxcdy + cdxbdy) * adz + (cdxady + adxcdy) * bdz + (adxbdy + bdxady) * cdz;
+        double errbound = O3DERRBOUND * permanent;
+        if (det > errbound || -det > errbound) {
+            return det;
+        }
+
+        return leftOfPlaneExact(xa, ya, za, xb, yb, zb, xc, yc, zc, xd, yd, zd);
+    }
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, as viewed from the right side of the plane.
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero, otherwise.
+     */
+    public static double leftOfPlane(double[] pa, double[] pb, double[] pc, double[] pd) {
+        return leftOfPlane(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
+    }
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, as viewed from the right side of the plane.
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero, otherwise.
+     */
+    public static double leftOfPlane(float[] pa, float[] pb, float[] pc, float[] pd) {
+        return leftOfPlane(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
+    }
+
+    /**
+     * Slow exact 3D orientation test. Returns a positive value if the point d lies left of the plane passing through
+     * pa, pb, and pc; here, "left" is defined so that pa, pb, and pc appear in counterclockwise order when viewed from
+     * right of the plane. Returns zero if the points are coplanar. The result is also a rough approximation of six
+     * times the signed volume of the tetrahedron defined by the four points.
      */
     private static double leftOfPlaneExact(double xa, double ya, double za, double xb, double yb, double zb, double xc,
                                            double yc, double zc, double xd, double yd, double zd) {
@@ -2340,11 +2215,91 @@ public final class Geometry {
     }
 
     /**
-     * Computes the scaled expansion h = e*b, eliminating zero components from the
-     * output expansion. Maintains the nonoverlapping property. If round-to-even is
-     * used (as with IEEE 754), maintains the strongly nonoverlapping and
-     * nonadjacent properties as well. (That is, if e has one of these properties,
-     * so will h.) The expansion h cannot be aliased with e.
+     * Determines if a point d is left of the plane defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, as viewed from the right side of the plane.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero, otherwise.
+     */
+    public static double leftOfPlaneFast(double xa, double ya, double za, double xb, double yb, double zb, double xc,
+                                         double yc, double zc, double xd, double yd, double zd) {
+        double adx = xa - xd;
+        double bdx = xb - xd;
+        double cdx = xc - xd;
+        double ady = ya - yd;
+        double bdy = yb - yd;
+        double cdy = yc - yd;
+        double adz = za - zd;
+        double bdz = zb - zd;
+        double cdz = zc - zd;
+
+        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+    }
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, as viewed from the right side of the plane.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero, otherwise.
+     */
+    public static double leftOfPlaneFast(double[] pa, double[] pb, double[] pc, double[] pd) {
+        return leftOfPlaneFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
+    }
+
+    /**
+     * Computes difference a-b, assuming that |a|&gt;=|b|. Puts result in x and
+     * error in y.
+     */
+    /*
+     * private strictfp static void twoDiffFast(double a, double b, Two t) { double
+     * x = a-b; double bvirt = a-x; t.x = x; t.y = bvirt-b; }
+     */
+
+    /**
+     * Determines if a point d is left of the plane defined by the points a, b, and c. The latter are assumed to be in
+     * CCW order, as viewed from the right side of the plane.
+     * <p>
+     * <em>Note: this fast method may return an incorrect result.</em>
+     *
+     * @return positive, if left of plane; negative, if right of plane; zero, otherwise.
+     */
+    public static double leftOfPlaneFast(float[] pa, float[] pb, float[] pc, float[] pd) {
+        return leftOfPlaneFast(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], pd[0], pd[1], pd[2]);
+    }
+
+    /**
+     * Computes the product a*b. Puts the product in x and the error in y.
+     */
+    /*
+     * private strictfp static void twoProduct(double a, double b, Two t) { double x
+     * = a*b; split(a,t); double ahi = t.x; double alo = t.y; split(b,t); double bhi
+     * = t.x; double blo = t.y; double err1 = x-(ahi*bhi); double err2 =
+     * err1-(alo*bhi); double err3 = err2-(ahi*blo); t.x = x; t.y = (alo*blo)-err3;
+     * }
+     */
+    public static float leftOfPlaneFastFloat(float xa, float ya, float za, float xb, float yb, float zb, float xc,
+                                             float yc, float zc, float xd, float yd, float zd) {
+        float adx = xa - xd;
+        float bdx = xb - xd;
+        float cdx = xc - xd;
+        float ady = ya - yd;
+        float bdy = yb - yd;
+        float cdy = yc - yd;
+        float adz = za - zd;
+        float bdz = zb - zd;
+        float cdz = zc - zd;
+
+        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+    }
+
+    /**
+     * Computes the scaled expansion h = e*b, eliminating zero components from the output expansion. Maintains the
+     * nonoverlapping property. If round-to-even is used (as with IEEE 754), maintains the strongly nonoverlapping and
+     * nonadjacent properties as well. (That is, if e has one of these properties, so will h.) The expansion h cannot be
+     * aliased with e.
      */
     private static int scaleExpansionZeroElim(int elen, double[] e, double b, double[] h) {
         Two t = new Two();
@@ -2383,8 +2338,7 @@ public final class Geometry {
     }
 
     /**
-     * Splits a into two overlapping parts. Puts the high bits in x and the low bits
-     * in y.
+     * Splits a into two overlapping parts. Puts the high bits in x and the low bits in y.
      */
     private static void split(double a, Two t) {
         double c = SPLITTER * a;
@@ -2407,8 +2361,7 @@ public final class Geometry {
     }
 
     /**
-     * Computes the product a*b, where b has already been split. Puts the product in
-     * x and the error in y.
+     * Computes the product a*b, where b has already been split. Puts the product in x and the error in y.
      */
     private static void twoProduct1Presplit(double a, double b, double bhi, double blo, Two t) {
         split(a, t);
@@ -2422,8 +2375,7 @@ public final class Geometry {
     }
 
     /**
-     * Computes the product a*b, where a and b have already been split. Puts the
-     * product in x and the error in y.
+     * Computes the product a*b, where a and b have already been split. Puts the product in x and the error in y.
      */
     private static void twoProduct2Presplit(double a, double ahi, double alo, double b, double bhi, double blo, Two t) {
         t.x = a * b;
@@ -2457,8 +2409,7 @@ public final class Geometry {
     }
 
     /**
-     * Computes the product a*b, where a and b are two-component expansions. Puts
-     * the product in the array x[8].
+     * Computes the product a*b, where a and b are two-component expansions. Puts the product in the array x[8].
      */
     private static void twoTwoProduct(double a1, double a0, double b1, double b0, double[] x) {
         double u0, u1, u2, ui, uj, uk, ul, um, un;
@@ -2537,24 +2488,10 @@ public final class Geometry {
         x[6] = t.y;
     }
 
-    static {
-        double epsilon = 1.0;
-        double splitter = 1.0;
-        boolean everyOther = true;
-        do {
-            epsilon *= 0.5;
-            if (everyOther) {
-                splitter *= 2.0;
-            }
-            everyOther = !everyOther;
-        } while (1.0 + epsilon != 1.0);
-        splitter += 1.0;
-        EPSILON = epsilon;
-        SPLITTER = splitter;
-        O2DERRBOUND = 4.0 * EPSILON;
-        O3DERRBOUND = 8.0 * EPSILON;
-        INCERRBOUND = 11.0 * EPSILON;
-        INSERRBOUND = 17.0 * EPSILON;
-        IOSERRBOUND = 19.0 * EPSILON;
+    /**
+     * Two doubles.
+     */
+    private static class Two {
+        double x, y;
     }
 }

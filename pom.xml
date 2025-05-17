@@ -9,15 +9,15 @@
     <name>Luciferase - A Bright Spark</name>
 
     <properties>
-        <maven.compiler.source>23</maven.compiler.source>
-        <maven.compiler.target>23</maven.compiler.target>
+        <maven.compiler.source>24</maven.compiler.source>
+        <maven.compiler.target>24</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.9.1</junit.version>
-        <logback.version>1.4.12</logback.version>
+        <logback.version>1.5.13</logback.version>
         <grpc.version>1.54.0</grpc.version>
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
-        <javafx.version>23</javafx.version>
+        <javafx.version>24</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
     </properties>
 
@@ -85,7 +85,12 @@
             </dependency>
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
-                <artifactId>maven-plugin</artifactId>
+                <artifactId>primemover-maven-plugin</artifactId>
+                <version>${prime-mover.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.hellblazer.primeMover</groupId>
+                <artifactId>sim-agent</artifactId>
                 <version>${prime-mover.version}</version>
             </dependency>
 

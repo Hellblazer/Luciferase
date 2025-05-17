@@ -53,11 +53,21 @@ public class MutableGrid extends Grid {
         }
     }
 
+    public Tetrahedron locate(Point3f p, Random entropy) {
+        return locate(p, last, entropy);
+    }
+
     public void rebuild(Random entropy) {
         clear();
         last = new Tetrahedron(fourCorners);
+        if (head == null) {
+            return;
+        }
         for (var v : head) {
-            insert(v, locate(v, last, entropy));
+            var containedIn = locate(v, last, entropy);
+            if (containedIn != null) {
+                insert(v, containedIn);
+            }
         }
     }
 
@@ -71,13 +81,12 @@ public class MutableGrid extends Grid {
      */
     public Vertex track(Point3f p, Random entropy) {
         assert p != null;
+        if (!contains(p)) {
+            return null;
+        }
         final var v = new Vertex(p);
         add(v, locate(p, entropy));
         return v;
-    }
-
-    public Tetrahedron locate(Point3f p, Random entropy) {
-        return locate(p, last, entropy);
     }
 
     /**
@@ -87,12 +96,19 @@ public class MutableGrid extends Grid {
      *
      * @param p    - the point to be inserted
      * @param near - the nearby vertex
-     * @return the new Vertex in the tetrahedralization
+     * @return the new Vertex in the tetrahedralization or null if the point is contained in the tetrahedralization
      */
     public Vertex track(Point3f p, Vertex near, Random entropy) {
         assert p != null;
+        if (!contains(p)) {
+            return null;
+        }
         final var v = new Vertex(p);
-        add(v, near.locate(p, entropy));
+        var containedIn = near.locate(p, entropy);
+        if (containedIn == null) {
+            return null;
+        }
+        add(v, containedIn);
         return v;
     }
 

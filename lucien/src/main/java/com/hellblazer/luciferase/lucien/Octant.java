@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 /**
  * @author hal.hildebrand
  **/
