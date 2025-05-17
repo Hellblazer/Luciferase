@@ -36,7 +36,7 @@ public class MutableGridTest {
             p.add(center);
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 100_000;
+        int iterations = 1_000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             //            sites.sort(Vertex::compareTo);

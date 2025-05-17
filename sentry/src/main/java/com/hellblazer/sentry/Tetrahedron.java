@@ -47,10 +47,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     private static final V[][]       VORONOI_FACE_ORIGIN = { { null, C, D, B }, { C, null, D, A }, { D, A, null, B },
                                                              { B, C, A, null } };
-    private final        FaceCBD     faceCBD;
-    private final        FaceDAC     faceDAC;
-    private final        FaceADB     faceADB;
-    private final        FaceBCA     faceBCA;
     /**
      * Vertex A
      */
@@ -102,10 +98,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         b.setAdjacent(this);
         c.setAdjacent(this);
         d.setAdjacent(this);
-        faceCBD = new FaceCBD();
-        faceDAC = new FaceDAC();
-        faceADB = new FaceADB();
-        faceBCA = new FaceBCA();
     }
 
     /**
@@ -217,16 +209,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public OrientedFace getFace(V v) {
         if (v == A) {
-            return faceCBD;
+            return new FaceCBD();
         }
         if (v == B) {
-            return faceDAC;
+            return new FaceDAC();
         }
         if (v == C) {
-            return faceADB;
+            return new FaceADB();
         }
         if (v == D) {
-            return faceBCA;
+            return new FaceBCA();
         }
         throw new IllegalArgumentException("Invalid vertex: " + v);
     }
