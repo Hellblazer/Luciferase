@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * @author hal.hildebrand
@@ -21,6 +20,25 @@ public class TetTest {
         assertTrue(tet.contains(new Point3f(1, 0, 0)));
         assertTrue(tet.contains(new Point3f(1, 0, 1)));
         assertTrue(tet.contains(new Point3f(1, 1, 1)));
+    }
+
+    @Test
+    public void faceNeighbor() {
+        var level = 10;
+        var h = 1 << (Constants.getMaxRefinementLevel() - level);
+        var tet = new Tet(3 * h, 0, 2 * h, (byte) level, (byte) 0);
+        var n0 = tet.faceNeighbor(0);
+        assertEquals((byte) 4, n0.tet().type());
+        assertNotNull(n0);
+        var n1 = tet.faceNeighbor(1);
+        assertNotNull(n1);
+        assertEquals((byte) 5, n1.tet().type());
+        var n2 = tet.faceNeighbor(2);
+        assertNotNull(n2);
+        assertEquals((byte) 1, n2.tet().type());
+        var n3 = tet.faceNeighbor(3);
+        assertNotNull(n3);
+        assertEquals((byte) 2, n3.tet().type());
     }
 
     @Test

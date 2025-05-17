@@ -79,7 +79,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         var coordinates = new int[3];
 
         for (int i = 1; i <= level; i++) {
-            var offsetCoords = MAX_REFINEMENT_LEVEL - i;
+            var offsetCoords = getMaxRefinementLevel() - i;
             var offsetIndex = level - i;
             // Get the local index of T's ancestor on level i
             var localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
@@ -133,15 +133,11 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the i-th child (in Tet Morton order) of the receiver
      */
     public Tet childTM(byte i) {
-        if (l == MAX_REFINEMENT_LEVEL) {
+        if (l == getMaxRefinementLevel()) {
             throw new IllegalArgumentException(
-            "No children at maximum refinement level: %s".formatted(MAX_REFINEMENT_LEVEL));
+            "No children at maximum refinement level: %s".formatted(getMaxRefinementLevel()));
         }
         return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
-    }
-
-    public byte computeType(byte level) {
-        return computeType(level, type, l);
     }
 
     /* A routine to compute the type of t's ancestor of level "level",
@@ -150,25 +146,22 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * It is not allowed to call this function with "level" greater than t->level.
      * This method runs in O(t->level - level).
      */
-    public byte computeType(byte level, byte known_type, byte known_level) {
-        byte type = known_type;
-        byte cid;
+    public byte computeType(byte level) {
+        assert (0 <= level && level <= l);
 
-        assert (0 <= level && level <= known_level);
-        assert known_level <= l;
-
-        if (level == known_level) {
-            return known_type;
+        if (level == l) {
+            return l;
         }
         if (level == 0) {
             /* TODO: the type of the root tet is hardcoded to 0
              *       maybe once we want to allow the root tet to have different types */
             return 0;
         }
-        for (byte i = known_level; i > level; i--) {
-            cid = cubeId(i);
+
+        byte type = this.type;
+        for (byte i = l; i > level; i--) {
             /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
-            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type];
+            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(i)][type];
         }
         return type;
     }
@@ -213,13 +206,13 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the cube id of t's ancestor of level "level"
      */
     public byte cubeId(byte level) {
-        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
+        if (level < 0 || level > getMaxRefinementLevel()) {
             throw new IllegalArgumentException("Illegal level: " + level);
         }
         if (level == 0 || level > l) {
             return 0;
         }
-        int h = 1 << (MAX_REFINEMENT_LEVEL - level);
+        int h = 1 << (getMaxRefinementLevel() - level);
         byte id = 0;
         id |= ((x & h) > 0 ? (byte) 1 : 0);
         id |= ((y & h) > 0 ? (byte) 2 : 0);
@@ -244,6 +237,55 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return 0L;
     }
 
+    public FaceNeighbor faceNeighbor(int face) {
+        final var h = length();
+        return switch (type) {
+            case 0 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 4));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 5));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 1));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 2));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 1 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 3));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 2));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 0));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 5));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 2 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 0));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 1));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 3));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 4));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 3 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 5));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 4));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 2));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 1));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 4 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 2));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 3));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 5));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 0));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            case 5 -> switch (face) {
+                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 1));
+                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 0));
+                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 4));
+                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 3));
+                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
+            };
+            default -> throw new IllegalStateException("type must be {0..5}: %s".formatted(type));
+        };
+    }
+
     /**
      * @return the consecutive index of the receiver on the space filling curve
      */
@@ -253,11 +295,11 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public long index(byte level) {
         long id = 0;
-        byte type_temp = 0;
+        byte computedType = 0;
         byte cid;
         int exponent;
 
-        assert (0 <= level && level <= MAX_REFINEMENT_LEVEL);
+        assert (0 <= level && level <= getMaxRefinementLevel());
         exponent = 0;
         /* If the given level is bigger than t's level
          * we first fill up with the ids of t's descendants at t's
@@ -266,12 +308,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             exponent = (level - l) * 3;
         }
         level = l;
-        type_temp = computeType(level);
+        computedType = computeType(level);
         for (byte i = level; i > 0; i--) {
             cid = cubeId(i);
-            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[type_temp][cid]) << exponent;
-            exponent += 8;    /* multiply with 4 (2d) resp. 8  (3d) */
-            type_temp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][type_temp];
+            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[computedType][cid]) << exponent;
+            exponent += 8;    /* multiply 8 (3d) */
+            computedType = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][computedType];
         }
         return id;
     }
@@ -284,7 +326,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the length of an edge at the given level, in integer coordinates
      */
     public int length() {
-        return 1 << (MAX_REFINEMENT_LEVEL - l);
+        return 1 << (getMaxRefinementLevel() - l);
     }
 
     /**
@@ -305,5 +347,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             i++;
         }
         return vertices;
+    }
+
+    public record FaceNeighbor(byte face, Tet tet) {
     }
 }

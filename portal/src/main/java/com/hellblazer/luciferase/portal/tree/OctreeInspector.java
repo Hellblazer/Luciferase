@@ -20,10 +20,10 @@ import javax.vecmath.Vector3d;
  * @author hal.hildebrand
  **/
 public class OctreeInspector extends Abstract3DApp {
-    public static final double OPACITY_PER_LEVEL = 1.0d / Constants.MAX_REFINEMENT_LEVEL;
+    public static final double OPACITY_PER_LEVEL = 1.0d / Constants.getMaxRefinementLevel();
 
     private final Group           view   = new Group();
-    private final PhongMaterial[] levels = new PhongMaterial[Constants.MAX_REFINEMENT_LEVEL];
+    private final PhongMaterial[] levels = new PhongMaterial[Constants.getMaxRefinementLevel()];
     private final Octant          root;
 
     public OctreeInspector() {

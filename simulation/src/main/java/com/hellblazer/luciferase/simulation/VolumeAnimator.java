@@ -17,13 +17,18 @@
 
 package com.hellblazer.luciferase.simulation;
 
-import com.hellblazer.luciferase.lucien.Tetree;
+import com.hellblazer.luciferase.lucien.Tet;
+import com.hellblazer.primeMover.Kronos;
+import com.hellblazer.primeMover.annotations.Entity;
+import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.controllers.RealTimeController;
-import com.hellblazer.sentry.Grid;
+import com.hellblazer.primeMover.runtime.Kairos;
 import com.hellblazer.sentry.MutableGrid;
 import com.hellblazer.sentry.Vertex;
 
-import javax.vecmath.Vector3d;
+import javax.vecmath.Point3f;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
@@ -34,22 +39,72 @@ import java.util.logging.Logger;
 public class VolumeAnimator {
     private static final Logger log = Logger.getLogger(VolumeAnimator.class.getCanonicalName());
 
+    private final Tet                cell;
+    private final MutableGrid        grid;
     private final RealTimeController controller;
-    private final Tetree.Simplex     cell;
-    private final Grid               grid;
+    private final AnimationFrame     frame = new AnimationFrame(100);
+    private final Random             entropy;
 
-    public VolumeAnimator(RealTimeController controller, Tetree.Simplex cell) {
-        this.controller = controller;
+    public VolumeAnimator(String name, Tet cell, Random entropy) {
+        this.controller = new RealTimeController(name);
         this.cell = cell;
-        this.grid = new MutableGrid(vertices(cell.vertices()));
+        this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
+        this.entropy = entropy;
+        Kairos.setController(controller);
     }
 
-    public static Vertex[] vertices(Vector3d[] vertices) {
-        Vertex[] result = new Vertex[vertices.length];
-        for (int i = 0; i < vertices.length; i++) {
-            var vertex = vertices[i];
-            result[i] = new Vertex((float) vertex.x, (float) vertex.y, (float) vertex.z);
+    @NonEvent
+    public AnimationFrame getFrame() {
+        return frame;
+    }
+
+    public void start() {
+        frame.track();
+        controller.start();
+    }
+
+    public Vertex track(Point3f p) {
+        return grid.track(p, entropy);
+    }
+
+    @Entity
+    public class AnimationFrame {
+        private final long frameRateNs;
+        private       long frameCount          = 0;
+        private       long cumulativeDurations = 0;
+        private       long cumulativeDelay     = 0;
+        private       long lastActive          = System.nanoTime();
+
+        public AnimationFrame(int frameRate) {
+            this.frameRateNs = (TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / frameRate);
         }
-        return result;
+
+        @NonEvent
+        public long getCumulativeDelay() {
+            return cumulativeDelay;
+        }
+
+        @NonEvent
+        public long getCumulativeDurations() {
+            return cumulativeDurations;
+        }
+
+        @NonEvent
+        public long getFrameCount() {
+            return frameCount;
+        }
+
+        public void track() {
+            frameCount++;
+            long start = System.nanoTime();
+            cumulativeDelay += start - lastActive;
+            grid.rebuild(entropy);
+            var now = System.nanoTime();
+            var duration = now - start;
+            cumulativeDurations += duration;
+            Kronos.sleep(frameRateNs - duration);
+            this.track();
+            lastActive = now;
+        }
     }
 }

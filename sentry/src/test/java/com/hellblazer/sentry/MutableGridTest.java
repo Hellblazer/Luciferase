@@ -16,6 +16,7 @@ package com.hellblazer.sentry;
 
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.Random;
 
@@ -29,14 +30,27 @@ public class MutableGridTest {
         var sentinel = new MutableGrid();
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
-        for (var p : Vertex.getRandomPoints(entropy, 2048, 10, true)) {
+        var radius = 16000.0f;
+        var center = new Point3f(radius + 100, radius + 100, radius + 100);
+        for (var p : Vertex.getRandomPoints(entropy, 256, radius, true)) {
+            p.add(center);
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 1000;
+        int iterations = 1_000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
+            //            sites.sort(Vertex::compareTo);
             for (var site : sites) {
-                site.moveBy(Vertex.randomPoint(entropy, -1f, 1f));
+                site.moveBy(Vertex.randomPoint(entropy, -5f, 5f));
+                if (site.x < 0.0f) {
+                    site.x = 0.0f;
+                }
+                if (site.y < 0.0f) {
+                    site.y = 0.0f;
+                }
+                if (site.z < 0.0f) {
+                    site.z = 0.0f;
+                }
             }
             sentinel.rebuild(entropy);
         }

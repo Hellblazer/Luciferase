@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
 import java.util.NavigableMap;

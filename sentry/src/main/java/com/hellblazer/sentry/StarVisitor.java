@@ -16,22 +16,17 @@
 package com.hellblazer.sentry;
 
 /**
- *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
- *
  */
 @FunctionalInterface
 public interface StarVisitor {
     /**
-     * Visit the tetrahedron t in the start set. The central vertex of the star set
-     * is vertex v in tetrahedron t. The other 3 vertices in tetrahedron t are given
-     * by {a, b, c} and are in counterclockwise order, where the central vertex of
-     * the star is V ordinal D in t, following the right hand rule.
+     * Visit the tetrahedron t in the star set. The central vertex of the star set is vertex v in tetrahedron t. The
+     * other 3 vertices in tetrahedron t are given by {a, b, c} and are in counterclockwise order, where the central
+     * vertex of the star is V ordinal D in t, following the right hand rule.
      *
-     * @param v - the V Ordinal of the central vertex Vc of the star in tetrahedron
-     *          t
-     * @param t - a tetrahedron in the star set, where the central vertex of the
-     *          start is the vertex ordinal in t
+     * @param v - the V Ordinal of the central vertex Vc of the star in tetrahedron t
+     * @param t - a tetrahedron in the star set, where the central vertex of the start is the vertex ordinal in t
      * @param a - vertex A relative to Vc
      * @param b - vertex B relative to Vc
      * @param c - vertex C relative to Vc

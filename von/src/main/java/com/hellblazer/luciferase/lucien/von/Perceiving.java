@@ -17,8 +17,9 @@
 
 package com.hellblazer.luciferase.lucien.von;
 
+import com.hellblazer.sentry.Cursor;
+
 import javax.vecmath.Point3f;
-import javax.vecmath.Vector3d;
 import javax.vecmath.Vector3f;
 
 /**

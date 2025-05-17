@@ -24,7 +24,6 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import java.util.*;
 
-import static com.hellblazer.luciferase.geometry.Geometry.centerSphere;
 import static com.hellblazer.sentry.V.*;
 
 /**
@@ -48,10 +47,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     private static final V[][]       VORONOI_FACE_ORIGIN = { { null, C, D, B }, { C, null, D, A }, { D, A, null, B },
                                                              { B, C, A, null } };
-    private final        FaceCBD     faceCBD;
-    private final        FaceDAC     faceDAC;
-    private final        FaceADB     faceADB;
-    private final        FaceBCA     faceBCA;
     /**
      * Vertex A
      */
@@ -103,10 +98,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         b.setAdjacent(this);
         c.setAdjacent(this);
         d.setAdjacent(this);
-        faceCBD = new FaceCBD();
-        faceDAC = new FaceDAC();
-        faceADB = new FaceADB();
-        faceBCA = new FaceBCA();
     }
 
     /**
@@ -129,8 +120,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * the test point is coplanar
      */
     public static double orientation(Tuple3f query, Tuple3f a, Tuple3f b, Tuple3f c) {
-        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y,
-                                                 query.z);
+        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
         return Math.signum(result);
     }
 
@@ -219,16 +209,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public OrientedFace getFace(V v) {
         if (v == A) {
-            return faceCBD;
+            return new FaceCBD();
         }
         if (v == B) {
-            return faceDAC;
+            return new FaceDAC();
         }
         if (v == C) {
-            return faceADB;
+            return new FaceADB();
         }
         if (v == D) {
-            return faceBCA;
+            return new FaceBCA();
         }
         throw new IllegalArgumentException("Invalid vertex: " + v);
     }
@@ -314,10 +304,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         return new Vertex[] { a, b, c, d };
     }
 
-    public boolean includes(Vertex query) {
-        return a == query || b == query || c == query || d == query;
-    }
-
     /**
      * Answer true if the query point is contained in the circumsphere of the tetrahedron
      *
@@ -326,6 +312,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public boolean inSphere(Vertex query) {
         return query.inSphere(a, b, c, d) > 0.0d;
+    }
+
+    public boolean includes(Vertex query) {
+        return a == query || b == query || c == query || d == query;
     }
 
     /**
@@ -337,8 +327,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     @Override
     public Iterator<OrientedFace> iterator() {
         return new Iterator<>() {
-            OrientedFace[] faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
-            int            i     = 0;
+            final OrientedFace[] faces = { getFace(A), getFace(B), getFace(C), getFace(D) };
+            int i = 0;
 
             @Override
             public boolean hasNext() {
@@ -374,6 +364,9 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         while (true) {
             // get the tetrahedron on the other side of the face
             var tetrahedron = current.getNeighbor(o);
+            if (tetrahedron == null) {
+                return null; // not contained in this tetrahedron
+            }
             int i = 0;
             for (V v : Grid.ORDER[tetrahedron.ordinalOf(current).ordinal()][entropy.nextInt(6)]) {
                 o = v;
@@ -622,7 +615,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (nC != null) {
             if (nC == nD) {
                 removeDegenerateTetrahedronPair(C, D, A, B);
-                return;
             }
         }
     }
@@ -862,10 +854,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean includes(Vertex v) {
-            if ((a == v) || (d == v) || (b == v)) {
-                return true;
-            }
-            return false;
+            return (a == v) || (d == v) || (b == v);
         }
 
         @Override
@@ -983,10 +972,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean includes(Vertex v) {
-            if ((b == v) || (c == v) || (a == v)) {
-                return true;
-            }
-            return false;
+            return (b == v) || (c == v) || (a == v);
         }
 
         @Override
@@ -1104,10 +1090,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean includes(Vertex v) {
-            if ((c == v) || (b == v) || (d == v)) {
-                return true;
-            }
-            return false;
+            return (c == v) || (b == v) || (d == v);
         }
 
         @Override
@@ -1231,10 +1214,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         @Override
         public boolean includes(Vertex v) {
-            if ((d == v) || (a == v) || (c == v)) {
-                return true;
-            }
-            return false;
+            return (d == v) || (a == v) || (c == v);
         }
 
         @Override

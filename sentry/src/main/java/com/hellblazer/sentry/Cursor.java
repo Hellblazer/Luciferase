@@ -15,10 +15,12 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-package com.hellblazer.luciferase.lucien.von;
+package com.hellblazer.sentry;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
@@ -26,7 +28,13 @@ import javax.vecmath.Tuple3f;
 
 public interface Cursor {
 
-    void moveBy(Tuple3f velocity);
-
     Point3f getLocation();
+
+    void moveBy(Tuple3f delta);
+
+    void moveTo(Tuple3f position);
+
+    Stream<Cursor> neighbors();
+
+    void visitNeighbors(Consumer<Cursor> consumer);
 }

@@ -15,6 +15,7 @@
 package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
+import com.hellblazer.luciferase.geometry.Geometry;
 
 import javax.vecmath.Tuple3f;
 import java.util.*;
@@ -43,7 +44,7 @@ import static com.hellblazer.sentry.V.*;
 public class Grid implements Iterable<Vertex> {
 
     /**
-     * Cannonical enumeration of the vertex ordinals
+     * Canonical enumeration of the vertex ordinals
      */
     public static final    V[]      VERTICES     = { A, B, C, D };
     public static final    Vertex[] FOUR_CORNERS = new Vertex[4];
@@ -61,7 +62,7 @@ public class Grid implements Iterable<Vertex> {
     /**
      * Scale of the universe
      */
-    private static         float    SCALE        = (float) Math.pow(2, 24);
+    private static final   float    SCALE        = (float) Math.pow(2, 24);
 
     static {
         FOUR_CORNERS[0] = new Vertex(-1, 1, -1, SCALE);
@@ -110,6 +111,10 @@ public class Grid implements Iterable<Vertex> {
         return new Tetrahedron(U);
     }
 
+    public boolean contains(Tuple3f point) {
+        return Geometry.insideTetrahedron(point, fourCorners[0], fourCorners[1], fourCorners[2], fourCorners[3]);
+    }
+
     /**
      * Answer the four corners of the universe
      *
@@ -143,7 +148,7 @@ public class Grid implements Iterable<Vertex> {
      * @param query  - the query point
      * @param start  - the starting tetrahedron
      * @param random - the source of entropy for the randomized algo
-     * @return the Tetrahedron containing the query
+     * @return the Tetrahedron containing the query, or null if the query is outside the tetrahedralization.
      */
     public Tetrahedron locate(Tuple3f query, Tetrahedron start, Random random) {
         assert query != null;
