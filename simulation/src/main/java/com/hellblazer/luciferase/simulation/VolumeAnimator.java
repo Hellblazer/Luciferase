@@ -74,6 +74,7 @@ public class VolumeAnimator {
         private       long cumulativeDurations = 0;
         private       long cumulativeDelay     = 0;
         private       long lastActive          = System.nanoTime();
+        private       long eventOverhead       = 0;
 
         public AnimationFrame(int frameRate) {
             this.frameRateNs = (TimeUnit.NANOSECONDS.convert(1, TimeUnit.SECONDS) / frameRate);
@@ -102,9 +103,10 @@ public class VolumeAnimator {
             var now = System.nanoTime();
             var duration = now - start;
             cumulativeDurations += duration;
-            Kronos.sleep(frameRateNs - duration);
+            Kronos.sleep(frameRateNs - duration - eventOverhead);
             this.track();
-            lastActive = now;
+            lastActive = System.nanoTime();
+            eventOverhead = (lastActive - now) / 2;
         }
     }
 }

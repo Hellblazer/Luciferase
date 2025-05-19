@@ -36,7 +36,12 @@ public class Constants {
                                                                            { 3, 3, 3, 3, 5, 4, 1, 2 },
                                                                            { 4, 4, 4, 4, 2, 3, 0, 5 },
                                                                            { 5, 5, 5, 5, 1, 0, 3, 4 } };
-    /** The Tetrahedrons in Bey's order, corners ordered z,y,x */
+    /**
+     * The Tetrahedrons in Bey's order, corners ordered z,y,x
+     * <p>
+     * <img src="reference-simplexes.png" alt="Bey's order" />
+     * </p>
+     */
     public static final Point3i[][] SIMPLEX               = new Point3i[][] {
     { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c3.coords(), CORNER.c7.coords() },
@@ -45,7 +50,13 @@ public class Constants {
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c5.coords(), CORNER.c7.coords() } };
 
-    /** The Tetrahedrons in Bey's order, corners ordered in standard position */
+    /**
+     * The Tetrahedrons in Bey's order, corners ordered in standard position
+     * <p>
+     * <img src="reference-simplexes.png" alt="Bey's order" />
+     * </p>
+     */
+
     public static final Point3i[][] SIMPLEX_STANDARD = new Point3i[][] {
     { CORNER.c0.coords(), CORNER.c1.coords(), CORNER.c5.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c3.coords(), CORNER.c1.coords() },
@@ -110,7 +121,11 @@ public class Constants {
         return level;
     }
 
-    // The corners of a cube
+    /**
+     * The corners of a cube
+     * <p>
+     * <img src="reference-cube.png" alt="Reference cube" />
+     */
     public enum CORNER {
         c0 {
             @Override
