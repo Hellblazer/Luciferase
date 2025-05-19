@@ -12,6 +12,9 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
 /**
  * A tetrahedron in the mesh from the paper:
  * <a href="https://arxiv.org/abs/1509.04627">A tetrahedral space-filling curve for non-conforming adaptive meshes</a>
+ * <p>
+ * <img src="reference-simplexes.png" alt="reference simplexes">
+ * </p>
  *
  * @author hal.hildebrand
  **/
@@ -150,7 +153,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         assert (0 <= level && level <= l);
 
         if (level == l) {
-            return l;
+            return type;
         }
         if (level == 0) {
             /* TODO: the type of the root tet is hardcoded to 0

@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.Geometry;
+
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
@@ -11,6 +13,11 @@ import java.util.stream.Stream;
 import static com.hellblazer.luciferase.lucien.Constants.SIMPLEX_STANDARD;
 
 /**
+ * Recursive subdivision of a tetrahedron.
+ * <p>
+ * <img src="reference-simplexes.png" alt="reference simplexes">
+ * </p>
+ *
  * @author hal.hildebrand
  **/
 public class Tetree<Content> {
@@ -86,21 +93,42 @@ public class Tetree<Content> {
 
     public Tet locate(Tuple3f point, byte level) {
         var length = Constants.lengthAtLevel(level);
-        var cubeId = new Point3i((int) (Math.floor(point.x / length) * length),
-                                 (int) (Math.floor(point.y / length) * length),
-                                 (int) (Math.floor(point.z / length) * length));
-        for (byte type = 0; type < 5; type++) {
-            var v = SIMPLEX_STANDARD[type];
-            var vertices = new Point3i[4];
-            for (int i = 0; i < 4; i++) {
-                vertices[i] = new Point3i(v[i]);
-                vertices[i].scaleAdd(length, cubeId);
+        var c0 = new Point3i((int) (Math.floor(point.x / length) * length),
+                             (int) (Math.floor(point.y / length) * length),
+                             (int) (Math.floor(point.z / length) * length));
+        var c7 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
+
+        var c1 = new Point3i(c0.x + length, c0.y, c0.z);
+
+        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.x, c1.z, point.x, point.y, point.z)
+        > 0.0) {
+            var c5 = new Point3i(c0.x + length, c0.y + length, c0.y + length);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.x, c0.z, point.x, point.y,
+                                         point.z) > 0.0) {
+                var c4 = new Point3i(c0.x, c0.y, c0.z + length);
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.x, c1.z, point.x, point.y,
+                                             point.z) > 0.0) {
+                    return new Tet(c0, level, 4);
+                }
+                return new Tet(c0, level, 5);
+            } else {
+                return new Tet(c0, level, 0);
             }
-            if (Tet.contains(vertices, point)) {
-                return new Tet(cubeId, level, type);
+        } else {
+            var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.x, c3.z, point.x, point.y,
+                                         point.z) > 0.0) {
+                var c2 = new Point3i(c0.x, c0.y + length, c0.z);
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.x, c2.z, point.x, point.y,
+                                             point.z) > 0.0) {
+                    return new Tet(c0, level, 2);
+                } else {
+                    return new Tet(c0, level, 3);
+                }
+            } else {
+                return new Tet(c0, level, 1);
             }
         }
-        throw new IllegalArgumentException("Out of bounds: %s".formatted(point));
     }
 
     static class Permutations<E> implements Iterator<E[]> {
