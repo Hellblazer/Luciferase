@@ -28,7 +28,7 @@ public class TetreeTest {
         tet = tetree.locate(new Point3f(500, 1000, 0), (byte) 19);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(145528082076402177L, indexes.getLast());
+        assertEquals(5692049, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 0, 0), (byte) 20);
         assertEquals(1, tet.type());
@@ -38,32 +38,32 @@ public class TetreeTest {
         tet = tetree.locate(new Point3f(0, 0, 100), (byte) 21);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(847723465146368L, indexes.getLast());
+        assertEquals(884864, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 100, 0), (byte) 17);
         assertEquals(3, tet.type());
         indexes.add(tet.index());
-        assertEquals(65792, indexes.getLast());
+        assertEquals(72, indexes.getLast());
 
         tet = tetree.locate(new Point3f(100, 0, 0), (byte) 16);
         assertEquals(0, tet.type());
         indexes.add(tet.index());
-        assertEquals(257, indexes.getLast());
+        assertEquals(9, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 200, 0), (byte) 15);
         assertEquals(3, tet.type());
         indexes.add(tet.index());
-        assertEquals(257, indexes.getLast());
+        assertEquals(9, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 0, 2000), (byte) 20);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(217020505612354307L, indexes.getLast());
+        assertEquals(460162048, indexes.getLast());
 
         tet = tetree.locate(new Point3f(100, 100, 0), (byte) 21);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(1412872442019840L, indexes.getLast());
+        assertEquals(1474880, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 100, 100), (byte) 13);
         assertEquals(3, tet.type());

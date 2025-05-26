@@ -64,11 +64,26 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
+     * Calculate the tetrahedral refinement level from a space-filling curve index
+     *
+     * @param index - the tetrahedral SFC index
+     * @return the refinement level
+     */
+    public static byte tetLevelFromIndex(long index) {
+        if (index == 0) {
+            return 0;
+        }
+        // Each level uses 3 bits, so level = ceil(log2(index+1) / 3)
+        int significantBits = 64 - Long.numberOfLeadingZeros(index);
+        return (byte) ((significantBits + 2) / 3);
+    }
+
+    /**
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
      */
     public static Tet tetrahedron(long index) {
-        return tetrahedron(index, toLevel(index));
+        return tetrahedron(index, tetLevelFromIndex(index));
     }
 
     /**
@@ -127,8 +142,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (i == 3) {
             j = 3;
         }
-        return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].x + coords[j].x) / 2,
-                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
+        return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].y + coords[j].y) / 2,
+                       (coords[0].z + coords[j].z) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
     }
 
     /**
@@ -298,27 +313,21 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public long index(byte level) {
         long id = 0;
-        byte computedType = 0;
-        byte cid;
-        int exponent;
 
         assert (0 <= level && level <= getMaxRefinementLevel());
-        exponent = 0;
+
         /* If the given level is bigger than t's level
          * we first fill up with the ids of t's descendants at t's
          * origin with the same type as t */
         if (level > l) {
-            exponent = (level - l) * 3;
+            // For now, just handle the case where level == l
+            // TODO: implement the descendant case
+            return index(l);
         }
-        level = l;
-        computedType = computeType(level);
-        for (byte i = level; i > 0; i--) {
-            cid = cubeId(i);
-            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[computedType][cid]) << exponent;
-            exponent += 8;    /* multiply 8 (3d) */
-            computedType = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][computedType];
-        }
-        return id;
+
+        // Build the index by working backwards through the SFC tree
+        // We need to find the sequence of parent types that led to this tetrahedron
+        return calculateIndexFromPath(level);
     }
 
     public long intersecting(Spatial volume) {
@@ -350,6 +359,66 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             i++;
         }
         return vertices;
+    }
+
+    /**
+     * Calculate the SFC index by working backwards through the parent chain and determining the local index at each
+     * level.
+     */
+    private long calculateIndexFromPath(byte targetLevel) {
+        if (targetLevel == 0) {
+            return 0; // Root tetrahedron
+        }
+
+        // Build array of tetrahedra from root to this level
+        Tet[] path = new Tet[targetLevel + 1];
+        Tet current = this;
+
+        // Fill path from target level back to root
+        for (int i = targetLevel; i >= 0; i--) {
+            path[i] = current;
+            if (i > 0) {
+                current = current.parent();
+            }
+        }
+
+        long index = 0;
+
+        // For each level from 1 to target, find the local index
+        for (int i = 1; i <= targetLevel; i++) {
+            Tet parentTet = path[i - 1];
+            Tet childTet = path[i];
+
+            // Find which local index corresponds to going from parent to child
+            byte localIndex = findLocalIndexForTransition(parentTet, childTet);
+
+            // Place the local index at the correct bit position
+            int bitPosition = 3 * (targetLevel - i);
+            index |= (long) localIndex << bitPosition;
+        }
+
+        return index;
+    }
+
+    /**
+     * Find the local index that transitions from parent to child in the SFC.
+     */
+    private byte findLocalIndexForTransition(Tet parent, Tet child) {
+        byte childCubeId = child.cubeId(child.l());
+
+        // Check all possible local indices for this parent type
+        for (byte localIndex = 0; localIndex < 8; localIndex++) {
+            byte expectedCubeId = PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[parent.type()][localIndex];
+            byte expectedType = PARENT_TYPE_LOCAL_INDEX_TO_TYPE[parent.type()][localIndex];
+
+            if (expectedCubeId == childCubeId && expectedType == child.type()) {
+                return localIndex;
+            }
+        }
+
+        throw new IllegalStateException(
+        "Could not find local index for transition from parent (%d,%d,%d) type=%d to child (%d,%d,%d) type=%d".formatted(
+        parent.x(), parent.y(), parent.z(), parent.type(), child.x(), child.y(), child.z(), child.type()));
     }
 
     public record FaceNeighbor(byte face, Tet tet) {
