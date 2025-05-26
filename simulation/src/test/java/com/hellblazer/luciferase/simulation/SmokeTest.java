@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.simulation;
 
 import com.hellblazer.luciferase.lucien.Constants;
-import com.hellblazer.primeMover.Kronos;
 import com.hellblazer.primeMover.annotations.Entity;
+import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.sentry.Cursor;
 import com.hellblazer.sentry.Vertex;
 import org.junit.jupiter.api.Test;

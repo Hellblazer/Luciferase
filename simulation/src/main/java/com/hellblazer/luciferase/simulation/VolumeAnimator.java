@@ -18,9 +18,9 @@
 package com.hellblazer.luciferase.simulation;
 
 import com.hellblazer.luciferase.lucien.Tet;
-import com.hellblazer.primeMover.Kronos;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
+import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.primeMover.runtime.Kairos;
 import com.hellblazer.sentry.MutableGrid;
