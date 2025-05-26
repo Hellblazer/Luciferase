@@ -256,52 +256,45 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     public FaceNeighbor faceNeighbor(int face) {
-        final var h = length();
-        return switch (type) {
-            case 0 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 4));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 5));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 1));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 2));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 1 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 3));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 2));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 0));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 5));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 2 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 0));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 1));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 3));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 4));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 3 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 5));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 4));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 2));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 1));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 4 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 2));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 3));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 5));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 0));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 5 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 1));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 0));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 4));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 3));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            default -> throw new IllegalStateException("type must be {0..5}: %s".formatted(type));
-        };
+        // Implement t8code's face neighbor algorithm from dtri_bits.c
+        // This is the 3D version (T8_DTRI_TO_DTET branch)
+        
+        assert (0 <= face && face < 4);
+        
+        int typeOld = this.type;
+        int typeNew = typeOld;
+        int[] coords = {this.x, this.y, this.z};
+        int h = length();
+        int ret = -1;
+        
+        // 3D algorithm from t8code
+        typeNew += 6; // We want to compute modulo six and don't want negative numbers
+        
+        if (face == 1 || face == 2) {
+            int sign = (typeNew % 2 == 0 ? 1 : -1);
+            sign *= (face % 2 == 0 ? 1 : -1);
+            typeNew += sign;
+            typeNew %= 6;
+            ret = face;
+        } else {
+            if (face == 0) {
+                /* type: 0,1 --> x+1
+                 *       2,3 --> y+1
+                 *       4,5 --> z+1 */
+                coords[typeOld / 2] += h;
+                typeNew += (typeNew % 2 == 0 ? 4 : 2);
+            } else { // face == 3
+                /* type: 1,2 --> z-1
+                 *       3,4 --> x-1
+                 *       5,0 --> y-1 */
+                coords[((typeNew + 3) % 6) / 2] -= h;
+                typeNew += (typeNew % 2 == 0 ? 2 : 4);
+            }
+            typeNew %= 6;
+            ret = 3 - face;
+        }
+        
+        return new FaceNeighbor((byte) ret, new Tet(coords[0], coords[1], coords[2], l, (byte) typeNew));
     }
 
     /**
