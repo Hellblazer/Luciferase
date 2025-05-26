@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>simulation</artifactId>
-    <name>Simulation: DES</name>
+    <name>Simulation - Volumetric Discrete Event Simulation</name>
 
     <properties>
         <sim.agent.jar>_sim-agent.jar</sim.agent.jar>
