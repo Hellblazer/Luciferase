@@ -313,21 +313,33 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public long index(byte level) {
         long id = 0;
+        byte typeTemp = 0;
+        byte cid;
+        int i;
+        int exponent;
+        int myLevel;
 
         assert (0 <= level && level <= getMaxRefinementLevel());
 
+        myLevel = this.l;
+        exponent = 0;
         /* If the given level is bigger than t's level
          * we first fill up with the ids of t's descendants at t's
          * origin with the same type as t */
-        if (level > l) {
-            // For now, just handle the case where level == l
-            // TODO: implement the descendant case
-            return index(l);
+        if (level > myLevel) {
+            exponent = (level - myLevel) * 3; // T8_DTRI_DIM = 3
         }
-
-        // Build the index by working backwards through the SFC tree
-        // We need to find the sequence of parent types that led to this tetrahedron
-        return calculateIndexFromPath(level);
+        level = (byte) myLevel;
+        typeTemp = computeType(level);
+        
+        // Match t8code algorithm exactly: for (i = level; i > 0; i--)
+        for (i = level; i > 0; i--) {
+            cid = cubeId((byte) i);
+            id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeTemp][cid]) << exponent;
+            exponent += 3; // T8_DTRI_DIM = 3 (multiply by 8 in 3D)
+            typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
+        }
+        return id;
     }
 
     public long intersecting(Spatial volume) {
@@ -361,65 +373,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return vertices;
     }
 
-    /**
-     * Calculate the SFC index by working backwards through the parent chain and determining the local index at each
-     * level.
-     */
-    private long calculateIndexFromPath(byte targetLevel) {
-        if (targetLevel == 0) {
-            return 0; // Root tetrahedron
-        }
-
-        // Build array of tetrahedra from root to this level
-        Tet[] path = new Tet[targetLevel + 1];
-        Tet current = this;
-
-        // Fill path from target level back to root
-        for (int i = targetLevel; i >= 0; i--) {
-            path[i] = current;
-            if (i > 0) {
-                current = current.parent();
-            }
-        }
-
-        long index = 0;
-
-        // For each level from 1 to target, find the local index
-        for (int i = 1; i <= targetLevel; i++) {
-            Tet parentTet = path[i - 1];
-            Tet childTet = path[i];
-
-            // Find which local index corresponds to going from parent to child
-            byte localIndex = findLocalIndexForTransition(parentTet, childTet);
-
-            // Place the local index at the correct bit position
-            int bitPosition = 3 * (targetLevel - i);
-            index |= (long) localIndex << bitPosition;
-        }
-
-        return index;
-    }
-
-    /**
-     * Find the local index that transitions from parent to child in the SFC.
-     */
-    private byte findLocalIndexForTransition(Tet parent, Tet child) {
-        byte childCubeId = child.cubeId(child.l());
-
-        // Check all possible local indices for this parent type
-        for (byte localIndex = 0; localIndex < 8; localIndex++) {
-            byte expectedCubeId = PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[parent.type()][localIndex];
-            byte expectedType = PARENT_TYPE_LOCAL_INDEX_TO_TYPE[parent.type()][localIndex];
-
-            if (expectedCubeId == childCubeId && expectedType == child.type()) {
-                return localIndex;
-            }
-        }
-
-        throw new IllegalStateException(
-        "Could not find local index for transition from parent (%d,%d,%d) type=%d to child (%d,%d,%d) type=%d".formatted(
-        parent.x(), parent.y(), parent.z(), parent.type(), child.x(), child.y(), child.z(), child.type()));
-    }
 
     public record FaceNeighbor(byte face, Tet tet) {
     }
