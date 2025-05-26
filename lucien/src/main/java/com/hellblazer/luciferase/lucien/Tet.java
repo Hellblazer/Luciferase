@@ -331,7 +331,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
         level = (byte) myLevel;
         typeTemp = computeType(level);
-        
+
         // Match t8code algorithm exactly: for (i = level; i > 0; i--)
         for (i = level; i > 0; i--) {
             cid = cubeId((byte) i);
@@ -372,7 +372,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
         return vertices;
     }
-
 
     public record FaceNeighbor(byte face, Tet tet) {
     }
