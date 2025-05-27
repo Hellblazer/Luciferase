@@ -258,18 +258,18 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     public FaceNeighbor faceNeighbor(int face) {
         // Implement t8code's face neighbor algorithm from dtri_bits.c
         // This is the 3D version (T8_DTRI_TO_DTET branch)
-        
+
         assert (0 <= face && face < 4);
-        
+
         int typeOld = this.type;
         int typeNew = typeOld;
-        int[] coords = {this.x, this.y, this.z};
+        int[] coords = { this.x, this.y, this.z };
         int h = length();
         int ret = -1;
-        
+
         // 3D algorithm from t8code
         typeNew += 6; // We want to compute modulo six and don't want negative numbers
-        
+
         if (face == 1 || face == 2) {
             int sign = (typeNew % 2 == 0 ? 1 : -1);
             sign *= (face % 2 == 0 ? 1 : -1);
@@ -293,7 +293,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             typeNew %= 6;
             ret = 3 - face;
         }
-        
+
         return new FaceNeighbor((byte) ret, new Tet(coords[0], coords[1], coords[2], l, (byte) typeNew));
     }
 

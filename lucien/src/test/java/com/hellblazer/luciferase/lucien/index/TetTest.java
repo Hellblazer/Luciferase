@@ -1079,7 +1079,7 @@ public class TetTest {
 
         System.out.println("  ✅ Type transitions validated against t8code");
     }
-    
+
     private record T8codeFaceNeighbor(int x, int y, int z, byte type, byte face) {
     }
 }
