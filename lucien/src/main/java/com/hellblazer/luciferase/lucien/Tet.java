@@ -64,11 +64,26 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
+     * Calculate the tetrahedral refinement level from a space-filling curve index
+     *
+     * @param index - the tetrahedral SFC index
+     * @return the refinement level
+     */
+    public static byte tetLevelFromIndex(long index) {
+        if (index == 0) {
+            return 0;
+        }
+        // Each level uses 3 bits, so level = ceil(log2(index+1) / 3)
+        int significantBits = 64 - Long.numberOfLeadingZeros(index);
+        return (byte) ((significantBits + 2) / 3);
+    }
+
+    /**
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
      */
     public static Tet tetrahedron(long index) {
-        return tetrahedron(index, toLevel(index));
+        return tetrahedron(index, tetLevelFromIndex(index));
     }
 
     /**
@@ -127,8 +142,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (i == 3) {
             j = 3;
         }
-        return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].x + coords[j].x) / 2,
-                       (coords[0].x + coords[j].x) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
+        return new Tet((coords[0].x + coords[j].x) / 2, (coords[0].y + coords[j].y) / 2,
+                       (coords[0].z + coords[j].z) / 2, (byte) (l + 1), TYPE_TO_TYPE_OF_CHILD[type][i]);
     }
 
     /**
@@ -241,52 +256,45 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     public FaceNeighbor faceNeighbor(int face) {
-        final var h = length();
-        return switch (type) {
-            case 0 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 4));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 5));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 1));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 2));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 1 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x + h, y, z, l, (byte) 3));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 2));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 0));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 5));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 2 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 0));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 1));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 3));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y, z - h, l, (byte) 4));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 3 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y + h, z, l, (byte) 5));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 4));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 2));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 1));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 4 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 2));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 3));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 5));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x - h, y, z, l, (byte) 0));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            case 5 -> switch (face) {
-                case 0 -> new FaceNeighbor((byte) 3, new Tet(x, y, z + h, l, (byte) 1));
-                case 1 -> new FaceNeighbor((byte) 1, new Tet(x, y, z, l, (byte) 0));
-                case 2 -> new FaceNeighbor((byte) 2, new Tet(x, y, z, l, (byte) 4));
-                case 3 -> new FaceNeighbor((byte) 0, new Tet(x, y - h, z, l, (byte) 3));
-                default -> throw new IllegalStateException("face must be {0..3}: %s".formatted(face));
-            };
-            default -> throw new IllegalStateException("type must be {0..5}: %s".formatted(type));
-        };
+        // Implement t8code's face neighbor algorithm from dtri_bits.c
+        // This is the 3D version (T8_DTRI_TO_DTET branch)
+
+        assert (0 <= face && face < 4);
+
+        int typeOld = this.type;
+        int typeNew = typeOld;
+        int[] coords = { this.x, this.y, this.z };
+        int h = length();
+        int ret = -1;
+
+        // 3D algorithm from t8code
+        typeNew += 6; // We want to compute modulo six and don't want negative numbers
+
+        if (face == 1 || face == 2) {
+            int sign = (typeNew % 2 == 0 ? 1 : -1);
+            sign *= (face % 2 == 0 ? 1 : -1);
+            typeNew += sign;
+            typeNew %= 6;
+            ret = face;
+        } else {
+            if (face == 0) {
+                /* type: 0,1 --> x+1
+                 *       2,3 --> y+1
+                 *       4,5 --> z+1 */
+                coords[typeOld / 2] += h;
+                typeNew += (typeNew % 2 == 0 ? 4 : 2);
+            } else { // face == 3
+                /* type: 1,2 --> z-1
+                 *       3,4 --> x-1
+                 *       5,0 --> y-1 */
+                coords[((typeNew + 3) % 6) / 2] -= h;
+                typeNew += (typeNew % 2 == 0 ? 2 : 4);
+            }
+            typeNew %= 6;
+            ret = 3 - face;
+        }
+
+        return new FaceNeighbor((byte) ret, new Tet(coords[0], coords[1], coords[2], l, (byte) typeNew));
     }
 
     /**
@@ -298,25 +306,31 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public long index(byte level) {
         long id = 0;
-        byte computedType = 0;
+        byte typeTemp = 0;
         byte cid;
+        int i;
         int exponent;
+        int myLevel;
 
         assert (0 <= level && level <= getMaxRefinementLevel());
+
+        myLevel = this.l;
         exponent = 0;
         /* If the given level is bigger than t's level
          * we first fill up with the ids of t's descendants at t's
          * origin with the same type as t */
-        if (level > l) {
-            exponent = (level - l) * 3;
+        if (level > myLevel) {
+            exponent = (level - myLevel) * 3; // T8_DTRI_DIM = 3
         }
-        level = l;
-        computedType = computeType(level);
-        for (byte i = level; i > 0; i--) {
-            cid = cubeId(i);
-            id |= (long) (TYPE_CUBE_ID_TO_LOCAL_INDEX[computedType][cid]) << exponent;
-            exponent += 8;    /* multiply 8 (3d) */
-            computedType = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][computedType];
+        level = (byte) myLevel;
+        typeTemp = computeType(level);
+
+        // Match t8code algorithm exactly: for (i = level; i > 0; i--)
+        for (i = level; i > 0; i--) {
+            cid = cubeId((byte) i);
+            id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeTemp][cid]) << exponent;
+            exponent += 3; // T8_DTRI_DIM = 3 (multiply by 8 in 3D)
+            typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
         }
         return id;
     }
