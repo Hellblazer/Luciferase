@@ -71,7 +71,7 @@ public class Tetree<Content> {
      * @param linearIndex - the index in the space filling curve
      * @return the Content at the linear index
      */
-    public Content get(int linearIndex) {
+    public Content get(long linearIndex) {
         return contents.get(linearIndex);
     }
 
