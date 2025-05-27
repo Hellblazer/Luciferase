@@ -225,13 +225,10 @@ public class Tetree<Content> {
 
         public Vector3d[] vertices() {
             var tet = Tet.tetrahedron(index);
-            var length = tet.length();
+            var coords = tet.coordinates();
             var vertices = new Vector3d[4];
-            var i = 0;
-            for (var vertex : SIMPLEX_STANDARD[tet.type()]) {
-                vertices[i] = new Vector3d(vertex.x, vertex.y, vertex.z);
-                vertices[i].scale(length);
-                i++;
+            for (int i = 0; i < 4; i++) {
+                vertices[i] = new Vector3d(coords[i].x, coords[i].y, coords[i].z);
             }
             return vertices;
         }
