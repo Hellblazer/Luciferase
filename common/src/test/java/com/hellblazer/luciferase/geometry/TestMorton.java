@@ -102,14 +102,14 @@ public class TestMorton {
             int y = random.nextInt(maxCoord);
             int z = random.nextInt(maxCoord);
             
-            long mortonMagic = MortonCurve.encode(x, y, z);
+            long mortonMagic = MortonCurve.encodeMagicBits(x, y, z);
             long mortonLUT = MortonCurve.encodeLUT(x, y, z);
             
             assertEquals(mortonMagic, mortonLUT, 
                 String.format("Encoding mismatch for [%d, %d, %d]: magic=%d, LUT=%d", 
                     x, y, z, mortonMagic, mortonLUT));
             
-            int[] decodedMagic = MortonCurve.decode(mortonMagic);
+            int[] decodedMagic = MortonCurve.decodeMagicBits(mortonMagic);
             int[] decodedLUT = MortonCurve.decodeLUT(mortonMagic);
             
             assertArrayEquals(decodedMagic, decodedLUT,
