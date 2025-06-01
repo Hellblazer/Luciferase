@@ -600,9 +600,9 @@ public class TetTest {
     void validateSFCProperties() {
         // Test additional SFC properties to ensure robustness
         System.out.println("=== Validating SFC Properties ===");
-
+        var count = 0L;
         // Test that tetLevelFromIndex works correctly
-        for (int level = 0; level <= 3; level++) {
+        for (int level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
             long startIndex = level == 0 ? 0 : (1L << (3 * (level - 1)));
             long endIndex = 1L << (3 * level);
 
@@ -613,9 +613,11 @@ public class TetTest {
                                       calculatedLevel);
                 }
                 assertEquals(level, calculatedLevel, "Level calculation failed for index " + index);
+                count++;
             }
         }
 
+        System.out.println("Tested: " + count);
         // Test that sequential indices produce valid tetrahedra
         for (long index = 0; index < 64; index++) {
             try {

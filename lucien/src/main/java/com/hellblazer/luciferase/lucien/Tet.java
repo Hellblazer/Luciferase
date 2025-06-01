@@ -20,6 +20,16 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
 
+    // Compact constructor for validation
+    public Tet {
+        if (l < 0 || l > getMaxRefinementLevel()) {
+            throw new IllegalArgumentException("Level must be in range [0, " + getMaxRefinementLevel() + "]: " + l);
+        }
+        if (type < 0 || type > 5) {
+            throw new IllegalArgumentException("Type must be in range [0, 5]: " + type);
+        }
+    }
+
     public Tet(int level, int type) {
         this((byte) level, (byte) type);
     }
@@ -72,6 +82,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     public static byte tetLevelFromIndex(long index) {
         if (index == 0) {
             return 0;
+        }
+        if (index < 0) {
+            throw new IllegalArgumentException("Index must be non-negative: " + index);
         }
         // Each level uses 3 bits, so level = ceil(log2(index+1) / 3)
         int significantBits = 64 - Long.numberOfLeadingZeros(index);
@@ -350,6 +363,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the parent Tet
      */
     public Tet parent() {
+        if (l == 0) {
+            throw new IllegalStateException("Root tetrahedron has no parent");
+        }
         int h = length();
         return new Tet(x & ~h, y & ~h, z & ~h, (byte) (l - 1), CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(l)][type]);
     }
