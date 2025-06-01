@@ -2,9 +2,12 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.Geometry;
 
+import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Stream;
 
 import static com.hellblazer.luciferase.lucien.Constants.*;
@@ -129,7 +132,15 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the Stream of indexes in the SFC locating the Tets bounded by the volume
      */
     public Stream<Long> boundedBy(Spatial volume) {
-        return null;
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return Stream.empty();
+        }
+
+        return spatialRangeQuery(bounds, false).filter(index -> {
+            var tet = Tet.tetrahedron(index);
+            return tetrahedronContainedInVolume(tet, volume);
+        });
     }
 
     /**
@@ -137,7 +148,15 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the Stream of indexes in the SFC locating the Tets that minimally bound the volume
      */
     public Stream<Long> bounding(Spatial volume) {
-        return null;
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return Stream.empty();
+        }
+
+        return spatialRangeQuery(bounds, true).filter(index -> {
+            var tet = Tet.tetrahedron(index);
+            return tetrahedronIntersectsVolume(tet, volume);
+        });
     }
 
     /**
@@ -256,7 +275,22 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return - index in the SFC of the minimum Tet enclosing the volume
      */
     public long enclosing(Spatial volume) {
-        return 0L;
+        // Extract bounding box of the volume
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return 0L;
+        }
+
+        // Find the minimum level that can contain the volume
+        byte level = findMinimumContainingLevel(bounds);
+
+        // Find a tetrahedron at that level that contains the volume
+        var centerPoint = new Point3f((bounds.minX + bounds.maxX) / 2, 
+                                      (bounds.minY + bounds.maxY) / 2,
+                                      (bounds.minZ + bounds.maxZ) / 2);
+
+        var tet = locate(centerPoint, level);
+        return tet.index();
     }
 
     /**
@@ -265,7 +299,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the simplex at the provided
      */
     public long enclosing(Tuple3f point, byte level) {
-        return 0L;
+        var tet = locate(new Point3f(point.x, point.y, point.z), level);
+        return tet.index();
     }
 
     public FaceNeighbor faceNeighbor(int face) {
@@ -349,7 +384,19 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     public long intersecting(Spatial volume) {
-        return 0L;
+        // Simple implementation: find first intersecting tetrahedron
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return 0L;
+        }
+
+        return spatialRangeQuery(bounds, true)
+            .filter(index -> {
+                var tet = Tet.tetrahedron(index);
+                return tetrahedronIntersectsVolume(tet, volume);
+            })
+            .findFirst()
+            .orElse(0L);
     }
 
     /**
@@ -382,6 +429,294 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return vertices;
     }
 
+    // Helper method from Tetree implementation - locate tetrahedron containing a point
+    public Tet locate(Point3f point, byte level) {
+        var length = Constants.lengthAtLevel(level);
+        var c0 = new Point3i((int) (Math.floor(point.x / length) * length),
+                             (int) (Math.floor(point.y / length) * length),
+                             (int) (Math.floor(point.z / length) * length));
+        var c7 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
+
+        var c1 = new Point3i(c0.x + length, c0.y, c0.z);
+
+        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.y, c1.z, point.x, point.y, point.z)
+        > 0.0) {
+            var c5 = new Point3i(c0.x + length, c0.y, c0.z + length);  // Fixed: was c7 coordinates
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.y, c0.z, point.x, point.y,
+                                         point.z) > 0.0) {
+                var c4 = new Point3i(c0.x, c0.y, c0.z + length);
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.y, c1.z, point.x, point.y,
+                                             point.z) > 0.0) {
+                    return new Tet(c0, level, 4);
+                }
+                return new Tet(c0, level, 5);
+            } else {
+                return new Tet(c0, level, 0);
+            }
+        } else {
+            var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.y, c3.z, point.x, point.y,
+                                         point.z) > 0.0) {
+                var c2 = new Point3i(c0.x, c0.y + length, c0.z);
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, point.x, point.y,
+                                             point.z) > 0.0) {
+                    return new Tet(c0, level, 2);
+                } else {
+                    return new Tet(c0, level, 3);
+                }
+            } else {
+                return new Tet(c0, level, 1);
+            }
+        }
+    }
+
+    // Compute SFC ranges for all tetrahedra in a grid cell
+    private List<SFCRange> computeCellSFCRanges(Point3f cellOrigin, byte level) {
+        List<SFCRange> ranges = new ArrayList<>();
+
+        // For a grid cell, there can be multiple tetrahedra (6 types)
+        // Find the SFC indices for all tetrahedron types at this location
+        for (byte type = 0; type < 6; type++) {
+            var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, type);
+            long index = tet.index();
+            ranges.add(new SFCRange(index, index));
+        }
+
+        return ranges;
+    }
+
+    // Compute SFC ranges that could contain tetrahedra intersecting the volume
+    private List<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
+        List<SFCRange> ranges = new ArrayList<>();
+
+        // Find appropriate refinement levels for the query volume
+        byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
+        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
+
+        for (byte level = minLevel; level <= maxLevel; level++) {
+            int length = Constants.lengthAtLevel(level);
+
+            // Calculate grid bounds at this level
+            int minX = (int) Math.floor(bounds.minX / length);
+            int maxX = (int) Math.ceil(bounds.maxX / length);
+            int minY = (int) Math.floor(bounds.minY / length);
+            int maxY = (int) Math.ceil(bounds.maxY / length);
+            int minZ = (int) Math.floor(bounds.minZ / length);
+            int maxZ = (int) Math.ceil(bounds.maxZ / length);
+
+            // Find SFC ranges for grid cells that could intersect the volume
+            for (int x = minX; x <= maxX; x++) {
+                for (int y = minY; y <= maxY; y++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+
+                        // Check if this grid cell could intersect our bounds
+                        if (gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting)) {
+                            // Find the SFC range for all tetrahedra in this grid cell
+                            var cellRanges = computeCellSFCRanges(cellPoint, level);
+                            ranges.addAll(cellRanges);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Merge overlapping ranges for efficiency
+        return mergeRanges(ranges);
+    }
+
+    // Create a spatial volume from bounds for final filtering
+    private Spatial createSpatialFromBounds(VolumeBounds bounds) {
+        return new Spatial.aabb(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ);
+    }
+
+    // Find minimum level that can contain the volume
+    private byte findMinimumContainingLevel(VolumeBounds bounds) {
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+
+        // Find the level where tetrahedron length >= maxExtent
+        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
+            if (Constants.lengthAtLevel(level) >= maxExtent) {
+                return level;
+            }
+        }
+        return Constants.getMaxRefinementLevel();
+    }
+
+    // Get bounding box of a tetrahedron for quick filtering
+    private VolumeBounds getTetrahedronBounds(Tet tet) {
+        var vertices = tet.coordinates();
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+
+        for (var vertex : vertices) {
+            minX = Math.min(minX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            minZ = Math.min(minZ, vertex.z);
+            maxX = Math.max(maxX, vertex.x);
+            maxY = Math.max(maxY, vertex.y);
+            maxZ = Math.max(maxZ, vertex.z);
+        }
+
+        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    // Extract bounding box from various spatial volume types
+    private VolumeBounds getVolumeBounds(Spatial volume) {
+        return switch (volume) {
+            case Spatial.Cube cube -> new VolumeBounds(cube.originX(), cube.originY(), cube.originZ(),
+                                                       cube.originX() + cube.extent(), cube.originY() + cube.extent(),
+                                                       cube.originZ() + cube.extent());
+            case Spatial.Sphere sphere -> new VolumeBounds(sphere.centerX() - sphere.radius(),
+                                                           sphere.centerY() - sphere.radius(),
+                                                           sphere.centerZ() - sphere.radius(),
+                                                           sphere.centerX() + sphere.radius(),
+                                                           sphere.centerY() + sphere.radius(),
+                                                           sphere.centerZ() + sphere.radius());
+            case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(), aabb.extentX(),
+                                                       aabb.extentY(), aabb.extentZ());
+            case Spatial.aabt aabt -> new VolumeBounds(aabt.originX(), aabt.originY(), aabt.originZ(), aabt.extentX(),
+                                                       aabt.extentY(), aabt.extentZ());
+            case Spatial.Parallelepiped para -> new VolumeBounds(para.originX(), para.originY(), para.originZ(),
+                                                                 para.extentX(), para.extentY(), para.extentZ());
+            case Spatial.Tetrahedron tet -> {
+                var vertices = new Tuple3f[] { tet.a(), tet.b(), tet.c(), tet.d() };
+                float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+                float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+                for (var vertex : vertices) {
+                    minX = Math.min(minX, vertex.x);
+                    minY = Math.min(minY, vertex.y);
+                    minZ = Math.min(minZ, vertex.z);
+                    maxX = Math.max(maxX, vertex.x);
+                    maxY = Math.max(maxY, vertex.y);
+                    maxZ = Math.max(maxZ, vertex.z);
+                }
+                yield new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+            }
+            default -> null;
+        };
+    }
+
+    // Check if a grid cell intersects with the query bounds
+    private boolean gridCellIntersectsBounds(Point3f cellOrigin, int cellSize, VolumeBounds bounds,
+                                             boolean includeIntersecting) {
+        float cellMaxX = cellOrigin.x + cellSize;
+        float cellMaxY = cellOrigin.y + cellSize;
+        float cellMaxZ = cellOrigin.z + cellSize;
+
+        if (includeIntersecting) {
+            // Check for any intersection
+            return !(cellMaxX < bounds.minX || cellOrigin.x > bounds.maxX || cellMaxY < bounds.minY
+                     || cellOrigin.y > bounds.maxY || cellMaxZ < bounds.minZ || cellOrigin.z > bounds.maxZ);
+        } else {
+            // Check for complete containment within bounds
+            return cellOrigin.x >= bounds.minX && cellMaxX <= bounds.maxX && cellOrigin.y >= bounds.minY
+            && cellMaxY <= bounds.maxY && cellOrigin.z >= bounds.minZ && cellMaxZ <= bounds.maxZ;
+        }
+    }
+
+    // Merge overlapping SFC ranges for efficiency
+    private List<SFCRange> mergeRanges(List<SFCRange> ranges) {
+        if (ranges.isEmpty()) {
+            return ranges;
+        }
+
+        ranges.sort((a, b) -> Long.compare(a.start, b.start));
+        List<SFCRange> merged = new ArrayList<>();
+        SFCRange current = ranges.get(0);
+
+        for (int i = 1; i < ranges.size(); i++) {
+            SFCRange next = ranges.get(i);
+            if (current.end + 1 >= next.start) {
+                // Merge overlapping ranges
+                current = new SFCRange(current.start, Math.max(current.end, next.end));
+            } else {
+                merged.add(current);
+                current = next;
+            }
+        }
+        merged.add(current);
+
+        return merged;
+    }
+
+    // Efficient spatial range query using tetrahedral space-filling curve properties
+    private Stream<Long> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
+        // Use SFC properties to find ranges of indices that could intersect the volume
+        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
+
+        return sfcRanges.stream().flatMap(range -> {
+            // Generate all indices in the range
+            List<Long> indices = new ArrayList<>();
+            for (long index = range.start; index <= range.end; index++) {
+                indices.add(index);
+            }
+            return indices.stream();
+        }).filter(index -> {
+            // Final precise filtering for elements that passed SFC range test
+            try {
+                var tet = Tet.tetrahedron(index);
+                if (includeIntersecting) {
+                    return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
+                } else {
+                    return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
+                }
+            } catch (Exception e) {
+                // Skip invalid indices
+                return false;
+            }
+        });
+    }
+
+    // Check if a tetrahedron is completely contained within a volume
+    private boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
+        var vertices = tet.coordinates();
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return false;
+        }
+
+        // Simple AABB containment test - all vertices must be within bounds
+        for (var vertex : vertices) {
+            if (vertex.x < bounds.minX || vertex.x > bounds.maxX || vertex.y < bounds.minY || vertex.y > bounds.maxY
+            || vertex.z < bounds.minZ || vertex.z > bounds.maxZ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Check if a tetrahedron intersects with a volume
+    private boolean tetrahedronIntersectsVolume(Tet tet, Spatial volume) {
+        var vertices = tet.coordinates();
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return false;
+        }
+
+        // Simple AABB intersection test - any vertex within bounds indicates intersection
+        for (var vertex : vertices) {
+            if (vertex.x >= bounds.minX && vertex.x <= bounds.maxX && vertex.y >= bounds.minY && vertex.y <= bounds.maxY
+            && vertex.z >= bounds.minZ && vertex.z <= bounds.maxZ) {
+                return true;
+            }
+        }
+
+        // Also check if the volume center is inside the tetrahedron
+        var centerPoint = new Point3f((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2,
+                                      (bounds.minZ + bounds.maxZ) / 2);
+        return tet.contains(centerPoint);
+    }
+
     public record FaceNeighbor(byte face, Tet tet) {
+    }
+
+    // Helper record for volume bounds
+    private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+    }
+
+    // Record to represent SFC index ranges
+    private record SFCRange(long start, long end) {
     }
 }
