@@ -132,13 +132,13 @@ public class Tetree<Content> {
 
         var c1 = new Point3i(c0.x + length, c0.y, c0.z);
 
-        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.x, c1.z, point.x, point.y, point.z)
+        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.y, c1.z, point.x, point.y, point.z)
         > 0.0) {
-            var c5 = new Point3i(c0.x + length, c0.y + length, c0.y + length);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.x, c0.z, point.x, point.y,
+            var c5 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.y, c0.z, point.x, point.y,
                                          point.z) > 0.0) {
                 var c4 = new Point3i(c0.x, c0.y, c0.z + length);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.x, c1.z, point.x, point.y,
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.y, c1.z, point.x, point.y,
                                              point.z) > 0.0) {
                     return new Tet(c0, level, 4);
                 }
@@ -148,10 +148,10 @@ public class Tetree<Content> {
             }
         } else {
             var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.x, c3.z, point.x, point.y,
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.y, c3.z, point.x, point.y,
                                          point.z) > 0.0) {
                 var c2 = new Point3i(c0.x, c0.y + length, c0.z);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.x, c2.z, point.x, point.y,
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, point.x, point.y,
                                              point.z) > 0.0) {
                     return new Tet(c0, level, 2);
                 } else {
