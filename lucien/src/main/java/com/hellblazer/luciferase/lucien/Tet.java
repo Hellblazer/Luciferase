@@ -8,7 +8,13 @@ import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 import java.util.stream.Stream;
+
+import static java.util.stream.Collectors.collectingAndThen;
+import static java.util.stream.Collectors.toList;
 
 import static com.hellblazer.luciferase.lucien.Constants.*;
 
@@ -453,59 +459,55 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
     }
 
-    // Compute SFC ranges for all tetrahedra in a grid cell
-    private List<SFCRange> computeCellSFCRanges(Point3f cellOrigin, byte level) {
-        List<SFCRange> ranges = new ArrayList<>();
-
+    // Compute SFC ranges for all tetrahedra in a grid cell - streaming version
+    private Stream<SFCRange> computeCellSFCRanges(Point3f cellOrigin, byte level) {
         // For a grid cell, there can be multiple tetrahedra (6 types)
         // Find the SFC indices for all tetrahedron types at this location
-        for (byte type = 0; type < 6; type++) {
-            var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, type);
-            long index = tet.index();
-            ranges.add(new SFCRange(index, index));
-        }
-
-        return ranges;
+        return IntStream.range(0, 6)
+            .mapToObj(type -> {
+                var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, (byte) type);
+                long index = tet.index();
+                return new SFCRange(index, index);
+            });
     }
 
-    // Compute SFC ranges that could contain tetrahedra intersecting the volume
-    private List<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
-        List<SFCRange> ranges = new ArrayList<>();
-
+    // Compute SFC ranges that could contain tetrahedra intersecting the volume - streaming version
+    private Stream<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
         // Find appropriate refinement levels for the query volume
         byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
         byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
 
-        for (byte level = minLevel; level <= maxLevel; level++) {
-            int length = Constants.lengthAtLevel(level);
+        return IntStream.rangeClosed(minLevel, maxLevel)
+            .boxed()
+            .flatMap(level -> {
+                int length = Constants.lengthAtLevel(level.byteValue());
 
-            // Calculate grid bounds at this level
-            int minX = (int) Math.floor(bounds.minX / length);
-            int maxX = (int) Math.ceil(bounds.maxX / length);
-            int minY = (int) Math.floor(bounds.minY / length);
-            int maxY = (int) Math.ceil(bounds.maxY / length);
-            int minZ = (int) Math.floor(bounds.minZ / length);
-            int maxZ = (int) Math.ceil(bounds.maxZ / length);
+                // Calculate grid bounds at this level
+                int minX = (int) Math.floor(bounds.minX / length);
+                int maxX = (int) Math.ceil(bounds.maxX / length);
+                int minY = (int) Math.floor(bounds.minY / length);
+                int maxY = (int) Math.ceil(bounds.maxY / length);
+                int minZ = (int) Math.floor(bounds.minZ / length);
+                int maxZ = (int) Math.ceil(bounds.maxZ / length);
 
-            // Find SFC ranges for grid cells that could intersect the volume
-            for (int x = minX; x <= maxX; x++) {
-                for (int y = minY; y <= maxY; y++) {
-                    for (int z = minZ; z <= maxZ; z++) {
-                        Point3f cellPoint = new Point3f(x * length, y * length, z * length);
-
-                        // Check if this grid cell could intersect our bounds
-                        if (gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting)) {
-                            // Find the SFC range for all tetrahedra in this grid cell
-                            var cellRanges = computeCellSFCRanges(cellPoint, level);
-                            ranges.addAll(cellRanges);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Merge overlapping ranges for efficiency
-        return mergeRanges(ranges);
+                // Find SFC ranges for grid cells that could intersect the volume - streaming
+                return IntStream.rangeClosed(minX, maxX)
+                    .boxed()
+                    .flatMap(x -> IntStream.rangeClosed(minY, maxY)
+                        .boxed()
+                        .flatMap(y -> IntStream.rangeClosed(minZ, maxZ)
+                            .filter(z -> {
+                                Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+                                return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                            })
+                            .mapToObj(z -> {
+                                Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+                                return computeCellSFCRanges(cellPoint, level.byteValue());
+                            })
+                            .flatMap(stream -> stream)
+                        )
+                    );
+            });
     }
 
     // Create a spatial volume from bounds for final filtering
@@ -624,32 +626,28 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return merged;
     }
 
-    // Efficient spatial range query using tetrahedral space-filling curve properties
+    // Efficient spatial range query using tetrahedral space-filling curve properties - streaming version
     private Stream<Long> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
         // Use SFC properties to find ranges of indices that could intersect the volume
-        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
-
-        return sfcRanges.stream().flatMap(range -> {
-            // Generate all indices in the range
-            List<Long> indices = new ArrayList<>();
-            for (long index = range.start; index <= range.end; index++) {
-                indices.add(index);
-            }
-            return indices.stream();
-        }).filter(index -> {
-            // Final precise filtering for elements that passed SFC range test
-            try {
-                var tet = Tet.tetrahedron(index);
-                if (includeIntersecting) {
-                    return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
-                } else {
-                    return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
+        // Apply Octree pattern: stream ranges, collect for merge, then stream final indices
+        return computeSFCRanges(bounds, includeIntersecting)
+            .collect(collectingAndThen(toList(), this::mergeRanges))
+            .stream()
+            .flatMap(range -> LongStream.rangeClosed(range.start(), range.end()).boxed())
+            .filter(index -> {
+                // Final precise filtering for elements that passed SFC range test
+                try {
+                    var tet = Tet.tetrahedron(index);
+                    if (includeIntersecting) {
+                        return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
+                    } else {
+                        return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
+                    }
+                } catch (Exception e) {
+                    // Skip invalid indices
+                    return false;
                 }
-            } catch (Exception e) {
-                // Skip invalid indices
-                return false;
-            }
-        });
+            });
     }
 
     // Check if a tetrahedron is completely contained within a volume
