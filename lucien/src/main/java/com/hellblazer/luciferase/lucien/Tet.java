@@ -458,6 +458,47 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             default -> throw new IllegalArgumentException("Invalid dimension: " + dimension);
         }
     }
+    
+    // Calculate touched dimensions for optimized spatial range queries
+    private TouchedDimensions calculateTouchedDimensions(VolumeBounds bounds, byte level) {
+        int length = Constants.lengthAtLevel(level);
+        
+        // Calculate grid bounds at this level
+        int minX = (int) Math.floor(bounds.minX / length);
+        int maxX = (int) Math.ceil(bounds.maxX / length);
+        int minY = (int) Math.floor(bounds.minY / length);
+        int maxY = (int) Math.ceil(bounds.maxY / length);
+        int minZ = (int) Math.floor(bounds.minZ / length);
+        int maxZ = (int) Math.ceil(bounds.maxZ / length);
+        
+        // Determine which dimensions are actually split by the volume
+        byte mask = 0;
+        if (minX != maxX) mask |= 0x01; // X dimension touched
+        if (minY != maxY) mask |= 0x02; // Y dimension touched  
+        if (minZ != maxZ) mask |= 0x04; // Z dimension touched
+        
+        // Calculate lower segment ID for SFC traversal optimization
+        byte lowerSegment = (byte) ((minX & 1) | ((minY & 1) << 1) | ((minZ & 1) << 2));
+        
+        return new TouchedDimensions(mask, lowerSegment, level);
+    }
+    
+    // Get spatial range metadata for optimized queries
+    private SpatialRangeMetaData getSpatialRangeMetaData(VolumeBounds bounds, byte level) {
+        var touched = calculateTouchedDimensions(bounds, level);
+        
+        // Calculate representative location ID
+        int length = Constants.lengthAtLevel(level);
+        int centerX = (int) ((bounds.minX + bounds.maxX) / (2 * length)) * length;
+        int centerY = (int) ((bounds.minY + bounds.maxY) / (2 * length)) * length;
+        int centerZ = (int) ((bounds.minZ + bounds.maxZ) / (2 * length)) * length;
+        
+        // Create representative tetrahedron and get its SFC location
+        var tet = new Tet(centerX, centerY, centerZ, level, (byte) 0);
+        long locationID = tet.index();
+        
+        return new SpatialRangeMetaData(level, locationID, touched);
+    }
 
     // Compute SFC ranges for all tetrahedra in a grid cell - streaming version
     private Stream<SFCRange> computeCellSFCRanges(Point3f cellOrigin, byte level) {
@@ -471,7 +512,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             });
     }
 
-    // Compute SFC ranges that could contain tetrahedra intersecting the volume - streaming version
+    // Compute SFC ranges that could contain tetrahedra intersecting the volume - optimized version
     private Stream<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
         // Find appropriate refinement levels for the query volume
         byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
@@ -479,40 +520,222 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         return IntStream.rangeClosed(minLevel, maxLevel)
             .boxed()
-            .flatMap(level -> {
-                int length = Constants.lengthAtLevel(level.byteValue());
-
-                // Calculate grid bounds at this level
-                int minX = (int) Math.floor(bounds.minX / length);
-                int maxX = (int) Math.ceil(bounds.maxX / length);
-                int minY = (int) Math.floor(bounds.minY / length);
-                int maxY = (int) Math.ceil(bounds.maxY / length);
-                int minZ = (int) Math.floor(bounds.minZ / length);
-                int maxZ = (int) Math.ceil(bounds.maxZ / length);
-
-                // Find SFC ranges for grid cells that could intersect the volume - streaming
-                return IntStream.rangeClosed(minX, maxX)
+            .flatMap(level -> computeOptimizedSFCRangesAtLevel(bounds, level.byteValue(), includeIntersecting));
+    }
+    
+    // Optimized SFC range computation using touched dimensions analysis
+    private Stream<SFCRange> computeOptimizedSFCRangesAtLevel(VolumeBounds bounds, byte level, boolean includeIntersecting) {
+        var touchedDims = calculateTouchedDimensions(bounds, level);
+        int length = Constants.lengthAtLevel(level);
+        
+        // Early termination if volume is too small for this level
+        if (touchedDims.getTouchedDimensionCount() == 0) {
+            // Volume fits in single grid cell
+            int centerX = (int) ((bounds.minX + bounds.maxX) / 2 / length) * length;
+            int centerY = (int) ((bounds.minY + bounds.maxY) / 2 / length) * length;
+            int centerZ = (int) ((bounds.minZ + bounds.maxZ) / 2 / length) * length;
+            return computeCellSFCRanges(new Point3f(centerX, centerY, centerZ), level);
+        }
+        
+        // Use touched dimensions to optimize traversal
+        int minX = (int) Math.floor(bounds.minX / length);
+        int maxX = (int) Math.ceil(bounds.maxX / length);
+        int minY = (int) Math.floor(bounds.minY / length);
+        int maxY = (int) Math.ceil(bounds.maxY / length);
+        int minZ = (int) Math.floor(bounds.minZ / length);
+        int maxZ = (int) Math.ceil(bounds.maxZ / length);
+        
+        // Optimize iteration based on touched dimensions
+        if (touchedDims.getTouchedDimensionCount() == 1) {
+            // Only one dimension varies - linear traversal
+            return computeLinearSFCRanges(bounds, level, minX, maxX, minY, maxY, minZ, maxZ, 
+                                        touchedDims, includeIntersecting);
+        } else if (touchedDims.getTouchedDimensionCount() == 2) {
+            // Two dimensions vary - planar traversal
+            return computePlanarSFCRanges(bounds, level, minX, maxX, minY, maxY, minZ, maxZ, 
+                                        touchedDims, includeIntersecting);
+        } else {
+            // All dimensions vary - full 3D traversal (fallback to original method)
+            return IntStream.rangeClosed(minX, maxX)
+                .boxed()
+                .flatMap(x -> IntStream.rangeClosed(minY, maxY)
                     .boxed()
-                    .flatMap(x -> IntStream.rangeClosed(minY, maxY)
-                        .boxed()
-                        .flatMap(y -> IntStream.rangeClosed(minZ, maxZ)
-                            .filter(z -> {
-                                Point3f cellPoint = new Point3f(x * length, y * length, z * length);
-                                return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
-                            })
-                            .mapToObj(z -> {
-                                Point3f cellPoint = new Point3f(x * length, y * length, z * length);
-                                return computeCellSFCRanges(cellPoint, level.byteValue());
-                            })
-                            .flatMap(stream -> stream)
-                        )
-                    );
-            });
+                    .flatMap(y -> IntStream.rangeClosed(minZ, maxZ)
+                        .filter(z -> {
+                            Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+                            return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                        })
+                        .mapToObj(z -> {
+                            Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+                            return computeCellSFCRanges(cellPoint, level);
+                        })
+                        .flatMap(stream -> stream)
+                    )
+                );
+        }
+    }
+    
+    // Optimized linear SFC range computation (1 dimension varies)
+    private Stream<SFCRange> computeLinearSFCRanges(VolumeBounds bounds, byte level, 
+                                                   int minX, int maxX, int minY, int maxY, int minZ, int maxZ,
+                                                   TouchedDimensions touchedDims, boolean includeIntersecting) {
+        int length = Constants.lengthAtLevel(level);
+        
+        if (touchedDims.isDimensionTouched(0)) {
+            // X dimension varies
+            return IntStream.rangeClosed(minX, maxX)
+                .filter(x -> {
+                    Point3f cellPoint = new Point3f(x * length, minY * length, minZ * length);
+                    return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                })
+                .mapToObj(x -> {
+                    Point3f cellPoint = new Point3f(x * length, minY * length, minZ * length);
+                    return computeCellSFCRanges(cellPoint, level);
+                })
+                .flatMap(stream -> stream);
+        } else if (touchedDims.isDimensionTouched(1)) {
+            // Y dimension varies
+            return IntStream.rangeClosed(minY, maxY)
+                .filter(y -> {
+                    Point3f cellPoint = new Point3f(minX * length, y * length, minZ * length);
+                    return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                })
+                .mapToObj(y -> {
+                    Point3f cellPoint = new Point3f(minX * length, y * length, minZ * length);
+                    return computeCellSFCRanges(cellPoint, level);
+                })
+                .flatMap(stream -> stream);
+        } else {
+            // Z dimension varies
+            return IntStream.rangeClosed(minZ, maxZ)
+                .filter(z -> {
+                    Point3f cellPoint = new Point3f(minX * length, minY * length, z * length);
+                    return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                })
+                .mapToObj(z -> {
+                    Point3f cellPoint = new Point3f(minX * length, minY * length, z * length);
+                    return computeCellSFCRanges(cellPoint, level);
+                })
+                .flatMap(stream -> stream);
+        }
+    }
+    
+    // Optimized planar SFC range computation (2 dimensions vary)
+    private Stream<SFCRange> computePlanarSFCRanges(VolumeBounds bounds, byte level,
+                                                   int minX, int maxX, int minY, int maxY, int minZ, int maxZ,
+                                                   TouchedDimensions touchedDims, boolean includeIntersecting) {
+        int length = Constants.lengthAtLevel(level);
+        
+        if (!touchedDims.isDimensionTouched(0)) {
+            // X fixed, Y and Z vary
+            return IntStream.rangeClosed(minY, maxY)
+                .boxed()
+                .flatMap(y -> IntStream.rangeClosed(minZ, maxZ)
+                    .filter(z -> {
+                        Point3f cellPoint = new Point3f(minX * length, y * length, z * length);
+                        return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                    })
+                    .mapToObj(z -> {
+                        Point3f cellPoint = new Point3f(minX * length, y * length, z * length);
+                        return computeCellSFCRanges(cellPoint, level);
+                    })
+                    .flatMap(stream -> stream)
+                );
+        } else if (!touchedDims.isDimensionTouched(1)) {
+            // Y fixed, X and Z vary
+            return IntStream.rangeClosed(minX, maxX)
+                .boxed()
+                .flatMap(x -> IntStream.rangeClosed(minZ, maxZ)
+                    .filter(z -> {
+                        Point3f cellPoint = new Point3f(x * length, minY * length, z * length);
+                        return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                    })
+                    .mapToObj(z -> {
+                        Point3f cellPoint = new Point3f(x * length, minY * length, z * length);
+                        return computeCellSFCRanges(cellPoint, level);
+                    })
+                    .flatMap(stream -> stream)
+                );
+        } else {
+            // Z fixed, X and Y vary
+            return IntStream.rangeClosed(minX, maxX)
+                .boxed()
+                .flatMap(x -> IntStream.rangeClosed(minY, maxY)
+                    .filter(y -> {
+                        Point3f cellPoint = new Point3f(x * length, y * length, minZ * length);
+                        return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                    })
+                    .mapToObj(y -> {
+                        Point3f cellPoint = new Point3f(x * length, y * length, minZ * length);
+                        return computeCellSFCRanges(cellPoint, level);
+                    })
+                    .flatMap(stream -> stream)
+                );
+        }
     }
 
     // Create a spatial volume from bounds for final filtering
     private Spatial createSpatialFromBounds(VolumeBounds bounds) {
         return new Spatial.aabb(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ);
+    }
+    
+    // Depth-aware spatial range computation with adaptive level selection
+    private Stream<SFCRange> computeDepthAwareSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
+        // Calculate optimal level range based on volume characteristics
+        byte optimalLevel = findOptimalLevel(bounds);
+        byte minLevel = (byte) Math.max(0, optimalLevel - 1);
+        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), optimalLevel + 2);
+        
+        // Use depth-dependent importance weighting
+        return IntStream.rangeClosed(minLevel, maxLevel)
+            .boxed()
+            .flatMap(level -> {
+                byte levelByte = level.byteValue();
+                var touchedDims = calculateTouchedDimensions(bounds, levelByte);
+                
+                // Skip levels that don't contribute meaningfully
+                if (shouldSkipLevel(bounds, levelByte, touchedDims)) {
+                    return Stream.empty();
+                }
+                
+                return computeOptimizedSFCRangesAtLevel(bounds, levelByte, includeIntersecting);
+            });
+    }
+    
+    // Find optimal level based on volume size and spatial characteristics
+    private byte findOptimalLevel(VolumeBounds bounds) {
+        float volumeSize = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) * (bounds.maxZ - bounds.minZ);
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+        
+        // Find level where tetrahedron size is roughly 1/4 to 1/2 of max extent
+        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
+            int tetLength = Constants.lengthAtLevel(level);
+            if (tetLength <= maxExtent * 2 && tetLength >= maxExtent / 4) {
+                return level;
+            }
+        }
+        
+        return findMinimumContainingLevel(bounds);
+    }
+    
+    // Determine if a level should be skipped based on spatial characteristics
+    private boolean shouldSkipLevel(VolumeBounds bounds, byte level, TouchedDimensions touchedDims) {
+        int tetLength = Constants.lengthAtLevel(level);
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+        
+        // Skip if tetrahedra are much larger than the volume
+        if (tetLength > maxExtent * 8) {
+            return true;
+        }
+        
+        // Skip if tetrahedra are much smaller and no dimensions are touched  
+        if (tetLength < maxExtent / 16 && touchedDims.getTouchedDimensionCount() == 0) {
+            return true;
+        }
+        
+        return false;
     }
 
     // Find minimum level that can contain the volume
@@ -600,6 +823,87 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             && cellMaxY <= bounds.maxY && cellOrigin.z >= bounds.minZ && cellMaxZ <= bounds.maxZ;
         }
     }
+    
+    // Hierarchical range splitting optimization for large volumes
+    private Stream<SFCRange> computeHierarchicalSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
+        float volumeSize = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) * (bounds.maxZ - bounds.minZ);
+        
+        // For large volumes, split hierarchically to reduce computation
+        if (volumeSize > 10000.0f) {
+            return splitVolumeHierarchically(bounds, includeIntersecting, 0);
+        } else {
+            return computeDepthAwareSFCRanges(bounds, includeIntersecting);
+        }
+    }
+    
+    // Recursively split large volumes into smaller manageable pieces
+    private Stream<SFCRange> splitVolumeHierarchically(VolumeBounds bounds, boolean includeIntersecting, int depth) {
+        final int MAX_SPLIT_DEPTH = 3;
+        float volumeSize = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) * (bounds.maxZ - bounds.minZ);
+        
+        // Base case: volume is small enough or max depth reached
+        if (volumeSize <= 5000.0f || depth >= MAX_SPLIT_DEPTH) {
+            return computeDepthAwareSFCRanges(bounds, includeIntersecting);
+        }
+        
+        // Find the largest dimension to split
+        float xExtent = bounds.maxX - bounds.minX;
+        float yExtent = bounds.maxY - bounds.minY;
+        float zExtent = bounds.maxZ - bounds.minZ;
+        
+        if (xExtent >= yExtent && xExtent >= zExtent) {
+            // Split along X dimension
+            float midX = (bounds.minX + bounds.maxX) / 2;
+            return Stream.of(
+                new VolumeBounds(bounds.minX, bounds.minY, bounds.minZ, midX, bounds.maxY, bounds.maxZ),
+                new VolumeBounds(midX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ)
+            ).flatMap(subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
+        } else if (yExtent >= zExtent) {
+            // Split along Y dimension
+            float midY = (bounds.minY + bounds.maxY) / 2;
+            return Stream.of(
+                new VolumeBounds(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, midY, bounds.maxZ),
+                new VolumeBounds(bounds.minX, midY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ)
+            ).flatMap(subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
+        } else {
+            // Split along Z dimension
+            float midZ = (bounds.minZ + bounds.maxZ) / 2;
+            return Stream.of(
+                new VolumeBounds(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, midZ),
+                new VolumeBounds(bounds.minX, bounds.minY, midZ, bounds.maxX, bounds.maxY, bounds.maxZ)
+            ).flatMap(subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
+        }
+    }
+    
+    // Enhanced range merging with hierarchical consideration
+    private List<SFCRange> mergeRangesOptimized(List<SFCRange> ranges) {
+        if (ranges.isEmpty()) {
+            return ranges;
+        }
+        
+        // Sort ranges by start index
+        ranges.sort((a, b) -> Long.compare(a.start, b.start));
+        
+        // Use more aggressive merging for better performance
+        List<SFCRange> merged = new ArrayList<>();
+        SFCRange current = ranges.get(0);
+        
+        for (int i = 1; i < ranges.size(); i++) {
+            SFCRange next = ranges.get(i);
+            
+            // Merge if ranges overlap or are very close (within a small gap)
+            long gap = next.start - current.end;
+            if (gap <= 8) { // Allow small gaps to reduce fragmentation
+                current = new SFCRange(current.start, Math.max(current.end, next.end));
+            } else {
+                merged.add(current);
+                current = next;
+            }
+        }
+        merged.add(current);
+        
+        return merged;
+    }
 
     // Merge overlapping SFC ranges for efficiency
     private List<SFCRange> mergeRanges(List<SFCRange> ranges) {
@@ -626,12 +930,14 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return merged;
     }
 
-    // Efficient spatial range query using tetrahedral space-filling curve properties - streaming version
+    // Efficient spatial range query using tetrahedral space-filling curve properties - optimized version
     private Stream<Long> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
-        // Use SFC properties to find ranges of indices that could intersect the volume
-        // Apply Octree pattern: stream ranges, collect for merge, then stream final indices
-        return computeSFCRanges(bounds, includeIntersecting)
-            .collect(collectingAndThen(toList(), this::mergeRanges))
+        // Choose optimization strategy based on volume characteristics
+        var rangeStream = selectOptimalRangeStrategy(bounds, includeIntersecting);
+            
+        // Apply optimized range merging and streaming
+        return rangeStream
+            .collect(collectingAndThen(toList(), this::mergeRangesOptimized))
             .stream()
             .flatMap(range -> LongStream.rangeClosed(range.start(), range.end()).boxed())
             .filter(index -> {
@@ -648,6 +954,36 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                     return false;
                 }
             });
+    }
+    
+    // Select optimal range computation strategy based on volume characteristics
+    private Stream<SFCRange> selectOptimalRangeStrategy(VolumeBounds bounds, boolean includeIntersecting) {
+        float volumeSize = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) * (bounds.maxZ - bounds.minZ);
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+        
+        // Strategy selection based on volume characteristics
+        if (volumeSize > 10000.0f) {
+            // Large volumes: use hierarchical splitting
+            return computeHierarchicalSFCRanges(bounds, includeIntersecting);
+        } else if (shouldUseDepthAwareOptimization(bounds)) {
+            // Medium volumes: use depth-aware optimization
+            return computeDepthAwareSFCRanges(bounds, includeIntersecting);
+        } else {
+            // Small volumes: use standard computation
+            return computeSFCRanges(bounds, includeIntersecting);
+        }
+    }
+    
+    // Determine whether to use depth-aware optimization based on volume characteristics
+    private boolean shouldUseDepthAwareOptimization(VolumeBounds bounds) {
+        float volumeSize = (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) * (bounds.maxZ - bounds.minZ);
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+        
+        // Use depth-aware optimization for medium to large volumes
+        // Small volumes benefit from simpler computation
+        return volumeSize > 1000.0f && maxExtent > 10.0f;
     }
 
     // Check if a tetrahedron is completely contained within a volume
@@ -695,6 +1031,25 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Helper record for volume bounds
     private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+    }
+    
+    // Record to represent touched dimensions for optimized range queries
+    private record TouchedDimensions(byte mask, byte lowerSegment, byte depthID) {
+        boolean isDimensionTouched(int dimension) {
+            return (mask & (1 << dimension)) != 0;
+        }
+        
+        int getTouchedDimensionCount() {
+            return Integer.bitCount(mask & 0xFF);
+        }
+        
+        boolean isAllDimensionsTouched() {
+            return (mask & 0x07) == 0x07; // All 3 dimensions touched
+        }
+    }
+    
+    // Record to represent spatial range metadata
+    private record SpatialRangeMetaData(byte depthID, long locationID, TouchedDimensions touched) {
     }
 
     // Record to represent SFC index ranges
