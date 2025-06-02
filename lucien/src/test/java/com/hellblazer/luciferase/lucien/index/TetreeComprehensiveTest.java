@@ -259,7 +259,7 @@ public class TetreeComprehensiveTest {
 
             // Test simplex vertices calculation
             var simplex = new Tetree.Simplex<>(tet.index(), "test");
-            Vector3d[] vertices = simplex.vertices();
+            Vector3d[] vertices = simplex.coordinates();
 
             assertEquals(4, vertices.length, "Tetrahedron should have 4 vertices");
 

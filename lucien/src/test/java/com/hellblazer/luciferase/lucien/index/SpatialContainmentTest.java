@@ -405,7 +405,7 @@ public class SpatialContainmentTest {
         long index = tetree.insert(point, level, "test");
         Tetree.Simplex<String> simplex = new Tetree.Simplex<>(index, "test");
 
-        Vector3d[] vertices = simplex.vertices();
+        Vector3d[] vertices = simplex.coordinates();
         assertEquals(4, vertices.length, "Tetrahedron should have 4 vertices");
 
         // Verify all vertices are distinct
