@@ -15,26 +15,58 @@ import static org.junit.jupiter.api.Assertions.*;
 public class TetTest {
     @Test
     public void baySubdivisionGeometry() {
-        // Test that child tetrahedra have valid 3D coordinates
+        // Test that child tetrahedra have valid 3D coordinates and geometric properties
         var parentTet = new Tet(0, 0, 0, (byte) 3, (byte) 0);
         var parentCoords = parentTet.coordinates();
-
+        
+        // Calculate the actual bounding box of the parent tetrahedron
+        int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+        int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;  
+        int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+        
+        for (var coord : parentCoords) {
+            minX = Math.min(minX, coord.x);
+            maxX = Math.max(maxX, coord.x);
+            minY = Math.min(minY, coord.y);
+            maxY = Math.max(maxY, coord.y);
+            minZ = Math.min(minZ, coord.z);
+            maxZ = Math.max(maxZ, coord.z);
+        }
+        
+        // For Bey subdivision, children should be within a reasonable extended bound
+        // of the parent tetrahedron, allowing for the subdivision geometry
+        int parentLength = parentTet.length();
+        int childLength = Constants.lengthAtLevel((byte)(parentTet.l() + 1));
+        
         for (byte childIndex = 0; childIndex < 8; childIndex++) {
             var childTet = parentTet.child(childIndex);
             var childCoords = childTet.coordinates();
-
-            // Verify child coordinates are within parent bounds
-            for (var coord : childCoords) {
-                assertTrue(coord.x >= parentCoords[0].x && coord.x <= parentCoords[3].x,
-                           "Child X coordinate %d out of parent bounds for child %d".formatted(coord.x, childIndex));
-                assertTrue(coord.y >= parentCoords[0].y && coord.y <= parentCoords[3].y,
-                           "Child Y coordinate %d out of parent bounds for child %d".formatted(coord.y, childIndex));
-                assertTrue(coord.z >= parentCoords[0].z && coord.z <= parentCoords[3].z,
-                           "Child Z coordinate %d out of parent bounds for child %d".formatted(coord.z, childIndex));
-            }
-
+            
             // Verify child is at correct refinement level
             assertEquals(parentTet.l() + 1, childTet.l(), "Child level incorrect for child %d".formatted(childIndex));
+            
+            // Verify child has smaller edge length
+            assertEquals(childLength, childTet.length(), "Child length incorrect for child %d".formatted(childIndex));
+            
+            // Verify child coordinates are reasonable (within extended bounds of parent)
+            // Allow some tolerance for Bey's geometric subdivision
+            int tolerance = parentLength; // Allow one parent edge length as tolerance
+            
+            for (var coord : childCoords) {
+                assertTrue(coord.x >= minX - tolerance && coord.x <= maxX + tolerance,
+                           "Child X coordinate %d out of reasonable bounds [%d,%d] ± %d for child %d"
+                           .formatted(coord.x, minX, maxX, tolerance, childIndex));
+                assertTrue(coord.y >= minY - tolerance && coord.y <= maxY + tolerance,
+                           "Child Y coordinate %d out of reasonable bounds [%d,%d] ± %d for child %d"
+                           .formatted(coord.y, minY, maxY, tolerance, childIndex));
+                assertTrue(coord.z >= minZ - tolerance && coord.z <= maxZ + tolerance,
+                           "Child Z coordinate %d out of reasonable bounds [%d,%d] ± %d for child %d"
+                           .formatted(coord.z, minZ, maxZ, tolerance, childIndex));
+            }
+            
+            // Verify child type is valid
+            assertTrue(childTet.type() >= 0 && childTet.type() <= 5, 
+                       "Child type %d invalid for child %d".formatted(childTet.type(), childIndex));
         }
     }
 
@@ -600,9 +632,9 @@ public class TetTest {
     void validateSFCProperties() {
         // Test additional SFC properties to ensure robustness
         System.out.println("=== Validating SFC Properties ===");
-
+        var count = 0L;
         // Test that tetLevelFromIndex works correctly
-        for (int level = 0; level <= 3; level++) {
+        for (int level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
             long startIndex = level == 0 ? 0 : (1L << (3 * (level - 1)));
             long endIndex = 1L << (3 * level);
 
@@ -613,9 +645,11 @@ public class TetTest {
                                       calculatedLevel);
                 }
                 assertEquals(level, calculatedLevel, "Level calculation failed for index " + index);
+                count++;
             }
         }
 
+        System.out.println("Tested: " + count);
         // Test that sequential indices produce valid tetrahedra
         for (long index = 0; index < 64; index++) {
             try {

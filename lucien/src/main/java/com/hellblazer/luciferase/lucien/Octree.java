@@ -289,11 +289,12 @@ public class Octree<Content> {
         // Use Morton curve properties to find ranges of indices that could intersect the volume
         var mortonRanges = computeMortonRanges(bounds, includeIntersecting);
 
-        return mortonRanges.stream().flatMap(range -> {
+        Stream<Map.Entry<Long, Content>> ranges = mortonRanges.stream().flatMap(range -> {
             // Use NavigableMap.subMap to efficiently get entries in Morton range
             var subMap = map.subMap(range.start, true, range.end, true);
             return subMap.entrySet().stream();
-        }).filter(entry -> {
+        });
+        return ranges.filter(entry -> {
             // Final precise filtering for elements that passed Morton range test
             var cube = toCube(entry.getKey());
             if (includeIntersecting) {
