@@ -51,11 +51,11 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public static boolean contains(Point3i[] vertices, Tuple3f point) {
         // wrt face CDB
-        if (orientation(point, vertices[2], vertices[3], vertices[1]) > 0) {
+        if (orientation(point, vertices[2], vertices[3], vertices[1]) > 0.0d) {
             return false;
         }
         // wrt face DCA
-        if (orientation(point, vertices[3], vertices[2], vertices[0]) > 0) {
+        if (orientation(point, vertices[3], vertices[2], vertices[0]) > 0.0d) {
             return false;
         }
         // wrt face BDA
@@ -63,7 +63,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return false;
         }
         // wrt face BAC
-        return orientation(point, vertices[1], vertices[0], vertices[2]) <= 0;
+        return orientation(point, vertices[1], vertices[0], vertices[2]) <= 0.0d;
     }
 
     public static double orientation(Tuple3i query, Tuple3i a, Tuple3i b, Tuple3i c) {
@@ -217,38 +217,40 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     public boolean contains(Tuple3f point) {
-        return contains(vertices(), point);
+        return contains(coordinates(), point);
     }
 
     /**
-     * Answer the 3D coordinates of the tetrahedron represented by the receiver
+     * Answer the 3D coordinates of the tetrahedron represented by the receiver Using t8code's canonical vertex
+     * coordinate algorithm
      *
-     * @return the 3D coordinates of the tetrahedron described by the receiver in CCW order
+     * @return the 3D coordinates of the tetrahedron described by the receiver
      */
     public Point3i[] coordinates() {
         var coords = new Point3i[4];
-        coords[0] = new Point3i(x, y, z);
         var h = length();
-        var i = type / 2;
-        var j = (i + ((type % 2 == 0) ? 2 : 1)) % 3;
 
-        if (i == 0) {
-            coords[1] = new Point3i(coords[0].x + h, coords[0].y, coords[0].z);
-        } else if (i == 1) {
-            coords[1] = new Point3i(coords[0].x, coords[0].y + h, coords[0].z);
-        } else if (i == 2) {
-            coords[1] = new Point3i(coords[0].x, coords[0].y, coords[0].z + h);
-        }
+        // t8code algorithm: ei = type / 2, ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3
+        int ei = type / 2;
+        int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
 
-        if (j == 0) {
-            coords[2] = new Point3i(coords[1].x + h, coords[1].y, coords[1].z);
-        } else if (j == 1) {
-            coords[2] = new Point3i(coords[1].x, coords[1].y + h, coords[1].z);
-        } else if (j == 2) {
-            coords[2] = new Point3i(coords[1].x, coords[1].y, coords[1].z + h);
-        }
+        // vertex 0: anchor coordinates (x, y, z)
+        coords[0] = new Point3i(x, y, z);
 
-        coords[3] = new Point3i(coords[1].x + h, coords[1].y + h, coords[1].z + h);
+        // vertex 1: anchor + h in dimension ei
+        coords[1] = new Point3i(x, y, z);
+        addToDimension(coords[1], ei, h);
+
+        // vertex 2: anchor + h in dimension ei + h in dimension ej
+        coords[2] = new Point3i(x, y, z);
+        addToDimension(coords[2], ei, h);
+        addToDimension(coords[2], ej, h);
+
+        // vertex 3: anchor + h in dimensions (ei+1)%3 and (ei+2)%3
+        coords[3] = new Point3i(x, y, z);
+        addToDimension(coords[3], (ei + 1) % 3, h);
+        addToDimension(coords[3], (ei + 2) % 3, h);
+
         return coords;
     }
 
@@ -285,8 +287,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         byte level = findMinimumContainingLevel(bounds);
 
         // Find a tetrahedron at that level that contains the volume
-        var centerPoint = new Point3f((bounds.minX + bounds.maxX) / 2, 
-                                      (bounds.minY + bounds.maxY) / 2,
+        var centerPoint = new Point3f((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2,
                                       (bounds.minZ + bounds.maxZ) / 2);
 
         var tet = locate(centerPoint, level);
@@ -349,10 +350,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the consecutive index of the receiver on the space filling curve
      */
     public long index() {
-        return index(l);
-    }
-
-    public long index(byte level) {
+        byte level = l;
         long id = 0;
         byte typeTemp = 0;
         byte cid;
@@ -390,13 +388,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return 0L;
         }
 
-        return spatialRangeQuery(bounds, true)
-            .filter(index -> {
-                var tet = Tet.tetrahedron(index);
-                return tetrahedronIntersectsVolume(tet, volume);
-            })
-            .findFirst()
-            .orElse(0L);
+        return spatialRangeQuery(bounds, true).filter(index -> {
+            var tet = Tet.tetrahedron(index);
+            return tetrahedronIntersectsVolume(tet, volume);
+        }).findFirst().orElse(0L);
     }
 
     /**
@@ -404,6 +399,26 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public int length() {
         return 1 << (getMaxRefinementLevel() - l);
+    }
+
+    // Helper method - locate tetrahedron containing a point using direct containment test
+    public Tet locate(Point3f point, byte level) {
+        var length = Constants.lengthAtLevel(level);
+        var c0 = new Point3i((int) (Math.floor(point.x / length) * length),
+                             (int) (Math.floor(point.y / length) * length),
+                             (int) (Math.floor(point.z / length) * length));
+
+        // Test all 6 tetrahedron types at this grid location to find which one contains the point
+        for (byte type = 0; type < 6; type++) {
+            var testTet = new Tet(c0.x, c0.y, c0.z, level, type);
+            if (testTet.contains(point)) {
+                return testTet;
+            }
+        }
+
+        // Fallback: if no tetrahedron contains the point (shouldn't happen), return type 0
+        // This could happen due to floating-point precision issues at boundaries
+        return new Tet(c0.x, c0.y, c0.z, level, (byte) 0);
     }
 
     /**
@@ -429,44 +444,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return vertices;
     }
 
-    // Helper method from Tetree implementation - locate tetrahedron containing a point
-    public Tet locate(Point3f point, byte level) {
-        var length = Constants.lengthAtLevel(level);
-        var c0 = new Point3i((int) (Math.floor(point.x / length) * length),
-                             (int) (Math.floor(point.y / length) * length),
-                             (int) (Math.floor(point.z / length) * length));
-        var c7 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
-
-        var c1 = new Point3i(c0.x + length, c0.y, c0.z);
-
-        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.y, c1.z, point.x, point.y, point.z)
-        > 0.0) {
-            var c5 = new Point3i(c0.x + length, c0.y, c0.z + length);  // Fixed: was c7 coordinates
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.y, c0.z, point.x, point.y,
-                                         point.z) > 0.0) {
-                var c4 = new Point3i(c0.x, c0.y, c0.z + length);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.y, c1.z, point.x, point.y,
-                                             point.z) > 0.0) {
-                    return new Tet(c0, level, 4);
-                }
-                return new Tet(c0, level, 5);
-            } else {
-                return new Tet(c0, level, 0);
-            }
-        } else {
-            var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.y, c3.z, point.x, point.y,
-                                         point.z) > 0.0) {
-                var c2 = new Point3i(c0.x, c0.y + length, c0.z);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, point.x, point.y,
-                                             point.z) > 0.0) {
-                    return new Tet(c0, level, 2);
-                } else {
-                    return new Tet(c0, level, 3);
-                }
-            } else {
-                return new Tet(c0, level, 1);
-            }
+    private void addToDimension(Point3i point, int dimension, int h) {
+        switch (dimension) {
+            case 0 -> point.x += h;
+            case 1 -> point.y += h;
+            case 2 -> point.z += h;
+            default -> throw new IllegalArgumentException("Invalid dimension: " + dimension);
         }
     }
 
