@@ -111,13 +111,34 @@ public class Constants {
 
     public static byte toLevel(long mortonCode) {
         if (mortonCode == 0) {
-            return 0;
+            return 0; // origin at coarsest level (root)
         }
-        byte level = 0;
-        while (mortonCode > 0) {
-            mortonCode >>= 3; // pop the octet
-            level++;
+
+        // Decode the Morton code to get coordinates
+        int[] coords = MortonCurve.decode(mortonCode);
+        int x = coords[0];
+        int y = coords[1];
+        int z = coords[2];
+
+        // Find the maximum coordinate to determine appropriate level
+        int maxCoord = Math.max(Math.max(x, y), z);
+
+        if (maxCoord == 0) {
+            return getMaxRefinementLevel();
         }
+
+        // Find the level that provides an appropriate cube size for this coordinate range
+        // We want a level where the grid size is large enough to reasonably contain the coordinates
+        // but not unnecessarily coarse
+
+        // Find the minimum number of bits needed to represent the max coordinate
+        int bitsNeeded = 32 - Integer.numberOfLeadingZeros(maxCoord);
+
+        // Choose a level that provides reasonable granularity
+        // Level 0 has grid size = 2^21, Level 21 has grid size = 1
+        // We want the coarsest level that still provides reasonable precision
+        byte level = (byte) Math.max(0, Math.min(getMaxRefinementLevel(), getMaxRefinementLevel() - bitsNeeded + 3));
+
         return level;
     }
 

@@ -132,13 +132,13 @@ public class Tetree<Content> {
 
         var c1 = new Point3i(c0.x + length, c0.y, c0.z);
 
-        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.x, c1.z, point.x, point.y, point.z)
+        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.y, c1.z, point.x, point.y, point.z)
         > 0.0) {
-            var c5 = new Point3i(c0.x + length, c0.y + length, c0.y + length);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.x, c0.z, point.x, point.y,
+            var c5 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.y, c0.z, point.x, point.y,
                                          point.z) > 0.0) {
                 var c4 = new Point3i(c0.x, c0.y, c0.z + length);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.x, c1.z, point.x, point.y,
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.y, c1.z, point.x, point.y,
                                              point.z) > 0.0) {
                     return new Tet(c0, level, 4);
                 }
@@ -148,10 +148,10 @@ public class Tetree<Content> {
             }
         } else {
             var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.x, c3.z, point.x, point.y,
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.y, c3.z, point.x, point.y,
                                          point.z) > 0.0) {
                 var c2 = new Point3i(c0.x, c0.y + length, c0.z);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.x, c2.z, point.x, point.y,
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, point.x, point.y,
                                              point.z) > 0.0) {
                     return new Tet(c0, level, 2);
                 } else {
@@ -315,9 +315,9 @@ public class Tetree<Content> {
             return ranges;
         }
 
-        ranges.sort((a, b) -> Long.compare(a.start, b.start));
+        ranges.sort(Comparator.comparingLong(a -> a.start));
         List<SFCRange> merged = new ArrayList<>();
-        SFCRange current = ranges.get(0);
+        SFCRange current = ranges.getFirst();
 
         for (int i = 1; i < ranges.size(); i++) {
             SFCRange next = ranges.get(i);
@@ -339,11 +339,12 @@ public class Tetree<Content> {
         // Use SFC properties to find ranges of indices that could intersect the volume
         var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
 
-        return sfcRanges.stream().flatMap(range -> {
+        Stream<Map.Entry<Long, Content>> ranges = sfcRanges.stream().flatMap(range -> {
             // Use NavigableMap.subMap to efficiently get entries in SFC range
             var subMap = contents.subMap(range.start, true, range.end, true);
             return subMap.entrySet().stream();
-        }).filter(entry -> {
+        });
+        return ranges.filter(entry -> {
             // Final precise filtering for elements that passed SFC range test
             var tet = Tet.tetrahedron(entry.getKey());
             if (includeIntersecting) {
@@ -405,14 +406,14 @@ public class Tetree<Content> {
             this.arr = arr.clone();
             ind = new int[arr.length];
             //convert an array of any elements into array of integers - first occurrence is used to enumerate
-            Map<E, Integer> hm = new HashMap<E, Integer>();
+            Map<E, Integer> hm = new HashMap<>();
             for (int i = 0; i < arr.length; i++) {
                 Integer n = hm.get(arr[i]);
                 if (n == null) {
                     hm.put(arr[i], i);
                     n = i;
                 }
-                ind[i] = n.intValue();
+                ind[i] = n;
             }
             Arrays.sort(ind);//start with ascending sequence of integers
 
@@ -480,13 +481,7 @@ public class Tetree<Content> {
             return false;
         }
 
-        @Override
-        public boolean intersects(float originX, float originY, float originZ, float extentX, float extentY,
-                                  float extentZ) {
-            return false;
-        }
-
-        public Vector3d[] vertices() {
+        public Vector3d[] coordinates() {
             var tet = Tet.tetrahedron(index);
             var coords = tet.coordinates();
             var vertices = new Vector3d[4];
@@ -494,6 +489,12 @@ public class Tetree<Content> {
                 vertices[i] = new Vector3d(coords[i].x, coords[i].y, coords[i].z);
             }
             return vertices;
+        }
+
+        @Override
+        public boolean intersects(float originX, float originY, float originZ, float extentX, float extentY,
+                                  float extentZ) {
+            return false;
         }
     }
 
