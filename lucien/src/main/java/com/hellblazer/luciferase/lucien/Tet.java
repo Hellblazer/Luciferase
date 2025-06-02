@@ -520,7 +520,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         return IntStream.rangeClosed(minLevel, maxLevel)
             .boxed()
-            .flatMap(level -> computeOptimizedSFCRangesAtLevel(bounds, level.byteValue(), includeIntersecting));
+            .flatMap(level -> computeOptimizedSFCRangesAtLevel(bounds, (byte) level.intValue(), includeIntersecting));
     }
     
     // Optimized SFC range computation using touched dimensions analysis
@@ -563,7 +563,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                     .flatMap(y -> IntStream.rangeClosed(minZ, maxZ)
                         .filter(z -> {
                             Point3f cellPoint = new Point3f(x * length, y * length, z * length);
-                            return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                            return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                         })
                         .mapToObj(z -> {
                             Point3f cellPoint = new Point3f(x * length, y * length, z * length);
@@ -586,7 +586,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return IntStream.rangeClosed(minX, maxX)
                 .filter(x -> {
                     Point3f cellPoint = new Point3f(x * length, minY * length, minZ * length);
-                    return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                    return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                 })
                 .mapToObj(x -> {
                     Point3f cellPoint = new Point3f(x * length, minY * length, minZ * length);
@@ -598,7 +598,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return IntStream.rangeClosed(minY, maxY)
                 .filter(y -> {
                     Point3f cellPoint = new Point3f(minX * length, y * length, minZ * length);
-                    return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                    return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                 })
                 .mapToObj(y -> {
                     Point3f cellPoint = new Point3f(minX * length, y * length, minZ * length);
@@ -610,7 +610,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return IntStream.rangeClosed(minZ, maxZ)
                 .filter(z -> {
                     Point3f cellPoint = new Point3f(minX * length, minY * length, z * length);
-                    return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                    return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                 })
                 .mapToObj(z -> {
                     Point3f cellPoint = new Point3f(minX * length, minY * length, z * length);
@@ -633,7 +633,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                 .flatMap(y -> IntStream.rangeClosed(minZ, maxZ)
                     .filter(z -> {
                         Point3f cellPoint = new Point3f(minX * length, y * length, z * length);
-                        return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                        return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                     })
                     .mapToObj(z -> {
                         Point3f cellPoint = new Point3f(minX * length, y * length, z * length);
@@ -648,7 +648,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                 .flatMap(x -> IntStream.rangeClosed(minZ, maxZ)
                     .filter(z -> {
                         Point3f cellPoint = new Point3f(x * length, minY * length, z * length);
-                        return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                        return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                     })
                     .mapToObj(z -> {
                         Point3f cellPoint = new Point3f(x * length, minY * length, z * length);
@@ -663,7 +663,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                 .flatMap(x -> IntStream.rangeClosed(minY, maxY)
                     .filter(y -> {
                         Point3f cellPoint = new Point3f(x * length, y * length, minZ * length);
-                        return gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting);
+                        return hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting);
                     })
                     .mapToObj(y -> {
                         Point3f cellPoint = new Point3f(x * length, y * length, minZ * length);
@@ -806,22 +806,108 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         };
     }
 
-    // Check if a grid cell intersects with the query bounds
-    private boolean gridCellIntersectsBounds(Point3f cellOrigin, int cellSize, VolumeBounds bounds,
+    // Hybrid cube/tetrahedral intersection test - preserves SFC cube navigation with tetrahedral geometry
+    private boolean hybridCellIntersectsBounds(Point3f cellOrigin, int cellSize, byte level, VolumeBounds bounds,
                                              boolean includeIntersecting) {
+        // First: Fast cube-based intersection test for early rejection (preserves SFC navigation)
         float cellMaxX = cellOrigin.x + cellSize;
         float cellMaxY = cellOrigin.y + cellSize;
         float cellMaxZ = cellOrigin.z + cellSize;
 
-        if (includeIntersecting) {
-            // Check for any intersection
-            return !(cellMaxX < bounds.minX || cellOrigin.x > bounds.maxX || cellMaxY < bounds.minY
-                     || cellOrigin.y > bounds.maxY || cellMaxZ < bounds.minZ || cellOrigin.z > bounds.maxZ);
-        } else {
-            // Check for complete containment within bounds
-            return cellOrigin.x >= bounds.minX && cellMaxX <= bounds.maxX && cellOrigin.y >= bounds.minY
-            && cellMaxY <= bounds.maxY && cellOrigin.z >= bounds.minZ && cellMaxZ <= bounds.maxZ;
+        // Quick cube-based bounding box test - if cube doesn't intersect, no tetrahedra will
+        if (cellMaxX < bounds.minX || cellOrigin.x > bounds.maxX || 
+            cellMaxY < bounds.minY || cellOrigin.y > bounds.maxY || 
+            cellMaxZ < bounds.minZ || cellOrigin.z > bounds.maxZ) {
+            return false;
         }
+        
+        // Second: Test individual tetrahedra within the cube for precise tetrahedral geometry
+        for (byte type = 0; type < 6; type++) {
+            var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, type);
+            
+            if (includeIntersecting) {
+                // Check if tetrahedron intersects the volume bounds
+                if (tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                    return true;
+                }
+            } else {
+                // Check if tetrahedron is completely contained within bounds
+                if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    // Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
+    private boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
+        var vertices = tet.coordinates();
+        
+        // Quick bounding box rejection test first
+        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
+        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
+        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
+        
+        for (var vertex : vertices) {
+            tetMinX = Math.min(tetMinX, vertex.x);
+            tetMaxX = Math.max(tetMaxX, vertex.x);
+            tetMinY = Math.min(tetMinY, vertex.y);
+            tetMaxY = Math.max(tetMaxY, vertex.y);
+            tetMinZ = Math.min(tetMinZ, vertex.z);
+            tetMaxZ = Math.max(tetMaxZ, vertex.z);
+        }
+        
+        // Bounding box intersection test
+        if (tetMaxX < bounds.minX || tetMinX > bounds.maxX ||
+            tetMaxY < bounds.minY || tetMinY > bounds.maxY ||
+            tetMaxZ < bounds.minZ || tetMinZ > bounds.maxZ) {
+            return false;
+        }
+        
+        // Test if any vertex of tetrahedron is inside bounds
+        for (var vertex : vertices) {
+            if (vertex.x >= bounds.minX && vertex.x <= bounds.maxX &&
+                vertex.y >= bounds.minY && vertex.y <= bounds.maxY &&
+                vertex.z >= bounds.minZ && vertex.z <= bounds.maxZ) {
+                return true;
+            }
+        }
+        
+        // Test if any corner of bounds is inside tetrahedron
+        var boundCorners = new Point3f[] {
+            new Point3f(bounds.minX, bounds.minY, bounds.minZ),
+            new Point3f(bounds.maxX, bounds.minY, bounds.minZ),
+            new Point3f(bounds.minX, bounds.maxY, bounds.minZ),
+            new Point3f(bounds.maxX, bounds.maxY, bounds.minZ),
+            new Point3f(bounds.minX, bounds.minY, bounds.maxZ),
+            new Point3f(bounds.maxX, bounds.minY, bounds.maxZ),
+            new Point3f(bounds.minX, bounds.maxY, bounds.maxZ),
+            new Point3f(bounds.maxX, bounds.maxY, bounds.maxZ)
+        };
+        
+        for (var corner : boundCorners) {
+            if (tet.contains(corner)) {
+                return true;
+            }
+        }
+        
+        return false; // More sophisticated intersection tests could be added here
+    }
+    
+    // Check if a tetrahedron is completely contained within volume bounds
+    private boolean tetrahedronContainedInVolumeBounds(Tet tet, VolumeBounds bounds) {
+        var vertices = tet.coordinates();
+        
+        // All vertices must be within bounds for complete containment
+        for (var vertex : vertices) {
+            if (vertex.x < bounds.minX || vertex.x > bounds.maxX ||
+                vertex.y < bounds.minY || vertex.y > bounds.maxY ||
+                vertex.z < bounds.minZ || vertex.z > bounds.maxZ) {
+                return false;
+            }
+        }
+        return true;
     }
     
     // Hierarchical range splitting optimization for large volumes
