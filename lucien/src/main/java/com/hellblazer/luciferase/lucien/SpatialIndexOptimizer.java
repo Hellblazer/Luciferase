@@ -61,61 +61,53 @@ public class SpatialIndexOptimizer {
      * Cache-friendly Morton code calculator with optimized bit operations
      */
     public static class OptimizedMortonCalculator {
-        // Pre-computed lookup tables for faster Morton encoding
-        private static final long[] X_MASK = new long[256];
-        private static final long[] Y_MASK = new long[256];
-        private static final long[] Z_MASK = new long[256];
-        
-        static {
-            // Pre-compute Morton encoding lookup tables
-            for (int i = 0; i < 256; i++) {
-                X_MASK[i] = expandBits(i) << 2;
-                Y_MASK[i] = expandBits(i) << 1;
-                Z_MASK[i] = expandBits(i);
-            }
-        }
         
         /**
-         * Optimized Morton encoding using lookup tables
+         * Optimized Morton encoding using bit manipulation
          */
         public static long encodeMorton3D(int x, int y, int z) {
-            // Use byte-wise lookup for better cache performance
-            return (X_MASK[x & 0xFF] | (X_MASK[(x >> 8) & 0xFF] << 24)) |
-                   (Y_MASK[y & 0xFF] | (Y_MASK[(y >> 8) & 0xFF] << 24)) |
-                   (Z_MASK[z & 0xFF] | (Z_MASK[(z >> 8) & 0xFF] << 24));
+            return splitBy3(x) | (splitBy3(y) << 1) | (splitBy3(z) << 2);
         }
         
         /**
          * Fast Morton decoding with bit manipulation tricks
          */
         public static int[] decodeMorton3D(long morton) {
-            int x = (int) compactBits(morton >> 2);
-            int y = (int) compactBits(morton >> 1);
-            int z = (int) compactBits(morton);
+            int x = (int) compactBy3(morton);
+            int y = (int) compactBy3(morton >> 1);
+            int z = (int) compactBy3(morton >> 2);
             return new int[]{x, y, z};
         }
         
         /**
-         * Optimized bit expansion for Morton encoding
+         * Split bits by inserting 2 zeros between each bit (for 3D Morton)
+         * Input:  00000000 00000000 00000000 000abcde
+         * Output: 00000000 000a000b 000c000d 0000000e
          */
-        private static long expandBits(int value) {
-            long x = value & 0x000000FFL;
-            x = (x | (x << 16)) & 0x00FF0000FFL;
-            x = (x | (x << 8)) & 0x0F00F00F00FL;
-            x = (x | (x << 4)) & 0x30C30C30C30C3L;
-            x = (x | (x << 2)) & 0x249249249249249L;
+        private static long splitBy3(int value) {
+            long x = value & 0x1fffffL; // Mask to 21 bits (2^21 = 2M, enough for most spatial coordinates)
+            
+            x = (x | (x << 32)) & 0x1f00000000ffffL;
+            x = (x | (x << 16)) & 0x1f0000ff0000ffL;
+            x = (x | (x << 8)) & 0x100f00f00f00f00fL;
+            x = (x | (x << 4)) & 0x10c30c30c30c30c3L;
+            x = (x | (x << 2)) & 0x1249249249249249L;
+            
             return x;
         }
         
         /**
-         * Optimized bit compaction for Morton decoding
+         * Compact bits by removing every 2nd and 3rd bit (inverse of splitBy3)
          */
-        private static long compactBits(long value) {
-            long x = value & 0x249249249249249L;
-            x = (x | (x >> 2)) & 0x30C30C30C30C3L;
-            x = (x | (x >> 4)) & 0x0F00F00F00F00FL;
-            x = (x | (x >> 8)) & 0x00FF0000FF0000FFL;
-            x = (x | (x >> 16)) & 0x000000FF000000FFL;
+        private static long compactBy3(long value) {
+            long x = value & 0x1249249249249249L;
+            
+            x = (x | (x >> 2)) & 0x10c30c30c30c30c3L;
+            x = (x | (x >> 4)) & 0x100f00f00f00f00fL;
+            x = (x | (x >> 8)) & 0x1f0000ff0000ffL;
+            x = (x | (x >> 16)) & 0x1f00000000ffffL;
+            x = (x | (x >> 32)) & 0x1fffffL;
+            
             return x;
         }
     }
