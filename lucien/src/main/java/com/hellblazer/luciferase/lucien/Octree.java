@@ -104,6 +104,14 @@ public class Octree<Content> {
         return map.get(key);
     }
 
+    /**
+     * Get access to the internal map for advanced operations
+     * @return the internal NavigableMap
+     */
+    public NavigableMap<Long, Content> getMap() {
+        return map;
+    }
+
     public long insert(Point3f point, byte level, Content value) {
         var length = Constants.lengthAtLevel(level);
         var index = MortonCurve.encode((int) (Math.floor(point.x / length) * length),
