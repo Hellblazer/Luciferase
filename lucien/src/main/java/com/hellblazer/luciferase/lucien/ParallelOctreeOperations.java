@@ -793,6 +793,332 @@ public class ParallelOctreeOperations {
         }
     }
     
+    /**
+     * Parallel sphere intersection search
+     * Processes sphere-cube intersection tests in parallel
+     * 
+     * @param sphereCenter center of the sphere (positive coordinates only)
+     * @param sphereRadius radius of the sphere (positive)
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return list of intersections ordered by distance from reference point
+     * @throws IllegalArgumentException if any coordinate is negative or radius is non-positive
+     */
+    public static <Content> List<SphereIntersectionSearch.SphereIntersection<Content>> sphereIntersectedAllParallel(
+            Point3f sphereCenter, float sphereRadius, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return SphereIntersectionSearch.sphereIntersectedAll(sphereCenter, sphereRadius, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(sphereCenter, "sphereCenter");
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        if (sphereRadius <= 0) {
+            throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
+        }
+        
+        return executeInPool(config, () -> {
+            List<SphereIntersectionSearch.SphereIntersection<Content>> intersections = 
+                map.entrySet().parallelStream()
+                    .map(entry -> {
+                        Spatial.Cube cube = Octree.toCube(entry.getKey());
+                        SphereIntersectionSearch.IntersectionType intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
+                        
+                        if (intersectionType != SphereIntersectionSearch.IntersectionType.COMPLETELY_OUTSIDE) {
+                            Point3f cubeCenter = getCubeCenter(cube);
+                            float distance = calculateDistance(referencePoint, cubeCenter);
+                            
+                            return new SphereIntersectionSearch.SphereIntersection<>(
+                                entry.getKey(), 
+                                entry.getValue(), 
+                                cube, 
+                                distance,
+                                cubeCenter,
+                                intersectionType
+                            );
+                        }
+                        return null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            // Sort by distance from reference point
+            intersections.sort(Comparator.comparing(si -> si.distanceToReferencePoint));
+            return intersections;
+        });
+    }
+
+    /**
+     * Parallel count of sphere intersections
+     * More efficient than getting all intersections when only count is needed
+     * 
+     * @param sphereCenter center of the sphere (positive coordinates only)
+     * @param sphereRadius radius of the sphere (positive)
+     * @param octree the octree to search
+     * @param config parallel execution configuration
+     * @return number of cubes intersecting the sphere
+     * @throws IllegalArgumentException if any coordinate is negative or radius is non-positive
+     */
+    public static <Content> long countSphereIntersectionsParallel(
+            Point3f sphereCenter, float sphereRadius, Octree<Content> octree, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return SphereIntersectionSearch.countSphereIntersections(sphereCenter, sphereRadius, octree);
+        }
+        
+        validatePositiveCoordinates(sphereCenter, "sphereCenter");
+        
+        if (sphereRadius <= 0) {
+            throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
+        }
+        
+        return executeInPool(config, () -> {
+            return map.entrySet().parallelStream()
+                .mapToLong(entry -> {
+                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    SphereIntersectionSearch.IntersectionType intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
+                    return intersectionType != SphereIntersectionSearch.IntersectionType.COMPLETELY_OUTSIDE ? 1 : 0;
+                })
+                .sum();
+        });
+    }
+
+    /**
+     * Parallel AABB intersection search
+     * Processes AABB-cube intersection tests in parallel
+     * 
+     * @param aabb the axis-aligned bounding box to test intersection with
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return list of intersections ordered by distance from reference point
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<AABBIntersectionSearch.AABBIntersection<Content>> aabbIntersectedAllParallel(
+            AABBIntersectionSearch.AABB aabb, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return AABBIntersectionSearch.aabbIntersectedAll(aabb, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            List<AABBIntersectionSearch.AABBIntersection<Content>> intersections = 
+                map.entrySet().parallelStream()
+                    .map(entry -> {
+                        Spatial.Cube cube = Octree.toCube(entry.getKey());
+                        AABBIntersectionSearch.IntersectionType intersectionType = testAABBIntersection(aabb, cube);
+                        
+                        if (intersectionType != AABBIntersectionSearch.IntersectionType.COMPLETELY_OUTSIDE) {
+                            Point3f cubeCenter = getCubeCenter(cube);
+                            float distance = calculateDistance(referencePoint, cubeCenter);
+                            
+                            return new AABBIntersectionSearch.AABBIntersection<>(
+                                entry.getKey(), 
+                                entry.getValue(), 
+                                cube, 
+                                distance,
+                                cubeCenter,
+                                intersectionType
+                            );
+                        }
+                        return null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            // Sort by distance from reference point
+            intersections.sort(Comparator.comparing(ai -> ai.distanceToReferencePoint));
+            return intersections;
+        });
+    }
+
+    /**
+     * Parallel count of AABB intersections
+     * More efficient than getting all intersections when only count is needed
+     * 
+     * @param aabb the axis-aligned bounding box to test intersection with
+     * @param octree the octree to search
+     * @param config parallel execution configuration
+     * @return number of cubes intersecting the AABB
+     */
+    public static <Content> long countAABBIntersectionsParallel(
+            AABBIntersectionSearch.AABB aabb, Octree<Content> octree, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return AABBIntersectionSearch.countAABBIntersections(aabb, octree);
+        }
+        
+        return executeInPool(config, () -> {
+            return map.entrySet().parallelStream()
+                .mapToLong(entry -> {
+                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    AABBIntersectionSearch.IntersectionType intersectionType = testAABBIntersection(aabb, cube);
+                    return intersectionType != AABBIntersectionSearch.IntersectionType.COMPLETELY_OUTSIDE ? 1 : 0;
+                })
+                .sum();
+        });
+    }
+
+    /**
+     * Batch processing for multiple sphere intersection queries
+     * Processes multiple sphere intersection queries in parallel
+     * 
+     * @param sphereQueries list of sphere queries to test
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return map of sphere queries to their intersection results
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> Map<SphereIntersectionSearch.SphereQuery, List<SphereIntersectionSearch.SphereIntersection<Content>>> 
+            batchSphereIntersections(List<SphereIntersectionSearch.SphereQuery> sphereQueries, Octree<Content> octree, 
+                                    Point3f referencePoint, ParallelConfig config) {
+        
+        if (sphereQueries.size() < config.parallelismThreshold / 10) {
+            // Use sequential processing for small batch sizes
+            return SphereIntersectionSearch.batchSphereIntersections(sphereQueries, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            return sphereQueries.parallelStream()
+                .collect(Collectors.toConcurrentMap(
+                    query -> query,
+                    query -> sphereIntersectedAllParallel(query.center, query.radius, octree, referencePoint, config)
+                ));
+        });
+    }
+
+    /**
+     * Batch processing for multiple AABB intersection queries
+     * Processes multiple AABB intersection queries in parallel
+     * 
+     * @param aabbs list of AABBs to test
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return map of AABBs to their intersection results
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> Map<AABBIntersectionSearch.AABB, List<AABBIntersectionSearch.AABBIntersection<Content>>> 
+            batchAABBIntersections(List<AABBIntersectionSearch.AABB> aabbs, Octree<Content> octree, 
+                                  Point3f referencePoint, ParallelConfig config) {
+        
+        if (aabbs.size() < config.parallelismThreshold / 10) {
+            // Use sequential processing for small batch sizes
+            return AABBIntersectionSearch.batchAABBIntersections(aabbs, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            return aabbs.parallelStream()
+                .collect(Collectors.toConcurrentMap(
+                    aabb -> aabb,
+                    aabb -> aabbIntersectedAllParallel(aabb, octree, referencePoint, config)
+                ));
+        });
+    }
+
+    /**
+     * Test sphere-cube intersection using optimized sphere-AABB intersection algorithm
+     * Based on "Real-Time Rendering" by Akenine-Möller, Haines, and Hoffman
+     * 
+     * @param sphereCenter center of the sphere
+     * @param sphereRadius radius of the sphere
+     * @param cube the cube to test
+     * @return intersection type
+     */
+    private static SphereIntersectionSearch.IntersectionType testSphereIntersection(Point3f sphereCenter, float sphereRadius, Spatial.Cube cube) {
+        float cubeMinX = cube.originX();
+        float cubeMinY = cube.originY();
+        float cubeMinZ = cube.originZ();
+        float cubeMaxX = cube.originX() + cube.extent();
+        float cubeMaxY = cube.originY() + cube.extent();
+        float cubeMaxZ = cube.originZ() + cube.extent();
+        
+        // Calculate squared distance from sphere center to closest point on cube
+        float dx = Math.max(0, Math.max(cubeMinX - sphereCenter.x, sphereCenter.x - cubeMaxX));
+        float dy = Math.max(0, Math.max(cubeMinY - sphereCenter.y, sphereCenter.y - cubeMaxY));
+        float dz = Math.max(0, Math.max(cubeMinZ - sphereCenter.z, sphereCenter.z - cubeMaxZ));
+        
+        float distanceSquared = dx * dx + dy * dy + dz * dz;
+        float radiusSquared = sphereRadius * sphereRadius;
+        
+        // No intersection if distance to closest point > radius
+        if (distanceSquared > radiusSquared) {
+            return SphereIntersectionSearch.IntersectionType.COMPLETELY_OUTSIDE;
+        }
+        
+        // Check if cube is completely inside sphere
+        // Calculate distance from sphere center to farthest corner of cube
+        float farthestDx = Math.max(Math.abs(cubeMinX - sphereCenter.x), Math.abs(cubeMaxX - sphereCenter.x));
+        float farthestDy = Math.max(Math.abs(cubeMinY - sphereCenter.y), Math.abs(cubeMaxY - sphereCenter.y));
+        float farthestDz = Math.max(Math.abs(cubeMinZ - sphereCenter.z), Math.abs(cubeMaxZ - sphereCenter.z));
+        
+        float farthestDistanceSquared = farthestDx * farthestDx + farthestDy * farthestDy + farthestDz * farthestDz;
+        
+        if (farthestDistanceSquared <= radiusSquared) {
+            return SphereIntersectionSearch.IntersectionType.COMPLETELY_INSIDE;
+        }
+        
+        // Cube partially intersects sphere
+        return SphereIntersectionSearch.IntersectionType.INTERSECTING;
+    }
+
+    /**
+     * Test AABB-cube intersection using standard AABB-AABB intersection algorithm
+     * 
+     * @param aabb the axis-aligned bounding box
+     * @param cube the cube to test
+     * @return intersection type
+     */
+    private static AABBIntersectionSearch.IntersectionType testAABBIntersection(AABBIntersectionSearch.AABB aabb, Spatial.Cube cube) {
+        float cubeMinX = cube.originX();
+        float cubeMinY = cube.originY();
+        float cubeMinZ = cube.originZ();
+        float cubeMaxX = cube.originX() + cube.extent();
+        float cubeMaxY = cube.originY() + cube.extent();
+        float cubeMaxZ = cube.originZ() + cube.extent();
+        
+        // Check for no intersection (separating axis test)
+        if (cubeMaxX < aabb.minX || cubeMinX > aabb.maxX ||
+            cubeMaxY < aabb.minY || cubeMinY > aabb.maxY ||
+            cubeMaxZ < aabb.minZ || cubeMinZ > aabb.maxZ) {
+            return AABBIntersectionSearch.IntersectionType.COMPLETELY_OUTSIDE;
+        }
+        
+        // Check if cube completely contains AABB
+        if (cubeMinX <= aabb.minX && cubeMaxX >= aabb.maxX &&
+            cubeMinY <= aabb.minY && cubeMaxY >= aabb.maxY &&
+            cubeMinZ <= aabb.minZ && cubeMaxZ >= aabb.maxZ) {
+            return AABBIntersectionSearch.IntersectionType.CONTAINS_AABB;
+        }
+        
+        // Check if cube is completely inside AABB
+        if (cubeMinX >= aabb.minX && cubeMaxX <= aabb.maxX &&
+            cubeMinY >= aabb.minY && cubeMaxY <= aabb.maxY &&
+            cubeMinZ >= aabb.minZ && cubeMaxZ <= aabb.maxZ) {
+            return AABBIntersectionSearch.IntersectionType.COMPLETELY_INSIDE;
+        }
+        
+        // Cube partially intersects AABB
+        return AABBIntersectionSearch.IntersectionType.INTERSECTING;
+    }
+    
     // Helper record for volume bounds
     private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
     }
