@@ -200,6 +200,366 @@ public class ParallelOctreeOperations {
     }
 
     /**
+     * Parallel plane intersection search
+     * Processes plane-cube intersection tests in parallel
+     * 
+     * @param plane the plane to test intersection with
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return list of intersections ordered by distance from reference point
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<PlaneIntersectionSearch.PlaneIntersection<Content>> planeIntersectedAllParallel(
+            Plane3D plane, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return PlaneIntersectionSearch.planeIntersectedAll(plane, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            List<PlaneIntersectionSearch.PlaneIntersection<Content>> intersections = 
+                map.entrySet().parallelStream()
+                    .map(entry -> {
+                        Spatial.Cube cube = Octree.toCube(entry.getKey());
+                        
+                        if (plane.intersectsCube(cube)) {
+                            Point3f cubeCenter = getCubeCenter(cube);
+                            float distance = calculateDistance(referencePoint, cubeCenter);
+                            
+                            return new PlaneIntersectionSearch.PlaneIntersection<>(
+                                entry.getKey(), 
+                                entry.getValue(), 
+                                cube, 
+                                distance,
+                                cubeCenter
+                            );
+                        }
+                        return null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            // Sort by distance from reference point
+            intersections.sort(Comparator.comparing(pi -> pi.distanceToReferencePoint));
+            return intersections;
+        });
+    }
+
+    /**
+     * Parallel count of plane intersections
+     * More efficient than getting all intersections when only count is needed
+     * 
+     * @param plane the plane to test intersection with
+     * @param octree the octree to search
+     * @param config parallel execution configuration
+     * @return number of cubes intersecting the plane
+     */
+    public static <Content> long countPlaneIntersectionsParallel(
+            Plane3D plane, Octree<Content> octree, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return PlaneIntersectionSearch.countPlaneIntersections(plane, octree);
+        }
+        
+        return executeInPool(config, () -> {
+            return map.entrySet().parallelStream()
+                .mapToLong(entry -> {
+                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    return plane.intersectsCube(cube) ? 1 : 0;
+                })
+                .sum();
+        });
+    }
+
+    /**
+     * Parallel test for any plane intersection
+     * Short-circuits on first intersection found for efficiency
+     * 
+     * @param plane the plane to test intersection with
+     * @param octree the octree to search
+     * @param config parallel execution configuration
+     * @return true if any cube intersects the plane
+     */
+    public static <Content> boolean hasAnyIntersectionParallel(
+            Plane3D plane, Octree<Content> octree, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return PlaneIntersectionSearch.hasAnyIntersection(plane, octree);
+        }
+        
+        return executeInPool(config, () -> {
+            return map.entrySet().parallelStream()
+                .anyMatch(entry -> {
+                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    return plane.intersectsCube(cube);
+                });
+        });
+    }
+
+    /**
+     * Parallel search for cubes on positive side of plane
+     * 
+     * @param plane the plane to test against
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return list of intersections on positive side, sorted by distance from reference point
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<PlaneIntersectionSearch.PlaneIntersection<Content>> cubesOnPositiveSideParallel(
+            Plane3D plane, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return PlaneIntersectionSearch.cubesOnPositiveSide(plane, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            List<PlaneIntersectionSearch.PlaneIntersection<Content>> results = 
+                map.entrySet().parallelStream()
+                    .map(entry -> {
+                        Spatial.Cube cube = Octree.toCube(entry.getKey());
+                        Point3f cubeCenter = getCubeCenter(cube);
+                        
+                        // Check if cube center is on positive side of plane
+                        if (plane.distanceToPoint(cubeCenter) > 0) {
+                            float distance = calculateDistance(referencePoint, cubeCenter);
+                            
+                            return new PlaneIntersectionSearch.PlaneIntersection<>(
+                                entry.getKey(), 
+                                entry.getValue(), 
+                                cube, 
+                                distance,
+                                cubeCenter
+                            );
+                        }
+                        return null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            // Sort by distance from reference point
+            results.sort(Comparator.comparing(pi -> pi.distanceToReferencePoint));
+            return results;
+        });
+    }
+
+    /**
+     * Parallel search for cubes on negative side of plane
+     * 
+     * @param plane the plane to test against
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return list of intersections on negative side, sorted by distance from reference point
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<PlaneIntersectionSearch.PlaneIntersection<Content>> cubesOnNegativeSideParallel(
+            Plane3D plane, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return PlaneIntersectionSearch.cubesOnNegativeSide(plane, octree, referencePoint);
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            List<PlaneIntersectionSearch.PlaneIntersection<Content>> results = 
+                map.entrySet().parallelStream()
+                    .map(entry -> {
+                        Spatial.Cube cube = Octree.toCube(entry.getKey());
+                        Point3f cubeCenter = getCubeCenter(cube);
+                        
+                        // Check if cube center is on negative side of plane
+                        if (plane.distanceToPoint(cubeCenter) < 0) {
+                            float distance = calculateDistance(referencePoint, cubeCenter);
+                            
+                            return new PlaneIntersectionSearch.PlaneIntersection<>(
+                                entry.getKey(), 
+                                entry.getValue(), 
+                                cube, 
+                                distance,
+                                cubeCenter
+                            );
+                        }
+                        return null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            // Sort by distance from reference point
+            results.sort(Comparator.comparing(pi -> pi.distanceToReferencePoint));
+            return results;
+        });
+    }
+
+    /**
+     * Batch processing for multiple plane intersection queries
+     * Processes multiple plane intersection queries in parallel
+     * 
+     * @param planes list of planes to test intersection with
+     * @param octree the octree to search
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return map of planes to their intersection results
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> Map<Plane3D, List<PlaneIntersectionSearch.PlaneIntersection<Content>>> 
+            batchPlaneIntersections(List<Plane3D> planes, Octree<Content> octree, 
+                                  Point3f referencePoint, ParallelConfig config) {
+        
+        if (planes.size() < config.parallelismThreshold / 10) {
+            // Use sequential processing for small batch sizes
+            return planes.stream()
+                .collect(Collectors.toMap(
+                    plane -> plane,
+                    plane -> PlaneIntersectionSearch.planeIntersectedAll(plane, octree, referencePoint)
+                ));
+        }
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        return executeInPool(config, () -> {
+            return planes.parallelStream()
+                .collect(Collectors.toConcurrentMap(
+                    plane -> plane,
+                    plane -> planeIntersectedAllParallel(plane, octree, referencePoint, config)
+                ));
+        });
+    }
+
+    /**
+     * Parallel frustum culling search
+     * Processes frustum-cube intersection tests in parallel
+     * 
+     * @param frustum the camera frustum to test intersection with
+     * @param octree the octree to search
+     * @param cameraPosition camera position for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return list of intersections ordered by distance from camera
+     * @throws IllegalArgumentException if camera position has negative coordinates
+     */
+    public static <Content> List<FrustumCullingSearch.FrustumIntersection<Content>> frustumCulledAllParallel(
+            Frustum3D frustum, Octree<Content> octree, Point3f cameraPosition, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return FrustumCullingSearch.frustumCulledAll(frustum, octree, cameraPosition);
+        }
+        
+        validatePositiveCoordinates(cameraPosition, "cameraPosition");
+        
+        return executeInPool(config, () -> {
+            List<FrustumCullingSearch.FrustumIntersection<Content>> intersections = 
+                map.entrySet().parallelStream()
+                    .map(entry -> {
+                        Spatial.Cube cube = Octree.toCube(entry.getKey());
+                        FrustumCullingSearch.CullingResult result = testFrustumCulling(frustum, cube);
+                        
+                        if (result != FrustumCullingSearch.CullingResult.OUTSIDE) {
+                            Point3f cubeCenter = getCubeCenter(cube);
+                            float distance = calculateDistance(cameraPosition, cubeCenter);
+                            
+                            return new FrustumCullingSearch.FrustumIntersection<>(
+                                entry.getKey(), 
+                                entry.getValue(), 
+                                cube, 
+                                distance,
+                                cubeCenter,
+                                result
+                            );
+                        }
+                        return null;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            
+            // Sort by distance from camera
+            intersections.sort(Comparator.comparing(fi -> fi.distanceToCamera));
+            return intersections;
+        });
+    }
+
+    /**
+     * Parallel count of frustum intersections
+     * More efficient than getting all intersections when only count is needed
+     * 
+     * @param frustum the camera frustum to test intersection with
+     * @param octree the octree to search
+     * @param config parallel execution configuration
+     * @return number of cubes intersecting the frustum
+     */
+    public static <Content> long countFrustumIntersectionsParallel(
+            Frustum3D frustum, Octree<Content> octree, ParallelConfig config) {
+        
+        NavigableMap<Long, Content> map = octree.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return FrustumCullingSearch.countFrustumIntersections(frustum, octree);
+        }
+        
+        return executeInPool(config, () -> {
+            return map.entrySet().parallelStream()
+                .mapToLong(entry -> {
+                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    FrustumCullingSearch.CullingResult result = testFrustumCulling(frustum, cube);
+                    return result != FrustumCullingSearch.CullingResult.OUTSIDE ? 1 : 0;
+                })
+                .sum();
+        });
+    }
+
+    /**
+     * Batch processing for multiple frustum culling queries
+     * Processes multiple frustum culling queries in parallel
+     * 
+     * @param frustums list of frustums to test
+     * @param octree the octree to search
+     * @param cameraPosition camera position for distance calculations (positive coordinates only)
+     * @param config parallel execution configuration
+     * @return map of frustums to their intersection results
+     * @throws IllegalArgumentException if camera position has negative coordinates
+     */
+    public static <Content> Map<Frustum3D, List<FrustumCullingSearch.FrustumIntersection<Content>>> 
+            batchFrustumCulling(List<Frustum3D> frustums, Octree<Content> octree, 
+                               Point3f cameraPosition, ParallelConfig config) {
+        
+        if (frustums.size() < config.parallelismThreshold / 10) {
+            // Use sequential processing for small batch sizes
+            return frustums.stream()
+                .collect(Collectors.toMap(
+                    frustum -> frustum,
+                    frustum -> FrustumCullingSearch.frustumCulledAll(frustum, octree, cameraPosition)
+                ));
+        }
+        
+        validatePositiveCoordinates(cameraPosition, "cameraPosition");
+        
+        return executeInPool(config, () -> {
+            return frustums.parallelStream()
+                .collect(Collectors.toConcurrentMap(
+                    frustum -> frustum,
+                    frustum -> frustumCulledAllParallel(frustum, octree, cameraPosition, config)
+                ));
+        });
+    }
+
+    /**
      * Execute operation in the configured thread pool
      */
     private static <T> T executeInPool(ParallelConfig config, java.util.function.Supplier<T> operation) {
@@ -390,6 +750,47 @@ public class ParallelOctreeOperations {
         Point3f intersectionPoint = ray.getPointAt(t);
         
         return new RayBoxIntersection(true, t, intersectionPoint);
+    }
+    
+    /**
+     * Test frustum culling for a single cube
+     * 
+     * @param frustum the camera frustum
+     * @param cube the cube to test
+     * @return culling result (INSIDE, INTERSECTING, or OUTSIDE)
+     */
+    private static FrustumCullingSearch.CullingResult testFrustumCulling(Frustum3D frustum, Spatial.Cube cube) {
+        // Test if cube is completely inside frustum
+        if (frustum.containsCube(cube)) {
+            return FrustumCullingSearch.CullingResult.INSIDE;
+        }
+        
+        // Test if cube intersects frustum
+        if (frustum.intersectsCube(cube)) {
+            return FrustumCullingSearch.CullingResult.INTERSECTING;
+        }
+        
+        // Cube is completely outside
+        return FrustumCullingSearch.CullingResult.OUTSIDE;
+    }
+    
+    /**
+     * Calculate Euclidean distance between two points
+     */
+    private static float calculateDistance(Point3f p1, Point3f p2) {
+        float dx = p1.x - p2.x;
+        float dy = p1.y - p2.y;
+        float dz = p1.z - p2.z;
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    
+    /**
+     * Validate that all coordinates in a point are positive
+     */
+    private static void validatePositiveCoordinates(Point3f point, String paramName) {
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException(paramName + " coordinates must be positive, got: " + point);
+        }
     }
     
     // Helper record for volume bounds
