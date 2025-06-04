@@ -157,6 +157,16 @@ public abstract class TetrahedralSearchBase {
      */
     protected static Point3f tetrahedronCenter(long tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronCenter(tet);
+    }
+    
+    /**
+     * Compute the center point of a tetrahedron
+     * 
+     * @param tet the tetrahedron
+     * @return center point of the tetrahedron
+     */
+    protected static Point3f tetrahedronCenter(Tet tet) {
         var vertices = tet.coordinates();
         
         float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
@@ -279,29 +289,67 @@ public abstract class TetrahedralSearchBase {
         // Get vertices of the specified face
         Point3i[] faceVertices = getFaceVertices(vertices, faceIndex);
         
-        // Compute distance to triangular face using point-to-plane distance
-        // This is a simplified implementation - could be made more precise
+        // Convert to Point3f for calculations
         Point3f v0 = new Point3f(faceVertices[0].x, faceVertices[0].y, faceVertices[0].z);
         Point3f v1 = new Point3f(faceVertices[1].x, faceVertices[1].y, faceVertices[1].z);
         Point3f v2 = new Point3f(faceVertices[2].x, faceVertices[2].y, faceVertices[2].z);
         
+        // Compute distance to triangle using proper point-to-triangle algorithm
+        // This projects the point onto the triangle plane and checks if it's inside the triangle
+        
         // Compute plane normal
-        float nx = (v1.y - v0.y) * (v2.z - v0.z) - (v1.z - v0.z) * (v2.y - v0.y);
-        float ny = (v1.z - v0.z) * (v2.x - v0.x) - (v1.x - v0.x) * (v2.z - v0.z);
-        float nz = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
+        float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
+        float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
+        
+        float nx = e1y * e2z - e1z * e2y;
+        float ny = e1z * e2x - e1x * e2z;
+        float nz = e1x * e2y - e1y * e2x;
         
         float normalLength = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
         if (normalLength < GEOMETRIC_TOLERANCE) {
-            return Float.MAX_VALUE; // Degenerate face
+            // Degenerate triangle - return distance to closest vertex
+            return Math.min(Math.min(distance(point, faceVertices[0]), 
+                                   distance(point, faceVertices[1])), 
+                          distance(point, faceVertices[2]));
         }
         
         nx /= normalLength;
         ny /= normalLength;
         nz /= normalLength;
         
-        // Distance from point to plane
+        // Project point onto triangle plane
         float d = nx * (point.x - v0.x) + ny * (point.y - v0.y) + nz * (point.z - v0.z);
-        return Math.abs(d);
+        float projX = point.x - d * nx;
+        float projY = point.y - d * ny;
+        float projZ = point.z - d * nz;
+        
+        // Check if projection is inside triangle using barycentric coordinates
+        float v0x = v0.x, v0y = v0.y, v0z = v0.z;
+        float v1x = v1.x, v1y = v1.y, v1z = v1.z;
+        float v2x = v2.x, v2y = v2.y, v2z = v2.z;
+        
+        // Compute barycentric coordinates
+        float dot00 = (v2x - v0x) * (v2x - v0x) + (v2y - v0y) * (v2y - v0y) + (v2z - v0z) * (v2z - v0z);
+        float dot01 = (v2x - v0x) * (v1x - v0x) + (v2y - v0y) * (v1y - v0y) + (v2z - v0z) * (v1z - v0z);
+        float dot02 = (v2x - v0x) * (projX - v0x) + (v2y - v0y) * (projY - v0y) + (v2z - v0z) * (projZ - v0z);
+        float dot11 = (v1x - v0x) * (v1x - v0x) + (v1y - v0y) * (v1y - v0y) + (v1z - v0z) * (v1z - v0z);
+        float dot12 = (v1x - v0x) * (projX - v0x) + (v1y - v0y) * (projY - v0y) + (v1z - v0z) * (projZ - v0z);
+        
+        float invDenom = 1.0f / (dot00 * dot11 - dot01 * dot01);
+        float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+        float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+        
+        // Check if point is inside triangle
+        if (u >= 0 && v >= 0 && u + v <= 1) {
+            // Point projects inside triangle - return perpendicular distance to plane
+            return Math.abs(d);
+        } else {
+            // Point projects outside triangle - return distance to closest edge or vertex
+            float dist1 = distanceToLineSegment(point, faceVertices[0], faceVertices[1]);
+            float dist2 = distanceToLineSegment(point, faceVertices[1], faceVertices[2]);
+            float dist3 = distanceToLineSegment(point, faceVertices[2], faceVertices[0]);
+            return Math.min(Math.min(dist1, dist2), dist3);
+        }
     }
     
     private static Point3i[] getFaceVertices(Point3i[] tetrahedronVertices, int faceIndex) {

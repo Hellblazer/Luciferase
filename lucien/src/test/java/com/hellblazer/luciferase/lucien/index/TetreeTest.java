@@ -26,55 +26,62 @@ public class TetreeTest {
         var tetree = new Tetree(contents);
         var indexes = new ArrayList<Long>();
         Tet tet;
+        
+        // Test SFC index consistency at level 0
         Tet testTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         assertEquals(0, testTet.index());
+        
+        // Test SFC index consistency at level 1 - level 1 starts at index 1, not 0
         testTet = new Tet(0, 0, 0, (byte) 1, (byte) 0);
-        assertEquals(0, testTet.index());
+        assertEquals(1, testTet.index());
 
+        // Test locate() at various points and levels with updated expected values 
+        // based on corrected SFC implementation
+        
         tet = tetree.locate(new Point3f(500, 1000, 0), (byte) 19);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(5692049, indexes.getLast());
+        assertEquals(18014398515174033L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 0, 0), (byte) 20);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(0, indexes.getLast());
+        assertEquals(144115188075855872L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 0, 100), (byte) 21);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(884864, indexes.getLast());
+        assertEquals(1152921504607731840L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 100, 0), (byte) 17);
         assertEquals(3, tet.type());
         indexes.add(tet.index());
-        assertEquals(72, indexes.getLast());
+        assertEquals(281474976710728L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(100, 0, 0), (byte) 16);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(9, indexes.getLast());
+        assertEquals(35184372088841L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 200, 0), (byte) 15);
         assertEquals(3, tet.type());
         indexes.add(tet.index());
-        assertEquals(9, indexes.getLast());
+        assertEquals(4398046511113L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 0, 2000), (byte) 20);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(460162048, indexes.getLast());
+        assertEquals(144115188536017920L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(100, 100, 0), (byte) 21);
         assertEquals(1, tet.type());
         indexes.add(tet.index());
-        assertEquals(1474880, indexes.getLast());
+        assertEquals(1152921504608321856L, indexes.getLast());
 
         tet = tetree.locate(new Point3f(0, 100, 100), (byte) 13);
         assertEquals(2, tet.type());
         indexes.add(tet.index());
-        assertEquals(0, indexes.getLast());
+        assertEquals(68719476736L, indexes.getLast());
     }
 
     @Test

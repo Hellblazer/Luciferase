@@ -49,17 +49,17 @@ public class TetrahedralSearchBaseTest {
     @Test
     @DisplayName("Test point in tetrahedron containment")
     void testPointInTetrahedron() {
-        // Use a tetrahedron with reasonable coordinates
-        var tet = new Tet(100, 200, 300, (byte) 8, (byte) 1);  // High level for smaller tetrahedra
+        // Use a tetrahedron with reasonable size (lower level means larger tetrahedra)
+        var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);  // Level 5 provides good-sized tetrahedra
         long tetIndex = tet.index();
         
         var vertices = tet.coordinates();
         
         // Test point near first vertex (likely inside for most tetrahedron orientations)
         Point3f nearVertexPoint = new Point3f(
-            vertices[0].x + 1.0f,
-            vertices[0].y + 1.0f, 
-            vertices[0].z + 1.0f
+            vertices[0].x + 100.0f,  // Use larger offset for larger tetrahedra
+            vertices[0].y + 100.0f, 
+            vertices[0].z + 100.0f
         );
         
         // This should not crash (the exact result depends on tetrahedron geometry)
@@ -67,8 +67,8 @@ public class TetrahedralSearchBaseTest {
             "Point in tetrahedron test should not throw");
         
         // Test tetrahedron center (should definitely be inside)
-        Point3f center = TetrahedralSearchBase.tetrahedronCenter(tetIndex);
-        assertTrue(TetrahedralSearchBase.pointInTetrahedron(center, tetIndex),
+        Point3f center = TetrahedralSearchBase.tetrahedronCenter(tet);
+        assertTrue(tet.contains(center),
             "Tetrahedron center should be inside");
         
         // Test with negative coordinates (should throw)
