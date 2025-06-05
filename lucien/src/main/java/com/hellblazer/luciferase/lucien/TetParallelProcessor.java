@@ -1,8 +1,6 @@
 package com.hellblazer.luciferase.lucien;
 
-import com.hellblazer.luciferase.lucien.TetQueryOptimizer.*;
-import com.hellblazer.luciferase.lucien.TetSpatialIndexOptimizer.*;
-
+import com.hellblazer.luciferase.lucien.TetQueryOptimizer.QueryMode;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.*;
@@ -10,27 +8,15 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.LongStream;
-import java.util.stream.Stream;
 
 /**
- * Phase 5C: Tetrahedral Parallel Processing
- * 
- * Provides advanced parallel processing optimizations specifically designed for tetrahedral
- * spatial operations. Unlike cubic parallel processing, this leverages the unique properties
- * of tetrahedral space-filling curves, 6-type subdivision, and tetrahedral load balancing.
- * 
- * Key tetrahedral parallel optimizations:
- * - Work-stealing for SFC range queries with tetrahedral granularity
- * - Thread-safe caching adapted for 6-type tetrahedral complexity
- * - Load balancing considering tetrahedral subdivision patterns
- * - Parallel batch processing for tetrahedral operations
- * - Lock-free data structures for tetrahedral spatial indexing
+ * Parallel implementations of tetrahedral operations for improved performance on large datasets
+ * Provides parallel alternatives to standard tetree queries using Java's parallel streams
+ * Follows architectural patterns established by ParallelOctreeOperations but adapted for tetrahedral space
  * 
  * @author hal.hildebrand
  */
-public class TetParallelProcessor {
+public class TetParallelProcessor extends TetrahedralSearchBase {
     
     // Thread pool configuration optimized for tetrahedral operations
     private final ForkJoinPool customForkJoinPool;
@@ -651,11 +637,60 @@ public class TetParallelProcessor {
     }
     
     // Helper records
+    
     private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {}
     private record GridChunk(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {}
     private record TetRangeKey(VolumeBounds bounds, QueryMode mode, byte level) {}
     private record TetIntersectionKey(long tetIndex, int volumeHash) {}
-    record TetPointPair(long tetIndex, Point3f point) {}
+    public record TetPointPair(long tetIndex, Point3f point) {}
+    
+    // Placeholder classes for missing tetrahedral optimizers
+    private static class TetIntersectionOptimizer {
+        public TetIntersectionOptimizer(TetQueryMetrics metrics) {}
+        public boolean intersects(Tet tet, Spatial volume) {
+            // Placeholder implementation - use simple AABB intersection
+            var tetBounds = calculateTetrahedronBounds(tet);
+            var volumeBounds = extractVolumeBounds(volume);
+            if (volumeBounds == null) return false;
+            
+            return !(tetBounds.maxX() < volumeBounds.minX() || tetBounds.minX() > volumeBounds.maxX() ||
+                    tetBounds.maxY() < volumeBounds.minY() || tetBounds.minY() > volumeBounds.maxY() ||
+                    tetBounds.maxZ() < volumeBounds.minZ() || tetBounds.minZ() > volumeBounds.maxZ());
+        }
+    }
+    
+    private static class TetContainmentOptimizer {
+        public TetContainmentOptimizer(TetQueryMetrics metrics) {}
+        public boolean contains(Tet tet, Point3f point) {
+            // Placeholder implementation - use bounding box containment
+            var bounds = calculateTetrahedronBounds(tet);
+            return point.x >= bounds.minX() && point.x <= bounds.maxX() &&
+                   point.y >= bounds.minY() && point.y <= bounds.maxY() &&
+                   point.z >= bounds.minZ() && point.z <= bounds.maxZ();
+        }
+    }
+    
+    private static class TetQueryMetrics {
+        // Placeholder metrics class
+    }
+    
+    private static VolumeBounds calculateTetrahedronBounds(Tet tet) {
+        var vertices = tet.coordinates();
+        float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
+        float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
+        float minZ = Float.MAX_VALUE, maxZ = Float.MIN_VALUE;
+        
+        for (var vertex : vertices) {
+            minX = Math.min(minX, vertex.x);
+            maxX = Math.max(maxX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            maxY = Math.max(maxY, vertex.y);
+            minZ = Math.min(minZ, vertex.z);
+            maxZ = Math.max(maxZ, vertex.z);
+        }
+        
+        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
     
     // Public API methods
     
