@@ -39,6 +39,20 @@ public class TetKNearestNeighborSearch extends TetrahedralSearchBase {
      */
     public static <Content> List<TetKNNCandidate<Content>> findKNearestNeighbors(
             Point3f queryPoint, int k, Tetree<Content> tetree) {
+        return findKNearestNeighbors(queryPoint, k, tetree, SimplexAggregationStrategy.REPRESENTATIVE_ONLY);
+    }
+    
+    /**
+     * Find k nearest neighbors to the query point in tetrahedral space with simplex aggregation
+     * 
+     * @param queryPoint the point to search around (must have positive coordinates)
+     * @param k number of neighbors to find
+     * @param tetree the tetree to search in
+     * @param strategy how to handle multiple simplicies in the same spatial region
+     * @return list of k nearest neighbors sorted by distance (closest first)
+     */
+    public static <Content> List<TetKNNCandidate<Content>> findKNearestNeighbors(
+            Point3f queryPoint, int k, Tetree<Content> tetree, SimplexAggregationStrategy strategy) {
         
         // Early validation
         if (k <= 0) {
@@ -85,12 +99,15 @@ public class TetKNearestNeighborSearch extends TetrahedralSearchBase {
         Spatial.aabb searchVolume = new Spatial.aabb(minX, minY, minZ, maxX, maxY, maxZ);
         
         // Step 3: Get simplicies bounded by this search volume
-        var simplicies = tetree.boundedBy(searchVolume).toList();
+        var spatialResults = tetree.boundedBy(searchVolume);
         
-        // Step 3: Create candidates by calculating distance from query point to each simplex
+        // Step 4: Apply simplex aggregation strategy
+        var aggregatedResults = aggregateSimplicies(spatialResults, strategy);
+        
+        // Step 5: Create candidates by calculating distance from query point to each simplex
         List<TetKNNCandidate<Content>> candidates = new ArrayList<>();
         
-        for (var simplex : simplicies) {
+        for (var simplex : aggregatedResults) {
             long tetIndex = simplex.index();
             Content content = simplex.cell();
             
@@ -106,10 +123,10 @@ public class TetKNearestNeighborSearch extends TetrahedralSearchBase {
             candidates.add(candidate);
         }
         
-        // Step 4: Sort candidates by distance (closest first)
+        // Step 6: Sort candidates by distance (closest first)
         candidates.sort(Comparator.comparing(c -> c.distance));
         
-        // Step 5: Return the first k candidates
+        // Step 7: Return the first k candidates
         return candidates.stream()
             .limit(k)
             .collect(Collectors.toList());

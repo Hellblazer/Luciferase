@@ -311,12 +311,13 @@ public class TetKNearestNeighborSearchTest {
         // Test that results are properly sorted by distance
         Tetree<String> sortingTetree = new Tetree<>(new TreeMap<>());
         
-        // Insert multiple points to test sorting
-        sortingTetree.insert(new Point3f(500.0f, 500.0f, 500.0f), (byte) 14, "Far");      // Should be far
-        sortingTetree.insert(new Point3f(50.0f, 50.0f, 50.0f), (byte) 14, "Close");       // Should be close
-        sortingTetree.insert(new Point3f(250.0f, 250.0f, 250.0f), (byte) 14, "Medium");   // Should be medium
+        // Use proper S0 coordinates
+        float scale = Constants.MAX_EXTENT * 0.1f;
+        sortingTetree.insert(new Point3f(scale * 0.8f, scale * 0.4f, scale * 0.3f), (byte) 14, "Far");      
+        sortingTetree.insert(new Point3f(scale * 0.1f, scale * 0.05f, scale * 0.02f), (byte) 14, "Close");       
+        sortingTetree.insert(new Point3f(scale * 0.4f, scale * 0.2f, scale * 0.15f), (byte) 14, "Medium");   
         
-        Point3f queryPoint = new Point3f(10.0f, 10.0f, 10.0f);
+        Point3f queryPoint = new Point3f(scale * 0.05f, scale * 0.02f, scale * 0.01f);
         
         // Test k=3 to get all results and verify sorting
         List<TetKNearestNeighborSearch.TetKNNCandidate<String>> results = 
@@ -342,5 +343,291 @@ public class TetKNearestNeighborSearchTest {
         for (var result : results) {
             assertTrue(result.distance >= 0, "All distances should be non-negative");
         }
+    }
+
+    @Test 
+    void testKParameterHandling() {
+        // Test k=2,3,5 to verify k parameter handling
+        Tetree<String> kTestTetree = new Tetree<>(new TreeMap<>());
+        
+        // Use proper S0 coordinates and insert multiple points for testing
+        float scale = Constants.MAX_EXTENT * 0.1f;
+        kTestTetree.insert(new Point3f(scale * 0.1f, scale * 0.05f, scale * 0.02f), (byte) 15, "Point1");
+        kTestTetree.insert(new Point3f(scale * 0.2f, scale * 0.1f, scale * 0.05f), (byte) 15, "Point2");
+        kTestTetree.insert(new Point3f(scale * 0.3f, scale * 0.15f, scale * 0.1f), (byte) 15, "Point3");
+        kTestTetree.insert(new Point3f(scale * 0.4f, scale * 0.2f, scale * 0.15f), (byte) 15, "Point4");
+        kTestTetree.insert(new Point3f(scale * 0.5f, scale * 0.25f, scale * 0.2f), (byte) 15, "Point5");
+        kTestTetree.insert(new Point3f(scale * 0.6f, scale * 0.3f, scale * 0.25f), (byte) 15, "Point6");
+        
+        Point3f queryPoint = new Point3f(scale * 0.05f, scale * 0.02f, scale * 0.01f);
+        
+        // Test k=2
+        List<TetKNearestNeighborSearch.TetKNNCandidate<String>> results2 = 
+            TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, 2, kTestTetree);
+        
+        System.out.println("K=2 test results:");
+        System.out.println("Query point: " + queryPoint);
+        System.out.println("Results found: " + results2.size());
+        for (int i = 0; i < results2.size(); i++) {
+            var result = results2.get(i);
+            System.out.println("  " + i + ": content=" + result.content + " distance=" + result.distance);
+        }
+        
+        assertNotNull(results2);
+        assertTrue(results2.size() <= 2, "Should return at most 2 results for k=2");
+        
+        // Test k=3
+        List<TetKNearestNeighborSearch.TetKNNCandidate<String>> results3 = 
+            TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, 3, kTestTetree);
+        
+        System.out.println("K=3 test results:");
+        System.out.println("Results found: " + results3.size());
+        for (int i = 0; i < results3.size(); i++) {
+            var result = results3.get(i);
+            System.out.println("  " + i + ": content=" + result.content + " distance=" + result.distance);
+        }
+        
+        assertNotNull(results3);
+        assertTrue(results3.size() <= 3, "Should return at most 3 results for k=3");
+        
+        // Test k=5
+        List<TetKNearestNeighborSearch.TetKNNCandidate<String>> results5 = 
+            TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, 5, kTestTetree);
+        
+        System.out.println("K=5 test results:");
+        System.out.println("Results found: " + results5.size());
+        for (int i = 0; i < results5.size(); i++) {
+            var result = results5.get(i);
+            System.out.println("  " + i + ": content=" + result.content + " distance=" + result.distance);
+        }
+        
+        assertNotNull(results5);
+        assertTrue(results5.size() <= 5, "Should return at most 5 results for k=5");
+        
+        // Verify that increasing k gives more results (up to available data)
+        assertTrue(results2.size() <= results3.size(), "k=3 should return at least as many results as k=2");
+        assertTrue(results3.size() <= results5.size(), "k=5 should return at least as many results as k=3");
+        
+        // All results should be sorted by distance
+        validateSorting(results2, "k=2");
+        validateSorting(results3, "k=3");
+        validateSorting(results5, "k=5");
+        
+        // All distances should be non-negative
+        for (var result : results2) assertTrue(result.distance >= 0, "k=2 distances should be non-negative");
+        for (var result : results3) assertTrue(result.distance >= 0, "k=3 distances should be non-negative");
+        for (var result : results5) assertTrue(result.distance >= 0, "k=5 distances should be non-negative");
+    }
+    
+    private void validateSorting(List<TetKNearestNeighborSearch.TetKNNCandidate<String>> results, String testName) {
+        for (int i = 1; i < results.size(); i++) {
+            assertTrue(results.get(i).distance >= results.get(i-1).distance, 
+                testName + " results should be sorted by distance (closest first)");
+        }
+    }
+
+    @Test
+    void testPerformanceComparison() {
+        // Performance comparison between TetKNearestNeighborSearch and KNearestNeighborSearch
+        System.out.println("=== PERFORMANCE COMPARISON: Tetree vs Octree k-NN Search ===");
+        
+        // Setup data structures with comparable data
+        Tetree<String> tetree = new Tetree<>(new TreeMap<>());
+        Octree<String> octree = new Octree<>(new TreeMap<>());
+        
+        // Use S0 tetrahedron coordinates for tetree and equivalent cube coordinates for octree
+        float scale = Constants.MAX_EXTENT * 0.1f;
+        byte testLevel = 12; // Use moderate resolution for performance testing
+        
+        // Insert test data into both structures
+        int numPoints = 50; // Moderate number for meaningful performance test
+        Point3f[] testPoints = new Point3f[numPoints];
+        
+        for (int i = 0; i < numPoints; i++) {
+            // Generate points within S0 tetrahedron domain
+            float x = scale * (0.1f + i * 0.01f);
+            float y = scale * (0.05f + i * 0.005f);  
+            float z = scale * (0.02f + i * 0.002f);
+            
+            testPoints[i] = new Point3f(x, y, z);
+            String content = "TestPoint" + i;
+            
+            // Insert into tetree
+            tetree.insert(testPoints[i], testLevel, content);
+            
+            // Insert into octree (using cube-compatible coordinates)
+            octree.insert(testPoints[i], testLevel, content);
+        }
+        
+        // Test query point
+        Point3f queryPoint = new Point3f(scale * 0.08f, scale * 0.04f, scale * 0.015f);
+        int k = 5;
+        
+        System.out.println("Data setup:");
+        System.out.println("  Points inserted: " + numPoints);
+        System.out.println("  Test level: " + testLevel);
+        System.out.println("  Query point: " + queryPoint);
+        System.out.println("  k = " + k);
+        System.out.println();
+        
+        // Warm up JVM
+        for (int i = 0; i < 10; i++) {
+            TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, tetree);
+            KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree);
+        }
+        
+        // Benchmark Tetree k-NN search
+        long tetreeStart = System.nanoTime();
+        List<TetKNearestNeighborSearch.TetKNNCandidate<String>> tetreeResults = null;
+        int tetreeRuns = 100;
+        for (int i = 0; i < tetreeRuns; i++) {
+            tetreeResults = TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, tetree);
+        }
+        long tetreeEnd = System.nanoTime();
+        
+        // Benchmark Octree k-NN search
+        long octreeStart = System.nanoTime();
+        List<KNearestNeighborSearch.KNNCandidate<String>> octreeResults = null;
+        int octreeRuns = 100;
+        for (int i = 0; i < octreeRuns; i++) {
+            octreeResults = KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree);
+        }
+        long octreeEnd = System.nanoTime();
+        
+        // Calculate performance metrics
+        double tetreeAvgNanos = (tetreeEnd - tetreeStart) / (double) tetreeRuns;
+        double octreeAvgNanos = (octreeEnd - octreeStart) / (double) octreeRuns;
+        
+        double tetreeAvgMicros = tetreeAvgNanos / 1000.0;
+        double octreeAvgMicros = octreeAvgNanos / 1000.0;
+        
+        double performanceRatio = tetreeAvgNanos / octreeAvgNanos;
+        
+        // Results analysis
+        System.out.println("Performance Results:");
+        System.out.println("  Tetree k-NN average: " + String.format("%.2f μs", tetreeAvgMicros));
+        System.out.println("  Octree k-NN average: " + String.format("%.2f μs", octreeAvgMicros));
+        System.out.println("  Performance ratio (Tetree/Octree): " + String.format("%.2fx", performanceRatio));
+        System.out.println();
+        
+        System.out.println("Result Analysis:");
+        System.out.println("  Tetree results found: " + (tetreeResults != null ? tetreeResults.size() : 0));
+        System.out.println("  Octree results found: " + (octreeResults != null ? octreeResults.size() : 0));
+        
+        if (tetreeResults != null && !tetreeResults.isEmpty()) {
+            System.out.println("  Tetree closest distance: " + String.format("%.2f", tetreeResults.get(0).distance));
+        }
+        if (octreeResults != null && !octreeResults.isEmpty()) {
+            System.out.println("  Octree closest distance: " + String.format("%.2f", octreeResults.get(0).distance));
+        }
+        System.out.println();
+        
+        // Quality comparison
+        System.out.println("Architectural Differences:");
+        System.out.println("  Tetree: Uses tetrahedral SFC indexing with 6 tetrahedra per grid cell");
+        System.out.println("  Octree: Uses Morton curve indexing with 1 cube per grid cell");
+        System.out.println("  Tetree: Complex geometric predicates for point location");
+        System.out.println("  Octree: Simple grid-based point location");
+        System.out.println("  Tetree: Bounded to S0 tetrahedron domain (1/6 of unit cube)");
+        System.out.println("  Octree: Works with full cubic domain");
+        System.out.println();
+        
+        // Basic validation that both implementations work
+        assertNotNull(tetreeResults, "Tetree should return results");
+        assertNotNull(octreeResults, "Octree should return results");
+        assertTrue(tetreeResults.size() <= k, "Tetree should return at most k results");
+        assertTrue(octreeResults.size() <= k, "Octree should return at most k results");
+        
+        // Performance expectation: Tetree may be slower due to complex geometric operations
+        if (performanceRatio > 2.0) {
+            System.out.println("NOTE: Tetree is significantly slower than Octree (expected due to complexity)");
+        } else if (performanceRatio < 0.5) {
+            System.out.println("NOTE: Tetree is significantly faster than Octree (unexpected - check implementation)");
+        } else {
+            System.out.println("NOTE: Tetree and Octree have comparable performance");
+        }
+        
+        System.out.println("=== End Performance Comparison ===");
+    }
+    
+    @Test
+    void testSimplexAggregationStrategies() {
+        // Test different simplex aggregation strategies
+        System.out.println("=== SIMPLEX AGGREGATION STRATEGIES TEST ===");
+        
+        Tetree<String> tetree = new Tetree<>(new TreeMap<>());
+        
+        // Use S0 tetrahedron coordinates and insert overlapping points to create spatial groups
+        float scale = Constants.MAX_EXTENT * 0.1f;
+        byte testLevel = 14; // Higher resolution to create more tetrahedra
+        
+        // Insert multiple points in close proximity to trigger aggregation
+        Point3f basePoint = new Point3f(scale * 0.2f, scale * 0.1f, scale * 0.05f);
+        tetree.insert(basePoint, testLevel, "Base");
+        
+        // Insert nearby points that should map to similar spatial regions
+        tetree.insert(new Point3f(basePoint.x + 10, basePoint.y + 5, basePoint.z + 2), testLevel, "Near1");
+        tetree.insert(new Point3f(basePoint.x + 20, basePoint.y + 10, basePoint.z + 5), testLevel, "Near2");
+        tetree.insert(new Point3f(basePoint.x + 30, basePoint.y + 15, basePoint.z + 8), testLevel, "Near3");
+        
+        Point3f queryPoint = new Point3f(basePoint.x - 5, basePoint.y - 2, basePoint.z - 1);
+        int k = 3;
+        
+        System.out.println("Data setup:");
+        System.out.println("  Base point: " + basePoint);
+        System.out.println("  Query point: " + queryPoint);
+        System.out.println("  Test level: " + testLevel);
+        System.out.println("  k = " + k);
+        System.out.println();
+        
+        // Test each aggregation strategy
+        var strategies = TetrahedralSearchBase.SimplexAggregationStrategy.values();
+        
+        for (var strategy : strategies) {
+            System.out.println("Testing strategy: " + strategy);
+            
+            List<TetKNearestNeighborSearch.TetKNNCandidate<String>> results = 
+                TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, tetree, strategy);
+            
+            System.out.println("  Results found: " + results.size());
+            for (int i = 0; i < results.size(); i++) {
+                var result = results.get(i);
+                System.out.println("    " + i + ": content=" + result.content + 
+                                 " position=" + result.position + " distance=" + String.format("%.2f", result.distance));
+            }
+            
+            // Basic validation
+            assertNotNull(results, "Results should not be null for strategy " + strategy);
+            assertTrue(results.size() <= k, "Should return at most k results for strategy " + strategy);
+            
+            // Validate sorting
+            for (int i = 1; i < results.size(); i++) {
+                assertTrue(results.get(i).distance >= results.get(i-1).distance,
+                          "Results should be sorted by distance for strategy " + strategy);
+            }
+            
+            // All distances should be non-negative
+            for (var result : results) {
+                assertTrue(result.distance >= 0, "Distance should be non-negative for strategy " + strategy);
+            }
+            
+            System.out.println();
+        }
+        
+        // Compare strategies: ALL_SIMPLICIES should return more results than REPRESENTATIVE_ONLY
+        var representativeResults = TetKNearestNeighborSearch.findKNearestNeighbors(
+            queryPoint, k, tetree, TetrahedralSearchBase.SimplexAggregationStrategy.REPRESENTATIVE_ONLY);
+        var allSimpliciesResults = TetKNearestNeighborSearch.findKNearestNeighbors(
+            queryPoint, k, tetree, TetrahedralSearchBase.SimplexAggregationStrategy.ALL_SIMPLICIES);
+        
+        System.out.println("Strategy Comparison:");
+        System.out.println("  REPRESENTATIVE_ONLY: " + representativeResults.size() + " results");
+        System.out.println("  ALL_SIMPLICIES: " + allSimpliciesResults.size() + " results");
+        
+        // ALL_SIMPLICIES should generally return more or equal results (unless there are fewer than k total)
+        assertTrue(allSimpliciesResults.size() >= representativeResults.size(),
+                  "ALL_SIMPLICIES should return at least as many results as REPRESENTATIVE_ONLY");
+        
+        System.out.println("=== End Simplex Aggregation Test ===");
     }
 }
