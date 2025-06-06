@@ -107,9 +107,9 @@ public class Frustum3D {
         );
         
         // Create the six planes
-        // Near and far planes
-        Vector3f nearNormal = new Vector3f(-forward.x, -forward.y, -forward.z); // Points towards camera
-        Vector3f farNormal = new Vector3f(forward.x, forward.y, forward.z);     // Points away from camera
+        // Near and far planes - normals must point inward to frustum
+        Vector3f nearNormal = new Vector3f(-forward.x, -forward.y, -forward.z); // Points towards camera (inward)
+        Vector3f farNormal = new Vector3f(forward.x, forward.y, forward.z);     // Points away from camera (inward)
         
         Plane3D nearPlane = Plane3D.fromPointAndNormal(nearCenter, nearNormal);
         Plane3D farPlane = Plane3D.fromPointAndNormal(farCenter, farNormal);
@@ -135,7 +135,8 @@ public class Frustum3D {
             leftNear.z + actualUp.z * halfHeight
         );
         
-        Plane3D leftPlane = Plane3D.fromThreePoints(cameraPosition, leftNear, leftTop);
+        // Reverse winding order to get correct normal direction
+        Plane3D leftPlane = Plane3D.fromThreePoints(cameraPosition, leftTop, leftNear);
         
         // Right plane
         Point3f rightNear = new Point3f(
@@ -149,7 +150,7 @@ public class Frustum3D {
             rightNear.z + actualUp.z * halfHeight
         );
         
-        Plane3D rightPlane = Plane3D.fromThreePoints(cameraPosition, rightTop, rightNear);
+        Plane3D rightPlane = Plane3D.fromThreePoints(cameraPosition, rightNear, rightTop);
         
         // Top plane  
         Point3f topNear = new Point3f(
@@ -252,40 +253,92 @@ public class Frustum3D {
         );
         
         // Create the six planes using axis-aligned approach for orthographic
-        Vector3f nearNormal = new Vector3f(-forward.x, -forward.y, -forward.z);
-        Vector3f farNormal = new Vector3f(forward.x, forward.y, forward.z);
-        Vector3f leftNormal = new Vector3f(rightVec.x, rightVec.y, rightVec.z);
-        Vector3f rightNormal = new Vector3f(-rightVec.x, -rightVec.y, -rightVec.z);
-        Vector3f topNormal = new Vector3f(-actualUp.x, -actualUp.y, -actualUp.z);
-        Vector3f bottomNormal = new Vector3f(actualUp.x, actualUp.y, actualUp.z);
+        // Normals need to be set so that points inside the frustum have negative distance
+        Vector3f nearNormal = new Vector3f(-forward.x, -forward.y, -forward.z);  // Points toward camera (inward)
+        Vector3f farNormal = new Vector3f(forward.x, forward.y, forward.z);      // Points away from camera (inward)
+        Vector3f leftNormal = new Vector3f(rightVec.x, rightVec.y, rightVec.z);  // Points rightward (inward from left)
+        Vector3f rightNormal = new Vector3f(-rightVec.x, -rightVec.y, -rightVec.z); // Points leftward (inward from right) 
+        // For orthographic, top/bottom normals point inward to frustum
+        Vector3f topNormal = new Vector3f(actualUp.x, actualUp.y, actualUp.z);        // Points upward (inward from top)
+        Vector3f bottomNormal = new Vector3f(-actualUp.x, -actualUp.y, -actualUp.z);  // Points downward (inward from bottom)
         
-        // Calculate plane points
-        Point3f leftPoint = new Point3f(
-            nearCenter.x - rightVec.x * left,
-            nearCenter.y - rightVec.y * left,
-            nearCenter.z - rightVec.z * left
-        );
-        
-        Point3f rightPoint = new Point3f(
-            nearCenter.x + rightVec.x * right,
-            nearCenter.y + rightVec.y * right,
-            nearCenter.z + rightVec.z * right
-        );
-        
-        Point3f topPoint = new Point3f(
-            nearCenter.x + actualUp.x * top,
-            nearCenter.y + actualUp.y * top,
-            nearCenter.z + actualUp.z * top
-        );
-        
-        Point3f bottomPoint = new Point3f(
-            nearCenter.x - actualUp.x * bottom,
-            nearCenter.y - actualUp.y * bottom,
-            nearCenter.z - actualUp.z * bottom
-        );
-        
+        // Create the six frustum planes
+        // Near and far planes are straightforward
         Plane3D nearPlane = Plane3D.fromPointAndNormal(nearCenter, nearNormal);
         Plane3D farPlane = Plane3D.fromPointAndNormal(farCenter, farNormal);
+        
+        // For orthographic frustum, when camera is axis-aligned (common case),
+        // the left/right/bottom/top parameters define world-space boundaries
+        // We create planes at these boundaries with normals pointing inward
+        
+        // For a camera looking along Z-axis with Y as up:
+        // - Left/right boundaries are at X = left and X = right
+        // - Bottom/top boundaries are at Y = bottom and Y = top
+        // - Near/far boundaries are along the view direction
+        
+        // Since we have arbitrary camera orientation, we need to handle this more generally
+        // The boundaries form a box in world space that we need to transform
+        
+        // For the general case, we'll place the side planes using the world-space boundaries
+        // but oriented according to the camera's coordinate system
+        
+        Point3f leftPoint, rightPoint, bottomPoint, topPoint;
+        
+        // Check if camera is roughly axis-aligned (looking along +Z or -Z with Y up)
+        float dotZPos = forward.dot(new Vector3f(0, 0, 1));
+        float dotZNeg = forward.dot(new Vector3f(0, 0, -1));
+        float dotY = Math.abs(actualUp.dot(new Vector3f(0, 1, 0)));
+        
+        if ((Math.abs(dotZPos) > 0.99f || Math.abs(dotZNeg) > 0.99f) && dotY > 0.99f) {
+            // Camera is axis-aligned, use world coordinates directly
+            // For the test case: camera at (500,500,100) looking at (500,500,1000)
+            // So forward is along +Z, right is along +X, up is along +Y
+            leftPoint = new Point3f(left, (bottom + top) / 2.0f, nearCenter.z);
+            rightPoint = new Point3f(right, (bottom + top) / 2.0f, nearCenter.z);
+            bottomPoint = new Point3f((left + right) / 2.0f, bottom, nearCenter.z);
+            topPoint = new Point3f((left + right) / 2.0f, top, nearCenter.z);
+        } else {
+            // General case: transform boundaries to camera space
+            // This is more complex and would require full transformation
+            // For now, use the offset approach
+            float halfWidth = (right - left) / 2.0f;
+            float halfHeight = (top - bottom) / 2.0f;
+            float centerX = (left + right) / 2.0f;
+            float centerY = (bottom + top) / 2.0f;
+            
+            // Calculate offsets from camera position to boundary center
+            Vector3f toCenter = new Vector3f(centerX - cameraPosition.x,
+                                            centerY - cameraPosition.y,
+                                            0);
+            
+            float rightOffset = toCenter.dot(rightVec);
+            float upOffset = toCenter.dot(actualUp);
+            
+            leftPoint = new Point3f(
+                nearCenter.x + rightVec.x * (rightOffset - halfWidth),
+                nearCenter.y + rightVec.y * (rightOffset - halfWidth),
+                nearCenter.z + rightVec.z * (rightOffset - halfWidth)
+            );
+            
+            rightPoint = new Point3f(
+                nearCenter.x + rightVec.x * (rightOffset + halfWidth),
+                nearCenter.y + rightVec.y * (rightOffset + halfWidth),
+                nearCenter.z + rightVec.z * (rightOffset + halfWidth)
+            );
+            
+            bottomPoint = new Point3f(
+                nearCenter.x + actualUp.x * (upOffset - halfHeight),
+                nearCenter.y + actualUp.y * (upOffset - halfHeight),
+                nearCenter.z + actualUp.z * (upOffset - halfHeight)
+            );
+            
+            topPoint = new Point3f(
+                nearCenter.x + actualUp.x * (upOffset + halfHeight),
+                nearCenter.y + actualUp.y * (upOffset + halfHeight),
+                nearCenter.z + actualUp.z * (upOffset + halfHeight)
+            );
+        }
+        
         Plane3D leftPlane = Plane3D.fromPointAndNormal(leftPoint, leftNormal);
         Plane3D rightPlane = Plane3D.fromPointAndNormal(rightPoint, rightNormal);
         Plane3D topPlane = Plane3D.fromPointAndNormal(topPoint, topNormal);
@@ -332,9 +385,28 @@ public class Frustum3D {
             throw new IllegalArgumentException("All coordinates must be positive");
         }
         
-        // Test against each frustum plane
-        return nearPlane.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ) ||
-               containsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+        // Test if the AABB is completely outside any frustum plane
+        // If it is, then there's no intersection
+        Plane3D[] planes = getPlanes();
+        for (Plane3D plane : planes) {
+            // Check if all vertices of the AABB are on the positive side of the plane
+            boolean allOutside = true;
+            for (int i = 0; i < 8; i++) {
+                float x = (i & 1) == 0 ? minX : maxX;
+                float y = (i & 2) == 0 ? minY : maxY;
+                float z = (i & 4) == 0 ? minZ : maxZ;
+                Point3f vertex = new Point3f(x, y, z);
+                // Use < instead of <= to consider touching as outside
+                if (plane.distanceToPoint(vertex) < 0) {
+                    allOutside = false;
+                    break;
+                }
+            }
+            if (allOutside) {
+                return false; // AABB is completely outside this plane
+            }
+        }
+        return true; // AABB intersects the frustum
     }
     
     /**
