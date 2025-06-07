@@ -326,6 +326,55 @@ public class ConvexHullIntersectionSearch {
         
         return intersections;
     }
+    
+    /**
+     * Find all cubes that intersect with the convex hull using adapter, ordered by distance from reference point
+     * 
+     * @param convexHull the convex hull to test intersection with
+     * @param adapter the adapter to search in
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @return list of intersections sorted by distance from reference point (closest first)
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<ConvexHullIntersection<Content>> convexHullIntersectedAll(
+            ConvexHull convexHull, SingleContentAdapter<Content> adapter, Point3f referencePoint) {
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        Map<Long, Content> map = adapter.getMap();
+        if (map.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<ConvexHullIntersection<Content>> intersections = new ArrayList<>();
+        
+        for (Map.Entry<Long, Content> entry : map.entrySet()) {
+            Spatial.Cube cube = SingleContentAdapter.toCube(entry.getKey());
+            
+            IntersectionType intersectionType = testConvexHullCubeIntersection(convexHull, cube);
+            if (intersectionType != IntersectionType.COMPLETELY_OUTSIDE) {
+                Point3f cubeCenter = getCubeCenter(cube);
+                float distance = calculateDistance(referencePoint, cubeCenter);
+                float penetrationDepth = calculatePenetrationDepth(convexHull, cube);
+                
+                ConvexHullIntersection<Content> intersection = new ConvexHullIntersection<>(
+                    entry.getKey(), 
+                    entry.getValue(), 
+                    cube, 
+                    distance,
+                    cubeCenter,
+                    intersectionType,
+                    penetrationDepth
+                );
+                intersections.add(intersection);
+            }
+        }
+
+        // Sort by distance from reference point
+        intersections.sort(Comparator.comparing(chi -> chi.distanceToReferencePoint));
+        
+        return intersections;
+    }
 
     /**
      * Find the first (closest to reference point) cube that intersects with the convex hull

@@ -77,6 +77,51 @@ public class PlaneIntersectionSearch {
         
         return intersections;
     }
+    
+    /**
+     * Find all cubes that intersect with the plane using adapter, ordered by distance from reference point
+     * 
+     * @param plane the plane to test intersection with
+     * @param adapter the adapter to search in
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @return list of intersections sorted by distance from reference point (closest first)
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<PlaneIntersection<Content>> planeIntersectedAll(
+            Plane3D plane, SingleContentAdapter<Content> adapter, Point3f referencePoint) {
+        
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        Map<Long, Content> map = adapter.getMap();
+        if (map.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<PlaneIntersection<Content>> intersections = new ArrayList<>();
+        
+        for (Map.Entry<Long, Content> entry : map.entrySet()) {
+            Spatial.Cube cube = SingleContentAdapter.toCube(entry.getKey());
+            
+            if (plane.intersectsCube(cube)) {
+                Point3f cubeCenter = getCubeCenter(cube);
+                float distance = calculateDistance(referencePoint, cubeCenter);
+                
+                PlaneIntersection<Content> intersection = new PlaneIntersection<>(
+                    entry.getKey(), 
+                    entry.getValue(), 
+                    cube, 
+                    distance,
+                    cubeCenter
+                );
+                intersections.add(intersection);
+            }
+        }
+
+        // Sort by distance from reference point
+        intersections.sort(Comparator.comparing(pi -> pi.distanceToReferencePoint));
+        
+        return intersections;
+    }
 
     /**
      * Find the first (closest to reference point) cube that intersects with the plane

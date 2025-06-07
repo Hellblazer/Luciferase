@@ -95,6 +95,57 @@ public class SphereIntersectionSearch {
             .sorted(Comparator.comparing(si -> si.distanceToReferencePoint))
             .toList();
     }
+    
+    /**
+     * Find all cubes that intersect with the sphere using adapter, ordered by distance from reference point
+     * 
+     * @param sphereCenter center of the sphere (positive coordinates only)
+     * @param sphereRadius radius of the sphere (positive)
+     * @param adapter the adapter to search in
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @return list of intersections sorted by distance from reference point (closest first)
+     * @throws IllegalArgumentException if any coordinate is negative or radius is non-positive
+     */
+    public static <Content> List<SphereIntersection<Content>> sphereIntersectedAll(
+            Point3f sphereCenter, float sphereRadius, SingleContentAdapter<Content> adapter, Point3f referencePoint) {
+        
+        validatePositiveCoordinates(sphereCenter, "sphereCenter");
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        if (sphereRadius <= 0) {
+            throw new IllegalArgumentException("Sphere radius must be positive");
+        }
+
+        // Use bounding AABB for efficient Morton curve-based search
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
+
+        return adapter.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
+                var intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
+                
+                if (intersectionType != IntersectionType.COMPLETELY_OUTSIDE) {
+                    Point3f cubeCenter = getCubeCenter(cube);
+                    float distance = calculateDistance(referencePoint, cubeCenter);
+                    
+                    return new SphereIntersection<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        distance,
+                        cubeCenter,
+                        intersectionType
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(si -> si.distanceToReferencePoint))
+            .toList();
+    }
 
     /**
      * Find the first (closest to reference point) cube that intersects with the sphere

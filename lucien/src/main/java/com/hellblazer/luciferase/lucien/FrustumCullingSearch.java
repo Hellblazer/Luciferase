@@ -90,6 +90,53 @@ public class FrustumCullingSearch {
         
         return intersections;
     }
+    
+    /**
+     * Find all cubes that intersect with the frustum using adapter, ordered by distance from camera
+     * 
+     * @param frustum the camera frustum to test intersection with
+     * @param adapter the adapter to search in
+     * @param cameraPosition camera position for distance calculations (positive coordinates only)
+     * @return list of intersections sorted by distance from camera (closest first)
+     * @throws IllegalArgumentException if camera position has negative coordinates
+     */
+    public static <Content> List<FrustumIntersection<Content>> frustumCulledAll(
+            Frustum3D frustum, SingleContentAdapter<Content> adapter, Point3f cameraPosition) {
+        
+        validatePositiveCoordinates(cameraPosition, "cameraPosition");
+        
+        Map<Long, Content> map = adapter.getMap();
+        if (map.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<FrustumIntersection<Content>> intersections = new ArrayList<>();
+        
+        for (Map.Entry<Long, Content> entry : map.entrySet()) {
+            Spatial.Cube cube = SingleContentAdapter.toCube(entry.getKey());
+            CullingResult result = testFrustumCulling(frustum, cube);
+            
+            if (result != CullingResult.OUTSIDE) {
+                Point3f cubeCenter = getCubeCenter(cube);
+                float distance = calculateDistance(cameraPosition, cubeCenter);
+                
+                FrustumIntersection<Content> intersection = new FrustumIntersection<>(
+                    entry.getKey(), 
+                    entry.getValue(), 
+                    cube, 
+                    distance,
+                    cubeCenter,
+                    result
+                );
+                intersections.add(intersection);
+            }
+        }
+
+        // Sort by distance from camera
+        intersections.sort(Comparator.comparing(fi -> fi.distanceToCamera));
+        
+        return intersections;
+    }
 
     /**
      * Find the first (closest to camera) cube that intersects with the frustum

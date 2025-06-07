@@ -37,14 +37,52 @@ import java.util.stream.Collectors;
  */
 public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content> {
     
-    private final Octree<Content> octree;
+    private final SingleContentAdapter<Content> octree;
     private final AtomicLong queryCount = new AtomicLong(0);
     private final LongAdder totalQueryTime = new LongAdder();
     private final LongAdder cacheHits = new LongAdder();
     private final LongAdder cellsTraversed = new LongAdder();
     
-    public OctreeSpatialEngine(Octree<Content> octree) {
+    /**
+     * Create with a SingleContentAdapter (recommended for new code)
+     */
+    public OctreeSpatialEngine(SingleContentAdapter<Content> octree) {
         this.octree = octree;
+    }
+    
+    /**
+     * Create with legacy Octree (for backward compatibility)
+     */
+    public OctreeSpatialEngine(Octree<Content> octree) {
+        // Wrap the legacy Octree in an adapter
+        this.octree = new SingleContentAdapter<>();
+        // Copy data from legacy octree to adapter
+        // Note: This is a one-time migration, not a live view
+        migrateFromLegacyOctree(octree);
+    }
+    
+    private void migrateFromLegacyOctree(Octree<Content> legacyOctree) {
+        // Get all entries from the legacy octree
+        var map = legacyOctree.getMap();
+        for (var entry : map.entrySet()) {
+            long mortonIndex = entry.getKey();
+            Content content = entry.getValue();
+            
+            // Decode Morton index to get position and level
+            var cube = Octree.toCube(mortonIndex);
+            Point3f position = new Point3f(cube.originX(), cube.originY(), cube.originZ());
+            
+            // Calculate level from cube extent
+            byte level = 0;
+            float extent = cube.extent();
+            while (level <= Constants.getMaxRefinementLevel() && 
+                   Constants.lengthAtLevel(level) > extent) {
+                level++;
+            }
+            
+            // Insert into adapter
+            octree.insert(position, level, content);
+        }
     }
     
     @Override

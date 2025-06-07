@@ -41,8 +41,31 @@ public class RayTracingSearch {
      */
     public static <Content> List<RayIntersection<Content>> rayIntersectedAll(
             Ray3D ray, Octree<Content> octree) {
+        return rayIntersectedAllImpl(ray, octree.getMap(), 
+            boundingAABB -> octree.bounding(boundingAABB));
+    }
+    
+    /**
+     * Find all cubes that intersect with the ray using adapter, ordered by distance from ray origin
+     * 
+     * @param ray the ray to trace (must have positive origin coordinates)
+     * @param adapter the adapter to search in
+     * @return stream of intersections sorted by distance (closest first)
+     */
+    public static <Content> List<RayIntersection<Content>> rayIntersectedAll(
+            Ray3D ray, SingleContentAdapter<Content> adapter) {
+        return rayIntersectedAllImpl(ray, adapter.getMap(), 
+            boundingAABB -> adapter.bounding(boundingAABB));
+    }
+    
+    /**
+     * Common implementation for ray tracing
+     */
+    private static <Content> List<RayIntersection<Content>> rayIntersectedAllImpl(
+            Ray3D ray, NavigableMap<Long, Content> map, 
+            java.util.function.Function<Spatial, java.util.stream.Stream<? extends Octree.Hexahedron<Content>>> bounder) {
         
-        if (octree.getMap().isEmpty()) {
+        if (map.isEmpty()) {
             return Collections.emptyList();
         }
 
@@ -66,8 +89,8 @@ public class RayTracingSearch {
         
         var boundingAABB = new Spatial.aabb(minX, minY, minZ, maxX, maxY, maxZ);
         
-        // Use Octree's efficient bounding method which uses Morton curve ranges
-        return octree.bounding(boundingAABB)
+        // Use efficient bounding method which uses Morton curve ranges
+        return bounder.apply(boundingAABB)
             .map(hex -> {
                 var cube = hex.toCube();
                 var intersection = rayBoxIntersection(ray, cube);

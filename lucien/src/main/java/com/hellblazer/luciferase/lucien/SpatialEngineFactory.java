@@ -49,7 +49,7 @@ public class SpatialEngineFactory {
         var data = initialData != null ? new TreeMap<>(initialData) : new TreeMap<Long, Content>();
         return switch (preferredType) {
             case OCTREE -> {
-                var octree = new Octree<Content>();
+                var adapter = new SingleContentAdapter<Content>();
                 // Pre-populate if initial data provided
                 if (initialData != null) {
                     // Instead of directly using the Morton codes, we need to use proper spatial insertion
@@ -61,10 +61,10 @@ public class SpatialEngineFactory {
                         
                         // Insert using proper spatial coordinates
                         var point = new Point3f(coords[0], coords[1], coords[2]);
-                        octree.insert(point, level, entry.getValue());
+                        adapter.insert(point, level, entry.getValue());
                     }
                 }
-                yield new OctreeSpatialEngine<>(octree);
+                yield new OctreeSpatialEngine<>(adapter);
             }
             case TETREE -> new TetreeSpatialEngine<>(new Tetree<>(data));
         };

@@ -152,6 +152,92 @@ public class VisibilitySearch {
         
         return new LineOfSightResult<>(hasLineOfSight, occludingCubes, totalOcclusionRatio, distanceThroughOccluders);
     }
+    
+    /**
+     * Test line of sight between two points using adapter
+     * 
+     * @param observer the observer position (positive coordinates only)
+     * @param target the target position (positive coordinates only)
+     * @param adapter the adapter to search for occluders
+     * @param occlusionThreshold minimum cube size to consider as occluder
+     * @return line of sight result with occlusion information
+     * @throws IllegalArgumentException if any coordinate is negative
+     */
+    public static <Content> LineOfSightResult<Content> testLineOfSight(
+            Point3f observer, Point3f target, SingleContentAdapter<Content> adapter, float occlusionThreshold) {
+        
+        validatePositiveCoordinates(observer, "observer");
+        validatePositiveCoordinates(target, "target");
+        
+        if (occlusionThreshold < 0) {
+            throw new IllegalArgumentException("Occlusion threshold must be non-negative, got: " + occlusionThreshold);
+        }
+        
+        Map<Long, Content> map = adapter.getMap();
+        if (map.isEmpty()) {
+            return new LineOfSightResult<>(true, Collections.emptyList(), 0.0f, 0.0f);
+        }
+
+        // Calculate ray from observer to target
+        Vector3f direction = new Vector3f();
+        direction.sub(target, observer);
+        direction.normalize();
+        Ray3D lineOfSight = new Ray3D(observer, direction);
+        float targetDistance = calculateDistance(observer, target);
+        
+        List<VisibilityResult<Content>> occludingCubes = new ArrayList<>();
+        float totalOcclusionRatio = 0.0f;
+        float distanceThroughOccluders = 0.0f;
+
+        for (Map.Entry<Long, Content> entry : map.entrySet()) {
+            Spatial.Cube cube = SingleContentAdapter.toCube(entry.getKey());
+            
+            // Skip very small cubes below occlusion threshold
+            if (cube.extent() < occlusionThreshold) {
+                continue;
+            }
+            
+            // Test ray intersection with cube
+            RayIntersection intersection = rayBoxIntersection(lineOfSight, cube);
+            if (intersection.intersects) {
+                Point3f cubeCenter = getCubeCenter(cube);
+                float distanceFromObserver = calculateDistance(observer, cubeCenter);
+                
+                // Only consider cubes between observer and target
+                if (distanceFromObserver < targetDistance) {
+                    float occlusionRatio = calculateOcclusionRatio(cube, lineOfSight, intersection.distance, targetDistance);
+                    
+                    if (occlusionRatio > 0) {
+                        VisibilityType visType = occlusionRatio >= 0.9f ? 
+                            VisibilityType.FULLY_OCCLUDING : VisibilityType.PARTIALLY_OCCLUDING;
+                        
+                        VisibilityResult<Content> result = new VisibilityResult<>(
+                            entry.getKey(),
+                            entry.getValue(),
+                            cube,
+                            cubeCenter,
+                            distanceFromObserver,
+                            intersection.distance,
+                            visType,
+                            occlusionRatio
+                        );
+                        
+                        occludingCubes.add(result);
+                        totalOcclusionRatio = Math.min(1.0f, totalOcclusionRatio + occlusionRatio);
+                        distanceThroughOccluders += cube.extent();
+                    }
+                }
+            }
+        }
+
+        // Sort occluding cubes by distance from observer
+        occludingCubes.sort(Comparator.comparing(vr -> vr.distanceFromObserver));
+        
+        // Determine if line of sight is blocked (threshold can be adjusted)
+        boolean hasLineOfSight = totalOcclusionRatio < 0.5f; // 50% occlusion threshold
+        
+        return new LineOfSightResult<>(hasLineOfSight, occludingCubes, totalOcclusionRatio, distanceThroughOccluders);
+    }
 
     /**
      * Find all cubes visible from an observer position within a viewing cone
@@ -222,6 +308,108 @@ public class VisibilitySearch {
                     visibleCubes.add(result);
                 }
             }
+        }
+
+        // Sort by distance from observer
+        visibleCubes.sort(Comparator.comparing(vr -> vr.distanceFromObserver));
+        
+        return visibleCubes;
+    }
+    
+    /**
+     * Find all cubes visible from an observer position within a viewing cone using adapter
+     * 
+     * @param observer the observer position (positive coordinates only)
+     * @param viewDirection the viewing direction (will be normalized)
+     * @param viewAngle the viewing angle in radians (cone half-angle)
+     * @param maxViewDistance maximum viewing distance
+     * @param adapter the adapter to search in
+     * @return list of visible cubes sorted by distance
+     * @throws IllegalArgumentException if any coordinate is negative
+     */
+    public static <Content> List<VisibilityResult<Content>> findVisibleCubes(
+            Point3f observer, Vector3f viewDirection, float viewAngle, float maxViewDistance, 
+            SingleContentAdapter<Content> adapter) {
+        
+        validatePositiveCoordinates(observer, "observer");
+        
+        if (viewAngle < 0 || viewAngle > Math.PI) {
+            throw new IllegalArgumentException("View angle must be between 0 and π radians");
+        }
+        
+        if (maxViewDistance < 0) {
+            throw new IllegalArgumentException("Max view distance must be non-negative");
+        }
+        
+        Map<Long, Content> map = adapter.getMap();
+        if (map.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Vector3f normalizedDirection = new Vector3f(viewDirection);
+        normalizedDirection.normalize();
+        
+        List<VisibilityResult<Content>> visibleCubes = new ArrayList<>();
+
+        for (Map.Entry<Long, Content> entry : map.entrySet()) {
+            Spatial.Cube cube = SingleContentAdapter.toCube(entry.getKey());
+            Point3f cubeCenter = getCubeCenter(cube);
+            
+            float distanceFromObserver = calculateDistance(observer, cubeCenter);
+            
+            // Check if cube is within viewing distance
+            if (distanceFromObserver > maxViewDistance) {
+                continue;
+            }
+            
+            // Check if cube is within viewing cone
+            Vector3f toCube = new Vector3f();
+            toCube.sub(cubeCenter, observer);
+            toCube.normalize();
+            
+            float angle = normalizedDirection.angle(toCube);
+            if (angle > viewAngle) {
+                continue;
+            }
+            
+            // Test line of sight to cube
+            LineOfSightResult<Content> losResult = testLineOfSight(observer, cubeCenter, adapter, cube.extent() * 0.1f);
+            
+            VisibilityType visType = VisibilityType.VISIBLE;
+            float occlusionRatio = 0.0f;
+            
+            if (!losResult.hasLineOfSight) {
+                // Check if the cube itself is blocking its own center
+                boolean selfOccluding = false;
+                for (VisibilityResult<Content> occluder : losResult.occludingCubes) {
+                    if (occluder.index == entry.getKey()) {
+                        selfOccluding = true;
+                        break;
+                    }
+                }
+                
+                if (!selfOccluding) {
+                    continue; // Skip if occluded by other cubes
+                }
+            }
+            
+            // Calculate distance to observer's "target" point along view direction
+            Point3f targetPoint = new Point3f();
+            targetPoint.scaleAdd(maxViewDistance, normalizedDirection, observer);
+            float distanceFromTarget = calculateDistance(cubeCenter, targetPoint);
+            
+            VisibilityResult<Content> result = new VisibilityResult<>(
+                entry.getKey(),
+                entry.getValue(),
+                cube,
+                cubeCenter,
+                distanceFromObserver,
+                distanceFromTarget,
+                visType,
+                occlusionRatio
+            );
+            
+            visibleCubes.add(result);
         }
 
         // Sort by distance from observer

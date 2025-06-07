@@ -47,6 +47,38 @@ public class AABBIntersectionSearch {
             return null;
         }).filter(Objects::nonNull).sorted(Comparator.comparing(ai -> ai.distanceToReferencePoint)).toList();
     }
+    
+    /**
+     * Find all cubes that intersect with the AABB using adapter, ordered by distance from reference point
+     *
+     * @param aabb           the axis-aligned bounding box to test intersection with
+     * @param adapter        the adapter to search in
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @return list of intersections sorted by distance from reference point (closest first)
+     * @throws IllegalArgumentException if reference point has negative coordinates
+     */
+    public static <Content> List<AABBIntersection<Content>> aabbIntersectedAll(AABB aabb, SingleContentAdapter<Content> adapter,
+                                                                               Point3f referencePoint) {
+
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+
+        // Convert AABB to a Spatial.aabb that adapter understands
+        var spatialAABB = new Spatial.aabb(aabb.minX, aabb.minY, aabb.minZ, aabb.maxX, aabb.maxY, aabb.maxZ);
+
+        // Use adapter's efficient bounding method which uses Morton curve ranges
+        return adapter.bounding(spatialAABB).map(hex -> {
+            var cube = hex.toCube();
+            var intersectionType = testAABBIntersection(aabb, cube);
+
+            if (intersectionType != IntersectionType.COMPLETELY_OUTSIDE) {
+                Point3f cubeCenter = getCubeCenter(cube);
+                float distance = calculateDistance(referencePoint, cubeCenter);
+
+                return new AABBIntersection<>(hex.index(), hex.cell(), cube, distance, cubeCenter, intersectionType);
+            }
+            return null;
+        }).filter(Objects::nonNull).sorted(Comparator.comparing(ai -> ai.distanceToReferencePoint)).toList();
+    }
 
     /**
      * Find the first (closest to reference point) cube that intersects with the AABB

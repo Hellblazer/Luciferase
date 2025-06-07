@@ -130,6 +130,56 @@ public class ProximitySearch {
             .sorted(Comparator.comparing(pr -> pr.distanceToQuery))
             .toList();
     }
+    
+    /**
+     * Find cubes within a specific distance range from a query point using adapter
+     * 
+     * @param queryPoint the reference point for distance calculations (positive coordinates only)
+     * @param distanceRange the distance range to search within
+     * @param adapter the adapter to search in
+     * @return list of cubes within the distance range, sorted by distance
+     * @throws IllegalArgumentException if query point has negative coordinates
+     */
+    public static <Content> List<ProximityResult<Content>> cubesWithinDistanceRange(
+            Point3f queryPoint, DistanceRange distanceRange, SingleContentAdapter<Content> adapter) {
+        
+        validatePositiveCoordinates(queryPoint, "queryPoint");
+        
+        // Create bounding AABB for the distance range
+        var boundingAABB = new Spatial.aabb(
+            queryPoint.x - distanceRange.maxDistance, queryPoint.y - distanceRange.maxDistance, queryPoint.z - distanceRange.maxDistance,
+            queryPoint.x + distanceRange.maxDistance, queryPoint.y + distanceRange.maxDistance, queryPoint.z + distanceRange.maxDistance
+        );
+        
+        // Use adapter's efficient bounding method which uses Morton curve ranges
+        return adapter.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
+                Point3f cubeCenter = getCubeCenter(cube);
+                
+                float centerDistance = calculateDistance(queryPoint, cubeCenter);
+                float minDistance = calculateMinDistanceToBox(queryPoint, cube);
+                float maxDistance = calculateMaxDistanceToBox(queryPoint, cube);
+                
+                // Check if the cube overlaps with the distance range
+                if (minDistance <= distanceRange.maxDistance && maxDistance >= distanceRange.minDistance) {
+                    return new ProximityResult<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        cubeCenter,
+                        centerDistance,
+                        minDistance,
+                        maxDistance,
+                        distanceRange.proximityType
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(pr -> pr.distanceToQuery))
+            .toList();
+    }
 
     /**
      * Find cubes within multiple distance ranges (proximity bands)

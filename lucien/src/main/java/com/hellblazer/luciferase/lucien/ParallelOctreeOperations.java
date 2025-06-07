@@ -70,6 +70,29 @@ public class ParallelOctreeOperations {
             return octree.boundedBy(volume).parallel().collect(Collectors.toList());
         });
     }
+    
+    /**
+     * Parallel version of boundedBy query using adapter
+     * 
+     * @param volume the volume to search within
+     * @param adapter the adapter to search
+     * @param config parallel execution configuration
+     * @return list of cubes bounded by the volume
+     */
+    public static <Content> List<Octree.Hexahedron<Content>> boundedByParallel(
+            Spatial volume, SingleContentAdapter<Content> adapter, ParallelConfig config) {
+        
+        Map<Long, Content> map = adapter.getMap();
+        if (map.size() < config.parallelismThreshold) {
+            // Use sequential version for small datasets
+            return adapter.boundedBy(volume).collect(Collectors.toList());
+        }
+        
+        return executeInPool(config, () -> {
+            // Use the adapter's optimized boundedBy method and parallelize the stream
+            return adapter.boundedBy(volume).parallel().collect(Collectors.toList());
+        });
+    }
 
     /**
      * Parallel version of bounding query

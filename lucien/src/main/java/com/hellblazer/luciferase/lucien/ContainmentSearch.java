@@ -102,6 +102,59 @@ public class ContainmentSearch {
             .sorted(Comparator.comparing(cr -> cr.distanceToReferencePoint))
             .toList();
     }
+    
+    /**
+     * Find all cubes completely contained within a sphere using adapter
+     * 
+     * @param sphereCenter center of the containing sphere (positive coordinates only)
+     * @param sphereRadius radius of the containing sphere (positive)
+     * @param adapter the adapter to search in
+     * @param referencePoint reference point for distance calculations (positive coordinates only)
+     * @return list of completely contained cubes sorted by distance from reference point
+     * @throws IllegalArgumentException if any coordinate is negative or radius is non-positive
+     */
+    public static <Content> List<ContainmentResult<Content>> cubesContainedInSphere(
+            Point3f sphereCenter, float sphereRadius, SingleContentAdapter<Content> adapter, Point3f referencePoint) {
+        
+        validatePositiveCoordinates(sphereCenter, "sphereCenter");
+        validatePositiveCoordinates(referencePoint, "referencePoint");
+        
+        if (sphereRadius <= 0) {
+            throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
+        }
+        
+        // Use bounding AABB for efficient Morton curve-based search
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
+        
+        return adapter.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
+                if (isCubeCompletelyInSphere(cube, sphereCenter, sphereRadius)) {
+                    Point3f cubeCenter = getCubeCenter(cube);
+                    float distance = calculateDistance(referencePoint, cubeCenter);
+                    float sphereVolume = (4.0f / 3.0f) * (float)Math.PI * sphereRadius * sphereRadius * sphereRadius;
+                    float cubeVolume = cube.extent() * cube.extent() * cube.extent();
+                    float volumeRatio = cubeVolume / sphereVolume;
+                    
+                    return new ContainmentResult<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        distance,
+                        cubeCenter,
+                        ContainmentType.COMPLETELY_CONTAINED,
+                        volumeRatio
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(cr -> cr.distanceToReferencePoint))
+            .toList();
+    }
 
     /**
      * Find all cubes completely contained within an AABB

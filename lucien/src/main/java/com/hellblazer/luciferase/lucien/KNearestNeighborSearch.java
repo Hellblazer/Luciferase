@@ -54,6 +54,30 @@ public class KNearestNeighborSearch {
      */
     public static <Content> List<KNNCandidate<Content>> findKNearestNeighbors(
             Point3f queryPoint, int k, Octree<Content> octree) {
+        return findKNearestNeighborsImpl(queryPoint, k, octree.getMap(), 
+            index -> Octree.toCube(index));
+    }
+    
+    /**
+     * Find k nearest neighbors to the query point using SingleContentAdapter
+     * 
+     * @param queryPoint the point to search around (must have positive coordinates)
+     * @param k number of neighbors to find
+     * @param adapter the adapter to search in
+     * @return list of k nearest neighbors sorted by distance (closest first)
+     */
+    public static <Content> List<KNNCandidate<Content>> findKNearestNeighbors(
+            Point3f queryPoint, int k, SingleContentAdapter<Content> adapter) {
+        return findKNearestNeighborsImpl(queryPoint, k, adapter.getMap(), 
+            index -> SingleContentAdapter.toCube(index));
+    }
+    
+    /**
+     * Common implementation for k-NN search
+     */
+    private static <Content> List<KNNCandidate<Content>> findKNearestNeighborsImpl(
+            Point3f queryPoint, int k, NavigableMap<Long, Content> map, 
+            java.util.function.Function<Long, Spatial.Cube> toCube) {
         
         if (k <= 0) {
             return Collections.emptyList();
@@ -64,7 +88,6 @@ public class KNearestNeighborSearch {
             throw new IllegalArgumentException("Query point must have positive coordinates");
         }
 
-        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -73,7 +96,7 @@ public class KNearestNeighborSearch {
         List<KNNCandidate<Content>> allCandidates = new ArrayList<>();
         
         for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
+            Spatial.Cube cube = toCube.apply(entry.getKey());
             
             // Calculate minimum distance from query point to cube (0 if inside cube)
             float distance = calculateMinDistanceToBox(queryPoint, cube);

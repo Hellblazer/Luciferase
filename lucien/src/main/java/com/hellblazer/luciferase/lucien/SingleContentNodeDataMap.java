@@ -98,20 +98,28 @@ public class SingleContentNodeDataMap<Content> implements NavigableMap<Long, Con
     
     @Override
     public Set<Long> keySet() {
-        // Not efficiently supported without tracking all Morton keys
-        throw new UnsupportedOperationException("KeySet not supported");
+        // Use getAllNodes() to get all keys
+        return adapter.getAllNodes().keySet();
     }
     
     @Override
     public Collection<Content> values() {
-        // Not efficiently supported without tracking all entities
-        throw new UnsupportedOperationException("Values not supported");
+        // Use getAllNodes() to get all values
+        return adapter.getAllNodes().values();
     }
     
     @Override
     public Set<Entry<Long, Content>> entrySet() {
-        // Not efficiently supported without tracking all entries
-        throw new UnsupportedOperationException("EntrySet not supported");
+        // Use getAllNodes() from adapter to get spatial information
+        Map<Long, Content> allNodes = adapter.getAllNodes();
+        
+        // Convert to entry set
+        Set<Entry<Long, Content>> entries = new HashSet<>();
+        for (Map.Entry<Long, Content> entry : allNodes.entrySet()) {
+            entries.add(new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue()));
+        }
+        
+        return entries;
     }
     
     @Override
