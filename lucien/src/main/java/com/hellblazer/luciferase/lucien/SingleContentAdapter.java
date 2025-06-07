@@ -22,22 +22,21 @@ import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
  * Adapter that provides the existing single-content-per-node API on top of the new entity-based octree implementation.
  *
+ * This adapter extends Octree to provide full compatibility with existing search algorithms while using
+ * OctreeWithEntities as the underlying storage.
+ *
  * @param <Content> The type of content stored
  * @author hal.hildebrand
  */
-public class SingleContentAdapter<Content> {
+public class SingleContentAdapter<Content> extends Octree<Content> {
     private final OctreeWithEntities<LongEntityID, Content> entityOctree;
-    private final Map<LongEntityID, Long> entityToMortonIndex = new HashMap<>();
+    private final Map<LongEntityID, Long>                   entityToMortonIndex = new HashMap<>();
 
     /**
      * Create adapter with default configuration
@@ -49,83 +48,20 @@ public class SingleContentAdapter<Content> {
     }
 
     /**
-     * Find content within a bounding box
-     */
-    public List<Content> boundedBy(Spatial.Cube region) {
-        List<LongEntityID> entityIds = entityOctree.entitiesInRegion(region);
-        return entityOctree.getEntities(entityIds);
-    }
-
-    /**
-     * Get the underlying entity-based octree for advanced operations
-     */
-    public OctreeWithEntities<LongEntityID, Content> getEntityOctree() {
-        return entityOctree;
-    }
-
-    /**
-     * Get statistics about the octree
-     */
-    public OctreeWithEntities.Stats getStats() {
-        return entityOctree.getStats();
-    }
-
-    /**
-     * Insert content and return Morton index (matches Octree API)
-     */
-    public long insert(Point3f position, byte level, Content content) {
-        var length = Constants.lengthAtLevel(level);
-        var mortonIndex = MortonCurve.encode((int) (Math.floor(position.x / length) * length),
-                                            (int) (Math.floor(position.y / length) * length),
-                                            (int) (Math.floor(position.z / length) * length));
-
-        // Remove any existing content at this location first
-        List<LongEntityID> existing = entityOctree.lookup(position, level);
-        for (LongEntityID id : existing) {
-            entityOctree.removeEntity(id);
-        }
-        // Insert new content
-        LongEntityID entityId = entityOctree.insert(position, level, content);
-        // Track the Morton index for this entity
-        entityToMortonIndex.put(entityId, mortonIndex);
-        return mortonIndex;
-    }
-
-    /**
-     * Lookup content at position (returns first/only content)
-     */
-    public Content lookup(Point3f position, byte level) {
-        List<LongEntityID> ids = entityOctree.lookup(position, level);
-        if (ids.isEmpty()) {
-            return null;
-        }
-        return entityOctree.getEntity(ids.get(0));
-    }
-
-    /**
-     * Remove content at position Note: This is approximate - removes first entity found at position
-     */
-    public boolean remove(Point3f position, byte level) {
-        List<LongEntityID> ids = entityOctree.lookup(position, level);
-        if (ids.isEmpty()) {
-            return false;
-        }
-        LongEntityID entityId = ids.get(0);
-        boolean removed = entityOctree.removeEntity(entityId);
-        if (removed) {
-            // Clean up Morton index tracking
-            entityToMortonIndex.remove(entityId);
-        }
-        return removed;
-    }
-
-    /**
      * Static method to convert Morton index to cube (matches Octree API)
      */
     public static Spatial.Cube toCube(long index) {
         var point = MortonCurve.decode(index);
         byte level = Constants.toLevel(index);
         return new Spatial.Cube(point[0], point[1], point[2], Constants.lengthAtLevel(level));
+    }
+
+    /**
+     * Find content within a bounding box
+     */
+    public List<Content> boundedBy(Spatial.Cube region) {
+        List<LongEntityID> entityIds = entityOctree.entitiesInRegion(region);
+        return entityOctree.getEntities(entityIds);
     }
 
     /**
@@ -165,8 +101,8 @@ public class SingleContentAdapter<Content> {
                                        (int) (Math.floor(centerPoint.z / length) * length));
 
         Content content = lookup(new Point3f((float) (Math.floor(centerPoint.x / length) * length),
-                                            (float) (Math.floor(centerPoint.y / length) * length),
-                                            (float) (Math.floor(centerPoint.z / length) * length)), level);
+                                             (float) (Math.floor(centerPoint.y / length) * length),
+                                             (float) (Math.floor(centerPoint.z / length) * length)), level);
         return new Octree.Hexahedron<>(index, content);
     }
 
@@ -178,15 +114,15 @@ public class SingleContentAdapter<Content> {
         var index = MortonCurve.encode((point.x / length) * length, (point.y / length) * length,
                                        (point.z / length) * length);
 
-        Content content = lookup(new Point3f((point.x / length) * length, 
-                                           (point.y / length) * length,
-                                           (point.z / length) * length), level);
+        Content content = lookup(
+        new Point3f((point.x / length) * length, (point.y / length) * length, (point.z / length) * length), level);
         return new Octree.Hexahedron<>(index, content);
     }
 
     /**
-     * Get content at Morton index
+     * Get content at Morton index (overrides Octree method)
      */
+    @Override
     public Content get(long index) {
         var point = MortonCurve.decode(index);
         byte level = Constants.toLevel(index);
@@ -194,8 +130,41 @@ public class SingleContentAdapter<Content> {
     }
 
     /**
-     * Get navigable map interface for compatibility
-     * Note: This returns a view that provides the Octree API
+     * Get all nodes with their Morton indices for iteration support This enables proper k-NN search and other
+     * operations that need to iterate all content
+     */
+    public Map<Long, Content> getAllNodes() {
+        Map<Long, Content> nodes = new HashMap<>();
+
+        // Get all entities from the octree
+        var allEntities = entityOctree.getAllEntities();
+
+        // For each entity, we need to find its spatial location
+        // Since SingleContentAdapter enforces one entity per location,
+        // we can reconstruct the Morton indices
+        for (var entry : allEntities.entrySet()) {
+            var entityId = entry.getKey();
+            var content = entry.getValue();
+
+            // Get the Morton index we tracked during insertion
+            Long mortonIndex = entityToMortonIndex.get(entityId);
+            if (mortonIndex != null) {
+                nodes.put(mortonIndex, content);
+            }
+        }
+
+        return nodes;
+    }
+
+    /**
+     * Get the underlying entity-based octree for advanced operations
+     */
+    public OctreeWithEntities<LongEntityID, Content> getEntityOctree() {
+        return entityOctree;
+    }
+
+    /**
+     * Get navigable map interface for compatibility Note: This returns a view that provides the Octree API
      */
     public NavigableMap<Long, Content> getMap() {
         return new SingleContentNodeDataMap<>(this);
@@ -209,6 +178,16 @@ public class SingleContentAdapter<Content> {
     }
 
     /**
+     * Get statistics about the octree (overrides Octree method)
+     */
+    @Override
+    public OctreeStats getStats() {
+        OctreeWithEntities.Stats entityStats = entityOctree.getStats();
+
+        return new OctreeStats(entityStats.nodeCount, entityStats.entityCount);
+    }
+
+    /**
      * Check if node exists at Morton key
      */
     public boolean hasNode(long mortonKey) {
@@ -218,12 +197,61 @@ public class SingleContentAdapter<Content> {
         return !ids.isEmpty();
     }
 
+    /**
+     * Insert content and return Morton index (overrides Octree method)
+     */
+    @Override
+    public long insert(Point3f position, byte level, Content content) {
+        var length = Constants.lengthAtLevel(level);
+        var mortonIndex = MortonCurve.encode((int) (Math.floor(position.x / length) * length),
+                                             (int) (Math.floor(position.y / length) * length),
+                                             (int) (Math.floor(position.z / length) * length));
+
+        // Remove any existing content at this location first
+        List<LongEntityID> existing = entityOctree.lookup(position, level);
+        for (LongEntityID id : existing) {
+            entityOctree.removeEntity(id);
+        }
+        // Insert new content
+        LongEntityID entityId = entityOctree.insert(position, level, content);
+        // Track the Morton index for this entity
+        entityToMortonIndex.put(entityId, mortonIndex);
+        return mortonIndex;
+    }
 
     /**
      * Get cube from index
      */
     public Spatial.Cube locate(long index) {
         return toCube(index);
+    }
+
+    /**
+     * Lookup content at position (returns first/only content)
+     */
+    public Content lookup(Point3f position, byte level) {
+        List<LongEntityID> ids = entityOctree.lookup(position, level);
+        if (ids.isEmpty()) {
+            return null;
+        }
+        return entityOctree.getEntity(ids.get(0));
+    }
+
+    /**
+     * Remove content at position Note: This is approximate - removes first entity found at position
+     */
+    public boolean remove(Point3f position, byte level) {
+        List<LongEntityID> ids = entityOctree.lookup(position, level);
+        if (ids.isEmpty()) {
+            return false;
+        }
+        LongEntityID entityId = ids.get(0);
+        boolean removed = entityOctree.removeEntity(entityId);
+        if (removed) {
+            // Clean up Morton index tracking
+            entityToMortonIndex.remove(entityId);
+        }
+        return removed;
     }
 
     /**
@@ -234,9 +262,10 @@ public class SingleContentAdapter<Content> {
     }
 
     /**
-     * Spatial range query implementation
+     * Spatial range query implementation (overrides Octree method)
      */
-    private Stream<Octree.Hexahedron<Content>> spatialRangeQuery(Spatial volume, boolean includeIntersecting) {
+    @Override
+    public Stream<Octree.Hexahedron<Content>> spatialRangeQuery(Spatial volume, boolean includeIntersecting) {
         List<Octree.Hexahedron<Content>> results = new ArrayList<>();
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -245,12 +274,12 @@ public class SingleContentAdapter<Content> {
 
         // Use getAllNodes() to get spatial information
         var allNodes = getAllNodes();
-        
+
         for (var entry : allNodes.entrySet()) {
             long mortonIndex = entry.getKey();
             Content content = entry.getValue();
             Spatial.Cube cube = toCube(mortonIndex);
-            
+
             // Check if cube intersects or is contained in volume
             boolean include = false;
             if (includeIntersecting) {
@@ -260,13 +289,56 @@ public class SingleContentAdapter<Content> {
                 // Check if cube is fully contained in volume
                 include = isCubeContainedInVolume(cube, volume);
             }
-            
+
             if (include) {
                 results.add(new Octree.Hexahedron<>(mortonIndex, content));
             }
         }
 
         return results.stream();
+    }
+
+    /**
+     * Check if a cube intersects with a volume
+     */
+    private boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
+        return switch (volume) {
+            case Spatial.Cube other ->
+            cube.originX() < other.originX() + other.extent() && cube.originX() + cube.extent() > other.originX()
+            && cube.originY() < other.originY() + other.extent() && cube.originY() + cube.extent() > other.originY()
+            && cube.originZ() < other.originZ() + other.extent() && cube.originZ() + cube.extent() > other.originZ();
+
+            case Spatial.Sphere sphere -> {
+                // Find closest point on cube to sphere center
+                float closestX = Math.max(cube.originX(), Math.min(sphere.centerX(), cube.originX() + cube.extent()));
+                float closestY = Math.max(cube.originY(), Math.min(sphere.centerY(), cube.originY() + cube.extent()));
+                float closestZ = Math.max(cube.originZ(), Math.min(sphere.centerZ(), cube.originZ() + cube.extent()));
+
+                // Check if closest point is within sphere radius
+                float dx = closestX - sphere.centerX();
+                float dy = closestY - sphere.centerY();
+                float dz = closestZ - sphere.centerZ();
+                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
+            }
+
+            default -> true; // Conservative: include for other volume types
+        };
+    }
+
+    /**
+     * Find minimum level that can contain the volume
+     */
+    private byte findMinimumContainingLevel(VolumeBounds bounds) {
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+
+        // Find the level where cube length >= maxExtent
+        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
+            if (Constants.lengthAtLevel(level) >= maxExtent) {
+                return level;
+            }
+        }
+        return Constants.getMaxRefinementLevel();
     }
 
     /**
@@ -283,16 +355,14 @@ public class SingleContentAdapter<Content> {
                                                            sphere.centerX() + sphere.radius(),
                                                            sphere.centerY() + sphere.radius(),
                                                            sphere.centerZ() + sphere.radius());
-            case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(), 
-                                                       aabb.originX() + aabb.extentX(),
-                                                       aabb.originY() + aabb.extentY(), 
+            case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(),
+                                                       aabb.originX() + aabb.extentX(), aabb.originY() + aabb.extentY(),
                                                        aabb.originZ() + aabb.extentZ());
             case Spatial.aabt aabt -> new VolumeBounds(aabt.originX(), aabt.originY(), aabt.originZ(),
-                                                       aabt.originX() + aabt.extentX(),
-                                                       aabt.originY() + aabt.extentY(),
+                                                       aabt.originX() + aabt.extentX(), aabt.originY() + aabt.extentY(),
                                                        aabt.originZ() + aabt.extentZ());
             case Spatial.Parallelepiped para -> new VolumeBounds(para.originX(), para.originY(), para.originZ(),
-                                                                 para.originX() + para.extentX(), 
+                                                                 para.originX() + para.extentX(),
                                                                  para.originY() + para.extentY(),
                                                                  para.originZ() + para.extentZ());
             case Spatial.Tetrahedron tet -> {
@@ -314,119 +384,41 @@ public class SingleContentAdapter<Content> {
     }
 
     /**
-     * Find minimum level that can contain the volume
-     */
-    private byte findMinimumContainingLevel(VolumeBounds bounds) {
-        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
-                                   bounds.maxZ - bounds.minZ);
-
-        // Find the level where cube length >= maxExtent
-        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
-            if (Constants.lengthAtLevel(level) >= maxExtent) {
-                return level;
-            }
-        }
-        return Constants.getMaxRefinementLevel();
-    }
-
-    /**
-     * Helper record for volume bounds
-     */
-    private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-    }
-    
-    /**
-     * Get all nodes with their Morton indices for iteration support
-     * This enables proper k-NN search and other operations that need to iterate all content
-     */
-    public Map<Long, Content> getAllNodes() {
-        Map<Long, Content> nodes = new HashMap<>();
-        
-        // Get all entities from the octree
-        var allEntities = entityOctree.getAllEntities();
-        
-        // For each entity, we need to find its spatial location
-        // Since SingleContentAdapter enforces one entity per location,
-        // we can reconstruct the Morton indices
-        for (var entry : allEntities.entrySet()) {
-            var entityId = entry.getKey();
-            var content = entry.getValue();
-            
-            // Get the Morton index we tracked during insertion
-            Long mortonIndex = entityToMortonIndex.get(entityId);
-            if (mortonIndex != null) {
-                nodes.put(mortonIndex, content);
-            }
-        }
-        
-        return nodes;
-    }
-    
-    /**
-     * Check if a cube intersects with a volume
-     */
-    private boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
-        return switch (volume) {
-            case Spatial.Cube other -> 
-                cube.originX() < other.originX() + other.extent() &&
-                cube.originX() + cube.extent() > other.originX() &&
-                cube.originY() < other.originY() + other.extent() &&
-                cube.originY() + cube.extent() > other.originY() &&
-                cube.originZ() < other.originZ() + other.extent() &&
-                cube.originZ() + cube.extent() > other.originZ();
-                
-            case Spatial.Sphere sphere -> {
-                // Find closest point on cube to sphere center
-                float closestX = Math.max(cube.originX(), 
-                    Math.min(sphere.centerX(), cube.originX() + cube.extent()));
-                float closestY = Math.max(cube.originY(), 
-                    Math.min(sphere.centerY(), cube.originY() + cube.extent()));
-                float closestZ = Math.max(cube.originZ(), 
-                    Math.min(sphere.centerZ(), cube.originZ() + cube.extent()));
-                
-                // Check if closest point is within sphere radius
-                float dx = closestX - sphere.centerX();
-                float dy = closestY - sphere.centerY();
-                float dz = closestZ - sphere.centerZ();
-                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
-            }
-            
-            default -> true; // Conservative: include for other volume types
-        };
-    }
-    
-    /**
      * Check if a cube is fully contained within a volume
      */
     private boolean isCubeContainedInVolume(Spatial.Cube cube, Spatial volume) {
         return switch (volume) {
-            case Spatial.Cube other -> 
-                cube.originX() >= other.originX() &&
-                cube.originY() >= other.originY() &&
-                cube.originZ() >= other.originZ() &&
-                cube.originX() + cube.extent() <= other.originX() + other.extent() &&
-                cube.originY() + cube.extent() <= other.originY() + other.extent() &&
-                cube.originZ() + cube.extent() <= other.originZ() + other.extent();
-                
+            case Spatial.Cube other ->
+            cube.originX() >= other.originX() && cube.originY() >= other.originY() && cube.originZ() >= other.originZ()
+            && cube.originX() + cube.extent() <= other.originX() + other.extent()
+            && cube.originY() + cube.extent() <= other.originY() + other.extent()
+            && cube.originZ() + cube.extent() <= other.originZ() + other.extent();
+
             case Spatial.Sphere sphere -> {
                 // Check all 8 corners of the cube
                 for (int i = 0; i < 8; i++) {
                     float x = cube.originX() + ((i & 1) != 0 ? cube.extent() : 0);
                     float y = cube.originY() + ((i & 2) != 0 ? cube.extent() : 0);
                     float z = cube.originZ() + ((i & 4) != 0 ? cube.extent() : 0);
-                    
+
                     float dx = x - sphere.centerX();
                     float dy = y - sphere.centerY();
                     float dz = z - sphere.centerZ();
-                    
+
                     if ((dx * dx + dy * dy + dz * dz) > (sphere.radius() * sphere.radius())) {
                         yield false;
                     }
                 }
                 yield true;
             }
-            
+
             default -> false; // Conservative: exclude for other volume types
         };
+    }
+
+    /**
+     * Helper record for volume bounds
+     */
+    private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
     }
 }
