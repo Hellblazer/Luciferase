@@ -6,7 +6,6 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.stream.Stream;
@@ -85,6 +84,7 @@ public class Octree<Content> {
 
     /**
      * Get the content stored at the given Morton index
+     *
      * @param index the Morton index
      * @return the content data, or null if not found
      */
@@ -95,6 +95,7 @@ public class Octree<Content> {
 
     /**
      * Get access to the internal map for advanced operations
+     *
      * @return a NavigableMap view that exposes node data directly
      */
     public NavigableMap<Long, Content> getMap() {
@@ -123,7 +124,15 @@ public class Octree<Content> {
                                           (int) (Math.floor(point.z / length) * length));
 
         // Insert into node structure
-        insertIntoNodeStructure(entityId, value, point, level);
+        // Use the passed Morton index directly
+        Node<Content> node = nodes.get(entityId);
+        if (node == null) {
+            node = new Node<>(value);
+            nodes.put(entityId, node);
+        } else {
+            // Update existing node with new value
+            node.setData(value);
+        }
 
         return entityId;
     }
@@ -226,18 +235,6 @@ public class Octree<Content> {
             }
             default -> null;
         };
-    }
-
-    private void insertIntoNodeStructure(long mortonIndex, Content value, Point3f point, byte targetDepth) {
-        // Use the passed Morton index directly
-        Node<Content> node = nodes.get(mortonIndex);
-        if (node == null) {
-            node = new Node<>(value);
-            nodes.put(mortonIndex, node);
-        } else {
-            // Update existing node with new value
-            node.setData(value);
-        }
     }
 
     /**
