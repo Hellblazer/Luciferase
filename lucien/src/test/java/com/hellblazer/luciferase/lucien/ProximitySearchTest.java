@@ -23,7 +23,7 @@ public class ProximitySearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes - all positive
         int gridSize = Constants.lengthAtLevel(testLevel);
@@ -78,7 +78,7 @@ public class ProximitySearchTest {
     void testCubesWithinDistanceRange() {
         Point3f queryPoint = new Point3f(150.0f, 150.0f, 150.0f);
         ProximitySearch.DistanceRange range = new ProximitySearch.DistanceRange(
-            0.0f, 1000000.0f, ProximitySearch.ProximityType.MODERATE);
+            0.0f, 1000.0f, ProximitySearch.ProximityType.MODERATE);
         
         List<ProximitySearch.ProximityResult<String>> results = 
             ProximitySearch.cubesWithinDistanceRange(queryPoint, range, octree);
@@ -179,7 +179,7 @@ public class ProximitySearchTest {
             new Point3f(100.0f, 100.0f, 100.0f),
             new Point3f(300.0f, 300.0f, 300.0f)
         );
-        float maxDistance = 1000000.0f;
+        float maxDistance = 1000.0f;
         
         List<ProximitySearch.ProximityResult<String>> results = 
             ProximitySearch.cubesNearAnyPoint(queryPoints, maxDistance, octree);
@@ -214,7 +214,7 @@ public class ProximitySearchTest {
             new Point3f(150.0f, 150.0f, 150.0f),
             new Point3f(250.0f, 250.0f, 250.0f)
         );
-        float maxDistance = 5000000.0f; // Large distance to include cubes
+        float maxDistance = 5000.0f; // Large distance to include cubes
         
         List<ProximitySearch.ProximityResult<String>> results = 
             ProximitySearch.cubesNearAllPoints(queryPoints, maxDistance, octree);
@@ -284,7 +284,7 @@ public class ProximitySearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Point3f queryPoint = new Point3f(200.0f, 200.0f, 200.0f);
         ProximitySearch.DistanceRange range = new ProximitySearch.DistanceRange(
             0.0f, 1000.0f, ProximitySearch.ProximityType.CLOSE);

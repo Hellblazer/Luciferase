@@ -26,7 +26,7 @@ public class OptimizedTetreePerformanceTest {
     void setUp() {
         originalTetree = new Tetree<>(new TreeMap<>());
         optimizedTetree = new TetreeOptimized<>(new TreeMap<>());
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Populate all data structures with identical data
         populateDataStructures();

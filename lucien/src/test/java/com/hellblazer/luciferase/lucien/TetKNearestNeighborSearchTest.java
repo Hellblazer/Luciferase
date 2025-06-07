@@ -433,7 +433,7 @@ public class TetKNearestNeighborSearchTest {
         
         // Setup data structures with comparable data
         Tetree<String> tetree = new Tetree<>(new TreeMap<>());
-        Octree<String> octree = new Octree<>(new TreeMap<>());
+        Octree<String> octree = new Octree<>();
         
         // Use S0 tetrahedron coordinates for tetree and equivalent cube coordinates for octree
         float scale = Constants.MAX_EXTENT * 0.1f;

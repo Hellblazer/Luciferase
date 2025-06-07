@@ -64,7 +64,7 @@ public class KNearestNeighborSearch {
             throw new IllegalArgumentException("Query point must have positive coordinates");
         }
 
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }

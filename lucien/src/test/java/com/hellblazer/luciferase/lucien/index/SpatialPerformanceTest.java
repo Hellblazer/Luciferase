@@ -22,7 +22,7 @@ public class SpatialPerformanceTest {
     @BeforeEach
     void setUp() {
         tetree = new Tetree<>(new TreeMap<>());
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
 
         // Populate with test data across multiple levels
         ThreadLocalRandom random = ThreadLocalRandom.current();

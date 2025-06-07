@@ -22,7 +22,7 @@ public class ContainmentSearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes - all positive
         int gridSize = Constants.lengthAtLevel(testLevel);
@@ -232,7 +232,7 @@ public class ContainmentSearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Point3f sphereCenter = new Point3f(200.0f, 200.0f, 200.0f);
         float sphereRadius = 1000.0f;
         Point3f referencePoint = new Point3f(100.0f, 100.0f, 100.0f);

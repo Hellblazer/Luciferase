@@ -121,11 +121,13 @@ public class AlgorithmOptimizer {
                     k + 1, Comparator.comparing((DistanceEntry<Content> e) -> e.distance).reversed());
                 
                 // Search in Morton order for spatial locality
-                NavigableMap<Long, Content> map = octree.getMap();
+                Map<Long, Content> map = octree.getMap();
                 
                 // Start from query Morton and expand outward
-                Long startKey = map.floorKey(queryMorton);
-                if (startKey == null) startKey = map.firstKey();
+                Long startKey = findClosestKey(map, queryMorton);
+                if (startKey == null && !map.isEmpty()) {
+                    startKey = map.keySet().iterator().next(); // Get any key as fallback
+                }
                 
                 // Bidirectional search from starting point
                 Set<Long> visited = new HashSet<>();
@@ -156,9 +158,9 @@ public class AlgorithmOptimizer {
                         }
                     }
                     
-                    // Add neighbors to visit queue
-                    Long higher = map.higherKey(currentKey);
-                    Long lower = map.lowerKey(currentKey);
+                    // Add neighbors to visit queue - find adjacent keys manually
+                    Long higher = findHigherKey(map, currentKey);
+                    Long lower = findLowerKey(map, currentKey);
                     if (higher != null && !visited.contains(higher)) toVisit.offer(higher);
                     if (lower != null && !visited.contains(lower)) toVisit.offer(lower);
                 }
@@ -353,7 +355,7 @@ public class AlgorithmOptimizer {
             float volume = (maxBounds.x - minBounds.x) * (maxBounds.y - minBounds.y) * (maxBounds.z - minBounds.z);
             
             // Estimate total space volume from octree data
-            NavigableMap<Long, ?> map = octree.getMap();
+            Map<Long, ?> map = octree.getMap();
             if (map.isEmpty()) {
                 return new OptimizedBounds(minBounds, maxBounds, 0.0f, 0, false);
             }
@@ -368,11 +370,16 @@ public class AlgorithmOptimizer {
         
         private float estimateDataSpaceVolume(Octree<?> octree) {
             // Simple heuristic: estimate from key range
-            NavigableMap<Long, ?> map = octree.getMap();
+            Map<Long, ?> map = octree.getMap();
             if (map.size() < 2) return 1.0f;
             
-            Long firstKey = map.firstKey();
-            Long lastKey = map.lastKey();
+            // Find min and max keys since we don't have NavigableMap methods
+            long firstKey = Long.MAX_VALUE;
+            long lastKey = Long.MIN_VALUE;
+            for (Long key : map.keySet()) {
+                firstKey = Math.min(firstKey, key);
+                lastKey = Math.max(lastKey, key);
+            }
             
             // Estimate volume from Morton code range (simplified)
             return Math.max(1.0f, (lastKey - firstKey) / 1000.0f);
@@ -638,5 +645,44 @@ public class AlgorithmOptimizer {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException(paramName + " coordinates must be positive, got: " + point);
         }
+    }
+    
+    // Helper methods for Map navigation since we can't use NavigableMap methods
+    
+    private static <Content> Long findClosestKey(Map<Long, Content> map, long target) {
+        if (map.isEmpty()) return null;
+        
+        Long closest = null;
+        long minDistance = Long.MAX_VALUE;
+        
+        for (Long key : map.keySet()) {
+            long distance = Math.abs(key - target);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closest = key;
+            }
+        }
+        
+        return closest;
+    }
+    
+    private static <Content> Long findHigherKey(Map<Long, Content> map, long target) {
+        Long higher = null;
+        for (Long key : map.keySet()) {
+            if (key > target && (higher == null || key < higher)) {
+                higher = key;
+            }
+        }
+        return higher;
+    }
+    
+    private static <Content> Long findLowerKey(Map<Long, Content> map, long target) {
+        Long lower = null;
+        for (Long key : map.keySet()) {
+            if (key < target && (lower == null || key > lower)) {
+                lower = key;
+            }
+        }
+        return lower;
     }
 }

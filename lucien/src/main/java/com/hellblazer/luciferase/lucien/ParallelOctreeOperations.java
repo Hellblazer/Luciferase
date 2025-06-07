@@ -16,21 +16,34 @@ public class ParallelOctreeOperations {
     /**
      * Configuration for parallel execution
      */
-    public static class ParallelConfig {
+    public static class ParallelConfig implements AutoCloseable {
         public final int parallelismThreshold;
         public final ForkJoinPool customThreadPool;
+        private final boolean shouldShutdownPool;
         
         public ParallelConfig(int parallelismThreshold, ForkJoinPool customThreadPool) {
+            this(parallelismThreshold, customThreadPool, false);
+        }
+        
+        private ParallelConfig(int parallelismThreshold, ForkJoinPool customThreadPool, boolean shouldShutdownPool) {
             this.parallelismThreshold = parallelismThreshold;
             this.customThreadPool = customThreadPool;
+            this.shouldShutdownPool = shouldShutdownPool;
         }
         
         public static ParallelConfig defaultConfig() {
-            return new ParallelConfig(1000, null); // Use common pool if null
+            return new ParallelConfig(1000, null, false); // Use common pool if null
         }
         
         public static ParallelConfig withCustomPool(int parallelismThreshold, int parallelism) {
-            return new ParallelConfig(parallelismThreshold, new ForkJoinPool(parallelism));
+            return new ParallelConfig(parallelismThreshold, new ForkJoinPool(parallelism), true);
+        }
+        
+        @Override
+        public void close() {
+            if (shouldShutdownPool && customThreadPool != null) {
+                customThreadPool.shutdown();
+            }
         }
     }
 
@@ -46,7 +59,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<Octree.Hexahedron<Content>> boundedByParallel(
             Spatial volume, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return octree.boundedBy(volume).collect(Collectors.toList());
@@ -69,7 +82,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<Octree.Hexahedron<Content>> boundingParallel(
             Spatial volume, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return octree.bounding(volume).collect(Collectors.toList());
@@ -94,7 +107,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<KNearestNeighborSearch.KNNCandidate<Content>> kNearestNeighborsParallel(
             Point3f queryPoint, int k, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree);
@@ -134,7 +147,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<RayTracingSearch.RayIntersection<Content>> rayIntersectedAllParallel(
             Ray3D ray, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return RayTracingSearch.rayIntersectedAll(ray, octree);
@@ -213,7 +226,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<PlaneIntersectionSearch.PlaneIntersection<Content>> planeIntersectedAllParallel(
             Plane3D plane, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return PlaneIntersectionSearch.planeIntersectedAll(plane, octree, referencePoint);
@@ -262,7 +275,7 @@ public class ParallelOctreeOperations {
     public static <Content> long countPlaneIntersectionsParallel(
             Plane3D plane, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return PlaneIntersectionSearch.countPlaneIntersections(plane, octree);
@@ -290,7 +303,7 @@ public class ParallelOctreeOperations {
     public static <Content> boolean hasAnyIntersectionParallel(
             Plane3D plane, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return PlaneIntersectionSearch.hasAnyIntersection(plane, octree);
@@ -318,7 +331,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<PlaneIntersectionSearch.PlaneIntersection<Content>> cubesOnPositiveSideParallel(
             Plane3D plane, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return PlaneIntersectionSearch.cubesOnPositiveSide(plane, octree, referencePoint);
@@ -369,7 +382,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<PlaneIntersectionSearch.PlaneIntersection<Content>> cubesOnNegativeSideParallel(
             Plane3D plane, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return PlaneIntersectionSearch.cubesOnNegativeSide(plane, octree, referencePoint);
@@ -456,7 +469,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<FrustumCullingSearch.FrustumIntersection<Content>> frustumCulledAllParallel(
             Frustum3D frustum, Octree<Content> octree, Point3f cameraPosition, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return FrustumCullingSearch.frustumCulledAll(frustum, octree, cameraPosition);
@@ -507,7 +520,7 @@ public class ParallelOctreeOperations {
     public static <Content> long countFrustumIntersectionsParallel(
             Frustum3D frustum, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return FrustumCullingSearch.countFrustumIntersections(frustum, octree);
@@ -808,7 +821,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<SphereIntersectionSearch.SphereIntersection<Content>> sphereIntersectedAllParallel(
             Point3f sphereCenter, float sphereRadius, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return SphereIntersectionSearch.sphereIntersectedAll(sphereCenter, sphereRadius, octree, referencePoint);
@@ -866,7 +879,7 @@ public class ParallelOctreeOperations {
     public static <Content> long countSphereIntersectionsParallel(
             Point3f sphereCenter, float sphereRadius, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return SphereIntersectionSearch.countSphereIntersections(sphereCenter, sphereRadius, octree);
@@ -903,7 +916,7 @@ public class ParallelOctreeOperations {
     public static <Content> List<AABBIntersectionSearch.AABBIntersection<Content>> aabbIntersectedAllParallel(
             AABBIntersectionSearch.AABB aabb, Octree<Content> octree, Point3f referencePoint, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return AABBIntersectionSearch.aabbIntersectedAll(aabb, octree, referencePoint);
@@ -954,7 +967,7 @@ public class ParallelOctreeOperations {
     public static <Content> long countAABBIntersectionsParallel(
             AABBIntersectionSearch.AABB aabb, Octree<Content> octree, ParallelConfig config) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.size() < config.parallelismThreshold) {
             // Use sequential version for small datasets
             return AABBIntersectionSearch.countAABBIntersections(aabb, octree);

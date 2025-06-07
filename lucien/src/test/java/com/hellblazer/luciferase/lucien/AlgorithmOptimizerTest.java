@@ -30,7 +30,7 @@ public class AlgorithmOptimizerTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Insert test data with known spatial patterns
         insertTestData();
@@ -453,7 +453,7 @@ public class AlgorithmOptimizerTest {
 
     @Test
     void testEmptyOctreeQueries() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         List<Point3f> emptyPoints = new ArrayList<>();
         SpatialIndexOptimizer.SpatialDistributionStats emptyStats = 
             SpatialIndexOptimizer.AdaptiveLevelSelector.analyzeSpatialDistribution(emptyPoints);

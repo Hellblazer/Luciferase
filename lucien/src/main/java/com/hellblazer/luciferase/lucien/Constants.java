@@ -65,10 +65,10 @@ public class Constants {
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c5.coords(), CORNER.c4.coords() } };
 
-    public static int MAX_EXTENT = 1 << getMaxRefinementLevel();
+    public static final int MAX_EXTENT = 1 << getMaxRefinementLevel();
 
     /** Tetrahedron type and Cube ID to local index **/
-    public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
+    public static final byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
                                                                         { 0, 1, 2, 5, 2, 5, 4, 7 },
                                                                         { 0, 2, 3, 4, 1, 6, 5, 7 },
                                                                         { 0, 3, 1, 5, 2, 4, 6, 7 },
@@ -76,7 +76,7 @@ public class Constants {
                                                                         { 0, 3, 3, 6, 3, 6, 6, 7 } };
 
     /** Parent type and local index to cube id **/
-    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
+    public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
                                                                                { 0, 1, 1, 1, 3, 3, 3, 7 },
                                                                                { 0, 2, 2, 2, 3, 3, 3, 7 },
                                                                                { 0, 2, 2, 2, 6, 6, 6, 7 },
@@ -84,7 +84,7 @@ public class Constants {
                                                                                { 0, 4, 4, 4, 5, 5, 5, 7 } };
 
     /** Parent type and local index to type **/
-    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
+    public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
                                                                             { 1, 1, 2, 3, 0, 1, 5, 1 },
                                                                             { 2, 0, 1, 2, 2, 3, 4, 2 },
                                                                             { 3, 3, 4, 5, 1, 2, 3, 3 },
@@ -92,10 +92,10 @@ public class Constants {
                                                                             { 5, 0, 1, 5, 3, 4, 5, 5 } };
 
     /** Tet ID of the Root Simplex **/
-    public static Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+    public static final Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
-    public static Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+    public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
 
     /** maximum level we can accommodate without overflow **/
     public static byte getMaxRefinementLevel() {

@@ -292,7 +292,7 @@ public class ConvexHullIntersectionSearch {
         
         validatePositiveCoordinates(referencePoint, "referencePoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -386,7 +386,7 @@ public class ConvexHullIntersectionSearch {
      * @return number of cubes intersecting the convex hull
      */
     public static <Content> long countConvexHullIntersections(ConvexHull convexHull, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return 0;
         }
@@ -409,7 +409,7 @@ public class ConvexHullIntersectionSearch {
      * @return true if any cube intersects the convex hull
      */
     public static <Content> boolean hasAnyIntersection(ConvexHull convexHull, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return false;
         }
@@ -432,7 +432,7 @@ public class ConvexHullIntersectionSearch {
     public static <Content> IntersectionStatistics getConvexHullIntersectionStatistics(
             ConvexHull convexHull, Octree<Content> octree) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new IntersectionStatistics(0, 0, 0, 0, 0.0f, 0.0f);
         }

@@ -95,41 +95,40 @@ public class ProximitySearch {
         
         validatePositiveCoordinates(queryPoint, "queryPoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<ProximityResult<Content>> results = new ArrayList<>();
+        // Create bounding AABB for the distance range
+        var boundingAABB = new Spatial.aabb(
+            queryPoint.x - distanceRange.maxDistance, queryPoint.y - distanceRange.maxDistance, queryPoint.z - distanceRange.maxDistance,
+            queryPoint.x + distanceRange.maxDistance, queryPoint.y + distanceRange.maxDistance, queryPoint.z + distanceRange.maxDistance
+        );
         
-        for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
-            Point3f cubeCenter = getCubeCenter(cube);
-            
-            float centerDistance = calculateDistance(queryPoint, cubeCenter);
-            float minDistance = calculateMinDistanceToBox(queryPoint, cube);
-            float maxDistance = calculateMaxDistanceToBox(queryPoint, cube);
-            
-            // Check if the cube overlaps with the distance range
-            if (minDistance <= distanceRange.maxDistance && maxDistance >= distanceRange.minDistance) {
-                ProximityResult<Content> result = new ProximityResult<>(
-                    entry.getKey(), 
-                    entry.getValue(), 
-                    cube, 
-                    cubeCenter,
-                    centerDistance,
-                    minDistance,
-                    maxDistance,
-                    distanceRange.proximityType
-                );
-                results.add(result);
-            }
-        }
-
-        // Sort by center distance
-        results.sort(Comparator.comparing(pr -> pr.distanceToQuery));
-        
-        return results;
+        // Use Octree's efficient bounding method which uses Morton curve ranges
+        return octree.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
+                Point3f cubeCenter = getCubeCenter(cube);
+                
+                float centerDistance = calculateDistance(queryPoint, cubeCenter);
+                float minDistance = calculateMinDistanceToBox(queryPoint, cube);
+                float maxDistance = calculateMaxDistanceToBox(queryPoint, cube);
+                
+                // Check if the cube overlaps with the distance range
+                if (minDistance <= distanceRange.maxDistance && maxDistance >= distanceRange.minDistance) {
+                    return new ProximityResult<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        cubeCenter,
+                        centerDistance,
+                        minDistance,
+                        maxDistance,
+                        distanceRange.proximityType
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(pr -> pr.distanceToQuery))
+            .toList();
     }
 
     /**
@@ -174,41 +173,57 @@ public class ProximitySearch {
             throw new IllegalArgumentException("N must be positive, got: " + n);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
+        if (octree.getMap().isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<ProximityResult<Content>> allResults = new ArrayList<>();
+        // Use expanding search radius approach
+        float searchRadius = 100; // Start with small radius
+        List<ProximityResult<Content>> results;
         
-        for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
-            Point3f cubeCenter = getCubeCenter(cube);
-            
-            float centerDistance = calculateDistance(queryPoint, cubeCenter);
-            float minDistance = calculateMinDistanceToBox(queryPoint, cube);
-            float maxDistance = calculateMaxDistanceToBox(queryPoint, cube);
-            
-            ProximityType proximityType = classifyDistance(centerDistance);
-            
-            ProximityResult<Content> result = new ProximityResult<>(
-                entry.getKey(), 
-                entry.getValue(), 
-                cube, 
-                cubeCenter,
-                centerDistance,
-                minDistance,
-                maxDistance,
-                proximityType
+        do {
+            var boundingAABB = new Spatial.aabb(
+                Math.max(0, queryPoint.x - searchRadius), 
+                Math.max(0, queryPoint.y - searchRadius), 
+                Math.max(0, queryPoint.z - searchRadius),
+                queryPoint.x + searchRadius, 
+                queryPoint.y + searchRadius, 
+                queryPoint.z + searchRadius
             );
-            allResults.add(result);
-        }
+            
+            results = octree.bounding(boundingAABB)
+                .map(hex -> {
+                    var cube = hex.toCube();
+                    Point3f cubeCenter = getCubeCenter(cube);
+                    
+                    float centerDistance = calculateDistance(queryPoint, cubeCenter);
+                    float minDistance = calculateMinDistanceToBox(queryPoint, cube);
+                    float maxDistance = calculateMaxDistanceToBox(queryPoint, cube);
+                    
+                    ProximityType proximityType = classifyDistance(centerDistance);
+                    
+                    return new ProximityResult<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        cubeCenter,
+                        centerDistance,
+                        minDistance,
+                        maxDistance,
+                        proximityType
+                    );
+                })
+                .sorted(Comparator.comparing(pr -> pr.distanceToQuery))
+                .limit(n)
+                .toList();
+            
+            // Double search radius if we haven't found enough
+            if (results.size() < n) {
+                searchRadius *= 2;
+            }
+        } while (results.size() < n && searchRadius < Float.MAX_VALUE / 2);
 
-        // Sort by center distance and take top N
-        return allResults.stream()
-            .sorted(Comparator.comparing(pr -> pr.distanceToQuery))
-            .limit(n)
-            .collect(Collectors.toList());
+        return results;
     }
 
     /**
@@ -231,7 +246,7 @@ public class ProximitySearch {
             throw new IllegalArgumentException("Max distance must be non-negative, got: " + maxDistance);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -299,7 +314,7 @@ public class ProximitySearch {
             throw new IllegalArgumentException("Max distance must be non-negative, got: " + maxDistance);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -364,7 +379,7 @@ public class ProximitySearch {
         
         validatePositiveCoordinates(queryPoint, "queryPoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new ProximityStatistics(0, 0, 0, 0, 0, 0.0f, 0.0f, 0.0f);
         }

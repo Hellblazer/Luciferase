@@ -291,18 +291,3 @@ public interface SpatialSearchEngine<Content> {
         long getEntryCount();
     }
 }
-
-/**
- * Enumeration of spatial engine types
- */
-enum SpatialEngineType {
-    /**
-     * Morton curve-based cubic decomposition (Octree)
-     */
-    OCTREE,
-    
-    /**
-     * Tetrahedral space-filling curve decomposition (Tetree)
-     */
-    TETREE
-}

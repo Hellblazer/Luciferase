@@ -58,7 +58,7 @@ public class FrustumCullingSearch {
         
         validatePositiveCoordinates(cameraPosition, "cameraPosition");
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -150,7 +150,7 @@ public class FrustumCullingSearch {
      * @return number of cubes intersecting the frustum
      */
     public static <Content> long countFrustumIntersections(Frustum3D frustum, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return 0;
         }
@@ -173,7 +173,7 @@ public class FrustumCullingSearch {
      * @return true if any cube intersects the frustum
      */
     public static <Content> boolean hasAnyIntersection(Frustum3D frustum, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return false;
         }
@@ -194,7 +194,7 @@ public class FrustumCullingSearch {
      * @return statistics about culling results
      */
     public static <Content> CullingStatistics getFrustumCullingStatistics(Frustum3D frustum, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new CullingStatistics(0, 0, 0, 0);
         }

@@ -2,6 +2,7 @@ package com.hellblazer.luciferase.lucien;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.stream.Stream;
 
@@ -223,11 +224,11 @@ public class TetreeOptimized<Content> extends Tetree<Content> {
     /**
      * Access to contents for optimized queries
      */
-    private NavigableMap<Long, Content> getContents() {
+    private Map<Long, Content> getContents() {
         try {
             var field = Tetree.class.getDeclaredField("contents");
             field.setAccessible(true);
-            return (NavigableMap<Long, Content>) field.get(this);
+            return (Map<Long, Content>) field.get(this);
         } catch (Exception e) {
             throw new RuntimeException("Cannot access contents field", e);
         }

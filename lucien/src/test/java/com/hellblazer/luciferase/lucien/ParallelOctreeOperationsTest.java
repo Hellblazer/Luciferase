@@ -28,13 +28,13 @@ public class ParallelOctreeOperationsTest {
     @BeforeEach
     void setUp() {
         // Create a small octree (below threshold)
-        smallOctree = new Octree<>(new TreeMap<>());
+        smallOctree = new Octree<>();
         smallOctree.insert(new Point3f(32.0f, 32.0f, 32.0f), testLevel, "Small1");
         smallOctree.insert(new Point3f(96.0f, 96.0f, 96.0f), testLevel, "Small2");
         smallOctree.insert(new Point3f(160.0f, 160.0f, 160.0f), testLevel, "Small3");
 
         // Create a larger octree (above threshold)
-        largeOctree = new Octree<>(new TreeMap<>());
+        largeOctree = new Octree<>();
         int gridSize = Constants.lengthAtLevel(testLevel);
         
         // Insert enough points to exceed parallelism threshold
@@ -265,7 +265,7 @@ public class ParallelOctreeOperationsTest {
 
     @Test
     void testEmptyOctreeParallelOperations() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Spatial.Cube searchVolume = new Spatial.Cube(50.0f, 50.0f, 50.0f, 100.0f);
         
         List<Octree.Hexahedron<String>> results = 

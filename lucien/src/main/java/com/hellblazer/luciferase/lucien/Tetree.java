@@ -28,6 +28,14 @@ public class Tetree<Content> {
     public Tetree(NavigableMap<Long, Content> contents) {
         this.contents = contents;
     }
+    
+    /**
+     * Get the number of entries in the tetree
+     * @return the size of the internal map
+     */
+    public int size() {
+        return contents.size();
+    }
 
     /**
      * @param volume - the enclosing volume
@@ -186,6 +194,11 @@ public class Tetree<Content> {
         byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
         byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
 
+        // Limit the number of levels to prevent memory exhaustion
+        if (maxLevel - minLevel > 3) {
+            maxLevel = (byte) (minLevel + 3);
+        }
+
         for (byte level = minLevel; level <= maxLevel; level++) {
             int length = Constants.lengthAtLevel(level);
 
@@ -197,7 +210,22 @@ public class Tetree<Content> {
             int minZ = (int) Math.floor(bounds.minZ / length);
             int maxZ = (int) Math.ceil(bounds.maxZ / length);
 
-            // Find SFC ranges for grid cells that could intersect the volume
+            // Skip this level if it would create too many cells
+            int numCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+            if (numCells > 100) {
+                // For very large volumes, use the entire range at this level
+                // This is an approximation but prevents memory exhaustion
+                Point3f minPoint = new Point3f(minX * length, minY * length, minZ * length);
+                Point3f maxPoint = new Point3f(maxX * length, maxY * length, maxZ * length);
+                var minRanges = computeCellSFCRanges(minPoint, level);
+                var maxRanges = computeCellSFCRanges(maxPoint, level);
+                if (!minRanges.isEmpty() && !maxRanges.isEmpty()) {
+                    ranges.add(new SFCRange(minRanges.get(0).start, maxRanges.get(maxRanges.size() - 1).end));
+                }
+                continue;
+            }
+
+            // For reasonable volumes, compute more precise ranges
             for (int x = minX; x <= maxX; x++) {
                 for (int y = minY; y <= maxY; y++) {
                     for (int z = minZ; z <= maxZ; z++) {
@@ -205,7 +233,7 @@ public class Tetree<Content> {
 
                         // Check if this grid cell could intersect our bounds
                         if (gridCellIntersectsBounds(cellPoint, length, bounds, includeIntersecting)) {
-                            // Find the SFC range for all tetrahedra in this grid cell
+                            // Find the SFC ranges for all tetrahedra in this grid cell
                             var cellRanges = computeCellSFCRanges(cellPoint, level);
                             ranges.addAll(cellRanges);
                         }
@@ -340,9 +368,8 @@ public class Tetree<Content> {
         var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
 
         Stream<Map.Entry<Long, Content>> ranges = sfcRanges.stream().flatMap(range -> {
-            // Use NavigableMap.subMap to efficiently get entries in SFC range
-            var subMap = contents.subMap(range.start, true, range.end, true);
-            return subMap.entrySet().stream();
+            // Use NavigableMap.subMap for efficient range queries
+            return contents.subMap(range.start, true, range.end, true).entrySet().stream();
         });
         return ranges.filter(entry -> {
             // Final precise filtering for elements that passed SFC range test

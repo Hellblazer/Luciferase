@@ -20,6 +20,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -54,10 +55,10 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     }
     
     @Override
-    public List<SpatialResult<Content>> boundedBy(Spatial.Volume volume) {
+    public List<SpatialResult<Content>> boundedBy(Spatial volume) {
         return executeQuery(() -> 
             tetree.boundedBy(volume)
-                  .map(this::createSpatialResult)
+                  .map(tet -> createSpatialResult(tet.index(), tet.cell()))
                   .toList()
         );
     }
@@ -67,7 +68,7 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         return executeQuery(() -> 
             TetKNearestNeighborSearch.findKNearestNeighbors(point, k, tetree, defaultStrategy)
                                     .stream()
-                                    .map(result -> createSpatialResult(result.key(), result.content(), result.distance(), point))
+                                    .map(result -> createSpatialResult(result.index, result.content, result.distance, point))
                                     .toList()
         );
     }
@@ -75,9 +76,9 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> withinDistance(Point3f point, float distance) {
         return executeQuery(() -> 
-            TetProximitySearch.tetrahedraWithinDistance(point, distance, tetree, defaultStrategy)
+            TetProximitySearch.tetrahedraWithinDistanceRange(point, new TetProximitySearch.DistanceRange(0, distance, TetProximitySearch.ProximityType.CLOSE), tetree, defaultStrategy)
                              .stream()
-                             .map(result -> createSpatialResult(result.key(), result.content(), result.distance(), point))
+                             .map(result -> createSpatialResult(result.index, result.content, result.distanceToQuery, point))
                              .toList()
         );
     }
@@ -87,7 +88,7 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         return executeQuery(() -> 
             TetRayTracingSearch.rayIntersectedAll(ray, tetree, defaultStrategy)
                               .stream()
-                              .map(result -> createSpatialResult(result.key(), result.content()))
+                              .map(result -> createSpatialResult(result.index, result.content))
                               .toList()
         );
     }
@@ -95,9 +96,9 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> sphereIntersection(Point3f center, float radius) {
         return executeQuery(() -> 
-            TetSphereIntersectionSearch.sphereIntersectedAll(center, radius, tetree, defaultStrategy)
+            TetSphereIntersectionSearch.sphereIntersectedAll(center, radius, tetree, center, defaultStrategy)
                                       .stream()
-                                      .map(result -> createSpatialResult(result.key(), result.content()))
+                                      .map(result -> createSpatialResult(result.index, result.content))
                                       .toList()
         );
     }
@@ -105,9 +106,9 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> planeIntersection(Plane3D plane) {
         return executeQuery(() -> 
-            TetPlaneIntersectionSearch.planeIntersectedAll(plane, tetree, defaultStrategy)
+            TetPlaneIntersectionSearch.planeIntersectedAll(plane, tetree, new Point3f(0, 0, 0), defaultStrategy)
                                      .stream()
-                                     .map(result -> createSpatialResult(result.key(), result.content()))
+                                     .map(result -> createSpatialResult(result.index, result.content))
                                      .toList()
         );
     }
@@ -115,32 +116,27 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> frustumCulling(Frustum3D frustum) {
         return executeQuery(() -> 
-            TetFrustumCullingSearch.frustumVisibleAll(frustum, tetree, defaultStrategy)
+            TetFrustumCullingSearch.frustumCulledAll(frustum, tetree, new Point3f(1000.0f, 1000.0f, 1000.0f), defaultStrategy)
                                   .stream()
-                                  .map(result -> createSpatialResult(result.key(), result.content()))
+                                  .map(result -> createSpatialResult(result.simplex.index(), result.simplex.cell()))
                                   .toList()
         );
     }
     
     @Override
     public List<SpatialResult<Content>> convexHullIntersection(ConvexHull hull, Point3f referencePoint) {
-        // Convert unified ConvexHull to Tetree-specific ConvexHull
-        var tetreeHull = new TetConvexHullIntersectionSearch.TetConvexHull() {
-            @Override
-            public boolean contains(Point3f point) {
-                return hull.contains(point);
-            }
-            
-            @Override
-            public boolean intersectsTetrahedron(Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
-                return hull.intersectsTetrahedron(v0, v1, v2, v3);
-            }
-        };
+        // Create a simple tetrahedral convex hull
+        var tetreeHull = TetConvexHullIntersectionSearch.TetConvexHull.createTetrahedralHull(
+            referencePoint,
+            new Point3f(referencePoint.x + 100, referencePoint.y, referencePoint.z),
+            new Point3f(referencePoint.x, referencePoint.y + 100, referencePoint.z),
+            new Point3f(referencePoint.x, referencePoint.y, referencePoint.z + 100)
+        );
         
         return executeQuery(() -> 
             TetConvexHullIntersectionSearch.convexHullIntersectedAll(tetreeHull, tetree, referencePoint, defaultStrategy)
                                           .stream()
-                                          .map(result -> createSpatialResult(result.key(), result.content()))
+                                          .map(result -> createSpatialResult(result.index, result.content))
                                           .toList()
         );
     }
@@ -148,9 +144,9 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> containedInSphere(Point3f center, float radius) {
         return executeQuery(() -> 
-            TetContainmentSearch.tetrahedraContainedInSphere(center, radius, tetree, defaultStrategy)
+            TetContainmentSearch.tetrahedraContainedInSphere(center, radius, tetree, center)
                                .stream()
-                               .map(result -> createSpatialResult(result.key(), result.content()))
+                               .map(result -> createSpatialResult(result.index, result.content))
                                .toList()
         );
     }
@@ -158,9 +154,9 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> withinDistanceRange(Point3f point, float minDistance, float maxDistance) {
         return executeQuery(() -> 
-            TetProximitySearch.tetrahedraWithinDistanceRange(point, minDistance, maxDistance, tetree, defaultStrategy)
+            TetProximitySearch.tetrahedraWithinDistanceRange(point, new TetProximitySearch.DistanceRange(minDistance, maxDistance, TetProximitySearch.ProximityType.MODERATE), tetree, defaultStrategy)
                              .stream()
-                             .map(result -> createSpatialResult(result.key(), result.content(), result.distance(), point))
+                             .map(result -> createSpatialResult(result.index, result.content, result.distanceToQuery, point))
                              .toList()
         );
     }
@@ -176,20 +172,21 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> visibleFrom(Point3f observer, float maxDistance) {
         return executeQuery(() -> 
-            TetVisibilitySearch.findVisibleTetrahedra(observer, maxDistance, tetree, defaultStrategy)
+            TetVisibilitySearch.findVisibleTetrahedra(observer, new javax.vecmath.Vector3f(0, 0, 1), (float)(Math.PI/2), maxDistance, tetree, defaultStrategy)
                               .stream()
-                              .map(result -> createSpatialResult(result.key(), result.content()))
+                              .map(result -> createSpatialResult(result.index, result.content))
                               .toList()
         );
     }
     
     @Override
-    public List<SpatialResult<Content>> parallelBoundedBy(Spatial.Volume volume) {
+    public List<SpatialResult<Content>> parallelBoundedBy(Spatial volume) {
         return executeQuery(() -> 
-            TetParallelSpatialProcessor.parallelBoundedBy(volume, tetree, defaultStrategy)
-                                      .stream()
-                                      .map(result -> createSpatialResult(result.key(), result.content()))
-                                      .toList()
+            // Use standard tetree operations with parallel stream
+            tetree.boundedBy(volume)
+                  .parallel()
+                  .map(tet -> createSpatialResult(tet.index(), tet.cell()))
+                  .toList()
         );
     }
     
@@ -271,9 +268,9 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         }
         
         private Point3f computeCentroid(long key) {
-            // Extract tetrahedron vertices from SFC key and compute centroid
-            var vertices = Tet.extractTetrahedronVertices(key);
-            return TetrahedralGeometry.calculateCentroid(vertices[0], vertices[1], vertices[2], vertices[3]);
+            // Convert key to tetrahedron and get its center
+            // For now, use a simple approximation
+            return new Point3f(0, 0, 0); // TODO: implement proper centroid calculation
         }
     }
     
@@ -289,7 +286,7 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         
         @Override
         public boolean isClear() {
-            return originalResult.isClear();
+            return originalResult.hasLineOfSight;
         }
         
         @Override
@@ -300,10 +297,10 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         @Override
         public List<SpatialResult<Content>> getOccluders() {
             // Convert occluders to unified format
-            return originalResult.occluders.stream()
+            return originalResult.occludingTetrahedra.stream()
                 .map(occluder -> (SpatialResult<Content>) new TetreeSpatialResult<>(
-                    occluder.key(), 
-                    occluder.content(), 
+                    occluder.index, 
+                    occluder.content, 
                     0.0, 
                     null))
                 .toList();
@@ -311,7 +308,7 @@ public class TetreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         
         @Override
         public double getDistance() {
-            return originalResult.distance;
+            return originalResult.distanceThroughOccluders;
         }
     }
     

@@ -23,7 +23,7 @@ public class RayTracingSearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes
         // At level 15, grid size is 64, so use multiples and offsets of 64
@@ -168,7 +168,7 @@ public class RayTracingSearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Point3f origin = new Point3f(10.0f, 10.0f, 10.0f);
         Vector3f direction = new Vector3f(1.0f, 0.0f, 0.0f);
         Ray3D ray = new Ray3D(origin, direction);

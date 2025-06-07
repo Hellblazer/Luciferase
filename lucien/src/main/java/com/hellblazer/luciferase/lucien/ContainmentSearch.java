@@ -67,40 +67,40 @@ public class ContainmentSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<ContainmentResult<Content>> results = new ArrayList<>();
+        // Create bounding AABB for the sphere
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
+        
         float sphereVolume = (4.0f / 3.0f) * (float) Math.PI * sphereRadius * sphereRadius * sphereRadius;
         
-        for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
-            
-            if (isCubeCompletelyInSphere(cube, sphereCenter, sphereRadius)) {
-                Point3f cubeCenter = getCubeCenter(cube);
-                float distance = calculateDistance(referencePoint, cubeCenter);
-                float cubeVolume = cube.extent() * cube.extent() * cube.extent();
-                float volumeRatio = cubeVolume / sphereVolume;
+        // Use Octree's efficient bounding method which uses Morton curve ranges
+        return octree.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
                 
-                ContainmentResult<Content> result = new ContainmentResult<>(
-                    entry.getKey(), 
-                    entry.getValue(), 
-                    cube, 
-                    distance,
-                    cubeCenter,
-                    ContainmentType.COMPLETELY_CONTAINED,
-                    volumeRatio
-                );
-                results.add(result);
-            }
-        }
-
-        // Sort by distance from reference point
-        results.sort(Comparator.comparing(cr -> cr.distanceToReferencePoint));
-        
-        return results;
+                if (isCubeCompletelyInSphere(cube, sphereCenter, sphereRadius)) {
+                    Point3f cubeCenter = getCubeCenter(cube);
+                    float distance = calculateDistance(referencePoint, cubeCenter);
+                    float cubeVolume = cube.extent() * cube.extent() * cube.extent();
+                    float volumeRatio = cubeVolume / sphereVolume;
+                    
+                    return new ContainmentResult<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        distance,
+                        cubeCenter,
+                        ContainmentType.COMPLETELY_CONTAINED,
+                        volumeRatio
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(cr -> cr.distanceToReferencePoint))
+            .toList();
     }
 
     /**
@@ -117,40 +117,35 @@ public class ContainmentSearch {
         
         validatePositiveCoordinates(referencePoint, "referencePoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<ContainmentResult<Content>> results = new ArrayList<>();
+        // Convert AABB to a Spatial.aabb that Octree understands
+        var spatialAABB = new Spatial.aabb(
+            aabb.minX, aabb.minY, aabb.minZ,
+            aabb.maxX, aabb.maxY, aabb.maxZ
+        );
+        
         float aabbVolume = aabb.getVolume();
         
-        for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
-            
-            if (isCubeCompletelyInAABB(cube, aabb)) {
+        // Use Octree's efficient boundedBy method which returns cubes completely inside the AABB
+        return octree.boundedBy(spatialAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
                 Point3f cubeCenter = getCubeCenter(cube);
                 float distance = calculateDistance(referencePoint, cubeCenter);
                 float cubeVolume = cube.extent() * cube.extent() * cube.extent();
                 float volumeRatio = cubeVolume / aabbVolume;
                 
-                ContainmentResult<Content> result = new ContainmentResult<>(
-                    entry.getKey(), 
-                    entry.getValue(), 
-                    cube, 
+                return new ContainmentResult<>(
+                    hex.index(),
+                    hex.cell(),
+                    cube,
                     distance,
                     cubeCenter,
                     ContainmentType.COMPLETELY_CONTAINED,
                     volumeRatio
                 );
-                results.add(result);
-            }
-        }
-
-        // Sort by distance from reference point
-        results.sort(Comparator.comparing(cr -> cr.distanceToReferencePoint));
-        
-        return results;
+            })
+            .sorted(Comparator.comparing(cr -> cr.distanceToReferencePoint))
+            .toList();
     }
 
     /**
@@ -176,7 +171,7 @@ public class ContainmentSearch {
             throw new IllegalArgumentException("Cylinder radius must be positive, got: " + cylinderRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -254,17 +249,19 @@ public class ContainmentSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return 0;
-        }
-
-        return map.entrySet().stream()
-            .mapToLong(entry -> {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
-                return isCubeCompletelyInSphere(cube, sphereCenter, sphereRadius) ? 1 : 0;
+        // Create bounding AABB for the sphere
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
+        
+        // Use efficient bounding stream and count
+        return octree.bounding(boundingAABB)
+            .filter(hex -> {
+                var cube = hex.toCube();
+                return isCubeCompletelyInSphere(cube, sphereCenter, sphereRadius);
             })
-            .sum();
+            .count();
     }
 
     /**
@@ -278,17 +275,14 @@ public class ContainmentSearch {
     public static <Content> long countCubesContainedInAABB(
             AABBIntersectionSearch.AABB aabb, Octree<Content> octree) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return 0;
-        }
-
-        return map.entrySet().stream()
-            .mapToLong(entry -> {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
-                return isCubeCompletelyInAABB(cube, aabb) ? 1 : 0;
-            })
-            .sum();
+        // Convert AABB to a Spatial.aabb that Octree understands
+        var spatialAABB = new Spatial.aabb(
+            aabb.minX, aabb.minY, aabb.minZ,
+            aabb.maxX, aabb.maxY, aabb.maxZ
+        );
+        
+        // Use efficient boundedBy stream and count
+        return octree.boundedBy(spatialAABB).count();
     }
 
     /**
@@ -309,7 +303,7 @@ public class ContainmentSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new ContainmentStatistics(0, 0, 0, 0, 0.0f, 0.0f);
         }

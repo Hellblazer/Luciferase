@@ -23,7 +23,7 @@ public class AABBIntersectionSearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes - all positive
         int gridSize = Constants.lengthAtLevel(testLevel);
@@ -325,7 +325,7 @@ public class AABBIntersectionSearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         AABBIntersectionSearch.AABB aabb = new AABBIntersectionSearch.AABB(
             150.0f, 150.0f, 150.0f, 250.0f, 250.0f, 250.0f);
         Point3f referencePoint = new Point3f(100.0f, 100.0f, 100.0f);

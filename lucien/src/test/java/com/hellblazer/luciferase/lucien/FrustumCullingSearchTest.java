@@ -24,7 +24,7 @@ public class FrustumCullingSearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes - all positive
         int gridSize = Constants.lengthAtLevel(testLevel);
@@ -272,7 +272,7 @@ public class FrustumCullingSearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Point3f cameraPos = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f lookAt = new Point3f(200.0f, 200.0f, 200.0f);
         Vector3f up = new Vector3f(10.0f, 20.0f, 10.0f);

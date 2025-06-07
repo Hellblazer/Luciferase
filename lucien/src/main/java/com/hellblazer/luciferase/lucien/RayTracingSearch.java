@@ -42,33 +42,50 @@ public class RayTracingSearch {
     public static <Content> List<RayIntersection<Content>> rayIntersectedAll(
             Ray3D ray, Octree<Content> octree) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
+        if (octree.getMap().isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<RayIntersection<Content>> intersections = new ArrayList<>();
+        Point3f rayOrigin = ray.origin();
+        Vector3f rayDirection = ray.direction();
         
-        for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
-            
-            RayBoxIntersection intersection = rayBoxIntersection(ray, cube);
-            if (intersection.intersects) {
-                RayIntersection<Content> rayIntersection = new RayIntersection<>(
-                    entry.getKey(), 
-                    entry.getValue(), 
-                    cube, 
-                    intersection.distance,
-                    intersection.intersectionPoint
-                );
-                intersections.add(rayIntersection);
-            }
-        }
-
-        // Sort by distance from ray origin
-        intersections.sort(Comparator.comparing(ri -> ri.distance));
+        // Calculate bounding box for the ray (assume reasonable max distance)
+        float maxDistance = 100000f;
+        Point3f rayEnd = new Point3f(
+            rayOrigin.x + rayDirection.x * maxDistance,
+            rayOrigin.y + rayDirection.y * maxDistance,
+            rayOrigin.z + rayDirection.z * maxDistance
+        );
         
-        return intersections;
+        float minX = Math.min(rayOrigin.x, rayEnd.x);
+        float maxX = Math.max(rayOrigin.x, rayEnd.x);
+        float minY = Math.min(rayOrigin.y, rayEnd.y);
+        float maxY = Math.max(rayOrigin.y, rayEnd.y);
+        float minZ = Math.min(rayOrigin.z, rayEnd.z);
+        float maxZ = Math.max(rayOrigin.z, rayEnd.z);
+        
+        var boundingAABB = new Spatial.aabb(minX, minY, minZ, maxX, maxY, maxZ);
+        
+        // Use Octree's efficient bounding method which uses Morton curve ranges
+        return octree.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
+                var intersection = rayBoxIntersection(ray, cube);
+                
+                if (intersection.intersects) {
+                    return new RayIntersection<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        intersection.distance,
+                        intersection.intersectionPoint
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(ri -> ri.distance))
+            .toList();
     }
 
     /**

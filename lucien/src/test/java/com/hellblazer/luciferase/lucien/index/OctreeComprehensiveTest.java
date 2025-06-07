@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
-import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,13 +20,11 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class OctreeComprehensiveTest {
 
-    private Octree<String>        octree;
-    private TreeMap<Long, String> contents;
+    private Octree<String> octree;
 
     @BeforeEach
     void setUp() {
-        contents = new TreeMap<>();
-        octree = new Octree<>(contents);
+        octree = new Octree<>();
     }
 
     @Test
@@ -40,9 +37,7 @@ public class OctreeComprehensiveTest {
         Point3f point2 = new Point3f(500.0f, 600.0f, 700.0f);
         long index2 = octree.insert(point2, (byte) 15, "content2");
 
-        // Verify retrieval
-        assertEquals("content1", contents.get(index1));
-        assertEquals("content2", contents.get(index2));
+        // Verify retrieval using octree.get()
         assertEquals("content1", octree.get(index1));
         assertEquals("content2", octree.get(index2));
 
@@ -311,7 +306,7 @@ public class OctreeComprehensiveTest {
         }
 
         // Verify all contents are retrievable (note: may have duplicates due to quantization)
-        assertTrue(contents.size() <= points.length);
+        assertTrue(octree.size() <= points.length);
 
         // Verify indices are unique for different points (when not quantized to same location)
         for (int i = 0; i < indices.length; i++) {

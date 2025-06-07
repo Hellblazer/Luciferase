@@ -23,7 +23,7 @@ public class VisibilitySearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes - all positive
         int gridSize = Constants.lengthAtLevel(testLevel);
@@ -205,7 +205,7 @@ public class VisibilitySearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(300.0f, 300.0f, 300.0f);
         Vector3f viewDirection = new Vector3f(100.0f, 100.0f, 100.0f);

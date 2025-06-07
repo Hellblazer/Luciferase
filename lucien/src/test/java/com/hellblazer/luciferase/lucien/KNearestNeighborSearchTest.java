@@ -22,7 +22,7 @@ public class KNearestNeighborSearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes
         // At level 15, grid size is 64, so use multiples and offsets of 64
@@ -92,7 +92,7 @@ public class KNearestNeighborSearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Point3f queryPoint = new Point3f(10.0f, 10.0f, 10.0f);
         
         List<KNearestNeighborSearch.KNNCandidate<String>> results = 
@@ -136,7 +136,7 @@ public class KNearestNeighborSearchTest {
         Point3f queryPoint = new Point3f(0.0f, 0.0f, 0.0f);
         
         // Insert a point that will map to a different cube
-        Octree<String> testOctree = new Octree<>(new TreeMap<>());
+        Octree<String> testOctree = new Octree<>();
         int gridSize = Constants.lengthAtLevel(testLevel);
         testOctree.insert(new Point3f(gridSize + 32.0f, gridSize + 32.0f, gridSize + 32.0f), testLevel, "DistantPoint");
         
@@ -165,7 +165,7 @@ public class KNearestNeighborSearchTest {
         // Test with larger coordinate values
         Point3f queryPoint = new Point3f(1000.0f, 1000.0f, 1000.0f);
         
-        Octree<String> largeOctree = new Octree<>(new TreeMap<>());
+        Octree<String> largeOctree = new Octree<>();
         largeOctree.insert(new Point3f(999.0f, 999.0f, 999.0f), testLevel, "Large1");
         largeOctree.insert(new Point3f(1001.0f, 1001.0f, 1001.0f), testLevel, "Large2");
         largeOctree.insert(new Point3f(500.0f, 500.0f, 500.0f), testLevel, "Large3");

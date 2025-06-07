@@ -26,7 +26,7 @@ public class QueryOptimizerTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Insert test data points in various spatial patterns
         insertTestData();
@@ -441,7 +441,7 @@ public class QueryOptimizerTest {
 
     @Test
     void testEmptyOctreeQueries() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         QueryOptimizer.OptimizedSpatialQuery<String> emptyQueryEngine = 
             new QueryOptimizer.OptimizedSpatialQuery<>(emptyOctree, 10);
         

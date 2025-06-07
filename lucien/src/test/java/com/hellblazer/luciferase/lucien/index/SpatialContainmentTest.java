@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Vector3d;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 
@@ -31,7 +32,13 @@ public class SpatialContainmentTest {
         tetreeContents = new TreeMap<>();
         octreeContents = new TreeMap<>();
         tetree = new Tetree<>(tetreeContents);
-        octree = new Octree<>(octreeContents);
+        octree = new Octree<>();
+        // Pre-populate octree if needed
+        if (!octreeContents.isEmpty()) {
+            for (Map.Entry<Long, String> entry : octreeContents.entrySet()) {
+                octree.getMap().put(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     @Test

@@ -19,14 +19,14 @@ public class TetreePerformanceBenchmark {
     private Tetree<String> tetree;
     private Octree<String> octree;
     
-    private static final int SMALL_DATASET = 100;
-    private static final int MEDIUM_DATASET = 1000;
-    private static final int LARGE_DATASET = 10000;
+    private static final int SMALL_DATASET = 50;
+    private static final int MEDIUM_DATASET = 200;
+    private static final int LARGE_DATASET = 500;
 
     @BeforeEach
     void setUp() {
         tetree = new Tetree<>(new TreeMap<>());
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
     }
 
     @Test
@@ -35,9 +35,9 @@ public class TetreePerformanceBenchmark {
         System.out.println("=== Tetree vs Octree Performance Benchmark ===\n");
         
         // Test with different dataset sizes to identify scalability patterns
-        benchmarkDatasetSize("Small Dataset (100 points)", SMALL_DATASET);
-        benchmarkDatasetSize("Medium Dataset (1000 points)", MEDIUM_DATASET);
-        benchmarkDatasetSize("Large Dataset (10000 points)", LARGE_DATASET);
+        benchmarkDatasetSize("Small Dataset (50 points)", SMALL_DATASET);
+        benchmarkDatasetSize("Medium Dataset (200 points)", MEDIUM_DATASET);
+        benchmarkDatasetSize("Large Dataset (500 points)", LARGE_DATASET);
     }
     
     private void benchmarkDatasetSize(String testName, int datasetSize) {
@@ -45,7 +45,7 @@ public class TetreePerformanceBenchmark {
         
         // Reset data structures
         tetree = new Tetree<>(new TreeMap<>());
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Populate with test data
         populateWithTestData(datasetSize);

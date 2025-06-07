@@ -64,37 +64,36 @@ public class SphereIntersectionSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<SphereIntersection<Content>> intersections = new ArrayList<>();
+        // Create bounding AABB for the sphere
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
         
-        for (Map.Entry<Long, Content> entry : map.entrySet()) {
-            Spatial.Cube cube = Octree.toCube(entry.getKey());
-            
-            IntersectionType intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
-            if (intersectionType != IntersectionType.COMPLETELY_OUTSIDE) {
-                Point3f cubeCenter = getCubeCenter(cube);
-                float distance = calculateDistance(referencePoint, cubeCenter);
+        // Use Octree's efficient bounding method which uses Morton curve ranges
+        return octree.bounding(boundingAABB)
+            .map(hex -> {
+                var cube = hex.toCube();
+                var intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
                 
-                SphereIntersection<Content> intersection = new SphereIntersection<>(
-                    entry.getKey(), 
-                    entry.getValue(), 
-                    cube, 
-                    distance,
-                    cubeCenter,
-                    intersectionType
-                );
-                intersections.add(intersection);
-            }
-        }
-
-        // Sort by distance from reference point
-        intersections.sort(Comparator.comparing(si -> si.distanceToReferencePoint));
-        
-        return intersections;
+                if (intersectionType != IntersectionType.COMPLETELY_OUTSIDE) {
+                    Point3f cubeCenter = getCubeCenter(cube);
+                    float distance = calculateDistance(referencePoint, cubeCenter);
+                    
+                    return new SphereIntersection<>(
+                        hex.index(),
+                        hex.cell(),
+                        cube,
+                        distance,
+                        cubeCenter,
+                        intersectionType
+                    );
+                }
+                return null;
+            })
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(si -> si.distanceToReferencePoint))
+            .toList();
     }
 
     /**
@@ -167,18 +166,20 @@ public class SphereIntersectionSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return 0;
-        }
-
-        return map.entrySet().stream()
-            .mapToLong(entry -> {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
-                IntersectionType intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
-                return intersectionType != IntersectionType.COMPLETELY_OUTSIDE ? 1 : 0;
+        // Create bounding AABB for the sphere
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
+        
+        // Use efficient bounding stream and count
+        return octree.bounding(boundingAABB)
+            .filter(hex -> {
+                var cube = hex.toCube();
+                var intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
+                return intersectionType != IntersectionType.COMPLETELY_OUTSIDE;
             })
-            .sum();
+            .count();
     }
 
     /**
@@ -198,15 +199,17 @@ public class SphereIntersectionSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
-        if (map.isEmpty()) {
-            return false;
-        }
-
-        return map.entrySet().stream()
-            .anyMatch(entry -> {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
-                IntersectionType intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
+        // Create bounding AABB for the sphere
+        var boundingAABB = new Spatial.aabb(
+            sphereCenter.x - sphereRadius, sphereCenter.y - sphereRadius, sphereCenter.z - sphereRadius,
+            sphereCenter.x + sphereRadius, sphereCenter.y + sphereRadius, sphereCenter.z + sphereRadius
+        );
+        
+        // Use efficient bounding stream to check existence
+        return octree.bounding(boundingAABB)
+            .anyMatch(hex -> {
+                var cube = hex.toCube();
+                var intersectionType = testSphereIntersection(sphereCenter, sphereRadius, cube);
                 return intersectionType != IntersectionType.COMPLETELY_OUTSIDE;
             });
     }
@@ -228,7 +231,7 @@ public class SphereIntersectionSearch {
             throw new IllegalArgumentException("Sphere radius must be positive, got: " + sphereRadius);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new IntersectionStatistics(0, 0, 0, 0);
         }

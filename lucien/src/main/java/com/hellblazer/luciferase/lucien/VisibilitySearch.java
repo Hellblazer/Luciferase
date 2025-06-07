@@ -90,7 +90,7 @@ public class VisibilitySearch {
             throw new IllegalArgumentException("Occlusion threshold must be non-negative, got: " + occlusionThreshold);
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new LineOfSightResult<>(true, Collections.emptyList(), 0.0f, 0.0f);
         }
@@ -178,7 +178,7 @@ public class VisibilitySearch {
             throw new IllegalArgumentException("Max view distance must be non-negative");
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -248,7 +248,7 @@ public class VisibilitySearch {
             throw new IllegalArgumentException("Max view distance must be non-negative");
         }
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return new VisibilityStatistics(0, 0, 0, 0, 0, 0.0f, 0.0f);
         }

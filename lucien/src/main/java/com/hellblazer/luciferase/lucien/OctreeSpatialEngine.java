@@ -20,6 +20,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
@@ -50,7 +51,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     public List<SpatialResult<Content>> boundedBy(Spatial volume) {
         return executeQuery(() -> 
             octree.boundedBy(volume)
-                  .map(this::createSpatialResult)
+                  .map(hex -> createSpatialResult(hex.index(), hex.cell()))
                   .toList()
         );
     }
@@ -60,7 +61,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         return executeQuery(() -> 
             KNearestNeighborSearch.findKNearestNeighbors(point, k, octree)
                                  .stream()
-                                 .map(result -> createSpatialResult(result.key(), result.content(), result.distance(), point))
+                                 .map(result -> createSpatialResult(result.index, result.content, result.distance, point))
                                  .toList()
         );
     }
@@ -68,9 +69,9 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> withinDistance(Point3f point, float distance) {
         return executeQuery(() -> 
-            ProximitySearch.cubesWithinDistance(point, distance, octree)
+            ProximitySearch.cubesWithinDistanceRange(point, new ProximitySearch.DistanceRange(0, distance, ProximitySearch.ProximityType.CLOSE), octree)
                           .stream()
-                          .map(result -> createSpatialResult(result.key(), result.content(), result.distance(), point))
+                          .map(result -> createSpatialResult(result.index, result.content, result.distanceToQuery, point))
                           .toList()
         );
     }
@@ -80,7 +81,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         return executeQuery(() -> 
             RayTracingSearch.rayIntersectedAll(ray, octree)
                            .stream()
-                           .map(result -> createSpatialResult(result.key(), result.content()))
+                           .map(result -> createSpatialResult(result.index, result.content))
                            .toList()
         );
     }
@@ -88,9 +89,9 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> sphereIntersection(Point3f center, float radius) {
         return executeQuery(() -> 
-            SphereIntersectionSearch.sphereIntersectedAll(center, radius, octree)
+            SphereIntersectionSearch.sphereIntersectedAll(center, radius, octree, center)
                                    .stream()
-                                   .map(result -> createSpatialResult(result.key(), result.content()))
+                                   .map(result -> createSpatialResult(result.index, result.content))
                                    .toList()
         );
     }
@@ -98,41 +99,40 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> planeIntersection(Plane3D plane) {
         return executeQuery(() -> 
-            PlaneIntersectionSearch.planeIntersectedAll(plane, octree)
+            PlaneIntersectionSearch.planeIntersectedAll(plane, octree, new Point3f(0, 0, 0))
                                   .stream()
-                                  .map(result -> createSpatialResult(result.key(), result.content()))
+                                  .map(result -> createSpatialResult(result.index, result.content))
                                   .toList()
         );
     }
     
     @Override
     public List<SpatialResult<Content>> frustumCulling(Frustum3D frustum) {
-        return executeQuery(() -> 
-            FrustumCullingSearch.frustumVisibleAll(frustum, octree)
-                               .stream()
-                               .map(result -> createSpatialResult(result.key(), result.content()))
-                               .toList()
-        );
+        return executeQuery(() -> {
+            // Use a default camera position since Frustum3D doesn't expose the eye position
+            Point3f cameraPosition = new Point3f(1000.0f, 1000.0f, 1000.0f);
+            return FrustumCullingSearch.frustumCulledAll(frustum, octree, cameraPosition)
+                                      .stream()
+                                      .map(result -> createSpatialResult(result.index, result.content))
+                                      .toList();
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> convexHullIntersection(ConvexHull hull, Point3f referencePoint) {
-        // Convert unified ConvexHull to Octree-specific ConvexHull
-        // Create a simple tetrahedral hull for testing
-        var testPoints = List.of(
-            new Point3f(referencePoint.x, referencePoint.y, referencePoint.z),
-            new Point3f(referencePoint.x + 100, referencePoint.y, referencePoint.z),
-            new Point3f(referencePoint.x, referencePoint.y + 100, referencePoint.z),
-            new Point3f(referencePoint.x, referencePoint.y, referencePoint.z + 100)
-        );
-        var octreeHull = ConvexHullIntersectionSearch.ConvexHull.createTetrahedralHull(
-            testPoints.get(0), testPoints.get(1), testPoints.get(2), testPoints.get(3)
-        );
+        // Create a simple convex hull using OBB
+        var axes = new Vector3f[] {
+            new Vector3f(1, 0, 0),
+            new Vector3f(0, 1, 0),
+            new Vector3f(0, 0, 1)
+        };
+        var extents = new float[] { 100.0f, 100.0f, 100.0f };
+        var octreeHull = ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(referencePoint, axes, extents);
         
         return executeQuery(() -> 
             ConvexHullIntersectionSearch.convexHullIntersectedAll(octreeHull, octree, referencePoint)
                                        .stream()
-                                       .map(result -> createSpatialResult(result.key(), result.content()))
+                                       .map(result -> createSpatialResult(result.index, result.content))
                                        .toList()
         );
     }
@@ -142,7 +142,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         return executeQuery(() -> 
             ContainmentSearch.cubesContainedInSphere(center, radius, octree, center)
                             .stream()
-                            .map(result -> createSpatialResult(result.key(), result.content()))
+                            .map(result -> createSpatialResult(result.index, result.content))
                             .toList()
         );
     }
@@ -150,9 +150,9 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> withinDistanceRange(Point3f point, float minDistance, float maxDistance) {
         return executeQuery(() -> 
-            ProximitySearch.cubesWithinDistanceRange(point, new ProximitySearch.DistanceRange(minDistance, maxDistance), octree)
+            ProximitySearch.cubesWithinDistanceRange(point, new ProximitySearch.DistanceRange(minDistance, maxDistance, ProximitySearch.ProximityType.MODERATE), octree)
                           .stream()
-                          .map(result -> createSpatialResult(result.key(), result.content(), result.distance(), point))
+                          .map(result -> createSpatialResult(result.index, result.content, result.distanceToQuery, point))
                           .toList()
         );
     }
@@ -168,7 +168,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> visibleFrom(Point3f observer, float maxDistance) {
         return executeQuery(() -> 
-            VisibilitySearch.findVisibleCubes(observer, new javax.vecmath.Vector3f(0, 0, 1), maxDistance, maxDistance, octree)
+            VisibilitySearch.findVisibleCubes(observer, new javax.vecmath.Vector3f(0, 0, 1), (float) (Math.PI / 2), maxDistance, octree)
                            .stream()
                            .map(result -> createSpatialResult(result.index, result.content))
                            .toList()
@@ -177,12 +177,14 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     
     @Override
     public List<SpatialResult<Content>> parallelBoundedBy(Spatial volume) {
-        return executeQuery(() -> 
-            ParallelSpatialProcessor.parallelBoundedBy(volume, octree)
-                                   .stream()
-                                   .map(result -> createSpatialResult(result.key(), result.content()))
-                                   .toList()
-        );
+        return executeQuery(() -> {
+            // Use parallel octree operations with default config
+            var config = ParallelOctreeOperations.ParallelConfig.defaultConfig();
+            return ParallelOctreeOperations.boundedByParallel(volume, octree, config)
+                                          .stream()
+                                          .map(hex -> createSpatialResult(hex.index(), hex.cell()))
+                                          .toList();
+        });
     }
     
     @Override
@@ -267,9 +269,9 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
      * Octree-specific line-of-sight result implementation
      */
     private static class OctreeLineOfSightResult<Content> implements LineOfSightResult<Content> {
-        private final VisibilitySearch.LineOfSightResult originalResult;
+        private final VisibilitySearch.LineOfSightResult<Content> originalResult;
         
-        public OctreeLineOfSightResult(VisibilitySearch.LineOfSightResult originalResult) {
+        public OctreeLineOfSightResult(VisibilitySearch.LineOfSightResult<Content> originalResult) {
             this.originalResult = originalResult;
         }
         
@@ -289,15 +291,15 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
             return originalResult.occludingCubes.stream()
                 .map(occluder -> (SpatialResult<Content>) new OctreeSpatialResult<>(
                     occluder.index, 
-                    (Content) occluder.content, 
-                    0.0, 
+                    occluder.content, 
+                    occluder.distanceFromObserver, 
                     null))
                 .toList();
         }
         
         @Override
         public double getDistance() {
-            return originalResult.distance;
+            return originalResult.distanceThroughOccluders;
         }
     }
     
@@ -345,7 +347,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         
         @Override
         public long getEntryCount() {
-            return octree.keySet().size();
+            return octree.size();
         }
     }
 }

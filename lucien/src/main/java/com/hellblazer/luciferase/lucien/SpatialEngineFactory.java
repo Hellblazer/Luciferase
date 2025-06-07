@@ -20,10 +20,12 @@
 package com.hellblazer.luciferase.lucien;
 
 import javax.vecmath.Point3f;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
 import static com.hellblazer.luciferase.lucien.TetrahedralSearchBase.SimplexAggregationStrategy;
+import com.hellblazer.luciferase.lucien.SpatialSearchEngine.*;
 
 /**
  * Factory for creating unified spatial search engines. Provides intelligent
@@ -44,9 +46,27 @@ public class SpatialEngineFactory {
             SpatialEngineType preferredType, 
             Map<Long, Content> initialData) {
         
+        var data = initialData != null ? new TreeMap<>(initialData) : new TreeMap<Long, Content>();
         return switch (preferredType) {
-            case OCTREE -> new OctreeSpatialEngine<>(new Octree<>(initialData != null ? initialData : new TreeMap<>()));
-            case TETREE -> new TetreeSpatialEngine<>(new Tetree<>(initialData != null ? initialData : new TreeMap<>()));
+            case OCTREE -> {
+                var octree = new Octree<Content>();
+                // Pre-populate if initial data provided
+                if (initialData != null) {
+                    // Instead of directly using the Morton codes, we need to use proper spatial insertion
+                    // Convert Morton codes back to coordinates and insert properly
+                    for (Map.Entry<Long, Content> entry : initialData.entrySet()) {
+                        // Decode the Morton code to get coordinates
+                        var coords = com.hellblazer.luciferase.geometry.MortonCurve.decode(entry.getKey());
+                        var level = Constants.toLevel(entry.getKey());
+                        
+                        // Insert using proper spatial coordinates
+                        var point = new Point3f(coords[0], coords[1], coords[2]);
+                        octree.insert(point, level, entry.getValue());
+                    }
+                }
+                yield new OctreeSpatialEngine<>(octree);
+            }
+            case TETREE -> new TetreeSpatialEngine<>(new Tetree<>(data));
         };
     }
     
@@ -78,7 +98,8 @@ public class SpatialEngineFactory {
             Map<Long, Content> initialData,
             SimplexAggregationStrategy aggregationStrategy) {
         
-        var tetree = new Tetree<Content>(initialData != null ? initialData : new TreeMap<>());
+        var data = initialData != null ? new TreeMap<>(initialData) : new TreeMap<Long, Content>();
+        var tetree = new Tetree<Content>(data);
         return new TetreeSpatialEngine<>(tetree, aggregationStrategy);
     }
     
@@ -233,7 +254,7 @@ public class SpatialEngineFactory {
         }
         
         @Override
-        public List<SpatialResult<Content>> boundedBy(Spatial.Volume volume) {
+        public List<SpatialResult<Content>> boundedBy(Spatial volume) {
             return executeWithFallback(() -> primaryEngine.boundedBy(volume));
         }
         
@@ -293,7 +314,7 @@ public class SpatialEngineFactory {
         }
         
         @Override
-        public List<SpatialResult<Content>> parallelBoundedBy(Spatial.Volume volume) {
+        public List<SpatialResult<Content>> parallelBoundedBy(Spatial volume) {
             return executeWithFallback(() -> primaryEngine.parallelBoundedBy(volume));
         }
         
@@ -329,8 +350,8 @@ public class SpatialEngineFactory {
                 return result;
             } catch (Exception e) {
                 monitor.recordFailure();
-                // Attempt with fallback engine
-                return fallbackEngine.boundedBy(null); // This would need proper fallback logic
+                // Throw the exception - let the caller handle fallback if needed
+                throw new RuntimeException("Spatial query failed in adaptive engine", e);
             }
         }
         

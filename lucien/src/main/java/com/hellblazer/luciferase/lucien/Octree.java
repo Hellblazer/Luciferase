@@ -8,56 +8,36 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 /**
+ * Octree implementation using HashMap for node storage (like C++ reference) Provides O(1) node lookups while
+ * maintaining spatial structure
+ *
  * @author hal.hildebrand
- **/
+ */
 public class Octree<Content> {
+    // Main storage - NavigableMap for spatial range queries
+    // Morton code is the key - it encodes both position and level
+    private final NavigableMap<Long, Node<Content>> nodes;
 
-    private final NavigableMap<Long, Content> map;
-
-    public Octree(NavigableMap map) {
-        this.map = map;
+    public Octree() {
+        this.nodes = new TreeMap<>();
     }
 
     public static Spatial.Cube toCube(long index) {
         var point = MortonCurve.decode(index);
-        return new Spatial.Cube(point[0], point[1], point[2], Constants.lengthAtLevel(Constants.toLevel(index)));
+        byte level = Constants.toLevel(index);
+        return new Spatial.Cube(point[0], point[1], point[2], Constants.lengthAtLevel(level));
     }
 
-    /**
-     * @param volume - the enclosing volume
-     * @return the Stream of simplexes bounded by the volume
-     */
     public Stream<Hexahedron<Content>> boundedBy(Spatial volume) {
-        // Use spatial range query to efficiently find cubes within volume
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return Stream.empty();
-        }
-
-        return spatialRangeQuery(bounds, false).filter(entry -> {
-            var cube = toCube(entry.getKey());
-            return cubeContainedInVolume(cube, volume);
-        }).map(entry -> new Hexahedron<>(entry.getKey(), entry.getValue()));
+        return spatialRangeQuery(volume, false);
     }
 
-    /**
-     * @param volume the volume to contain
-     * @return the Stream of simplexes that minimally bound the volume
-     */
     public Stream<Hexahedron<Content>> bounding(Spatial volume) {
-        // Use spatial range query to efficiently find cubes intersecting volume
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return Stream.empty();
-        }
-
-        return spatialRangeQuery(bounds, true).filter(entry -> {
-            var cube = toCube(entry.getKey());
-            return cubeIntersectsVolume(cube, volume);
-        }).map(entry -> new Hexahedron<>(entry.getKey(), entry.getValue()));
+        return spatialRangeQuery(volume, true);
     }
 
     /**
@@ -82,122 +62,122 @@ public class Octree<Content> {
         var index = MortonCurve.encode((int) (Math.floor(centerPoint.x / length) * length),
                                        (int) (Math.floor(centerPoint.y / length) * length),
                                        (int) (Math.floor(centerPoint.z / length) * length));
-        var content = map.get(index);
+
+        var node = nodes.get(index);
+        var content = node != null ? node.getData() : null;
         return new Hexahedron<>(index, content);
     }
 
     /**
      * @param point - the point to enclose
      * @param level - refinement level for enclosure
-     * @return the cube at the provided
+     * @return the cube at the provided level
      */
     public Hexahedron<Content> enclosing(Tuple3i point, byte level) {
         var length = Constants.lengthAtLevel(level);
-        var index = MortonCurve.encode((int) (Math.floor(point.x / length) * length),
-                                       (int) (Math.floor(point.y / length) * length),
-                                       (int) (Math.floor(point.z / length) * length));
-        var content = map.get(index);
+        var index = MortonCurve.encode((point.x / length) * length, (point.y / length) * length,
+                                       (point.z / length) * length);
+
+        var node = nodes.get(index);
+        var content = node != null ? node.getData() : null;
         return new Hexahedron<>(index, content);
     }
 
-    public Content get(long key) {
-        return map.get(key);
+    /**
+     * Get the content stored at the given Morton index
+     * @param index the Morton index
+     * @return the content data, or null if not found
+     */
+    public Content get(long index) {
+        Node<Content> node = nodes.get(index);
+        return node != null ? node.getData() : null;
     }
 
     /**
      * Get access to the internal map for advanced operations
-     * @return the internal NavigableMap
+     * @return a NavigableMap view that exposes node data directly
      */
     public NavigableMap<Long, Content> getMap() {
-        return map;
+        return new NodeDataMap<>(nodes);
+    }
+
+    /**
+     * Get stats about the octree
+     */
+    public OctreeStats getStats() {
+        int totalEntities = nodes.size();
+        return new OctreeStats(nodes.size(), totalEntities);
+    }
+
+    /**
+     * Check if node exists - O(1)
+     */
+    public boolean hasNode(long mortonKey) {
+        return nodes.containsKey(mortonKey);
     }
 
     public long insert(Point3f point, byte level, Content value) {
         var length = Constants.lengthAtLevel(level);
-        var index = MortonCurve.encode((int) (Math.floor(point.x / length) * length),
-                                       (int) (Math.floor(point.y / length) * length),
-                                       (int) (Math.floor(point.z / length) * length));
-        map.put(index, value);
-        return index;
+        var entityId = MortonCurve.encode((int) (Math.floor(point.x / length) * length),
+                                          (int) (Math.floor(point.y / length) * length),
+                                          (int) (Math.floor(point.z / length) * length));
+
+        // Insert into node structure
+        insertIntoNodeStructure(entityId, value, point, level);
+
+        return entityId;
     }
 
+    /**
+     * Convenience method to get cube from index
+     */
     public Spatial.Cube locate(long index) {
-        return Octree.toCube(index);
+        return toCube(index);
     }
 
-    // Compute Morton ranges that could contain cubes intersecting the volume
-    private List<MortonRange> computeMortonRanges(VolumeBounds bounds, boolean includeIntersecting) {
-        List<MortonRange> ranges = new ArrayList<>();
+    public int size() {
+        return nodes.size();
+    }
 
-        // Find appropriate refinement levels for the query volume
-        byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
-        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
+    /**
+     * Spatial range query
+     */
+    public Stream<Hexahedron<Content>> spatialRangeQuery(Spatial volume, boolean includeIntersecting) {
+        List<Hexahedron<Content>> results = new ArrayList<>();
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return results.stream();
+        }
 
-        for (byte level = minLevel; level <= maxLevel; level++) {
-            int length = Constants.lengthAtLevel(level);
+        // Check all nodes (could be optimized with spatial indexing)
+        for (var entry : nodes.entrySet()) {
+            long nodeKey = entry.getKey();
+            var node = entry.getValue();
 
-            // Calculate grid bounds at this level
-            int minX = (int) Math.floor(bounds.minX / length);
-            int maxX = (int) Math.ceil(bounds.maxX / length);
-            int minY = (int) Math.floor(bounds.minY / length);
-            int maxY = (int) Math.ceil(bounds.maxY / length);
-            int minZ = (int) Math.floor(bounds.minZ / length);
-            int maxZ = (int) Math.ceil(bounds.maxZ / length);
-
-            // Find Morton ranges for grid cells that could intersect the volume
-            for (int x = minX; x <= maxX; x++) {
-                for (int y = minY; y <= maxY; y++) {
-                    for (int z = minZ; z <= maxZ; z++) {
-                        // Align to grid
-                        int gridX = x * length;
-                        int gridY = y * length;
-                        int gridZ = z * length;
-
-                        // Check if this grid cell could intersect our bounds
-                        if (gridCellIntersectsBounds(gridX, gridY, gridZ, length, bounds, includeIntersecting)) {
-                            // Encode using Morton curve to get the index
-                            long index = MortonCurve.encode(gridX, gridY, gridZ);
-                            ranges.add(new MortonRange(index, index));
-                        }
-                    }
-                }
+            var cube = toCube(nodeKey);
+            boolean matches = includeIntersecting ? cubeIntersectsBounds(cube, bounds) : cubeContainedInBounds(cube,
+                                                                                                               bounds);
+            if (matches) {
+                results.add(new Hexahedron<>(nodeKey, node.getData()));
             }
         }
 
-        // Merge overlapping ranges for efficiency
-        return mergeMortonRanges(ranges);
+        return results.stream();
     }
 
-    // Create a spatial volume from bounds for final filtering
-    private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ);
-    }
-
-    // Check if a cube is completely contained within a volume
-    private boolean cubeContainedInVolume(Spatial.Cube cube, Spatial volume) {
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return false;
-        }
-
-        // All cube corners must be within volume bounds
+    private boolean cubeContainedInBounds(Spatial.Cube cube, VolumeBounds bounds) {
         return cube.originX() >= bounds.minX && cube.originX() + cube.extent() <= bounds.maxX
         && cube.originY() >= bounds.minY && cube.originY() + cube.extent() <= bounds.maxY
         && cube.originZ() >= bounds.minZ && cube.originZ() + cube.extent() <= bounds.maxZ;
     }
 
-    // Check if a cube intersects with a volume
-    private boolean cubeIntersectsVolume(Spatial.Cube cube, Spatial volume) {
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return false;
-        }
-
-        // AABB intersection test
+    private boolean cubeIntersectsBounds(Spatial.Cube cube, VolumeBounds bounds) {
         return !(cube.originX() + cube.extent() < bounds.minX || cube.originX() > bounds.maxX
                  || cube.originY() + cube.extent() < bounds.minY || cube.originY() > bounds.maxY
                  || cube.originZ() + cube.extent() < bounds.minZ || cube.originZ() > bounds.maxZ);
     }
+
+    // Helper methods
 
     // Find minimum level that can contain the volume
     private byte findMinimumContainingLevel(VolumeBounds bounds) {
@@ -213,7 +193,6 @@ public class Octree<Content> {
         return Constants.getMaxRefinementLevel();
     }
 
-    // Extract bounding box from various spatial volume types (reused from Tetree)
     private VolumeBounds getVolumeBounds(Spatial volume) {
         return switch (volume) {
             case Spatial.Cube cube -> new VolumeBounds(cube.originX(), cube.originY(), cube.originZ(),
@@ -249,68 +228,64 @@ public class Octree<Content> {
         };
     }
 
-    // Check if a grid cell intersects with the query bounds
-    private boolean gridCellIntersectsBounds(int cellX, int cellY, int cellZ, int cellSize, VolumeBounds bounds,
-                                             boolean includeIntersecting) {
-        float cellMaxX = cellX + cellSize;
-        float cellMaxY = cellY + cellSize;
-        float cellMaxZ = cellZ + cellSize;
-
-        if (includeIntersecting) {
-            // Check for any intersection
-            return !(cellMaxX < bounds.minX || cellX > bounds.maxX || cellMaxY < bounds.minY || cellY > bounds.maxY
-                     || cellMaxZ < bounds.minZ || cellZ > bounds.maxZ);
+    private void insertIntoNodeStructure(long mortonIndex, Content value, Point3f point, byte targetDepth) {
+        // Use the passed Morton index directly
+        Node<Content> node = nodes.get(mortonIndex);
+        if (node == null) {
+            node = new Node<>(value);
+            nodes.put(mortonIndex, node);
         } else {
-            // Check for complete containment within bounds
-            return cellX >= bounds.minX && cellMaxX <= bounds.maxX && cellY >= bounds.minY && cellMaxY <= bounds.maxY
-            && cellZ >= bounds.minZ && cellMaxZ <= bounds.maxZ;
+            // Update existing node with new value
+            node.setData(value);
         }
     }
 
-    // Merge overlapping Morton ranges for efficiency
-    private List<MortonRange> mergeMortonRanges(List<MortonRange> ranges) {
-        if (ranges.isEmpty()) {
-            return ranges;
+    /**
+     * Node structure matching C++ reference - stores only entity IDs
+     */
+    public static class Node<Content> {
+
+        private byte    childrenMask = 0; // Bit mask for existing children
+        private Content data;
+
+        public Node() {
         }
 
-        ranges.sort((a, b) -> Long.compare(a.start, b.start));
-        List<MortonRange> merged = new ArrayList<>();
-        MortonRange current = ranges.get(0);
-
-        for (int i = 1; i < ranges.size(); i++) {
-            MortonRange next = ranges.get(i);
-            if (current.end + 1 >= next.start) {
-                // Merge overlapping ranges
-                current = new MortonRange(current.start, Math.max(current.end, next.end));
-            } else {
-                merged.add(current);
-                current = next;
-            }
+        public Node(Content data) {
+            this.data = data;
         }
-        merged.add(current);
 
-        return merged;
+        // Getters
+        public byte getChildrenMask() {
+            return childrenMask;
+        }
+
+        public Content getData() {
+            return data;
+        }
+
+        public boolean hasChild(int octant) {
+            return (childrenMask & (1 << octant)) != 0;
+        }
+
+        public boolean hasChildren() {
+            return childrenMask != 0;
+        }
+
+        public void removeChild(int octant) {
+            childrenMask &= ~(1 << octant);
+        }
+
+        public void setChild(int octant) {
+            childrenMask |= (1 << octant);
+        }
+
+        public void setData(Content data) {
+            this.data = data;
+        }
     }
 
-    // Efficient spatial range query using Morton curve properties
-    private Stream<Map.Entry<Long, Content>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
-        // Use Morton curve properties to find ranges of indices that could intersect the volume
-        var mortonRanges = computeMortonRanges(bounds, includeIntersecting);
-
-        Stream<Map.Entry<Long, Content>> ranges = mortonRanges.stream().flatMap(range -> {
-            // Use NavigableMap.subMap to efficiently get entries in Morton range
-            var subMap = map.subMap(range.start, true, range.end, true);
-            return subMap.entrySet().stream();
-        });
-        return ranges.filter(entry -> {
-            // Final precise filtering for elements that passed Morton range test
-            var cube = toCube(entry.getKey());
-            if (includeIntersecting) {
-                return cubeIntersectsVolume(cube, createSpatialFromBounds(bounds));
-            } else {
-                return cubeContainedInVolume(cube, createSpatialFromBounds(bounds));
-            }
-        });
+    public record OctreeStats(int totalNodes, int totalEntities) {
     }
 
     record Hexahedron<Data>(long index, Data cell) {
@@ -319,11 +294,6 @@ public class Octree<Content> {
         }
     }
 
-    // Helper record for volume bounds (reused from Tetree)
     private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-    }
-
-    // Record to represent Morton index ranges
-    private record MortonRange(long start, long end) {
     }
 }

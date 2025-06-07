@@ -243,18 +243,20 @@ public class TetSpatialOptimizer {
     /**
      * Optimized spatial range query that reduces stream overhead
      */
-    public static Stream<Map.Entry<Long, ?>> optimizedSpatialRangeQuery(NavigableMap<Long, ?> contents, 
+    public static Stream<Map.Entry<Long, ?>> optimizedSpatialRangeQuery(Map<Long, ?> contents, 
                                                                         VolumeBounds bounds, 
                                                                         boolean includeIntersecting) {
         var ranges = computeOptimizedSFCRanges(bounds, includeIntersecting);
         
-        // Use parallel streams for large range sets
+        // Use parallel streams for large range sets - filter entries since we don't have subMap
         if (ranges.size() > 10) {
             return ranges.parallelStream()
-                .flatMap(range -> contents.subMap(range.startIndex(), true, range.endIndex(), true).entrySet().stream());
+                .flatMap(range -> contents.entrySet().stream()
+                    .filter(entry -> entry.getKey() >= range.startIndex() && entry.getKey() <= range.endIndex()));
         } else {
             return ranges.stream()
-                .flatMap(range -> contents.subMap(range.startIndex(), true, range.endIndex(), true).entrySet().stream());
+                .flatMap(range -> contents.entrySet().stream()
+                    .filter(entry -> entry.getKey() >= range.startIndex() && entry.getKey() <= range.endIndex()));
         }
     }
     

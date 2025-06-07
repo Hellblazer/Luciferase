@@ -339,7 +339,7 @@ public class TetRayTracingSearchTest {
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testPerformanceComparison() {
         // Create equivalent data structures for performance comparison
-        Octree<String> octree = new Octree<>(new java.util.TreeMap<>());
+        Octree<String> octree = new Octree<>();
         Tetree<String> perfTetree = new Tetree<>(new java.util.TreeMap<>());
         
         // Add same data to both structures

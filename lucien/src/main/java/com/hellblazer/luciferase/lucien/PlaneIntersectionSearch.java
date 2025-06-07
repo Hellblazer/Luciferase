@@ -47,7 +47,7 @@ public class PlaneIntersectionSearch {
         
         validatePositiveCoordinates(referencePoint, "referencePoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -105,7 +105,7 @@ public class PlaneIntersectionSearch {
     public static <Content> List<PlaneIntersection<Content>> planeIntersectedAllByPlaneDistance(
             Plane3D plane, Octree<Content> octree) {
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -150,7 +150,7 @@ public class PlaneIntersectionSearch {
         
         validatePositiveCoordinates(referencePoint, "referencePoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -196,7 +196,7 @@ public class PlaneIntersectionSearch {
         
         validatePositiveCoordinates(referencePoint, "referencePoint");
         
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return Collections.emptyList();
         }
@@ -237,7 +237,7 @@ public class PlaneIntersectionSearch {
      * @return number of cubes intersecting the plane
      */
     public static <Content> long countPlaneIntersections(Plane3D plane, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return 0;
         }
@@ -259,7 +259,7 @@ public class PlaneIntersectionSearch {
      * @return true if any cube intersects the plane
      */
     public static <Content> boolean hasAnyIntersection(Plane3D plane, Octree<Content> octree) {
-        NavigableMap<Long, Content> map = octree.getMap();
+        Map<Long, Content> map = octree.getMap();
         if (map.isEmpty()) {
             return false;
         }

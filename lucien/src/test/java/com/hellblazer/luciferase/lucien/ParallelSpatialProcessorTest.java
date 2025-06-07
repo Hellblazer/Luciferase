@@ -27,7 +27,7 @@ public class ParallelSpatialProcessorTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Insert sufficient test data to trigger parallel processing
         insertTestData();
@@ -488,7 +488,7 @@ public class ParallelSpatialProcessorTest {
 
     @Test
     void testEmptyOctreeParallelQueries() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         ParallelSpatialProcessor.ParallelConfig config = 
             ParallelSpatialProcessor.ParallelConfig.defaultConfig();
         

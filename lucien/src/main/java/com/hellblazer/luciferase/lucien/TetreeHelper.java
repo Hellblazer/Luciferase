@@ -54,11 +54,11 @@ public class TetreeHelper {
     }
     
     @SuppressWarnings("unchecked")
-    private static <Content> java.util.NavigableMap<Long, Content> getContentsMap(Tetree<Content> tetree) {
+    private static <Content> java.util.Map<Long, Content> getContentsMap(Tetree<Content> tetree) {
         try {
             var field = Tetree.class.getDeclaredField("contents");
             field.setAccessible(true);
-            return (java.util.NavigableMap<Long, Content>) field.get(tetree);
+            return (java.util.Map<Long, Content>) field.get(tetree);
         } catch (Exception e) {
             throw new RuntimeException("Failed to access Tetree contents", e);
         }

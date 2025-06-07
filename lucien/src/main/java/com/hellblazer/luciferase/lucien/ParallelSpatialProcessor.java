@@ -121,7 +121,7 @@ public class ParallelSpatialProcessor {
             validatePositiveCoordinates(center, "center");
             
             long startTime = System.nanoTime();
-            NavigableMap<Long, Content> map = octree.getMap();
+            Map<Long, Content> map = octree.getMap();
             
             if (map.size() < config.minDataSizeForParallel) {
                 // Fall back to sequential processing for small datasets
@@ -175,7 +175,7 @@ public class ParallelSpatialProcessor {
             validatePositiveCoordinates(maxBounds, "maxBounds");
             
             long startTime = System.nanoTime();
-            NavigableMap<Long, Content> map = octree.getMap();
+            Map<Long, Content> map = octree.getMap();
             
             if (map.size() < config.minDataSizeForParallel) {
                 return executeSequentialRangeQuery(minBounds, maxBounds, startTime);
@@ -227,7 +227,7 @@ public class ParallelSpatialProcessor {
             validatePositiveCoordinates(queryPoint, "queryPoint");
             
             long startTime = System.nanoTime();
-            NavigableMap<Long, Content> map = octree.getMap();
+            Map<Long, Content> map = octree.getMap();
             
             if (map.size() < config.minDataSizeForParallel || k >= map.size()) {
                 return executeSequentialKNNQuery(queryPoint, k, startTime);
@@ -284,7 +284,7 @@ public class ParallelSpatialProcessor {
          */
         public ParallelResult<Content> parallelCustomQuery(Predicate<Map.Entry<Long, Content>> predicate) {
             long startTime = System.nanoTime();
-            NavigableMap<Long, Content> map = octree.getMap();
+            Map<Long, Content> map = octree.getMap();
             
             if (map.size() < config.minDataSizeForParallel) {
                 return executeSequentialCustomQuery(predicate, startTime);

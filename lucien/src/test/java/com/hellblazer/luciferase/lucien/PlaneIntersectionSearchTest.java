@@ -23,7 +23,7 @@ public class PlaneIntersectionSearchTest {
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>(new TreeMap<>());
+        octree = new Octree<>();
         
         // Use coordinates that will map to different cubes - all positive
         int gridSize = Constants.lengthAtLevel(testLevel);
@@ -184,7 +184,7 @@ public class PlaneIntersectionSearchTest {
 
     @Test
     void testEmptyOctree() {
-        Octree<String> emptyOctree = new Octree<>(new TreeMap<>());
+        Octree<String> emptyOctree = new Octree<>();
         Plane3D plane = Plane3D.parallelToXY(100.0f);
         Point3f referencePoint = new Point3f(50.0f, 50.0f, 50.0f);
         
