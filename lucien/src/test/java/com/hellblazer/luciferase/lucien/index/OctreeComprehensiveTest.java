@@ -125,14 +125,14 @@ public class OctreeComprehensiveTest {
             // Note: Due to Morton encoding behavior, coordinates may not match exactly
             // Just verify the cube is valid - Morton encoding may produce unexpected geometries
             assertNotNull(cube);
-            
+
             // The extent should be determined by toLevel() applied to the Morton code
             long insertedMorton = MortonCurve.encode(expectedX, expectedY, expectedZ);
             byte expectedLevel = Constants.toLevel(insertedMorton);
             int expectedExtent = Constants.lengthAtLevel(expectedLevel);
-            assertEquals(expectedExtent, cube.extent(), 
-                String.format("Extent should match toLevel calculation for coords (%d,%d,%d) at level %d", 
-                    expectedX, expectedY, expectedZ, expectedLevel));
+            assertEquals(expectedExtent, cube.extent(),
+                         String.format("Extent should match toLevel calculation for coords (%d,%d,%d) at level %d",
+                                       expectedX, expectedY, expectedZ, expectedLevel));
         }
     }
 
@@ -179,12 +179,12 @@ public class OctreeComprehensiveTest {
         long largeMorton = MortonCurve.encode(expectedX, expectedY, expectedZ);
         byte actualLevel = Constants.toLevel(largeMorton);
         int actualExtent = Constants.lengthAtLevel(actualLevel);
-        
+
         // Verify the cube has the exact extent determined by toLevel
-        assertEquals(actualExtent, cube.extent(), 
-            String.format("Large coordinate extent should be %d (level %d) for coords (%d,%d,%d)",
-                actualExtent, actualLevel, expectedX, expectedY, expectedZ));
-        
+        assertEquals(actualExtent, cube.extent(),
+                     String.format("Large coordinate extent should be %d (level %d) for coords (%d,%d,%d)",
+                                   actualExtent, actualLevel, expectedX, expectedY, expectedZ));
+
         // Verify cube coordinates match quantization
         assertEquals(expectedX, cube.originX(), "X coordinate should match quantization");
         assertEquals(expectedY, cube.originY(), "Y coordinate should match quantization");
@@ -339,35 +339,36 @@ public class OctreeComprehensiveTest {
         assertEquals(2048, length, "Level 10 should have length 2048");
 
         // Test specific grid-aligned points with known expected quantization
-        record TestCase(Point3f point, int expectedX, int expectedY, int expectedZ) {}
-        
-        TestCase[] testCases = {
-            new TestCase(new Point3f(0.1f, 0.1f, 0.1f), 0, 0, 0),
-            new TestCase(new Point3f(2048.1f, 0.1f, 0.1f), 2048, 0, 0),
-            new TestCase(new Point3f(0.1f, 2048.1f, 0.1f), 0, 2048, 0),
-            new TestCase(new Point3f(0.1f, 0.1f, 2048.1f), 0, 0, 2048),
-            new TestCase(new Point3f(4096.1f, 4096.1f, 4096.1f), 4096, 4096, 4096),
-        };
-        
+        record TestCase(Point3f point, int expectedX, int expectedY, int expectedZ) {
+        }
+
+        TestCase[] testCases = { new TestCase(new Point3f(0.1f, 0.1f, 0.1f), 0, 0, 0), new TestCase(
+        new Point3f(2048.1f, 0.1f, 0.1f), 2048, 0, 0), new TestCase(new Point3f(0.1f, 2048.1f, 0.1f), 0, 2048, 0),
+                                 new TestCase(new Point3f(0.1f, 0.1f, 2048.1f), 0, 0, 2048), new TestCase(
+        new Point3f(4096.1f, 4096.1f, 4096.1f), 4096, 4096, 4096), };
+
         for (TestCase tc : testCases) {
             long index = octree.insert(tc.point, level, "test");
             Spatial.Cube cube = octree.locate(index);
-            
+
             // Verify quantization is correct
-            assertEquals(tc.expectedX, cube.originX(), 
-                String.format("X quantization for point (%.1f,%.1f,%.1f)", tc.point.x, tc.point.y, tc.point.z));
-            assertEquals(tc.expectedY, cube.originY(), 
-                String.format("Y quantization for point (%.1f,%.1f,%.1f)", tc.point.x, tc.point.y, tc.point.z));
-            assertEquals(tc.expectedZ, cube.originZ(), 
-                String.format("Z quantization for point (%.1f,%.1f,%.1f)", tc.point.x, tc.point.y, tc.point.z));
-                
+            assertEquals(tc.expectedX, cube.originX(),
+                         String.format("X quantization for point (%.1f,%.1f,%.1f)", tc.point.x, tc.point.y,
+                                       tc.point.z));
+            assertEquals(tc.expectedY, cube.originY(),
+                         String.format("Y quantization for point (%.1f,%.1f,%.1f)", tc.point.x, tc.point.y,
+                                       tc.point.z));
+            assertEquals(tc.expectedZ, cube.originZ(),
+                         String.format("Z quantization for point (%.1f,%.1f,%.1f)", tc.point.x, tc.point.y,
+                                       tc.point.z));
+
             // Verify the cube extent matches toLevel calculation
             long quantizedMorton = MortonCurve.encode(tc.expectedX, tc.expectedY, tc.expectedZ);
             byte cubeLevel = Constants.toLevel(quantizedMorton);
             int expectedExtent = Constants.lengthAtLevel(cubeLevel);
             assertEquals(expectedExtent, cube.extent(),
-                String.format("Extent should match toLevel for quantized coords (%d,%d,%d)", 
-                    tc.expectedX, tc.expectedY, tc.expectedZ));
+                         String.format("Extent should match toLevel for quantized coords (%d,%d,%d)", tc.expectedX,
+                                       tc.expectedY, tc.expectedZ));
         }
     }
 
@@ -397,53 +398,52 @@ public class OctreeComprehensiveTest {
         long insertedMorton = MortonCurve.encode(expectedX, expectedY, expectedZ);
         byte cubeLevel = Constants.toLevel(insertedMorton);
         int expectedCubeExtent = Constants.lengthAtLevel(cubeLevel);
-        
-        assertEquals(expectedCubeExtent, cube.extent(), 
-            String.format("Static toCube extent should be %d (level %d) for coords (%d,%d,%d)", 
-                expectedCubeExtent, cubeLevel, expectedX, expectedY, expectedZ));
+
+        assertEquals(expectedCubeExtent, cube.extent(),
+                     String.format("Static toCube extent should be %d (level %d) for coords (%d,%d,%d)",
+                                   expectedCubeExtent, cubeLevel, expectedX, expectedY, expectedZ));
     }
 
     @Test
     @DisplayName("Test toLevel method with known values")
     void testToLevelMethodKnownValues() {
         // Test toLevel with specific known values for precise verification
-        
+
         // Origin should return level 0 (coarsest/root)
-        assertEquals(0, Constants.toLevel(MortonCurve.encode(0, 0, 0)), 
-            "Origin should return coarsest level 0");
-        
+        assertEquals(0, Constants.toLevel(MortonCurve.encode(0, 0, 0)), "Origin should return coarsest level 0");
+
         // Test specific known cases from our comparison
-        assertEquals(21, Constants.toLevel(MortonCurve.encode(1, 1, 1)), 
-            "Small coordinates (1,1,1) should return level 21");
-        assertEquals(15, Constants.toLevel(MortonCurve.encode(100, 200, 300)), 
-            "Medium coordinates (100,200,300) should return level 15");
-        assertEquals(14, Constants.toLevel(MortonCurve.encode(1000, 1000, 1000)), 
-            "Medium-large coordinates (1000,1000,1000) should return level 14");
-        assertEquals(7, Constants.toLevel(MortonCurve.encode(100000, 100000, 100000)), 
-            "Large coordinates (100000,100000,100000) should return level 7");
-        
+        assertEquals(21, Constants.toLevel(MortonCurve.encode(1, 1, 1)),
+                     "Small coordinates (1,1,1) should return level 21");
+        assertEquals(15, Constants.toLevel(MortonCurve.encode(100, 200, 300)),
+                     "Medium coordinates (100,200,300) should return level 15");
+        assertEquals(14, Constants.toLevel(MortonCurve.encode(1000, 1000, 1000)),
+                     "Medium-large coordinates (1000,1000,1000) should return level 14");
+        assertEquals(7, Constants.toLevel(MortonCurve.encode(100000, 100000, 100000)),
+                     "Large coordinates (100000,100000,100000) should return level 7");
+
         // Test single-axis cases
-        assertEquals(21, Constants.toLevel(MortonCurve.encode(1, 0, 0)), 
-            "Single coordinate (1,0,0) should return level 21");
-        assertEquals(21, Constants.toLevel(MortonCurve.encode(0, 1, 0)), 
-            "Single coordinate (0,1,0) should return level 21");
-        assertEquals(21, Constants.toLevel(MortonCurve.encode(0, 0, 1)), 
-            "Single coordinate (0,0,1) should return level 21");
-        
+        assertEquals(21, Constants.toLevel(MortonCurve.encode(1, 0, 0)),
+                     "Single coordinate (1,0,0) should return level 21");
+        assertEquals(21, Constants.toLevel(MortonCurve.encode(0, 1, 0)),
+                     "Single coordinate (0,1,0) should return level 21");
+        assertEquals(21, Constants.toLevel(MortonCurve.encode(0, 0, 1)),
+                     "Single coordinate (0,0,1) should return level 21");
+
         // Test power-of-2 cases with known expected values
-        assertEquals(13, Constants.toLevel(MortonCurve.encode(1024, 0, 0)), 
-            "Power-of-2 coordinate (1024,0,0) should return level 13");
-        assertEquals(12, Constants.toLevel(MortonCurve.encode(0, 2048, 0)), 
-            "Power-of-2 coordinate (0,2048,0) should return level 12");
-        assertEquals(11, Constants.toLevel(MortonCurve.encode(0, 0, 4096)), 
-            "Power-of-2 coordinate (0,0,4096) should return level 11");
-        
+        assertEquals(13, Constants.toLevel(MortonCurve.encode(1024, 0, 0)),
+                     "Power-of-2 coordinate (1024,0,0) should return level 13");
+        assertEquals(12, Constants.toLevel(MortonCurve.encode(0, 2048, 0)),
+                     "Power-of-2 coordinate (0,2048,0) should return level 12");
+        assertEquals(11, Constants.toLevel(MortonCurve.encode(0, 0, 4096)),
+                     "Power-of-2 coordinate (0,0,4096) should return level 11");
+
         // Verify relationship: larger coordinates should have coarser or equal levels
         byte level1 = Constants.toLevel(MortonCurve.encode(1, 1, 1));
         byte level1k = Constants.toLevel(MortonCurve.encode(1000, 1000, 1000));
         byte level100k = Constants.toLevel(MortonCurve.encode(100000, 100000, 100000));
-        
-        assertTrue(level100k <= level1k && level1k <= level1, 
-            String.format("Levels should be ordered: %d <= %d <= %d", level100k, level1k, level1));
+
+        assertTrue(level100k <= level1k && level1k <= level1,
+                   String.format("Levels should be ordered: %d <= %d <= %d", level100k, level1k, level1));
     }
 }

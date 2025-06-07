@@ -102,6 +102,10 @@ public class Octree<Content> {
         return new NodeDataMap<>(nodes);
     }
 
+    public NavigableMap<Long, Content> getNodes() {
+        return new NodeDataMap<>(nodes);
+    }
+
     /**
      * Get stats about the octree
      */
@@ -124,15 +128,7 @@ public class Octree<Content> {
                                           (int) (Math.floor(point.z / length) * length));
 
         // Insert into node structure
-        // Use the passed Morton index directly
-        Node<Content> node = nodes.get(entityId);
-        if (node == null) {
-            node = new Node<>(value);
-            nodes.put(entityId, node);
-        } else {
-            // Update existing node with new value
-            node.setData(value);
-        }
+        insertIntoNodeStructure(entityId, value, point, level);
 
         return entityId;
     }
@@ -180,13 +176,13 @@ public class Octree<Content> {
         && cube.originZ() >= bounds.minZ && cube.originZ() + cube.extent() <= bounds.maxZ;
     }
 
+    // Helper methods
+
     private boolean cubeIntersectsBounds(Spatial.Cube cube, VolumeBounds bounds) {
         return !(cube.originX() + cube.extent() < bounds.minX || cube.originX() > bounds.maxX
                  || cube.originY() + cube.extent() < bounds.minY || cube.originY() > bounds.maxY
                  || cube.originZ() + cube.extent() < bounds.minZ || cube.originZ() > bounds.maxZ);
     }
-
-    // Helper methods
 
     // Find minimum level that can contain the volume
     private byte findMinimumContainingLevel(VolumeBounds bounds) {
@@ -235,6 +231,18 @@ public class Octree<Content> {
             }
             default -> null;
         };
+    }
+
+    private void insertIntoNodeStructure(long mortonIndex, Content value, Point3f point, byte targetDepth) {
+        // Use the passed Morton index directly
+        Node<Content> node = nodes.get(mortonIndex);
+        if (node == null) {
+            node = new Node<>(value);
+            nodes.put(mortonIndex, node);
+        } else {
+            // Update existing node with new value
+            node.setData(value);
+        }
     }
 
     /**
