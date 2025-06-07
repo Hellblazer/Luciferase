@@ -27,3 +27,6 @@
 /JAVA_OCTREE_ENTITY_STORAGE_PLAN.md
 /OCTREE_ENTITY_STORAGE_ANALYSIS.md
 /CLAUDE.local.md
+/OCTREE_ENTITY_PERFORMANCE_ANALYSIS.md
+/OCTREE_ENTITY_INTEGRATION_GUIDE.md
+/lucien/src/test/java/com/hellblazer/luciferase/lucien/entity/OctreePerformanceBenchmark.java
