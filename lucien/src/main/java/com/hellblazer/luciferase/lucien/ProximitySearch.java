@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityProximitySearch {
+public class ProximitySearch {
     
     /**
      * Type of proximity relationship

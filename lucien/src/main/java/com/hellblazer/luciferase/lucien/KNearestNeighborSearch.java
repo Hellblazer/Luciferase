@@ -27,18 +27,18 @@ import java.util.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityKNearestNeighborSearch {
+public class KNearestNeighborSearch {
     
     /**
      * Result container that includes entity ID for disambiguation
      */
-    public static class MultiEntityKNNCandidate<ID extends EntityID, Content> {
+    public static class KNNCandidate<ID extends EntityID, Content> {
         public final ID id;
         public final Content content;
         public final Point3f position;
         public final float distance;
         
-        public MultiEntityKNNCandidate(ID id, Content content, Point3f position, float distance) {
+        public KNNCandidate(ID id, Content content, Point3f position, float distance) {
             this.id = id;
             this.content = content;
             this.position = position;
@@ -55,7 +55,7 @@ public class MultiEntityKNearestNeighborSearch {
      * @param searchRadius optional maximum search radius (use Float.MAX_VALUE for unlimited)
      * @return list of k nearest entities sorted by distance
      */
-    public static <ID extends EntityID, Content> List<MultiEntityKNNCandidate<ID, Content>> findKNearestEntities(
+    public static <ID extends EntityID, Content> List<KNNCandidate<ID, Content>> findKNearestEntities(
             Point3f queryPoint,
             int k,
             OctreeWithEntities<ID, Content> octree,
@@ -71,7 +71,7 @@ public class MultiEntityKNearestNeighborSearch {
         }
         
         // Priority queue to maintain k nearest candidates
-        PriorityQueue<MultiEntityKNNCandidate<ID, Content>> candidates = new PriorityQueue<>(
+        PriorityQueue<KNNCandidate<ID, Content>> candidates = new PriorityQueue<>(
             k + 1,
             (a, b) -> Float.compare(b.distance, a.distance) // Max heap
         );
@@ -105,8 +105,8 @@ public class MultiEntityKNearestNeighborSearch {
             
             // Only consider entities within search radius
             if (distance <= searchRadius) {
-                MultiEntityKNNCandidate<ID, Content> candidate = 
-                    new MultiEntityKNNCandidate<>(entityId, content, entityPos, distance);
+                KNNCandidate<ID, Content> candidate = 
+                    new KNNCandidate<>(entityId, content, entityPos, distance);
                 
                 candidates.offer(candidate);
                 
@@ -118,7 +118,7 @@ public class MultiEntityKNearestNeighborSearch {
         }
         
         // Convert to sorted list
-        List<MultiEntityKNNCandidate<ID, Content>> result = new ArrayList<>(candidates);
+        List<KNNCandidate<ID, Content>> result = new ArrayList<>(candidates);
         result.sort(Comparator.comparingDouble(c -> c.distance));
         
         return result;
@@ -127,7 +127,7 @@ public class MultiEntityKNearestNeighborSearch {
     /**
      * Simplified version without search radius limit
      */
-    public static <ID extends EntityID, Content> List<MultiEntityKNNCandidate<ID, Content>> findKNearestEntities(
+    public static <ID extends EntityID, Content> List<KNNCandidate<ID, Content>> findKNearestEntities(
             Point3f queryPoint,
             int k,
             OctreeWithEntities<ID, Content> octree) {
@@ -156,7 +156,7 @@ public class MultiEntityKNearestNeighborSearch {
     /**
      * Advanced k-NN search with configurable distance strategy
      */
-    public static <ID extends EntityID, Content> List<MultiEntityKNNCandidate<ID, Content>> findKNearestEntitiesAdvanced(
+    public static <ID extends EntityID, Content> List<KNNCandidate<ID, Content>> findKNearestEntitiesAdvanced(
             Point3f queryPoint,
             int k,
             OctreeWithEntities<ID, Content> octree,

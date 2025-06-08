@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityIntegrationTest {
+public class EntityIntegrationTest {
     
     private OctreeWithEntities<LongEntityID, String> octree;
     private final byte testLevel = 12;
@@ -40,51 +40,51 @@ public class MultiEntityIntegrationTest {
     @BeforeEach
     void setUp() {
         // Create a complex scene with multiple entities at same locations
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Cluster 1: Multiple buildings at city center
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(1000.0f, 1000.0f, 1000.0f),
             testLevel,
             "OfficeBuilding1", "OfficeBuilding2", "ShoppingMall", "ParkingGarage"
         ));
         
         // Cluster 2: Residential area with overlapping properties
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(1500.0f, 1000.0f, 1000.0f),
             testLevel,
             "ApartmentA", "ApartmentB", "ApartmentC"
         ));
         
         // Cluster 3: Transportation hub
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(1250.0f, 1250.0f, 1000.0f),
             testLevel,
             "TrainStation", "BusTerminal", "TaxiStand", "BikeShare"
         ));
         
         // Individual landmarks
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(800.0f, 1200.0f, 1000.0f),
             testLevel,
             "Monument"
         ));
         
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(1700.0f, 800.0f, 1000.0f),
             testLevel,
             "Park"
         ));
         
         // Dense cluster for stress testing
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(1000.0f, 1500.0f, 1200.0f),
             testLevel,
             "Market1", "Market2", "Market3", "Market4", "Market5", 
             "Market6", "Market7", "Market8", "Market9", "Market10"
         ));
         
-        octree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        octree = EntityTestUtils.createMultiEntityOctree(locations);
     }
     
     @Test
@@ -92,8 +92,8 @@ public class MultiEntityIntegrationTest {
         // Find nearest entities to a tourist location
         Point3f touristLocation = new Point3f(1100.0f, 1100.0f, 1000.0f);
         
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> nearest = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(touristLocation, 10, octree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> nearest = 
+            KNearestNeighborSearch.findKNearestEntities(touristLocation, 10, octree);
         
         // Should find at least 10 entities
         assertEquals(10, nearest.size());
@@ -117,8 +117,8 @@ public class MultiEntityIntegrationTest {
         // Search a region that includes multiple clusters
         Spatial.Cube searchRegion = new Spatial.Cube(900.0f, 900.0f, 900.0f, 400.0f);
         
-        List<MultiEntityContainmentSearch.ContainedEntity<LongEntityID, String>> contained = 
-            MultiEntityContainmentSearch.findEntitiesInCube(searchRegion, octree);
+        List<ContainmentSearch.ContainedEntity<LongEntityID, String>> contained = 
+            ContainmentSearch.findEntitiesInCube(searchRegion, octree);
         
         // Should find at least the city center cluster
         assertTrue(contained.size() >= 4);
@@ -136,8 +136,8 @@ public class MultiEntityIntegrationTest {
         rayDirection.normalize();
         Ray3D ray = new Ray3D(rayOrigin, rayDirection);
         
-        List<MultiEntityRayTracingSearch.RayIntersection<LongEntityID, String>> intersections = 
-            MultiEntityRayTracingSearch.traceRay(ray, octree, 1500.0f);
+        List<RayTracingSearch.RayIntersection<LongEntityID, String>> intersections = 
+            RayTracingSearch.traceRay(ray, octree, 1500.0f);
         
         // Should hit multiple clusters along the x-axis
         assertTrue(intersections.size() >= 2);
@@ -153,8 +153,8 @@ public class MultiEntityIntegrationTest {
         // Create a sphere centered at transportation hub
         Spatial.Sphere searchSphere = new Spatial.Sphere(1250.0f, 1250.0f, 1000.0f, 300.0f);
         
-        List<MultiEntityContainmentSearch.ContainedEntity<LongEntityID, String>> inSphere = 
-            MultiEntityContainmentSearch.findEntitiesInSphere(searchSphere, octree);
+        List<ContainmentSearch.ContainedEntity<LongEntityID, String>> inSphere = 
+            ContainmentSearch.findEntitiesInSphere(searchSphere, octree);
         
         // Should find transportation hub entities
         assertTrue(inSphere.stream().anyMatch(e -> e.content.equals("TrainStation")));
@@ -165,7 +165,7 @@ public class MultiEntityIntegrationTest {
     void testEntityCountInVolume() {
         // Count entities in different regions
         Spatial.Cube marketRegion = new Spatial.Cube(950.0f, 1450.0f, 1150.0f, 100.0f);
-        int marketCount = MultiEntityContainmentSearch.countEntitiesInVolume(marketRegion, octree);
+        int marketCount = ContainmentSearch.countEntitiesInVolume(marketRegion, octree);
         
         // Should find the dense market cluster
         assertTrue(marketCount >= 10, "Expected at least 10 market entities");
@@ -180,8 +180,8 @@ public class MultiEntityIntegrationTest {
             new Spatial.Cube(750.0f, 1150.0f, 950.0f, 100.0f)      // Monument area
         };
         
-        List<MultiEntityContainmentSearch.ContainedEntity<LongEntityID, String>> unionResults = 
-            MultiEntityContainmentSearch.findEntitiesInUnion(volumes, octree);
+        List<ContainmentSearch.ContainedEntity<LongEntityID, String>> unionResults = 
+            ContainmentSearch.findEntitiesInUnion(volumes, octree);
         
         // Should find entities from all three regions
         assertTrue(unionResults.stream().anyMatch(e -> e.content.contains("Office")));
@@ -198,8 +198,8 @@ public class MultiEntityIntegrationTest {
         Point3f searchPoint = new Point3f(1000.0f, 1000.0f, 1000.0f);
         float smallRadius = 50.0f;
         
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> nearbyOnly = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(searchPoint, 20, octree, smallRadius);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> nearbyOnly = 
+            KNearestNeighborSearch.findKNearestEntities(searchPoint, 20, octree, smallRadius);
         
         // Should only find city center entities within small radius
         assertTrue(nearbyOnly.stream().allMatch(e -> e.distance <= smallRadius));
@@ -223,8 +223,8 @@ public class MultiEntityIntegrationTest {
         
         // Quick performance check - k-NN should complete quickly even with many entities
         long startTime = System.currentTimeMillis();
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(
                 new Point3f(1200.0f, 1200.0f, 1100.0f), 20, octree);
         long endTime = System.currentTimeMillis();
         
@@ -241,8 +241,8 @@ public class MultiEntityIntegrationTest {
         viewDirection.normalize();
         Ray3D viewRay = new Ray3D(viewpoint, viewDirection);
         
-        List<MultiEntityRayTracingSearch.RayIntersection<LongEntityID, String>> visible = 
-            MultiEntityRayTracingSearch.traceCone(viewRay, (float)Math.PI/6, octree, 2000.0f);
+        List<RayTracingSearch.RayIntersection<LongEntityID, String>> visible = 
+            RayTracingSearch.traceCone(viewRay, (float)Math.PI/6, octree, 2000.0f);
         
         // Should find multiple entities in the cone
         assertTrue(visible.size() > 0);
@@ -257,7 +257,7 @@ public class MultiEntityIntegrationTest {
             new Ray3D(new Point3f(1500.0f, 1500.0f, 800.0f), new Vector3f(0.0f, 0.0f, 1.0f))
         };
         
-        var multiHits = MultiEntityRayTracingSearch.traceMultipleRays(rays, octree, 1000.0f);
+        var multiHits = RayTracingSearch.traceMultipleRays(rays, octree, 1000.0f);
         
         // Should find hits from multiple rays
         assertTrue(multiHits.size() > 0);

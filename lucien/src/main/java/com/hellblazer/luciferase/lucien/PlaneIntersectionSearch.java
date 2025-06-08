@@ -26,7 +26,7 @@ import java.util.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityPlaneIntersectionSearch {
+public class PlaneIntersectionSearch {
     
     /**
      * Plane intersection result with entity information

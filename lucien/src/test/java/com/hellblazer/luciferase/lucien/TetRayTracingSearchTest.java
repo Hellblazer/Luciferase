@@ -184,14 +184,14 @@ public class TetRayTracingSearchTest {
 
         // Warm up JVM
         for (int i = 0; i < 100; i++) {
-            RayTracingSearch.rayIntersectedAll(ray, octree);
+            // RayTracingSearch.rayIntersectedAll(ray, octree); // Removed single-content search
             TetRayTracingSearch.rayIntersectedAll(ray, perfTetree);
         }
 
-        // Benchmark Octree ray tracing
+        // Benchmark Octree ray tracing (commented out due to removal of single-content search)
         long octreeStart = System.nanoTime();
         for (int i = 0; i < 1000; i++) {
-            RayTracingSearch.rayIntersectedAll(ray, octree);
+            // RayTracingSearch.rayIntersectedAll(ray, octree); // Removed single-content search
         }
         long octreeEnd = System.nanoTime();
         double octreeTime = (octreeEnd - octreeStart) / 1_000_000.0; // Convert to milliseconds

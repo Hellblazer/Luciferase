@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityKNearestNeighborSearchTest {
+public class KNearestNeighborSearchTest {
 
     private final byte testLevel = 15; // Higher resolution for testing smaller coordinates
     private OctreeWithEntities<LongEntityID, String> multiEntityOctree;
@@ -41,43 +41,43 @@ public class MultiEntityKNearestNeighborSearchTest {
     @BeforeEach
     void setUp() {
         // Create test data with multiple entities at same locations
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Multiple entities at the same exact position
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(32.0f, 32.0f, 32.0f),
             testLevel,
             "Entity1A", "Entity1B", "Entity1C"
         ));
         
         // Another location with multiple entities
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(96.0f, 96.0f, 96.0f),
             testLevel,
             "Entity2A", "Entity2B"
         ));
         
         // Single entity locations
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(160.0f, 160.0f, 160.0f),
             testLevel,
             "Entity3"
         ));
         
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(224.0f, 224.0f, 224.0f),
             testLevel,
             "Entity4"
         ));
         
         // Dense cluster
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(288.0f, 288.0f, 288.0f),
             testLevel,
             "Entity5A", "Entity5B", "Entity5C", "Entity5D"
         ));
         
-        multiEntityOctree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        multiEntityOctree = EntityTestUtils.createMultiEntityOctree(locations);
     }
 
     @Test
@@ -85,8 +85,8 @@ public class MultiEntityKNearestNeighborSearchTest {
         Point3f queryPoint = new Point3f(30.0f, 30.0f, 30.0f);
         
         // Find 5 nearest entities
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 5, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 5, multiEntityOctree);
         
         assertEquals(5, results.size());
         
@@ -110,8 +110,8 @@ public class MultiEntityKNearestNeighborSearchTest {
         Point3f queryPoint = new Point3f(288.0f, 288.0f, 288.0f);
         
         // Find 10 nearest entities (should get all 4 from the dense cluster first)
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 10, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 10, multiEntityOctree);
         
         // Should get at least 4 entities from the dense cluster
         long entity5Count = results.stream()
@@ -129,8 +129,8 @@ public class MultiEntityKNearestNeighborSearchTest {
     void testDistanceOrderingWithMultipleEntities() {
         Point3f queryPoint = new Point3f(64.0f, 64.0f, 64.0f);
         
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 20, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 20, multiEntityOctree);
         
         // Results should be sorted by distance
         for (int i = 0; i < results.size() - 1; i++) {
@@ -146,8 +146,8 @@ public class MultiEntityKNearestNeighborSearchTest {
         Point3f queryPoint = new Point3f(32.0f, 32.0f, 32.0f);
         float searchRadius = 100.0f; // Distance to Entity2* at (96,96,96) is ~110.85, so outside radius
         
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 10, multiEntityOctree, searchRadius);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 10, multiEntityOctree, searchRadius);
         
         // Should only find entities within radius (only Entity1* entities)
         assertTrue(results.stream().allMatch(r -> r.content.startsWith("Entity1")));
@@ -163,8 +163,8 @@ public class MultiEntityKNearestNeighborSearchTest {
     void testEntityIDUniqueness() {
         Point3f queryPoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 20, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 20, multiEntityOctree);
         
         // All entity IDs should be unique
         long uniqueIdCount = results.stream()
@@ -177,11 +177,11 @@ public class MultiEntityKNearestNeighborSearchTest {
     @Test
     void testEmptyMultiEntityOctree() {
         OctreeWithEntities<LongEntityID, String> emptyOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(new ArrayList<>());
+            EntityTestUtils.createMultiEntityOctree(new ArrayList<>());
         Point3f queryPoint = new Point3f(10.0f, 10.0f, 10.0f);
         
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 3, emptyOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 3, emptyOctree);
         
         assertTrue(results.isEmpty());
     }
@@ -191,7 +191,7 @@ public class MultiEntityKNearestNeighborSearchTest {
         Point3f invalidQueryPoint = new Point3f(-10.0f, 10.0f, 10.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(invalidQueryPoint, 1, multiEntityOctree);
+            KNearestNeighborSearch.findKNearestEntities(invalidQueryPoint, 1, multiEntityOctree);
         });
     }
 
@@ -209,16 +209,15 @@ public class MultiEntityKNearestNeighborSearchTest {
         
         Point3f queryPoint = new Point3f(100.0f, 100.0f, 100.0f);
         
-        // Get results from single content adapter
-        List<KNearestNeighborSearch.KNNCandidate<String>> singleResults = 
-            KNearestNeighborSearch.findKNearestNeighbors(queryPoint, 3, adapter);
+        // Get results from single content adapter (commented out due to removal of single-content search)
+        // List<KNearestNeighborSearch.KNNCandidate<String>> singleResults = 
+        //     KNearestNeighborSearch.findKNearestNeighbors(queryPoint, 3, adapter);
         
         // Get results from multi-entity search
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> multiResults = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 3, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> multiResults = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 3, multiEntityOctree);
         
-        // Both should find nearest locations in same order (though multi-entity might have more entities)
-        assertEquals(3, singleResults.size());
+        // Multi-entity should find 3 nearest entities
         assertEquals(3, multiResults.size());
     }
 
@@ -227,8 +226,8 @@ public class MultiEntityKNearestNeighborSearchTest {
         Point3f queryPoint = new Point3f(150.0f, 150.0f, 150.0f);
         
         // Request more neighbors than exist
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 100, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 100, multiEntityOctree);
         
         // Should return all entities
         assertEquals(multiEntityOctree.getStats().entityCount, results.size());
@@ -239,10 +238,10 @@ public class MultiEntityKNearestNeighborSearchTest {
         Point3f queryPoint = new Point3f(50.0f, 50.0f, 50.0f);
         
         // Multiple calls should return consistent results
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results1 = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 5, multiEntityOctree);
-        List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results2 = 
-            MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 5, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results1 = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 5, multiEntityOctree);
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> results2 = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 5, multiEntityOctree);
         
         assertEquals(results1.size(), results2.size());
         

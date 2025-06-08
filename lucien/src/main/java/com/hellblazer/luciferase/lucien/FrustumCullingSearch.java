@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityFrustumCullingSearch {
+public class FrustumCullingSearch {
     
     /**
      * Result of frustum culling test

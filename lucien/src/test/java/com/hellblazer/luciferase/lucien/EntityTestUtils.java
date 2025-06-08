@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityTestUtils {
+public class EntityTestUtils {
     
     /**
      * Test data representing multiple entities at the same location

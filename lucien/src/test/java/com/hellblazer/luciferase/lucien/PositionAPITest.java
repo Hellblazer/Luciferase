@@ -191,7 +191,7 @@ public class PositionAPITest {
         octree.insert(new Point3f(550.0f, 500.0f, 500.0f), testLevel, "50 units away");  // 50 units
         
         // Find k nearest neighbors
-        var nearest = MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 3, octree);
+        var nearest = KNearestNeighborSearch.findKNearestEntities(queryPoint, 3, octree);
         
         assertEquals(3, nearest.size());
         
@@ -219,7 +219,7 @@ public class PositionAPITest {
         octree.insert(new Point3f(0.0f, 120.0f, 0.0f), testLevel, "Outside2");    // Distance = 120
         
         // Find entities in sphere
-        var entitiesInSphere = MultiEntityContainmentSearch.findEntitiesInSphere(sphere, octree);
+        var entitiesInSphere = ContainmentSearch.findEntitiesInSphere(sphere, octree);
         
         // Should find exactly 3 entities
         assertEquals(3, entitiesInSphere.size());

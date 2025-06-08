@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityVisibilitySearchTest {
+public class VisibilitySearchTest {
 
     private final byte testLevel = 15;
     private OctreeWithEntities<LongEntityID, String> multiEntityOctree;
@@ -41,54 +41,54 @@ public class MultiEntityVisibilitySearchTest {
     @BeforeEach
     void setUp() {
         // Create test data with entities positioned for visibility testing
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Observer location
         Point3f observerPos = new Point3f(100.0f, 100.0f, 100.0f);
         
         // Visible entities (clear line of sight)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(200.0f, 100.0f, 100.0f), // Directly in front
             testLevel,
             "VisibleEntity1", "VisibleEntity2"
         ));
         
         // Partially occluded entities
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(300.0f, 100.0f, 100.0f), // Behind visible entities
             testLevel,
             "PartiallyOccludedEntity1", "PartiallyOccludedEntity2"
         ));
         
         // Occluding entities (blocking line of sight)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(250.0f, 100.0f, 100.0f), // Between observer and target
             testLevel,
             "OccludingEntity1", "OccludingEntity2", "OccludingEntity3"
         ));
         
         // Target entity
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(400.0f, 100.0f, 100.0f),
             testLevel,
             "TargetEntity"
         ));
         
         // Entities outside viewing cone
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(100.0f, 300.0f, 100.0f), // 90 degrees to the side
             testLevel,
             "OutsideConeEntity1", "OutsideConeEntity2"
         ));
         
         // Far entities (out of range)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(5000.0f, 5000.0f, 5000.0f),
             testLevel,
             "FarEntity1", "FarEntity2"
         ));
         
-        multiEntityOctree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        multiEntityOctree = EntityTestUtils.createMultiEntityOctree(locations);
     }
 
     @Test
@@ -96,8 +96,8 @@ public class MultiEntityVisibilitySearchTest {
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(200.0f, 100.0f, 100.0f); // Clear path to visible entities
         
-        MultiEntityVisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
-            MultiEntityVisibilitySearch.testLineOfSight(observer, target, multiEntityOctree, 0.1f);
+        VisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
+            VisibilitySearch.testLineOfSight(observer, target, multiEntityOctree, 0.1f);
         
         // Should have clear line of sight (visible entities are at the target)
         assertTrue(result.hasLineOfSight || result.occludingEntities.size() <= 2); // May self-occlude
@@ -109,8 +109,8 @@ public class MultiEntityVisibilitySearchTest {
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(400.0f, 100.0f, 100.0f); // Path blocked by occluding entities
         
-        MultiEntityVisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
-            MultiEntityVisibilitySearch.testLineOfSight(observer, target, multiEntityOctree, 0.1f);
+        VisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
+            VisibilitySearch.testLineOfSight(observer, target, multiEntityOctree, 0.1f);
         
         // Should have occluding entities
         assertTrue(result.occludingEntities.size() > 0);
@@ -134,8 +134,8 @@ public class MultiEntityVisibilitySearchTest {
         float viewAngle = (float) Math.toRadians(45); // 45 degree cone
         float maxViewDistance = 1000.0f;
         
-        List<MultiEntityVisibilitySearch.EntityVisibilityResult<LongEntityID, String>> visibleEntities =
-            MultiEntityVisibilitySearch.findVisibleEntities(observer, viewDirection, viewAngle, 
+        List<VisibilitySearch.EntityVisibilityResult<LongEntityID, String>> visibleEntities =
+            VisibilitySearch.findVisibleEntities(observer, viewDirection, viewAngle, 
                                                           maxViewDistance, multiEntityOctree);
         
         // Should find entities within viewing cone
@@ -168,8 +168,8 @@ public class MultiEntityVisibilitySearchTest {
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(400.0f, 100.0f, 100.0f); // Target entity position
         
-        List<MultiEntityVisibilitySearch.EntityVisibilityResult<LongEntityID, String>> occluders =
-            MultiEntityVisibilitySearch.findOccludingEntities(observer, target, multiEntityOctree);
+        List<VisibilitySearch.EntityVisibilityResult<LongEntityID, String>> occluders =
+            VisibilitySearch.findOccludingEntities(observer, target, multiEntityOctree);
         
         // Should find occluding entities
         assertTrue(occluders.size() > 0);
@@ -181,8 +181,8 @@ public class MultiEntityVisibilitySearchTest {
         
         // Should have appropriate visibility types
         for (var occluder : occluders) {
-            assertTrue(occluder.visibilityType == MultiEntityVisibilitySearch.VisibilityType.PARTIALLY_OCCLUDING ||
-                      occluder.visibilityType == MultiEntityVisibilitySearch.VisibilityType.FULLY_OCCLUDING);
+            assertTrue(occluder.visibilityType == VisibilitySearch.VisibilityType.PARTIALLY_OCCLUDING ||
+                      occluder.visibilityType == VisibilitySearch.VisibilityType.FULLY_OCCLUDING);
         }
     }
 
@@ -191,8 +191,8 @@ public class MultiEntityVisibilitySearchTest {
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         float maxViewDistance = 1000.0f;
         
-        MultiEntityVisibilitySearch.EntityVisibilityStatistics stats =
-            MultiEntityVisibilitySearch.calculateVisibilityStatistics(observer, maxViewDistance, multiEntityOctree);
+        VisibilitySearch.EntityVisibilityStatistics stats =
+            VisibilitySearch.calculateVisibilityStatistics(observer, maxViewDistance, multiEntityOctree);
         
         // Verify total entity count
         assertEquals(multiEntityOctree.getStats().entityCount, stats.totalEntities);
@@ -232,8 +232,8 @@ public class MultiEntityVisibilitySearchTest {
         candidatePositions.add(new Point3f(400.0f, 200.0f, 100.0f)); // Very close, larger angle
         candidatePositions.add(new Point3f(250.0f, 100.0f, 200.0f)); // Side view
         
-        List<MultiEntityVisibilitySearch.EntityVantagePoint<LongEntityID>> vantagePoints =
-            MultiEntityVisibilitySearch.findBestVantagePointsForEntity(targetId, candidatePositions, multiEntityOctree);
+        List<VisibilitySearch.EntityVantagePoint<LongEntityID>> vantagePoints =
+            VisibilitySearch.findBestVantagePointsForEntity(targetId, candidatePositions, multiEntityOctree);
         
         assertEquals(candidatePositions.size(), vantagePoints.size());
         
@@ -256,12 +256,12 @@ public class MultiEntityVisibilitySearchTest {
         float wideAngle = (float) Math.toRadians(90); // Wide cone
         float maxViewDistance = 1000.0f;
         
-        List<MultiEntityVisibilitySearch.EntityVisibilityResult<LongEntityID, String>> narrowResults =
-            MultiEntityVisibilitySearch.findVisibleEntities(observer, viewDirection, narrowAngle, 
+        List<VisibilitySearch.EntityVisibilityResult<LongEntityID, String>> narrowResults =
+            VisibilitySearch.findVisibleEntities(observer, viewDirection, narrowAngle, 
                                                           maxViewDistance, multiEntityOctree);
         
-        List<MultiEntityVisibilitySearch.EntityVisibilityResult<LongEntityID, String>> wideResults =
-            MultiEntityVisibilitySearch.findVisibleEntities(observer, viewDirection, wideAngle, 
+        List<VisibilitySearch.EntityVisibilityResult<LongEntityID, String>> wideResults =
+            VisibilitySearch.findVisibleEntities(observer, viewDirection, wideAngle, 
                                                           maxViewDistance, multiEntityOctree);
         
         // Wide cone should find more entities
@@ -280,8 +280,8 @@ public class MultiEntityVisibilitySearchTest {
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(400.0f, 100.0f, 100.0f);
         
-        MultiEntityVisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
-            MultiEntityVisibilitySearch.testLineOfSight(observer, target, multiEntityOctree, 0.1f);
+        VisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
+            VisibilitySearch.testLineOfSight(observer, target, multiEntityOctree, 0.1f);
         
         // Should have occlusion contributions map
         assertNotNull(result.entityOcclusionContributions);
@@ -306,7 +306,7 @@ public class MultiEntityVisibilitySearchTest {
         Point3f validTarget = new Point3f(100.0f, 100.0f, 100.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityVisibilitySearch.testLineOfSight(invalidObserver, validTarget, multiEntityOctree, 0.1f);
+            VisibilitySearch.testLineOfSight(invalidObserver, validTarget, multiEntityOctree, 0.1f);
         });
         
         // Test negative target position
@@ -314,7 +314,7 @@ public class MultiEntityVisibilitySearchTest {
         Point3f invalidTarget = new Point3f(100.0f, -10.0f, 100.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityVisibilitySearch.testLineOfSight(validObserver, invalidTarget, multiEntityOctree, 0.1f);
+            VisibilitySearch.testLineOfSight(validObserver, invalidTarget, multiEntityOctree, 0.1f);
         });
     }
 
@@ -326,13 +326,13 @@ public class MultiEntityVisibilitySearchTest {
         
         // Test negative angle
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityVisibilitySearch.findVisibleEntities(observer, viewDirection, -0.1f, 
+            VisibilitySearch.findVisibleEntities(observer, viewDirection, -0.1f, 
                                                           maxViewDistance, multiEntityOctree);
         });
         
         // Test angle > PI
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityVisibilitySearch.findVisibleEntities(observer, viewDirection, (float)(Math.PI + 0.1), 
+            VisibilitySearch.findVisibleEntities(observer, viewDirection, (float)(Math.PI + 0.1), 
                                                           maxViewDistance, multiEntityOctree);
         });
     }
@@ -340,22 +340,22 @@ public class MultiEntityVisibilitySearchTest {
     @Test
     void testEmptyOctree() {
         OctreeWithEntities<LongEntityID, String> emptyOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(new ArrayList<>());
+            EntityTestUtils.createMultiEntityOctree(new ArrayList<>());
         
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(200.0f, 200.0f, 200.0f);
         
         // Test line of sight
-        MultiEntityVisibilitySearch.EntityLineOfSightResult<LongEntityID, String> losResult =
-            MultiEntityVisibilitySearch.testLineOfSight(observer, target, emptyOctree, 0.1f);
+        VisibilitySearch.EntityLineOfSightResult<LongEntityID, String> losResult =
+            VisibilitySearch.testLineOfSight(observer, target, emptyOctree, 0.1f);
         
         assertTrue(losResult.hasLineOfSight);
         assertTrue(losResult.occludingEntities.isEmpty());
         assertEquals(0.0f, losResult.totalOcclusionRatio);
         
         // Test visibility statistics
-        MultiEntityVisibilitySearch.EntityVisibilityStatistics stats =
-            MultiEntityVisibilitySearch.calculateVisibilityStatistics(observer, 1000.0f, emptyOctree);
+        VisibilitySearch.EntityVisibilityStatistics stats =
+            VisibilitySearch.calculateVisibilityStatistics(observer, 1000.0f, emptyOctree);
         
         assertEquals(0, stats.totalEntities);
     }
@@ -363,21 +363,21 @@ public class MultiEntityVisibilitySearchTest {
     @Test
     void testSelfOcclusion() {
         // Create an octree with a single large entity
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(200.0f, 200.0f, 200.0f),
             testLevel,
             "LargeEntity"
         ));
         
         OctreeWithEntities<LongEntityID, String> singleEntityOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(locations);
+            EntityTestUtils.createMultiEntityOctree(locations);
         
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f target = new Point3f(200.0f, 200.0f, 200.0f); // Entity position
         
-        MultiEntityVisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
-            MultiEntityVisibilitySearch.testLineOfSight(observer, target, singleEntityOctree, 0.1f);
+        VisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
+            VisibilitySearch.testLineOfSight(observer, target, singleEntityOctree, 0.1f);
         
         // Entity might occlude itself, but this should still be considered visible
         if (result.occludingEntities.size() == 1 && 
@@ -392,8 +392,8 @@ public class MultiEntityVisibilitySearchTest {
         Point3f observer = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f farTarget = new Point3f(1000.0f, 100.0f, 100.0f);
         
-        MultiEntityVisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
-            MultiEntityVisibilitySearch.testLineOfSight(observer, farTarget, multiEntityOctree, 0.1f);
+        VisibilitySearch.EntityLineOfSightResult<LongEntityID, String> result =
+            VisibilitySearch.testLineOfSight(observer, farTarget, multiEntityOctree, 0.1f);
         
         // Check visibility type classifications
         for (var entity : result.occludingEntities) {
@@ -401,9 +401,9 @@ public class MultiEntityVisibilitySearchTest {
             
             // Entities between observer and target should be occluding types
             if (entity.distanceFromObserver < observer.distance(farTarget)) {
-                assertTrue(entity.visibilityType == MultiEntityVisibilitySearch.VisibilityType.PARTIALLY_OCCLUDING ||
-                          entity.visibilityType == MultiEntityVisibilitySearch.VisibilityType.FULLY_OCCLUDING ||
-                          entity.visibilityType == MultiEntityVisibilitySearch.VisibilityType.BEFORE_OBSERVER);
+                assertTrue(entity.visibilityType == VisibilitySearch.VisibilityType.PARTIALLY_OCCLUDING ||
+                          entity.visibilityType == VisibilitySearch.VisibilityType.FULLY_OCCLUDING ||
+                          entity.visibilityType == VisibilitySearch.VisibilityType.BEFORE_OBSERVER);
             }
         }
     }

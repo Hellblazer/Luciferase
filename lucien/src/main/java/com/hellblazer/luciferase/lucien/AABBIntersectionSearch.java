@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityAABBIntersectionSearch {
+public class AABBIntersectionSearch {
     
     /**
      * Type of intersection between entity and AABB
@@ -159,6 +159,30 @@ public class MultiEntityAABBIntersectionSearch {
         }
     }
     
+    /**
+     * Find all content within the specified AABB (simplified version for SpatialIndex)
+     * 
+     * @param aabb the axis-aligned bounding box
+     * @param spatialIndex the spatial index to search
+     * @return list of content intersecting the AABB
+     */
+    public static <Content> List<Content> findContentInAABB(
+            AABB aabb,
+            SpatialIndex<Content> spatialIndex) {
+        
+        validatePositiveCoordinates(aabb.getCenter());
+        
+        // Convert AABB to Spatial.Cube for spatial index query
+        Spatial.Cube cube = new Spatial.Cube(
+            aabb.minX, aabb.minY, aabb.minZ,
+            aabb.maxX - aabb.minX  // extent = max - min
+        );
+        
+        return spatialIndex.bounding(cube)
+                          .map(node -> node.content())
+                          .collect(java.util.stream.Collectors.toList());
+    }
+
     /**
      * Find all entities that intersect with the AABB, ordered by distance from reference point
      * 

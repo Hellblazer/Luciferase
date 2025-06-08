@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityConvexHullIntersectionSearchTest {
+public class ConvexHullIntersectionSearchTest {
 
     private final byte testLevel = 15;
     private OctreeWithEntities<LongEntityID, String> multiEntityOctree;
@@ -41,49 +41,49 @@ public class MultiEntityConvexHullIntersectionSearchTest {
     @BeforeEach
     void setUp() {
         // Create test data with entities positioned for convex hull testing
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Entities inside a test convex hull (200-400 cube)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(300.0f, 300.0f, 300.0f), // Center
             testLevel,
             "InsideEntity1", "InsideEntity2"
         ));
         
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(250.0f, 250.0f, 250.0f), // Inside corner
             testLevel,
             "InsideEntity3", "InsideEntity4"
         ));
         
         // Entities on the boundary
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(200.0f, 300.0f, 300.0f), // On face
             testLevel,
             "BoundaryEntity1", "BoundaryEntity2"
         ));
         
         // Entities partially intersecting
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(195.0f, 300.0f, 300.0f), // Slightly outside
             testLevel,
             "IntersectingEntity1", "IntersectingEntity2"
         ));
         
         // Entities outside
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(100.0f, 100.0f, 100.0f),
             testLevel,
             "OutsideEntity1", "OutsideEntity2"
         ));
         
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(500.0f, 500.0f, 500.0f),
             testLevel,
             "FarEntity"
         ));
         
-        multiEntityOctree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        multiEntityOctree = EntityTestUtils.createMultiEntityOctree(locations);
     }
 
     @Test
@@ -95,8 +95,8 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices.add(new Point3f(300.0f, 400.0f, 200.0f));
         vertices.add(new Point3f(300.0f, 300.0f, 400.0f));
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
         
         assertNotNull(hull);
         assertNotNull(hull.planes);
@@ -122,8 +122,8 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         };
         float[] extents = { 100.0f, 100.0f, 100.0f };
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
         
         assertNotNull(hull);
         assertEquals(6, hull.planes.size()); // 6 planes for a box
@@ -147,13 +147,13 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices.add(new Point3f(200.0f, 400.0f, 400.0f));
         vertices.add(new Point3f(400.0f, 400.0f, 400.0f));
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
         
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
-            MultiEntityConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
+            ConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
                 hull, multiEntityOctree, referencePoint
             );
         
@@ -187,16 +187,16 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         };
         float[] extents = { 100.0f, 100.0f, 100.0f };
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
         
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
-            MultiEntityConvexHullIntersectionSearch.findEntitiesInsideConvexHull(hull, multiEntityOctree);
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
+            ConvexHullIntersectionSearch.findEntitiesInsideConvexHull(hull, multiEntityOctree);
         
         // Should only find entities completely inside
         assertTrue(results.size() > 0);
         assertTrue(results.stream().allMatch(r -> 
-            r.intersectionType == MultiEntityConvexHullIntersectionSearch.IntersectionType.COMPLETELY_INSIDE
+            r.intersectionType == ConvexHullIntersectionSearch.IntersectionType.COMPLETELY_INSIDE
         ));
         
         // Should include inside entities
@@ -216,10 +216,10 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices.add(new Point3f(200.0f, 400.0f, 200.0f));
         vertices.add(new Point3f(200.0f, 200.0f, 400.0f));
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
         
-        int[] counts = MultiEntityConvexHullIntersectionSearch.countEntitiesByConvexHullIntersection(
+        int[] counts = ConvexHullIntersectionSearch.countEntitiesByConvexHullIntersection(
             hull, multiEntityOctree
         );
         
@@ -238,7 +238,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
     @Test
     void testFindEntitiesIntersectingMultipleConvexHulls() {
         // Create two overlapping convex hulls
-        List<MultiEntityConvexHullIntersectionSearch.ConvexHull> hulls = new ArrayList<>();
+        List<ConvexHullIntersectionSearch.ConvexHull> hulls = new ArrayList<>();
         
         // First hull: 200-350
         List<Point3f> vertices1 = new ArrayList<>();
@@ -246,7 +246,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices1.add(new Point3f(350.0f, 200.0f, 200.0f));
         vertices1.add(new Point3f(200.0f, 350.0f, 200.0f));
         vertices1.add(new Point3f(200.0f, 200.0f, 350.0f));
-        hulls.add(MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices1));
+        hulls.add(ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices1));
         
         // Second hull: 250-400
         List<Point3f> vertices2 = new ArrayList<>();
@@ -254,11 +254,11 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices2.add(new Point3f(400.0f, 250.0f, 250.0f));
         vertices2.add(new Point3f(250.0f, 400.0f, 250.0f));
         vertices2.add(new Point3f(250.0f, 250.0f, 400.0f));
-        hulls.add(MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices2));
+        hulls.add(ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices2));
         
         // Test requiring all hulls (intersection)
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> allResults =
-            MultiEntityConvexHullIntersectionSearch.findEntitiesIntersectingMultipleConvexHulls(
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> allResults =
+            ConvexHullIntersectionSearch.findEntitiesIntersectingMultipleConvexHulls(
                 hulls, multiEntityOctree, true
             );
         
@@ -266,8 +266,8 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         assertTrue(allResults.size() > 0);
         
         // Test requiring any hull (union)
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> anyResults =
-            MultiEntityConvexHullIntersectionSearch.findEntitiesIntersectingMultipleConvexHulls(
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> anyResults =
+            ConvexHullIntersectionSearch.findEntitiesIntersectingMultipleConvexHulls(
                 hulls, multiEntityOctree, false
             );
         
@@ -286,11 +286,11 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         };
         float[] extents = { 100.0f, 100.0f, 100.0f };
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHullIntersectionStatistics stats =
-            MultiEntityConvexHullIntersectionSearch.getConvexHullIntersectionStatistics(hull, multiEntityOctree);
+        ConvexHullIntersectionSearch.ConvexHullIntersectionStatistics stats =
+            ConvexHullIntersectionSearch.getConvexHullIntersectionStatistics(hull, multiEntityOctree);
         
         // Verify total entity count
         assertEquals(multiEntityOctree.getStats().entityCount, stats.totalEntities);
@@ -312,7 +312,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
     void testBatchConvexHullIntersections() {
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityConvexHullIntersectionSearch.ConvexHull> hulls = new ArrayList<>();
+        List<ConvexHullIntersectionSearch.ConvexHull> hulls = new ArrayList<>();
         
         // Small hull
         List<Point3f> vertices1 = new ArrayList<>();
@@ -320,7 +320,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices1.add(new Point3f(350.0f, 250.0f, 250.0f));
         vertices1.add(new Point3f(250.0f, 350.0f, 250.0f));
         vertices1.add(new Point3f(250.0f, 250.0f, 350.0f));
-        hulls.add(MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices1));
+        hulls.add(ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices1));
         
         // Large hull
         List<Point3f> vertices2 = new ArrayList<>();
@@ -328,18 +328,18 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices2.add(new Point3f(500.0f, 100.0f, 100.0f));
         vertices2.add(new Point3f(100.0f, 500.0f, 100.0f));
         vertices2.add(new Point3f(100.0f, 100.0f, 500.0f));
-        hulls.add(MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices2));
+        hulls.add(ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices2));
         
-        Map<MultiEntityConvexHullIntersectionSearch.ConvexHull, 
-            List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>>> results =
-            MultiEntityConvexHullIntersectionSearch.batchConvexHullIntersections(hulls, multiEntityOctree, referencePoint);
+        Map<ConvexHullIntersectionSearch.ConvexHull, 
+            List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>>> results =
+            ConvexHullIntersectionSearch.batchConvexHullIntersections(hulls, multiEntityOctree, referencePoint);
         
         assertEquals(2, results.size());
         
         // Small hull should have fewer intersections
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> smallResults = 
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> smallResults = 
             results.get(hulls.get(0));
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> largeResults = 
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> largeResults = 
             results.get(hulls.get(1));
         
         assertTrue(smallResults.size() <= largeResults.size());
@@ -356,19 +356,19 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         };
         float[] extents = { 100.0f, 100.0f, 100.0f };
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
         
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
-            MultiEntityConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
+            ConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
                 hull, multiEntityOctree, referencePoint
             );
         
         // Entities inside should have positive penetration depth
         for (var result : results) {
-            if (result.intersectionType == MultiEntityConvexHullIntersectionSearch.IntersectionType.COMPLETELY_INSIDE) {
+            if (result.intersectionType == ConvexHullIntersectionSearch.IntersectionType.COMPLETELY_INSIDE) {
                 assertTrue(result.penetrationDepth > 0);
             }
         }
@@ -384,7 +384,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         invalidVertices.add(new Point3f(10.0f, 10.0f, 20.0f));
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(invalidVertices);
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(invalidVertices);
         });
         
         // Test negative center for oriented bounding box
@@ -397,7 +397,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         float[] extents = { 10.0f, 10.0f, 10.0f };
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(invalidCenter, axes, extents);
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(invalidCenter, axes, extents);
         });
         
         // Test negative reference point
@@ -407,12 +407,12 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         validVertices.add(new Point3f(10.0f, 20.0f, 10.0f));
         validVertices.add(new Point3f(10.0f, 10.0f, 20.0f));
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull validHull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(validVertices);
+        ConvexHullIntersectionSearch.ConvexHull validHull = 
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(validVertices);
         Point3f invalidRef = new Point3f(-10.0f, 10.0f, 10.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
+            ConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
                 validHull, multiEntityOctree, invalidRef
             );
         });
@@ -421,7 +421,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
     @Test
     void testEmptyOctree() {
         OctreeWithEntities<LongEntityID, String> emptyOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(new ArrayList<>());
+            EntityTestUtils.createMultiEntityOctree(new ArrayList<>());
         
         List<Point3f> vertices = new ArrayList<>();
         vertices.add(new Point3f(10.0f, 10.0f, 10.0f));
@@ -429,12 +429,12 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         vertices.add(new Point3f(10.0f, 20.0f, 10.0f));
         vertices.add(new Point3f(10.0f, 10.0f, 20.0f));
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(vertices);
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
-            MultiEntityConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
+        List<ConvexHullIntersectionSearch.EntityConvexHullIntersection<LongEntityID, String>> results =
+            ConvexHullIntersectionSearch.findEntitiesIntersectingConvexHull(
                 hull, emptyOctree, referencePoint
             );
         
@@ -449,12 +449,12 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         insufficientVertices.add(new Point3f(20.0f, 10.0f, 10.0f));
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(insufficientVertices);
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(insufficientVertices);
         });
         
         // Test with null vertices
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.fromVertices(null);
+            ConvexHullIntersectionSearch.ConvexHull.fromVertices(null);
         });
         
         // Test with invalid extents
@@ -467,7 +467,7 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         float[] invalidExtents = { -10.0f, 10.0f, 10.0f };
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, invalidExtents);
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, invalidExtents);
         });
     }
 
@@ -482,8 +482,8 @@ public class MultiEntityConvexHullIntersectionSearchTest {
         };
         float[] extents = { 100.0f, 100.0f, 100.0f };
         
-        MultiEntityConvexHullIntersectionSearch.ConvexHull hull = 
-            MultiEntityConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
+        ConvexHullIntersectionSearch.ConvexHull hull = 
+            ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(center, axes, extents);
         
         // Test point inside
         Point3f insidePoint = new Point3f(300.0f, 300.0f, 300.0f);

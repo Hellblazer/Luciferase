@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityVisibilitySearch {
+public class VisibilitySearch {
     
     /**
      * Type of visibility relationship

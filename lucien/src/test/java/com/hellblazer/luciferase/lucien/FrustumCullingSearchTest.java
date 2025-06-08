@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityFrustumCullingSearchTest {
+public class FrustumCullingSearchTest {
 
     private final byte testLevel = 15;
     private OctreeWithEntities<LongEntityID, String> multiEntityOctree;
@@ -57,50 +57,50 @@ public class MultiEntityFrustumCullingSearchTest {
         );
         
         // Create test data
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Entities clearly inside frustum (near center of view)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(500.0f, 500.0f, 500.0f),
             testLevel,
             "CenterEntity1", "CenterEntity2", "CenterEntity3"
         ));
         
         // Entities at edge of frustum
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(700.0f, 500.0f, 500.0f),
             testLevel,
             "EdgeEntityRight1", "EdgeEntityRight2"
         ));
         
         // Entities outside frustum (behind camera)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(500.0f, 500.0f, 50.0f),
             testLevel,
             "BehindCamera1", "BehindCamera2"
         ));
         
         // Entities outside frustum (too far left)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(100.0f, 500.0f, 500.0f),
             testLevel,
             "OutsideLeft"
         ));
         
         // Entities outside frustum (beyond far plane)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(500.0f, 500.0f, 1100.0f),
             testLevel,
             "BeyondFar"
         ));
         
-        multiEntityOctree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        multiEntityOctree = EntityTestUtils.createMultiEntityOctree(locations);
     }
 
     @Test
     void testFindEntitiesInFrustum() {
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
-            MultiEntityFrustumCullingSearch.findEntitiesInFrustum(testFrustum, multiEntityOctree, cameraPosition);
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
+            FrustumCullingSearch.findEntitiesInFrustum(testFrustum, multiEntityOctree, cameraPosition);
         
         // Should find center entities and edge entities
         assertTrue(results.size() >= 5); // At least CenterEntity1-3 and EdgeEntityRight1-2
@@ -121,8 +121,8 @@ public class MultiEntityFrustumCullingSearchTest {
 
     @Test
     void testMultipleEntitiesAtSameLocationInFrustum() {
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
-            MultiEntityFrustumCullingSearch.findEntitiesInFrustum(testFrustum, multiEntityOctree, cameraPosition);
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
+            FrustumCullingSearch.findEntitiesInFrustum(testFrustum, multiEntityOctree, cameraPosition);
         
         // Count center entities
         long centerEntityCount = results.stream()
@@ -132,7 +132,7 @@ public class MultiEntityFrustumCullingSearchTest {
         assertEquals(3, centerEntityCount); // Should find all 3 center entities
         
         // Verify they all have the same distance
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> centerEntities =
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> centerEntities =
             results.stream()
                 .filter(r -> r.content.startsWith("CenterEntity"))
                 .toList();
@@ -143,7 +143,7 @@ public class MultiEntityFrustumCullingSearchTest {
 
     @Test
     void testCountEntitiesByCullingResult() {
-        int[] counts = MultiEntityFrustumCullingSearch.countEntitiesByCullingResult(testFrustum, multiEntityOctree);
+        int[] counts = FrustumCullingSearch.countEntitiesByCullingResult(testFrustum, multiEntityOctree);
         
         int inside = counts[0];
         int intersecting = counts[1];
@@ -171,8 +171,8 @@ public class MultiEntityFrustumCullingSearchTest {
             10.0f, 900.0f   // near, far
         );
         
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
-            MultiEntityFrustumCullingSearch.findEntitiesInFrustum(orthoFrustum, multiEntityOctree, cameraPosition);
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
+            FrustumCullingSearch.findEntitiesInFrustum(orthoFrustum, multiEntityOctree, cameraPosition);
         
         // Should find entities within the orthographic bounds
         assertTrue(results.size() > 0);
@@ -185,8 +185,8 @@ public class MultiEntityFrustumCullingSearchTest {
     void testVisibleEntities() {
         Vector3f lookDirection = new Vector3f(0.0f, 0.0f, 1.0f); // Looking along +Z
         
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
-            MultiEntityFrustumCullingSearch.findVisibleEntities(
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
+            FrustumCullingSearch.findVisibleEntities(
                 testFrustum, multiEntityOctree, cameraPosition, lookDirection
             );
         
@@ -217,15 +217,15 @@ public class MultiEntityFrustumCullingSearchTest {
         frustums.add(rightFrustum);
         cameraPositions.add(rightCameraPos);
         
-        Map<Frustum3D, List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>>> results =
-            MultiEntityFrustumCullingSearch.batchFrustumCulling(frustums, multiEntityOctree, cameraPositions);
+        Map<Frustum3D, List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>>> results =
+            FrustumCullingSearch.batchFrustumCulling(frustums, multiEntityOctree, cameraPositions);
         
         assertEquals(2, results.size());
         
         // Each frustum should see different entities
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> originalResults = 
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> originalResults = 
             results.get(testFrustum);
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> rightResults = 
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> rightResults = 
             results.get(rightFrustum);
         
         // Original should see center entities
@@ -255,8 +255,8 @@ public class MultiEntityFrustumCullingSearchTest {
         // Far LOD frustum (wide, far)
         lodFrustums.add(testFrustum); // Use the main frustum as far LOD
         
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
-            MultiEntityFrustumCullingSearch.findEntitiesInAnyFrustum(lodFrustums, multiEntityOctree, cameraPosition);
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
+            FrustumCullingSearch.findEntitiesInAnyFrustum(lodFrustums, multiEntityOctree, cameraPosition);
         
         // Should find entities from both frustums
         assertTrue(results.size() > 0);
@@ -270,10 +270,10 @@ public class MultiEntityFrustumCullingSearchTest {
     @Test
     void testEmptyOctree() {
         OctreeWithEntities<LongEntityID, String> emptyOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(new ArrayList<>());
+            EntityTestUtils.createMultiEntityOctree(new ArrayList<>());
             
-        List<MultiEntityFrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
-            MultiEntityFrustumCullingSearch.findEntitiesInFrustum(testFrustum, emptyOctree, cameraPosition);
+        List<FrustumCullingSearch.EntityFrustumIntersection<LongEntityID, String>> results =
+            FrustumCullingSearch.findEntitiesInFrustum(testFrustum, emptyOctree, cameraPosition);
         
         assertTrue(results.isEmpty());
     }
@@ -283,14 +283,14 @@ public class MultiEntityFrustumCullingSearchTest {
         Point3f invalidCameraPos = new Point3f(-10.0f, 10.0f, 10.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityFrustumCullingSearch.findEntitiesInFrustum(testFrustum, multiEntityOctree, invalidCameraPos);
+            FrustumCullingSearch.findEntitiesInFrustum(testFrustum, multiEntityOctree, invalidCameraPos);
         });
     }
 
     @Test
     void testAllCullingResults() {
         // Verify all entities are in one of the three culling states
-        int[] counts = MultiEntityFrustumCullingSearch.countEntitiesByCullingResult(testFrustum, multiEntityOctree);
+        int[] counts = FrustumCullingSearch.countEntitiesByCullingResult(testFrustum, multiEntityOctree);
         
         int totalFromCounts = counts[0] + counts[1] + counts[2];
         int totalEntities = multiEntityOctree.getStats().entityCount;

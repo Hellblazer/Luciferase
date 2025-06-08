@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityAABBIntersectionSearchTest {
+public class AABBIntersectionSearchTest {
 
     private final byte testLevel = 15;
     private OctreeWithEntities<LongEntityID, String> multiEntityOctree;
@@ -40,61 +40,61 @@ public class MultiEntityAABBIntersectionSearchTest {
     @BeforeEach
     void setUp() {
         // Create test data with entities at various positions relative to an AABB
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Entities at AABB center (300, 300, 300)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(300.0f, 300.0f, 300.0f),
             testLevel,
             "CenterEntity1", "CenterEntity2"
         ));
         
         // Entities inside AABB (200-400 range)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(250.0f, 250.0f, 250.0f),
             testLevel,
             "InsideEntity1", "InsideEntity2", "InsideEntity3"
         ));
         
         // Entities on AABB boundary
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(200.0f, 300.0f, 300.0f), // On min X face
             testLevel,
             "BoundaryEntity1", "BoundaryEntity2"
         ));
         
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(400.0f, 300.0f, 300.0f), // On max X face
             testLevel,
             "BoundaryEntity3"
         ));
         
         // Entities outside AABB
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(150.0f, 150.0f, 150.0f),
             testLevel,
             "OutsideEntity1", "OutsideEntity2"
         ));
         
         // Entities far outside
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(500.0f, 500.0f, 500.0f),
             testLevel,
             "FarEntity"
         ));
         
-        multiEntityOctree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        multiEntityOctree = EntityTestUtils.createMultiEntityOctree(locations);
     }
 
     @Test
     void testFindEntitiesIntersectingAABB() {
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
+        AABBIntersectionSearch.AABB aabb = 
+            new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
         Point3f referencePoint = new Point3f(100.0f, 100.0f, 100.0f);
         float boundaryTolerance = 1.0f;
         
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
-            MultiEntityAABBIntersectionSearch.findEntitiesIntersectingAABB(
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
+            AABBIntersectionSearch.findEntitiesIntersectingAABB(
                 aabb, multiEntityOctree, referencePoint, boundaryTolerance
             );
         
@@ -122,11 +122,11 @@ public class MultiEntityAABBIntersectionSearchTest {
 
     @Test
     void testFindEntitiesInsideAABB() {
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
+        AABBIntersectionSearch.AABB aabb = 
+            new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
         
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
-            MultiEntityAABBIntersectionSearch.findEntitiesInsideAABB(aabb, multiEntityOctree);
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
+            AABBIntersectionSearch.findEntitiesInsideAABB(aabb, multiEntityOctree);
         
         // Should find center (2) and inside (3) entities = 5 total
         // Boundary entities should NOT be included (strict containment)
@@ -134,7 +134,7 @@ public class MultiEntityAABBIntersectionSearchTest {
         
         // Verify all results are marked as INSIDE
         assertTrue(results.stream().allMatch(r -> 
-            r.intersectionType == MultiEntityAABBIntersectionSearch.IntersectionType.INSIDE
+            r.intersectionType == AABBIntersectionSearch.IntersectionType.INSIDE
         ));
         
         // Verify sorting by distance from AABB center
@@ -145,33 +145,33 @@ public class MultiEntityAABBIntersectionSearchTest {
 
     @Test
     void testIntersectionTypes() {
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
+        AABBIntersectionSearch.AABB aabb = 
+            new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         float boundaryTolerance = 1.0f;
         
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
-            MultiEntityAABBIntersectionSearch.findEntitiesIntersectingAABB(
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
+            AABBIntersectionSearch.findEntitiesIntersectingAABB(
                 aabb, multiEntityOctree, referencePoint, boundaryTolerance
             );
         
         // Check intersection types
         for (var result : results) {
             if (result.content.startsWith("CenterEntity") || result.content.startsWith("InsideEntity")) {
-                assertEquals(MultiEntityAABBIntersectionSearch.IntersectionType.INSIDE, result.intersectionType);
+                assertEquals(AABBIntersectionSearch.IntersectionType.INSIDE, result.intersectionType);
             } else if (result.content.startsWith("BoundaryEntity")) {
-                assertEquals(MultiEntityAABBIntersectionSearch.IntersectionType.ON_BOUNDARY, result.intersectionType);
+                assertEquals(AABBIntersectionSearch.IntersectionType.ON_BOUNDARY, result.intersectionType);
             }
         }
     }
 
     @Test
     void testCountEntitiesByAABBIntersection() {
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
+        AABBIntersectionSearch.AABB aabb = 
+            new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f);
         float boundaryTolerance = 1.0f;
         
-        int[] counts = MultiEntityAABBIntersectionSearch.countEntitiesByAABBIntersection(
+        int[] counts = AABBIntersectionSearch.countEntitiesByAABBIntersection(
             aabb, multiEntityOctree, boundaryTolerance
         );
         
@@ -195,13 +195,13 @@ public class MultiEntityAABBIntersectionSearchTest {
     @Test
     void testFindEntitiesIntersectingMultipleAABBs() {
         // Create overlapping AABBs
-        List<MultiEntityAABBIntersectionSearch.AABB> aabbs = new ArrayList<>();
-        aabbs.add(new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 350.0f, 350.0f, 350.0f));
-        aabbs.add(new MultiEntityAABBIntersectionSearch.AABB(250.0f, 250.0f, 250.0f, 400.0f, 400.0f, 400.0f));
+        List<AABBIntersectionSearch.AABB> aabbs = new ArrayList<>();
+        aabbs.add(new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 350.0f, 350.0f, 350.0f));
+        aabbs.add(new AABBIntersectionSearch.AABB(250.0f, 250.0f, 250.0f, 400.0f, 400.0f, 400.0f));
         
         // Test requiring all AABBs (intersection)
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> allResults =
-            MultiEntityAABBIntersectionSearch.findEntitiesIntersectingMultipleAABBs(
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> allResults =
+            AABBIntersectionSearch.findEntitiesIntersectingMultipleAABBs(
                 aabbs, multiEntityOctree, true
             );
         
@@ -209,8 +209,8 @@ public class MultiEntityAABBIntersectionSearchTest {
         assertTrue(allResults.size() > 0);
         
         // Test requiring any AABB (union)
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> anyResults =
-            MultiEntityAABBIntersectionSearch.findEntitiesIntersectingMultipleAABBs(
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> anyResults =
+            AABBIntersectionSearch.findEntitiesIntersectingMultipleAABBs(
                 aabbs, multiEntityOctree, false
             );
         
@@ -220,13 +220,13 @@ public class MultiEntityAABBIntersectionSearchTest {
 
     @Test
     void testFindEntitiesInAABBIntersection() {
-        MultiEntityAABBIntersectionSearch.AABB aabb1 = 
-            new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 350.0f, 350.0f, 350.0f);
-        MultiEntityAABBIntersectionSearch.AABB aabb2 = 
-            new MultiEntityAABBIntersectionSearch.AABB(250.0f, 250.0f, 250.0f, 400.0f, 400.0f, 400.0f);
+        AABBIntersectionSearch.AABB aabb1 = 
+            new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 350.0f, 350.0f, 350.0f);
+        AABBIntersectionSearch.AABB aabb2 = 
+            new AABBIntersectionSearch.AABB(250.0f, 250.0f, 250.0f, 400.0f, 400.0f, 400.0f);
         
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
-            MultiEntityAABBIntersectionSearch.findEntitiesInAABBIntersection(aabb1, aabb2, multiEntityOctree);
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
+            AABBIntersectionSearch.findEntitiesInAABBIntersection(aabb1, aabb2, multiEntityOctree);
         
         // Should find entities in the intersection region (250-350)
         assertTrue(results.size() > 0);
@@ -243,20 +243,20 @@ public class MultiEntityAABBIntersectionSearchTest {
     void testBatchAABBIntersections() {
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityAABBIntersectionSearch.AABB> queries = new ArrayList<>();
-        queries.add(new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 300.0f, 300.0f, 300.0f)); // Small
-        queries.add(new MultiEntityAABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f)); // Large
+        List<AABBIntersectionSearch.AABB> queries = new ArrayList<>();
+        queries.add(new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 300.0f, 300.0f, 300.0f)); // Small
+        queries.add(new AABBIntersectionSearch.AABB(200.0f, 200.0f, 200.0f, 400.0f, 400.0f, 400.0f)); // Large
         
-        Map<MultiEntityAABBIntersectionSearch.AABB, 
-            List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>>> results =
-            MultiEntityAABBIntersectionSearch.batchAABBIntersections(queries, multiEntityOctree, referencePoint);
+        Map<AABBIntersectionSearch.AABB, 
+            List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>>> results =
+            AABBIntersectionSearch.batchAABBIntersections(queries, multiEntityOctree, referencePoint);
         
         assertEquals(2, results.size());
         
         // Small AABB should have fewer intersections
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> smallResults = 
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> smallResults = 
             results.get(queries.get(0));
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> largeResults = 
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> largeResults = 
             results.get(queries.get(1));
         
         assertTrue(smallResults.size() <= largeResults.size());
@@ -269,8 +269,8 @@ public class MultiEntityAABBIntersectionSearchTest {
         float halfHeight = 100.0f;
         float halfDepth = 100.0f;
         
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            MultiEntityAABBIntersectionSearch.AABB.fromCenterAndHalfExtents(
+        AABBIntersectionSearch.AABB aabb = 
+            AABBIntersectionSearch.AABB.fromCenterAndHalfExtents(
                 center, halfWidth, halfHeight, halfDepth
             );
         
@@ -293,8 +293,8 @@ public class MultiEntityAABBIntersectionSearchTest {
         Point3f corner1 = new Point3f(200.0f, 200.0f, 200.0f);
         Point3f corner2 = new Point3f(400.0f, 400.0f, 400.0f);
         
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            MultiEntityAABBIntersectionSearch.AABB.fromCorners(corner1, corner2);
+        AABBIntersectionSearch.AABB aabb = 
+            AABBIntersectionSearch.AABB.fromCorners(corner1, corner2);
         
         assertEquals(200.0f, aabb.minX);
         assertEquals(200.0f, aabb.minY);
@@ -304,8 +304,8 @@ public class MultiEntityAABBIntersectionSearchTest {
         assertEquals(400.0f, aabb.maxZ);
         
         // Test with corners in opposite order
-        MultiEntityAABBIntersectionSearch.AABB aabb2 = 
-            MultiEntityAABBIntersectionSearch.AABB.fromCorners(corner2, corner1);
+        AABBIntersectionSearch.AABB aabb2 = 
+            AABBIntersectionSearch.AABB.fromCorners(corner2, corner1);
         
         assertEquals(aabb, aabb2);
     }
@@ -313,15 +313,15 @@ public class MultiEntityAABBIntersectionSearchTest {
     @Test
     void testEmptyOctree() {
         OctreeWithEntities<LongEntityID, String> emptyOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(new ArrayList<>());
+            EntityTestUtils.createMultiEntityOctree(new ArrayList<>());
         
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            new MultiEntityAABBIntersectionSearch.AABB(100.0f, 100.0f, 100.0f, 200.0f, 200.0f, 200.0f);
+        AABBIntersectionSearch.AABB aabb = 
+            new AABBIntersectionSearch.AABB(100.0f, 100.0f, 100.0f, 200.0f, 200.0f, 200.0f);
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntityAABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
-            MultiEntityAABBIntersectionSearch.findEntitiesIntersectingAABB(
-                aabb, multiEntityOctree, referencePoint, 1.0f
+        List<AABBIntersectionSearch.EntityAABBIntersection<LongEntityID, String>> results =
+            AABBIntersectionSearch.findEntitiesIntersectingAABB(
+                aabb, emptyOctree, referencePoint, 1.0f
             );
         
         assertTrue(results.isEmpty());
@@ -331,16 +331,16 @@ public class MultiEntityAABBIntersectionSearchTest {
     void testNegativeCoordinatesThrowsException() {
         // Test negative AABB coordinates
         assertThrows(IllegalArgumentException.class, () -> {
-            new MultiEntityAABBIntersectionSearch.AABB(-10.0f, 10.0f, 10.0f, 100.0f, 100.0f, 100.0f);
+            new AABBIntersectionSearch.AABB(-10.0f, 10.0f, 10.0f, 100.0f, 100.0f, 100.0f);
         });
         
         // Test negative reference point
-        MultiEntityAABBIntersectionSearch.AABB validAABB = 
-            new MultiEntityAABBIntersectionSearch.AABB(10.0f, 10.0f, 10.0f, 100.0f, 100.0f, 100.0f);
+        AABBIntersectionSearch.AABB validAABB = 
+            new AABBIntersectionSearch.AABB(10.0f, 10.0f, 10.0f, 100.0f, 100.0f, 100.0f);
         Point3f invalidRef = new Point3f(-10.0f, 10.0f, 10.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntityAABBIntersectionSearch.findEntitiesIntersectingAABB(
+            AABBIntersectionSearch.findEntitiesIntersectingAABB(
                 validAABB, multiEntityOctree, invalidRef, 1.0f
             );
         });
@@ -350,14 +350,14 @@ public class MultiEntityAABBIntersectionSearchTest {
     void testInvalidAABBThrowsException() {
         // Test max <= min
         assertThrows(IllegalArgumentException.class, () -> {
-            new MultiEntityAABBIntersectionSearch.AABB(100.0f, 100.0f, 100.0f, 50.0f, 150.0f, 150.0f);
+            new AABBIntersectionSearch.AABB(100.0f, 100.0f, 100.0f, 50.0f, 150.0f, 150.0f);
         });
     }
 
     @Test
     void testAABBProperties() {
-        MultiEntityAABBIntersectionSearch.AABB aabb = 
-            new MultiEntityAABBIntersectionSearch.AABB(100.0f, 100.0f, 100.0f, 300.0f, 400.0f, 500.0f);
+        AABBIntersectionSearch.AABB aabb = 
+            new AABBIntersectionSearch.AABB(100.0f, 100.0f, 100.0f, 300.0f, 400.0f, 500.0f);
         
         assertEquals(200.0f, aabb.getWidth());
         assertEquals(300.0f, aabb.getHeight());

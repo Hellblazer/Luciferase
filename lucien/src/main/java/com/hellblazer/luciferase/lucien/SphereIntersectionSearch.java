@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntitySphereIntersectionSearch {
+public class SphereIntersectionSearch {
     
     /**
      * Type of intersection between entity and sphere

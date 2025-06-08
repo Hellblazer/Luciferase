@@ -27,7 +27,7 @@ import java.util.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityRayTracingSearch {
+public class RayTracingSearch {
     
     /**
      * Ray intersection result with entity information

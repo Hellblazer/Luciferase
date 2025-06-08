@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntitySphereIntersectionSearchTest {
+public class SphereIntersectionSearchTest {
 
     private final byte testLevel = 15;
     private OctreeWithEntities<LongEntityID, String> multiEntityOctree;
@@ -40,44 +40,44 @@ public class MultiEntitySphereIntersectionSearchTest {
     @BeforeEach
     void setUp() {
         // Create test data with entities at various distances from a sphere center
-        List<MultiEntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
+        List<EntityTestUtils.MultiEntityLocation<String>> locations = new ArrayList<>();
         
         // Entities at sphere center (distance = 0)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(500.0f, 500.0f, 500.0f),
             testLevel,
             "CenterEntity1", "CenterEntity2"
         ));
         
         // Entities inside sphere (distance < radius)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(550.0f, 500.0f, 500.0f), // 50 units from center
             testLevel,
             "InsideEntity1", "InsideEntity2", "InsideEntity3"
         ));
         
         // Entities on sphere surface (distance ≈ radius)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(600.0f, 500.0f, 500.0f), // 100 units from center
             testLevel,
             "SurfaceEntity1", "SurfaceEntity2"
         ));
         
         // Entities outside sphere (distance > radius)
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(650.0f, 500.0f, 500.0f), // 150 units from center
             testLevel,
             "OutsideEntity1", "OutsideEntity2"
         ));
         
         // Entities far outside
-        locations.add(new MultiEntityTestUtils.MultiEntityLocation<>(
+        locations.add(new EntityTestUtils.MultiEntityLocation<>(
             new Point3f(800.0f, 500.0f, 500.0f), // 300 units from center
             testLevel,
             "FarEntity"
         ));
         
-        multiEntityOctree = MultiEntityTestUtils.createMultiEntityOctree(locations);
+        multiEntityOctree = EntityTestUtils.createMultiEntityOctree(locations);
     }
 
     @Test
@@ -87,8 +87,8 @@ public class MultiEntitySphereIntersectionSearchTest {
         Point3f referencePoint = new Point3f(400.0f, 400.0f, 400.0f);
         float surfaceTolerance = 1.0f;
         
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
-            MultiEntitySphereIntersectionSearch.findEntitiesIntersectingSphere(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
+            SphereIntersectionSearch.findEntitiesIntersectingSphere(
                 sphereCenter, sphereRadius, multiEntityOctree, referencePoint, surfaceTolerance
             );
         
@@ -119,15 +119,15 @@ public class MultiEntitySphereIntersectionSearchTest {
         Point3f sphereCenter = new Point3f(500.0f, 500.0f, 500.0f);
         float sphereRadius = 100.0f;
         
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
-            MultiEntitySphereIntersectionSearch.findEntitiesInsideSphere(sphereCenter, sphereRadius, multiEntityOctree);
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
+            SphereIntersectionSearch.findEntitiesInsideSphere(sphereCenter, sphereRadius, multiEntityOctree);
         
         // Should find center (2) and inside (3) entities = 5 total
         // Surface entities should NOT be included (distance = radius)
         assertEquals(5, results.size());
         
         // Verify all results are marked as INSIDE
-        assertTrue(results.stream().allMatch(r -> r.intersectionType == MultiEntitySphereIntersectionSearch.IntersectionType.INSIDE));
+        assertTrue(results.stream().allMatch(r -> r.intersectionType == SphereIntersectionSearch.IntersectionType.INSIDE));
         
         // Verify sorting by distance from sphere center
         for (int i = 0; i < results.size() - 1; i++) {
@@ -141,8 +141,8 @@ public class MultiEntitySphereIntersectionSearchTest {
         float innerRadius = 40.0f;
         float outerRadius = 110.0f;
         
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
-            MultiEntitySphereIntersectionSearch.findEntitiesInSphericalShell(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
+            SphereIntersectionSearch.findEntitiesInSphericalShell(
                 center, innerRadius, outerRadius, multiEntityOctree
             );
         
@@ -163,7 +163,7 @@ public class MultiEntitySphereIntersectionSearchTest {
         float sphereRadius = 100.0f;
         float surfaceTolerance = 1.0f;
         
-        int[] counts = MultiEntitySphereIntersectionSearch.countEntitiesBySphereIntersection(
+        int[] counts = SphereIntersectionSearch.countEntitiesBySphereIntersection(
             sphereCenter, sphereRadius, multiEntityOctree, surfaceTolerance
         );
         
@@ -191,17 +191,17 @@ public class MultiEntitySphereIntersectionSearchTest {
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         float surfaceTolerance = 1.0f;
         
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
-            MultiEntitySphereIntersectionSearch.findEntitiesIntersectingSphere(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
+            SphereIntersectionSearch.findEntitiesIntersectingSphere(
                 sphereCenter, sphereRadius, multiEntityOctree, referencePoint, surfaceTolerance
             );
         
         // Check intersection types
         for (var result : results) {
             if (result.content.startsWith("CenterEntity") || result.content.startsWith("InsideEntity")) {
-                assertEquals(MultiEntitySphereIntersectionSearch.IntersectionType.INSIDE, result.intersectionType);
+                assertEquals(SphereIntersectionSearch.IntersectionType.INSIDE, result.intersectionType);
             } else if (result.content.startsWith("SurfaceEntity")) {
-                assertEquals(MultiEntitySphereIntersectionSearch.IntersectionType.ON_SURFACE, result.intersectionType);
+                assertEquals(SphereIntersectionSearch.IntersectionType.ON_SURFACE, result.intersectionType);
             }
         }
     }
@@ -209,17 +209,17 @@ public class MultiEntitySphereIntersectionSearchTest {
     @Test
     void testFindEntitiesIntersectingMultipleSpheres() {
         // Create overlapping spheres
-        List<MultiEntitySphereIntersectionSearch.SphereQuery> spheres = new ArrayList<>();
-        spheres.add(new MultiEntitySphereIntersectionSearch.SphereQuery(
+        List<SphereIntersectionSearch.SphereQuery> spheres = new ArrayList<>();
+        spheres.add(new SphereIntersectionSearch.SphereQuery(
             new Point3f(500.0f, 500.0f, 500.0f), 100.0f
         ));
-        spheres.add(new MultiEntitySphereIntersectionSearch.SphereQuery(
+        spheres.add(new SphereIntersectionSearch.SphereQuery(
             new Point3f(550.0f, 500.0f, 500.0f), 100.0f
         ));
         
         // Test requiring all spheres (intersection)
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> allResults =
-            MultiEntitySphereIntersectionSearch.findEntitiesIntersectingMultipleSpheres(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> allResults =
+            SphereIntersectionSearch.findEntitiesIntersectingMultipleSpheres(
                 spheres, multiEntityOctree, true
             );
         
@@ -227,8 +227,8 @@ public class MultiEntitySphereIntersectionSearchTest {
         assertTrue(allResults.size() > 0);
         
         // Test requiring any sphere (union)
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> anyResults =
-            MultiEntitySphereIntersectionSearch.findEntitiesIntersectingMultipleSpheres(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> anyResults =
+            SphereIntersectionSearch.findEntitiesIntersectingMultipleSpheres(
                 spheres, multiEntityOctree, false
             );
         
@@ -240,24 +240,24 @@ public class MultiEntitySphereIntersectionSearchTest {
     void testBatchSphereIntersections() {
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntitySphereIntersectionSearch.SphereQuery> queries = new ArrayList<>();
-        queries.add(new MultiEntitySphereIntersectionSearch.SphereQuery(
+        List<SphereIntersectionSearch.SphereQuery> queries = new ArrayList<>();
+        queries.add(new SphereIntersectionSearch.SphereQuery(
             new Point3f(500.0f, 500.0f, 500.0f), 50.0f  // Small sphere
         ));
-        queries.add(new MultiEntitySphereIntersectionSearch.SphereQuery(
+        queries.add(new SphereIntersectionSearch.SphereQuery(
             new Point3f(500.0f, 500.0f, 500.0f), 150.0f // Large sphere
         ));
         
-        Map<MultiEntitySphereIntersectionSearch.SphereQuery, 
-            List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>>> results =
-            MultiEntitySphereIntersectionSearch.batchSphereIntersections(queries, multiEntityOctree, referencePoint);
+        Map<SphereIntersectionSearch.SphereQuery, 
+            List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>>> results =
+            SphereIntersectionSearch.batchSphereIntersections(queries, multiEntityOctree, referencePoint);
         
         assertEquals(2, results.size());
         
         // Small sphere should have fewer intersections
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> smallResults = 
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> smallResults = 
             results.get(queries.get(0));
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> largeResults = 
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> largeResults = 
             results.get(queries.get(1));
         
         assertTrue(smallResults.size() < largeResults.size());
@@ -269,8 +269,8 @@ public class MultiEntitySphereIntersectionSearchTest {
         float sphereRadius = 75.0f; // Between inside and surface entities
         int k = 5;
         
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
-            MultiEntitySphereIntersectionSearch.findKNearestToSphereSurface(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
+            SphereIntersectionSearch.findKNearestToSphereSurface(
                 sphereCenter, sphereRadius, multiEntityOctree, k
             );
         
@@ -289,14 +289,14 @@ public class MultiEntitySphereIntersectionSearchTest {
     @Test
     void testEmptyOctree() {
         OctreeWithEntities<LongEntityID, String> emptyOctree = 
-            MultiEntityTestUtils.createMultiEntityOctree(new ArrayList<>());
+            EntityTestUtils.createMultiEntityOctree(new ArrayList<>());
         
         Point3f sphereCenter = new Point3f(100.0f, 100.0f, 100.0f);
         float sphereRadius = 50.0f;
         Point3f referencePoint = new Point3f(0.0f, 0.0f, 0.0f);
         
-        List<MultiEntitySphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
-            MultiEntitySphereIntersectionSearch.findEntitiesIntersectingSphere(
+        List<SphereIntersectionSearch.EntitySphereIntersection<LongEntityID, String>> results =
+            SphereIntersectionSearch.findEntitiesIntersectingSphere(
                 sphereCenter, sphereRadius, emptyOctree, referencePoint, 1.0f
             );
         
@@ -308,7 +308,7 @@ public class MultiEntitySphereIntersectionSearchTest {
         Point3f invalidCenter = new Point3f(-10.0f, 10.0f, 10.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntitySphereIntersectionSearch.findEntitiesInsideSphere(
+            SphereIntersectionSearch.findEntitiesInsideSphere(
                 invalidCenter, 50.0f, multiEntityOctree
             );
         });
@@ -319,13 +319,13 @@ public class MultiEntitySphereIntersectionSearchTest {
         Point3f validCenter = new Point3f(100.0f, 100.0f, 100.0f);
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntitySphereIntersectionSearch.findEntitiesInsideSphere(
+            SphereIntersectionSearch.findEntitiesInsideSphere(
                 validCenter, -10.0f, multiEntityOctree
             );
         });
         
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntitySphereIntersectionSearch.findEntitiesInsideSphere(
+            SphereIntersectionSearch.findEntitiesInsideSphere(
                 validCenter, 0.0f, multiEntityOctree
             );
         });
@@ -337,14 +337,14 @@ public class MultiEntitySphereIntersectionSearchTest {
         
         // Invalid: outer radius <= inner radius
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntitySphereIntersectionSearch.findEntitiesInSphericalShell(
+            SphereIntersectionSearch.findEntitiesInSphericalShell(
                 center, 100.0f, 50.0f, multiEntityOctree
             );
         });
         
         // Invalid: negative radius
         assertThrows(IllegalArgumentException.class, () -> {
-            MultiEntitySphereIntersectionSearch.findEntitiesInSphericalShell(
+            SphereIntersectionSearch.findEntitiesInSphericalShell(
                 center, -10.0f, 50.0f, multiEntityOctree
             );
         });

@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityConvexHullIntersectionSearch {
+public class ConvexHullIntersectionSearch {
     
     /**
      * Type of intersection between convex hull and entity
@@ -128,32 +128,69 @@ public class MultiEntityConvexHullIntersectionSearch {
             
             List<Plane3D> planes = new ArrayList<>();
             
-            // Create 6 planes for the oriented bounding box
-            for (int i = 0; i < 3; i++) {
-                Vector3f axis = new Vector3f(axes[i]);
-                axis.normalize();
-                float extent = extents[i];
+            // For axis-aligned bounding boxes (axes are identity), use simpler approach
+            if (isAxisAligned(axes)) {
+                // Calculate bounds
+                float minX = center.x - extents[0];
+                float maxX = center.x + extents[0];
+                float minY = center.y - extents[1];
+                float maxY = center.y + extents[1];
+                float minZ = center.z - extents[2];
+                float maxZ = center.z + extents[2];
                 
-                // Positive side plane
-                Point3f posPoint = new Point3f(
-                    center.x + axis.x * extent,
-                    center.y + axis.y * extent,
-                    center.z + axis.z * extent
-                );
-                Vector3f posNormal = new Vector3f(-axis.x, -axis.y, -axis.z); // Inward normal
-                planes.add(Plane3D.fromPointAndNormal(posPoint, posNormal));
-                
-                // Negative side plane - ensure coordinates remain positive
-                Point3f negPoint = new Point3f(
-                    Math.max(0.1f, center.x - axis.x * extent),
-                    Math.max(0.1f, center.y - axis.y * extent),
-                    Math.max(0.1f, center.z - axis.z * extent)
-                );
-                Vector3f negNormal = new Vector3f(axis.x, axis.y, axis.z); // Inward normal
-                planes.add(Plane3D.fromPointAndNormal(negPoint, negNormal));
+                // Create 6 bounding box planes with inward normals (same as createBoundingBoxPlanes)
+                planes.add(new Plane3D(1, 0, 0, -maxX));   // Right face: x <= maxX
+                planes.add(new Plane3D(-1, 0, 0, minX));   // Left face: x >= minX
+                planes.add(new Plane3D(0, 1, 0, -maxY));   // Top face: y <= maxY
+                planes.add(new Plane3D(0, -1, 0, minY));   // Bottom face: y >= minY
+                planes.add(new Plane3D(0, 0, 1, -maxZ));   // Far face: z <= maxZ
+                planes.add(new Plane3D(0, 0, -1, minZ));   // Near face: z >= minZ
+            } else {
+                // Create 6 planes for general oriented bounding box
+                for (int i = 0; i < 3; i++) {
+                    Vector3f axis = new Vector3f(axes[i]);
+                    axis.normalize();
+                    float extent = extents[i];
+                    
+                    // Positive side plane
+                    Point3f posPoint = new Point3f(
+                        center.x + axis.x * extent,
+                        center.y + axis.y * extent,
+                        center.z + axis.z * extent
+                    );
+                    Vector3f posNormal = new Vector3f(-axis.x, -axis.y, -axis.z); // Inward normal
+                    planes.add(Plane3D.fromPointAndNormal(posPoint, posNormal));
+                    
+                    // Negative side plane - ensure coordinates remain positive
+                    Point3f negPoint = new Point3f(
+                        Math.max(0.1f, center.x - axis.x * extent),
+                        Math.max(0.1f, center.y - axis.y * extent),
+                        Math.max(0.1f, center.z - axis.z * extent)
+                    );
+                    Vector3f negNormal = new Vector3f(axis.x, axis.y, axis.z); // Inward normal
+                    planes.add(Plane3D.fromPointAndNormal(negPoint, negNormal));
+                }
             }
             
             return new ConvexHull(planes);
+        }
+        
+        // Helper method to check if axes are axis-aligned
+        private static boolean isAxisAligned(Vector3f[] axes) {
+            final float EPSILON = 1e-6f;
+            
+            // Check if axes are close to identity vectors
+            Vector3f xAxis = new Vector3f(axes[0]);
+            Vector3f yAxis = new Vector3f(axes[1]);
+            Vector3f zAxis = new Vector3f(axes[2]);
+            
+            xAxis.normalize();
+            yAxis.normalize();
+            zAxis.normalize();
+            
+            return Math.abs(xAxis.x - 1.0f) < EPSILON && Math.abs(xAxis.y) < EPSILON && Math.abs(xAxis.z) < EPSILON &&
+                   Math.abs(yAxis.y - 1.0f) < EPSILON && Math.abs(yAxis.x) < EPSILON && Math.abs(yAxis.z) < EPSILON &&
+                   Math.abs(zAxis.z - 1.0f) < EPSILON && Math.abs(zAxis.x) < EPSILON && Math.abs(zAxis.y) < EPSILON;
         }
         
         /**
@@ -278,32 +315,9 @@ public class MultiEntityConvexHullIntersectionSearch {
         }
         
         private static List<Plane3D> createPlanesFromVertices(List<Point3f> vertices) {
-            // Simplified convex hull plane creation
-            List<Plane3D> planes = new ArrayList<>();
-            
-            if (vertices.size() >= 4) {
-                // Create a tetrahedron from first 4 vertices
-                Point3f v0 = vertices.get(0);
-                Point3f v1 = vertices.get(1);
-                Point3f v2 = vertices.get(2);
-                Point3f v3 = vertices.get(3);
-                
-                // Create 4 triangular faces
-                try {
-                    planes.add(Plane3D.fromThreePoints(v0, v1, v2));
-                    planes.add(Plane3D.fromThreePoints(v0, v2, v3));
-                    planes.add(Plane3D.fromThreePoints(v0, v3, v1));
-                    planes.add(Plane3D.fromThreePoints(v1, v3, v2));
-                } catch (IllegalArgumentException e) {
-                    // If points are coplanar, fall back to bounding box
-                    return createBoundingBoxPlanes(vertices);
-                }
-            } else {
-                // Fall back to axis-aligned bounding box
-                return createBoundingBoxPlanes(vertices);
-            }
-            
-            return planes;
+            // For simplicity and reliability, always use bounding box approach
+            // Creating proper convex hull from arbitrary vertices is complex
+            return createBoundingBoxPlanes(vertices);
         }
         
         private static List<Plane3D> createBoundingBoxPlanes(List<Point3f> vertices) {
@@ -324,12 +338,15 @@ public class MultiEntityConvexHullIntersectionSearch {
             List<Plane3D> planes = new ArrayList<>();
             
             // Create 6 bounding box planes with inward normals
-            planes.add(new Plane3D(-1, 0, 0, maxX));  // Right face
-            planes.add(new Plane3D(1, 0, 0, -minX));   // Left face
-            planes.add(new Plane3D(0, -1, 0, maxY));  // Top face
-            planes.add(new Plane3D(0, 1, 0, -minY));   // Bottom face
-            planes.add(new Plane3D(0, 0, -1, maxZ));  // Far face
-            planes.add(new Plane3D(0, 0, 1, -minZ));   // Near face
+            // For a point to be inside, it must satisfy: minX <= x <= maxX, etc.
+            // Plane equation: ax + by + cz + d = 0
+            // For inward normals, distance should be negative for inside points
+            planes.add(new Plane3D(1, 0, 0, -maxX));   // Right face: x <= maxX
+            planes.add(new Plane3D(-1, 0, 0, minX));   // Left face: x >= minX
+            planes.add(new Plane3D(0, 1, 0, -maxY));   // Top face: y <= maxY
+            planes.add(new Plane3D(0, -1, 0, minY));   // Bottom face: y >= minY
+            planes.add(new Plane3D(0, 0, 1, -maxZ));   // Far face: z <= maxZ
+            planes.add(new Plane3D(0, 0, -1, minZ));   // Near face: z >= minZ
             
             return planes;
         }

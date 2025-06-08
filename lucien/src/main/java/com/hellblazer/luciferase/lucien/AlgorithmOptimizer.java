@@ -23,13 +23,13 @@ public class AlgorithmOptimizer {
          * Adaptive k-NN search that selects optimal algorithm based on data characteristics
          */
         public static class AdaptiveKNearestNeighbor<Content> {
-            private final Octree<Content> octree;
+            private final SpatialIndex<Content> spatialIndex;
             private final SpatialIndexOptimizer.SpatialDistributionStats dataStats;
             private SearchStrategy lastUsedStrategy;
             private final Map<SearchStrategy, PerformanceMetrics> strategyMetrics;
             
-            public AdaptiveKNearestNeighbor(Octree<Content> octree, SpatialIndexOptimizer.SpatialDistributionStats dataStats) {
-                this.octree = octree;
+            public AdaptiveKNearestNeighbor(SpatialIndex<Content> spatialIndex, SpatialIndexOptimizer.SpatialDistributionStats dataStats) {
+                this.spatialIndex = spatialIndex;
                 this.dataStats = dataStats;
                 this.strategyMetrics = new EnumMap<>(SearchStrategy.class);
                 this.lastUsedStrategy = SearchStrategy.HIERARCHICAL;
@@ -89,7 +89,7 @@ public class AlgorithmOptimizer {
                 }
                 
                 // Strategy selection based on data characteristics
-                int dataSize = octree.getMap().size();
+                int dataSize = spatialIndex.getMap().size();
                 
                 if (dataSize < 1000) {
                     return SearchStrategy.HIERARCHICAL; // Simple hierarchical for small datasets
@@ -121,7 +121,7 @@ public class AlgorithmOptimizer {
                     k + 1, Comparator.comparing((DistanceEntry<Content> e) -> e.distance).reversed());
                 
                 // Search in Morton order for spatial locality
-                Map<Long, Content> map = octree.getMap();
+                Map<Long, Content> map = spatialIndex.getMap();
                 
                 // Start from query Morton and expand outward
                 Long startKey = findClosestKey(map, queryMorton);
@@ -174,7 +174,7 @@ public class AlgorithmOptimizer {
                 PriorityQueue<DistanceEntry<Content>> result = new PriorityQueue<>(
                     k + 1, Comparator.comparing((DistanceEntry<Content> e) -> e.distance).reversed());
                 
-                for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
+                for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                     Spatial.Cube cube = Octree.toCube(entry.getKey());
                     Point3f cubeCenter = new Point3f(
                         cube.originX() + cube.extent() / 2.0f,
@@ -241,11 +241,11 @@ public class AlgorithmOptimizer {
          * Intelligent range query with adaptive bounds optimization
          */
         public static class AdaptiveRangeQuery<Content> {
-            private final Octree<Content> octree;
+            private final SpatialIndex<Content> spatialIndex;
             private final BoundsOptimizer boundsOptimizer;
             
-            public AdaptiveRangeQuery(Octree<Content> octree) {
-                this.octree = octree;
+            public AdaptiveRangeQuery(SpatialIndex<Content> spatialIndex) {
+                this.spatialIndex = spatialIndex;
                 this.boundsOptimizer = new BoundsOptimizer();
             }
             
@@ -256,12 +256,12 @@ public class AlgorithmOptimizer {
                 long startTime = System.nanoTime();
                 
                 // Optimize query bounds based on data distribution
-                OptimizedBounds optimizedBounds = boundsOptimizer.optimizeBounds(minBounds, maxBounds, octree);
+                OptimizedBounds optimizedBounds = boundsOptimizer.optimizeBounds(minBounds, maxBounds, spatialIndex);
                 
                 List<Content> results = new ArrayList<>();
                 int nodesVisited = 0;
                 
-                for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
+                for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                     nodesVisited++;
                     Spatial.Cube cube = Octree.toCube(entry.getKey());
                     
@@ -350,27 +350,27 @@ public class AlgorithmOptimizer {
      */
     public static class BoundsOptimizer {
         
-        public OptimizedBounds optimizeBounds(Point3f minBounds, Point3f maxBounds, Octree<?> octree) {
+        public OptimizedBounds optimizeBounds(Point3f minBounds, Point3f maxBounds, SpatialIndex<?> spatialIndex) {
             // Calculate query volume and expected selectivity
             float volume = (maxBounds.x - minBounds.x) * (maxBounds.y - minBounds.y) * (maxBounds.z - minBounds.z);
             
-            // Estimate total space volume from octree data
-            Map<Long, ?> map = octree.getMap();
+            // Estimate total space volume from spatialIndex data
+            Map<Long, ?> map = spatialIndex.getMap();
             if (map.isEmpty()) {
                 return new OptimizedBounds(minBounds, maxBounds, 0.0f, 0, false);
             }
             
             // Simple bounds optimization based on data distribution
-            float selectivity = Math.min(1.0f, volume / estimateDataSpaceVolume(octree));
+            float selectivity = Math.min(1.0f, volume / estimateDataSpaceVolume(spatialIndex));
             int expectedResults = (int) (map.size() * selectivity);
             boolean highlySelective = selectivity < 0.1f;
             
             return new OptimizedBounds(minBounds, maxBounds, selectivity, expectedResults, highlySelective);
         }
         
-        private float estimateDataSpaceVolume(Octree<?> octree) {
+        private float estimateDataSpaceVolume(SpatialIndex<?> spatialIndex) {
             // Simple heuristic: estimate from key range
-            Map<Long, ?> map = octree.getMap();
+            Map<Long, ?> map = spatialIndex.getMap();
             if (map.size() < 2) return 1.0f;
             
             // Find min and max keys since we don't have NavigableMap methods

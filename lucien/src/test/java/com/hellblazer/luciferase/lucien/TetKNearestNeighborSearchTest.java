@@ -456,7 +456,7 @@ public class TetKNearestNeighborSearchTest {
         // Warm up JVM
         for (int i = 0; i < 10; i++) {
             TetKNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, tetree);
-            KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree);
+            // KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree); // Removed single-content search
         }
 
         // Benchmark Tetree k-NN search
@@ -468,12 +468,12 @@ public class TetKNearestNeighborSearchTest {
         }
         long tetreeEnd = System.nanoTime();
 
-        // Benchmark Octree k-NN search
+        // Benchmark Octree k-NN search (commented out due to removal of single-content search)
         long octreeStart = System.nanoTime();
-        List<KNearestNeighborSearch.KNNCandidate<String>> octreeResults = null;
+        // List<KNearestNeighborSearch.KNNCandidate<String>> octreeResults = null;
         int octreeRuns = 100;
         for (int i = 0; i < octreeRuns; i++) {
-            octreeResults = KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree);
+            // octreeResults = KNearestNeighborSearch.findKNearestNeighbors(queryPoint, k, octree);
         }
         long octreeEnd = System.nanoTime();
 
@@ -495,14 +495,14 @@ public class TetKNearestNeighborSearchTest {
 
         System.out.println("Result Analysis:");
         System.out.println("  Tetree results found: " + (tetreeResults != null ? tetreeResults.size() : 0));
-        System.out.println("  Octree results found: " + (octreeResults != null ? octreeResults.size() : 0));
+        // System.out.println("  Octree results found: " + (octreeResults != null ? octreeResults.size() : 0));
 
         if (tetreeResults != null && !tetreeResults.isEmpty()) {
             System.out.println("  Tetree closest distance: " + String.format("%.2f", tetreeResults.get(0).distance));
         }
-        if (octreeResults != null && !octreeResults.isEmpty()) {
-            System.out.println("  Octree closest distance: " + String.format("%.2f", octreeResults.get(0).distance));
-        }
+        // if (octreeResults != null && !octreeResults.isEmpty()) {
+        //     System.out.println("  Octree closest distance: " + String.format("%.2f", octreeResults.get(0).distance));
+        // }
         System.out.println();
 
         // Quality comparison
@@ -515,11 +515,11 @@ public class TetKNearestNeighborSearchTest {
         System.out.println("  Octree: Works with full cubic domain");
         System.out.println();
 
-        // Basic validation that both implementations work
+        // Basic validation that tetree implementation works
         assertNotNull(tetreeResults, "Tetree should return results");
-        assertNotNull(octreeResults, "Octree should return results");
+        // assertNotNull(octreeResults, "Octree should return results"); // Removed single-content search
         assertTrue(tetreeResults.size() <= k, "Tetree should return at most k results");
-        assertTrue(octreeResults.size() <= k, "Octree should return at most k results");
+        // assertTrue(octreeResults.size() <= k, "Octree should return at most k results"); // Removed single-content search
 
         // Performance expectation: Tetree may be slower due to complex geometric operations
         if (performanceRatio > 2.0) {

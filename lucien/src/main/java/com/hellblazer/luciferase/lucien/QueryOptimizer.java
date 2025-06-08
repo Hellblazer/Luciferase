@@ -314,13 +314,13 @@ public class QueryOptimizer {
      * Optimized spatial query executor with caching and performance monitoring
      */
     public static class OptimizedSpatialQuery<Content> {
-        private final Octree<Content> octree;
+        private final SpatialIndex<Content> spatialIndex;
         private final SpatialQueryCache<Content> cache;
         private final QueryExecutionPlanner planner;
         private final SpatialIndexOptimizer.SpatialDistributionStats dataStats;
         
-        public OptimizedSpatialQuery(Octree<Content> octree, int cacheSize) {
-            this.octree = octree;
+        public OptimizedSpatialQuery(SpatialIndex<Content> spatialIndex, int cacheSize) {
+            this.spatialIndex = spatialIndex;
             this.cache = new SpatialQueryCache<>(cacheSize);
             this.planner = new QueryExecutionPlanner();
             this.dataStats = analyzeOctreeDistribution();
@@ -445,10 +445,10 @@ public class QueryOptimizer {
         
         private List<Content> executeRadiusQuery(Point3f center, float radius, QueryPlan plan) {
             // Implementation would depend on the chosen strategy
-            // This is a simplified version that filters all octree contents
+            // This is a simplified version that filters all spatialIndex contents
             List<Content> results = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
+            for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                 Spatial.Cube cube = Octree.toCube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
@@ -467,7 +467,7 @@ public class QueryOptimizer {
         private List<Content> executeRangeQuery(Point3f minBounds, Point3f maxBounds, QueryPlan plan) {
             List<Content> results = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
+            for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                 Spatial.Cube cube = Octree.toCube(entry.getKey());
                 
                 // Check if cube intersects with query bounds
@@ -485,7 +485,7 @@ public class QueryOptimizer {
             // Simplified k-NN implementation using distance sorting
             List<Map.Entry<Float, Content>> candidates = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
+            for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                 Spatial.Cube cube = Octree.toCube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
@@ -507,7 +507,7 @@ public class QueryOptimizer {
         private SpatialIndexOptimizer.SpatialDistributionStats analyzeOctreeDistribution() {
             List<Point3f> points = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
+            for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                 Spatial.Cube cube = Octree.toCube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
@@ -525,11 +525,11 @@ public class QueryOptimizer {
         private int calculateNodesVisited(Point3f center, float radius, QueryPlan plan) {
             // Simplified estimate based on strategy
             return switch (plan.strategy) {
-                case SPATIAL_INDEX -> Math.max(1, (int) Math.log(octree.getMap().size()));
-                case MORTON_ORDERED -> Math.max(1, octree.getMap().size() / 4);
-                case ADAPTIVE_HIERARCHICAL -> Math.max(1, octree.getMap().size() / 3);
-                case FULL_SCAN -> octree.getMap().size();
-                case PARALLEL_SPATIAL -> Math.max(1, octree.getMap().size() / 2);
+                case SPATIAL_INDEX -> Math.max(1, (int) Math.log(spatialIndex.getMap().size()));
+                case MORTON_ORDERED -> Math.max(1, spatialIndex.getMap().size() / 4);
+                case ADAPTIVE_HIERARCHICAL -> Math.max(1, spatialIndex.getMap().size() / 3);
+                case FULL_SCAN -> spatialIndex.getMap().size();
+                case PARALLEL_SPATIAL -> Math.max(1, spatialIndex.getMap().size() / 2);
             };
         }
         
@@ -608,7 +608,7 @@ public class QueryOptimizer {
             }
             
             long endTime = System.nanoTime();
-            return new BenchmarkResult("Radius Query", queryEngine.octree.getMap().size(), 
+            return new BenchmarkResult("Radius Query", queryEngine.spatialIndex.getMap().size(), 
                                      endTime - startTime, queryPoints.size());
         }
         
@@ -621,7 +621,7 @@ public class QueryOptimizer {
             }
             
             long endTime = System.nanoTime();
-            return new BenchmarkResult("K-NN Query", queryEngine.octree.getMap().size(), 
+            return new BenchmarkResult("K-NN Query", queryEngine.spatialIndex.getMap().size(), 
                                      endTime - startTime, queryPoints.size());
         }
         

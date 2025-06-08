@@ -28,7 +28,7 @@ import java.util.*;
  *
  * @author hal.hildebrand
  */
-public class MultiEntityContainmentSearch {
+public class ContainmentSearch {
     
     /**
      * Result container that includes entity ID and location info
