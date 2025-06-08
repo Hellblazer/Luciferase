@@ -14,9 +14,12 @@ import java.util.stream.Stream;
  * Octree implementation using HashMap for node storage (like C++ reference) Provides O(1) node lookups while
  * maintaining spatial structure
  *
+ * @deprecated Use {@link SpatialIndex} interface with {@link SingleContentAdapter} for new code.
+ *             This class will be removed in a future version.
  * @author hal.hildebrand
  */
-public class Octree<Content> {
+@Deprecated(since = "2025.01", forRemoval = true)
+public class Octree<Content> implements SpatialIndex<Content> {
     // Main storage - NavigableMap for spatial range queries
     // Morton code is the key - it encodes both position and level
     private final NavigableMap<Long, Node<Content>> nodes;
@@ -31,19 +34,54 @@ public class Octree<Content> {
         return new Spatial.Cube(point[0], point[1], point[2], Constants.lengthAtLevel(level));
     }
 
-    public Stream<Hexahedron<Content>> boundedBy(Spatial volume) {
+    // SpatialIndex implementation methods
+    
+    @Override
+    public Stream<SpatialNode<Content>> nodes() {
+        return nodes.entrySet().stream()
+            .map(entry -> new SpatialNode<>(entry.getKey(), entry.getValue().getData()));
+    }
+    
+    @Override
+    public Stream<SpatialNode<Content>> boundedBy(Spatial volume) {
+        return spatialRangeQuery(volume, false)
+            .map(hex -> new SpatialNode<>(hex.index(), hex.cell()));
+    }
+
+    @Override
+    public Stream<SpatialNode<Content>> bounding(Spatial volume) {
+        return spatialRangeQuery(volume, true)
+            .map(hex -> new SpatialNode<>(hex.index(), hex.cell()));
+    }
+    
+    @Override
+    public SpatialNode<Content> enclosing(Spatial volume) {
+        var hex = enclosingLegacy(volume);
+        return hex != null ? new SpatialNode<>(hex.index(), hex.cell()) : null;
+    }
+    
+    @Override
+    public SpatialNode<Content> enclosing(Tuple3i point, byte level) {
+        var hex = enclosingLegacy(point, level);
+        return hex != null ? new SpatialNode<>(hex.index(), hex.cell()) : null;
+    }
+    
+    // Legacy methods for backward compatibility
+    
+    public Stream<Hexahedron<Content>> boundedByLegacy(Spatial volume) {
         return spatialRangeQuery(volume, false);
     }
 
-    public Stream<Hexahedron<Content>> bounding(Spatial volume) {
+    public Stream<Hexahedron<Content>> boundingLegacy(Spatial volume) {
         return spatialRangeQuery(volume, true);
     }
 
     /**
+     * Legacy method for backward compatibility
      * @param volume - the volume to enclose
      * @return - minimum cube enclosing the volume
      */
-    public Hexahedron<Content> enclosing(Spatial volume) {
+    public Hexahedron<Content> enclosingLegacy(Spatial volume) {
         // Extract bounding box of the volume
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -68,11 +106,12 @@ public class Octree<Content> {
     }
 
     /**
+     * Legacy method for backward compatibility
      * @param point - the point to enclose
      * @param level - refinement level for enclosure
      * @return the cube at the provided level
      */
-    public Hexahedron<Content> enclosing(Tuple3i point, byte level) {
+    public Hexahedron<Content> enclosingLegacy(Tuple3i point, byte level) {
         var length = Constants.lengthAtLevel(level);
         var index = MortonCurve.encode((point.x / length) * length, (point.y / length) * length,
                                        (point.z / length) * length);
@@ -109,7 +148,16 @@ public class Octree<Content> {
     /**
      * Get stats about the octree
      */
-    public OctreeStats getStats() {
+    @Override
+    public SpatialIndexStats getStats() {
+        int totalEntities = nodes.size();
+        return new SpatialIndexStats(nodes.size(), totalEntities);
+    }
+    
+    /**
+     * Legacy method for backward compatibility
+     */
+    public OctreeStats getStatsLegacy() {
         int totalEntities = nodes.size();
         return new OctreeStats(nodes.size(), totalEntities);
     }

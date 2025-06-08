@@ -201,7 +201,7 @@ public class MultiEntityConvexHullIntersectionSearch {
             if (!anyInside) {
                 // Check if hull intersects bounds
                 for (Plane3D plane : planes) {
-                    if (plane.intersectsBounds(bounds)) {
+                    if (intersectsPlane(bounds, plane)) {
                         return IntersectionType.INTERSECTING;
                     }
                 }
@@ -724,5 +724,31 @@ public class MultiEntityConvexHullIntersectionSearch {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException("Point must have positive coordinates");
         }
+    }
+    
+    /**
+     * Check if entity bounds intersect with a plane
+     */
+    private static boolean intersectsPlane(EntityBounds bounds, Plane3D plane) {
+        Point3f[] corners = getBoundsCorners(bounds);
+        
+        boolean hasPositive = false;
+        boolean hasNegative = false;
+        
+        for (Point3f corner : corners) {
+            float distance = plane.distanceToPoint(corner);
+            if (distance > 0) {
+                hasPositive = true;
+            } else if (distance < 0) {
+                hasNegative = true;
+            }
+            
+            // If we have both positive and negative distances, the bounds intersect the plane
+            if (hasPositive && hasNegative) {
+                return true;
+            }
+        }
+        
+        return false; // All points are on one side of the plane
     }
 }

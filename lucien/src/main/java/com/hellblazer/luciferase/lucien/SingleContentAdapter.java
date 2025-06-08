@@ -65,23 +65,23 @@ public class SingleContentAdapter<Content> extends Octree<Content> {
     }
 
     /**
-     * Stream of content bounded by volume (matches Octree API)
+     * Stream of content bounded by volume (legacy compatibility)
      */
-    public Stream<Octree.Hexahedron<Content>> boundedBy(Spatial volume) {
+    public Stream<Octree.Hexahedron<Content>> boundedByLegacy(Spatial volume) {
         return spatialRangeQuery(volume, false);
     }
 
     /**
-     * Stream of content bounding volume (matches Octree API)
+     * Stream of content bounding volume (legacy compatibility)
      */
-    public Stream<Octree.Hexahedron<Content>> bounding(Spatial volume) {
+    public Stream<Octree.Hexahedron<Content>> boundingLegacy(Spatial volume) {
         return spatialRangeQuery(volume, true);
     }
 
     /**
-     * Find the minimum cube enclosing the volume
+     * Find the minimum cube enclosing the volume (legacy compatibility)
      */
-    public Octree.Hexahedron<Content> enclosing(Spatial volume) {
+    public Octree.Hexahedron<Content> enclosingLegacy(Spatial volume) {
         // Extract bounding box of the volume
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -107,9 +107,9 @@ public class SingleContentAdapter<Content> extends Octree<Content> {
     }
 
     /**
-     * Find the cube at the provided level enclosing the point
+     * Find the cube at the provided level enclosing the point (legacy compatibility)
      */
-    public Octree.Hexahedron<Content> enclosing(Tuple3i point, byte level) {
+    public Octree.Hexahedron<Content> enclosingLegacy(Tuple3i point, byte level) {
         var length = Constants.lengthAtLevel(level);
         var index = MortonCurve.encode((point.x / length) * length, (point.y / length) * length,
                                        (point.z / length) * length);
@@ -181,9 +181,16 @@ public class SingleContentAdapter<Content> extends Octree<Content> {
      * Get statistics about the octree (overrides Octree method)
      */
     @Override
-    public OctreeStats getStats() {
+    public SpatialIndexStats getStats() {
         OctreeWithEntities.Stats entityStats = entityOctree.getStats();
-
+        return new SpatialIndexStats(entityStats.nodeCount, entityStats.entityCount);
+    }
+    
+    /**
+     * Get statistics (legacy compatibility)
+     */
+    public OctreeStats getStatsLegacy() {
+        OctreeWithEntities.Stats entityStats = entityOctree.getStats();
         return new OctreeStats(entityStats.nodeCount, entityStats.entityCount);
     }
 

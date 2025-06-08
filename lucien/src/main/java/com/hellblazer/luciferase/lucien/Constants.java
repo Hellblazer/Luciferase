@@ -2,6 +2,7 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
 
+import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 
 /**
@@ -109,6 +110,19 @@ public class Constants {
         return 1 << (getMaxRefinementLevel() - level);
     }
 
+    /**
+     * Calculate the Morton index for a given point and level
+     * @param point the 3D point
+     * @param level the refinement level
+     * @return the Morton index
+     */
+    public static long calculateMortonIndex(Point3f point, byte level) {
+        var length = lengthAtLevel(level);
+        return MortonCurve.encode((int) (Math.floor(point.x / length) * length),
+                                  (int) (Math.floor(point.y / length) * length),
+                                  (int) (Math.floor(point.z / length) * length));
+    }
+    
     public static byte toLevel(long mortonCode) {
         if (mortonCode == 0) {
             return 0; // origin at coarsest level (root)

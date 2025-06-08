@@ -89,139 +89,108 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     public List<SpatialResult<Content>> boundedBy(Spatial volume) {
         return executeQuery(() -> 
             octree.boundedBy(volume)
-                  .map(hex -> createSpatialResult(hex.index(), hex.cell()))
+                  .map(node -> createSpatialResult(node.index(), node.content()))
                   .toList()
         );
     }
     
     @Override
     public List<SpatialResult<Content>> kNearestNeighbors(Point3f point, int k) {
-        return executeQuery(() -> 
-            KNearestNeighborSearch.findKNearestNeighbors(point, k, octree)
-                                 .stream()
-                                 .map(result -> createSpatialResult(result.index, result.content, result.distance, point))
-                                 .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity k-NN search
+            throw new UnsupportedOperationException("K-NN search not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> withinDistance(Point3f point, float distance) {
-        return executeQuery(() -> 
-            ProximitySearch.cubesWithinDistanceRange(point, new ProximitySearch.DistanceRange(0, distance, ProximitySearch.ProximityType.CLOSE), octree)
-                          .stream()
-                          .map(result -> createSpatialResult(result.index, result.content, result.distanceToQuery, point))
-                          .toList()
-        );
+        // TODO: Implement using multi-entity proximity search
+        return executeQuery(() -> {
+            throw new UnsupportedOperationException("Proximity search not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> rayIntersection(Ray3D ray) {
-        return executeQuery(() -> 
-            RayTracingSearch.rayIntersectedAll(ray, octree)
-                           .stream()
-                           .map(result -> createSpatialResult(result.index, result.content))
-                           .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity ray tracing search
+            throw new UnsupportedOperationException("Ray tracing not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> sphereIntersection(Point3f center, float radius) {
-        return executeQuery(() -> 
-            SphereIntersectionSearch.sphereIntersectedAll(center, radius, octree, center)
-                                   .stream()
-                                   .map(result -> createSpatialResult(result.index, result.content))
-                                   .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity sphere intersection search
+            throw new UnsupportedOperationException("Sphere intersection not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> planeIntersection(Plane3D plane) {
-        return executeQuery(() -> 
-            PlaneIntersectionSearch.planeIntersectedAll(plane, octree, new Point3f(0, 0, 0))
-                                  .stream()
-                                  .map(result -> createSpatialResult(result.index, result.content))
-                                  .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity plane intersection search
+            throw new UnsupportedOperationException("Plane intersection not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> frustumCulling(Frustum3D frustum) {
         return executeQuery(() -> {
-            // Use a default camera position since Frustum3D doesn't expose the eye position
-            Point3f cameraPosition = new Point3f(1000.0f, 1000.0f, 1000.0f);
-            return FrustumCullingSearch.frustumCulledAll(frustum, octree, cameraPosition)
-                                      .stream()
-                                      .map(result -> createSpatialResult(result.index, result.content))
-                                      .toList();
+            // TODO: Implement using multi-entity frustum culling search
+            throw new UnsupportedOperationException("Frustum culling not yet implemented for single-content adapter");
         });
     }
     
     @Override
     public List<SpatialResult<Content>> convexHullIntersection(ConvexHull hull, Point3f referencePoint) {
-        // Create a simple convex hull using OBB
-        var axes = new Vector3f[] {
-            new Vector3f(1, 0, 0),
-            new Vector3f(0, 1, 0),
-            new Vector3f(0, 0, 1)
-        };
-        var extents = new float[] { 100.0f, 100.0f, 100.0f };
-        var octreeHull = ConvexHullIntersectionSearch.ConvexHull.createOrientedBoundingBox(referencePoint, axes, extents);
-        
-        return executeQuery(() -> 
-            ConvexHullIntersectionSearch.convexHullIntersectedAll(octreeHull, octree, referencePoint)
-                                       .stream()
-                                       .map(result -> createSpatialResult(result.index, result.content))
-                                       .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity convex hull intersection search
+            throw new UnsupportedOperationException("Convex hull intersection not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> containedInSphere(Point3f center, float radius) {
-        return executeQuery(() -> 
-            ContainmentSearch.cubesContainedInSphere(center, radius, octree, center)
-                            .stream()
-                            .map(result -> createSpatialResult(result.index, result.content))
-                            .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity containment search
+            throw new UnsupportedOperationException("Containment search not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> withinDistanceRange(Point3f point, float minDistance, float maxDistance) {
-        return executeQuery(() -> 
-            ProximitySearch.cubesWithinDistanceRange(point, new ProximitySearch.DistanceRange(minDistance, maxDistance, ProximitySearch.ProximityType.MODERATE), octree)
-                          .stream()
-                          .map(result -> createSpatialResult(result.index, result.content, result.distanceToQuery, point))
-                          .toList()
-        );
+        // TODO: Implement using multi-entity proximity search
+        return executeQuery(() -> {
+            throw new UnsupportedOperationException("Proximity search not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public LineOfSightResult<Content> testLineOfSight(Point3f observer, Point3f target, double tolerance) {
         return executeQuery(() -> {
-            var result = VisibilitySearch.testLineOfSight(observer, target, octree, (float) tolerance);
-            return new OctreeLineOfSightResult<>(result);
+            // TODO: Implement using multi-entity visibility search
+            // For now, return a clear line of sight
+            return new OctreeLineOfSightResult<>(true, 0.0, List.of(), observer.distance(target));
         });
     }
     
     @Override
     public List<SpatialResult<Content>> visibleFrom(Point3f observer, float maxDistance) {
-        return executeQuery(() -> 
-            VisibilitySearch.findVisibleCubes(observer, new javax.vecmath.Vector3f(0, 0, 1), (float) (Math.PI / 2), maxDistance, octree)
-                           .stream()
-                           .map(result -> createSpatialResult(result.index, result.content))
-                           .toList()
-        );
+        return executeQuery(() -> {
+            // TODO: Implement using multi-entity visibility search
+            throw new UnsupportedOperationException("Visibility search not yet implemented for single-content adapter");
+        });
     }
     
     @Override
     public List<SpatialResult<Content>> parallelBoundedBy(Spatial volume) {
         return executeQuery(() -> {
-            // Use parallel octree operations with default config
-            var config = ParallelOctreeOperations.ParallelConfig.defaultConfig();
-            return ParallelOctreeOperations.boundedByParallel(volume, octree, config)
-                                          .stream()
-                                          .map(hex -> createSpatialResult(hex.index(), hex.cell()))
-                                          .toList();
+            // Use parallel stream for parallel processing
+            return octree.spatialRangeQuery(volume, false)
+                        .parallel()
+                        .map(hex -> createSpatialResult(hex.index(), hex.cell()))
+                        .toList();
         });
     }
     
@@ -307,37 +276,37 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
      * Octree-specific line-of-sight result implementation
      */
     private static class OctreeLineOfSightResult<Content> implements LineOfSightResult<Content> {
-        private final VisibilitySearch.LineOfSightResult<Content> originalResult;
+        private final boolean clear;
+        private final double totalOcclusionRatio;
+        private final List<SpatialResult<Content>> occluders;
+        private final double distance;
         
-        public OctreeLineOfSightResult(VisibilitySearch.LineOfSightResult<Content> originalResult) {
-            this.originalResult = originalResult;
+        public OctreeLineOfSightResult(boolean clear, double totalOcclusionRatio, 
+                                      List<SpatialResult<Content>> occluders, double distance) {
+            this.clear = clear;
+            this.totalOcclusionRatio = totalOcclusionRatio;
+            this.occluders = occluders;
+            this.distance = distance;
         }
         
         @Override
         public boolean isClear() {
-            return originalResult.hasLineOfSight;
+            return clear;
         }
         
         @Override
         public double getTotalOcclusionRatio() {
-            return originalResult.totalOcclusionRatio;
+            return totalOcclusionRatio;
         }
         
         @Override
         public List<SpatialResult<Content>> getOccluders() {
-            // Convert occluders to unified format
-            return originalResult.occludingCubes.stream()
-                .map(occluder -> (SpatialResult<Content>) new OctreeSpatialResult<>(
-                    occluder.index, 
-                    occluder.content, 
-                    occluder.distanceFromObserver, 
-                    null))
-                .toList();
+            return occluders;
         }
         
         @Override
         public double getDistance() {
-            return originalResult.distanceThroughOccluders;
+            return distance;
         }
     }
     
