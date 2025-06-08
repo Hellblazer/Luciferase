@@ -181,7 +181,7 @@ public class SphereIntersectionSearchTest {
         assertEquals(3, outside);
         
         // Total should match entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, inside + onSurface + outside);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, inside + onSurface + outside);
     }
 
     @Test

@@ -219,7 +219,7 @@ public class ProximitySearchTest {
             ProximitySearch.getProximityStatistics(queryPoint, multiEntityOctree);
         
         // Verify total entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, stats.totalEntities);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, stats.totalEntities);
         
         // Verify statistics are calculated
         assertTrue(stats.averageDistance > 0);

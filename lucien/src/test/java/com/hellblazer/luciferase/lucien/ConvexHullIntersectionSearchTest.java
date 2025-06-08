@@ -232,7 +232,7 @@ public class ConvexHullIntersectionSearchTest {
         assertTrue(outside > 0);
         
         // Total should match entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, inside + intersecting + outside);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, inside + intersecting + outside);
     }
 
     @Test
@@ -293,7 +293,7 @@ public class ConvexHullIntersectionSearchTest {
             ConvexHullIntersectionSearch.getConvexHullIntersectionStatistics(hull, multiEntityOctree);
         
         // Verify total entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, stats.totalEntities);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, stats.totalEntities);
         
         // Should have entities in different categories
         assertTrue(stats.insideEntities > 0);

@@ -138,7 +138,7 @@ public class KNearestNeighborSearchTest {
         }
         
         // Should have found all entities
-        assertEquals(multiEntityOctree.getStats().entityCount, results.size());
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, results.size());
     }
 
     @Test
@@ -230,7 +230,7 @@ public class KNearestNeighborSearchTest {
             KNearestNeighborSearch.findKNearestEntities(queryPoint, 100, multiEntityOctree);
         
         // Should return all entities
-        assertEquals(multiEntityOctree.getStats().entityCount, results.size());
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, results.size());
     }
 
     @Test

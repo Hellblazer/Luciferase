@@ -65,7 +65,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id4 = octree.insert(pos4, level, "Entity4");
 
         // Check stats after subdivision
-        OctreeWithEntities.Stats stats = octree.getStats();
+        OctreeWithEntities.Stats stats = octree.getEntityStats();
         System.out.println("Stats after redistribution: " + stats);
 
         // Check that entities are still retrievable at their positions
@@ -121,7 +121,7 @@ public class OctreeSubdivisionTest {
             octree.insert(pos, startLevel, "Entity" + i);
         }
 
-        OctreeWithEntities.Stats stats = octree.getStats();
+        OctreeWithEntities.Stats stats = octree.getEntityStats();
         System.out.println("Multiple levels stats: " + stats);
 
         // Should have created multiple nodes due to spatial distribution
@@ -144,7 +144,7 @@ public class OctreeSubdivisionTest {
             octree.insert(pos, maxLevel, "Entity" + i);
         }
 
-        OctreeWithEntities.Stats stats = octree.getStats();
+        OctreeWithEntities.Stats stats = octree.getEntityStats();
         assertEquals(1, stats.nodeCount, "Should not subdivide at max depth");
         assertEquals(10, stats.entityCount);
         assertEquals(10, stats.totalEntityReferences);
@@ -163,7 +163,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id3 = octree.insert(basePos, level, "Entity3");
 
         // Stats before subdivision trigger
-        OctreeWithEntities.Stats statsBefore = octree.getStats();
+        OctreeWithEntities.Stats statsBefore = octree.getEntityStats();
         assertEquals(1, statsBefore.nodeCount);
         assertEquals(3, statsBefore.entityCount);
 
@@ -171,7 +171,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id4 = octree.insert(basePos, level, "Entity4");
 
         // Stats after subdivision
-        OctreeWithEntities.Stats statsAfter = octree.getStats();
+        OctreeWithEntities.Stats statsAfter = octree.getEntityStats();
         assertEquals(4, statsAfter.entityCount);
 
         // Debug output

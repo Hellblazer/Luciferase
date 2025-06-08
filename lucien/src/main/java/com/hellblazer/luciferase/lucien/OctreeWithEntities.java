@@ -18,11 +18,13 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
 
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Octree implementation with C++-style entity storage system. Uses dual storage architecture: - Spatial index: Morton
@@ -37,7 +39,7 @@ import java.util.stream.Collectors;
 public class OctreeWithEntities<ID extends EntityID, Content> {
 
     // Spatial index: Morton code → Node containing entity IDs
-    private final NavigableMap<Long, OctreeNode<ID>> spatialIndex;
+    final NavigableMap<Long, OctreeNode<ID>> spatialIndex;
 
     // Consolidated entity storage: Entity ID → Entity (content, locations, position, bounds)
     private final Map<ID, Entity<Content>> entities;
@@ -49,6 +51,7 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
     private final int                  maxEntitiesPerNode;
     private final byte                 maxDepth;
     private final EntitySpanningPolicy spanningPolicy;
+    final boolean              singleContentMode;  // When true, enforces one entity per location
 
     /**
      * Create an octree with default configuration
@@ -56,12 +59,19 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
     public OctreeWithEntities(EntityIDGenerator<ID> idGenerator) {
         this(idGenerator, 10, Constants.getMaxRefinementLevel());
     }
+    
+    /**
+     * Create an octree in single content mode (for SpatialIndex compatibility)
+     */
+    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, boolean singleContentMode) {
+        this(idGenerator, 1, Constants.getMaxRefinementLevel(), new EntitySpanningPolicy(), singleContentMode);
+    }
 
     /**
      * Create an octree with custom configuration
      */
     public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth) {
-        this(idGenerator, maxEntitiesPerNode, maxDepth, new EntitySpanningPolicy());
+        this(idGenerator, maxEntitiesPerNode, maxDepth, new EntitySpanningPolicy(), false);
     }
 
     /**
@@ -69,12 +79,21 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
      */
     public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                               EntitySpanningPolicy spanningPolicy) {
+        this(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy, false);
+    }
+    
+    /**
+     * Create an octree with full configuration options
+     */
+    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
+                              EntitySpanningPolicy spanningPolicy, boolean singleContentMode) {
         this.spatialIndex = new TreeMap<>();
         this.entities = new ConcurrentHashMap<>();
         this.idGenerator = Objects.requireNonNull(idGenerator);
-        this.maxEntitiesPerNode = maxEntitiesPerNode;
+        this.maxEntitiesPerNode = singleContentMode ? 1 : maxEntitiesPerNode;
         this.maxDepth = maxDepth;
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
+        this.singleContentMode = singleContentMode;
     }
 
     /**
@@ -189,9 +208,9 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
     }
 
     /**
-     * Get statistics about the octree
+     * Get entity-based statistics about the octree
      */
-    public Stats getStats() {
+    public Stats getEntityStats() {
         Stats stats = new Stats();
         stats.nodeCount = spatialIndex.size();
         stats.entityCount = entities.size();
@@ -335,6 +354,164 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
         node.addEntity(entityId);
         entity.addLocation(newMortonCode);
     }
+    
+    // Helper methods for spatial range queries
+    
+    Stream<SpatialNode<Content>> spatialRangeQuery(Spatial volume, boolean includeIntersecting) {
+        List<SpatialNode<Content>> results = new ArrayList<>();
+        var bounds = getVolumeBounds(volume);
+        if (bounds == null) {
+            return results.stream();
+        }
+        
+        for (Map.Entry<Long, OctreeNode<ID>> entry : spatialIndex.entrySet()) {
+            long mortonIndex = entry.getKey();
+            OctreeNode<ID> node = entry.getValue();
+            
+            if (node.isEmpty()) {
+                continue;
+            }
+            
+            Spatial.Cube cube = Octree.toCube(mortonIndex);
+            
+            // Check if cube intersects or is contained in volume
+            boolean include = false;
+            if (includeIntersecting) {
+                include = doesCubeIntersectVolume(cube, volume);
+            } else {
+                include = isCubeContainedInVolume(cube, volume);
+            }
+            
+            if (include) {
+                ID entityId = node.getEntityIds().iterator().next();
+                Content content = getEntity(entityId);
+                results.add(new SpatialNode<>(mortonIndex, content));
+            }
+        }
+        
+        return results.stream();
+    }
+    
+    boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
+        return switch (volume) {
+            case Spatial.Cube other ->
+                cube.originX() < other.originX() + other.extent() && 
+                cube.originX() + cube.extent() > other.originX() &&
+                cube.originY() < other.originY() + other.extent() && 
+                cube.originY() + cube.extent() > other.originY() &&
+                cube.originZ() < other.originZ() + other.extent() && 
+                cube.originZ() + cube.extent() > other.originZ();
+                
+            case Spatial.Sphere sphere -> {
+                // Find closest point on cube to sphere center
+                float closestX = Math.max(cube.originX(), Math.min(sphere.centerX(), cube.originX() + cube.extent()));
+                float closestY = Math.max(cube.originY(), Math.min(sphere.centerY(), cube.originY() + cube.extent()));
+                float closestZ = Math.max(cube.originZ(), Math.min(sphere.centerZ(), cube.originZ() + cube.extent()));
+                
+                // Check if closest point is within sphere radius
+                float dx = closestX - sphere.centerX();
+                float dy = closestY - sphere.centerY();
+                float dz = closestZ - sphere.centerZ();
+                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
+            }
+            
+            default -> true; // Conservative: include for other volume types
+        };
+    }
+    
+    boolean isCubeContainedInVolume(Spatial.Cube cube, Spatial volume) {
+        return switch (volume) {
+            case Spatial.Cube other ->
+                cube.originX() >= other.originX() && 
+                cube.originY() >= other.originY() && 
+                cube.originZ() >= other.originZ() &&
+                cube.originX() + cube.extent() <= other.originX() + other.extent() &&
+                cube.originY() + cube.extent() <= other.originY() + other.extent() &&
+                cube.originZ() + cube.extent() <= other.originZ() + other.extent();
+                
+            case Spatial.Sphere sphere -> {
+                // Check all 8 corners of the cube
+                for (int i = 0; i < 8; i++) {
+                    float x = cube.originX() + ((i & 1) != 0 ? cube.extent() : 0);
+                    float y = cube.originY() + ((i & 2) != 0 ? cube.extent() : 0);
+                    float z = cube.originZ() + ((i & 4) != 0 ? cube.extent() : 0);
+                    
+                    float dx = x - sphere.centerX();
+                    float dy = y - sphere.centerY();
+                    float dz = z - sphere.centerZ();
+                    
+                    if ((dx * dx + dy * dy + dz * dz) > (sphere.radius() * sphere.radius())) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            
+            default -> false; // Conservative: exclude for other volume types
+        };
+    }
+    
+    VolumeBounds getVolumeBounds(Spatial volume) {
+        return switch (volume) {
+            case Spatial.Cube cube -> new VolumeBounds(
+                cube.originX(), cube.originY(), cube.originZ(),
+                cube.originX() + cube.extent(), cube.originY() + cube.extent(),
+                cube.originZ() + cube.extent()
+            );
+            case Spatial.Sphere sphere -> new VolumeBounds(
+                sphere.centerX() - sphere.radius(),
+                sphere.centerY() - sphere.radius(),
+                sphere.centerZ() - sphere.radius(),
+                sphere.centerX() + sphere.radius(),
+                sphere.centerY() + sphere.radius(),
+                sphere.centerZ() + sphere.radius()
+            );
+            case Spatial.aabb aabb -> new VolumeBounds(
+                aabb.originX(), aabb.originY(), aabb.originZ(),
+                aabb.originX() + aabb.extentX(), aabb.originY() + aabb.extentY(),
+                aabb.originZ() + aabb.extentZ()
+            );
+            case Spatial.aabt aabt -> new VolumeBounds(
+                aabt.originX(), aabt.originY(), aabt.originZ(),
+                aabt.originX() + aabt.extentX(), aabt.originY() + aabt.extentY(),
+                aabt.originZ() + aabt.extentZ()
+            );
+            case Spatial.Parallelepiped para -> new VolumeBounds(
+                para.originX(), para.originY(), para.originZ(),
+                para.originX() + para.extentX(),
+                para.originY() + para.extentY(),
+                para.originZ() + para.extentZ()
+            );
+            case Spatial.Tetrahedron tet -> {
+                var vertices = new javax.vecmath.Tuple3f[] { tet.a(), tet.b(), tet.c(), tet.d() };
+                float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+                float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+                for (var vertex : vertices) {
+                    minX = Math.min(minX, vertex.x);
+                    minY = Math.min(minY, vertex.y);
+                    minZ = Math.min(minZ, vertex.z);
+                    maxX = Math.max(maxX, vertex.x);
+                    maxY = Math.max(maxY, vertex.y);
+                    maxZ = Math.max(maxZ, vertex.z);
+                }
+                yield new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+            }
+            default -> null;
+        };
+    }
+    
+    byte findMinimumContainingLevel(VolumeBounds bounds) {
+        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
+                                   bounds.maxZ - bounds.minZ);
+        
+        // Find the level where cube length >= maxExtent
+        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
+            if (Constants.lengthAtLevel(level) >= maxExtent) {
+                return level;
+            }
+        }
+        return Constants.getMaxRefinementLevel();
+    }
 
     private long calculateMortonCode(Point3f position, byte level) {
         // Scale coordinates to the appropriate level of the hierarchy
@@ -403,6 +580,11 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
         Entity<Content> entity = entities.get(entityId);
         if (entity != null) {
             entity.addLocation(mortonCode);
+        }
+        
+        // In single content mode, we don't split nodes
+        if (singleContentMode) {
+            return;
         }
 
         // Handle subdivision if needed
@@ -499,6 +681,7 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
         }
     }
 
+    
     /**
      * Statistics tracking
      */
@@ -513,5 +696,11 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
             return String.format("Nodes: %d, Entities: %d, Max Depth: %d, Total Refs: %d", nodeCount, entityCount,
                                  maxDepth, totalEntityReferences);
         }
+    }
+    
+    /**
+     * Helper record for volume bounds
+     */
+    record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
     }
 }

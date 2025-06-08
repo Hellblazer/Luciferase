@@ -211,7 +211,7 @@ public class EntityIntegrationTest {
     @Test
     void testPerformanceWithLargeEntityCount() {
         // Verify the octree handles the dense cluster efficiently
-        OctreeWithEntities.Stats stats = octree.getStats();
+        OctreeWithEntities.Stats stats = octree.getEntityStats();
         
         // Count the actual entities we inserted: 4 + 3 + 4 + 1 + 1 + 10 = 23
         assertTrue(stats.entityCount >= 23, 

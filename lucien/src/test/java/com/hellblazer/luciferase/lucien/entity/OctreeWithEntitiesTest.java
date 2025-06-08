@@ -226,7 +226,7 @@ public class OctreeWithEntitiesTest {
         longIdOctree.insert(new Point3f(100, 100, 100), (byte) 15, "E2");
         longIdOctree.insert(new Point3f(5000, 5000, 5000), (byte) 15, "E3");
 
-        OctreeWithEntities.Stats stats = longIdOctree.getStats();
+        OctreeWithEntities.Stats stats = longIdOctree.getEntityStats();
 
         assertEquals(2, stats.nodeCount); // Two different positions
         assertEquals(3, stats.entityCount); // Three entities total

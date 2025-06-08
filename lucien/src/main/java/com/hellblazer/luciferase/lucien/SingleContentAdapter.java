@@ -182,7 +182,7 @@ public class SingleContentAdapter<Content> extends Octree<Content> {
      */
     @Override
     public SpatialIndexStats getStats() {
-        OctreeWithEntities.Stats entityStats = entityOctree.getStats();
+        OctreeWithEntities.Stats entityStats = entityOctree.getEntityStats();
         return new SpatialIndexStats(entityStats.nodeCount, entityStats.entityCount);
     }
     
@@ -190,7 +190,7 @@ public class SingleContentAdapter<Content> extends Octree<Content> {
      * Get statistics (legacy compatibility)
      */
     public OctreeStats getStatsLegacy() {
-        OctreeWithEntities.Stats entityStats = entityOctree.getStats();
+        OctreeWithEntities.Stats entityStats = entityOctree.getEntityStats();
         return new OctreeStats(entityStats.nodeCount, entityStats.entityCount);
     }
 
@@ -265,7 +265,7 @@ public class SingleContentAdapter<Content> extends Octree<Content> {
      * Get the number of nodes/entities
      */
     public int size() {
-        return entityOctree.getStats().entityCount;
+        return entityOctree.getEntityStats().entityCount;
     }
 
     /**

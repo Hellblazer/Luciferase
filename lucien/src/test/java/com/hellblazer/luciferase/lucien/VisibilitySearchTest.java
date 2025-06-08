@@ -195,7 +195,7 @@ public class VisibilitySearchTest {
             VisibilitySearch.calculateVisibilityStatistics(observer, maxViewDistance, multiEntityOctree);
         
         // Verify total entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, stats.totalEntities);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, stats.totalEntities);
         
         // Should have some visible entities
         assertTrue(stats.visibleEntities > 0);

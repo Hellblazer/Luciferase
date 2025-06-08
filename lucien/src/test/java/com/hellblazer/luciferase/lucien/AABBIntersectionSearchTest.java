@@ -189,7 +189,7 @@ public class AABBIntersectionSearchTest {
         assertEquals(3, outside);
         
         // Total should match entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, inside + onBoundary + outside);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, inside + onBoundary + outside);
     }
 
     @Test

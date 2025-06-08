@@ -156,7 +156,7 @@ public class FrustumCullingSearchTest {
         assertTrue(outside > 0);
         
         // Total should match entity count
-        assertEquals(multiEntityOctree.getStats().entityCount, inside + intersecting + outside);
+        assertEquals(multiEntityOctree.getEntityStats().entityCount, inside + intersecting + outside);
     }
 
     @Test
@@ -293,7 +293,7 @@ public class FrustumCullingSearchTest {
         int[] counts = FrustumCullingSearch.countEntitiesByCullingResult(testFrustum, multiEntityOctree);
         
         int totalFromCounts = counts[0] + counts[1] + counts[2];
-        int totalEntities = multiEntityOctree.getStats().entityCount;
+        int totalEntities = multiEntityOctree.getEntityStats().entityCount;
         
         assertEquals(totalEntities, totalFromCounts);
     }
