@@ -97,6 +97,7 @@ public class Constants {
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
     public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+    public static final int MAX_COORD    = (1 << 21) - 1;
 
     /**
      * Calculate the Morton index for a given point and level
@@ -104,12 +105,27 @@ public class Constants {
      * @param point the 3D point
      * @param level the refinement level
      * @return the Morton index
+     *
+     * Note: Morton encoding uses 21-bit coordinates. The maximum coordinate value that can be encoded is 2^21 - 1 =
+     * 2,097,151. Coordinates beyond this range will wrap around due to bit masking in the MortonCurve.encode method. At
+     * level 0, the cell length is 2^21 = 2,097,152, which exceeds the maximum encodable coordinate.
      */
     public static long calculateMortonIndex(Point3f point, byte level) {
         var length = lengthAtLevel(level);
-        return MortonCurve.encode((int) (Math.floor(point.x / length) * length),
-                                  (int) (Math.floor(point.y / length) * length),
-                                  (int) (Math.floor(point.z / length) * length));
+        int quantizedX = (int) (Math.floor(point.x / length) * length);
+        int quantizedY = (int) (Math.floor(point.y / length) * length);
+        int quantizedZ = (int) (Math.floor(point.z / length) * length);
+
+        // Warn if coordinates will overflow (only in debug/development)
+        // Note: Negative coordinates will be wrapped by the cast to int and then by Morton encoding
+        assert (quantizedX & MAX_COORD) == quantizedX || quantizedX < 0 : String.format(
+        "X coordinate %d exceeds 21-bit range, will wrap to %d", quantizedX, quantizedX & MAX_COORD);
+        assert (quantizedY & MAX_COORD) == quantizedY || quantizedY < 0 : String.format(
+        "Y coordinate %d exceeds 21-bit range, will wrap to %d", quantizedY, quantizedY & MAX_COORD);
+        assert (quantizedZ & MAX_COORD) == quantizedZ || quantizedZ < 0 : String.format(
+        "Z coordinate %d exceeds 21-bit range, will wrap to %d", quantizedZ, quantizedZ & MAX_COORD);
+
+        return MortonCurve.encode(quantizedX, quantizedY, quantizedZ);
     }
 
     /** maximum level we can accommodate without overflow **/
@@ -121,6 +137,7 @@ public class Constants {
      * @return the length of an edge at the given level, in integer coordinates
      */
     public static int lengthAtLevel(byte level) {
+        assert level <= getMaxRefinementLevel();
         return 1 << (getMaxRefinementLevel() - level);
     }
 
