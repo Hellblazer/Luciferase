@@ -19,6 +19,9 @@
 
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.List;
@@ -97,16 +100,39 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> kNearestNeighbors(Point3f point, int k) {
         return executeQuery(() -> {
-            // TODO: Implement using multi-entity k-NN search
-            throw new UnsupportedOperationException("K-NN search not yet implemented for single-content adapter");
+            List<KNearestNeighborSearch.KNNCandidate<LongEntityID, Content>> results = 
+                KNearestNeighborSearch.findKNearestEntities(point, k, octree.getEntityOctree());
+            
+            return results.stream()
+                .map(r -> {
+                    // Get morton index for this entity position
+                    long mortonIndex = MortonCurve.encode(
+                        (int)r.position.x, (int)r.position.y, (int)r.position.z
+                    );
+                    return createSpatialResult(mortonIndex, r.content, r.distance, point);
+                })
+                .toList();
         });
     }
     
     @Override
     public List<SpatialResult<Content>> withinDistance(Point3f point, float distance) {
-        // TODO: Implement using multi-entity proximity search
         return executeQuery(() -> {
-            throw new UnsupportedOperationException("Proximity search not yet implemented for single-content adapter");
+            ProximitySearch.DistanceRange distanceRange = 
+                new ProximitySearch.DistanceRange(0.0f, distance, ProximitySearch.ProximityType.CLOSE);
+            
+            List<ProximitySearch.EntityProximityResult<LongEntityID, Content>> results = 
+                ProximitySearch.findEntitiesWithinDistanceRange(point, distanceRange, octree.getEntityOctree());
+            
+            return results.stream()
+                .map(r -> {
+                    // Get morton index for this entity position
+                    long mortonIndex = MortonCurve.encode(
+                        (int)r.position.x, (int)r.position.y, (int)r.position.z
+                    );
+                    return createSpatialResult(mortonIndex, r.content, r.distanceToQuery, point);
+                })
+                .toList();
         });
     }
     
@@ -153,16 +179,35 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     @Override
     public List<SpatialResult<Content>> containedInSphere(Point3f center, float radius) {
         return executeQuery(() -> {
-            // TODO: Implement using multi-entity containment search
-            throw new UnsupportedOperationException("Containment search not yet implemented for single-content adapter");
+            Spatial.Sphere sphere = new Spatial.Sphere(center.x, center.y, center.z, radius);
+            
+            List<ContainmentSearch.ContainedEntity<LongEntityID, Content>> results = 
+                ContainmentSearch.findEntitiesInSphere(sphere, octree.getEntityOctree());
+            
+            return results.stream()
+                .map(r -> createSpatialResult(r.mortonIndex, r.content, 0.0, center))
+                .toList();
         });
     }
     
     @Override
     public List<SpatialResult<Content>> withinDistanceRange(Point3f point, float minDistance, float maxDistance) {
-        // TODO: Implement using multi-entity proximity search
         return executeQuery(() -> {
-            throw new UnsupportedOperationException("Proximity search not yet implemented for single-content adapter");
+            ProximitySearch.DistanceRange distanceRange = 
+                new ProximitySearch.DistanceRange(minDistance, maxDistance, ProximitySearch.ProximityType.CLOSE);
+            
+            List<ProximitySearch.EntityProximityResult<LongEntityID, Content>> results = 
+                ProximitySearch.findEntitiesWithinDistanceRange(point, distanceRange, octree.getEntityOctree());
+            
+            return results.stream()
+                .map(r -> {
+                    // Get morton index for this entity position
+                    long mortonIndex = com.hellblazer.luciferase.geometry.MortonCurve.encode(
+                        (int)r.position.x, (int)r.position.y, (int)r.position.z
+                    );
+                    return createSpatialResult(mortonIndex, r.content, r.distanceToQuery, point);
+                })
+                .toList();
         });
     }
     

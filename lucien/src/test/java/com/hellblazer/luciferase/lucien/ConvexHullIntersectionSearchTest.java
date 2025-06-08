@@ -367,9 +367,18 @@ public class ConvexHullIntersectionSearchTest {
             );
         
         // Entities inside should have positive penetration depth
+        long insideCount = results.stream()
+            .filter(r -> r.intersectionType == ConvexHullIntersectionSearch.IntersectionType.COMPLETELY_INSIDE)
+            .count();
+        
+        // If no entities are classified as COMPLETELY_INSIDE, that's the bug
+        assertTrue(insideCount > 0, "Expected some entities to be COMPLETELY_INSIDE the convex hull");
+        
         for (var result : results) {
             if (result.intersectionType == ConvexHullIntersectionSearch.IntersectionType.COMPLETELY_INSIDE) {
-                assertTrue(result.penetrationDepth > 0);
+                assertTrue(result.penetrationDepth > 0, 
+                    String.format("Entity %s at %s should have positive penetration depth, got: %f", 
+                        result.content, result.position, result.penetrationDepth));
             }
         }
     }

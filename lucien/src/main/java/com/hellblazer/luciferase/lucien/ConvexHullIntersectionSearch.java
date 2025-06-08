@@ -194,7 +194,7 @@ public class ConvexHullIntersectionSearch {
         }
         
         /**
-         * Test if a point is inside this convex hull
+         * Test if a point is inside this convex hull (includes boundary)
          */
         public boolean containsPoint(Point3f point) {
             validatePositiveCoordinates(point);
@@ -202,6 +202,23 @@ public class ConvexHullIntersectionSearch {
             for (Plane3D plane : planes) {
                 if (plane.distanceToPoint(point) > 0) {
                     return false; // Point is on positive side of plane (outside)
+                }
+            }
+            return true;
+        }
+        
+        /**
+         * Test if a point is strictly inside this convex hull (excludes boundary)
+         */
+        public boolean strictlyContainsPoint(Point3f point) {
+            validatePositiveCoordinates(point);
+            
+            final float EPSILON = 1e-6f; // Small tolerance for floating point comparison
+            
+            for (Plane3D plane : planes) {
+                float distance = plane.distanceToPoint(point);
+                if (distance >= -EPSILON) { // Point is outside or on boundary
+                    return false;
                 }
             }
             return true;
@@ -386,8 +403,13 @@ public class ConvexHullIntersectionSearch {
                 intersectionType = convexHull.intersectsEntityBounds(bounds);
             } else {
                 // No bounds, test point
-                intersectionType = convexHull.containsPoint(position) ? 
-                    IntersectionType.COMPLETELY_INSIDE : IntersectionType.COMPLETELY_OUTSIDE;
+                if (convexHull.strictlyContainsPoint(position)) {
+                    intersectionType = IntersectionType.COMPLETELY_INSIDE;
+                } else if (convexHull.containsPoint(position)) {
+                    intersectionType = IntersectionType.INTERSECTING; // On boundary
+                } else {
+                    intersectionType = IntersectionType.COMPLETELY_OUTSIDE;
+                }
             }
             
             if (intersectionType != IntersectionType.COMPLETELY_OUTSIDE) {
@@ -440,7 +462,7 @@ public class ConvexHullIntersectionSearch {
             if (bounds != null) {
                 completelyInside = convexHull.intersectsEntityBounds(bounds) == IntersectionType.COMPLETELY_INSIDE;
             } else {
-                completelyInside = convexHull.containsPoint(position);
+                completelyInside = convexHull.strictlyContainsPoint(position);
             }
             
             if (completelyInside) {
@@ -490,8 +512,13 @@ public class ConvexHullIntersectionSearch {
             if (bounds != null) {
                 type = convexHull.intersectsEntityBounds(bounds);
             } else {
-                type = convexHull.containsPoint(position) ? 
-                    IntersectionType.COMPLETELY_INSIDE : IntersectionType.COMPLETELY_OUTSIDE;
+                if (convexHull.strictlyContainsPoint(position)) {
+                    type = IntersectionType.COMPLETELY_INSIDE;
+                } else if (convexHull.containsPoint(position)) {
+                    type = IntersectionType.INTERSECTING; // On boundary
+                } else {
+                    type = IntersectionType.COMPLETELY_OUTSIDE;
+                }
             }
             
             switch (type) {
@@ -538,8 +565,13 @@ public class ConvexHullIntersectionSearch {
                 if (bounds != null) {
                     type = hull.intersectsEntityBounds(bounds);
                 } else {
-                    type = hull.containsPoint(position) ? 
-                        IntersectionType.COMPLETELY_INSIDE : IntersectionType.COMPLETELY_OUTSIDE;
+                    if (hull.strictlyContainsPoint(position)) {
+                        type = IntersectionType.COMPLETELY_INSIDE;
+                    } else if (hull.containsPoint(position)) {
+                        type = IntersectionType.INTERSECTING; // On boundary
+                    } else {
+                        type = IntersectionType.COMPLETELY_OUTSIDE;
+                    }
                 }
                 
                 if (type != IntersectionType.COMPLETELY_OUTSIDE) {
@@ -601,8 +633,13 @@ public class ConvexHullIntersectionSearch {
             if (bounds != null) {
                 type = convexHull.intersectsEntityBounds(bounds);
             } else {
-                type = convexHull.containsPoint(position) ? 
-                    IntersectionType.COMPLETELY_INSIDE : IntersectionType.COMPLETELY_OUTSIDE;
+                if (convexHull.strictlyContainsPoint(position)) {
+                    type = IntersectionType.COMPLETELY_INSIDE;
+                } else if (convexHull.containsPoint(position)) {
+                    type = IntersectionType.INTERSECTING; // On boundary
+                } else {
+                    type = IntersectionType.COMPLETELY_OUTSIDE;
+                }
             }
             
             switch (type) {
