@@ -141,7 +141,7 @@ public class AlgorithmOptimizer {
                     visited.add(currentKey);
                     Content content = map.get(currentKey);
                     if (content != null) {
-                        Spatial.Cube cube = Octree.toCube(currentKey);
+                        Spatial.Cube cube = new Spatial.Cube(currentKey);
                         Point3f cubeCenter = new Point3f(
                             cube.originX() + cube.extent() / 2.0f,
                             cube.originY() + cube.extent() / 2.0f,
@@ -175,7 +175,7 @@ public class AlgorithmOptimizer {
                     k + 1, Comparator.comparing((DistanceEntry<Content> e) -> e.distance).reversed());
                 
                 for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
-                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                     Point3f cubeCenter = new Point3f(
                         cube.originX() + cube.extent() / 2.0f,
                         cube.originY() + cube.extent() / 2.0f,
@@ -263,7 +263,7 @@ public class AlgorithmOptimizer {
                 
                 for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
                     nodesVisited++;
-                    Spatial.Cube cube = Octree.toCube(entry.getKey());
+                    Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                     
                     if (optimizedBounds.intersects(cube)) {
                         results.add(entry.getValue());

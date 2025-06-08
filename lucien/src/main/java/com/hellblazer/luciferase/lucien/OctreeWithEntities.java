@@ -372,7 +372,9 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
                 continue;
             }
             
-            Spatial.Cube cube = Octree.toCube(mortonIndex);
+            var point = MortonCurve.decode(mortonIndex);
+            byte level = Constants.toLevel(mortonIndex);
+            Spatial.Cube cube = new Spatial.Cube(point[0], point[1], point[2], Constants.lengthAtLevel(level));
             
             // Check if cube intersects or is contained in volume
             boolean include = false;

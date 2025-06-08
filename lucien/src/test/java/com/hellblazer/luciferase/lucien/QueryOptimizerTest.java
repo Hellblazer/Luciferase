@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,18 +19,18 @@ import static org.junit.jupiter.api.Assertions.*;
 public class QueryOptimizerTest {
 
     private final byte                                         testLevel = 15;
-    private       Octree<String>                               octree;
+    private       OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String> spatialIndex;
     private       QueryOptimizer.OptimizedSpatialQuery<String> queryEngine;
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>();
+        spatialIndex = new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
 
         // Insert test data points in various spatial patterns
         insertTestData();
 
         // Create query engine with moderate cache size
-        queryEngine = new QueryOptimizer.OptimizedSpatialQuery<>(octree, 100);
+        queryEngine = new QueryOptimizer.OptimizedSpatialQuery<>(spatialIndex, 100);
     }
 
     @Test
@@ -102,13 +104,13 @@ public class QueryOptimizerTest {
 
     @Test
     void testEmptyOctreeQueries() {
-        Octree<String> emptyOctree = new Octree<>();
+        var emptyIndex = new OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String>(new SequentialLongIDGenerator());
         QueryOptimizer.OptimizedSpatialQuery<String> emptyQueryEngine = new QueryOptimizer.OptimizedSpatialQuery<>(
-        emptyOctree, 10);
+        emptyIndex, 10);
 
         Point3f queryPoint = new Point3f(200.0f, 200.0f, 200.0f);
 
-        // All queries on empty octree should return empty results
+        // All queries on empty spatialIndex should return empty results
         QueryOptimizer.QueryResult<String> radiusResult = emptyQueryEngine.radiusQuery(queryPoint, 100.0f);
         assertTrue(radiusResult.results.isEmpty());
 
@@ -161,7 +163,7 @@ public class QueryOptimizerTest {
 
         // Should find exactly k results (or fewer if total data < k)
         assertTrue(result.results.size() <= k);
-        assertTrue(result.results.size() <= octree.getMap().size());
+        assertTrue(result.results.size() <= spatialIndex.getMap().size());
 
         // Test with k=1
         QueryOptimizer.QueryResult<String> singleResult = queryEngine.nearestNeighborQuery(queryPoint, 1);
@@ -197,8 +199,9 @@ public class QueryOptimizerTest {
 
     @Test
     void testOptimizedRangeQuery() {
-        Point3f minBounds = new Point3f(150.0f, 150.0f, 150.0f);
-        Point3f maxBounds = new Point3f(250.0f, 250.0f, 250.0f);
+        // Use grid coordinates - dense cluster around (200,200,200) at level 15 maps to grid (3,3,3)
+        Point3f minBounds = new Point3f(2.0f, 2.0f, 2.0f);
+        Point3f maxBounds = new Point3f(4.0f, 4.0f, 4.0f);
 
         QueryOptimizer.QueryResult<String> result = queryEngine.rangeQuery(minBounds, maxBounds);
 
@@ -458,14 +461,14 @@ public class QueryOptimizerTest {
             float x = 180.0f + i * 2.0f;
             float y = 180.0f + i * 2.0f;
             float z = 180.0f + i * 2.0f;
-            octree.insert(new Point3f(x, y, z), testLevel, "Dense_" + i);
+            spatialIndex.insert(new Point3f(x, y, z), testLevel, "Dense_" + i);
         }
 
         // Sparse points distributed widely
-        octree.insert(new Point3f(50.0f, 50.0f, 50.0f), testLevel, "Sparse_1");
-        octree.insert(new Point3f(500.0f, 500.0f, 500.0f), testLevel, "Sparse_2");
-        octree.insert(new Point3f(100.0f, 300.0f, 200.0f), testLevel, "Sparse_3");
-        octree.insert(new Point3f(400.0f, 150.0f, 350.0f), testLevel, "Sparse_4");
+        spatialIndex.insert(new Point3f(50.0f, 50.0f, 50.0f), testLevel, "Sparse_1");
+        spatialIndex.insert(new Point3f(500.0f, 500.0f, 500.0f), testLevel, "Sparse_2");
+        spatialIndex.insert(new Point3f(100.0f, 300.0f, 200.0f), testLevel, "Sparse_3");
+        spatialIndex.insert(new Point3f(400.0f, 150.0f, 350.0f), testLevel, "Sparse_4");
 
         // Medium density cluster around (350, 350, 350)
         ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -473,7 +476,7 @@ public class QueryOptimizerTest {
             float x = 320.0f + random.nextFloat() * 60.0f;
             float y = 320.0f + random.nextFloat() * 60.0f;
             float z = 320.0f + random.nextFloat() * 60.0f;
-            octree.insert(new Point3f(x, y, z), testLevel, "Medium_" + i);
+            spatialIndex.insert(new Point3f(x, y, z), testLevel, "Medium_" + i);
         }
     }
 }

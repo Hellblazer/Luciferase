@@ -39,7 +39,7 @@ public interface SpatialIndex<Content> {
          * Convert the node's Morton index to a spatial cube
          */
         public Spatial.Cube toCube() {
-            return Octree.toCube(index);
+            return new Spatial.Cube(index);
         }
     }
     

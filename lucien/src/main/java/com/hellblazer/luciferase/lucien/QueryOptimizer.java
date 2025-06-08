@@ -449,7 +449,7 @@ public class QueryOptimizer {
             List<Content> results = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -468,7 +468,7 @@ public class QueryOptimizer {
             List<Content> results = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 
                 // Check if cube intersects with query bounds
                 if (cube.originX() <= maxBounds.x && cube.originX() + cube.extent() >= minBounds.x &&
@@ -486,7 +486,7 @@ public class QueryOptimizer {
             List<Map.Entry<Float, Content>> candidates = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -508,7 +508,7 @@ public class QueryOptimizer {
             List<Point3f> points = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : spatialIndex.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -552,6 +552,14 @@ public class QueryOptimizer {
         
         public void clearCache() {
             cache.clear();
+        }
+        
+        
+        private static float calculateDistance(Point3f p1, Point3f p2) {
+            float dx = p1.x - p2.x;
+            float dy = p1.y - p2.y;
+            float dz = p1.z - p2.z;
+            return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
         }
     }
 

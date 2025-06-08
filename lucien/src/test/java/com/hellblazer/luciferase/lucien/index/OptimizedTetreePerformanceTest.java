@@ -1,6 +1,8 @@
 package com.hellblazer.luciferase.lucien.index;
 
-import com.hellblazer.luciferase.lucien.Octree;
+import com.hellblazer.luciferase.lucien.OctreeWithEntitiesSpatialIndexAdapter;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.Tetree;
 import com.hellblazer.luciferase.lucien.TetreeOptimized;
@@ -22,7 +24,7 @@ public class OptimizedTetreePerformanceTest {
     private static final int                     DATASET_SIZE = 5000;
     private              Tetree<String>          originalTetree;
     private              TetreeOptimized<String> optimizedTetree;
-    private              Octree<String>          octree;
+    private              OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String>          octree;
 
     @Test
     @DisplayName("Compare boundedBy query performance: Original vs Optimized vs Octree")
@@ -133,7 +135,7 @@ public class OptimizedTetreePerformanceTest {
     void setUp() {
         originalTetree = new Tetree<>(new TreeMap<>());
         optimizedTetree = new TetreeOptimized<>(new TreeMap<>());
-        octree = new Octree<>();
+        octree = new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
 
         // Populate all data structures with identical data
         populateDataStructures();

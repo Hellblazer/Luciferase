@@ -1,6 +1,8 @@
 package com.hellblazer.luciferase.lucien.index;
 
 import com.hellblazer.luciferase.lucien.*;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,33 +25,33 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SpatialContainmentTest {
 
     private Tetree<String>        tetree;
-    private Octree<String>        octree;
+    private OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String> spatialIndex;
     private TreeMap<Long, String> tetreeContents;
-    private TreeMap<Long, String> octreeContents;
+    private TreeMap<Long, String> spatialIndexContents;
 
     @BeforeEach
     void setUp() {
         tetreeContents = new TreeMap<>();
-        octreeContents = new TreeMap<>();
+        spatialIndexContents = new TreeMap<>();
         tetree = new Tetree<>(tetreeContents);
-        octree = new Octree<>();
-        // Pre-populate octree if needed
-        if (!octreeContents.isEmpty()) {
-            for (Map.Entry<Long, String> entry : octreeContents.entrySet()) {
-                octree.getMap().put(entry.getKey(), entry.getValue());
+        spatialIndex = new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
+        // Pre-populate spatial index if needed
+        if (!spatialIndexContents.isEmpty()) {
+            for (Map.Entry<Long, String> entry : spatialIndexContents.entrySet()) {
+                spatialIndex.getMap().put(entry.getKey(), entry.getValue());
             }
         }
     }
 
     @Test
-    @DisplayName("Test basic point location in octree")
+    @DisplayName("Test basic point location in spatialIndex")
     void testBasicPointLocationOctree() {
         // Test Morton curve-based point location
         Point3f point = new Point3f(100.0f, 200.0f, 300.0f);
         byte level = 10;
 
-        long index = octree.insert(point, level, "test");
-        Spatial.Cube cube = octree.locate(index);
+        long index = spatialIndex.insert(point, level, "test");
+        Spatial.Cube cube = spatialIndex.locate(index);
 
         assertNotNull(cube, "Octree should locate cube for point");
         assertTrue(cube.extent() >= 0, "Cube extent should be non-negative");
@@ -150,10 +152,10 @@ public class SpatialContainmentTest {
     @Test
     @DisplayName("Test implemented spatial operations return proper values")
     void testImplementedSpatialOperations() {
-        // Add some content to tetree and octree first
+        // Add some content to tetree and spatialIndex first
         tetree.insert(new Point3f(100, 100, 100), (byte) 10, "test-data-1");
         tetree.insert(new Point3f(150, 150, 150), (byte) 10, "test-data-2");
-        octree.insert(new Point3f(100, 100, 100), (byte) 10, "test-data-3");
+        spatialIndex.insert(new Point3f(100, 100, 100), (byte) 10, "test-data-3");
 
         // Test that implemented operations return proper values
 
@@ -179,17 +181,17 @@ public class SpatialContainmentTest {
         assertNotNull(intersecting, "Implemented intersecting should return simplex");
 
         // Octree spatial operations (using wildcard since Hexahedron is not public)
-        Stream<?> octreeBoundedBy = octree.boundedBy(testVolume);
-        assertTrue(octreeBoundedBy.count() >= 0, "Implemented octree boundedBy should return stream");
+        Stream<?> spatialIndexBoundedBy = spatialIndex.boundedBy(testVolume);
+        assertTrue(spatialIndexBoundedBy.count() >= 0, "Implemented spatialIndex boundedBy should return stream");
 
-        Stream<?> octreeBounding = octree.bounding(testVolume);
-        assertTrue(octreeBounding.count() >= 0, "Implemented octree bounding should return stream");
+        Stream<?> spatialIndexBounding = spatialIndex.bounding(testVolume);
+        assertTrue(spatialIndexBounding.count() >= 0, "Implemented spatialIndex bounding should return stream");
 
-        Object octreeEnclosing = octree.enclosing(testVolume);
-        assertNotNull(octreeEnclosing, "Implemented octree enclosing should return hexahedron");
+        Object spatialIndexEnclosing = spatialIndex.enclosing(testVolume);
+        assertNotNull(spatialIndexEnclosing, "Implemented spatialIndex enclosing should return hexahedron");
 
-        Object octreeEnclosingPoint = octree.enclosing(point, (byte) 10);
-        assertNotNull(octreeEnclosingPoint, "Implemented octree point enclosing should return hexahedron");
+        Object spatialIndexEnclosingPoint = spatialIndex.enclosing(point, (byte) 10);
+        assertNotNull(spatialIndexEnclosingPoint, "Implemented spatialIndex point enclosing should return hexahedron");
     }
 
     @Test
@@ -267,12 +269,12 @@ public class SpatialContainmentTest {
                    || fineTet.z() >= coarseTet.z() && fineTet.z() < coarseTet.z() + coarseTet.length(),
                    "Fine tet should be spatially related to coarse tet");
 
-        // Test octree hierarchy
-        long coarseIndex = octree.insert(testPoint, (byte) 8, "coarse");
-        long fineIndex = octree.insert(testPoint, (byte) 12, "fine");
+        // Test spatialIndex hierarchy
+        long coarseIndex = spatialIndex.insert(testPoint, (byte) 8, "coarse");
+        long fineIndex = spatialIndex.insert(testPoint, (byte) 12, "fine");
 
-        Spatial.Cube coarseCube = octree.locate(coarseIndex);
-        Spatial.Cube fineCube = octree.locate(fineIndex);
+        Spatial.Cube coarseCube = spatialIndex.locate(coarseIndex);
+        Spatial.Cube fineCube = spatialIndex.locate(fineIndex);
 
         assertNotNull(coarseCube, "Should locate coarse cube");
         assertNotNull(fineCube, "Should locate fine cube");

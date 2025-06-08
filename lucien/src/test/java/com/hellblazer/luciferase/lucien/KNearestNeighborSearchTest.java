@@ -196,28 +196,35 @@ public class KNearestNeighborSearchTest {
     }
 
     @Test
-    void testComparisonWithSingleContentAdapter() {
-        // Create single content adapter for comparison
-        SingleContentAdapter<String> adapter = new SingleContentAdapter<>();
+    void testComparisonWithSingleEntityPerLocation() {
+        // Create another multi-entity octree with only one entity per location
+        List<EntityTestUtils.MultiEntityLocation<String>> singleEntityLocations = new ArrayList<>();
+        singleEntityLocations.add(new EntityTestUtils.MultiEntityLocation<>(
+            new Point3f(32.0f, 32.0f, 32.0f), testLevel, "Entity1A"));
+        singleEntityLocations.add(new EntityTestUtils.MultiEntityLocation<>(
+            new Point3f(96.0f, 96.0f, 96.0f), testLevel, "Entity2A"));
+        singleEntityLocations.add(new EntityTestUtils.MultiEntityLocation<>(
+            new Point3f(160.0f, 160.0f, 160.0f), testLevel, "Entity3"));
+        singleEntityLocations.add(new EntityTestUtils.MultiEntityLocation<>(
+            new Point3f(224.0f, 224.0f, 224.0f), testLevel, "Entity4"));
+        singleEntityLocations.add(new EntityTestUtils.MultiEntityLocation<>(
+            new Point3f(288.0f, 288.0f, 288.0f), testLevel, "Entity5A"));
         
-        // Insert only first entity from each location
-        adapter.insert(new Point3f(32.0f, 32.0f, 32.0f), testLevel, "Entity1A");
-        adapter.insert(new Point3f(96.0f, 96.0f, 96.0f), testLevel, "Entity2A");
-        adapter.insert(new Point3f(160.0f, 160.0f, 160.0f), testLevel, "Entity3");
-        adapter.insert(new Point3f(224.0f, 224.0f, 224.0f), testLevel, "Entity4");
-        adapter.insert(new Point3f(288.0f, 288.0f, 288.0f), testLevel, "Entity5A");
+        OctreeWithEntities<LongEntityID, String> singleEntityOctree = 
+            EntityTestUtils.createMultiEntityOctree(singleEntityLocations);
         
         Point3f queryPoint = new Point3f(100.0f, 100.0f, 100.0f);
         
-        // Get results from single content adapter (commented out due to removal of single-content search)
-        // List<KNearestNeighborSearch.KNNCandidate<String>> singleResults = 
-        //     KNearestNeighborSearch.findKNearestNeighbors(queryPoint, 3, adapter);
+        // Get results from single entity per location octree
+        List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> singleResults = 
+            KNearestNeighborSearch.findKNearestEntities(queryPoint, 3, singleEntityOctree);
         
         // Get results from multi-entity search
         List<KNearestNeighborSearch.KNNCandidate<LongEntityID, String>> multiResults = 
             KNearestNeighborSearch.findKNearestEntities(queryPoint, 3, multiEntityOctree);
         
-        // Multi-entity should find 3 nearest entities
+        // Both should find 3 nearest entities
+        assertEquals(3, singleResults.size());
         assertEquals(3, multiResults.size());
     }
 

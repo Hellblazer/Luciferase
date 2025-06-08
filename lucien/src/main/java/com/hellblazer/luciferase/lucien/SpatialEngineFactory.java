@@ -26,6 +26,8 @@ import java.util.TreeMap;
 
 import static com.hellblazer.luciferase.lucien.TetrahedralSearchBase.SimplexAggregationStrategy;
 import com.hellblazer.luciferase.lucien.SpatialSearchEngine.*;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 
 /**
  * Factory for creating unified spatial search engines. Provides intelligent
@@ -49,7 +51,9 @@ public class SpatialEngineFactory {
         var data = initialData != null ? new TreeMap<>(initialData) : new TreeMap<Long, Content>();
         return switch (preferredType) {
             case OCTREE -> {
-                var adapter = new SingleContentAdapter<Content>();
+                var adapter = new OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>(
+                    new SequentialLongIDGenerator()
+                );
                 // Pre-populate if initial data provided
                 if (initialData != null) {
                     // Instead of directly using the Morton codes, we need to use proper spatial insertion

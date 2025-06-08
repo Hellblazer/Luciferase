@@ -170,14 +170,10 @@ public class TetRayTracingSearchTest {
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testPerformanceComparison() {
         // Create equivalent data structures for performance comparison
-        Octree<String> octree = new Octree<>();
+        // Octree performance comparison removed - SingleContentAdapter doesn't support ray tracing
         Tetree<String> perfTetree = new Tetree<>(new java.util.TreeMap<>());
 
-        // Add same data to both structures
-        octree.insert(VALID_POINT_1, testLevel, "content1");
-        octree.insert(VALID_POINT_2, testLevel, "content2");
-        octree.insert(VALID_POINT_3, testLevel, "content3");
-
+        // Add data to Tetree
         perfTetree.insert(VALID_POINT_1, testLevel, "content1");
         perfTetree.insert(VALID_POINT_2, testLevel, "content2");
         perfTetree.insert(VALID_POINT_3, testLevel, "content3");
@@ -186,17 +182,10 @@ public class TetRayTracingSearchTest {
 
         // Warm up JVM
         for (int i = 0; i < 100; i++) {
-            // RayTracingSearch.rayIntersectedAll(ray, octree); // Removed single-content search
             TetRayTracingSearch.rayIntersectedAll(ray, perfTetree);
         }
 
-        // Benchmark Octree ray tracing (commented out due to removal of single-content search)
-        long octreeStart = System.nanoTime();
-        for (int i = 0; i < 1000; i++) {
-            // RayTracingSearch.rayIntersectedAll(ray, octree); // Removed single-content search
-        }
-        long octreeEnd = System.nanoTime();
-        double octreeTime = (octreeEnd - octreeStart) / 1_000_000.0; // Convert to milliseconds
+        // Octree benchmark removed - not supported by OctreeWithEntitiesSpatialIndexAdapter
 
         // Benchmark Tetree ray tracing
         long tetreeStart = System.nanoTime();
@@ -207,20 +196,13 @@ public class TetRayTracingSearchTest {
         double tetreeTime = (tetreeEnd - tetreeStart) / 1_000_000.0; // Convert to milliseconds
 
         // Calculate performance metrics
-        double octreeAvg = octreeTime / 1000.0;
         double tetreeAvg = tetreeTime / 1000.0;
-        double ratio = tetreeTime / octreeTime;
 
-        System.out.printf("Performance Comparison (1000 iterations):%n");
-        System.out.printf("Octree ray tracing: %.3f ms total, %.6f ms avg%n", octreeTime, octreeAvg);
+        System.out.printf("Performance Results (1000 iterations):%n");
         System.out.printf("Tetree ray tracing: %.3f ms total, %.6f ms avg%n", tetreeTime, tetreeAvg);
-        System.out.printf("Tetree/Octree ratio: %.2fx%n", ratio);
-
-        // Tetree should be within reasonable performance bounds
-        // Due to geometric complexity, we expect 8-12x slower than Octree for ray tracing
-        // This accounts for Möller-Trumbore algorithm complexity vs simple ray-AABB
-        assertTrue(ratio < 15.0,
-                   String.format("Tetree ray tracing should be within 15x of Octree performance, got %.2fx", ratio));
+        
+        // Note: Octree comparison removed as OctreeWithEntitiesSpatialIndexAdapter doesn't support ray tracing
+        System.out.println("Note: Direct Octree comparison not available with current architecture");
 
         // Log performance for future optimization
         System.out.printf("TetRayTracingSearch performance: %.6f ms per operation%n", tetreeAvg);

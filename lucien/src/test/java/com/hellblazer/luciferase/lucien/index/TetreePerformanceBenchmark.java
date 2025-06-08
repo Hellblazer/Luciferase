@@ -1,6 +1,8 @@
 package com.hellblazer.luciferase.lucien.index;
 
-import com.hellblazer.luciferase.lucien.Octree;
+import com.hellblazer.luciferase.lucien.OctreeWithEntitiesSpatialIndexAdapter;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.Tet;
 import com.hellblazer.luciferase.lucien.Tetree;
@@ -23,7 +25,7 @@ public class TetreePerformanceBenchmark {
     private static final int            MEDIUM_DATASET = 200;
     private static final int            LARGE_DATASET  = 500;
     private              Tetree<String> tetree;
-    private              Octree<String> octree;
+    private              OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String> octree;
 
     @Test
     @DisplayName("Memory allocation and GC pressure analysis")
@@ -141,7 +143,7 @@ public class TetreePerformanceBenchmark {
     @BeforeEach
     void setUp() {
         tetree = new Tetree<>(new TreeMap<>());
-        octree = new Octree<>();
+        octree = new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
     }
 
     private void analyzeQueryMemoryUsage() {
@@ -255,7 +257,7 @@ public class TetreePerformanceBenchmark {
 
         // Reset data structures
         tetree = new Tetree<>(new TreeMap<>());
-        octree = new Octree<>();
+        octree = new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
 
         // Populate with test data
         populateWithTestData(datasetSize);
@@ -317,14 +319,7 @@ public class TetreePerformanceBenchmark {
     }
 
     private int getOctreeContentCount() {
-        try {
-            var field = Octree.class.getDeclaredField("map");
-            field.setAccessible(true);
-            var map = (TreeMap<?, ?>) field.get(octree);
-            return map.size();
-        } catch (Exception e) {
-            return -1;
-        }
+        return octree.size();
     }
 
     private int getTetreeContentCount() {

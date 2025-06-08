@@ -416,7 +416,8 @@ public class TetKNearestNeighborSearchTest {
 
         // Setup data structures with comparable data
         Tetree<String> tetree = new Tetree<>(new TreeMap<>());
-        Octree<String> octree = new Octree<>();
+        var octreeAdapter = new OctreeWithEntitiesSpatialIndexAdapter<com.hellblazer.luciferase.lucien.entity.LongEntityID, String>(
+            new com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator());
 
         // Use S0 tetrahedron coordinates for tetree and equivalent cube coordinates for octree
         float scale = Constants.MAX_EXTENT * 0.1f;
@@ -438,8 +439,8 @@ public class TetKNearestNeighborSearchTest {
             // Insert into tetree
             tetree.insert(testPoints[i], testLevel, content);
 
-            // Insert into octree (using cube-compatible coordinates)
-            octree.insert(testPoints[i], testLevel, content);
+            // Insert into octree adapter (using cube-compatible coordinates)
+            octreeAdapter.insert(testPoints[i], testLevel, content);
         }
 
         // Test query point

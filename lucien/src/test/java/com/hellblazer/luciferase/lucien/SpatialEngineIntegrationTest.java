@@ -17,16 +17,15 @@ public class SpatialEngineIntegrationTest {
         // Create simple test data
         var testData = new TreeMap<Long, String>();
 
-        // Create a temporary octree to generate proper Morton indices
-        var tempOctree = new Octree<String>();
+        // Generate Morton indices directly
         byte level = 10;
         
-        // Insert points and collect the resulting Morton indices
-        long key1 = tempOctree.insert(new Point3f(0, 0, 0), level, "origin");
-        long key2 = tempOctree.insert(new Point3f(1000, 0, 0), level, "point-1");
-        long key3 = tempOctree.insert(new Point3f(0, 1000, 0), level, "point-2");
-        long key4 = tempOctree.insert(new Point3f(0, 0, 1000), level, "point-3");
-        long key5 = tempOctree.insert(new Point3f(1000, 1000, 1000), level, "point-4");
+        // Calculate Morton indices for test points
+        long key1 = Constants.calculateMortonIndex(new Point3f(0, 0, 0), level);
+        long key2 = Constants.calculateMortonIndex(new Point3f(1000, 0, 0), level);
+        long key3 = Constants.calculateMortonIndex(new Point3f(0, 1000, 0), level);
+        long key4 = Constants.calculateMortonIndex(new Point3f(0, 0, 1000), level);
+        long key5 = Constants.calculateMortonIndex(new Point3f(1000, 1000, 1000), level);
         
         // Use the generated keys
         testData.put(key1, "origin");

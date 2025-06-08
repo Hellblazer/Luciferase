@@ -70,33 +70,47 @@ public class Constants {
 
     /** Tetrahedron type and Cube ID to local index **/
     public static final byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
-                                                                        { 0, 1, 2, 5, 2, 5, 4, 7 },
-                                                                        { 0, 2, 3, 4, 1, 6, 5, 7 },
-                                                                        { 0, 3, 1, 5, 2, 4, 6, 7 },
-                                                                        { 0, 2, 2, 6, 3, 5, 5, 7 },
-                                                                        { 0, 3, 3, 6, 3, 6, 6, 7 } };
+                                                                              { 0, 1, 2, 5, 2, 5, 4, 7 },
+                                                                              { 0, 2, 3, 4, 1, 6, 5, 7 },
+                                                                              { 0, 3, 1, 5, 2, 4, 6, 7 },
+                                                                              { 0, 2, 2, 6, 3, 5, 5, 7 },
+                                                                              { 0, 3, 3, 6, 3, 6, 6, 7 } };
 
     /** Parent type and local index to cube id **/
     public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
-                                                                               { 0, 1, 1, 1, 3, 3, 3, 7 },
-                                                                               { 0, 2, 2, 2, 3, 3, 3, 7 },
-                                                                               { 0, 2, 2, 2, 6, 6, 6, 7 },
-                                                                               { 0, 4, 4, 4, 6, 6, 6, 7 },
-                                                                               { 0, 4, 4, 4, 5, 5, 5, 7 } };
+                                                                                     { 0, 1, 1, 1, 3, 3, 3, 7 },
+                                                                                     { 0, 2, 2, 2, 3, 3, 3, 7 },
+                                                                                     { 0, 2, 2, 2, 6, 6, 6, 7 },
+                                                                                     { 0, 4, 4, 4, 6, 6, 6, 7 },
+                                                                                     { 0, 4, 4, 4, 5, 5, 5, 7 } };
 
     /** Parent type and local index to type **/
     public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
-                                                                            { 1, 1, 2, 3, 0, 1, 5, 1 },
-                                                                            { 2, 0, 1, 2, 2, 3, 4, 2 },
-                                                                            { 3, 3, 4, 5, 1, 2, 3, 3 },
-                                                                            { 4, 2, 3, 4, 0, 4, 5, 4 },
-                                                                            { 5, 0, 1, 5, 3, 4, 5, 5 } };
+                                                                                  { 1, 1, 2, 3, 0, 1, 5, 1 },
+                                                                                  { 2, 0, 1, 2, 2, 3, 4, 2 },
+                                                                                  { 3, 3, 4, 5, 1, 2, 3, 3 },
+                                                                                  { 4, 2, 3, 4, 0, 4, 5, 4 },
+                                                                                  { 5, 0, 1, 5, 3, 4, 5, 5 } };
 
     /** Tet ID of the Root Simplex **/
     public static final Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
     public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+
+    /**
+     * Calculate the Morton index for a given point and level
+     *
+     * @param point the 3D point
+     * @param level the refinement level
+     * @return the Morton index
+     */
+    public static long calculateMortonIndex(Point3f point, byte level) {
+        var length = lengthAtLevel(level);
+        return MortonCurve.encode((int) (Math.floor(point.x / length) * length),
+                                  (int) (Math.floor(point.y / length) * length),
+                                  (int) (Math.floor(point.z / length) * length));
+    }
 
     /** maximum level we can accommodate without overflow **/
     public static byte getMaxRefinementLevel() {
@@ -110,19 +124,6 @@ public class Constants {
         return 1 << (getMaxRefinementLevel() - level);
     }
 
-    /**
-     * Calculate the Morton index for a given point and level
-     * @param point the 3D point
-     * @param level the refinement level
-     * @return the Morton index
-     */
-    public static long calculateMortonIndex(Point3f point, byte level) {
-        var length = lengthAtLevel(level);
-        return MortonCurve.encode((int) (Math.floor(point.x / length) * length),
-                                  (int) (Math.floor(point.y / length) * length),
-                                  (int) (Math.floor(point.z / length) * length));
-    }
-    
     public static byte toLevel(long mortonCode) {
         if (mortonCode == 0) {
             return 0; // origin at coarsest level (root)

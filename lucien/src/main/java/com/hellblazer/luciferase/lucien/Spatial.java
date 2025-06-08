@@ -21,6 +21,30 @@ public interface Spatial {
     }
 
     record Cube(float originX, float originY, float originZ, float extent) implements Spatial {
+        
+        /**
+         * Create a Cube from a Morton index
+         * @param mortonIndex the Morton index encoding position and level
+         */
+        public Cube(long mortonIndex) {
+            this(decode(mortonIndex));
+        }
+        
+        // Private constructor that takes decoded values
+        private Cube(DecodedMorton decoded) {
+            this(decoded.x, decoded.y, decoded.z, decoded.extent);
+        }
+        
+        // Helper to decode morton index
+        private static DecodedMorton decode(long mortonIndex) {
+            var point = com.hellblazer.luciferase.geometry.MortonCurve.decode(mortonIndex);
+            byte level = Constants.toLevel(mortonIndex);
+            return new DecodedMorton(point[0], point[1], point[2], Constants.lengthAtLevel(level));
+        }
+        
+        // Helper record for decoded values
+        private record DecodedMorton(float x, float y, float z, float extent) {}
+        
         @Override
         public boolean containedBy(aabt aabt) {
             // Check if this cube is completely contained within the tetrahedral bounds

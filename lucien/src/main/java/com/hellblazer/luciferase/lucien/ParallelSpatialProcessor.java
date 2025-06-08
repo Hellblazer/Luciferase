@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.entity.EntityID;
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.*;
@@ -12,8 +13,10 @@ import java.util.stream.Collectors;
  * Provides thread-safe parallel execution of spatial queries and operations
  * All operations are constrained to positive coordinates only
  * 
+ * @deprecated This class depends on the deleted Octree class and needs to be updated to work with SpatialIndex interface
  * @author hal.hildebrand
  */
+@Deprecated
 public class ParallelSpatialProcessor {
 
     /**
@@ -100,13 +103,16 @@ public class ParallelSpatialProcessor {
 
     /**
      * Thread-safe parallel spatial query executor
+     * @deprecated Needs to be updated to work with SpatialIndex interface or removed entirely
      */
-    public static class ParallelSpatialQueryExecutor<Content> {
-        private final Octree<Content> octree;
+    @Deprecated
+    public static class ParallelSpatialQueryExecutor<ID extends EntityID, Content> {
+        // Using OctreeWithEntities instead of the deleted Octree class
+        private final OctreeWithEntities<ID, Content> octree;
         private final ParallelConfig config;
         private final ExecutorService executorService;
         
-        public ParallelSpatialQueryExecutor(Octree<Content> octree, ParallelConfig config) {
+        public ParallelSpatialQueryExecutor(OctreeWithEntities<ID, Content> octree, ParallelConfig config) {
             this.octree = octree;
             this.config = config;
             this.executorService = config.enableWorkStealing ? 
@@ -116,12 +122,15 @@ public class ParallelSpatialProcessor {
         
         /**
          * Execute parallel radius query
+         * @deprecated This method needs to be rewritten to work with OctreeWithEntities structure
          */
+        @Deprecated
         public ParallelResult<Content> parallelRadiusQuery(Point3f center, float radius) {
             validatePositiveCoordinates(center, "center");
             
             long startTime = System.nanoTime();
-            Map<Long, Content> map = octree.getMap();
+            // TODO: Need to adapt to work with OctreeNode structure
+            Map<Long, Content> map = Collections.emptyMap(); // Temporary stub
             
             if (map.size() < config.minDataSizeForParallel) {
                 // Fall back to sequential processing for small datasets
@@ -175,7 +184,8 @@ public class ParallelSpatialProcessor {
             validatePositiveCoordinates(maxBounds, "maxBounds");
             
             long startTime = System.nanoTime();
-            Map<Long, Content> map = octree.getMap();
+            // TODO: Need to adapt to work with OctreeNode structure
+            Map<Long, Content> map = Collections.emptyMap(); // Temporary stub
             
             if (map.size() < config.minDataSizeForParallel) {
                 return executeSequentialRangeQuery(minBounds, maxBounds, startTime);
@@ -227,7 +237,8 @@ public class ParallelSpatialProcessor {
             validatePositiveCoordinates(queryPoint, "queryPoint");
             
             long startTime = System.nanoTime();
-            Map<Long, Content> map = octree.getMap();
+            // TODO: Need to adapt to work with OctreeNode structure
+            Map<Long, Content> map = Collections.emptyMap(); // Temporary stub
             
             if (map.size() < config.minDataSizeForParallel || k >= map.size()) {
                 return executeSequentialKNNQuery(queryPoint, k, startTime);
@@ -284,7 +295,8 @@ public class ParallelSpatialProcessor {
          */
         public ParallelResult<Content> parallelCustomQuery(Predicate<Map.Entry<Long, Content>> predicate) {
             long startTime = System.nanoTime();
-            Map<Long, Content> map = octree.getMap();
+            // TODO: Need to adapt to work with OctreeNode structure
+            Map<Long, Content> map = Collections.emptyMap(); // Temporary stub
             
             if (map.size() < config.minDataSizeForParallel) {
                 return executeSequentialCustomQuery(predicate, startTime);
@@ -336,7 +348,7 @@ public class ParallelSpatialProcessor {
             List<Content> results = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : chunk) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -356,7 +368,7 @@ public class ParallelSpatialProcessor {
             List<Content> results = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : chunk) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 
                 // Check if cube intersects with query bounds
                 if (cube.originX() <= maxBounds.x && cube.originX() + cube.extent() >= minBounds.x &&
@@ -374,7 +386,7 @@ public class ParallelSpatialProcessor {
             List<DistanceContentPair<Content>> candidates = new ArrayList<>();
             
             for (Map.Entry<Long, Content> entry : chunk) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -405,8 +417,9 @@ public class ParallelSpatialProcessor {
         private ParallelResult<Content> executeSequentialRadiusQuery(Point3f center, float radius, long startTime) {
             List<Content> results = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+            // TODO: Need to adapt to work with OctreeNode structure
+            for (Map.Entry<Long, Content> entry : Collections.<Long, Content>emptyMap().entrySet()) {
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -425,8 +438,9 @@ public class ParallelSpatialProcessor {
         private ParallelResult<Content> executeSequentialRangeQuery(Point3f minBounds, Point3f maxBounds, long startTime) {
             List<Content> results = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+            // TODO: Need to adapt to work with OctreeNode structure
+            for (Map.Entry<Long, Content> entry : Collections.<Long, Content>emptyMap().entrySet()) {
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 
                 if (cube.originX() <= maxBounds.x && cube.originX() + cube.extent() >= minBounds.x &&
                     cube.originY() <= maxBounds.y && cube.originY() + cube.extent() >= minBounds.y &&
@@ -442,8 +456,9 @@ public class ParallelSpatialProcessor {
         private ParallelResult<Content> executeSequentialKNNQuery(Point3f queryPoint, int k, long startTime) {
             List<DistanceContentPair<Content>> candidates = new ArrayList<>();
             
-            for (Map.Entry<Long, Content> entry : octree.getMap().entrySet()) {
-                Spatial.Cube cube = Octree.toCube(entry.getKey());
+            // TODO: Need to adapt to work with OctreeNode structure
+            for (Map.Entry<Long, Content> entry : Collections.<Long, Content>emptyMap().entrySet()) {
+                Spatial.Cube cube = new Spatial.Cube(entry.getKey());
                 Point3f cubeCenter = new Point3f(
                     cube.originX() + cube.extent() / 2.0f,
                     cube.originY() + cube.extent() / 2.0f,
@@ -465,10 +480,8 @@ public class ParallelSpatialProcessor {
         }
         
         private ParallelResult<Content> executeSequentialCustomQuery(Predicate<Map.Entry<Long, Content>> predicate, long startTime) {
-            List<Content> results = octree.getMap().entrySet().stream()
-                .filter(predicate)
-                .map(Map.Entry::getValue)
-                .collect(Collectors.toList());
+            // TODO: Need to adapt to work with OctreeNode structure
+            List<Content> results = Collections.emptyList();
             
             long endTime = System.nanoTime();
             return new ParallelResult<>(results, endTime - startTime, 1, 1, false, null);

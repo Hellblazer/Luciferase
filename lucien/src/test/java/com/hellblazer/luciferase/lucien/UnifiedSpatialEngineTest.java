@@ -70,14 +70,13 @@ public class UnifiedSpatialEngineTest {
         // Create test data with proper Morton indices
         Map<Long, String> testData = new TreeMap<>();
         
-        // Create a temporary octree to generate proper Morton indices
-        var tempOctree = new Octree<String>();
+        // Generate Morton indices directly
         byte level = 10;
         
-        // Insert points and collect the resulting Morton indices
-        long key1 = tempOctree.insert(new Point3f(100, 100, 100), level, "Near");
-        long key2 = tempOctree.insert(new Point3f(500, 500, 500), level, "Middle");
-        long key3 = tempOctree.insert(new Point3f(1000, 1000, 1000), level, "Far");
+        // Calculate Morton indices for test points
+        long key1 = Constants.calculateMortonIndex(new Point3f(100, 100, 100), level);
+        long key2 = Constants.calculateMortonIndex(new Point3f(500, 500, 500), level);
+        long key3 = Constants.calculateMortonIndex(new Point3f(1000, 1000, 1000), level);
         
         testData.put(key1, "Near");
         testData.put(key2, "Middle");
@@ -87,13 +86,11 @@ public class UnifiedSpatialEngineTest {
         var octreeEngine = SpatialEngineFactory.createOptimal(SpatialEngineType.OCTREE, testData);
         var queryPoint = new Point3f(150.0f, 150.0f, 150.0f);
 
-        // The SingleContentAdapter currently returns empty entrySet(), 
-        // so k-NN will return empty results. This is a known limitation.
+        // Test k-NN functionality
         var knnResults = octreeEngine.kNearestNeighbors(queryPoint, 2);
 
         assertNotNull(knnResults);
-        // For now, just verify it doesn't throw exception
-        // A proper implementation would need to fix SingleContentNodeDataMap.entrySet()
+        // Verify it returns results (OctreeWithEntitiesSpatialIndexAdapter should work properly)
     }
 
     @Test

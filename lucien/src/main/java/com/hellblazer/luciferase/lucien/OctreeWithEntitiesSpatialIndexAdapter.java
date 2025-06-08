@@ -53,17 +53,30 @@ public class OctreeWithEntitiesSpatialIndexAdapter<ID extends EntityID, Content>
     
     @Override
     public long insert(Point3f position, byte level, Content content) {
+        // In single content mode, check if there's already an entity at this position
+        var existingEntities = octreeWithEntities.lookup(position, level);
+        if (!existingEntities.isEmpty()) {
+            // Remove existing entities to maintain single content behavior
+            for (ID existingId : existingEntities) {
+                octreeWithEntities.removeEntity(existingId);
+            }
+        }
+        
         // Insert and get the entity ID
         ID entityId = octreeWithEntities.insert(position, level, content);
         
-        // Calculate Morton index for this position and level
-        int scale = 1 << (Constants.getMaxRefinementLevel() - level);
-        int x = (int)(position.x / scale);
-        int y = (int)(position.y / scale);
-        int z = (int)(position.z / scale);
+        // The Morton index should match what OctreeWithEntities actually stores
+        // We need to find the actual Morton index used in the spatial index
+        for (var entry : octreeWithEntities.spatialIndex.entrySet()) {
+            long mortonIndex = entry.getKey();
+            var node = entry.getValue();
+            if (node.getEntityIds().contains(entityId)) {
+                return mortonIndex;
+            }
+        }
         
-        Octant octant = new Octant(x, y, z, level);
-        return octant.index();
+        // Fallback: calculate it ourselves (should not happen)
+        throw new IllegalStateException("Entity was inserted but not found in spatial index");
     }
     
     @Override
@@ -192,5 +205,14 @@ public class OctreeWithEntitiesSpatialIndexAdapter<ID extends EntityID, Content>
      */
     public OctreeWithEntities<ID, Content> getEntityOctree() {
         return octreeWithEntities;
+    }
+    
+    /**
+     * Get cube from Morton index
+     * @param index the Morton index
+     * @return the spatial cube at that index
+     */
+    public Spatial.Cube locate(long index) {
+        return new Spatial.Cube(index);
     }
 }

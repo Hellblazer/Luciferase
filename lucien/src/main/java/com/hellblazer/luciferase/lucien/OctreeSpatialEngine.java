@@ -41,64 +41,20 @@ import java.util.stream.Collectors;
 public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content> {
     
     private final SpatialIndex<Content> spatialIndex;
-    private final SingleContentAdapter<Content> octree; // For backward compatibility
     private final AtomicLong queryCount = new AtomicLong(0);
     private final LongAdder totalQueryTime = new LongAdder();
     private final LongAdder cacheHits = new LongAdder();
     private final LongAdder cellsTraversed = new LongAdder();
     
     /**
-     * Create with any SpatialIndex implementation (recommended)
+     * Create with any SpatialIndex implementation
      */
     public OctreeSpatialEngine(SpatialIndex<Content> spatialIndex) {
         this.spatialIndex = spatialIndex;
-        // Keep octree reference if it's a SingleContentAdapter for backward compatibility
-        this.octree = spatialIndex instanceof SingleContentAdapter<Content> sca ? sca : null;
     }
     
-    /**
-     * Create with a SingleContentAdapter (for backward compatibility)
-     */
-    public OctreeSpatialEngine(SingleContentAdapter<Content> octree) {
-        this.spatialIndex = octree;
-        this.octree = octree;
-    }
     
-    /**
-     * Create with legacy Octree (for backward compatibility)
-     */
-    public OctreeSpatialEngine(Octree<Content> octree) {
-        // Wrap the legacy Octree in an adapter
-        this.octree = new SingleContentAdapter<>();
-        this.spatialIndex = this.octree;
-        // Copy data from legacy octree to adapter
-        // Note: This is a one-time migration, not a live view
-        migrateFromLegacyOctree(octree);
-    }
     
-    private void migrateFromLegacyOctree(Octree<Content> legacyOctree) {
-        // Get all entries from the legacy octree
-        var map = legacyOctree.getMap();
-        for (var entry : map.entrySet()) {
-            long mortonIndex = entry.getKey();
-            Content content = entry.getValue();
-            
-            // Decode Morton index to get position and level
-            var cube = Octree.toCube(mortonIndex);
-            Point3f position = new Point3f(cube.originX(), cube.originY(), cube.originZ());
-            
-            // Calculate level from cube extent
-            byte level = 0;
-            float extent = cube.extent();
-            while (level <= Constants.getMaxRefinementLevel() && 
-                   Constants.lengthAtLevel(level) > extent) {
-                level++;
-            }
-            
-            // Insert into adapter
-            octree.insert(position, level, content);
-        }
-    }
     
     @Override
     public List<SpatialResult<Content>> boundedBy(Spatial volume) {
@@ -113,20 +69,7 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     public List<SpatialResult<Content>> kNearestNeighbors(Point3f point, int k) {
         return executeQuery(() -> {
             // Check if we have entity support
-            if (octree != null) {
-                List<KNearestNeighborSearch.KNNCandidate<LongEntityID, Content>> results = 
-                    KNearestNeighborSearch.findKNearestEntities(point, k, octree.getEntityOctree());
-                
-                return results.stream()
-                    .map(r -> {
-                        // Get morton index for this entity position
-                        long mortonIndex = MortonCurve.encode(
-                            (int)r.position.x, (int)r.position.y, (int)r.position.z
-                        );
-                        return createSpatialResult(mortonIndex, r.content, r.distance, point);
-                    })
-                    .toList();
-            } else if (spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?> adapter) {
+            if (spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?> adapter) {
                 // Use the adapter's entity octree
                 @SuppressWarnings("unchecked")
                 var entityOctree = ((OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)adapter).getEntityOctree();
@@ -165,18 +108,13 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     public List<SpatialResult<Content>> withinDistance(Point3f point, float distance) {
         return executeQuery(() -> {
             // Check if we have entity support
-            if (octree != null || spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?>) {
+            if (spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?>) {
                 ProximitySearch.DistanceRange distanceRange = 
                     new ProximitySearch.DistanceRange(0.0f, distance, ProximitySearch.ProximityType.CLOSE);
                 
-                OctreeWithEntities<LongEntityID, Content> entityOctree;
-                if (octree != null) {
-                    entityOctree = octree.getEntityOctree();
-                } else {
-                    @SuppressWarnings("unchecked")
-                    var adapter = (OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)spatialIndex;
-                    entityOctree = adapter.getEntityOctree();
-                }
+                @SuppressWarnings("unchecked")
+                var adapter = (OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)spatialIndex;
+                OctreeWithEntities<LongEntityID, Content> entityOctree = adapter.getEntityOctree();
                 
                 List<ProximitySearch.EntityProximityResult<LongEntityID, Content>> results = 
                     ProximitySearch.findEntitiesWithinDistanceRange(point, distanceRange, entityOctree);
@@ -254,15 +192,10 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
             Spatial.Sphere sphere = new Spatial.Sphere(center.x, center.y, center.z, radius);
             
             // Check if we have entity support
-            if (octree != null || spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?>) {
-                OctreeWithEntities<LongEntityID, Content> entityOctree;
-                if (octree != null) {
-                    entityOctree = octree.getEntityOctree();
-                } else {
-                    @SuppressWarnings("unchecked")
-                    var adapter = (OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)spatialIndex;
-                    entityOctree = adapter.getEntityOctree();
-                }
+            if (spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?>) {
+                @SuppressWarnings("unchecked")
+                var adapter = (OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)spatialIndex;
+                OctreeWithEntities<LongEntityID, Content> entityOctree = adapter.getEntityOctree();
                 
                 List<ContainmentSearch.ContainedEntity<LongEntityID, Content>> results = 
                     ContainmentSearch.findEntitiesInSphere(sphere, entityOctree);
@@ -283,18 +216,13 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     public List<SpatialResult<Content>> withinDistanceRange(Point3f point, float minDistance, float maxDistance) {
         return executeQuery(() -> {
             // Check if we have entity support
-            if (octree != null || spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?>) {
+            if (spatialIndex instanceof OctreeWithEntitiesSpatialIndexAdapter<?,?>) {
                 ProximitySearch.DistanceRange distanceRange = 
                     new ProximitySearch.DistanceRange(minDistance, maxDistance, ProximitySearch.ProximityType.CLOSE);
                 
-                OctreeWithEntities<LongEntityID, Content> entityOctree;
-                if (octree != null) {
-                    entityOctree = octree.getEntityOctree();
-                } else {
-                    @SuppressWarnings("unchecked")
-                    var adapter = (OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)spatialIndex;
-                    entityOctree = adapter.getEntityOctree();
-                }
+                @SuppressWarnings("unchecked")
+                var adapter = (OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, Content>)spatialIndex;
+                OctreeWithEntities<LongEntityID, Content> entityOctree = adapter.getEntityOctree();
                 
                 List<ProximitySearch.EntityProximityResult<LongEntityID, Content>> results = 
                     ProximitySearch.findEntitiesWithinDistanceRange(point, distanceRange, entityOctree);
@@ -390,9 +318,9 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
     }
     
     private Point3f getCentroid(long mortonIndex) {
-        var cube = spatialIndex instanceof Octree ? 
-            ((Octree<Content>)spatialIndex).toCube(mortonIndex) : 
-            Octree.toCube(mortonIndex);
+        // Use SpatialNode's toCube method
+        var node = new SpatialIndex.SpatialNode<Content>(mortonIndex, null);
+        var cube = node.toCube();
         float halfExtent = cube.extent() / 2.0f;
         return new Point3f(cube.originX() + halfExtent, cube.originY() + halfExtent, cube.originZ() + halfExtent);
     }
@@ -435,7 +363,8 @@ public class OctreeSpatialEngine<Content> implements SpatialSearchEngine<Content
         
         private Point3f computeCentroid(long key) {
             // Convert key to cube and get its center
-            var cube = Octree.toCube(key);
+            var node = new SpatialIndex.SpatialNode<Content>(key, null);
+            var cube = node.toCube();
             float halfExtent = cube.extent() / 2.0f;
             return new Point3f(cube.originX() + halfExtent, cube.originY() + halfExtent, cube.originZ() + halfExtent);
         }

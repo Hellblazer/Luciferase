@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,14 +23,14 @@ import static org.junit.jupiter.api.Assertions.*;
 public class AlgorithmOptimizerTest {
 
     private final byte                                                                      testLevel = 15;
-    private       Octree<String>                                                            octree;
+    private       OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String>              spatialIndex;
     private       SpatialIndexOptimizer.SpatialDistributionStats                            dataStats;
     private       AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveKNearestNeighbor<String> adaptiveKNN;
     private       AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveRangeQuery<String>       adaptiveRange;
 
     @BeforeEach
     void setUp() {
-        octree = new Octree<>();
+        spatialIndex = new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
 
         // Insert test data with known spatial patterns
         insertTestData();
@@ -38,14 +40,14 @@ public class AlgorithmOptimizerTest {
         dataStats = SpatialIndexOptimizer.AdaptiveLevelSelector.analyzeSpatialDistribution(points);
 
         // Create adaptive search engines
-        adaptiveKNN = new AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveKNearestNeighbor<>(octree, dataStats);
-        adaptiveRange = new AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveRangeQuery<>(octree);
+        adaptiveKNN = new AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveKNearestNeighbor<>(spatialIndex, dataStats);
+        adaptiveRange = new AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveRangeQuery<>(spatialIndex);
     }
 
     @AfterEach
     void tearDown() {
-        if (octree != null) {
-            octree.getMap().clear();
+        if (spatialIndex != null) {
+            spatialIndex.getMap().clear();
         }
     }
 
@@ -91,7 +93,7 @@ public class AlgorithmOptimizerTest {
         assertNotNull(result);
         assertNotNull(result.results);
         assertTrue(result.results.size() <= k);
-        assertTrue(result.results.size() <= octree.getMap().size());
+        assertTrue(result.results.size() <= spatialIndex.getMap().size());
         assertTrue(result.executionTimeNanos > 0);
         assertNotNull(result.strategyUsed);
         assertTrue(result.getThroughputItemsPerSecond() > 0);
@@ -112,13 +114,15 @@ public class AlgorithmOptimizerTest {
 
         AlgorithmOptimizer.AdvancedSpatialSearch.KNNResult<String> largeK = adaptiveKNN.findKNearest(queryPoint, 20);
         assertTrue(largeK.results.size() <= 20);
-        assertTrue(largeK.results.size() <= octree.getMap().size());
+        assertTrue(largeK.results.size() <= spatialIndex.getMap().size());
     }
 
     @Test
     void testAdaptiveRangeQuery() {
-        Point3f minBounds = new Point3f(150.0f, 150.0f, 150.0f);
-        Point3f maxBounds = new Point3f(250.0f, 250.0f, 250.0f);
+        // The dense cluster around (200,200,200) at level 15 (scale=64) maps to grid coordinates around (3,3,3)
+        // So we need to query in grid space, not world space
+        Point3f minBounds = new Point3f(2.0f, 2.0f, 2.0f);
+        Point3f maxBounds = new Point3f(4.0f, 4.0f, 4.0f);
 
         AlgorithmOptimizer.AdvancedSpatialSearch.RangeQueryResult<String> result = adaptiveRange.rangeQuery(minBounds,
                                                                                                             maxBounds);
@@ -129,7 +133,7 @@ public class AlgorithmOptimizerTest {
         assertTrue(result.executionTimeNanos > 0);
         assertTrue(result.nodesVisited > 0);
         assertTrue(result.getSelectivity() >= 0.0 && result.getSelectivity() <= 1.0);
-
+        
         // Results should be non-empty since we have data in that range
         assertTrue(result.results.size() > 0);
 
@@ -169,19 +173,20 @@ public class AlgorithmOptimizerTest {
     void testBoundsOptimizer() {
         AlgorithmOptimizer.BoundsOptimizer optimizer = new AlgorithmOptimizer.BoundsOptimizer();
 
-        Point3f minBounds = new Point3f(100.0f, 100.0f, 100.0f);
-        Point3f maxBounds = new Point3f(300.0f, 300.0f, 300.0f);
+        // Use grid coordinates that match the actual data
+        Point3f minBounds = new Point3f(1.0f, 1.0f, 1.0f);
+        Point3f maxBounds = new Point3f(8.0f, 8.0f, 8.0f);
 
-        AlgorithmOptimizer.OptimizedBounds optimized = optimizer.optimizeBounds(minBounds, maxBounds, octree);
+        AlgorithmOptimizer.OptimizedBounds optimized = optimizer.optimizeBounds(minBounds, maxBounds, spatialIndex);
 
         assertNotNull(optimized);
         assertTrue(optimized.getSelectivity() >= 0.0f && optimized.getSelectivity() <= 1.0f);
         assertTrue(optimized.getExpectedResults() >= 0);
-        assertTrue(optimized.getExpectedResults() <= octree.getMap().size());
+        assertTrue(optimized.getExpectedResults() <= spatialIndex.getMap().size());
 
         // Test intersection logic
-        for (Long key : octree.getMap().keySet()) {
-            Spatial.Cube cube = com.hellblazer.luciferase.lucien.Octree.toCube(key);
+        for (Long key : spatialIndex.getMap().keySet()) {
+            Spatial.Cube cube = spatialIndex.locate(key);
             boolean shouldIntersect = cube.originX() <= maxBounds.x && cube.originX() + cube.extent() >= minBounds.x
             && cube.originY() <= maxBounds.y && cube.originY() + cube.extent() >= minBounds.y
             && cube.originZ() <= maxBounds.z && cube.originZ() + cube.extent() >= minBounds.z;
@@ -195,8 +200,8 @@ public class AlgorithmOptimizerTest {
         assertTrue(optimizedStr.contains("expected="));
 
         // Test with small bounds (should be highly selective)
-        Point3f smallMax = new Point3f(110.0f, 110.0f, 110.0f);
-        AlgorithmOptimizer.OptimizedBounds smallBounds = optimizer.optimizeBounds(minBounds, smallMax, octree);
+        Point3f smallMax = new Point3f(2.0f, 2.0f, 2.0f);
+        AlgorithmOptimizer.OptimizedBounds smallBounds = optimizer.optimizeBounds(minBounds, smallMax, spatialIndex);
         assertTrue(smallBounds.getSelectivity() < optimized.getSelectivity());
     }
 
@@ -257,24 +262,24 @@ public class AlgorithmOptimizerTest {
 
     @Test
     void testEmptyOctreeQueries() {
-        Octree<String> emptyOctree = new Octree<>();
+        var emptyIndex = new OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String>(new SequentialLongIDGenerator());
         List<Point3f> emptyPoints = new ArrayList<>();
         SpatialIndexOptimizer.SpatialDistributionStats emptyStats = SpatialIndexOptimizer.AdaptiveLevelSelector.analyzeSpatialDistribution(
         emptyPoints);
 
         AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveKNearestNeighbor<String> emptyKNN = new AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveKNearestNeighbor<>(
-        emptyOctree, emptyStats);
+        emptyIndex, emptyStats);
 
         AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveRangeQuery<String> emptyRange = new AlgorithmOptimizer.AdvancedSpatialSearch.AdaptiveRangeQuery<>(
-        emptyOctree);
+        emptyIndex);
 
         Point3f queryPoint = new Point3f(200.0f, 200.0f, 200.0f);
 
-        // KNN on empty octree should return empty results
+        // KNN on empty spatialIndex should return empty results
         AlgorithmOptimizer.AdvancedSpatialSearch.KNNResult<String> knnResult = emptyKNN.findKNearest(queryPoint, 5);
         assertTrue(knnResult.results.isEmpty());
 
-        // Range query on empty octree should return empty results
+        // Range query on empty spatialIndex should return empty results
         Point3f minBounds = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f maxBounds = new Point3f(300.0f, 300.0f, 300.0f);
         AlgorithmOptimizer.AdvancedSpatialSearch.RangeQueryResult<String> rangeResult = emptyRange.rangeQuery(minBounds,
@@ -510,8 +515,8 @@ public class AlgorithmOptimizerTest {
 
     private List<Point3f> extractPointsFromOctree() {
         List<Point3f> points = new ArrayList<>();
-        for (Long key : octree.getMap().keySet()) {
-            Spatial.Cube cube = com.hellblazer.luciferase.lucien.Octree.toCube(key);
+        for (Long key : spatialIndex.getMap().keySet()) {
+            Spatial.Cube cube = spatialIndex.locate(key);
             points.add(new Point3f(cube.originX() + cube.extent() / 2.0f, cube.originY() + cube.extent() / 2.0f,
                                    cube.originZ() + cube.extent() / 2.0f));
         }
@@ -526,7 +531,7 @@ public class AlgorithmOptimizerTest {
             float x = 180.0f + random.nextFloat() * 40.0f;
             float y = 180.0f + random.nextFloat() * 40.0f;
             float z = 180.0f + random.nextFloat() * 40.0f;
-            octree.insert(new Point3f(x, y, z), testLevel, "Dense_" + i);
+            spatialIndex.insert(new Point3f(x, y, z), testLevel, "Dense_" + i);
         }
 
         // Medium density cluster around (400, 400, 400)
@@ -534,7 +539,7 @@ public class AlgorithmOptimizerTest {
             float x = 380.0f + random.nextFloat() * 40.0f;
             float y = 380.0f + random.nextFloat() * 40.0f;
             float z = 380.0f + random.nextFloat() * 40.0f;
-            octree.insert(new Point3f(x, y, z), testLevel, "Medium_" + i);
+            spatialIndex.insert(new Point3f(x, y, z), testLevel, "Medium_" + i);
         }
 
         // Sparse points distributed widely
@@ -542,7 +547,7 @@ public class AlgorithmOptimizerTest {
             float x = 50.0f + random.nextFloat() * 500.0f;
             float y = 50.0f + random.nextFloat() * 500.0f;
             float z = 50.0f + random.nextFloat() * 500.0f;
-            octree.insert(new Point3f(x, y, z), testLevel, "Sparse_" + i);
+            spatialIndex.insert(new Point3f(x, y, z), testLevel, "Sparse_" + i);
         }
     }
 }
