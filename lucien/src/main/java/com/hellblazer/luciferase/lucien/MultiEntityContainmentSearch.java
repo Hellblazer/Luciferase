@@ -98,13 +98,26 @@ public class MultiEntityContainmentSearch {
         List<ContainedEntity<ID, Content>> results = new ArrayList<>();
         
         // Filter to only those actually in the sphere
-        // This requires knowing entity positions, which is a current limitation
         for (ID entityId : entityIds) {
             Content content = octree.getEntity(entityId);
             if (content != null) {
-                // Without position info, we include all entities in bounding cube
-                // A proper implementation would check actual containment
-                results.add(new ContainedEntity<>(entityId, content, 0L, (byte)0));
+                Point3f entityPos = octree.getEntityPosition(entityId);
+                if (entityPos != null) {
+                    // Check if entity is within sphere
+                    float dx = entityPos.x - sphere.centerX();
+                    float dy = entityPos.y - sphere.centerY();
+                    float dz = entityPos.z - sphere.centerZ();
+                    float distSquared = dx * dx + dy * dy + dz * dz;
+                    
+                    if (distSquared <= sphere.radius() * sphere.radius()) {
+                        // Calculate Morton index for this position
+                        long mortonIndex = com.hellblazer.luciferase.geometry.MortonCurve.encode(
+                            (int)entityPos.x, (int)entityPos.y, (int)entityPos.z
+                        );
+                        byte level = Constants.toLevel(mortonIndex);
+                        results.add(new ContainedEntity<>(entityId, content, mortonIndex, level));
+                    }
+                }
             }
         }
         
@@ -137,9 +150,24 @@ public class MultiEntityContainmentSearch {
         for (ID entityId : entityIds) {
             Content content = octree.getEntity(entityId);
             if (content != null) {
-                // Without position info, we include all entities
-                // A proper implementation would check actual AABB containment
-                results.add(new ContainedEntity<>(entityId, content, 0L, (byte)0));
+                Point3f entityPos = octree.getEntityPosition(entityId);
+                if (entityPos != null) {
+                    // Check if entity is within AABB
+                    if (entityPos.x >= aabb.originX() && 
+                        entityPos.x <= aabb.originX() + aabb.extentX() &&
+                        entityPos.y >= aabb.originY() && 
+                        entityPos.y <= aabb.originY() + aabb.extentY() &&
+                        entityPos.z >= aabb.originZ() && 
+                        entityPos.z <= aabb.originZ() + aabb.extentZ()) {
+                        
+                        // Calculate Morton index for this position
+                        long mortonIndex = com.hellblazer.luciferase.geometry.MortonCurve.encode(
+                            (int)entityPos.x, (int)entityPos.y, (int)entityPos.z
+                        );
+                        byte level = Constants.toLevel(mortonIndex);
+                        results.add(new ContainedEntity<>(entityId, content, mortonIndex, level));
+                    }
+                }
             }
         }
         

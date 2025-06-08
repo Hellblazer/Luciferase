@@ -97,9 +97,8 @@ public class MultiEntityKNearestNeighborSearch {
             Content content = octree.getEntity(entityId);
             if (content == null) continue;
             
-            // We need the entity's position - this requires extending the API
-            // For now, we'll use a workaround by checking multiple levels
-            Point3f entityPos = findEntityPosition(octree, entityId);
+            // Get the entity's actual position
+            Point3f entityPos = octree.getEntityPosition(entityId);
             if (entityPos == null) continue;
             
             float distance = queryPoint.distance(entityPos);
@@ -134,20 +133,6 @@ public class MultiEntityKNearestNeighborSearch {
             OctreeWithEntities<ID, Content> octree) {
         return findKNearestEntities(queryPoint, k, octree, Float.MAX_VALUE);
     }
-    
-    /**
-     * Find entity position by searching through octree levels
-     * This is a workaround until OctreeWithEntities exposes entity positions directly
-     */
-    private static <ID extends EntityID, Content> Point3f findEntityPosition(
-            OctreeWithEntities<ID, Content> octree, ID entityId) {
-        
-        // For now, return a placeholder position
-        // This is a limitation that needs to be addressed by extending OctreeWithEntities API
-        // to expose entity positions directly
-        return new Point3f(0, 0, 0);
-    }
-    
     /**
      * Multi-entity aware distance calculation strategies
      */

@@ -144,17 +144,19 @@ public class MultiEntityKNearestNeighborSearchTest {
     @Test
     void testSearchRadiusWithMultipleEntities() {
         Point3f queryPoint = new Point3f(32.0f, 32.0f, 32.0f);
-        float searchRadius = 100.0f; // Should only include first two locations
+        float searchRadius = 100.0f; // Distance to Entity2* at (96,96,96) is ~110.85, so outside radius
         
         List<MultiEntityKNearestNeighborSearch.MultiEntityKNNCandidate<LongEntityID, String>> results = 
             MultiEntityKNearestNeighborSearch.findKNearestEntities(queryPoint, 10, multiEntityOctree, searchRadius);
         
-        // Should only find entities within radius (Entity1* and Entity2*)
-        assertTrue(results.stream().allMatch(r -> 
-            r.content.startsWith("Entity1") || r.content.startsWith("Entity2")));
+        // Should only find entities within radius (only Entity1* entities)
+        assertTrue(results.stream().allMatch(r -> r.content.startsWith("Entity1")));
         
-        // Should have found 3 + 2 = 5 entities
-        assertEquals(5, results.size());
+        // Should have found only 3 entities (Entity1A, Entity1B, Entity1C)
+        assertEquals(3, results.size());
+        
+        // All distances should be 0 (same position as query point)
+        assertTrue(results.stream().allMatch(r -> r.distance == 0.0f));
     }
 
     @Test

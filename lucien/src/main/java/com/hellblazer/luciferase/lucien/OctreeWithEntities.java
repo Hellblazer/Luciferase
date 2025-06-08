@@ -144,6 +144,41 @@ public class OctreeWithEntities<ID extends EntityID, Content> {
         Entity<Content> entity = entities.get(entityId);
         return entity != null ? entity.getContent() : null;
     }
+    
+    /**
+     * Get the position of a specific entity
+     * 
+     * @param entityId the entity ID to get the position for
+     * @return the entity's position, or null if entity not found
+     */
+    public Point3f getEntityPosition(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getPosition() : null;
+    }
+    
+    /**
+     * Get all entities with their positions
+     * 
+     * @return map of entity IDs to their positions
+     */
+    public Map<ID, Point3f> getEntitiesWithPositions() {
+        Map<ID, Point3f> result = new HashMap<>();
+        for (Map.Entry<ID, Entity<Content>> entry : entities.entrySet()) {
+            result.put(entry.getKey(), entry.getValue().getPosition());
+        }
+        return Collections.unmodifiableMap(result);
+    }
+    
+    /**
+     * Get entity bounds if available
+     * 
+     * @param entityId the entity ID to get bounds for
+     * @return the entity's bounds, or null if not set or entity not found
+     */
+    public EntityBounds getEntityBounds(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getBounds() : null;
+    }
 
     /**
      * Get the number of nodes containing a specific entity
