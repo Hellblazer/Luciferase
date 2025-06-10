@@ -119,7 +119,7 @@ public class Tetree<Content> {
 
     public Simplex<Content> intersecting(Spatial volume) {
         // For now, use a simple approach: find the enclosing tetrahedron
-        // TODO: Implement proper intersection testing for more precise results
+        // Currently uses enclosing method - could be enhanced with intersection tests
         return enclosing(volume);
     }
 

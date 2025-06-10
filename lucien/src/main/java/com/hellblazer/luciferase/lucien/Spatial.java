@@ -137,7 +137,7 @@ public interface Spatial {
                                                                                                      extentX, extentY,
                                                                                                      extentZ);
 
-            // TODO: More sophisticated tetrahedron-AABB intersection test
+            // Simple vertex-based test - could be enhanced with edge/face intersection tests
         }
 
         private boolean vertexInAABB(Tuple3f vertex, float minX, float minY, float minZ, float maxX, float maxY,
