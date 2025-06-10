@@ -39,8 +39,10 @@ import java.util.stream.Stream;
 public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Content> {
 
     // Spatial index: Morton code → Node containing entity IDs
-    final         NavigableMap<Long, OctreeNode<ID>> spatialIndex;
-    final         boolean                            singleContentMode;  // When true, enforces one entity per location
+    final         Map<Long, OctreeNode<ID>> spatialIndex;
+    // Sorted Morton codes for efficient range queries
+    final         NavigableSet<Long>        sortedMortonCodes;
+    final         boolean                   singleContentMode;  // When true, enforces one entity per location
     // Consolidated entity storage: Entity ID → Entity (content, locations, position, bounds)
     private final Map<ID, Entity<Content>>           entities;
     // ID generation strategy
@@ -84,7 +86,8 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy, boolean singleContentMode) {
-        this.spatialIndex = new TreeMap<>();
+        this.spatialIndex = new HashMap<>();
+        this.sortedMortonCodes = new TreeSet<>();
         this.entities = new ConcurrentHashMap<>();
         this.idGenerator = Objects.requireNonNull(idGenerator);
         this.maxEntitiesPerNode = singleContentMode ? 1 : maxEntitiesPerNode;
@@ -413,12 +416,209 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                     // Remove empty nodes
                     if (node.isEmpty() && !node.hasChildren()) {
                         spatialIndex.remove(mortonCode);
+                        sortedMortonCodes.remove(mortonCode);
                     }
                 }
             }
         }
 
         return true;
+    }
+
+    /**
+     * Bulk insert multiple entities efficiently
+     * 
+     * @param entities collection of entity data to insert
+     */
+    public void insertAll(Collection<EntityData<ID, Content>> entities) {
+        // Pre-sort by Morton code for better cache locality
+        List<EntityData<ID, Content>> sorted = entities.stream()
+            .sorted((e1, e2) -> {
+                long morton1 = calculateMortonCode(e1.position(), e1.level());
+                long morton2 = calculateMortonCode(e2.position(), e2.level());
+                return Long.compare(morton1, morton2);
+            })
+            .collect(Collectors.toList());
+        
+        // Batch insert with optimized node access
+        for (EntityData<ID, Content> data : sorted) {
+            if (data.bounds() != null) {
+                insert(data.id(), data.position(), data.level(), data.content(), data.bounds());
+            } else {
+                insert(data.id(), data.position(), data.level(), data.content());
+            }
+        }
+    }
+
+    /**
+     * Find k nearest neighbors to a query point
+     * 
+     * @param queryPoint the point to search from
+     * @param k the number of neighbors to find
+     * @param maxDistance maximum search distance
+     * @return list of entity IDs sorted by distance
+     */
+    public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
+        if (k <= 0) {
+            return Collections.emptyList();
+        }
+        
+        // Priority queue to keep track of k nearest entities
+        PriorityQueue<EntityDistance> candidates = new PriorityQueue<>(
+            Comparator.comparingDouble(ed -> -ed.distance) // Max heap
+        );
+        
+        // Track visited entities to avoid duplicates
+        Set<ID> visited = new HashSet<>();
+        
+        // Start with nodes containing the query point
+        byte startLevel = maxDepth;
+        long initialMortonCode = calculateMortonCode(queryPoint, startLevel);
+        
+        // Use a queue for breadth-first search
+        Queue<Long> toVisit = new LinkedList<>();
+        
+        // First, try to find the initial node or its parent
+        OctreeNode<ID> initialNode = spatialIndex.get(initialMortonCode);
+        if (initialNode != null) {
+            toVisit.add(initialMortonCode);
+        } else {
+            // If exact node doesn't exist, start from all existing nodes
+            // This is a simple approach - could be optimized with parent search
+            toVisit.addAll(spatialIndex.keySet());
+        }
+        
+        // Track visited nodes to avoid cycles
+        Set<Long> visitedNodes = new HashSet<>();
+        
+        while (!toVisit.isEmpty()) {
+            Long current = toVisit.poll();
+            if (!visitedNodes.add(current)) {
+                continue; // Already visited this node
+            }
+            
+            OctreeNode<ID> node = spatialIndex.get(current);
+            if (node == null) {
+                continue;
+            }
+            
+            // Check all entities in this node
+            for (ID entityId : node.getEntityIds()) {
+                if (visited.add(entityId)) {
+                    Entity<Content> entity = entities.get(entityId);
+                    if (entity != null) {
+                        float distance = queryPoint.distance(entity.getPosition());
+                        if (distance <= maxDistance) {
+                            candidates.add(new EntityDistance(entityId, distance));
+                            
+                            // Keep only k elements
+                            if (candidates.size() > k) {
+                                candidates.poll();
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Add neighboring nodes if we haven't found enough candidates
+            // or if the furthest candidate might be improved
+            if (candidates.size() < k || !isSearchComplete(current, queryPoint, candidates, maxDistance)) {
+                addNeighboringNodes(current, toVisit, visitedNodes);
+            }
+        }
+        
+        // Convert to sorted list (closest first)
+        List<EntityDistance> sorted = new ArrayList<>(candidates);
+        sorted.sort(Comparator.comparingDouble(ed -> ed.distance));
+        
+        return sorted.stream()
+            .map(ed -> ed.entityId)
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * Helper class for k-NN search
+     */
+    private class EntityDistance {
+        final ID entityId;
+        final float distance;
+        
+        EntityDistance(ID entityId, float distance) {
+            this.entityId = entityId;
+            this.distance = distance;
+        }
+    }
+    
+    /**
+     * Check if we can stop searching based on current candidates
+     */
+    private boolean isSearchComplete(long nodeCode, Point3f queryPoint, 
+                                   PriorityQueue<EntityDistance> candidates, float maxDistance) {
+        if (candidates.isEmpty()) {
+            return false;
+        }
+        
+        // Get the furthest candidate distance
+        EntityDistance furthest = candidates.peek();
+        if (furthest == null) {
+            return false;
+        }
+        
+        // Calculate distance from query point to node bounds
+        int[] coords = MortonCurve.decode(nodeCode);
+        byte level = Constants.toLevel(nodeCode);
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Simple heuristic: if node is far from query, we can skip it
+        float nodeMinX = coords[0];
+        float nodeMinY = coords[1];
+        float nodeMinZ = coords[2];
+        float nodeMaxX = nodeMinX + cellSize;
+        float nodeMaxY = nodeMinY + cellSize;
+        float nodeMaxZ = nodeMinZ + cellSize;
+        
+        // Calculate closest point on node to query
+        float closestX = Math.max(nodeMinX, Math.min(queryPoint.x, nodeMaxX));
+        float closestY = Math.max(nodeMinY, Math.min(queryPoint.y, nodeMaxY));
+        float closestZ = Math.max(nodeMinZ, Math.min(queryPoint.z, nodeMaxZ));
+        
+        float nodeDistance = new Point3f(closestX, closestY, closestZ).distance(queryPoint);
+        
+        // If the closest point on this node is further than our furthest candidate,
+        // we don't need to explore further
+        return nodeDistance > furthest.distance;
+    }
+    
+    /**
+     * Add neighboring nodes to the search queue
+     */
+    private void addNeighboringNodes(long nodeCode, Queue<Long> toVisit, Set<Long> visitedNodes) {
+        int[] coords = MortonCurve.decode(nodeCode);
+        byte level = Constants.toLevel(nodeCode);
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Check all 26 neighbors (3x3x3 cube minus center)
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue; // Skip center (current node)
+                    }
+                    
+                    int nx = coords[0] + dx * cellSize;
+                    int ny = coords[1] + dy * cellSize;
+                    int nz = coords[2] + dz * cellSize;
+                    
+                    // Check bounds
+                    if (nx >= 0 && ny >= 0 && nz >= 0) {
+                        long neighborCode = MortonCurve.encode(nx, ny, nz);
+                        if (!visitedNodes.contains(neighborCode)) {
+                            toVisit.add(neighborCode);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -440,13 +640,22 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
             OctreeNode<ID> node = spatialIndex.get(mortonCode);
             if (node != null) {
                 node.removeEntity(entityId);
+                
+                // Remove empty nodes
+                if (node.isEmpty() && !node.hasChildren()) {
+                    spatialIndex.remove(mortonCode);
+                    sortedMortonCodes.remove(mortonCode);
+                }
             }
         }
         entity.clearLocations();
 
         // Re-insert at new position
         long newMortonCode = calculateMortonCode(newPosition, level);
-        OctreeNode<ID> node = spatialIndex.computeIfAbsent(newMortonCode, k -> new OctreeNode<>(maxEntitiesPerNode));
+        OctreeNode<ID> node = spatialIndex.computeIfAbsent(newMortonCode, k -> {
+            sortedMortonCodes.add(newMortonCode);
+            return new OctreeNode<>(maxEntitiesPerNode);
+        });
 
         node.addEntity(entityId);
         entity.addLocation(newMortonCode);
@@ -618,7 +827,10 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         long mortonCode = calculateMortonCode(position, level);
 
         // Get or create node
-        OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> new OctreeNode<>(maxEntitiesPerNode));
+        OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> {
+            sortedMortonCodes.add(mortonCode);
+            return new OctreeNode<>(maxEntitiesPerNode);
+        });
 
         // Add entity to node
         boolean shouldSplit = node.addEntity(entityId);
@@ -649,7 +861,10 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         // Add entity to all intersecting nodes
         for (Long mortonCode : intersectingNodes) {
-            OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> new OctreeNode<>(maxEntitiesPerNode));
+            OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> {
+                sortedMortonCodes.add(mortonCode);
+                return new OctreeNode<>(maxEntitiesPerNode);
+            });
 
             node.addEntity(entityId);
             Entity<Content> entity = entities.get(entityId);
@@ -670,11 +885,24 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
             return results.stream();
         }
 
-        for (Map.Entry<Long, OctreeNode<ID>> entry : spatialIndex.entrySet()) {
-            long mortonIndex = entry.getKey();
-            OctreeNode<ID> node = entry.getValue();
+        // Use Morton code range optimization for better performance
+        // Calculate approximate Morton code range for the query bounds
+        long minMorton = calculateMortonCode(new Point3f(bounds.minX, bounds.minY, bounds.minZ), maxDepth);
+        long maxMorton = calculateMortonCode(new Point3f(bounds.maxX, bounds.maxY, bounds.maxZ), maxDepth);
+        
+        // Use sorted Morton codes for efficient range query
+        NavigableSet<Long> candidateCodes = sortedMortonCodes.subSet(minMorton, true, maxMorton, true);
+        
+        // Also check codes just outside the range as Morton curve can be non-contiguous
+        NavigableSet<Long> extendedCodes = new TreeSet<>(candidateCodes);
+        Long lower = sortedMortonCodes.lower(minMorton);
+        if (lower != null) extendedCodes.add(lower);
+        Long higher = sortedMortonCodes.higher(maxMorton);
+        if (higher != null) extendedCodes.add(higher);
 
-            if (node.isEmpty()) {
+        for (Long mortonIndex : extendedCodes) {
+            OctreeNode<ID> node = spatialIndex.get(mortonIndex);
+            if (node == null || node.isEmpty()) {
                 continue;
             }
 
@@ -730,7 +958,10 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
             if (!childEntities.isEmpty()) {
                 // Create or get child node
                 OctreeNode<ID> childNode = spatialIndex.computeIfAbsent(childMorton,
-                                                                        k -> new OctreeNode<>(maxEntitiesPerNode));
+                                                                        k -> {
+                                                                            sortedMortonCodes.add(childMorton);
+                                                                            return new OctreeNode<>(maxEntitiesPerNode);
+                                                                        });
 
                 // Add entities to child
                 for (ID entityId : childEntities) {
