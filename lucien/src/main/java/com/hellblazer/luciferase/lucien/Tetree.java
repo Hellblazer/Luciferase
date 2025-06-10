@@ -28,14 +28,6 @@ public class Tetree<Content> {
     public Tetree(NavigableMap<Long, Content> contents) {
         this.contents = contents;
     }
-    
-    /**
-     * Get the number of entries in the tetree
-     * @return the size of the internal map
-     */
-    public int size() {
-        return contents.size();
-    }
 
     /**
      * @param volume - the enclosing volume
@@ -169,6 +161,15 @@ public class Tetree<Content> {
                 return new Tet(c0, level, 1);
             }
         }
+    }
+
+    /**
+     * Get the number of entries in the tetree
+     *
+     * @return the size of the internal map
+     */
+    public int size() {
+        return contents.size();
     }
 
     // Compute SFC ranges for all tetrahedra in a grid cell

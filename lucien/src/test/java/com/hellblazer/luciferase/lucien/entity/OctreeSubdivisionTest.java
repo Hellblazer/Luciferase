@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
-import com.hellblazer.luciferase.lucien.OctreeWithEntities;
+import com.hellblazer.luciferase.lucien.Octree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,12 +33,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class OctreeSubdivisionTest {
 
-    private OctreeWithEntities<LongEntityID, String> octree;
+    private Octree<LongEntityID, String> octree;
 
     @BeforeEach
     void setUp() {
         // Create octree with low threshold to trigger subdivision
-        octree = new OctreeWithEntities<>(new SequentialLongIDGenerator(), 3, (byte) 21);
+        octree = new Octree<>(new SequentialLongIDGenerator(), 3, (byte) 21);
     }
 
     @Test
@@ -65,7 +65,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id4 = octree.insert(pos4, level, "Entity4");
 
         // Check stats after subdivision
-        OctreeWithEntities.Stats stats = octree.getEntityStats();
+        Octree.Stats stats = octree.getEntityStats();
         System.out.println("Stats after redistribution: " + stats);
 
         // Check that entities are still retrievable at their positions
@@ -121,7 +121,7 @@ public class OctreeSubdivisionTest {
             octree.insert(pos, startLevel, "Entity" + i);
         }
 
-        OctreeWithEntities.Stats stats = octree.getEntityStats();
+        Octree.Stats stats = octree.getEntityStats();
         System.out.println("Multiple levels stats: " + stats);
 
         // Should have created multiple nodes due to spatial distribution
@@ -144,7 +144,7 @@ public class OctreeSubdivisionTest {
             octree.insert(pos, maxLevel, "Entity" + i);
         }
 
-        OctreeWithEntities.Stats stats = octree.getEntityStats();
+        Octree.Stats stats = octree.getEntityStats();
         assertEquals(1, stats.nodeCount, "Should not subdivide at max depth");
         assertEquals(10, stats.entityCount);
         assertEquals(10, stats.totalEntityReferences);
@@ -163,7 +163,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id3 = octree.insert(basePos, level, "Entity3");
 
         // Stats before subdivision trigger
-        OctreeWithEntities.Stats statsBefore = octree.getEntityStats();
+        Octree.Stats statsBefore = octree.getEntityStats();
         assertEquals(1, statsBefore.nodeCount);
         assertEquals(3, statsBefore.entityCount);
 
@@ -171,7 +171,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id4 = octree.insert(basePos, level, "Entity4");
 
         // Stats after subdivision
-        OctreeWithEntities.Stats statsAfter = octree.getEntityStats();
+        Octree.Stats statsAfter = octree.getEntityStats();
         assertEquals(4, statsAfter.entityCount);
 
         // Debug output

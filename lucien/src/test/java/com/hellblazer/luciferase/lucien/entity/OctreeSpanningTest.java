@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
-import com.hellblazer.luciferase.lucien.OctreeWithEntities;
+import com.hellblazer.luciferase.lucien.Octree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,14 +32,14 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class OctreeSpanningTest {
 
-    private OctreeWithEntities<LongEntityID, String> octree;
-    private EntitySpanningPolicy                     spanningPolicy;
+    private Octree<LongEntityID, String> octree;
+    private EntitySpanningPolicy         spanningPolicy;
 
     @BeforeEach
     void setUp() {
         // Create octree with spanning enabled
         spanningPolicy = EntitySpanningPolicy.withSpanning();
-        octree = new OctreeWithEntities<>(new SequentialLongIDGenerator(), 10, (byte) 21, spanningPolicy);
+        octree = new Octree<>(new SequentialLongIDGenerator(), 10, (byte) 21, spanningPolicy);
     }
 
     @Test
@@ -176,8 +176,7 @@ public class OctreeSpanningTest {
     @Test
     void testNoSpanningWhenDisabled() {
         // Create octree with spanning disabled
-        OctreeWithEntities<LongEntityID, String> noSpanOctree = new OctreeWithEntities<>(
-        new SequentialLongIDGenerator(), 10, (byte) 21);
+        Octree<LongEntityID, String> noSpanOctree = new Octree<>(new SequentialLongIDGenerator(), 10, (byte) 21);
 
         byte level = 15;
         int cellSize = 1 << (21 - level);

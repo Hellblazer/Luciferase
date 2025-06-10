@@ -36,7 +36,7 @@ import java.util.stream.Stream;
  * @param <Content> The type of content stored
  * @author hal.hildebrand
  */
-public class OctreeWithEntities<ID extends EntityID, Content> implements SpatialIndexMultiEntity<ID, Content> {
+public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Content> {
 
     // Spatial index: Morton code → Node containing entity IDs
     final         NavigableMap<Long, OctreeNode<ID>> spatialIndex;
@@ -53,37 +53,37 @@ public class OctreeWithEntities<ID extends EntityID, Content> implements Spatial
     /**
      * Create an octree with default configuration
      */
-    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator) {
+    public Octree(EntityIDGenerator<ID> idGenerator) {
         this(idGenerator, 10, Constants.getMaxRefinementLevel());
     }
 
     /**
      * Create an octree in single content mode (for SpatialIndex compatibility)
      */
-    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, boolean singleContentMode) {
+    public Octree(EntityIDGenerator<ID> idGenerator, boolean singleContentMode) {
         this(idGenerator, 1, Constants.getMaxRefinementLevel(), new EntitySpanningPolicy(), singleContentMode);
     }
 
     /**
      * Create an octree with custom configuration
      */
-    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth) {
+    public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth) {
         this(idGenerator, maxEntitiesPerNode, maxDepth, new EntitySpanningPolicy(), false);
     }
 
     /**
      * Create an octree with custom configuration and spanning policy
      */
-    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
-                              EntitySpanningPolicy spanningPolicy) {
+    public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
+                  EntitySpanningPolicy spanningPolicy) {
         this(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy, false);
     }
 
     /**
      * Create an octree with full configuration options
      */
-    public OctreeWithEntities(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
-                              EntitySpanningPolicy spanningPolicy, boolean singleContentMode) {
+    public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
+                  EntitySpanningPolicy spanningPolicy, boolean singleContentMode) {
         this.spatialIndex = new TreeMap<>();
         this.entities = new ConcurrentHashMap<>();
         this.idGenerator = Objects.requireNonNull(idGenerator);
@@ -292,10 +292,10 @@ public class OctreeWithEntities<ID extends EntityID, Content> implements Spatial
     // Helper methods for spatial range queries
 
     @Override
-    public SpatialIndexMultiEntity.EntityStats getStats() {
+    public SpatialIndex.EntityStats getStats() {
         Stats stats = getEntityStats();
-        return new SpatialIndexMultiEntity.EntityStats(stats.nodeCount, stats.entityCount, stats.totalEntityReferences,
-                                                       stats.maxDepth);
+        return new SpatialIndex.EntityStats(stats.nodeCount, stats.entityCount, stats.totalEntityReferences,
+                                            stats.maxDepth);
     }
 
     @Override
@@ -476,7 +476,7 @@ public class OctreeWithEntities<ID extends EntityID, Content> implements Spatial
         };
     }
 
-    // ===== SpatialIndexMultiEntity Interface Implementation =====
+    // ===== SpatialIndex Interface Implementation =====
 
     byte findMinimumContainingLevel(VolumeBounds bounds) {
         float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),

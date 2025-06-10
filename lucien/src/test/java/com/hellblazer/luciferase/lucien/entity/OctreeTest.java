@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
-import com.hellblazer.luciferase.lucien.OctreeWithEntities;
+import com.hellblazer.luciferase.lucien.Octree;
 import com.hellblazer.luciferase.lucien.Spatial;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,15 +31,15 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class OctreeWithEntitiesTest {
+public class OctreeTest {
 
-    private OctreeWithEntities<LongEntityID, String>     longIdOctree;
-    private OctreeWithEntities<UUIDEntityID, TestEntity> uuidOctree;
+    private Octree<LongEntityID, String>     longIdOctree;
+    private Octree<UUIDEntityID, TestEntity> uuidOctree;
 
     @BeforeEach
     void setUp() {
-        longIdOctree = new OctreeWithEntities<>(new SequentialLongIDGenerator());
-        uuidOctree = new OctreeWithEntities<>(new UUIDGenerator());
+        longIdOctree = new Octree<>(new SequentialLongIDGenerator());
+        uuidOctree = new Octree<>(new UUIDGenerator());
     }
 
     @Test
@@ -198,7 +198,7 @@ public class OctreeWithEntitiesTest {
         longIdOctree.insert(new Point3f(100, 100, 100), (byte) 15, "E2");
         longIdOctree.insert(new Point3f(5000, 5000, 5000), (byte) 15, "E3");
 
-        OctreeWithEntities.Stats stats = longIdOctree.getEntityStats();
+        Octree.Stats stats = longIdOctree.getEntityStats();
 
         assertEquals(2, stats.nodeCount); // Two different positions
         assertEquals(3, stats.entityCount); // Three entities total

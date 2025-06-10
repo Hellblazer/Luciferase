@@ -25,56 +25,67 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Utilities for testing multi-entity capabilities of OctreeWithEntities
+ * Utilities for testing multi-entity capabilities of Octree
  *
  * @author hal.hildebrand
  */
 public class EntityTestUtils {
-    
+
     /**
-     * Test data representing multiple entities at the same location
+     * Count total entities across all locations
      */
-    public static class MultiEntityLocation<Content> {
-        public final Point3f position;
-        public final byte level;
-        public final List<Content> entities;
-        
-        public MultiEntityLocation(Point3f position, byte level, List<Content> entities) {
-            this.position = position;
-            this.level = level;
-            this.entities = new ArrayList<>(entities);
-        }
-        
-        public MultiEntityLocation(Point3f position, byte level, Content... entities) {
-            this(position, level, Arrays.asList(entities));
-        }
+    public static <ID extends EntityID, Content> int countTotalEntities(Octree<ID, Content> octree) {
+        return octree.getAllEntities().size();
     }
-    
+
     /**
-     * Create an OctreeWithEntities populated with multi-entity test data
+     * Create test data with collision scenarios
      */
-    public static <Content> OctreeWithEntities<LongEntityID, Content> createMultiEntityOctree(
-            List<MultiEntityLocation<Content>> locations) {
-        OctreeWithEntities<LongEntityID, Content> octree = 
-            new OctreeWithEntities<>(new SequentialLongIDGenerator());
-            
+    public static List<MultiEntityLocation<String>> createCollisionTestData() {
+        List<MultiEntityLocation<String>> locations = new ArrayList<>();
+
+        // Multiple entities at the same exact position
+        locations.add(
+        new MultiEntityLocation<>(new Point3f(100, 100, 100), (byte) 10, "Entity1", "Entity2", "Entity3"));
+
+        // Different entities at nearby positions that map to same Morton code
+        Point3f basePos = new Point3f(200, 200, 200);
+        locations.add(new MultiEntityLocation<>(basePos, (byte) 8, "GroupA1", "GroupA2"));
+
+        // Single entity at a different location
+        locations.add(new MultiEntityLocation<>(new Point3f(300, 300, 300), (byte) 10, "Singleton"));
+
+        // Dense cluster of entities
+        for (int i = 0; i < 5; i++) {
+            locations.add(new MultiEntityLocation<>(new Point3f(400, 400, 400), (byte) 12, "Dense" + i));
+        }
+
+        return locations;
+    }
+
+    /**
+     * Create an Octree populated with multi-entity test data
+     */
+    public static <Content> Octree<LongEntityID, Content> createMultiEntityOctree(
+    List<MultiEntityLocation<Content>> locations) {
+        Octree<LongEntityID, Content> octree = new Octree<>(new SequentialLongIDGenerator());
+
         for (MultiEntityLocation<Content> location : locations) {
             for (Content entity : location.entities) {
                 octree.insert(location.position, location.level, entity);
             }
         }
-        
+
         return octree;
     }
-    
+
     /**
-     * Create an OctreeWithEntities with entities that have specific IDs
+     * Create an Octree with entities that have specific IDs
      */
-    public static <Content> OctreeWithEntities<LongEntityID, Content> createMultiEntityOctreeWithIds(
-            Map<LongEntityID, MultiEntityLocation<Content>> entityMap) {
-        OctreeWithEntities<LongEntityID, Content> octree = 
-            new OctreeWithEntities<>(new SequentialLongIDGenerator());
-            
+    public static <Content> Octree<LongEntityID, Content> createMultiEntityOctreeWithIds(
+    Map<LongEntityID, MultiEntityLocation<Content>> entityMap) {
+        Octree<LongEntityID, Content> octree = new Octree<>(new SequentialLongIDGenerator());
+
         for (Map.Entry<LongEntityID, MultiEntityLocation<Content>> entry : entityMap.entrySet()) {
             LongEntityID id = entry.getKey();
             MultiEntityLocation<Content> location = entry.getValue();
@@ -82,160 +93,119 @@ public class EntityTestUtils {
                 octree.insert(id, location.position, location.level, location.entities.get(0));
             }
         }
-        
+
         return octree;
     }
-    
+
     /**
-     * Verify that all entities at a location are present
+     * Create test data for entity bounds and spanning scenarios
      */
-    public static <ID extends EntityID, Content> boolean verifyEntitiesAtLocation(
-            OctreeWithEntities<ID, Content> octree,
-            Point3f position,
-            byte level,
-            Collection<Content> expectedEntities) {
-        
-        List<ID> ids = octree.lookup(position, level);
-        if (ids.size() != expectedEntities.size()) {
-            return false;
-        }
-        
-        Set<Content> actualEntities = ids.stream()
-            .map(octree::getEntity)
-            .collect(Collectors.toSet());
-            
-        return actualEntities.equals(new HashSet<>(expectedEntities));
+    public static List<MultiEntityLocation<String>> createSpanningTestData() {
+        List<MultiEntityLocation<String>> locations = new ArrayList<>();
+
+        // Large entity that should span multiple nodes
+        locations.add(new MultiEntityLocation<>(new Point3f(500, 500, 500), (byte) 8, "LargeBuilding"));
+
+        // Overlapping entities
+        locations.add(new MultiEntityLocation<>(new Point3f(510, 510, 510), (byte) 8, "OverlappingStructure1",
+                                                "OverlappingStructure2"));
+
+        return locations;
     }
-    
-    /**
-     * Count total entities across all locations
-     */
-    public static <ID extends EntityID, Content> int countTotalEntities(
-            OctreeWithEntities<ID, Content> octree) {
-        return octree.getAllEntities().size();
-    }
-    
+
     /**
      * Get all unique spatial locations that have entities
      */
-    public static <ID extends EntityID, Content> Set<Point3f> getUniqueLocations(
-            OctreeWithEntities<ID, Content> octree,
-            byte level) {
+    public static <ID extends EntityID, Content> Set<Point3f> getUniqueLocations(Octree<ID, Content> octree,
+                                                                                 byte level) {
         Set<Point3f> locations = new HashSet<>();
-        
+
         // This is a simplified approach - in a real implementation,
         // we'd need to traverse the octree structure
         for (Map.Entry<ID, Content> entry : octree.getAllEntities().entrySet()) {
             // We'd need access to entity positions here
             // For now, this is a placeholder
         }
-        
+
         return locations;
     }
-    
+
     /**
-     * Create test data with collision scenarios
+     * Verify that all entities at a location are present
      */
-    public static List<MultiEntityLocation<String>> createCollisionTestData() {
-        List<MultiEntityLocation<String>> locations = new ArrayList<>();
-        
-        // Multiple entities at the same exact position
-        locations.add(new MultiEntityLocation<>(
-            new Point3f(100, 100, 100),
-            (byte) 10,
-            "Entity1", "Entity2", "Entity3"
-        ));
-        
-        // Different entities at nearby positions that map to same Morton code
-        Point3f basePos = new Point3f(200, 200, 200);
-        locations.add(new MultiEntityLocation<>(
-            basePos,
-            (byte) 8,
-            "GroupA1", "GroupA2"
-        ));
-        
-        // Single entity at a different location
-        locations.add(new MultiEntityLocation<>(
-            new Point3f(300, 300, 300),
-            (byte) 10,
-            "Singleton"
-        ));
-        
-        // Dense cluster of entities
-        for (int i = 0; i < 5; i++) {
-            locations.add(new MultiEntityLocation<>(
-                new Point3f(400, 400, 400),
-                (byte) 12,
-                "Dense" + i
-            ));
+    public static <ID extends EntityID, Content> boolean verifyEntitiesAtLocation(Octree<ID, Content> octree,
+                                                                                  Point3f position, byte level,
+                                                                                  Collection<Content> expectedEntities) {
+
+        List<ID> ids = octree.lookup(position, level);
+        if (ids.size() != expectedEntities.size()) {
+            return false;
         }
-        
-        return locations;
+
+        Set<Content> actualEntities = ids.stream().map(octree::getEntity).collect(Collectors.toSet());
+
+        return actualEntities.equals(new HashSet<>(expectedEntities));
     }
-    
+
     /**
-     * Create test data for entity bounds and spanning scenarios
+     * Test data representing multiple entities at the same location
      */
-    public static List<MultiEntityLocation<String>> createSpanningTestData() {
-        List<MultiEntityLocation<String>> locations = new ArrayList<>();
-        
-        // Large entity that should span multiple nodes
-        locations.add(new MultiEntityLocation<>(
-            new Point3f(500, 500, 500),
-            (byte) 8,
-            "LargeBuilding"
-        ));
-        
-        // Overlapping entities
-        locations.add(new MultiEntityLocation<>(
-            new Point3f(510, 510, 510),
-            (byte) 8,
-            "OverlappingStructure1", "OverlappingStructure2"
-        ));
-        
-        return locations;
+    public static class MultiEntityLocation<Content> {
+        public final Point3f       position;
+        public final byte          level;
+        public final List<Content> entities;
+
+        public MultiEntityLocation(Point3f position, byte level, List<Content> entities) {
+            this.position = position;
+            this.level = level;
+            this.entities = new ArrayList<>(entities);
+        }
+
+        public MultiEntityLocation(Point3f position, byte level, Content... entities) {
+            this(position, level, Arrays.asList(entities));
+        }
     }
-    
+
     /**
      * Helper to create a simple multi-entity adapter for search algorithms
      */
     public static class MultiEntityAdapter<Content> {
-        private final OctreeWithEntities<LongEntityID, Content> octree;
-        
-        public MultiEntityAdapter(OctreeWithEntities<LongEntityID, Content> octree) {
+        private final Octree<LongEntityID, Content> octree;
+
+        public MultiEntityAdapter(Octree<LongEntityID, Content> octree) {
             this.octree = octree;
         }
-        
+
         /**
-         * Get all entities at all Morton indices as a flattened list
-         * This allows search algorithms to work with multiple entities
+         * Get all entities at all Morton indices as a flattened list This allows search algorithms to work with
+         * multiple entities
          */
         public List<EntityWithLocation<Content>> getAllEntitiesWithLocations() {
             List<EntityWithLocation<Content>> result = new ArrayList<>();
-            
+
             // We need to track entity locations
-            // This would require extending OctreeWithEntities to expose this information
+            // This would require extending Octree to expose this information
             Map<LongEntityID, Content> allEntities = octree.getAllEntities();
-            
+
             for (Map.Entry<LongEntityID, Content> entry : allEntities.entrySet()) {
                 // For now, we can't get the exact position without extending the API
                 // This is a limitation we need to address
-                result.add(new EntityWithLocation<>(entry.getKey(), entry.getValue(), null, (byte)0));
+                result.add(new EntityWithLocation<>(entry.getKey(), entry.getValue(), null, (byte) 0));
             }
-            
+
             return result;
         }
     }
-    
+
     /**
      * Container for entity with its spatial location
      */
     public static class EntityWithLocation<Content> {
         public final LongEntityID id;
-        public final Content content;
-        public final Point3f position;
-        public final byte level;
-        
+        public final Content      content;
+        public final Point3f      position;
+        public final byte         level;
+
         public EntityWithLocation(LongEntityID id, Content content, Point3f position, byte level) {
             this.id = id;
             this.content = content;
