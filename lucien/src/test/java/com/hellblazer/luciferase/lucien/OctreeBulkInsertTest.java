@@ -135,10 +135,9 @@ public class OctreeBulkInsertTest {
         // Bulk insert may have overhead from sorting, especially on slower machines
         // On CI or less capable hardware, the overhead can be more significant
         // Check if we're running on CI (common CI environment variables)
-        boolean isCI = System.getenv("CI") != null || 
-                       System.getenv("CONTINUOUS_INTEGRATION") != null ||
-                       System.getenv("GITHUB_ACTIONS") != null;
-        
+        boolean isCI = System.getenv("CI") != null || System.getenv("CONTINUOUS_INTEGRATION") != null || System.getenv(
+        "GITHUB_ACTIONS") != null;
+
         if (isCI) {
             // On CI, we're mainly testing functionality, not performance
             System.out.println("Running on CI - skipping performance assertion");
