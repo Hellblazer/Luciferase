@@ -35,7 +35,7 @@ public class EntityTestUtils {
      * Count total entities across all locations
      */
     public static <ID extends EntityID, Content> int countTotalEntities(Octree<ID, Content> octree) {
-        return octree.getAllEntities().size();
+        return octree.entityCount();
     }
 
     /**
@@ -118,16 +118,8 @@ public class EntityTestUtils {
      */
     public static <ID extends EntityID, Content> Set<Point3f> getUniqueLocations(Octree<ID, Content> octree,
                                                                                  byte level) {
-        Set<Point3f> locations = new HashSet<>();
-
-        // This is a simplified approach - in a real implementation,
-        // we'd need to traverse the octree structure
-        for (Map.Entry<ID, Content> entry : octree.getAllEntities().entrySet()) {
-            // We'd need access to entity positions here
-            // For now, this is a placeholder
-        }
-
-        return locations;
+        // Use getEntitiesWithPositions to get position info
+        return new HashSet<>(octree.getEntitiesWithPositions().values());
     }
 
     /**
@@ -183,14 +175,15 @@ public class EntityTestUtils {
         public List<EntityWithLocation<Content>> getAllEntitiesWithLocations() {
             List<EntityWithLocation<Content>> result = new ArrayList<>();
 
-            // We need to track entity locations
-            // This would require extending Octree to expose this information
-            Map<LongEntityID, Content> allEntities = octree.getAllEntities();
+            // Use getEntitiesWithPositions to get entity locations
+            Map<LongEntityID, Point3f> positions = octree.getEntitiesWithPositions();
 
-            for (Map.Entry<LongEntityID, Content> entry : allEntities.entrySet()) {
-                // For now, we can't get the exact position without extending the API
-                // This is a limitation we need to address
-                result.add(new EntityWithLocation<>(entry.getKey(), entry.getValue(), null, (byte) 0));
+            for (Map.Entry<LongEntityID, Point3f> entry : positions.entrySet()) {
+                LongEntityID id = entry.getKey();
+                Content content = octree.getEntity(id);
+                if (content != null) {
+                    result.add(new EntityWithLocation<>(id, content, entry.getValue(), (byte) 0));
+                }
             }
 
             return result;
