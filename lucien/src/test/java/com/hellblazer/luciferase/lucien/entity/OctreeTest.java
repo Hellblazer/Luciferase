@@ -176,19 +176,19 @@ public class OctreeTest {
         longIdOctree.insert(new Point3f(200, 200, 200), (byte) 10, "E3");
         longIdOctree.insert(new Point3f(300, 300, 300), (byte) 10, "E4");
 
-        // Query region
+        // Query region: cube from (50,50,50) to (250,250,250)
         Spatial.Cube region = new Spatial.Cube(50, 50, 50, 200);
         List<LongEntityID> entitiesInRegion = longIdOctree.entitiesInRegion(region);
 
-        // Phase 1: Simple implementation returns all entities
-        // TODO: In Phase 2, implement proper spatial filtering
-        assertEquals(4, entitiesInRegion.size());
+        // E1 (100,100,100), E2 (150,150,150), and E3 (200,200,200) are inside
+        // E4 (300,300,300) is outside the region
+        assertEquals(3, entitiesInRegion.size());
 
         List<String> contents = longIdOctree.getEntities(entitiesInRegion);
         assertTrue(contents.contains("E1"));
         assertTrue(contents.contains("E2"));
         assertTrue(contents.contains("E3"));
-        assertTrue(contents.contains("E4"));
+        assertFalse(contents.contains("E4"));
     }
 
     @Test
