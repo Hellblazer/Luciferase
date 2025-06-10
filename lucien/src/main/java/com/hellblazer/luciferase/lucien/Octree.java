@@ -42,7 +42,6 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     final         Map<Long, OctreeNode<ID>> spatialIndex;
     // Sorted Morton codes for efficient range queries
     final         NavigableSet<Long>        sortedMortonCodes;
-    final         boolean                   singleContentMode;  // When true, enforces one entity per location
     // Consolidated entity storage: Entity ID → Entity (content, locations, position, bounds)
     private final Map<ID, Entity<Content>>           entities;
     // ID generation strategy
@@ -59,18 +58,12 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         this(idGenerator, 10, Constants.getMaxRefinementLevel());
     }
 
-    /**
-     * Create an octree in single content mode (for SpatialIndex compatibility)
-     */
-    public Octree(EntityIDGenerator<ID> idGenerator, boolean singleContentMode) {
-        this(idGenerator, 1, Constants.getMaxRefinementLevel(), new EntitySpanningPolicy(), singleContentMode);
-    }
 
     /**
      * Create an octree with custom configuration
      */
     public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth) {
-        this(idGenerator, maxEntitiesPerNode, maxDepth, new EntitySpanningPolicy(), false);
+        this(idGenerator, maxEntitiesPerNode, maxDepth, new EntitySpanningPolicy());
     }
 
     /**
@@ -78,22 +71,13 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
-        this(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy, false);
-    }
-
-    /**
-     * Create an octree with full configuration options
-     */
-    public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
-                  EntitySpanningPolicy spanningPolicy, boolean singleContentMode) {
         this.spatialIndex = new HashMap<>();
         this.sortedMortonCodes = new TreeSet<>();
         this.entities = new ConcurrentHashMap<>();
         this.idGenerator = Objects.requireNonNull(idGenerator);
-        this.maxEntitiesPerNode = singleContentMode ? 1 : maxEntitiesPerNode;
+        this.maxEntitiesPerNode = maxEntitiesPerNode;
         this.maxDepth = maxDepth;
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
-        this.singleContentMode = singleContentMode;
     }
 
     @Override
@@ -839,11 +823,6 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         Entity<Content> entity = entities.get(entityId);
         if (entity != null) {
             entity.addLocation(mortonCode);
-        }
-
-        // In single content mode, we don't split nodes
-        if (singleContentMode) {
-            return;
         }
 
         // Handle subdivision if needed

@@ -21,8 +21,8 @@ public class OctreeUpdateOperationTest {
 
     @Test
     void testBasicEntityUpdate() {
-        // Create octree in single content mode to avoid subdivision issues
-        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator(), true);
+        // Create octree with max entities = 1 to control subdivision
+        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator(), 1, (byte)20);
         
         // Insert an entity
         Point3f initialPos = new Point3f(100, 100, 100);
