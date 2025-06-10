@@ -146,18 +146,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         }
 
         // Use Morton code range optimization
-        long minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), maxDepth);
-        long maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), maxDepth);
-
-        // Get candidate nodes using Morton code range
-        NavigableSet<Long> candidateCodes = sortedMortonCodes.subSet(minMorton, true, maxMorton, true);
-
-        // Also check codes just outside the range as Morton curve can be non-contiguous
-        NavigableSet<Long> extendedCodes = new TreeSet<>(candidateCodes);
-        Long lower = sortedMortonCodes.lower(minMorton);
-        if (lower != null) extendedCodes.add(lower);
-        Long higher = sortedMortonCodes.higher(maxMorton);
-        if (higher != null) extendedCodes.add(higher);
+        NavigableSet<Long> extendedCodes = getMortonCodeRange(bounds);
 
         Set<ID> uniqueEntities = new HashSet<>();
 
@@ -264,24 +253,6 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         return entity != null ? entity.getSpanCount() : 0;
     }
 
-    /**
-     * Get entity-based statistics about the octree
-     */
-    public Stats getEntityStats() {
-        Stats stats = new Stats();
-        stats.nodeCount = spatialIndex.size();
-        stats.entityCount = entities.size();
-
-        for (Map.Entry<Long, OctreeNode<ID>> entry : spatialIndex.entrySet()) {
-            stats.totalEntityReferences += entry.getValue().getEntityCount();
-
-            // Calculate depth from Morton code
-            byte depth = Constants.toLevel(entry.getKey());
-            stats.maxDepth = Math.max(stats.maxDepth, depth);
-        }
-
-        return stats;
-    }
 
     @Override
     public NavigableMap<Long, Set<ID>> getSpatialMap() {
@@ -298,9 +269,23 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
     @Override
     public SpatialIndex.EntityStats getStats() {
-        Stats stats = getEntityStats();
-        return new SpatialIndex.EntityStats(stats.nodeCount, stats.entityCount, stats.totalEntityReferences,
-                                            stats.maxDepth);
+        int nodeCount = 0;
+        int entityCount = entities.size();
+        int totalEntityReferences = 0;
+        int maxDepth = 0;
+
+        for (Map.Entry<Long, OctreeNode<ID>> entry : spatialIndex.entrySet()) {
+            if (!entry.getValue().isEmpty()) {
+                nodeCount++;
+            }
+            totalEntityReferences += entry.getValue().getEntityCount();
+
+            // Calculate depth from Morton code
+            byte depth = Constants.toLevel(entry.getKey());
+            maxDepth = Math.max(maxDepth, depth);
+        }
+
+        return new SpatialIndex.EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
     }
 
     @Override
@@ -416,10 +401,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                     node.removeEntity(entityId);
 
                     // Remove empty nodes
-                    if (node.isEmpty() && !node.hasChildren()) {
-                        spatialIndex.remove(mortonCode);
-                        sortedMortonCodes.remove(mortonCode);
-                    }
+                    cleanupEmptyNode(mortonCode, node);
                 }
             }
         }
@@ -616,6 +598,36 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     }
 
     /**
+     * Clean up empty nodes from the spatial index
+     */
+    private void cleanupEmptyNode(long mortonCode, OctreeNode<ID> node) {
+        if (node.isEmpty() && !node.hasChildren()) {
+            spatialIndex.remove(mortonCode);
+            sortedMortonCodes.remove(mortonCode);
+        }
+    }
+
+    /**
+     * Get Morton code range for spatial bounds, including boundary codes
+     */
+    private NavigableSet<Long> getMortonCodeRange(VolumeBounds bounds) {
+        long minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), maxDepth);
+        long maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), maxDepth);
+        
+        // Use sorted Morton codes for efficient range query
+        NavigableSet<Long> candidateCodes = sortedMortonCodes.subSet(minMorton, true, maxMorton, true);
+        
+        // Also check codes just outside the range as Morton curve can be non-contiguous
+        NavigableSet<Long> extendedCodes = new TreeSet<>(candidateCodes);
+        Long lower = sortedMortonCodes.lower(minMorton);
+        if (lower != null) extendedCodes.add(lower);
+        Long higher = sortedMortonCodes.higher(maxMorton);
+        if (higher != null) extendedCodes.add(higher);
+        
+        return extendedCodes;
+    }
+
+    /**
      * Update entity position (remove from old nodes, add to new)
      */
     @Override
@@ -636,10 +648,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                 node.removeEntity(entityId);
                 
                 // Remove empty nodes
-                if (node.isEmpty() && !node.hasChildren()) {
-                    spatialIndex.remove(mortonCode);
-                    sortedMortonCodes.remove(mortonCode);
-                }
+                cleanupEmptyNode(mortonCode, node);
             }
         }
         entity.clearLocations();
@@ -840,19 +849,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         }
 
         // Use Morton code range optimization for better performance
-        // Calculate approximate Morton code range for the query bounds
-        long minMorton = calculateMortonCode(new Point3f(bounds.minX, bounds.minY, bounds.minZ), maxDepth);
-        long maxMorton = calculateMortonCode(new Point3f(bounds.maxX, bounds.maxY, bounds.maxZ), maxDepth);
-        
-        // Use sorted Morton codes for efficient range query
-        NavigableSet<Long> candidateCodes = sortedMortonCodes.subSet(minMorton, true, maxMorton, true);
-        
-        // Also check codes just outside the range as Morton curve can be non-contiguous
-        NavigableSet<Long> extendedCodes = new TreeSet<>(candidateCodes);
-        Long lower = sortedMortonCodes.lower(minMorton);
-        if (lower != null) extendedCodes.add(lower);
-        Long higher = sortedMortonCodes.higher(maxMorton);
-        if (higher != null) extendedCodes.add(higher);
+        NavigableSet<Long> extendedCodes = getMortonCodeRange(bounds);
 
         for (Long mortonIndex : extendedCodes) {
             OctreeNode<ID> node = spatialIndex.get(mortonIndex);
@@ -943,21 +940,6 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         }
     }
 
-    /**
-     * Statistics tracking
-     */
-    public static class Stats {
-        public int nodeCount             = 0;
-        public int entityCount           = 0;
-        public int maxDepth              = 0;
-        public int totalEntityReferences = 0; // Total entity IDs across all nodes
-
-        @Override
-        public String toString() {
-            return String.format("Nodes: %d, Entities: %d, Max Depth: %d, Total Refs: %d", nodeCount, entityCount,
-                                 maxDepth, totalEntityReferences);
-        }
-    }
 
     /**
      * Helper record for volume bounds

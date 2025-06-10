@@ -198,12 +198,12 @@ public class OctreeTest {
         longIdOctree.insert(new Point3f(100, 100, 100), (byte) 15, "E2");
         longIdOctree.insert(new Point3f(5000, 5000, 5000), (byte) 15, "E3");
 
-        Octree.Stats stats = longIdOctree.getEntityStats();
+        var stats = longIdOctree.getStats();
 
-        assertEquals(2, stats.nodeCount); // Two different positions
-        assertEquals(3, stats.entityCount); // Three entities total
-        assertEquals(3, stats.totalEntityReferences); // No spanning yet
-        assertTrue(stats.maxDepth >= 0);
+        assertEquals(2, stats.nodeCount()); // Two different positions
+        assertEquals(3, stats.entityCount()); // Three entities total
+        assertEquals(3, stats.totalEntityReferences()); // No spanning yet
+        assertTrue(stats.maxDepth() >= 0);
 
         System.out.println("Stats: " + stats);
     }

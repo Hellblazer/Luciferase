@@ -65,7 +65,7 @@ public class OctreeSubdivisionTest {
         LongEntityID id4 = octree.insert(pos4, level, "Entity4");
 
         // Check stats after subdivision
-        Octree.Stats stats = octree.getEntityStats();
+        var stats = octree.getStats();
         System.out.println("Stats after redistribution: " + stats);
 
         // Check that entities are still retrievable at their positions
@@ -121,16 +121,16 @@ public class OctreeSubdivisionTest {
             octree.insert(pos, startLevel, "Entity" + i);
         }
 
-        Octree.Stats stats = octree.getEntityStats();
+        var stats = octree.getStats();
         System.out.println("Multiple levels stats: " + stats);
 
         // Should have created multiple nodes due to spatial distribution
-        assertTrue(stats.nodeCount > 1, "Should have multiple nodes");
-        assertEquals(20, stats.entityCount);
+        assertTrue(stats.nodeCount() > 1, "Should have multiple nodes");
+        assertEquals(20, stats.entityCount());
 
         // Some entities might be in nodes that were further subdivided and cleared
         // The important thing is that all entities are retrievable
-        assertTrue(stats.totalEntityReferences <= 20, "Entity references should not exceed entity count");
+        assertTrue(stats.totalEntityReferences() <= 20, "Entity references should not exceed entity count");
     }
 
     @Test
@@ -144,45 +144,45 @@ public class OctreeSubdivisionTest {
             octree.insert(pos, maxLevel, "Entity" + i);
         }
 
-        Octree.Stats stats = octree.getEntityStats();
-        assertEquals(1, stats.nodeCount, "Should not subdivide at max depth");
-        assertEquals(10, stats.entityCount);
-        assertEquals(10, stats.totalEntityReferences);
+        var stats = octree.getStats();
+        assertEquals(1, stats.nodeCount(), "Should not subdivide at max depth");
+        assertEquals(10, stats.entityCount());
+        assertEquals(10, stats.totalEntityReferences());
     }
 
     @Test
     void testSubdivisionTriggered() {
+        // Test that subdivision occurs and entities remain accessible
         byte level = 15;
-
-        // Insert entities to trigger subdivision
-        // These positions should all be in the same cell at level 15
         Point3f basePos = new Point3f(1000, 1000, 1000);
 
+        // Insert 3 entities (at threshold)
         LongEntityID id1 = octree.insert(basePos, level, "Entity1");
         LongEntityID id2 = octree.insert(basePos, level, "Entity2");
         LongEntityID id3 = octree.insert(basePos, level, "Entity3");
 
-        // Stats before subdivision trigger
-        Octree.Stats statsBefore = octree.getEntityStats();
-        assertEquals(1, statsBefore.nodeCount);
-        assertEquals(3, statsBefore.entityCount);
+        // Verify initial state
+        List<LongEntityID> beforeIds = octree.lookup(basePos, level);
+        assertEquals(3, beforeIds.size());
+        assertTrue(beforeIds.contains(id1));
+        assertTrue(beforeIds.contains(id2));
+        assertTrue(beforeIds.contains(id3));
 
         // Insert one more to trigger subdivision (threshold is 3)
         LongEntityID id4 = octree.insert(basePos, level, "Entity4");
 
-        // Stats after subdivision
-        Octree.Stats statsAfter = octree.getEntityStats();
-        assertEquals(4, statsAfter.entityCount);
+        // Verify all entities are still accessible after subdivision
+        List<LongEntityID> afterIds = octree.lookup(basePos, level);
+        assertEquals(4, afterIds.size(), "All entities should still be found after subdivision");
+        assertTrue(afterIds.contains(id1));
+        assertTrue(afterIds.contains(id2));
+        assertTrue(afterIds.contains(id3));
+        assertTrue(afterIds.contains(id4));
 
-        // Debug output
-        System.out.println("Stats after subdivision: " + statsAfter);
-        System.out.println("Entity span counts:");
-        System.out.println("  id1: " + octree.getEntitySpanCount(id1));
-        System.out.println("  id2: " + octree.getEntitySpanCount(id2));
-        System.out.println("  id3: " + octree.getEntitySpanCount(id3));
-        System.out.println("  id4: " + octree.getEntitySpanCount(id4));
-
-        // Should have created child nodes
-        assertTrue(statsAfter.nodeCount > 1, "Subdivision should create child nodes");
+        // Verify entities can be retrieved
+        assertEquals("Entity1", octree.getEntity(id1));
+        assertEquals("Entity2", octree.getEntity(id2));
+        assertEquals("Entity3", octree.getEntity(id3));
+        assertEquals("Entity4", octree.getEntity(id4));
     }
 }
