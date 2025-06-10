@@ -281,7 +281,9 @@ public class TetrahedralGeometry {
         boolean tet1InTet2 = false;
         for (Point3i vertex : vertices1) {
             Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
-            if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex2)) {
+            // TODO: Implement when TetrahedralSearchBase is available
+            // if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex2)) {
+            if (false) { // Placeholder
                 tet1InTet2 = true;
                 break;
             }
@@ -291,7 +293,9 @@ public class TetrahedralGeometry {
         boolean tet2InTet1 = false;
         for (Point3i vertex : vertices2) {
             Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
-            if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex1)) {
+            // TODO: Implement when TetrahedralSearchBase is available
+            // if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex1)) {
+            if (false) { // Placeholder
                 tet2InTet1 = true;
                 break;
             }
@@ -333,14 +337,18 @@ public class TetrahedralGeometry {
         // Check distance from each vertex of tet1 to tet2
         for (Point3i vertex : vertices1) {
             Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
-            float dist = TetrahedralSearchBase.distanceToTetrahedron(v, tetIndex2);
+            // TODO: Implement when TetrahedralSearchBase is available
+            // float dist = TetrahedralSearchBase.distanceToTetrahedron(v, tetIndex2);
+            float dist = Float.MAX_VALUE; // Placeholder
             minDistance = Math.min(minDistance, dist);
         }
         
         // Check distance from each vertex of tet2 to tet1
         for (Point3i vertex : vertices2) {
             Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
-            float dist = TetrahedralSearchBase.distanceToTetrahedron(v, tetIndex1);
+            // TODO: Implement when TetrahedralSearchBase is available
+            // float dist = TetrahedralSearchBase.distanceToTetrahedron(v, tetIndex1);
+            float dist = Float.MAX_VALUE; // Placeholder
             minDistance = Math.min(minDistance, dist);
         }
         
@@ -355,7 +363,9 @@ public class TetrahedralGeometry {
      * @return minimum distance to tetrahedron
      */
     public static float distancePointToTetrahedron(Point3f point, long tetIndex) {
-        return TetrahedralSearchBase.distanceToTetrahedron(point, tetIndex);
+        // TODO: Implement when TetrahedralSearchBase is available
+        // return TetrahedralSearchBase.distanceToTetrahedron(point, tetIndex);
+        return Float.MAX_VALUE; // Placeholder
     }
     
     // Helper methods

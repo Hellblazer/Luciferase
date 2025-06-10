@@ -17,7 +17,6 @@
 package com.hellblazer.luciferase.lucien.entity;
 
 import com.hellblazer.luciferase.lucien.OctreeWithEntities;
-import com.hellblazer.luciferase.lucien.OctreeWithEntitiesSpatialIndexAdapter;
 import com.hellblazer.luciferase.lucien.Spatial;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -190,36 +189,6 @@ public class OctreeWithEntitiesTest {
         assertTrue(contents.contains("E2"));
         assertTrue(contents.contains("E3"));
         assertTrue(contents.contains("E4"));
-    }
-
-    @Test
-    void testOctreeWithEntitiesSpatialIndexAdapter() {
-        OctreeWithEntitiesSpatialIndexAdapter<LongEntityID, String> adapter = 
-            new OctreeWithEntitiesSpatialIndexAdapter<>(new SequentialLongIDGenerator());
-
-        Point3f pos1 = new Point3f(100, 100, 100);
-        Point3f pos2 = new Point3f(5000, 5000, 5000);
-
-        // Use spatial index API
-        adapter.insert(pos1, (byte) 15, "Content1");
-        adapter.insert(pos2, (byte) 15, "Content2");
-
-        // Lookup using spatial index API
-        String content1 = adapter.lookup(pos1, (byte) 15);
-        assertEquals("Content1", content1);
-
-        String content2 = adapter.lookup(pos2, (byte) 15);
-        assertEquals("Content2", content2);
-
-        // Test bounded query
-        // At level 15, scale is 64, so point (100,100,100) maps to grid (1,1,1)
-        // and point (5000,5000,5000) maps to grid (78,78,78)
-        // Use a region that contains the actual grid coordinates
-        Spatial.Cube region = new Spatial.Cube(0, 0, 0, 100);
-        var contents = adapter.boundedBy(region).toList();
-        // Should find at least one entity
-        assertTrue(contents.size() >= 1);
-        assertTrue(contents.stream().anyMatch(node -> node.content() != null));
     }
 
     @Test
