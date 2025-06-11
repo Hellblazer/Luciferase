@@ -36,7 +36,7 @@ import java.util.stream.Stream;
  * @param <Content> The type of content stored
  * @author hal.hildebrand
  */
-public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Content> {
+public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<ID, Content, OctreeNode<ID>> {
 
     // Default configuration constants
     private static final int DEFAULT_MAX_ENTITIES_PER_NODE = 10;
@@ -44,15 +44,9 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     private static final int OCTREE_CHILDREN               = 8;
 
     // Spatial index: Morton code → Node containing entity IDs
-    final         Map<Long, OctreeNode<ID>> spatialIndex;
+    private final Map<Long, OctreeNode<ID>> spatialIndex;
     // Sorted Morton codes for efficient range queries
-    final         NavigableSet<Long>        sortedMortonCodes;
-    // Centralized entity management
-    private final EntityManager<ID, Content> entityManager;
-    // Configuration
-    private final int                       maxEntitiesPerNode;
-    private final byte                      maxDepth;
-    private final EntitySpanningPolicy      spanningPolicy;
+    private final NavigableSet<Long>        sortedMortonCodes;
 
     /**
      * Create an octree with default configuration
@@ -73,30 +67,83 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
+        super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
         this.spatialIndex = new HashMap<>();
         this.sortedMortonCodes = new TreeSet<>();
-        this.entityManager = new EntityManager<>(idGenerator);
-        this.maxEntitiesPerNode = maxEntitiesPerNode;
-        this.maxDepth = maxDepth;
-        this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
     }
 
+    // ===== Abstract Method Implementations =====
+    
     @Override
-    public Stream<SpatialNode<ID>> boundedBy(Spatial volume) {
-        return spatialRangeQueryMultiEntity(volume, false);
+    protected Map<Long, OctreeNode<ID>> getSpatialIndex() {
+        return spatialIndex;
     }
-
+    
     @Override
-    public Stream<SpatialNode<ID>> bounding(Spatial volume) {
-        return spatialRangeQueryMultiEntity(volume, true);
+    protected long calculateSpatialIndex(Point3f position, byte level) {
+        return calculateMortonCode(position, level);
     }
-
-    /**
-     * Check if an entity exists
-     */
+    
     @Override
-    public boolean containsEntity(ID entityId) {
-        return entityManager.containsEntity(entityId);
+    protected byte getLevelFromIndex(long index) {
+        return Constants.toLevel(index);
+    }
+    
+    @Override
+    protected OctreeNode<ID> createNode() {
+        return new OctreeNode<>(maxEntitiesPerNode);
+    }
+    
+    @Override
+    protected Spatial getNodeBounds(long mortonIndex) {
+        int[] coords = MortonCurve.decode(mortonIndex);
+        byte level = Constants.toLevel(mortonIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+        return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
+    }
+    
+    @Override
+    protected boolean doesNodeIntersectVolume(long mortonIndex, Spatial volume) {
+        Spatial nodeBounds = getNodeBounds(mortonIndex);
+        if (nodeBounds instanceof Spatial.Cube cube) {
+            return doesCubeIntersectVolume(cube, volume);
+        }
+        return false;
+    }
+    
+    @Override
+    protected boolean isNodeContainedInVolume(long mortonIndex, Spatial volume) {
+        Spatial nodeBounds = getNodeBounds(mortonIndex);
+        if (nodeBounds instanceof Spatial.Cube cube) {
+            return isCubeContainedInVolume(cube, volume);
+        }
+        return false;
+    }
+    
+    @Override
+    protected void validateSpatialConstraints(Point3f position) {
+        // Octree doesn't have specific spatial constraints
+    }
+    
+    @Override
+    protected void validateSpatialConstraints(Spatial volume) {
+        // Octree doesn't have specific spatial constraints
+    }
+    
+    @Override
+    protected int getCellSizeAtLevel(byte level) {
+        return Constants.lengthAtLevel(level);
+    }
+    
+    @Override
+    protected void onNodeRemoved(long spatialIndex) {
+        sortedMortonCodes.remove(spatialIndex);
+    }
+    
+    @Override
+    protected boolean hasChildren(long spatialIndex) {
+        OctreeNode<ID> node = this.spatialIndex.get(spatialIndex);
+        return node != null && node.hasChildren();
     }
 
     @Override
@@ -177,143 +224,13 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         }).collect(Collectors.toList());
     }
 
-    @Override
-    public int entityCount() {
-        return entityManager.getEntityCount();
-    }
 
-    /**
-     * Get content for multiple entity IDs
-     */
-    @Override
-    public List<Content> getEntities(List<ID> entityIds) {
-        return entityManager.getEntitiesContent(entityIds);
-    }
 
-    /**
-     * Get all entities with their positions
-     *
-     * @return map of entity IDs to their positions
-     */
-    @Override
-    public Map<ID, Point3f> getEntitiesWithPositions() {
-        return entityManager.getEntitiesWithPositions();
-    }
-
-    /**
-     * Get content for a specific entity ID
-     */
-    @Override
-    public Content getEntity(ID entityId) {
-        return entityManager.getEntityContent(entityId);
-    }
-
-    /**
-     * Get entity bounds if available
-     *
-     * @param entityId the entity ID to get bounds for
-     * @return the entity's bounds, or null if not set or entity not found
-     */
-    @Override
-    public EntityBounds getEntityBounds(ID entityId) {
-        return entityManager.getEntityBounds(entityId);
-    }
-
-    /**
-     * Get the position of a specific entity
-     *
-     * @param entityId the entity ID to get the position for
-     * @return the entity's position, or null if entity not found
-     */
-    @Override
-    public Point3f getEntityPosition(ID entityId) {
-        return entityManager.getEntityPosition(entityId);
-    }
-
-    /**
-     * Get the number of nodes containing a specific entity
-     */
-    @Override
-    public int getEntitySpanCount(ID entityId) {
-        return entityManager.getEntitySpanCount(entityId);
-    }
-
-    @Override
-    public NavigableMap<Long, Set<ID>> getSpatialMap() {
-        NavigableMap<Long, Set<ID>> map = new TreeMap<>();
-        for (var entry : spatialIndex.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                map.put(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()));
-            }
-        }
-        return map;
-    }
 
     // Helper methods for spatial range queries
 
-    @Override
-    public SpatialIndex.EntityStats getStats() {
-        int nodeCount = 0;
-        int entityCount = entityManager.getEntityCount();
-        int totalEntityReferences = 0;
-        int maxDepth = 0;
 
-        for (Map.Entry<Long, OctreeNode<ID>> entry : spatialIndex.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                nodeCount++;
-            }
-            totalEntityReferences += entry.getValue().getEntityCount();
 
-            // Calculate depth from Morton code
-            byte depth = Constants.toLevel(entry.getKey());
-            maxDepth = Math.max(maxDepth, depth);
-        }
-
-        return new SpatialIndex.EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
-    }
-
-    @Override
-    public boolean hasNode(long mortonIndex) {
-        var node = spatialIndex.get(mortonIndex);
-        return node != null && !node.isEmpty();
-    }
-
-    /**
-     * Insert content with auto-generated ID
-     *
-     * @return the generated entity ID
-     */
-    @Override
-    public ID insert(Point3f position, byte level, Content content) {
-        ID entityId = entityManager.generateEntityId();
-        insert(entityId, position, level, content);
-        return entityId;
-    }
-
-    /**
-     * Insert content with explicit ID
-     */
-    @Override
-    public void insert(ID entityId, Point3f position, byte level, Content content) {
-        insert(entityId, position, level, content, null);
-    }
-
-    /**
-     * Insert content with explicit ID and bounds
-     */
-    @Override
-    public void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
-        // Create or update entity
-        entityManager.createOrUpdateEntity(entityId, content, position, bounds);
-
-        // If spanning is enabled and entity has bounds, check for spanning
-        if (spanningPolicy.isSpanningEnabled() && bounds != null) {
-            insertWithSpanning(entityId, bounds, level);
-        } else {
-            // Standard single-node insertion
-            insertAtPosition(entityId, position, level);
-        }
-    }
 
     /**
      * Bulk insert multiple entities efficiently
@@ -450,78 +367,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
     // Private helper methods
 
-    @Override
-    public int nodeCount() {
-        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
-    }
 
-    @Override
-    public Stream<SpatialNode<ID>> nodes() {
-        return spatialIndex.entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
-        entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
-    }
-
-    /**
-     * Remove an entity from all nodes and storage
-     */
-    @Override
-    public boolean removeEntity(ID entityId) {
-        // Get all locations where this entity appears
-        Set<Long> locations = entityManager.getEntityLocations(entityId);
-        
-        // Remove from entity storage
-        Entity<Content> removed = entityManager.removeEntity(entityId);
-        if (removed == null) {
-            return false;
-        }
-
-        if (!locations.isEmpty()) {
-            // Remove from each node
-            for (Long mortonCode : locations) {
-                OctreeNode<ID> node = spatialIndex.get(mortonCode);
-                if (node != null) {
-                    node.removeEntity(entityId);
-
-                    // Remove empty nodes
-                    cleanupEmptyNode(mortonCode, node);
-                }
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Update entity position (remove from old nodes, add to new)
-     */
-    @Override
-    public void updateEntity(ID entityId, Point3f newPosition, byte level) {
-        // Update entity position
-        entityManager.updateEntityPosition(entityId, newPosition);
-
-        // Remove from all current locations
-        Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
-        for (Long mortonCode : oldLocations) {
-            OctreeNode<ID> node = spatialIndex.get(mortonCode);
-            if (node != null) {
-                node.removeEntity(entityId);
-
-                // Remove empty nodes
-                cleanupEmptyNode(mortonCode, node);
-            }
-        }
-        entityManager.clearEntityLocations(entityId);
-
-        // Re-insert at new position
-        long newMortonCode = calculateMortonCode(newPosition, level);
-        OctreeNode<ID> node = spatialIndex.computeIfAbsent(newMortonCode, k -> {
-            sortedMortonCodes.add(newMortonCode);
-            return new OctreeNode<>(maxEntitiesPerNode);
-        });
-
-        node.addEntity(entityId);
-        entityManager.addEntityLocation(entityId, newMortonCode);
-    }
 
     boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
         return switch (volume) {
@@ -547,21 +393,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         };
     }
 
-    byte findMinimumContainingLevel(VolumeBounds bounds) {
-        float maxExtent = bounds.maxExtent();
 
-        // Find the level where cube length >= maxExtent
-        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
-            if (Constants.lengthAtLevel(level) >= maxExtent) {
-                return level;
-            }
-        }
-        return Constants.getMaxRefinementLevel();
-    }
-
-    VolumeBounds getVolumeBounds(Spatial volume) {
-        return VolumeBounds.from(volume);
-    }
 
     boolean isCubeContainedInVolume(Spatial.Cube cube, Spatial volume) {
         return switch (volume) {
@@ -640,15 +472,6 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
     // ===== SpatialIndex Interface Implementation =====
 
-    /**
-     * Clean up empty nodes from the spatial index
-     */
-    private void cleanupEmptyNode(long mortonCode, OctreeNode<ID> node) {
-        if (node.isEmpty() && !node.hasChildren()) {
-            spatialIndex.remove(mortonCode);
-            sortedMortonCodes.remove(mortonCode);
-        }
-    }
 
     /**
      * Find all nodes at the given level that intersect with the bounds
@@ -712,9 +535,10 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     }
 
     /**
-     * Insert entity at a single position (no spanning)
+     * Insert entity at a single position (no spanning) - override to add Morton code tracking
      */
-    private void insertAtPosition(ID entityId, Point3f position, byte level) {
+    @Override
+    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
         // Calculate Morton code for position
         long mortonCode = calculateMortonCode(position, level);
 
@@ -732,14 +556,15 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         // Handle subdivision if needed
         if (shouldSplit && level < maxDepth) {
-            subdivideNode(mortonCode, level, node);
+            handleNodeSubdivision(mortonCode, level, node);
         }
     }
 
     /**
      * Insert entity with spanning across multiple nodes
      */
-    private void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
+    @Override
+    protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
         // Find all nodes that the entity's bounds intersect
         Set<Long> intersectingNodes = findIntersectingNodes(bounds, level);
 
@@ -798,40 +623,18 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         return nodeDistance > furthest.distance();
     }
 
-    // New helper method for multi-entity spatial range queries
-    private Stream<SpatialNode<ID>> spatialRangeQueryMultiEntity(Spatial volume, boolean includeIntersecting) {
-        List<SpatialNode<ID>> results = new ArrayList<>();
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return results.stream();
-        }
-
+    @Override
+    protected Stream<Map.Entry<Long, OctreeNode<ID>>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
         // Use Morton code range optimization for better performance
         NavigableSet<Long> extendedCodes = getMortonCodeRange(bounds);
-
-        for (Long mortonIndex : extendedCodes) {
-            OctreeNode<ID> node = spatialIndex.get(mortonIndex);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
-
-            var point = MortonCurve.decode(mortonIndex);
-            byte level = Constants.toLevel(mortonIndex);
-            Spatial.Cube cube = new Spatial.Cube(point[0], point[1], point[2], Constants.lengthAtLevel(level));
-
-            // Check if cube intersects or is contained in volume
-            boolean include = includeIntersecting ? doesCubeIntersectVolume(cube, volume) : isCubeContainedInVolume(
-            cube, volume);
-
-            if (include) {
-                results.add(new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds())));
-            }
-        }
-
-        return results.stream();
+        
+        return extendedCodes.stream()
+            .map(mortonIndex -> Map.entry(mortonIndex, spatialIndex.get(mortonIndex)))
+            .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty());
     }
 
-    private void subdivideNode(long parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
+    @Override
+    protected void handleNodeSubdivision(long parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
         // Can't subdivide beyond max depth
         if (parentLevel >= maxDepth) {
             return;

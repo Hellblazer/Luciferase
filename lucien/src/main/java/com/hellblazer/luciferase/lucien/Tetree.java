@@ -39,16 +39,10 @@ import java.util.stream.Stream;
  * @param <Content> The type of content stored
  * @author hal.hildebrand
  */
-public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Content> {
+public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<ID, Content, TetreeNodeImpl<ID>> {
 
     // Spatial index: Tetrahedral index → Node containing entity IDs
     private final NavigableMap<Long, TetreeNodeImpl<ID>> spatialIndex;
-    // Centralized entity management
-    private final EntityManager<ID, Content>         entityManager;
-    // Configuration
-    private final int                                maxEntitiesPerNode;
-    private final byte                               maxDepth;
-    private final EntitySpanningPolicy               spanningPolicy;
 
     /**
      * Create a Tetree with default configuration
@@ -69,62 +63,85 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                               EntitySpanningPolicy spanningPolicy) {
+        super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
         this.spatialIndex = new TreeMap<>();
-        this.entityManager = new EntityManager<>(idGenerator);
-        this.maxEntitiesPerNode = maxEntitiesPerNode;
-        this.maxDepth = maxDepth;
-        this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
     }
 
+    // ===== Abstract Method Implementations =====
+    
     @Override
-    public Stream<SpatialNode<ID>> boundedBy(Spatial volume) {
-        // Validate positive coordinates constraint
+    protected Map<Long, TetreeNodeImpl<ID>> getSpatialIndex() {
+        return spatialIndex;
+    }
+    
+    @Override
+    protected long calculateSpatialIndex(Point3f position, byte level) {
+        Tet tet = locate(position, level);
+        return tet.index();
+    }
+    
+    @Override
+    protected byte getLevelFromIndex(long index) {
+        return Tet.tetLevelFromIndex(index);
+    }
+    
+    @Override
+    protected TetreeNodeImpl<ID> createNode() {
+        return new TetreeNodeImpl<>(maxEntitiesPerNode);
+    }
+    
+    @Override
+    protected Spatial getNodeBounds(long tetIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        // Return the bounding cube of the tetrahedron
+        int cellSize = Constants.lengthAtLevel(tet.l());
+        return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
+    }
+    
+    @Override
+    protected boolean doesNodeIntersectVolume(long tetIndex, Spatial volume) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronIntersectsVolume(tet, volume);
+    }
+    
+    @Override
+    protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronContainedInVolume(tet, volume);
+    }
+    
+    @Override
+    protected void validateSpatialConstraints(Point3f position) {
+        validatePositiveCoordinates(position);
+    }
+    
+    @Override
+    protected void validateSpatialConstraints(Spatial volume) {
         validatePositiveCoordinates(volume);
-
-        // Use spatial range query to efficiently find tetrahedra within volume
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return Stream.empty();
-        }
-
-        return spatialRangeQuery(bounds, false).filter(entry -> {
-            var tet = Tet.tetrahedron(entry.getKey());
-            return tetrahedronContainedInVolume(tet, volume);
-        }).map(entry -> {
-            TetreeNodeImpl<ID> node = entry.getValue();
-            if (node != null && !node.isEmpty()) {
-                return new SpatialNode<>(entry.getKey(), new HashSet<>(node.getEntityIds()));
-            }
-            return null;
-        }).filter(Objects::nonNull);
+    }
+    
+    @Override
+    protected int getCellSizeAtLevel(byte level) {
+        return Constants.lengthAtLevel(level);
     }
 
     @Override
-    public Stream<SpatialNode<ID>> bounding(Spatial volume) {
-        // Validate positive coordinates constraint
-        validatePositiveCoordinates(volume);
+    protected Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
+        // Use SFC properties to find ranges of indices that could intersect the volume
+        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
 
-        // Use spatial range query to efficiently find tetrahedra intersecting volume
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return Stream.empty();
-        }
-
-        return spatialRangeQuery(bounds, true).filter(entry -> {
+        return sfcRanges.stream().flatMap(range -> {
+            // Use NavigableMap.subMap for efficient range queries
+            return spatialIndex.subMap(range.start, true, range.end, true).entrySet().stream();
+        }).filter(entry -> {
+            // Final precise filtering for elements that passed SFC range test
             var tet = Tet.tetrahedron(entry.getKey());
-            return tetrahedronIntersectsVolume(tet, volume);
-        }).map(entry -> {
-            TetreeNodeImpl<ID> node = entry.getValue();
-            if (node != null && !node.isEmpty()) {
-                return new SpatialNode<>(entry.getKey(), new HashSet<>(node.getEntityIds()));
+            if (includeIntersecting) {
+                return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
+            } else {
+                return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
             }
-            return null;
-        }).filter(Objects::nonNull);
-    }
-
-    @Override
-    public boolean containsEntity(ID entityId) {
-        return entityManager.containsEntity(entityId);
+        });
     }
 
     @Override
@@ -187,115 +204,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         return new ArrayList<>(uniqueEntities);
     }
 
-    @Override
-    public int entityCount() {
-        return entityManager.getEntityCount();
-    }
-
-    @Override
-    public List<Content> getEntities(List<ID> entityIds) {
-        return entityManager.getEntitiesContent(entityIds);
-    }
-
-    @Override
-    public Map<ID, Point3f> getEntitiesWithPositions() {
-        return entityManager.getEntitiesWithPositions();
-    }
-
-    @Override
-    public Content getEntity(ID entityId) {
-        return entityManager.getEntityContent(entityId);
-    }
-
-    @Override
-    public EntityBounds getEntityBounds(ID entityId) {
-        return entityManager.getEntityBounds(entityId);
-    }
-
-    @Override
-    public Point3f getEntityPosition(ID entityId) {
-        return entityManager.getEntityPosition(entityId);
-    }
-
-    @Override
-    public int getEntitySpanCount(ID entityId) {
-        return entityManager.getEntitySpanCount(entityId);
-    }
-
-    @Override
-    public NavigableMap<Long, Set<ID>> getSpatialMap() {
-        NavigableMap<Long, Set<ID>> map = new TreeMap<>();
-        for (var entry : spatialIndex.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                map.put(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()));
-            }
-        }
-        return map;
-    }
-
-    @Override
-    public EntityStats getStats() {
-        int nodeCount = 0;
-        int entityCount = entityManager.getEntityCount();
-        int totalEntityReferences = 0;
-        int maxDepth = 0;
-
-        for (Map.Entry<Long, TetreeNodeImpl<ID>> entry : spatialIndex.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                nodeCount++;
-            }
-            totalEntityReferences += entry.getValue().getEntityCount();
-
-            // Calculate depth from tetrahedral index
-            byte depth = Tet.tetLevelFromIndex(entry.getKey());
-            maxDepth = Math.max(maxDepth, depth);
-        }
-
-        return new EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
-    }
-
-    @Override
-    public boolean hasNode(long mortonIndex) {
-        var node = spatialIndex.get(mortonIndex);
-        return node != null && !node.isEmpty();
-    }
-
-    @Override
-    public ID insert(Point3f position, byte level, Content content) {
-        ID entityId = entityManager.generateEntityId();
-        insert(entityId, position, level, content);
-        return entityId;
-    }
-
-    @Override
-    public void insert(ID entityId, Point3f position, byte level, Content content) {
-        insert(entityId, position, level, content, null);
-    }
-
-    @Override
-    public void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
-        // Validate positive coordinates
-        validatePositiveCoordinates(position);
-
-        // Create or update entity
-        entityManager.createOrUpdateEntity(entityId, content, position, bounds);
-
-        // Find the containing tetrahedron
-        Tet tet = locate(position, level);
-        long tetIndex = tet.index();
-
-        // Get or create node
-        TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> new TetreeNodeImpl<>(maxEntitiesPerNode));
-
-        // Add entity to node
-        boolean shouldSplit = node.addEntity(entityId);
-
-        // Track entity location
-        entityManager.addEntityLocation(entityId, tetIndex);
-
-        // Note: Tetree subdivision is more complex than Octree due to tetrahedral geometry
-        // For now, we don't implement subdivision - just allow overflow
-    }
+    // These methods are now handled by AbstractSpatialIndex
 
     /**
      * Get all entities at the given tetrahedral index (direct access)
@@ -376,8 +285,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         Set<ID> visited = new HashSet<>();
 
         // Start with the tetrahedron containing the query point
-        byte startLevel = maxDepth;
-        Tet initialTet = locate(queryPoint, startLevel);
+        Tet initialTet = locate(queryPoint, maxDepth);
         long initialIndex = initialTet.index();
 
         // Use a queue for breadth-first search through tetrahedral space
@@ -424,7 +332,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
             }
 
             // Add neighboring tetrahedra if we haven't found enough candidates
-            if (candidates.size() < k || shouldContinueSearch(current, queryPoint, candidates)) {
+            if (candidates.size() < k || shouldContinueSearch(current, candidates)) {
                 addNeighboringTetrahedra(current, toVisit, visitedNodes);
             }
         }
@@ -452,77 +360,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         return new ArrayList<>(node.getEntityIds());
     }
 
-    @Override
-    public int nodeCount() {
-        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
-    }
-
-    @Override
-    public Stream<SpatialNode<ID>> nodes() {
-        return spatialIndex.entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
-        entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
-    }
-
-    @Override
-    public boolean removeEntity(ID entityId) {
-        // Get all locations where this entity appears
-        Set<Long> locations = entityManager.getEntityLocations(entityId);
-        
-        // Remove from entity storage
-        Entity<Content> removed = entityManager.removeEntity(entityId);
-        if (removed == null) {
-            return false;
-        }
-
-        if (!locations.isEmpty()) {
-            // Remove from each node
-            for (Long tetIndex : locations) {
-                TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
-                if (node != null) {
-                    node.removeEntity(entityId);
-
-                    // Remove empty nodes
-                    if (node.isEmpty()) {
-                        spatialIndex.remove(tetIndex);
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-
-    @Override
-    public void updateEntity(ID entityId, Point3f newPosition, byte level) {
-        validatePositiveCoordinates(newPosition);
-
-        // Update entity position
-        entityManager.updateEntityPosition(entityId, newPosition);
-
-        // Remove from all current locations
-        Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
-        for (Long tetIndex : oldLocations) {
-            TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
-            if (node != null) {
-                node.removeEntity(entityId);
-
-                // Remove empty nodes
-                if (node.isEmpty()) {
-                    spatialIndex.remove(tetIndex);
-                }
-            }
-        }
-        entityManager.clearEntityLocations(entityId);
-
-        // Re-insert at new position
-        Tet newTet = locate(newPosition, level);
-        long newTetIndex = newTet.index();
-
-        TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(newTetIndex, k -> new TetreeNodeImpl<>(maxEntitiesPerNode));
-
-        node.addEntity(entityId);
-        entityManager.addEntityLocation(entityId, newTetIndex);
-    }
+    // These methods are now handled by AbstractSpatialIndex
 
     /**
      * Add neighboring tetrahedra to the search queue Tetrahedral neighborhoods are more complex than cubic ones
@@ -627,7 +465,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                 var minRanges = computeCellSFCRanges(minPoint, level);
                 var maxRanges = computeCellSFCRanges(maxPoint, level);
                 if (!minRanges.isEmpty() && !maxRanges.isEmpty()) {
-                    ranges.add(new SFCRange(minRanges.get(0).start, maxRanges.get(maxRanges.size() - 1).end));
+                    ranges.add(new SFCRange(minRanges.getFirst().start, maxRanges.getLast().end));
                 }
                 continue;
             }
@@ -658,23 +496,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ());
     }
 
-    // Find minimum level that can contain the volume
-    private byte findMinimumContainingLevel(VolumeBounds bounds) {
-        float maxExtent = bounds.maxExtent();
-
-        // Find the level where tetrahedron length >= maxExtent
-        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
-            if (Constants.lengthAtLevel(level) >= maxExtent) {
-                return level;
-            }
-        }
-        return Constants.getMaxRefinementLevel();
-    }
-
-    // Extract bounding box from various spatial volume types
-    private VolumeBounds getVolumeBounds(Spatial volume) {
-        return VolumeBounds.from(volume);
-    }
+    // These methods are inherited from AbstractSpatialIndex
 
     // Check if a grid cell intersects with the query bounds
     private boolean gridCellIntersectsBounds(Point3f cellOrigin, int cellSize, VolumeBounds bounds,
@@ -745,7 +567,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         ranges.sort(Comparator.comparingLong(a -> a.start));
         List<SFCRange> merged = new ArrayList<>();
-        SFCRange current = ranges.get(0);
+        SFCRange current = ranges.getFirst();
 
         for (int i = 1; i < ranges.size(); i++) {
             SFCRange next = ranges.get(i);
@@ -765,7 +587,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     /**
      * Check if we should continue searching based on current candidates
      */
-    private boolean shouldContinueSearch(long tetIndex, Point3f queryPoint, PriorityQueue<EntityDistance<ID>> candidates) {
+    private boolean shouldContinueSearch(long tetIndex, PriorityQueue<EntityDistance<ID>> candidates) {
         if (candidates.isEmpty()) {
             return true;
         }
@@ -787,26 +609,7 @@ public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         return cellSize < furthest.distance() * 2;
     }
 
-    // Efficient spatial range query using tetrahedral space-filling curve properties
-    private Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds,
-                                                                      boolean includeIntersecting) {
-        // Use SFC properties to find ranges of indices that could intersect the volume
-        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
-
-        Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> ranges = sfcRanges.stream().flatMap(range -> {
-            // Use NavigableMap.subMap for efficient range queries
-            return spatialIndex.subMap(range.start, true, range.end, true).entrySet().stream();
-        });
-        return ranges.filter(entry -> {
-            // Final precise filtering for elements that passed SFC range test
-            var tet = Tet.tetrahedron(entry.getKey());
-            if (includeIntersecting) {
-                return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
-            } else {
-                return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
-            }
-        });
-    }
+    // This method has been moved to the override section
 
     // Check if a tetrahedron is completely contained within a volume
     private boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
