@@ -33,8 +33,8 @@ public abstract class TetrahedralSearchBase {
      * @param strategy   aggregation strategy to use
      * @return aggregated result according to strategy
      */
-    protected static <Content> List<Tetree.Simplex<Content>> aggregateSimplicies(
-    Stream<Tetree.Simplex<Content>> simplicies, SimplexAggregationStrategy strategy) {
+    protected static <Content> List<Simplex<Content>> aggregateSimplicies(Stream<Simplex<Content>> simplicies,
+                                                                          SimplexAggregationStrategy strategy) {
 
         var simpliciesList = simplicies.collect(Collectors.toList());
         if (simpliciesList.isEmpty()) {
@@ -221,10 +221,10 @@ public abstract class TetrahedralSearchBase {
      * @return list of simplex groups
      */
     protected static <Content> List<SimplexGroup<Content>> groupSimpliciesBySpatialProximity(
-    Stream<Tetree.Simplex<Content>> simplicies) {
+    Stream<Simplex<Content>> simplicies) {
 
         // Group by spatial proximity using tetrahedral coordinates at a coarser level
-        Map<String, List<Tetree.Simplex<Content>>> spatialGroups = simplicies.collect(Collectors.groupingBy(simplex -> {
+        Map<String, List<Simplex<Content>>> spatialGroups = simplicies.collect(Collectors.groupingBy(simplex -> {
             var tet = Tet.tetrahedron(simplex.index());
             // Group by coarser spatial coordinates (divide by tetrahedron level size)
             int levelSize = Constants.lengthAtLevel(tet.l());
@@ -262,8 +262,7 @@ public abstract class TetrahedralSearchBase {
      * @param simplicies list of simplicies to choose from
      * @return representative simplex, or null if list is empty
      */
-    protected static <Content> Tetree.Simplex<Content> selectRepresentativeSimplex(
-    List<Tetree.Simplex<Content>> simplicies) {
+    protected static <Content> Simplex<Content> selectRepresentativeSimplex(List<Simplex<Content>> simplicies) {
         if (simplicies.isEmpty()) {
             return null;
         }
@@ -364,12 +363,12 @@ public abstract class TetrahedralSearchBase {
      * decomposition)
      */
     public static class SimplexGroup<Content> {
-        public final List<Tetree.Simplex<Content>> simplicies;
-        public final Point3f                       groupCenter;
-        public final float                         groupVolume;
-        public final long                          representativeIndex;
+        public final List<Simplex<Content>> simplicies;
+        public final Point3f                groupCenter;
+        public final float                  groupVolume;
+        public final long                   representativeIndex;
 
-        public SimplexGroup(List<Tetree.Simplex<Content>> simplicies) {
+        public SimplexGroup(List<Simplex<Content>> simplicies) {
             if (simplicies.isEmpty()) {
                 throw new IllegalArgumentException("SimplexGroup cannot be empty");
             }
@@ -380,7 +379,7 @@ public abstract class TetrahedralSearchBase {
             this.representativeIndex = selectRepresentativeIndex(simplicies);
         }
 
-        private static <Content> Point3f computeGroupCenter(List<Tetree.Simplex<Content>> simplicies) {
+        private static <Content> Point3f computeGroupCenter(List<Simplex<Content>> simplicies) {
             float sumX = 0, sumY = 0, sumZ = 0;
             for (var simplex : simplicies) {
                 Point3f center = tetrahedronCenter(simplex.index());
@@ -392,11 +391,11 @@ public abstract class TetrahedralSearchBase {
             return new Point3f(sumX / count, sumY / count, sumZ / count);
         }
 
-        private static <Content> float computeGroupVolume(List<Tetree.Simplex<Content>> simplicies) {
+        private static <Content> float computeGroupVolume(List<Simplex<Content>> simplicies) {
             return (float) simplicies.stream().mapToDouble(simplex -> tetrahedronVolume(simplex.index())).sum();
         }
 
-        private static <Content> long selectRepresentativeIndex(List<Tetree.Simplex<Content>> simplicies) {
+        private static <Content> long selectRepresentativeIndex(List<Simplex<Content>> simplicies) {
             // Select the simplex closest to the group center
             Point3f groupCenter = computeGroupCenter(simplicies);
             return simplicies.stream().min((s1, s2) -> {

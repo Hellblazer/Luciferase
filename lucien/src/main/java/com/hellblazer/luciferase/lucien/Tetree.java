@@ -1,39 +1,86 @@
+/**
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This file is part of the Luciferase.
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.lucien.entity.*;
 
-import javax.vecmath.*;
-import java.lang.reflect.Array;
+import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
+import javax.vecmath.Tuple3f;
+import javax.vecmath.Tuple3i;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Recursive subdivision of a tetrahedron.
- * <p>
- * <img src="reference-simplexes.png" alt="reference simplexes">
- * </p>
+ * Tetree implementation with multi-entity support per tetrahedral location. This class provides a tetrahedral
+ * spatial index using space-filling curves that supports multiple entities per location.
  *
+ * Key constraints: - All coordinates must be positive (tetrahedral SFC requirement) - Points must be within the S0
+ * tetrahedron domain - Each grid cell contains 6 tetrahedra (types 0-5)
+ *
+ * @param <ID>      The type of EntityID used
+ * @param <Content> The type of content stored
  * @author hal.hildebrand
- **/
-public class Tetree<Content> {
+ */
+public class Tetree<ID extends EntityID, Content> implements SpatialIndex<ID, Content> {
 
-    public final static byte[][] TYPE_TRAVERSALS;
+    // Spatial index: Tetrahedral index → Node containing entity IDs
+    private final NavigableMap<Long, TetreeNodeImpl<ID>> spatialIndex;
+    // Centralized entity management
+    private final EntityManager<ID, Content>         entityManager;
+    // Configuration
+    private final int                                maxEntitiesPerNode;
+    private final byte                               maxDepth;
+    private final EntitySpanningPolicy               spanningPolicy;
 
-    static {
-        TYPE_TRAVERSALS = new Permutations<>(new byte[][] { { 0, 1, 2, 3, 4, 5 } }).next();
-    }
-
-    private final NavigableMap<Long, Content> contents;
-
-    public Tetree(NavigableMap<Long, Content> contents) {
-        this.contents = contents;
+    /**
+     * Create a Tetree with default configuration
+     */
+    public Tetree(EntityIDGenerator<ID> idGenerator) {
+        this(idGenerator, 10, Constants.getMaxRefinementLevel());
     }
 
     /**
-     * @param volume - the enclosing volume
-     * @return the Stream of simplexes bounded by the volume
+     * Create a Tetree with custom configuration
      */
-    public Stream<Simplex<Content>> boundedBy(Spatial volume) {
+    public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth) {
+        this(idGenerator, maxEntitiesPerNode, maxDepth, new EntitySpanningPolicy());
+    }
+
+    /**
+     * Create a Tetree with full configuration
+     */
+    public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
+                              EntitySpanningPolicy spanningPolicy) {
+        this.spatialIndex = new TreeMap<>();
+        this.entityManager = new EntityManager<>(idGenerator);
+        this.maxEntitiesPerNode = maxEntitiesPerNode;
+        this.maxDepth = maxDepth;
+        this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
+    }
+
+    @Override
+    public Stream<SpatialNode<ID>> boundedBy(Spatial volume) {
+        // Validate positive coordinates constraint
+        validatePositiveCoordinates(volume);
+
         // Use spatial range query to efficiently find tetrahedra within volume
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -43,14 +90,20 @@ public class Tetree<Content> {
         return spatialRangeQuery(bounds, false).filter(entry -> {
             var tet = Tet.tetrahedron(entry.getKey());
             return tetrahedronContainedInVolume(tet, volume);
-        }).map(entry -> new Simplex<>(entry.getKey(), entry.getValue()));
+        }).map(entry -> {
+            TetreeNodeImpl<ID> node = entry.getValue();
+            if (node != null && !node.isEmpty()) {
+                return new SpatialNode<>(entry.getKey(), new HashSet<>(node.getEntityIds()));
+            }
+            return null;
+        }).filter(Objects::nonNull);
     }
 
-    /**
-     * @param volume the volume to contain
-     * @return the Stream of simplexes that minimally bound the volume
-     */
-    public Stream<Simplex<Content>> bounding(Spatial volume) {
+    @Override
+    public Stream<SpatialNode<ID>> bounding(Spatial volume) {
+        // Validate positive coordinates constraint
+        validatePositiveCoordinates(volume);
+
         // Use spatial range query to efficiently find tetrahedra intersecting volume
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -60,14 +113,24 @@ public class Tetree<Content> {
         return spatialRangeQuery(bounds, true).filter(entry -> {
             var tet = Tet.tetrahedron(entry.getKey());
             return tetrahedronIntersectsVolume(tet, volume);
-        }).map(entry -> new Simplex<>(entry.getKey(), entry.getValue()));
+        }).map(entry -> {
+            TetreeNodeImpl<ID> node = entry.getValue();
+            if (node != null && !node.isEmpty()) {
+                return new SpatialNode<>(entry.getKey(), new HashSet<>(node.getEntityIds()));
+            }
+            return null;
+        }).filter(Objects::nonNull);
     }
 
-    /**
-     * @param volume - the volume to enclose
-     * @return - minimum Simplex enclosing the volume
-     */
-    public Simplex<Content> enclosing(Spatial volume) {
+    @Override
+    public boolean containsEntity(ID entityId) {
+        return entityManager.containsEntity(entityId);
+    }
+
+    @Override
+    public SpatialNode<ID> enclosing(Spatial volume) {
+        validatePositiveCoordinates(volume);
+
         // Extract bounding box of the volume
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -78,98 +141,441 @@ public class Tetree<Content> {
         byte level = findMinimumContainingLevel(bounds);
 
         // Find a tetrahedron at that level that contains the volume
-        var centerPoint = new Point3f((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2,
-                                      (bounds.minZ + bounds.maxZ) / 2);
+        var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
+                                      (bounds.minZ() + bounds.maxZ()) / 2);
 
         var tet = locate(centerPoint, level);
-        var content = contents.get(tet.index());
-        return new Simplex<>(tet.index(), content);
+        TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
+        if (node != null && !node.isEmpty()) {
+            return new SpatialNode<>(tet.index(), new HashSet<>(node.getEntityIds()));
+        }
+        return null;
     }
 
-    /**
-     * @param point - the point to enclose
-     * @param level - refinement level for enclosure
-     * @return the simplex at the provided
-     */
-    public Simplex<Content> enclosing(Tuple3i point, byte level) {
+    @Override
+    public SpatialNode<ID> enclosing(Tuple3i point, byte level) {
+        validatePositiveCoordinates(point);
+
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
-        var content = contents.get(tet.index());
-        return new Simplex<>(tet.index(), content);
+        TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
+        if (node != null && !node.isEmpty()) {
+            return new SpatialNode<>(tet.index(), new HashSet<>(node.getEntityIds()));
+        }
+        return null;
     }
 
-    /**
-     * @param linearIndex - the index in the space filling curve
-     * @return the Content at the linear index
-     */
-    public Content get(long linearIndex) {
-        return contents.get(linearIndex);
-    }
+    @Override
+    public List<ID> entitiesInRegion(Spatial.Cube region) {
+        validatePositiveCoordinates(region);
 
-    /**
-     * @param point   - point in the interior of the S0 tetrahedron
-     * @param level   - refinement level
-     * @param content - content to store
-     * @return the tetrahedral SFC index for this content
-     */
-    public long insert(Tuple3f point, byte level, Content content) {
-        var index = locate(point, level).index();
-        contents.put(index, content);
-        return index;
-    }
+        Set<ID> uniqueEntities = new HashSet<>();
 
-    public Simplex<Content> intersecting(Spatial volume) {
-        // For now, use a simple approach: find the enclosing tetrahedron
-        // Currently uses enclosing method - could be enhanced with intersection tests
-        return enclosing(volume);
-    }
+        // Simple approach: Check all entities directly
+        // This is more reliable than trying to use boundedBy on a reconstructed Tetree
+        Map<ID, Point3f> allEntitiesWithPositions = entityManager.getEntitiesWithPositions();
+        for (Map.Entry<ID, Point3f> entry : allEntitiesWithPositions.entrySet()) {
+            Point3f pos = entry.getValue();
 
-    public Tet locate(Tuple3f point, byte level) {
-        var length = Constants.lengthAtLevel(level);
-        var c0 = new Point3i((int) (Math.floor(point.x / length) * length),
-                             (int) (Math.floor(point.y / length) * length),
-                             (int) (Math.floor(point.z / length) * length));
-        var c7 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
-
-        var c1 = new Point3i(c0.x + length, c0.y, c0.z);
-
-        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.y, c1.z, point.x, point.y, point.z)
-        > 0.0) {
-            var c5 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.y, c0.z, point.x, point.y,
-                                         point.z) > 0.0) {
-                var c4 = new Point3i(c0.x, c0.y, c0.z + length);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.y, c1.z, point.x, point.y,
-                                             point.z) > 0.0) {
-                    return new Tet(c0, level, 4);
-                }
-                return new Tet(c0, level, 5);
-            } else {
-                return new Tet(c0, level, 0);
-            }
-        } else {
-            var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
-            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.y, c3.z, point.x, point.y,
-                                         point.z) > 0.0) {
-                var c2 = new Point3i(c0.x, c0.y + length, c0.z);
-                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, point.x, point.y,
-                                             point.z) > 0.0) {
-                    return new Tet(c0, level, 2);
-                } else {
-                    return new Tet(c0, level, 3);
-                }
-            } else {
-                return new Tet(c0, level, 1);
+            // Check if position is within the region
+            if (pos.x >= region.originX() && pos.x <= region.originX() + region.extent() && pos.y >= region.originY()
+            && pos.y <= region.originY() + region.extent() && pos.z >= region.originZ()
+            && pos.z <= region.originZ() + region.extent()) {
+                uniqueEntities.add(entry.getKey());
             }
         }
+
+        return new ArrayList<>(uniqueEntities);
+    }
+
+    @Override
+    public int entityCount() {
+        return entityManager.getEntityCount();
+    }
+
+    @Override
+    public List<Content> getEntities(List<ID> entityIds) {
+        return entityManager.getEntitiesContent(entityIds);
+    }
+
+    @Override
+    public Map<ID, Point3f> getEntitiesWithPositions() {
+        return entityManager.getEntitiesWithPositions();
+    }
+
+    @Override
+    public Content getEntity(ID entityId) {
+        return entityManager.getEntityContent(entityId);
+    }
+
+    @Override
+    public EntityBounds getEntityBounds(ID entityId) {
+        return entityManager.getEntityBounds(entityId);
+    }
+
+    @Override
+    public Point3f getEntityPosition(ID entityId) {
+        return entityManager.getEntityPosition(entityId);
+    }
+
+    @Override
+    public int getEntitySpanCount(ID entityId) {
+        return entityManager.getEntitySpanCount(entityId);
+    }
+
+    @Override
+    public NavigableMap<Long, Set<ID>> getSpatialMap() {
+        NavigableMap<Long, Set<ID>> map = new TreeMap<>();
+        for (var entry : spatialIndex.entrySet()) {
+            if (!entry.getValue().isEmpty()) {
+                map.put(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()));
+            }
+        }
+        return map;
+    }
+
+    @Override
+    public EntityStats getStats() {
+        int nodeCount = 0;
+        int entityCount = entityManager.getEntityCount();
+        int totalEntityReferences = 0;
+        int maxDepth = 0;
+
+        for (Map.Entry<Long, TetreeNodeImpl<ID>> entry : spatialIndex.entrySet()) {
+            if (!entry.getValue().isEmpty()) {
+                nodeCount++;
+            }
+            totalEntityReferences += entry.getValue().getEntityCount();
+
+            // Calculate depth from tetrahedral index
+            byte depth = Tet.tetLevelFromIndex(entry.getKey());
+            maxDepth = Math.max(maxDepth, depth);
+        }
+
+        return new EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
+    }
+
+    @Override
+    public boolean hasNode(long mortonIndex) {
+        var node = spatialIndex.get(mortonIndex);
+        return node != null && !node.isEmpty();
+    }
+
+    @Override
+    public ID insert(Point3f position, byte level, Content content) {
+        ID entityId = entityManager.generateEntityId();
+        insert(entityId, position, level, content);
+        return entityId;
+    }
+
+    @Override
+    public void insert(ID entityId, Point3f position, byte level, Content content) {
+        insert(entityId, position, level, content, null);
+    }
+
+    @Override
+    public void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
+        // Validate positive coordinates
+        validatePositiveCoordinates(position);
+
+        // Create or update entity
+        entityManager.createOrUpdateEntity(entityId, content, position, bounds);
+
+        // Find the containing tetrahedron
+        Tet tet = locate(position, level);
+        long tetIndex = tet.index();
+
+        // Get or create node
+        TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> new TetreeNodeImpl<>(maxEntitiesPerNode));
+
+        // Add entity to node
+        boolean shouldSplit = node.addEntity(entityId);
+
+        // Track entity location
+        entityManager.addEntityLocation(entityId, tetIndex);
+
+        // Note: Tetree subdivision is more complex than Octree due to tetrahedral geometry
+        // For now, we don't implement subdivision - just allow overflow
     }
 
     /**
-     * Get the number of entries in the tetree
+     * Get all entities at the given tetrahedral index (direct access)
      *
-     * @return the size of the internal map
+     * @param tetIndex the tetrahedral index
+     * @return list of content at the index, or empty list if no entities
+     */
+    public List<Content> get(long tetIndex) {
+        TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+        if (node != null && !node.isEmpty()) {
+            // Get all entity IDs at this location
+            List<ID> entityIds = new ArrayList<>(node.getEntityIds());
+            // Return the content of all entities
+            return getEntities(entityIds);
+        }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Find a single node intersecting with a volume
+     * Note: This returns the first intersecting node found
+     *
+     * @param volume the volume to test
+     * @return a single intersecting node, or null if none found
+     */
+    public SpatialNode<ID> intersecting(Spatial volume) {
+        validatePositiveCoordinates(volume);
+        
+        // Find the first intersecting node
+        return bounding(volume).findFirst().orElse(null);
+    }
+
+    /**
+     * Get the size of the spatial index (number of non-empty nodes)
+     *
+     * @return the number of non-empty tetrahedral nodes
      */
     public int size() {
-        return contents.size();
+        return (int) spatialIndex.values().stream()
+            .filter(node -> !node.isEmpty())
+            .count();
+    }
+
+    /**
+     * Public access to locate method for finding containing tetrahedron
+     *
+     * @param point the point to locate (must have positive coordinates)
+     * @param level the refinement level
+     * @return the Tet containing the point
+     */
+    public Tet locateTetrahedron(Tuple3f point, byte level) {
+        validatePositiveCoordinates(new Point3f(point.x, point.y, point.z));
+        return locate(point, level);
+    }
+
+
+    /**
+     * Find k nearest neighbors to a query point within tetrahedral space
+     *
+     * @param queryPoint  the point to search from (must have positive coordinates)
+     * @param k           the number of neighbors to find
+     * @param maxDistance maximum search distance
+     * @return list of entity IDs sorted by distance (closest first)
+     */
+    public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
+        validatePositiveCoordinates(queryPoint);
+
+        if (k <= 0) {
+            return Collections.emptyList();
+        }
+
+        // Priority queue to keep track of k nearest entities (max heap)
+        PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(
+            EntityDistance.maxHeapComparator() // Max heap
+        );
+
+        // Track visited entities to avoid duplicates
+        Set<ID> visited = new HashSet<>();
+
+        // Start with the tetrahedron containing the query point
+        byte startLevel = maxDepth;
+        Tet initialTet = locate(queryPoint, startLevel);
+        long initialIndex = initialTet.index();
+
+        // Use a queue for breadth-first search through tetrahedral space
+        Queue<Long> toVisit = new LinkedList<>();
+        Set<Long> visitedNodes = new HashSet<>();
+
+        // Start from the initial tetrahedron
+        TetreeNodeImpl<ID> initialNode = spatialIndex.get(initialIndex);
+        if (initialNode != null) {
+            toVisit.add(initialIndex);
+        } else {
+            // If exact node doesn't exist, search all nodes
+            // This is less efficient but ensures we find entities
+            toVisit.addAll(spatialIndex.keySet());
+        }
+
+        while (!toVisit.isEmpty()) {
+            Long current = toVisit.poll();
+            if (!visitedNodes.add(current)) {
+                continue; // Already visited this node
+            }
+
+            TetreeNodeImpl<ID> node = spatialIndex.get(current);
+            if (node == null) {
+                continue;
+            }
+
+            // Check all entities in this tetrahedron
+            for (ID entityId : node.getEntityIds()) {
+                if (visited.add(entityId)) {
+                    Point3f entityPos = entityManager.getEntityPosition(entityId);
+                    if (entityPos != null) {
+                        float distance = queryPoint.distance(entityPos);
+                        if (distance <= maxDistance) {
+                            candidates.add(new EntityDistance<>(entityId, distance));
+
+                            // Keep only k elements
+                            if (candidates.size() > k) {
+                                candidates.poll();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add neighboring tetrahedra if we haven't found enough candidates
+            if (candidates.size() < k || shouldContinueSearch(current, queryPoint, candidates)) {
+                addNeighboringTetrahedra(current, toVisit, visitedNodes);
+            }
+        }
+
+        // Convert to sorted list (closest first)
+        List<EntityDistance<ID>> sorted = new ArrayList<>(candidates);
+        sorted.sort(Comparator.comparingDouble(EntityDistance::distance));
+
+        return sorted.stream().map(EntityDistance::entityId).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ID> lookup(Point3f position, byte level) {
+        validatePositiveCoordinates(position);
+
+        // Find the containing tetrahedron
+        Tet tet = locate(position, level);
+        long tetIndex = tet.index();
+
+        TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+        if (node == null) {
+            return Collections.emptyList();
+        }
+
+        return new ArrayList<>(node.getEntityIds());
+    }
+
+    @Override
+    public int nodeCount() {
+        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+    }
+
+    @Override
+    public Stream<SpatialNode<ID>> nodes() {
+        return spatialIndex.entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
+        entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+    }
+
+    @Override
+    public boolean removeEntity(ID entityId) {
+        // Get all locations where this entity appears
+        Set<Long> locations = entityManager.getEntityLocations(entityId);
+        
+        // Remove from entity storage
+        Entity<Content> removed = entityManager.removeEntity(entityId);
+        if (removed == null) {
+            return false;
+        }
+
+        if (!locations.isEmpty()) {
+            // Remove from each node
+            for (Long tetIndex : locations) {
+                TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+                if (node != null) {
+                    node.removeEntity(entityId);
+
+                    // Remove empty nodes
+                    if (node.isEmpty()) {
+                        spatialIndex.remove(tetIndex);
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
+    @Override
+    public void updateEntity(ID entityId, Point3f newPosition, byte level) {
+        validatePositiveCoordinates(newPosition);
+
+        // Update entity position
+        entityManager.updateEntityPosition(entityId, newPosition);
+
+        // Remove from all current locations
+        Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
+        for (Long tetIndex : oldLocations) {
+            TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+            if (node != null) {
+                node.removeEntity(entityId);
+
+                // Remove empty nodes
+                if (node.isEmpty()) {
+                    spatialIndex.remove(tetIndex);
+                }
+            }
+        }
+        entityManager.clearEntityLocations(entityId);
+
+        // Re-insert at new position
+        Tet newTet = locate(newPosition, level);
+        long newTetIndex = newTet.index();
+
+        TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(newTetIndex, k -> new TetreeNodeImpl<>(maxEntitiesPerNode));
+
+        node.addEntity(entityId);
+        entityManager.addEntityLocation(entityId, newTetIndex);
+    }
+
+    /**
+     * Add neighboring tetrahedra to the search queue Tetrahedral neighborhoods are more complex than cubic ones
+     */
+    private void addNeighboringTetrahedra(long tetIndex, Queue<Long> toVisit, Set<Long> visitedNodes) {
+        Tet currentTet = Tet.tetrahedron(tetIndex);
+
+        // For tetrahedral mesh, neighbors include:
+        // 1. Other tetrahedra in the same grid cell (6 types per cell)
+        // 2. Tetrahedra in adjacent grid cells
+
+        // Add other types in the same grid cell
+        for (byte type = 0; type < 6; type++) {
+            if (type != currentTet.type()) {
+                Tet neighbor = new Tet(currentTet.x(), currentTet.y(), currentTet.z(), currentTet.l(), type);
+                long neighborIndex = neighbor.index();
+                if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
+                    toVisit.add(neighborIndex);
+                }
+            }
+        }
+
+        // Add tetrahedra in adjacent grid cells
+        // This is simplified - a full implementation would consider
+        // the complex tetrahedral adjacency relationships
+        int cellSize = 1 << (Constants.getMaxRefinementLevel() - currentTet.l());
+        int[] offsets = { -cellSize, 0, cellSize };
+
+        for (int dx : offsets) {
+            for (int dy : offsets) {
+                for (int dz : offsets) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+
+                    int nx = currentTet.x() + dx;
+                    int ny = currentTet.y() + dy;
+                    int nz = currentTet.z() + dz;
+
+                    // Check bounds (must be positive for tetrahedral SFC)
+                    if (nx >= 0 && ny >= 0 && nz >= 0) {
+                        // Check all 6 types in the neighboring cell
+                        for (byte type = 0; type < 6; type++) {
+                            Tet neighbor = new Tet(nx, ny, nz, currentTet.l(), type);
+                            long neighborIndex = neighbor.index();
+                            if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
+                                toVisit.add(neighborIndex);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Compute SFC ranges for all tetrahedra in a grid cell
@@ -204,12 +610,12 @@ public class Tetree<Content> {
             int length = Constants.lengthAtLevel(level);
 
             // Calculate grid bounds at this level
-            int minX = (int) Math.floor(bounds.minX / length);
-            int maxX = (int) Math.ceil(bounds.maxX / length);
-            int minY = (int) Math.floor(bounds.minY / length);
-            int maxY = (int) Math.ceil(bounds.maxY / length);
-            int minZ = (int) Math.floor(bounds.minZ / length);
-            int maxZ = (int) Math.ceil(bounds.maxZ / length);
+            int minX = (int) Math.floor(bounds.minX() / length);
+            int maxX = (int) Math.ceil(bounds.maxX() / length);
+            int minY = (int) Math.floor(bounds.minY() / length);
+            int maxY = (int) Math.ceil(bounds.maxY() / length);
+            int minZ = (int) Math.floor(bounds.minZ() / length);
+            int maxZ = (int) Math.ceil(bounds.maxZ() / length);
 
             // Skip this level if it would create too many cells
             int numCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
@@ -249,13 +655,12 @@ public class Tetree<Content> {
 
     // Create a spatial volume from bounds for final filtering
     private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ);
+        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ());
     }
 
     // Find minimum level that can contain the volume
     private byte findMinimumContainingLevel(VolumeBounds bounds) {
-        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
-                                   bounds.maxZ - bounds.minZ);
+        float maxExtent = bounds.maxExtent();
 
         // Find the level where tetrahedron length >= maxExtent
         for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
@@ -266,58 +671,9 @@ public class Tetree<Content> {
         return Constants.getMaxRefinementLevel();
     }
 
-    // Get bounding box of a tetrahedron for quick filtering
-    private VolumeBounds getTetrahedronBounds(Tet tet) {
-        var vertices = tet.coordinates();
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (var vertex : vertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
-    }
-
     // Extract bounding box from various spatial volume types
     private VolumeBounds getVolumeBounds(Spatial volume) {
-        return switch (volume) {
-            case Spatial.Cube cube -> new VolumeBounds(cube.originX(), cube.originY(), cube.originZ(),
-                                                       cube.originX() + cube.extent(), cube.originY() + cube.extent(),
-                                                       cube.originZ() + cube.extent());
-            case Spatial.Sphere sphere -> new VolumeBounds(sphere.centerX() - sphere.radius(),
-                                                           sphere.centerY() - sphere.radius(),
-                                                           sphere.centerZ() - sphere.radius(),
-                                                           sphere.centerX() + sphere.radius(),
-                                                           sphere.centerY() + sphere.radius(),
-                                                           sphere.centerZ() + sphere.radius());
-            case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(), aabb.extentX(),
-                                                       aabb.extentY(), aabb.extentZ());
-            case Spatial.aabt aabt -> new VolumeBounds(aabt.originX(), aabt.originY(), aabt.originZ(), aabt.extentX(),
-                                                       aabt.extentY(), aabt.extentZ());
-            case Spatial.Parallelepiped para -> new VolumeBounds(para.originX(), para.originY(), para.originZ(),
-                                                                 para.extentX(), para.extentY(), para.extentZ());
-            case Spatial.Tetrahedron tet -> {
-                var vertices = new Tuple3f[] { tet.a(), tet.b(), tet.c(), tet.d() };
-                float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-                float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-                for (var vertex : vertices) {
-                    minX = Math.min(minX, vertex.x);
-                    minY = Math.min(minY, vertex.y);
-                    minZ = Math.min(minZ, vertex.z);
-                    maxX = Math.max(maxX, vertex.x);
-                    maxY = Math.max(maxY, vertex.y);
-                    maxZ = Math.max(maxZ, vertex.z);
-                }
-                yield new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
-            }
-            default -> null;
-        };
+        return VolumeBounds.from(volume);
     }
 
     // Check if a grid cell intersects with the query bounds
@@ -329,12 +685,55 @@ public class Tetree<Content> {
 
         if (includeIntersecting) {
             // Check for any intersection
-            return !(cellMaxX < bounds.minX || cellOrigin.x > bounds.maxX || cellMaxY < bounds.minY
-                     || cellOrigin.y > bounds.maxY || cellMaxZ < bounds.minZ || cellOrigin.z > bounds.maxZ);
+            return !(cellMaxX < bounds.minX() || cellOrigin.x > bounds.maxX() || cellMaxY < bounds.minY()
+                     || cellOrigin.y > bounds.maxY() || cellMaxZ < bounds.minZ() || cellOrigin.z > bounds.maxZ());
         } else {
             // Check for complete containment within bounds
-            return cellOrigin.x >= bounds.minX && cellMaxX <= bounds.maxX && cellOrigin.y >= bounds.minY
-            && cellMaxY <= bounds.maxY && cellOrigin.z >= bounds.minZ && cellMaxZ <= bounds.maxZ;
+            return cellOrigin.x >= bounds.minX() && cellMaxX <= bounds.maxX() && cellOrigin.y >= bounds.minY()
+            && cellMaxY <= bounds.maxY() && cellOrigin.z >= bounds.minZ() && cellMaxZ <= bounds.maxZ();
+        }
+    }
+
+    /**
+     * Locate the tetrahedron containing a point at a given level
+     */
+    private Tet locate(Tuple3f point, byte level) {
+        var length = Constants.lengthAtLevel(level);
+        var c0 = new Point3i((int) (Math.floor(point.x / length) * length),
+                             (int) (Math.floor(point.y / length) * length),
+                             (int) (Math.floor(point.z / length) * length));
+        var c7 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
+
+        var c1 = new Point3i(c0.x + length, c0.y, c0.z);
+
+        if (Geometry.leftOfPlaneFast(c0.x, c0.y, c0.z, c7.x, c7.y, c7.z, c1.x, c1.y, c1.z, point.x, point.y, point.z)
+        > 0.0) {
+            var c5 = new Point3i(c0.x + length, c0.y + length, c0.z + length);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c5.x, c5.y, c5.z, c0.x, c0.y, c0.z, point.x, point.y,
+                                         point.z) > 0.0) {
+                var c4 = new Point3i(c0.x, c0.y, c0.z + length);
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c4.x, c4.y, c4.z, c1.x, c1.y, c1.z, point.x, point.y,
+                                             point.z) > 0.0) {
+                    return new Tet(c0, level, 4);
+                }
+                return new Tet(c0, level, 5);
+            } else {
+                return new Tet(c0, level, 0);
+            }
+        } else {
+            var c3 = new Point3i(c0.x + length, c0.y + length, c0.z);
+            if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c3.x, c3.y, c3.z, point.x, point.y,
+                                         point.z) > 0.0) {
+                var c2 = new Point3i(c0.x, c0.y + length, c0.z);
+                if (Geometry.leftOfPlaneFast(c7.x, c7.y, c7.z, c0.x, c0.y, c0.z, c2.x, c2.y, c2.z, point.x, point.y,
+                                             point.z) > 0.0) {
+                    return new Tet(c0, level, 2);
+                } else {
+                    return new Tet(c0, level, 3);
+                }
+            } else {
+                return new Tet(c0, level, 1);
+            }
         }
     }
 
@@ -346,7 +745,7 @@ public class Tetree<Content> {
 
         ranges.sort(Comparator.comparingLong(a -> a.start));
         List<SFCRange> merged = new ArrayList<>();
-        SFCRange current = ranges.getFirst();
+        SFCRange current = ranges.get(0);
 
         for (int i = 1; i < ranges.size(); i++) {
             SFCRange next = ranges.get(i);
@@ -363,14 +762,40 @@ public class Tetree<Content> {
         return merged;
     }
 
+    /**
+     * Check if we should continue searching based on current candidates
+     */
+    private boolean shouldContinueSearch(long tetIndex, Point3f queryPoint, PriorityQueue<EntityDistance<ID>> candidates) {
+        if (candidates.isEmpty()) {
+            return true;
+        }
+
+        // Get the furthest candidate distance
+        EntityDistance<ID> furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+
+        // For tetrahedral geometry, this is more complex than cubic
+        // For now, use a simple heuristic based on level
+        Tet tet = Tet.tetrahedron(tetIndex);
+        byte level = tet.l();
+        float cellSize = Constants.lengthAtLevel(level);
+
+        // Conservative estimate: if we're within 2x the cell size of the furthest candidate,
+        // continue searching
+        return cellSize < furthest.distance() * 2;
+    }
+
     // Efficient spatial range query using tetrahedral space-filling curve properties
-    private Stream<Map.Entry<Long, Content>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
+    private Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds,
+                                                                      boolean includeIntersecting) {
         // Use SFC properties to find ranges of indices that could intersect the volume
         var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
 
-        Stream<Map.Entry<Long, Content>> ranges = sfcRanges.stream().flatMap(range -> {
+        Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> ranges = sfcRanges.stream().flatMap(range -> {
             // Use NavigableMap.subMap for efficient range queries
-            return contents.subMap(range.start, true, range.end, true).entrySet().stream();
+            return spatialIndex.subMap(range.start, true, range.end, true).entrySet().stream();
         });
         return ranges.filter(entry -> {
             // Final precise filtering for elements that passed SFC range test
@@ -393,8 +818,8 @@ public class Tetree<Content> {
 
         // Simple AABB containment test - all vertices must be within bounds
         for (var vertex : vertices) {
-            if (vertex.x < bounds.minX || vertex.x > bounds.maxX || vertex.y < bounds.minY || vertex.y > bounds.maxY
-            || vertex.z < bounds.minZ || vertex.z > bounds.maxZ) {
+            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY() || vertex.y > bounds.maxY()
+            || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
                 return false;
             }
         }
@@ -411,126 +836,63 @@ public class Tetree<Content> {
 
         // Simple AABB intersection test - any vertex within bounds indicates intersection
         for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX && vertex.x <= bounds.maxX && vertex.y >= bounds.minY && vertex.y <= bounds.maxY
-            && vertex.z >= bounds.minZ && vertex.z <= bounds.maxZ) {
+            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY() && vertex.y <= bounds.maxY()
+            && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
                 return true;
             }
         }
 
         // Also check if the volume center is inside the tetrahedron
-        var centerPoint = new Point3f((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2,
-                                      (bounds.minZ + bounds.maxZ) / 2);
+        var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
+                                      (bounds.minZ() + bounds.maxZ()) / 2);
         return tet.contains(centerPoint);
     }
 
-    static class Permutations<E> implements Iterator<E[]> {
+    /**
+     * Validate that coordinates are positive (tetrahedral SFC requirement)
+     */
+    private void validatePositiveCoordinates(Point3f point) {
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException("Tetree requires positive coordinates. Got: " + point);
+        }
+    }
 
-        private final E[]     arr;
-        private final int[]   ind;
-        public        E[]     output;//next() returns this array, make it public
-        private       boolean has_next;
+    private void validatePositiveCoordinates(Tuple3i point) {
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException(
+            "Tetree requires positive coordinates. Got: (" + point.x + ", " + point.y + ", " + point.z + ")");
+        }
+    }
 
-        Permutations(E[] arr) {
-            this.arr = arr.clone();
-            ind = new int[arr.length];
-            //convert an array of any elements into array of integers - first occurrence is used to enumerate
-            Map<E, Integer> hm = new HashMap<>();
-            for (int i = 0; i < arr.length; i++) {
-                Integer n = hm.get(arr[i]);
-                if (n == null) {
-                    hm.put(arr[i], i);
-                    n = i;
+    private void validatePositiveCoordinates(Spatial volume) {
+        // Check origin coordinates based on volume type
+        switch (volume) {
+            case Spatial.Cube cube -> {
+                if (cube.originX() < 0 || cube.originY() < 0 || cube.originZ() < 0) {
+                    throw new IllegalArgumentException(
+                    "Tetree requires positive coordinates. Cube origin: (" + cube.originX() + ", " + cube.originY()
+                    + ", " + cube.originZ() + ")");
                 }
-                ind[i] = n;
             }
-            Arrays.sort(ind);//start with ascending sequence of integers
-
-            //output = new E[arr.length]; <-- cannot do in Java with generics, so use reflection
-            output = (E[]) Array.newInstance(arr.getClass().getComponentType(), arr.length);
-            has_next = true;
-        }
-
-        public boolean hasNext() {
-            return has_next;
-        }
-
-        /**
-         * Computes next permutations. Same array instance is returned every time!
-         *
-         * @return the next permutation
-         */
-        public E[] next() {
-            if (!has_next) {
-                throw new NoSuchElementException();
-            }
-
-            for (int i = 0; i < ind.length; i++) {
-                output[i] = arr[ind[i]];
-            }
-
-            //get next permutation
-            has_next = false;
-            for (int tail = ind.length - 1; tail > 0; tail--) {
-                if (ind[tail - 1] < ind[tail]) {//still increasing
-
-                    //find last element which does not exceed ind[tail-1]
-                    int s = ind.length - 1;
-                    while (ind[tail - 1] >= ind[s])
-                        s--;
-
-                    swap(ind, tail - 1, s);
-
-                    //reverse order of elements in the tail
-                    for (int i = tail, j = ind.length - 1; i < j; i++, j--) {
-                        swap(ind, i, j);
-                    }
-                    has_next = true;
-                    break;
+            case Spatial.Sphere sphere -> {
+                // For sphere, check if any part extends into negative space
+                if (sphere.centerX() - sphere.radius() < 0 || sphere.centerY() - sphere.radius() < 0
+                || sphere.centerZ() - sphere.radius() < 0) {
+                    throw new IllegalArgumentException(
+                    "Tetree requires positive coordinates. Sphere extends into negative space");
                 }
-
             }
-            return output;
-        }
-
-        public void remove() {
-
-        }
-
-        private void swap(int[] arr, int i, int j) {
-            int t = arr[i];
-            arr[i] = arr[j];
-            arr[j] = t;
-        }
-    }
-
-    public record Simplex<Data>(long index, Data cell) implements Spatial {
-        @Override
-        public boolean containedBy(aabt aabt) {
-            return false;
-        }
-
-        public Vector3d[] coordinates() {
-            var tet = Tet.tetrahedron(index);
-            var coords = tet.coordinates();
-            var vertices = new Vector3d[4];
-            for (int i = 0; i < 4; i++) {
-                vertices[i] = new Vector3d(coords[i].x, coords[i].y, coords[i].z);
+            // Add other spatial types as needed
+            default -> {
+                // For now, allow other types but log warning
             }
-            return vertices;
-        }
-
-        @Override
-        public boolean intersects(float originX, float originY, float originZ, float extentX, float extentY,
-                                  float extentZ) {
-            return false;
         }
     }
 
-    // Helper record for volume bounds
-    private record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-    }
+
 
     // Record to represent SFC index ranges
     private record SFCRange(long start, long end) {
     }
+
 }

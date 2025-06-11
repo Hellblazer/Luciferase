@@ -19,26 +19,27 @@ package com.hellblazer.luciferase.lucien;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
 /**
  * Enhanced octree node that stores multiple entity IDs instead of content. Mimics C++ EntityContainer approach for
- * multiple entities per node.
+ * multiple entities per node. Extends AbstractSpatialNode to share common functionality with TetreeNode.
  *
  * @param <ID> The type of EntityID used
  * @author hal.hildebrand
  */
-public class OctreeNode<ID extends EntityID> {
+public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
     private final List<ID> entityIds;
-    private final int      maxEntitiesBeforeSplit;
     private       byte     childrenMask = 0;
 
     /**
      * Create a node with default max entities (10)
      */
     public OctreeNode() {
-        this(10);
+        super();
+        this.entityIds = new ArrayList<>();
     }
 
     /**
@@ -47,18 +48,13 @@ public class OctreeNode<ID extends EntityID> {
      * @param maxEntitiesBeforeSplit threshold for subdivision
      */
     public OctreeNode(int maxEntitiesBeforeSplit) {
+        super(maxEntitiesBeforeSplit);
         this.entityIds = new ArrayList<>();
-        this.maxEntitiesBeforeSplit = maxEntitiesBeforeSplit;
     }
 
-    /**
-     * Add an entity ID to this node
-     *
-     * @return true if the node should be split (exceeds threshold)
-     */
-    public boolean addEntity(ID entityId) {
+    @Override
+    protected void doAddEntity(ID entityId) {
         entityIds.add(entityId);
-        return entityIds.size() > maxEntitiesBeforeSplit;
     }
 
     /**
@@ -73,19 +69,11 @@ public class OctreeNode<ID extends EntityID> {
         childrenMask &= ~(1 << octant);
     }
 
-    /**
-     * Clear all entities from this node
-     */
-    public void clearEntities() {
+    @Override
+    protected void doClearEntities() {
         entityIds.clear();
     }
 
-    /**
-     * Check if this node contains a specific entity
-     */
-    public boolean containsEntity(ID entityId) {
-        return entityIds.contains(entityId);
-    }
 
     /**
      * Get the children mask indicating which octants have child nodes
@@ -94,28 +82,16 @@ public class OctreeNode<ID extends EntityID> {
         return childrenMask;
     }
 
-    /**
-     * Get the number of entities in this node
-     */
+    @Override
     public int getEntityCount() {
         return entityIds.size();
     }
 
-    /**
-     * Get all entity IDs in this node
-     *
-     * @return unmodifiable view of entity IDs
-     */
-    public List<ID> getEntityIds() {
+    @Override
+    public Collection<ID> getEntityIds() {
         return Collections.unmodifiableList(entityIds);
     }
 
-    /**
-     * Get the maximum entities allowed before split
-     */
-    public int getMaxEntitiesBeforeSplit() {
-        return maxEntitiesBeforeSplit;
-    }
 
     /**
      * Check if a specific octant has a child
@@ -136,19 +112,9 @@ public class OctreeNode<ID extends EntityID> {
         return childrenMask != 0;
     }
 
-    /**
-     * Check if this node is empty (no entities)
-     */
-    public boolean isEmpty() {
-        return entityIds.isEmpty();
-    }
 
-    /**
-     * Remove an entity ID from this node
-     *
-     * @return true if the entity was found and removed
-     */
-    public boolean removeEntity(ID entityId) {
+    @Override
+    protected boolean doRemoveEntity(ID entityId) {
         return entityIds.remove(entityId);
     }
 
@@ -164,15 +130,18 @@ public class OctreeNode<ID extends EntityID> {
         childrenMask |= (1 << octant);
     }
 
-    /**
-     * Check if this node should be split based on entity count
-     */
-    public boolean shouldSplit() {
-        return entityIds.size() > maxEntitiesBeforeSplit;
-    }
 
     /**
-     * Get mutable entity list for redistribution during splits Package-private for octree internal use only
+     * Get all entity IDs as a list (for backward compatibility)
+     *
+     * @return unmodifiable list view of entity IDs
+     */
+    public List<ID> getEntityIdsAsList() {
+        return Collections.unmodifiableList(entityIds);
+    }
+    
+    /**
+     * Get mutable entity list for redistribution during splits. Package-private for octree internal use only
      */
     List<ID> getMutableEntityIds() {
         return entityIds;

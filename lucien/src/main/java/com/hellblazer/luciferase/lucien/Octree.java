@@ -47,10 +47,8 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     final         Map<Long, OctreeNode<ID>> spatialIndex;
     // Sorted Morton codes for efficient range queries
     final         NavigableSet<Long>        sortedMortonCodes;
-    // Consolidated entity storage: Entity ID → Entity (content, locations, position, bounds)
-    private final Map<ID, Entity<Content>>  entities;
-    // ID generation strategy
-    private final EntityIDGenerator<ID>     idGenerator;
+    // Centralized entity management
+    private final EntityManager<ID, Content> entityManager;
     // Configuration
     private final int                       maxEntitiesPerNode;
     private final byte                      maxDepth;
@@ -77,8 +75,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                   EntitySpanningPolicy spanningPolicy) {
         this.spatialIndex = new HashMap<>();
         this.sortedMortonCodes = new TreeSet<>();
-        this.entities = new ConcurrentHashMap<>();
-        this.idGenerator = Objects.requireNonNull(idGenerator);
+        this.entityManager = new EntityManager<>(idGenerator);
         this.maxEntitiesPerNode = maxEntitiesPerNode;
         this.maxDepth = maxDepth;
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
@@ -99,7 +96,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public boolean containsEntity(ID entityId) {
-        return entities.containsKey(entityId);
+        return entityManager.containsEntity(entityId);
     }
 
     @Override
@@ -170,11 +167,10 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         // Filter entities based on their actual positions
         return uniqueEntities.stream().filter(entityId -> {
-            Entity<Content> entity = entities.get(entityId);
-            if (entity == null) {
+            Point3f pos = entityManager.getEntityPosition(entityId);
+            if (pos == null) {
                 return false;
             }
-            Point3f pos = entity.getPosition();
             return pos.x >= region.originX() && pos.x <= region.originX() + region.extent() && pos.y >= region.originY()
             && pos.y <= region.originY() + region.extent() && pos.z >= region.originZ()
             && pos.z <= region.originZ() + region.extent();
@@ -183,7 +179,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
     @Override
     public int entityCount() {
-        return entities.size();
+        return entityManager.getEntityCount();
     }
 
     /**
@@ -191,8 +187,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public List<Content> getEntities(List<ID> entityIds) {
-        return entityIds.stream().map(entities::get).filter(Objects::nonNull).map(Entity::getContent).collect(
-        Collectors.toList());
+        return entityManager.getEntitiesContent(entityIds);
     }
 
     /**
@@ -202,11 +197,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public Map<ID, Point3f> getEntitiesWithPositions() {
-        Map<ID, Point3f> result = new HashMap<>();
-        for (Map.Entry<ID, Entity<Content>> entry : entities.entrySet()) {
-            result.put(entry.getKey(), entry.getValue().getPosition());
-        }
-        return Collections.unmodifiableMap(result);
+        return entityManager.getEntitiesWithPositions();
     }
 
     /**
@@ -214,8 +205,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public Content getEntity(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getContent() : null;
+        return entityManager.getEntityContent(entityId);
     }
 
     /**
@@ -226,8 +216,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public EntityBounds getEntityBounds(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getBounds() : null;
+        return entityManager.getEntityBounds(entityId);
     }
 
     /**
@@ -238,8 +227,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public Point3f getEntityPosition(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getPosition() : null;
+        return entityManager.getEntityPosition(entityId);
     }
 
     /**
@@ -247,8 +235,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public int getEntitySpanCount(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getSpanCount() : 0;
+        return entityManager.getEntitySpanCount(entityId);
     }
 
     @Override
@@ -267,7 +254,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     @Override
     public SpatialIndex.EntityStats getStats() {
         int nodeCount = 0;
-        int entityCount = entities.size();
+        int entityCount = entityManager.getEntityCount();
         int totalEntityReferences = 0;
         int maxDepth = 0;
 
@@ -298,7 +285,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public ID insert(Point3f position, byte level, Content content) {
-        ID entityId = idGenerator.generateID();
+        ID entityId = entityManager.generateEntityId();
         insert(entityId, position, level, content);
         return entityId;
     }
@@ -317,17 +304,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
         // Create or update entity
-        Entity<Content> entity = entities.get(entityId);
-        if (entity == null) {
-            entity = bounds != null ? new Entity<>(content, position, bounds) : new Entity<>(content, position);
-            entities.put(entityId, entity);
-        } else {
-            // Update existing entity
-            entity.setPosition(position);
-            if (bounds != null) {
-                entity.setBounds(bounds);
-            }
-        }
+        entityManager.createOrUpdateEntity(entityId, content, position, bounds);
 
         // If spanning is enabled and entity has bounds, check for spanning
         if (spanningPolicy.isSpanningEnabled() && bounds != null) {
@@ -376,7 +353,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         // Priority queue to keep track of k nearest entities
         PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(
-        Comparator.comparingDouble(ed -> -ed.distance()) // Max heap
+        EntityDistance.maxHeapComparator() // Max heap
         );
 
         // Track visited entities to avoid duplicates
@@ -416,9 +393,9 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
             // Check all entities in this node
             for (ID entityId : node.getEntityIds()) {
                 if (visited.add(entityId)) {
-                    Entity<Content> entity = entities.get(entityId);
-                    if (entity != null) {
-                        float distance = queryPoint.distance(entity.getPosition());
+                    Point3f entityPos = entityManager.getEntityPosition(entityId);
+                    if (entityPos != null) {
+                        float distance = queryPoint.distance(entityPos);
                         if (distance <= maxDistance) {
                             candidates.add(new EntityDistance<>(entityId, distance));
 
@@ -489,15 +466,16 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public boolean removeEntity(ID entityId) {
+        // Get all locations where this entity appears
+        Set<Long> locations = entityManager.getEntityLocations(entityId);
+        
         // Remove from entity storage
-        Entity<Content> removed = entities.remove(entityId);
+        Entity<Content> removed = entityManager.removeEntity(entityId);
         if (removed == null) {
             return false;
         }
 
-        // Get all locations where this entity appears
-        Set<Long> locations = removed.getLocations();
-        if (locations != null && !locations.isEmpty()) {
+        if (!locations.isEmpty()) {
             // Remove from each node
             for (Long mortonCode : locations) {
                 OctreeNode<ID> node = spatialIndex.get(mortonCode);
@@ -518,16 +496,11 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
      */
     @Override
     public void updateEntity(ID entityId, Point3f newPosition, byte level) {
-        Entity<Content> entity = entities.get(entityId);
-        if (entity == null) {
-            throw new IllegalArgumentException("Entity not found: " + entityId);
-        }
-
         // Update entity position
-        entity.setPosition(newPosition);
+        entityManager.updateEntityPosition(entityId, newPosition);
 
         // Remove from all current locations
-        Set<Long> oldLocations = new HashSet<>(entity.getLocations());
+        Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
         for (Long mortonCode : oldLocations) {
             OctreeNode<ID> node = spatialIndex.get(mortonCode);
             if (node != null) {
@@ -537,7 +510,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                 cleanupEmptyNode(mortonCode, node);
             }
         }
-        entity.clearLocations();
+        entityManager.clearEntityLocations(entityId);
 
         // Re-insert at new position
         long newMortonCode = calculateMortonCode(newPosition, level);
@@ -547,7 +520,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         });
 
         node.addEntity(entityId);
-        entity.addLocation(newMortonCode);
+        entityManager.addEntityLocation(entityId, newMortonCode);
     }
 
     boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
@@ -575,8 +548,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
     }
 
     byte findMinimumContainingLevel(VolumeBounds bounds) {
-        float maxExtent = Math.max(Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY),
-                                   bounds.maxZ - bounds.minZ);
+        float maxExtent = bounds.maxExtent();
 
         // Find the level where cube length >= maxExtent
         for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
@@ -756,10 +728,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
         boolean shouldSplit = node.addEntity(entityId);
 
         // Track entity location
-        Entity<Content> entity = entities.get(entityId);
-        if (entity != null) {
-            entity.addLocation(mortonCode);
-        }
+        entityManager.addEntityLocation(entityId, mortonCode);
 
         // Handle subdivision if needed
         if (shouldSplit && level < maxDepth) {
@@ -782,10 +751,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
             });
 
             node.addEntity(entityId);
-            Entity<Content> entity = entities.get(entityId);
-            if (entity != null) {
-                entity.addLocation(mortonCode);
-            }
+            entityManager.addEntityLocation(entityId, mortonCode);
 
             // Note: We don't trigger subdivision for spanning entities
             // to avoid cascading subdivisions
@@ -884,9 +850,8 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         // Determine which child each entity belongs to
         for (ID entityId : parentEntities) {
-            Entity<Content> entity = entities.get(entityId);
-            if (entity != null) {
-                Point3f entityPos = entity.getPosition();
+            Point3f entityPos = entityManager.getEntityPosition(entityId);
+            if (entityPos != null) {
                 // Calculate which child this entity belongs to at the finer level
                 long childMorton = calculateMortonCode(entityPos, childLevel);
                 childEntityMap.computeIfAbsent(childMorton, k -> new ArrayList<>()).add(entityId);
@@ -909,10 +874,7 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
                 for (ID entityId : childEntities) {
                     childNode.addEntity(entityId);
                     // Update entity locations - add child location
-                    Entity<Content> entity = entities.get(entityId);
-                    if (entity != null) {
-                        entity.addLocation(childMorton);
-                    }
+                    entityManager.addEntityLocation(entityId, childMorton);
                 }
 
                 // Parent knows it has children because its entities have been redistributed
@@ -924,63 +886,8 @@ public class Octree<ID extends EntityID, Content> implements SpatialIndex<ID, Co
 
         // Remove parent from entity locations
         for (ID entityId : parentEntities) {
-            Entity<Content> entity = entities.get(entityId);
-            if (entity != null) {
-                entity.removeLocation(parentMorton);
-            }
+            entityManager.removeEntityLocation(entityId, parentMorton);
         }
     }
 
-    /**
-     * Helper record for k-NN search
-     */
-    private record EntityDistance<ID>(ID entityId, float distance) {
-    }
-
-    /**
-     * Helper record for volume bounds
-     */
-    record VolumeBounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-        static VolumeBounds from(Spatial volume) {
-            return switch (volume) {
-                case Spatial.Cube cube -> new VolumeBounds(cube.originX(), cube.originY(), cube.originZ(),
-                                                           cube.originX() + cube.extent(),
-                                                           cube.originY() + cube.extent(),
-                                                           cube.originZ() + cube.extent());
-                case Spatial.Sphere sphere -> new VolumeBounds(sphere.centerX() - sphere.radius(),
-                                                               sphere.centerY() - sphere.radius(),
-                                                               sphere.centerZ() - sphere.radius(),
-                                                               sphere.centerX() + sphere.radius(),
-                                                               sphere.centerY() + sphere.radius(),
-                                                               sphere.centerZ() + sphere.radius());
-                case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(),
-                                                           aabb.originX() + aabb.extentX(),
-                                                           aabb.originY() + aabb.extentY(),
-                                                           aabb.originZ() + aabb.extentZ());
-                case Spatial.aabt aabt -> new VolumeBounds(aabt.originX(), aabt.originY(), aabt.originZ(),
-                                                           aabt.originX() + aabt.extentX(),
-                                                           aabt.originY() + aabt.extentY(),
-                                                           aabt.originZ() + aabt.extentZ());
-                case Spatial.Parallelepiped para -> new VolumeBounds(para.originX(), para.originY(), para.originZ(),
-                                                                     para.originX() + para.extentX(),
-                                                                     para.originY() + para.extentY(),
-                                                                     para.originZ() + para.extentZ());
-                case Spatial.Tetrahedron tet -> {
-                    var vertices = new javax.vecmath.Tuple3f[] { tet.a(), tet.b(), tet.c(), tet.d() };
-                    float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-                    float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-                    for (var vertex : vertices) {
-                        minX = Math.min(minX, vertex.x);
-                        minY = Math.min(minY, vertex.y);
-                        minZ = Math.min(minZ, vertex.z);
-                        maxX = Math.max(maxX, vertex.x);
-                        maxY = Math.max(maxY, vertex.y);
-                        maxZ = Math.max(maxZ, vertex.z);
-                    }
-                    yield new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
-                }
-                default -> null;
-            };
-        }
-    }
 }
