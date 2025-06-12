@@ -18,26 +18,24 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
-import java.util.Collection;
-
 /**
- * Abstract base implementation of SpatialNodeStorage providing common functionality
- * for spatial index nodes. This class handles entity storage and threshold checking.
+ * Abstract base implementation of SpatialNodeStorage providing common functionality for spatial index nodes. This class
+ * handles entity storage and threshold checking.
  *
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
  */
 public abstract class AbstractSpatialNode<ID extends EntityID> implements SpatialNodeStorage<ID> {
-    
+
     protected final int maxEntitiesBeforeSplit;
-    
+
     /**
      * Create a node with default max entities (10)
      */
     protected AbstractSpatialNode() {
         this(10);
     }
-    
+
     /**
      * Create a node with specified max entities before split
      *
@@ -49,7 +47,7 @@ public abstract class AbstractSpatialNode<ID extends EntityID> implements Spatia
         }
         this.maxEntitiesBeforeSplit = maxEntitiesBeforeSplit;
     }
-    
+
     @Override
     public boolean addEntity(ID entityId) {
         if (entityId == null) {
@@ -58,20 +56,12 @@ public abstract class AbstractSpatialNode<ID extends EntityID> implements Spatia
         doAddEntity(entityId);
         return shouldSplit();
     }
-    
+
     @Override
-    public boolean removeEntity(ID entityId) {
-        if (entityId == null) {
-            return false;
-        }
-        return doRemoveEntity(entityId);
+    public void clearEntities() {
+        doClearEntities();
     }
-    
-    @Override
-    public boolean isEmpty() {
-        return getEntityCount() == 0;
-    }
-    
+
     @Override
     public boolean containsEntity(ID entityId) {
         if (entityId == null) {
@@ -79,39 +69,48 @@ public abstract class AbstractSpatialNode<ID extends EntityID> implements Spatia
         }
         return getEntityIds().contains(entityId);
     }
-    
-    @Override
-    public void clearEntities() {
-        doClearEntities();
-    }
-    
-    @Override
-    public boolean shouldSplit() {
-        return getEntityCount() > maxEntitiesBeforeSplit;
-    }
-    
+
     /**
      * Get the maximum entities allowed before split
      */
     public int getMaxEntitiesBeforeSplit() {
         return maxEntitiesBeforeSplit;
     }
-    
+
+    @Override
+    public boolean isEmpty() {
+        return getEntityCount() == 0;
+    }
+
+    @Override
+    public boolean removeEntity(ID entityId) {
+        if (entityId == null) {
+            return false;
+        }
+        return doRemoveEntity(entityId);
+    }
+
+    @Override
+    public boolean shouldSplit() {
+        return getEntityCount() > maxEntitiesBeforeSplit;
+    }
+
     // Abstract methods for subclasses to implement storage specifics
-    
+
     /**
      * Actually add the entity to the storage
      */
     protected abstract void doAddEntity(ID entityId);
-    
-    /**
-     * Actually remove the entity from storage
-     * @return true if the entity was found and removed
-     */
-    protected abstract boolean doRemoveEntity(ID entityId);
-    
+
     /**
      * Clear all entities from storage
      */
     protected abstract void doClearEntities();
+
+    /**
+     * Actually remove the entity from storage
+     *
+     * @return true if the entity was found and removed
+     */
+    protected abstract boolean doRemoveEntity(ID entityId);
 }

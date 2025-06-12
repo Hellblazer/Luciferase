@@ -21,14 +21,14 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import java.util.Collection;
 
 /**
- * Common interface for spatial index nodes that store entity IDs.
- * This interface abstracts the storage mechanism for both Octree and Tetree nodes.
+ * Common interface for spatial index nodes that store entity IDs. This interface abstracts the storage mechanism for
+ * both Octree and Tetree nodes.
  *
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
  */
 public interface SpatialNodeStorage<ID extends EntityID> {
-    
+
     /**
      * Add an entity ID to this node
      *
@@ -36,36 +36,12 @@ public interface SpatialNodeStorage<ID extends EntityID> {
      * @return true if the node should be split (exceeds threshold)
      */
     boolean addEntity(ID entityId);
-    
+
     /**
-     * Remove an entity ID from this node
-     *
-     * @param entityId the entity ID to remove
-     * @return true if the entity was found and removed
+     * Clear all entities from this node
      */
-    boolean removeEntity(ID entityId);
-    
-    /**
-     * Get all entity IDs in this node
-     *
-     * @return collection of entity IDs (unmodifiable)
-     */
-    Collection<ID> getEntityIds();
-    
-    /**
-     * Get the number of entities in this node
-     *
-     * @return entity count
-     */
-    int getEntityCount();
-    
-    /**
-     * Check if this node is empty (no entities)
-     *
-     * @return true if no entities are stored
-     */
-    boolean isEmpty();
-    
+    void clearEntities();
+
     /**
      * Check if this node contains a specific entity
      *
@@ -73,12 +49,36 @@ public interface SpatialNodeStorage<ID extends EntityID> {
      * @return true if the entity is in this node
      */
     boolean containsEntity(ID entityId);
-    
+
     /**
-     * Clear all entities from this node
+     * Get the number of entities in this node
+     *
+     * @return entity count
      */
-    void clearEntities();
-    
+    int getEntityCount();
+
+    /**
+     * Get all entity IDs in this node
+     *
+     * @return collection of entity IDs (unmodifiable)
+     */
+    Collection<ID> getEntityIds();
+
+    /**
+     * Check if this node is empty (no entities)
+     *
+     * @return true if no entities are stored
+     */
+    boolean isEmpty();
+
+    /**
+     * Remove an entity ID from this node
+     *
+     * @param entityId the entity ID to remove
+     * @return true if the entity was found and removed
+     */
+    boolean removeEntity(ID entityId);
+
     /**
      * Check if this node should be split based on entity count
      *

@@ -48,7 +48,9 @@ import java.util.stream.Stream;
 public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<ID, Content, TetreeNodeImpl<ID>> {
 
     // Spatial index: Tetrahedral index → Node containing entity IDs
-    private final NavigableMap<Long, TetreeNodeImpl<ID>> spatialIndex;
+    private final Map<Long, TetreeNodeImpl<ID>> spatialIndex;
+    // Sorted tetrahedral indices for efficient range queries
+    private final NavigableSet<Long>            sortedTetIndices;
 
     /**
      * Create a Tetree with default configuration
@@ -70,7 +72,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
-        this.spatialIndex = new TreeMap<>();
+        this.spatialIndex = new HashMap<>();
+        this.sortedTetIndices = new TreeSet<>();
     }
 
     // ===== Abstract Method Implementations =====
@@ -328,9 +331,36 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     @Override
+    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
+        long tetIndex = calculateSpatialIndex(position, level);
+
+        // Get or create node
+        TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
+            sortedTetIndices.add(tetIndex);
+            return createNode();
+        });
+
+        // Add entity to node
+        boolean shouldSplit = node.addEntity(entityId);
+
+        // Track entity location
+        entityManager.addEntityLocation(entityId, tetIndex);
+
+        // Handle subdivision if needed (delegated to subclasses)
+        if (shouldSplit && level < maxDepth) {
+            handleNodeSubdivision(tetIndex, level, node);
+        }
+    }
+
+    @Override
     protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
         Tet tet = Tet.tetrahedron(tetIndex);
         return tetrahedronContainedInVolume(tet, volume);
+    }
+
+    @Override
+    protected void onNodeRemoved(long spatialIndex) {
+        sortedTetIndices.remove(spatialIndex);
     }
 
     @Override
@@ -340,8 +370,10 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
 
         return sfcRanges.stream().flatMap(range -> {
-            // Use NavigableMap.subMap for efficient range queries
-            return spatialIndex.subMap(range.start, true, range.end, true).entrySet().stream();
+            // Use sorted indices for efficient range queries
+            NavigableSet<Long> candidateIndices = sortedTetIndices.subSet(range.start, true, range.end, true);
+            return candidateIndices.stream().map(tetIndex -> Map.entry(tetIndex, spatialIndex.get(tetIndex))).filter(
+            entry -> entry.getValue() != null);
         }).filter(entry -> {
             // Final precise filtering for elements that passed SFC range test
             var tet = Tet.tetrahedron(entry.getKey());
