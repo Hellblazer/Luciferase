@@ -14,10 +14,12 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.entity;
+package com.hellblazer.luciferase.lucien;
 
-import com.hellblazer.luciferase.lucien.Octree;
-import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;
+import com.hellblazer.luciferase.lucien.entity.UUIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
