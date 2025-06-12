@@ -27,10 +27,10 @@ import java.util.Set;
 /**
  * Tetree node implementation that stores entity IDs using a Set. Extends AbstractSpatialNode to share common
  * functionality with OctreeNode.
- * 
- * Thread Safety: This class is NOT thread-safe on its own. It relies on external synchronization
- * provided by AbstractSpatialIndex's read-write lock. All access to node instances must be
- * performed within the appropriate lock context.
+ *
+ * Thread Safety: This class is NOT thread-safe on its own. It relies on external synchronization provided by
+ * AbstractSpatialIndex's read-write lock. All access to node instances must be performed within the appropriate lock
+ * context.
  *
  * @param <ID> The type of EntityID used
  * @author hal.hildebrand

@@ -17,10 +17,7 @@
 package com.hellblazer.luciferase.lucien.octree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
-import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
-import com.hellblazer.luciferase.lucien.Constants;
-import com.hellblazer.luciferase.lucien.Spatial;
-import com.hellblazer.luciferase.lucien.VolumeBounds;
+import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.entity.*;
 
 import javax.vecmath.Point3f;
@@ -200,6 +197,36 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     @Override
+    protected void addNeighboringNodes(long nodeCode, Queue<Long> toVisit, Set<Long> visitedNodes) {
+        int[] coords = MortonCurve.decode(nodeCode);
+        byte level = Constants.toLevel(nodeCode);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Check all 26 neighbors (3x3x3 cube minus center)
+        for (int dx = -NEIGHBOR_SEARCH_RADIUS; dx <= NEIGHBOR_SEARCH_RADIUS; dx++) {
+            for (int dy = -NEIGHBOR_SEARCH_RADIUS; dy <= NEIGHBOR_SEARCH_RADIUS; dy++) {
+                for (int dz = -NEIGHBOR_SEARCH_RADIUS; dz <= NEIGHBOR_SEARCH_RADIUS; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue; // Skip center (current node)
+                    }
+
+                    int nx = coords[0] + dx * cellSize;
+                    int ny = coords[1] + dy * cellSize;
+                    int nz = coords[2] + dz * cellSize;
+
+                    // Check bounds
+                    if (nx >= 0 && ny >= 0 && nz >= 0) {
+                        long neighborCode = MortonCurve.encode(nx, ny, nz);
+                        if (!visitedNodes.contains(neighborCode)) {
+                            toVisit.add(neighborCode);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
     protected long calculateSpatialIndex(Point3f position, byte level) {
         return calculateMortonCode(position, level);
     }
@@ -216,6 +243,18 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return doesCubeIntersectVolume(cube, volume);
         }
         return false;
+    }
+
+    @Override
+    protected boolean doesRayIntersectNode(long nodeIndex, Ray3D ray) {
+        // Get node bounds
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Perform ray-AABB intersection test
+        return rayIntersectsAABB(ray, coords[0], coords[1], coords[2], coords[0] + cellSize, coords[1] + cellSize,
+                                 coords[2] + cellSize) >= 0;
     }
 
     @Override
@@ -236,6 +275,65 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
     }
 
+    // Helper methods for spatial range queries
+
+    @Override
+    protected float getRayNodeIntersectionDistance(long nodeIndex, Ray3D ray) {
+        // Get node bounds
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Calculate ray-AABB intersection distance
+        float distance = rayIntersectsAABB(ray, coords[0], coords[1], coords[2], coords[0] + cellSize,
+                                           coords[1] + cellSize, coords[2] + cellSize);
+
+        return distance >= 0 ? distance : Float.MAX_VALUE;
+    }
+
+    @Override
+    protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
+        // Use a priority queue to order nodes by ray intersection distance
+        PriorityQueue<NodeDistance> nodeQueue = new PriorityQueue<>();
+        Set<Long> visitedNodes = new HashSet<>();
+
+        // Start with root node (level 0)
+        long rootIndex = 0L;
+        float rootDistance = getRayNodeIntersectionDistance(rootIndex, ray);
+        if (rootDistance < Float.MAX_VALUE && rootDistance <= ray.maxDistance()) {
+            nodeQueue.add(new NodeDistance(rootIndex, rootDistance));
+        }
+
+        // Build ordered stream of nodes
+        List<Long> orderedNodes = new ArrayList<>();
+
+        while (!nodeQueue.isEmpty()) {
+            NodeDistance current = nodeQueue.poll();
+            if (!visitedNodes.add(current.nodeIndex)) {
+                continue;
+            }
+
+            // Check if node exists in spatial index
+            if (spatialIndex.containsKey(current.nodeIndex)) {
+                orderedNodes.add(current.nodeIndex);
+            }
+
+            // Add children if they intersect the ray
+            byte currentLevel = Constants.toLevel(current.nodeIndex);
+            if (currentLevel < maxDepth) {
+                addIntersectingChildren(current.nodeIndex, currentLevel, ray, nodeQueue, visitedNodes);
+            }
+        }
+
+        return orderedNodes.stream();
+    }
+
+    @Override
+    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
+        return getMortonCodeRange(bounds);
+    }
+
+    // Private helper methods
 
     @Override
     protected void handleNodeSubdivision(long parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
@@ -303,8 +401,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return node != null && node.hasChildren();
     }
 
-    // Helper methods for spatial range queries
-
     /**
      * Insert entity at a single position (no spanning) - override to add Morton code tracking
      */
@@ -330,6 +426,8 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             handleNodeSubdivision(mortonCode, level, node);
         }
     }
+
+    // ===== SpatialIndex Interface Implementation =====
 
     /**
      * Insert entity with spanning across multiple nodes
@@ -363,12 +461,41 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return false;
     }
 
-    // Private helper methods
-
-
     @Override
-    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
-        return getMortonCodeRange(bounds);
+    protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint,
+                                              PriorityQueue<EntityDistance<ID>> candidates) {
+        if (candidates.isEmpty()) {
+            return true;
+        }
+
+        // Get the furthest candidate distance
+        EntityDistance<ID> furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+
+        // Calculate distance from query point to node bounds
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Calculate closest point on node to query
+        float nodeMinX = coords[0];
+        float nodeMinY = coords[1];
+        float nodeMinZ = coords[2];
+        float nodeMaxX = nodeMinX + cellSize;
+        float nodeMaxY = nodeMinY + cellSize;
+        float nodeMaxZ = nodeMinZ + cellSize;
+
+        float closestX = Math.max(nodeMinX, Math.min(queryPoint.x, nodeMaxX));
+        float closestY = Math.max(nodeMinY, Math.min(queryPoint.y, nodeMaxY));
+        float closestZ = Math.max(nodeMinZ, Math.min(queryPoint.z, nodeMaxZ));
+
+        float nodeDistance = new Point3f(closestX, closestY, closestZ).distance(queryPoint);
+
+        // If the closest point on this node is further than our furthest candidate,
+        // we don't need to explore further
+        return nodeDistance <= furthest.distance();
     }
 
     @Override
@@ -380,8 +507,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     protected void validateSpatialConstraints(Spatial volume) {
         // Octree doesn't have specific spatial constraints
     }
-
-    // ===== SpatialIndex Interface Implementation =====
 
     boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
         return switch (volume) {
@@ -437,68 +562,30 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         };
     }
 
-    @Override
-    protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint, 
-                                            PriorityQueue<EntityDistance<ID>> candidates) {
-        if (candidates.isEmpty()) {
-            return true;
-        }
+    // ===== Ray Intersection Implementation =====
 
-        // Get the furthest candidate distance
-        EntityDistance<ID> furthest = candidates.peek();
-        if (furthest == null) {
-            return true;
-        }
+    /**
+     * Helper method to add intersecting child nodes to the traversal queue
+     */
+    private void addIntersectingChildren(long parentIndex, byte parentLevel, Ray3D ray,
+                                         PriorityQueue<NodeDistance> nodeQueue, Set<Long> visitedNodes) {
+        int[] parentCoords = MortonCurve.decode(parentIndex);
+        int parentCellSize = Constants.lengthAtLevel(parentLevel);
+        int childCellSize = parentCellSize / 2;
+        byte childLevel = (byte) (parentLevel + 1);
 
-        // Calculate distance from query point to node bounds
-        int[] coords = MortonCurve.decode(nodeIndex);
-        byte level = Constants.toLevel(nodeIndex);
-        int cellSize = Constants.lengthAtLevel(level);
+        // Check all 8 children
+        for (int i = 0; i < OCTREE_CHILDREN; i++) {
+            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
+            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
+            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
 
-        // Calculate closest point on node to query
-        float nodeMinX = coords[0];
-        float nodeMinY = coords[1];
-        float nodeMinZ = coords[2];
-        float nodeMaxX = nodeMinX + cellSize;
-        float nodeMaxY = nodeMinY + cellSize;
-        float nodeMaxZ = nodeMinZ + cellSize;
-
-        float closestX = Math.max(nodeMinX, Math.min(queryPoint.x, nodeMaxX));
-        float closestY = Math.max(nodeMinY, Math.min(queryPoint.y, nodeMaxY));
-        float closestZ = Math.max(nodeMinZ, Math.min(queryPoint.z, nodeMaxZ));
-
-        float nodeDistance = new Point3f(closestX, closestY, closestZ).distance(queryPoint);
-
-        // If the closest point on this node is further than our furthest candidate,
-        // we don't need to explore further
-        return nodeDistance <= furthest.distance();
-    }
-
-    @Override
-    protected void addNeighboringNodes(long nodeCode, Queue<Long> toVisit, Set<Long> visitedNodes) {
-        int[] coords = MortonCurve.decode(nodeCode);
-        byte level = Constants.toLevel(nodeCode);
-        int cellSize = Constants.lengthAtLevel(level);
-
-        // Check all 26 neighbors (3x3x3 cube minus center)
-        for (int dx = -NEIGHBOR_SEARCH_RADIUS; dx <= NEIGHBOR_SEARCH_RADIUS; dx++) {
-            for (int dy = -NEIGHBOR_SEARCH_RADIUS; dy <= NEIGHBOR_SEARCH_RADIUS; dy++) {
-                for (int dz = -NEIGHBOR_SEARCH_RADIUS; dz <= NEIGHBOR_SEARCH_RADIUS; dz++) {
-                    if (dx == 0 && dy == 0 && dz == 0) {
-                        continue; // Skip center (current node)
-                    }
-
-                    int nx = coords[0] + dx * cellSize;
-                    int ny = coords[1] + dy * cellSize;
-                    int nz = coords[2] + dz * cellSize;
-
-                    // Check bounds
-                    if (nx >= 0 && ny >= 0 && nz >= 0) {
-                        long neighborCode = MortonCurve.encode(nx, ny, nz);
-                        if (!visitedNodes.contains(neighborCode)) {
-                            toVisit.add(neighborCode);
-                        }
-                    }
+            long childIndex = MortonCurve.encode(childX, childY, childZ);
+            if (!visitedNodes.contains(childIndex)) {
+                float distance = rayIntersectsAABB(ray, childX, childY, childZ, childX + childCellSize,
+                                                   childY + childCellSize, childZ + childCellSize);
+                if (distance >= 0 && distance <= ray.maxDistance()) {
+                    nodeQueue.add(new NodeDistance(childIndex, distance));
                 }
             }
         }
@@ -578,5 +665,109 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return extendedCodes;
     }
 
+    /**
+     * Ray-AABB intersection test
+     *
+     * @param ray  the ray to test
+     * @param minX minimum X coordinate
+     * @param minY minimum Y coordinate
+     * @param minZ minimum Z coordinate
+     * @param maxX maximum X coordinate
+     * @param maxY maximum Y coordinate
+     * @param maxZ maximum Z coordinate
+     * @return distance to intersection, or -1 if no intersection
+     */
+    private float rayIntersectsAABB(Ray3D ray, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+        float tmin = 0.0f;
+        float tmax = ray.maxDistance();
 
+        // X axis
+        if (Math.abs(ray.direction().x) < 1e-6f) {
+            if (ray.origin().x < minX || ray.origin().x > maxX) {
+                return -1;
+            }
+        } else {
+            float t1 = (minX - ray.origin().x) / ray.direction().x;
+            float t2 = (maxX - ray.origin().x) / ray.direction().x;
+
+            if (t1 > t2) {
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+
+            tmin = Math.max(tmin, t1);
+            tmax = Math.min(tmax, t2);
+
+            if (tmin > tmax) {
+                return -1;
+            }
+        }
+
+        // Y axis
+        if (Math.abs(ray.direction().y) < 1e-6f) {
+            if (ray.origin().y < minY || ray.origin().y > maxY) {
+                return -1;
+            }
+        } else {
+            float t1 = (minY - ray.origin().y) / ray.direction().y;
+            float t2 = (maxY - ray.origin().y) / ray.direction().y;
+
+            if (t1 > t2) {
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+
+            tmin = Math.max(tmin, t1);
+            tmax = Math.min(tmax, t2);
+
+            if (tmin > tmax) {
+                return -1;
+            }
+        }
+
+        // Z axis
+        if (Math.abs(ray.direction().z) < 1e-6f) {
+            if (ray.origin().z < minZ || ray.origin().z > maxZ) {
+                return -1;
+            }
+        } else {
+            float t1 = (minZ - ray.origin().z) / ray.direction().z;
+            float t2 = (maxZ - ray.origin().z) / ray.direction().z;
+
+            if (t1 > t2) {
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+
+            tmin = Math.max(tmin, t1);
+            tmax = Math.min(tmax, t2);
+
+            if (tmin > tmax) {
+                return -1;
+            }
+        }
+
+        return tmin;
+    }
+
+    /**
+     * Helper class to store node index with distance for priority queue ordering
+     */
+    private static class NodeDistance implements Comparable<NodeDistance> {
+        final long  nodeIndex;
+        final float distance;
+
+        NodeDistance(long nodeIndex, float distance) {
+            this.nodeIndex = nodeIndex;
+            this.distance = distance;
+        }
+
+        @Override
+        public int compareTo(NodeDistance other) {
+            return Float.compare(this.distance, other.distance);
+        }
+    }
 }

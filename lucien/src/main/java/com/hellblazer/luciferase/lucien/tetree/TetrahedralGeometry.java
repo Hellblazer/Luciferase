@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Ray3D;
+
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Vector3f;
@@ -187,7 +189,7 @@ public class TetrahedralGeometry {
         Vector3f edge2 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
 
         Vector3f h = new Vector3f();
-        h.cross(ray.direction, edge2);
+        h.cross(ray.direction(), edge2);
 
         float a = edge1.dot(h);
         if (a > -EPSILON && a < EPSILON) {
@@ -195,7 +197,7 @@ public class TetrahedralGeometry {
         }
 
         float f = 1.0f / a;
-        Vector3f s = new Vector3f(ray.origin.x - v0.x, ray.origin.y - v0.y, ray.origin.z - v0.z);
+        Vector3f s = new Vector3f(ray.origin().x - v0.x, ray.origin().y - v0.y, ray.origin().z - v0.z);
         float u = f * s.dot(h);
 
         if (u < 0.0f || u > 1.0f) {
@@ -204,7 +206,7 @@ public class TetrahedralGeometry {
 
         Vector3f q = new Vector3f();
         q.cross(s, edge1);
-        float v = f * ray.direction.dot(q);
+        float v = f * ray.direction().dot(q);
 
         if (v < 0.0f || u + v > 1.0f) {
             return RayTetrahedronIntersection.noIntersection();
@@ -212,7 +214,7 @@ public class TetrahedralGeometry {
 
         float t = f * edge2.dot(q);
 
-        if (t > EPSILON && t <= ray.maxDistance) {
+        if (t > EPSILON && t <= ray.maxDistance()) {
             Point3f intersection = ray.pointAt(t);
 
             // Compute face normal
@@ -323,20 +325,7 @@ public class TetrahedralGeometry {
     /**
      * 3D Ray representation for ray-tetrahedron intersection tests
      */
-    public record Ray3D(Point3f origin, Vector3f direction, float maxDistance) {
-        public Ray3D {
-            if (origin.x < 0 || origin.y < 0 || origin.z < 0) {
-                throw new IllegalArgumentException("Ray origin must have positive coordinates: " + origin);
-            }
-            if (maxDistance <= 0) {
-                throw new IllegalArgumentException("Ray max distance must be positive: " + maxDistance);
-            }
-        }
-
-        public Point3f pointAt(float t) {
-            return new Point3f(origin.x + t * direction.x, origin.y + t * direction.y, origin.z + t * direction.z);
-        }
-    }
+    // Ray3D has been moved to com.hellblazer.luciferase.lucien.Ray3D as a unified implementation
 
     // Helper methods
 

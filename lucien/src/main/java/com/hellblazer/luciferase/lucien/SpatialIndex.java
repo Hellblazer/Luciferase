@@ -21,10 +21,8 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Set;
+import javax.vecmath.Vector3f;
+import java.util.*;
 import java.util.stream.Stream;
 
 /**
@@ -204,6 +202,18 @@ public interface SpatialIndex<ID extends EntityID, Content> {
     void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds);
 
     /**
+     * Find the k nearest neighbors to a query point
+     *
+     * @param queryPoint  the query point
+     * @param k           the number of neighbors to find
+     * @param maxDistance maximum distance to search
+     * @return list of entity IDs sorted by distance
+     */
+    List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance);
+
+    // ===== Map Operations =====
+
+    /**
      * Look up all entities at a specific position
      *
      * @param position the 3D position
@@ -211,8 +221,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return list of entity IDs at that position
      */
     List<ID> lookup(Point3f position, byte level);
-
-    // ===== Map Operations =====
 
     /**
      * Get the total number of nodes in the spatial index
@@ -227,6 +235,35 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return stream of spatial nodes with their entity IDs
      */
     Stream<SpatialNode<ID>> nodes();
+
+    /**
+     * Find all entities intersected by a ray, sorted by distance
+     *
+     * @param ray the ray to test
+     * @return list of ray intersections sorted by distance along the ray
+     */
+    List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray);
+
+    // ===== k-Nearest Neighbor Operations =====
+
+    /**
+     * Find the first entity intersected by a ray
+     *
+     * @param ray the ray to test
+     * @return the first intersection, or empty if no intersection
+     */
+    Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray);
+
+    // ===== Ray Intersection Operations =====
+
+    /**
+     * Find all entities intersected by a ray within a maximum distance
+     *
+     * @param ray         the ray to test
+     * @param maxDistance maximum distance along the ray
+     * @return list of ray intersections within the distance, sorted by distance
+     */
+    List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance);
 
     /**
      * Remove an entity from all nodes
@@ -275,6 +312,45 @@ public interface SpatialIndex<ID extends EntityID, Content> {
          */
         public double entitySpanningFactor() {
             return entityCount > 0 ? (double) totalEntityReferences / entityCount : 0.0;
+        }
+    }
+
+    /**
+     * Result of a ray-entity intersection test
+     *
+     * @param <ID>      The type of EntityID used for entity identification
+     * @param <Content> The type of content stored with each entity
+     */
+    record RayIntersection<ID extends EntityID, Content>(ID entityId, Content content, float distance,
+                                                         Point3f intersectionPoint, Vector3f normal,
+                                                         EntityBounds bounds)
+    implements Comparable<RayIntersection<ID, Content>> {
+
+        /**
+         * Compare intersections by distance for sorting
+         */
+        @Override
+        public int compareTo(RayIntersection<ID, Content> other) {
+            return Float.compare(this.distance, other.distance);
+        }
+
+        /**
+         * Get the entity position (may differ from intersection point for bounded entities)
+         */
+        public Point3f getEntityPosition() {
+            if (bounds != null) {
+                // Return center of bounds
+                return new Point3f((bounds.getMinX() + bounds.getMaxX()) / 2, (bounds.getMinY() + bounds.getMaxY()) / 2,
+                                   (bounds.getMinZ() + bounds.getMaxZ()) / 2);
+            }
+            return intersectionPoint;
+        }
+
+        /**
+         * Check if this intersection has bounds information
+         */
+        public boolean hasBounds() {
+            return bounds != null;
         }
     }
 }

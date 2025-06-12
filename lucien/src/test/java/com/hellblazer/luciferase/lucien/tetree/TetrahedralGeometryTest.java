@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Ray3D;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
@@ -102,8 +103,8 @@ public class TetrahedralGeometryTest {
         Point3f origin = new Point3f(100.0f, 100.0f, 100.0f);
         Vector3f zeroDirection = new Vector3f(0.0f, 0.0f, 0.0f);
 
-        // Ray with zero direction should still be constructible (though not useful)
-        assertDoesNotThrow(() -> new TetrahedralGeometry.Ray3D(origin, zeroDirection, 100.0f));
+        // Ray with zero direction should throw (as per unified Ray3D implementation)
+        assertThrows(IllegalArgumentException.class, () -> new Ray3D(origin, zeroDirection, 100.0f));
     }
 
     @Test
@@ -225,7 +226,7 @@ public class TetrahedralGeometryTest {
         Vector3f direction = new Vector3f(0.0f, 0.0f, 1.0f);
         float maxDistance = 100.0f;
 
-        var ray = new TetrahedralGeometry.Ray3D(origin, direction, maxDistance);
+        var ray = new Ray3D(origin, direction, maxDistance);
         assertEquals(origin, ray.origin());
         assertEquals(direction, ray.direction());
         assertEquals(maxDistance, ray.maxDistance());
@@ -238,10 +239,10 @@ public class TetrahedralGeometryTest {
 
         // Invalid ray with negative origin coordinates
         assertThrows(IllegalArgumentException.class,
-                     () -> new TetrahedralGeometry.Ray3D(new Point3f(-1.0f, 2.0f, 3.0f), direction, maxDistance));
+                     () -> new Ray3D(new Point3f(-1.0f, 2.0f, 3.0f), direction, maxDistance));
 
         // Invalid ray with negative max distance
-        assertThrows(IllegalArgumentException.class, () -> new TetrahedralGeometry.Ray3D(origin, direction, -1.0f));
+        assertThrows(IllegalArgumentException.class, () -> new Ray3D(origin, direction, -1.0f));
     }
 
     @Test
@@ -269,7 +270,7 @@ public class TetrahedralGeometryTest {
         Vector3f rayDirection = new Vector3f(1.0f, 1.0f, 1.0f);
         rayDirection.normalize();
 
-        var ray = new TetrahedralGeometry.Ray3D(rayOrigin, rayDirection, 1000.0f);
+        var ray = new Ray3D(rayOrigin, rayDirection, 1000.0f);
         var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
 
         // For a well-formed tetrahedron, we should get some intersection information
@@ -279,7 +280,7 @@ public class TetrahedralGeometryTest {
         // Test ray pointing away from tetrahedron
         Vector3f awayDirection = new Vector3f(-1.0f, -1.0f, -1.0f);
         awayDirection.normalize();
-        var awayRay = new TetrahedralGeometry.Ray3D(rayOrigin, awayDirection, 1000.0f);
+        var awayRay = new Ray3D(rayOrigin, awayDirection, 1000.0f);
         var noIntersection = TetrahedralGeometry.rayIntersectsTetrahedron(awayRay, tetIndex);
 
         assertFalse(noIntersection.intersects, "Ray pointing away should not intersect");

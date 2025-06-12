@@ -17,10 +17,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.Geometry;
-import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
-import com.hellblazer.luciferase.lucien.Constants;
-import com.hellblazer.luciferase.lucien.Spatial;
-import com.hellblazer.luciferase.lucien.VolumeBounds;
+import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.entity.EntityDistance;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
@@ -31,7 +28,6 @@ import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -201,101 +197,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     @Override
-    protected long calculateSpatialIndex(Point3f position, byte level) {
-        Tet tet = locate(position, level);
-        return tet.index();
-    }
-
-    @Override
-    protected TetreeNodeImpl<ID> createNode() {
-        return new TetreeNodeImpl<>(maxEntitiesPerNode);
-    }
-
-    @Override
-    protected boolean doesNodeIntersectVolume(long tetIndex, Spatial volume) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        return tetrahedronIntersectsVolume(tet, volume);
-    }
-
-    @Override
-    protected int getCellSizeAtLevel(byte level) {
-        return Constants.lengthAtLevel(level);
-    }
-
-    @Override
-    protected byte getLevelFromIndex(long index) {
-        return Tet.tetLevelFromIndex(index);
-    }
-
-    // These methods are now handled by AbstractSpatialIndex
-
-    @Override
-    protected Spatial getNodeBounds(long tetIndex) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        // Return the bounding cube of the tetrahedron
-        int cellSize = Constants.lengthAtLevel(tet.l());
-        return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
-    }
-
-
-
-    @Override
-    protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        return tetrahedronContainedInVolume(tet, volume);
-    }
-
-
-    @Override
-    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
-        // Use SFC properties to find ranges of indices that could intersect the volume
-        var sfcRanges = computeSFCRanges(bounds, true); // Use inclusive for range finding
-        
-        NavigableSet<Long> result = new TreeSet<>();
-        for (var range : sfcRanges) {
-            // Use sorted indices for efficient range queries
-            result.addAll(sortedSpatialIndices.subSet(range.start, true, range.end, true));
-        }
-        return result;
-    }
-
-    @Override
-    protected void validateSpatialConstraints(Point3f position) {
-        validatePositiveCoordinates(position);
-    }
-
-    @Override
-    protected void validateSpatialConstraints(Spatial volume) {
-        validatePositiveCoordinates(volume);
-    }
-
-    // These methods are now handled by AbstractSpatialIndex
-
-    @Override
-    protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint, 
-                                            PriorityQueue<EntityDistance<ID>> candidates) {
-        if (candidates.isEmpty()) {
-            return true;
-        }
-
-        // Get the furthest candidate distance
-        EntityDistance<ID> furthest = candidates.peek();
-        if (furthest == null) {
-            return true;
-        }
-
-        // For tetrahedral geometry, this is more complex than cubic
-        // For now, use a simple heuristic based on level
-        Tet tet = Tet.tetrahedron(nodeIndex);
-        byte level = tet.l();
-        float cellSize = Constants.lengthAtLevel(level);
-
-        // Conservative estimate: if we're within 2x the cell size of the furthest candidate,
-        // continue searching
-        return cellSize < furthest.distance() * 2;
-    }
-
-    @Override
     protected void addNeighboringNodes(long tetIndex, Queue<Long> toVisit, Set<Long> visitedNodes) {
         Tet currentTet = Tet.tetrahedron(tetIndex);
 
@@ -342,6 +243,269 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    @Override
+    protected long calculateSpatialIndex(Point3f position, byte level) {
+        Tet tet = locate(position, level);
+        return tet.index();
+    }
+
+    @Override
+    protected TetreeNodeImpl<ID> createNode() {
+        return new TetreeNodeImpl<>(maxEntitiesPerNode);
+    }
+
+    @Override
+    protected boolean doesNodeIntersectVolume(long tetIndex, Spatial volume) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronIntersectsVolume(tet, volume);
+    }
+
+    @Override
+    protected boolean doesRayIntersectNode(long nodeIndex, Ray3D ray) {
+        // Use TetrahedralGeometry for ray-tetrahedron intersection
+        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
+        return intersection.intersects;
+    }
+
+    // These methods are now handled by AbstractSpatialIndex
+
+    @Override
+    protected int getCellSizeAtLevel(byte level) {
+        return Constants.lengthAtLevel(level);
+    }
+
+    @Override
+    protected byte getLevelFromIndex(long index) {
+        return Tet.tetLevelFromIndex(index);
+    }
+
+    @Override
+    protected Spatial getNodeBounds(long tetIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        // Return the bounding cube of the tetrahedron
+        int cellSize = Constants.lengthAtLevel(tet.l());
+        return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
+    }
+
+    @Override
+    protected float getRayNodeIntersectionDistance(long nodeIndex, Ray3D ray) {
+        // Get ray-tetrahedron intersection distance
+        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
+        return intersection.intersects ? intersection.distance : Float.MAX_VALUE;
+    }
+
+    @Override
+    protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
+        // Use a priority queue to order tetrahedra by ray intersection distance
+        PriorityQueue<TetDistance> tetQueue = new PriorityQueue<>();
+        Set<Long> visitedTets = new HashSet<>();
+
+        // Find the tetrahedron containing the ray origin
+        Tet startTet = locate(ray.origin(), maxDepth);
+        long startIndex = startTet.index();
+
+        // Add starting tetrahedron
+        float startDistance = getRayNodeIntersectionDistance(startIndex, ray);
+        if (startDistance <= ray.maxDistance()) {
+            tetQueue.add(new TetDistance(startIndex, startDistance));
+        }
+
+        // Build ordered stream of tetrahedra
+        List<Long> orderedTets = new ArrayList<>();
+
+        while (!tetQueue.isEmpty()) {
+            TetDistance current = tetQueue.poll();
+            if (!visitedTets.add(current.tetIndex)) {
+                continue;
+            }
+
+            // Check if tetrahedron exists in spatial index
+            if (spatialIndex.containsKey(current.tetIndex)) {
+                orderedTets.add(current.tetIndex);
+            }
+
+            // Add neighboring tetrahedra that intersect the ray
+            addIntersectingNeighbors(current.tetIndex, ray, tetQueue, visitedTets);
+        }
+
+        return orderedTets.stream();
+    }
+
+    // These methods are now handled by AbstractSpatialIndex
+
+    @Override
+    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
+        // Use SFC properties to find ranges of indices that could intersect the volume
+        var sfcRanges = computeSFCRanges(bounds, true); // Use inclusive for range finding
+
+        NavigableSet<Long> result = new TreeSet<>();
+        for (var range : sfcRanges) {
+            // Use sorted indices for efficient range queries
+            result.addAll(sortedSpatialIndices.subSet(range.start, true, range.end, true));
+        }
+        return result;
+    }
+
+    @Override
+    protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronContainedInVolume(tet, volume);
+    }
+
+    @Override
+    protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint,
+                                              PriorityQueue<EntityDistance<ID>> candidates) {
+        if (candidates.isEmpty()) {
+            return true;
+        }
+
+        // Get the furthest candidate distance
+        EntityDistance<ID> furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+
+        // For tetrahedral geometry, this is more complex than cubic
+        // For now, use a simple heuristic based on level
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        byte level = tet.l();
+        float cellSize = Constants.lengthAtLevel(level);
+
+        // Conservative estimate: if we're within 2x the cell size of the furthest candidate,
+        // continue searching
+        return cellSize < furthest.distance() * 2;
+    }
+
+    @Override
+    protected void validateSpatialConstraints(Point3f position) {
+        validatePositiveCoordinates(position);
+    }
+
+    // These methods are inherited from AbstractSpatialIndex
+
+    @Override
+    protected void validateSpatialConstraints(Spatial volume) {
+        validatePositiveCoordinates(volume);
+    }
+
+    /**
+     * Add child tetrahedra that intersect the ray
+     */
+    private void addChildTetrahedra(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
+                                    Set<Long> visitedTets) {
+        byte childLevel = (byte) (currentTet.l() + 1);
+        int childCellSize = 1 << (Constants.getMaxRefinementLevel() - childLevel);
+
+        // Each tetrahedron can be subdivided into smaller tetrahedra
+        // This is a simplified approach - check child cells that overlap current tet
+        int minX = currentTet.x();
+        int minY = currentTet.y();
+        int minZ = currentTet.z();
+        int currentCellSize = 1 << (Constants.getMaxRefinementLevel() - currentTet.l());
+
+        for (int x = minX; x < minX + currentCellSize; x += childCellSize) {
+            for (int y = minY; y < minY + currentCellSize; y += childCellSize) {
+                for (int z = minZ; z < minZ + currentCellSize; z += childCellSize) {
+                    // Check all 6 tetrahedron types in child cell
+                    for (byte type = 0; type < 6; type++) {
+                        Tet child = new Tet(x, y, z, childLevel, type);
+                        long childIndex = child.index();
+
+                        if (!visitedTets.contains(childIndex)) {
+                            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
+                            if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                                tetQueue.add(new TetDistance(childIndex, intersection.distance));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Helper method to add neighboring tetrahedra that intersect the ray
+     */
+    private void addIntersectingNeighbors(long tetIndex, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
+                                          Set<Long> visitedTets) {
+        Tet currentTet = Tet.tetrahedron(tetIndex);
+
+        // Check neighboring tetrahedra at the same level
+        int cellSize = 1 << (Constants.getMaxRefinementLevel() - currentTet.l());
+
+        // For tetrahedral mesh, neighbors are more complex than cubic
+        // Check tetrahedra in adjacent grid cells
+        for (int dx = -cellSize; dx <= cellSize; dx += cellSize) {
+            for (int dy = -cellSize; dy <= cellSize; dy += cellSize) {
+                for (int dz = -cellSize; dz <= cellSize; dz += cellSize) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+
+                    int nx = currentTet.x() + dx;
+                    int ny = currentTet.y() + dy;
+                    int nz = currentTet.z() + dz;
+
+                    // Check bounds (must be positive)
+                    if (nx >= 0 && ny >= 0 && nz >= 0) {
+                        // Check all 6 tetrahedron types in the neighboring cell
+                        for (byte type = 0; type < 6; type++) {
+                            Tet neighbor = new Tet(nx, ny, nz, currentTet.l(), type);
+                            long neighborIndex = neighbor.index();
+
+                            if (!visitedTets.contains(neighborIndex)) {
+                                var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, neighborIndex);
+                                if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                                    tetQueue.add(new TetDistance(neighborIndex, intersection.distance));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check parent and child tetrahedra for hierarchical traversal
+        if (currentTet.l() > 0) {
+            // Check parent tetrahedron
+            addParentTetrahedra(currentTet, ray, tetQueue, visitedTets);
+        }
+
+        if (currentTet.l() < maxDepth) {
+            // Check child tetrahedra
+            addChildTetrahedra(currentTet, ray, tetQueue, visitedTets);
+        }
+    }
+
+    // This method has been moved to the override section
+
+    /**
+     * Add parent tetrahedra that intersect the ray
+     */
+    private void addParentTetrahedra(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
+                                     Set<Long> visitedTets) {
+        byte parentLevel = (byte) (currentTet.l() - 1);
+        int parentCellSize = 1 << (Constants.getMaxRefinementLevel() - parentLevel);
+
+        // Calculate parent cell coordinates
+        int px = (currentTet.x() / parentCellSize) * parentCellSize;
+        int py = (currentTet.y() / parentCellSize) * parentCellSize;
+        int pz = (currentTet.z() / parentCellSize) * parentCellSize;
+
+        // Check all 6 tetrahedron types in parent cell
+        for (byte type = 0; type < 6; type++) {
+            Tet parent = new Tet(px, py, pz, parentLevel, type);
+            long parentIndex = parent.index();
+
+            if (!visitedTets.contains(parentIndex)) {
+                var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, parentIndex);
+                if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                    tetQueue.add(new TetDistance(parentIndex, intersection.distance));
                 }
             }
         }
@@ -421,9 +585,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         // Merge overlapping ranges for efficiency
         return mergeRanges(ranges);
     }
-
-
-    // These methods are inherited from AbstractSpatialIndex
 
     // Check if a grid cell intersects with the query bounds
     private boolean gridCellIntersectsBounds(Point3f cellOrigin, int cellSize, VolumeBounds bounds,
@@ -511,8 +672,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return merged;
     }
 
-
-    // This method has been moved to the override section
+    // ===== Ray Intersection Implementation =====
 
     // Check if a tetrahedron is completely contained within a volume
     private boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
@@ -599,4 +759,21 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     private record SFCRange(long start, long end) {
     }
 
+    /**
+     * Helper class to store tetrahedron index with distance for priority queue ordering
+     */
+    private static class TetDistance implements Comparable<TetDistance> {
+        final long  tetIndex;
+        final float distance;
+
+        TetDistance(long tetIndex, float distance) {
+            this.tetIndex = tetIndex;
+            this.distance = distance;
+        }
+
+        @Override
+        public int compareTo(TetDistance other) {
+            return Float.compare(this.distance, other.distance);
+        }
+    }
 }
