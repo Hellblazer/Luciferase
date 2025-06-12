@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;

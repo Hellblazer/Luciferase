@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

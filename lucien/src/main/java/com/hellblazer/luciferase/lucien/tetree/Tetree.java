@@ -14,23 +14,29 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.Geometry;
-import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
+import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
+import com.hellblazer.luciferase.lucien.entity.EntityDistance;
+import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
+import com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Tetree implementation with multi-entity support per tetrahedral location. This class provides a tetrahedral
- * spatial index using space-filling curves that supports multiple entities per location.
+ * Tetree implementation with multi-entity support per tetrahedral location. This class provides a tetrahedral spatial
+ * index using space-filling curves that supports multiple entities per location.
  *
  * Key constraints: - All coordinates must be positive (tetrahedral SFC requirement) - Points must be within the S0
  * tetrahedron domain - Each grid cell contains 6 tetrahedra (types 0-5)
@@ -62,87 +68,12 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
      * Create a Tetree with full configuration
      */
     public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
-                              EntitySpanningPolicy spanningPolicy) {
+                  EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
         this.spatialIndex = new TreeMap<>();
     }
 
     // ===== Abstract Method Implementations =====
-    
-    @Override
-    protected Map<Long, TetreeNodeImpl<ID>> getSpatialIndex() {
-        return spatialIndex;
-    }
-    
-    @Override
-    protected long calculateSpatialIndex(Point3f position, byte level) {
-        Tet tet = locate(position, level);
-        return tet.index();
-    }
-    
-    @Override
-    protected byte getLevelFromIndex(long index) {
-        return Tet.tetLevelFromIndex(index);
-    }
-    
-    @Override
-    protected TetreeNodeImpl<ID> createNode() {
-        return new TetreeNodeImpl<>(maxEntitiesPerNode);
-    }
-    
-    @Override
-    protected Spatial getNodeBounds(long tetIndex) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        // Return the bounding cube of the tetrahedron
-        int cellSize = Constants.lengthAtLevel(tet.l());
-        return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
-    }
-    
-    @Override
-    protected boolean doesNodeIntersectVolume(long tetIndex, Spatial volume) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        return tetrahedronIntersectsVolume(tet, volume);
-    }
-    
-    @Override
-    protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        return tetrahedronContainedInVolume(tet, volume);
-    }
-    
-    @Override
-    protected void validateSpatialConstraints(Point3f position) {
-        validatePositiveCoordinates(position);
-    }
-    
-    @Override
-    protected void validateSpatialConstraints(Spatial volume) {
-        validatePositiveCoordinates(volume);
-    }
-    
-    @Override
-    protected int getCellSizeAtLevel(byte level) {
-        return Constants.lengthAtLevel(level);
-    }
-
-    @Override
-    protected Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
-        // Use SFC properties to find ranges of indices that could intersect the volume
-        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
-
-        return sfcRanges.stream().flatMap(range -> {
-            // Use NavigableMap.subMap for efficient range queries
-            return spatialIndex.subMap(range.start, true, range.end, true).entrySet().stream();
-        }).filter(entry -> {
-            // Final precise filtering for elements that passed SFC range test
-            var tet = Tet.tetrahedron(entry.getKey());
-            if (includeIntersecting) {
-                return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
-            } else {
-                return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
-            }
-        });
-    }
 
     @Override
     public SpatialNode<ID> enclosing(Spatial volume) {
@@ -204,8 +135,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return new ArrayList<>(uniqueEntities);
     }
 
-    // These methods are now handled by AbstractSpatialIndex
-
     /**
      * Get all entities at the given tetrahedral index (direct access)
      *
@@ -224,42 +153,17 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     /**
-     * Find a single node intersecting with a volume
-     * Note: This returns the first intersecting node found
+     * Find a single node intersecting with a volume Note: This returns the first intersecting node found
      *
      * @param volume the volume to test
      * @return a single intersecting node, or null if none found
      */
     public SpatialNode<ID> intersecting(Spatial volume) {
         validatePositiveCoordinates(volume);
-        
+
         // Find the first intersecting node
         return bounding(volume).findFirst().orElse(null);
     }
-
-    /**
-     * Get the size of the spatial index (number of non-empty nodes)
-     *
-     * @return the number of non-empty tetrahedral nodes
-     */
-    public int size() {
-        return (int) spatialIndex.values().stream()
-            .filter(node -> !node.isEmpty())
-            .count();
-    }
-
-    /**
-     * Public access to locate method for finding containing tetrahedron
-     *
-     * @param point the point to locate (must have positive coordinates)
-     * @param level the refinement level
-     * @return the Tet containing the point
-     */
-    public Tet locateTetrahedron(Tuple3f point, byte level) {
-        validatePositiveCoordinates(new Point3f(point.x, point.y, point.z));
-        return locate(point, level);
-    }
-
 
     /**
      * Find k nearest neighbors to a query point within tetrahedral space
@@ -277,8 +181,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
 
         // Priority queue to keep track of k nearest entities (max heap)
-        PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(
-            EntityDistance.maxHeapComparator() // Max heap
+        PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(EntityDistance.maxHeapComparator()
+                                                                           // Max heap
         );
 
         // Track visited entities to avoid duplicates
@@ -344,6 +248,18 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return sorted.stream().map(EntityDistance::entityId).collect(Collectors.toList());
     }
 
+    /**
+     * Public access to locate method for finding containing tetrahedron
+     *
+     * @param point the point to locate (must have positive coordinates)
+     * @param level the refinement level
+     * @return the Tet containing the point
+     */
+    public Tet locateTetrahedron(Tuple3f point, byte level) {
+        validatePositiveCoordinates(new Point3f(point.x, point.y, point.z));
+        return locate(point, level);
+    }
+
     @Override
     public List<ID> lookup(Point3f position, byte level) {
         validatePositiveCoordinates(position);
@@ -358,6 +274,93 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
 
         return new ArrayList<>(node.getEntityIds());
+    }
+
+    /**
+     * Get the size of the spatial index (number of non-empty nodes)
+     *
+     * @return the number of non-empty tetrahedral nodes
+     */
+    public int size() {
+        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+    }
+
+    @Override
+    protected long calculateSpatialIndex(Point3f position, byte level) {
+        Tet tet = locate(position, level);
+        return tet.index();
+    }
+
+    @Override
+    protected TetreeNodeImpl<ID> createNode() {
+        return new TetreeNodeImpl<>(maxEntitiesPerNode);
+    }
+
+    @Override
+    protected boolean doesNodeIntersectVolume(long tetIndex, Spatial volume) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronIntersectsVolume(tet, volume);
+    }
+
+    @Override
+    protected int getCellSizeAtLevel(byte level) {
+        return Constants.lengthAtLevel(level);
+    }
+
+    @Override
+    protected byte getLevelFromIndex(long index) {
+        return Tet.tetLevelFromIndex(index);
+    }
+
+    // These methods are now handled by AbstractSpatialIndex
+
+    @Override
+    protected Spatial getNodeBounds(long tetIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        // Return the bounding cube of the tetrahedron
+        int cellSize = Constants.lengthAtLevel(tet.l());
+        return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
+    }
+
+    @Override
+    protected Map<Long, TetreeNodeImpl<ID>> getSpatialIndex() {
+        return spatialIndex;
+    }
+
+    @Override
+    protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronContainedInVolume(tet, volume);
+    }
+
+    @Override
+    protected Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds,
+                                                                            boolean includeIntersecting) {
+        // Use SFC properties to find ranges of indices that could intersect the volume
+        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
+
+        return sfcRanges.stream().flatMap(range -> {
+            // Use NavigableMap.subMap for efficient range queries
+            return spatialIndex.subMap(range.start, true, range.end, true).entrySet().stream();
+        }).filter(entry -> {
+            // Final precise filtering for elements that passed SFC range test
+            var tet = Tet.tetrahedron(entry.getKey());
+            if (includeIntersecting) {
+                return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
+            } else {
+                return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
+            }
+        });
+    }
+
+    @Override
+    protected void validateSpatialConstraints(Point3f position) {
+        validatePositiveCoordinates(position);
+    }
+
+    @Override
+    protected void validateSpatialConstraints(Spatial volume) {
+        validatePositiveCoordinates(volume);
     }
 
     // These methods are now handled by AbstractSpatialIndex
@@ -493,7 +496,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     // Create a spatial volume from bounds for final filtering
     private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ());
+        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                bounds.maxZ());
     }
 
     // These methods are inherited from AbstractSpatialIndex
@@ -621,8 +625,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
         // Simple AABB containment test - all vertices must be within bounds
         for (var vertex : vertices) {
-            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY() || vertex.y > bounds.maxY()
-            || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
+            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY()
+            || vertex.y > bounds.maxY() || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
                 return false;
             }
         }
@@ -639,8 +643,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
         // Simple AABB intersection test - any vertex within bounds indicates intersection
         for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY() && vertex.y <= bounds.maxY()
-            && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
+            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
+            && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
                 return true;
             }
         }
@@ -691,8 +695,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             }
         }
     }
-
-
 
     // Record to represent SFC index ranges
     private record SFCRange(long start, long end) {

@@ -1,6 +1,9 @@
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -548,7 +551,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Hierarchical range splitting optimization for large volumes
     private Stream<SFCRange> computeHierarchicalSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
 
         // For large volumes, split hierarchically to reduce computation
         if (volumeSize > 10000.0f) {
@@ -699,7 +703,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Create a spatial volume from bounds for final filtering
     private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ());
+        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
+                                bounds.maxZ());
     }
 
     // Find minimum level that can contain the volume
@@ -718,7 +723,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Find optimal level based on volume size and spatial characteristics
     private byte findOptimalLevel(VolumeBounds bounds) {
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
         float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
                                    bounds.maxZ() - bounds.minZ());
 
@@ -782,8 +788,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         float cellMaxZ = cellOrigin.z + cellSize;
 
         // Quick cube-based bounding box test - if cube doesn't intersect, no tetrahedra will
-        if (cellMaxX < bounds.minX() || cellOrigin.x > bounds.maxX() || cellMaxY < bounds.minY() || cellOrigin.y > bounds.maxY()
-        || cellMaxZ < bounds.minZ() || cellOrigin.z > bounds.maxZ()) {
+        if (cellMaxX < bounds.minX() || cellOrigin.x > bounds.maxX() || cellMaxY < bounds.minY()
+        || cellOrigin.y > bounds.maxY() || cellMaxZ < bounds.minZ() || cellOrigin.z > bounds.maxZ()) {
             return false;
         }
 
@@ -863,7 +869,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Select optimal range computation strategy based on volume characteristics
     private Stream<SFCRange> selectOptimalRangeStrategy(VolumeBounds bounds, boolean includeIntersecting) {
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
         float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
                                    bounds.maxZ() - bounds.minZ());
 
@@ -897,7 +904,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Determine whether to use depth-aware optimization based on volume characteristics
     private boolean shouldUseDepthAwareOptimization(VolumeBounds bounds) {
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
         float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
                                    bounds.maxZ() - bounds.minZ());
 
@@ -932,7 +940,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     // Recursively split large volumes into smaller manageable pieces
     private Stream<SFCRange> splitVolumeHierarchically(VolumeBounds bounds, boolean includeIntersecting, int depth) {
         final int MAX_SPLIT_DEPTH = 3;
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
 
         // Base case: volume is small enough or max depth reached
         if (volumeSize <= 5000.0f || depth >= MAX_SPLIT_DEPTH) {
@@ -947,21 +956,24 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (xExtent >= yExtent && xExtent >= zExtent) {
             // Split along X dimension
             float midX = (bounds.minX() + bounds.maxX()) / 2;
-            return Stream.of(new VolumeBounds(bounds.minX(), bounds.minY(), bounds.minZ(), midX, bounds.maxY(), bounds.maxZ()),
-                             new VolumeBounds(midX, bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ()))
-                         .flatMap(subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
+            return Stream.of(
+            new VolumeBounds(bounds.minX(), bounds.minY(), bounds.minZ(), midX, bounds.maxY(), bounds.maxZ()),
+            new VolumeBounds(midX, bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ())).flatMap(
+            subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
         } else if (yExtent >= zExtent) {
             // Split along Y dimension
             float midY = (bounds.minY() + bounds.maxY()) / 2;
-            return Stream.of(new VolumeBounds(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), midY, bounds.maxZ()),
-                             new VolumeBounds(bounds.minX(), midY, bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ()))
-                         .flatMap(subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
+            return Stream.of(
+            new VolumeBounds(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), midY, bounds.maxZ()),
+            new VolumeBounds(bounds.minX(), midY, bounds.minZ(), bounds.maxX(), bounds.maxY(), bounds.maxZ())).flatMap(
+            subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
         } else {
             // Split along Z dimension
             float midZ = (bounds.minZ() + bounds.maxZ()) / 2;
-            return Stream.of(new VolumeBounds(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), midZ),
-                             new VolumeBounds(bounds.minX(), bounds.minY(), midZ, bounds.maxX(), bounds.maxY(), bounds.maxZ()))
-                         .flatMap(subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
+            return Stream.of(
+            new VolumeBounds(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(), midZ),
+            new VolumeBounds(bounds.minX(), bounds.minY(), midZ, bounds.maxX(), bounds.maxY(), bounds.maxZ())).flatMap(
+            subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
         }
     }
 
@@ -975,8 +987,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // Simple AABB containment test - all vertices must be within bounds
         for (var vertex : vertices) {
-            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY() || vertex.y > bounds.maxY()
-            || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
+            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY()
+            || vertex.y > bounds.maxY() || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
                 return false;
             }
         }
@@ -989,8 +1001,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // All vertices must be within bounds for complete containment
         for (var vertex : vertices) {
-            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY() || vertex.y > bounds.maxY()
-            || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
+            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY()
+            || vertex.y > bounds.maxY() || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
                 return false;
             }
         }
@@ -1007,8 +1019,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // Simple AABB intersection test - any vertex within bounds indicates intersection
         for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY() && vertex.y <= bounds.maxY()
-            && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
+            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
+            && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
                 return true;
             }
         }
@@ -1045,25 +1057,19 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // Test if any vertex of tetrahedron is inside bounds
         for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY() && vertex.y <= bounds.maxY()
-            && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
+            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
+            && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
                 return true;
             }
         }
 
         // Test if any corner of bounds is inside tetrahedron
-        var boundCorners = new Point3f[] { new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), new Point3f(bounds.maxX(),
-                                                                                                           bounds.minY(),
-                                                                                                           bounds.minZ()),
-                                           new Point3f(bounds.minX(), bounds.maxY(), bounds.minZ()), new Point3f(bounds.maxX(),
-                                                                                                           bounds.maxY(),
-                                                                                                           bounds.minZ()),
-                                           new Point3f(bounds.minX(), bounds.minY(), bounds.maxZ()), new Point3f(bounds.maxX(),
-                                                                                                           bounds.minY(),
-                                                                                                           bounds.maxZ()),
-                                           new Point3f(bounds.minX(), bounds.maxY(), bounds.maxZ()), new Point3f(bounds.maxX(),
-                                                                                                           bounds.maxY(),
-                                                                                                           bounds.maxZ()) };
+        var boundCorners = new Point3f[] { new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), new Point3f(
+        bounds.maxX(), bounds.minY(), bounds.minZ()), new Point3f(bounds.minX(), bounds.maxY(), bounds.minZ()),
+                                           new Point3f(bounds.maxX(), bounds.maxY(), bounds.minZ()), new Point3f(
+        bounds.minX(), bounds.minY(), bounds.maxZ()), new Point3f(bounds.maxX(), bounds.minY(), bounds.maxZ()),
+                                           new Point3f(bounds.minX(), bounds.maxY(), bounds.maxZ()), new Point3f(
+        bounds.maxX(), bounds.maxY(), bounds.maxZ()) };
 
         for (var corner : boundCorners) {
             if (tet.contains(corner)) {
@@ -1076,7 +1082,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public record FaceNeighbor(byte face, Tet tet) {
     }
-
 
     // Record to represent touched dimensions for optimized range queries
     private record TouchedDimensions(byte mask, byte lowerSegment, byte depthID) {

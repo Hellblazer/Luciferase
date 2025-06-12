@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;

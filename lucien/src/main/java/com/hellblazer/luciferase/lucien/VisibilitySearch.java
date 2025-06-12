@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.octree.Octree;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;

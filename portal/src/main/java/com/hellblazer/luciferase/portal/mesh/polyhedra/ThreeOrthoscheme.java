@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra;
 
-import com.hellblazer.luciferase.lucien.Tet;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.portal.mesh.Face;
 
 import javax.vecmath.Vector3d;

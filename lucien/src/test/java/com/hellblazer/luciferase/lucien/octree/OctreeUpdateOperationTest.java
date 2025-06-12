@@ -1,7 +1,7 @@
 /**
  * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.octree;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;

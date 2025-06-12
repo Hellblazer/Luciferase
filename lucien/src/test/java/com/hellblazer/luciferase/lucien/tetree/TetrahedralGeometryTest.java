@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;

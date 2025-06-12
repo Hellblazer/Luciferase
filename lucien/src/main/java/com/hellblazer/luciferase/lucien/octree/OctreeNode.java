@@ -14,8 +14,9 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.lucien.AbstractSpatialNode;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.ArrayList;
@@ -52,11 +53,6 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
         this.entityIds = new ArrayList<>();
     }
 
-    @Override
-    protected void doAddEntity(ID entityId) {
-        entityIds.add(entityId);
-    }
-
     /**
      * Clear a bit in the children mask when a child is removed
      *
@@ -68,12 +64,6 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
         }
         childrenMask &= ~(1 << octant);
     }
-
-    @Override
-    protected void doClearEntities() {
-        entityIds.clear();
-    }
-
 
     /**
      * Get the children mask indicating which octants have child nodes
@@ -92,6 +82,14 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
         return Collections.unmodifiableList(entityIds);
     }
 
+    /**
+     * Get all entity IDs as a list (for backward compatibility)
+     *
+     * @return unmodifiable list view of entity IDs
+     */
+    public List<ID> getEntityIdsAsList() {
+        return Collections.unmodifiableList(entityIds);
+    }
 
     /**
      * Check if a specific octant has a child
@@ -112,12 +110,6 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
         return childrenMask != 0;
     }
 
-
-    @Override
-    protected boolean doRemoveEntity(ID entityId) {
-        return entityIds.remove(entityId);
-    }
-
     /**
      * Set a bit in the children mask to indicate a child exists
      *
@@ -130,16 +122,21 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
         childrenMask |= (1 << octant);
     }
 
-
-    /**
-     * Get all entity IDs as a list (for backward compatibility)
-     *
-     * @return unmodifiable list view of entity IDs
-     */
-    public List<ID> getEntityIdsAsList() {
-        return Collections.unmodifiableList(entityIds);
+    @Override
+    protected void doAddEntity(ID entityId) {
+        entityIds.add(entityId);
     }
-    
+
+    @Override
+    protected void doClearEntities() {
+        entityIds.clear();
+    }
+
+    @Override
+    protected boolean doRemoveEntity(ID entityId) {
+        return entityIds.remove(entityId);
+    }
+
     /**
      * Get mutable entity list for redistribution during splits. Package-private for octree internal use only
      */

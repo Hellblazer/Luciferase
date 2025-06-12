@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.tetree.Tet;
+
 import javax.vecmath.Vector3d;
 
 /**

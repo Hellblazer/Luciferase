@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
 /**
  * Validate our understanding of the t8code tetrahedral SFC behavior

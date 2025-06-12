@@ -14,8 +14,9 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.AbstractSpatialNode;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.Collection;
@@ -24,16 +25,16 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Tetree node implementation that stores entity IDs using a Set.
- * Extends AbstractSpatialNode to share common functionality with OctreeNode.
+ * Tetree node implementation that stores entity IDs using a Set. Extends AbstractSpatialNode to share common
+ * functionality with OctreeNode.
  *
  * @param <ID> The type of EntityID used
  * @author hal.hildebrand
  */
 public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID> {
-    
+
     private final Set<ID> entityIds;
-    
+
     /**
      * Create a node with default max entities (10)
      */
@@ -41,7 +42,7 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
         super();
         this.entityIds = new HashSet<>();
     }
-    
+
     /**
      * Create a node with specified max entities before split
      *
@@ -51,32 +52,17 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
         super(maxEntitiesBeforeSplit);
         this.entityIds = new HashSet<>();
     }
-    
-    @Override
-    protected void doAddEntity(ID entityId) {
-        entityIds.add(entityId);
-    }
-    
-    @Override
-    protected boolean doRemoveEntity(ID entityId) {
-        return entityIds.remove(entityId);
-    }
-    
-    @Override
-    protected void doClearEntities() {
-        entityIds.clear();
-    }
-    
-    @Override
-    public Collection<ID> getEntityIds() {
-        return Collections.unmodifiableSet(new HashSet<>(entityIds));
-    }
-    
+
     @Override
     public int getEntityCount() {
         return entityIds.size();
     }
-    
+
+    @Override
+    public Collection<ID> getEntityIds() {
+        return Collections.unmodifiableSet(new HashSet<>(entityIds));
+    }
+
     /**
      * Get entity IDs as a Set (for backward compatibility)
      *
@@ -84,5 +70,20 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
      */
     public Set<ID> getEntityIdsAsSet() {
         return Collections.unmodifiableSet(new HashSet<>(entityIds));
+    }
+
+    @Override
+    protected void doAddEntity(ID entityId) {
+        entityIds.add(entityId);
+    }
+
+    @Override
+    protected void doClearEntities() {
+        entityIds.clear();
+    }
+
+    @Override
+    protected boolean doRemoveEntity(ID entityId) {
+        return entityIds.remove(entityId);
     }
 }

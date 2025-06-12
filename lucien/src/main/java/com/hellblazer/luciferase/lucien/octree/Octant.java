@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.octree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
 

@@ -1,5 +1,6 @@
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
 public class ValidCoordinateTest {

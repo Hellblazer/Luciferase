@@ -14,8 +14,9 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.entity.UUIDEntityID;

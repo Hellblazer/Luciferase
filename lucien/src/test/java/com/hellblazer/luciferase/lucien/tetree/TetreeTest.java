@@ -1,8 +1,9 @@
 /**
  * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
  */
-package com.hellblazer.luciferase.lucien;
+package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,6 +97,34 @@ public class TetreeTest {
 
         // Position should be updated
         assertEquals(newPos, tetree.getEntityPosition(id));
+    }
+
+    @Test
+    void testGetReturnsAllEntities() {
+        // Insert multiple entities at the same position
+        Point3f position = new Point3f(100, 100, 100);
+        byte level = 10;
+
+        tetree.insert(position, level, "Entity1");
+        tetree.insert(position, level, "Entity2");
+        tetree.insert(position, level, "Entity3");
+
+        // Find the tetrahedral index for this position
+        Tet tet = tetree.locateTetrahedron(position, level);
+        long tetIndex = tet.index();
+
+        // Get all entities at this index
+        List<String> contents = tetree.get(tetIndex);
+
+        // Verify we get all three entities
+        assertEquals(3, contents.size());
+        assertTrue(contents.contains("Entity1"));
+        assertTrue(contents.contains("Entity2"));
+        assertTrue(contents.contains("Entity3"));
+
+        // Test empty index returns empty list
+        List<String> emptyContents = tetree.get(tetIndex + 1000); // Different index
+        assertTrue(emptyContents.isEmpty());
     }
 
     @Test
@@ -214,33 +243,5 @@ public class TetreeTest {
         assertEquals(3, stats.entityCount()); // Three entities total
         assertEquals(3, stats.totalEntityReferences()); // No spanning yet
         assertTrue(stats.maxDepth() >= 0);
-    }
-
-    @Test
-    void testGetReturnsAllEntities() {
-        // Insert multiple entities at the same position
-        Point3f position = new Point3f(100, 100, 100);
-        byte level = 10;
-        
-        tetree.insert(position, level, "Entity1");
-        tetree.insert(position, level, "Entity2");
-        tetree.insert(position, level, "Entity3");
-        
-        // Find the tetrahedral index for this position
-        Tet tet = tetree.locateTetrahedron(position, level);
-        long tetIndex = tet.index();
-        
-        // Get all entities at this index
-        List<String> contents = tetree.get(tetIndex);
-        
-        // Verify we get all three entities
-        assertEquals(3, contents.size());
-        assertTrue(contents.contains("Entity1"));
-        assertTrue(contents.contains("Entity2"));
-        assertTrue(contents.contains("Entity3"));
-        
-        // Test empty index returns empty list
-        List<String> emptyContents = tetree.get(tetIndex + 1000); // Different index
-        assertTrue(emptyContents.isEmpty());
     }
 }

@@ -14,12 +14,7 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien;
-
-import com.hellblazer.luciferase.lucien.entity.Entity;
-import com.hellblazer.luciferase.lucien.entity.EntityBounds;
-import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
+package com.hellblazer.luciferase.lucien.entity;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -27,22 +22,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * Centralized entity management for spatial indices. Handles entity storage, lifecycle,
- * position tracking, and location management. This class consolidates common entity
- * management functionality shared between Octree and Tetree.
+ * Centralized entity management for spatial indices. Handles entity storage, lifecycle, position tracking, and location
+ * management. This class consolidates common entity management functionality shared between Octree and Tetree.
  *
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
 public class EntityManager<ID extends EntityID, Content> {
-    
+
     // Entity storage: Entity ID → Entity (content, locations, position, bounds)
     private final Map<ID, Entity<Content>> entities;
-    
+
     // ID generation strategy
     private final EntityIDGenerator<ID> idGenerator;
-    
+
     /**
      * Create an entity manager with thread-safe storage
      */
@@ -50,7 +44,7 @@ public class EntityManager<ID extends EntityID, Content> {
         this.entities = new ConcurrentHashMap<>();
         this.idGenerator = Objects.requireNonNull(idGenerator, "ID generator cannot be null");
     }
-    
+
     /**
      * Create an entity manager with custom storage implementation
      */
@@ -58,23 +52,52 @@ public class EntityManager<ID extends EntityID, Content> {
         this.entities = Objects.requireNonNull(storageMap, "Storage map cannot be null");
         this.idGenerator = Objects.requireNonNull(idGenerator, "ID generator cannot be null");
     }
-    
+
     // ===== Entity Creation and Storage =====
-    
+
     /**
-     * Generate a new entity ID
+     * Add a spatial location to an entity
      */
-    public ID generateEntityId() {
-        return idGenerator.generateID();
+    public void addEntityLocation(ID entityId, long spatialIndex) {
+        Entity<Content> entity = entities.get(entityId);
+        if (entity != null) {
+            entity.addLocation(spatialIndex);
+        }
     }
-    
+
+    /**
+     * Clear all entities
+     */
+    public void clear() {
+        entities.clear();
+    }
+
+    // ===== Entity Retrieval =====
+
+    /**
+     * Clear all locations for an entity
+     */
+    public void clearEntityLocations(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        if (entity != null) {
+            entity.clearLocations();
+        }
+    }
+
+    /**
+     * Check if an entity exists
+     */
+    public boolean containsEntity(ID entityId) {
+        return entities.containsKey(entityId);
+    }
+
     /**
      * Create or update an entity
      *
      * @param entityId the entity ID
-     * @param content the content to store
+     * @param content  the content to store
      * @param position the entity position
-     * @param bounds optional entity bounds
+     * @param bounds   optional entity bounds
      * @return the created or updated entity
      */
     public Entity<Content> createOrUpdateEntity(ID entityId, Content content, Point3f position, EntityBounds bounds) {
@@ -91,51 +114,46 @@ public class EntityManager<ID extends EntityID, Content> {
         }
         return entity;
     }
-    
-    // ===== Entity Retrieval =====
-    
+
     /**
-     * Get an entity by ID
+     * Find entities within a bounding box region Note: This is a simple implementation - spatial indices may override
+     * with more efficient versions
      */
-    public Entity<Content> getEntity(ID entityId) {
-        return entities.get(entityId);
+    public List<ID> findEntitiesInRegion(float minX, float maxX, float minY, float maxY, float minZ, float maxZ) {
+        List<ID> result = new ArrayList<>();
+        for (Map.Entry<ID, Entity<Content>> entry : entities.entrySet()) {
+            Point3f pos = entry.getValue().getPosition();
+            if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY && pos.z >= minZ && pos.z <= maxZ) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
     }
-    
+
     /**
-     * Get entity content by ID
+     * Generate a new entity ID
      */
-    public Content getEntityContent(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getContent() : null;
+    public ID generateEntityId() {
+        return idGenerator.generateID();
     }
-    
+
     /**
-     * Get entity position by ID
+     * Get all entity IDs
      */
-    public Point3f getEntityPosition(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getPosition() : null;
+    public Set<ID> getAllEntityIds() {
+        return new HashSet<>(entities.keySet());
     }
-    
-    /**
-     * Get entity bounds by ID
-     */
-    public EntityBounds getEntityBounds(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getBounds() : null;
-    }
-    
+
+    // ===== Entity Location Management =====
+
     /**
      * Get content for multiple entities
      */
     public List<Content> getEntitiesContent(List<ID> entityIds) {
-        return entityIds.stream()
-            .map(entities::get)
-            .filter(Objects::nonNull)
-            .map(Entity::getContent)
-            .collect(Collectors.toList());
+        return entityIds.stream().map(entities::get).filter(Objects::nonNull).map(Entity::getContent).collect(
+        Collectors.toList());
     }
-    
+
     /**
      * Get all entities with their positions
      */
@@ -146,19 +164,81 @@ public class EntityManager<ID extends EntityID, Content> {
         }
         return Collections.unmodifiableMap(result);
     }
-    
-    // ===== Entity Location Management =====
-    
+
     /**
-     * Add a spatial location to an entity
+     * Get an entity by ID
      */
-    public void addEntityLocation(ID entityId, long spatialIndex) {
-        Entity<Content> entity = entities.get(entityId);
-        if (entity != null) {
-            entity.addLocation(spatialIndex);
-        }
+    public Entity<Content> getEntity(ID entityId) {
+        return entities.get(entityId);
     }
-    
+
+    /**
+     * Get entity bounds by ID
+     */
+    public EntityBounds getEntityBounds(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getBounds() : null;
+    }
+
+    /**
+     * Get entity content by ID
+     */
+    public Content getEntityContent(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getContent() : null;
+    }
+
+    // ===== Entity Lifecycle =====
+
+    /**
+     * Get the total number of entities
+     */
+    public int getEntityCount() {
+        return entities.size();
+    }
+
+    /**
+     * Get all spatial locations for an entity
+     */
+    public Set<Long> getEntityLocations(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? new HashSet<>(entity.getLocations()) : Collections.emptySet();
+    }
+
+    /**
+     * Get entity position by ID
+     */
+    public Point3f getEntityPosition(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getPosition() : null;
+    }
+
+    // ===== Statistics and Queries =====
+
+    /**
+     * Get the span count (number of nodes) for an entity
+     */
+    public int getEntitySpanCount(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getSpanCount() : 0;
+    }
+
+    /**
+     * Check if the manager is empty
+     */
+    public boolean isEmpty() {
+        return entities.isEmpty();
+    }
+
+    /**
+     * Remove an entity completely
+     *
+     * @return the removed entity, or null if not found
+     */
+    public Entity<Content> removeEntity(ID entityId) {
+        return entities.remove(entityId);
+    }
+
     /**
      * Remove a spatial location from an entity
      */
@@ -168,51 +248,9 @@ public class EntityManager<ID extends EntityID, Content> {
             entity.removeLocation(spatialIndex);
         }
     }
-    
-    /**
-     * Get all spatial locations for an entity
-     */
-    public Set<Long> getEntityLocations(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? new HashSet<>(entity.getLocations()) : Collections.emptySet();
-    }
-    
-    /**
-     * Clear all locations for an entity
-     */
-    public void clearEntityLocations(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        if (entity != null) {
-            entity.clearLocations();
-        }
-    }
-    
-    /**
-     * Get the span count (number of nodes) for an entity
-     */
-    public int getEntitySpanCount(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getSpanCount() : 0;
-    }
-    
-    // ===== Entity Lifecycle =====
-    
-    /**
-     * Check if an entity exists
-     */
-    public boolean containsEntity(ID entityId) {
-        return entities.containsKey(entityId);
-    }
-    
-    /**
-     * Remove an entity completely
-     *
-     * @return the removed entity, or null if not found
-     */
-    public Entity<Content> removeEntity(ID entityId) {
-        return entities.remove(entityId);
-    }
-    
+
+    // ===== Spatial Region Queries =====
+
     /**
      * Update an entity's position
      */
@@ -222,54 +260,5 @@ public class EntityManager<ID extends EntityID, Content> {
             throw new IllegalArgumentException("Entity not found: " + entityId);
         }
         entity.setPosition(newPosition);
-    }
-    
-    // ===== Statistics and Queries =====
-    
-    /**
-     * Get the total number of entities
-     */
-    public int getEntityCount() {
-        return entities.size();
-    }
-    
-    /**
-     * Check if the manager is empty
-     */
-    public boolean isEmpty() {
-        return entities.isEmpty();
-    }
-    
-    /**
-     * Get all entity IDs
-     */
-    public Set<ID> getAllEntityIds() {
-        return new HashSet<>(entities.keySet());
-    }
-    
-    /**
-     * Clear all entities
-     */
-    public void clear() {
-        entities.clear();
-    }
-    
-    // ===== Spatial Region Queries =====
-    
-    /**
-     * Find entities within a bounding box region
-     * Note: This is a simple implementation - spatial indices may override with more efficient versions
-     */
-    public List<ID> findEntitiesInRegion(float minX, float maxX, float minY, float maxY, float minZ, float maxZ) {
-        List<ID> result = new ArrayList<>();
-        for (Map.Entry<ID, Entity<Content>> entry : entities.entrySet()) {
-            Point3f pos = entry.getValue().getPosition();
-            if (pos.x >= minX && pos.x <= maxX &&
-                pos.y >= minY && pos.y <= maxY &&
-                pos.z >= minZ && pos.z <= maxZ) {
-                result.add(entry.getKey());
-            }
-        }
-        return result;
     }
 }
