@@ -20,6 +20,9 @@ import com.hellblazer.luciferase.lucien.entity.*;
 
 import javax.vecmath.Point3f;
 import java.util.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -40,6 +43,12 @@ implements SpatialIndex<ID, Content> {
     protected final int                        maxEntitiesPerNode;
     protected final byte                       maxDepth;
     protected final EntitySpanningPolicy       spanningPolicy;
+    // Spatial index: Long index -> Node containing entity IDs
+    protected final Map<Long, NodeType>        spatialIndex;
+    // Sorted spatial indices for efficient range queries
+    protected final NavigableSet<Long>         sortedSpatialIndices;
+    // Read-write lock for thread safety
+    private final ReadWriteLock                lock;
 
     /**
      * Constructor with common parameters
@@ -50,6 +59,9 @@ implements SpatialIndex<ID, Content> {
         this.maxEntitiesPerNode = maxEntitiesPerNode;
         this.maxDepth = maxDepth;
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
+        this.spatialIndex = new HashMap<>();
+        this.sortedSpatialIndices = new TreeSet<>();
+        this.lock = new ReentrantReadWriteLock();
     }
 
     // ===== Abstract Methods for Subclasses =====
@@ -63,8 +75,17 @@ implements SpatialIndex<ID, Content> {
             return Stream.empty();
         }
 
-        return spatialRangeQuery(bounds, false).filter(entry -> isNodeContainedInVolume(entry.getKey(), volume)).map(
-        entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+        lock.readLock().lock();
+        try {
+            // Must collect results inside lock to avoid concurrent modification
+            List<SpatialNode<ID>> results = spatialRangeQuery(bounds, false)
+                .filter(entry -> isNodeContainedInVolume(entry.getKey(), volume))
+                .map(entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())))
+                .collect(Collectors.toList());
+            return results.stream();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
@@ -76,146 +97,269 @@ implements SpatialIndex<ID, Content> {
             return Stream.empty();
         }
 
-        return spatialRangeQuery(bounds, true).filter(entry -> doesNodeIntersectVolume(entry.getKey(), volume)).map(
-        entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+        lock.readLock().lock();
+        try {
+            // Must collect results inside lock to avoid concurrent modification
+            List<SpatialNode<ID>> results = spatialRangeQuery(bounds, true)
+                .filter(entry -> doesNodeIntersectVolume(entry.getKey(), volume))
+                .map(entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())))
+                .collect(Collectors.toList());
+            return results.stream();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public boolean containsEntity(ID entityId) {
-        return entityManager.containsEntity(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.containsEntity(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public int entityCount() {
-        return entityManager.getEntityCount();
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityCount();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public List<Content> getEntities(List<ID> entityIds) {
-        return entityManager.getEntitiesContent(entityIds);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntitiesContent(entityIds);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public Map<ID, Point3f> getEntitiesWithPositions() {
-        return entityManager.getEntitiesWithPositions();
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntitiesWithPositions();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public Content getEntity(ID entityId) {
-        return entityManager.getEntityContent(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityContent(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public EntityBounds getEntityBounds(ID entityId) {
-        return entityManager.getEntityBounds(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityBounds(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public Point3f getEntityPosition(ID entityId) {
-        return entityManager.getEntityPosition(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityPosition(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public int getEntitySpanCount(ID entityId) {
-        return entityManager.getEntitySpanCount(entityId);
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntitySpanCount(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     // ===== Common Entity Management Methods =====
 
     @Override
     public NavigableMap<Long, Set<ID>> getSpatialMap() {
-        NavigableMap<Long, Set<ID>> map = new TreeMap<>();
-        for (var entry : getSpatialIndex().entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                map.put(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()));
+        lock.readLock().lock();
+        try {
+            NavigableMap<Long, Set<ID>> map = new TreeMap<>();
+            for (var entry : getSpatialIndex().entrySet()) {
+                if (!entry.getValue().isEmpty()) {
+                    map.put(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()));
+                }
             }
+            return map;
+        } finally {
+            lock.readLock().unlock();
         }
-        return map;
     }
 
     @Override
     public EntityStats getStats() {
-        int nodeCount = 0;
-        int entityCount = entityManager.getEntityCount();
-        int totalEntityReferences = 0;
-        int maxDepth = 0;
+        lock.readLock().lock();
+        try {
+            int nodeCount = 0;
+            int entityCount = entityManager.getEntityCount();
+            int totalEntityReferences = 0;
+            int maxDepth = 0;
 
-        for (Map.Entry<Long, NodeType> entry : getSpatialIndex().entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                nodeCount++;
+            for (Map.Entry<Long, NodeType> entry : getSpatialIndex().entrySet()) {
+                if (!entry.getValue().isEmpty()) {
+                    nodeCount++;
+                }
+                totalEntityReferences += entry.getValue().getEntityCount();
+
+                // Calculate depth from spatial index
+                byte depth = getLevelFromIndex(entry.getKey());
+                maxDepth = Math.max(maxDepth, depth);
             }
-            totalEntityReferences += entry.getValue().getEntityCount();
 
-            // Calculate depth from spatial index
-            byte depth = getLevelFromIndex(entry.getKey());
-            maxDepth = Math.max(maxDepth, depth);
+            return new EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
+        } finally {
+            lock.readLock().unlock();
         }
-
-        return new EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
     }
 
     @Override
     public boolean hasNode(long spatialIndex) {
-        NodeType node = getSpatialIndex().get(spatialIndex);
-        return node != null && !node.isEmpty();
+        lock.readLock().lock();
+        try {
+            NodeType node = getSpatialIndex().get(spatialIndex);
+            return node != null && !node.isEmpty();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public ID insert(Point3f position, byte level, Content content) {
-        ID entityId = entityManager.generateEntityId();
-        insert(entityId, position, level, content);
-        return entityId;
+        lock.writeLock().lock();
+        try {
+            ID entityId = entityManager.generateEntityId();
+            insert(entityId, position, level, content);
+            return entityId;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content) {
-        insert(entityId, position, level, content, null);
+        lock.writeLock().lock();
+        try {
+            insert(entityId, position, level, content, null);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
-        // Validate spatial constraints
-        validateSpatialConstraints(position);
+        lock.writeLock().lock();
+        try {
+            // Validate spatial constraints
+            validateSpatialConstraints(position);
 
-        // Create or update entity
-        entityManager.createOrUpdateEntity(entityId, content, position, bounds);
+            // Create or update entity
+            entityManager.createOrUpdateEntity(entityId, content, position, bounds);
 
-        // If spanning is enabled and entity has bounds, check for spanning
-        if (spanningPolicy.isSpanningEnabled() && bounds != null) {
-            insertWithSpanning(entityId, bounds, level);
-        } else {
-            // Standard single-node insertion
-            insertAtPosition(entityId, position, level);
+            // If spanning is enabled and entity has bounds, check for spanning
+            if (spanningPolicy.isSpanningEnabled() && bounds != null) {
+                insertWithSpanning(entityId, bounds, level);
+            } else {
+                // Standard single-node insertion
+                insertAtPosition(entityId, position, level);
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
     @Override
     public int nodeCount() {
-        return (int) getSpatialIndex().values().stream().filter(node -> !node.isEmpty()).count();
+        lock.readLock().lock();
+        try {
+            return (int) getSpatialIndex().values().stream().filter(node -> !node.isEmpty()).count();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public Stream<SpatialNode<ID>> nodes() {
-        return getSpatialIndex().entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
-        entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
+        lock.readLock().lock();
+        try {
+            // Must collect results inside lock to avoid concurrent modification
+            List<SpatialNode<ID>> results = getSpatialIndex().entrySet().stream()
+                .filter(entry -> !entry.getValue().isEmpty())
+                .map(entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())))
+                .collect(Collectors.toList());
+            return results.stream();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     // ===== Common Insert Operations =====
 
     @Override
     public boolean removeEntity(ID entityId) {
-        // Get all locations where this entity appears
-        Set<Long> locations = entityManager.getEntityLocations(entityId);
+        lock.writeLock().lock();
+        try {
+            // Get all locations where this entity appears
+            Set<Long> locations = entityManager.getEntityLocations(entityId);
 
-        // Remove from entity storage
-        Entity<Content> removed = entityManager.removeEntity(entityId);
-        if (removed == null) {
-            return false;
+            // Remove from entity storage
+            Entity<Content> removed = entityManager.removeEntity(entityId);
+            if (removed == null) {
+                return false;
+            }
+
+            if (!locations.isEmpty()) {
+                // Remove from each node
+                for (Long spatialIndex : locations) {
+                    NodeType node = getSpatialIndex().get(spatialIndex);
+                    if (node != null) {
+                        node.removeEntity(entityId);
+
+                        // Remove empty nodes
+                        cleanupEmptyNode(spatialIndex, node);
+                    }
+                }
+            }
+
+            return true;
+        } finally {
+            lock.writeLock().unlock();
         }
+    }
 
-        if (!locations.isEmpty()) {
-            // Remove from each node
-            for (Long spatialIndex : locations) {
+    @Override
+    public void updateEntity(ID entityId, Point3f newPosition, byte level) {
+        lock.writeLock().lock();
+        try {
+            validateSpatialConstraints(newPosition);
+
+            // Update entity position
+            entityManager.updateEntityPosition(entityId, newPosition);
+
+            // Remove from all current locations
+            Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
+            for (Long spatialIndex : oldLocations) {
                 NodeType node = getSpatialIndex().get(spatialIndex);
                 if (node != null) {
                     node.removeEntity(entityId);
@@ -224,33 +368,13 @@ implements SpatialIndex<ID, Content> {
                     cleanupEmptyNode(spatialIndex, node);
                 }
             }
+            entityManager.clearEntityLocations(entityId);
+
+            // Re-insert at new position
+            insertAtPosition(entityId, newPosition, level);
+        } finally {
+            lock.writeLock().unlock();
         }
-
-        return true;
-    }
-
-    @Override
-    public void updateEntity(ID entityId, Point3f newPosition, byte level) {
-        validateSpatialConstraints(newPosition);
-
-        // Update entity position
-        entityManager.updateEntityPosition(entityId, newPosition);
-
-        // Remove from all current locations
-        Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
-        for (Long spatialIndex : oldLocations) {
-            NodeType node = getSpatialIndex().get(spatialIndex);
-            if (node != null) {
-                node.removeEntity(entityId);
-
-                // Remove empty nodes
-                cleanupEmptyNode(spatialIndex, node);
-            }
-        }
-        entityManager.clearEntityLocations(entityId);
-
-        // Re-insert at new position
-        insertAtPosition(entityId, newPosition, level);
     }
 
     /**
@@ -315,7 +439,9 @@ implements SpatialIndex<ID, Content> {
     /**
      * Get the spatial index storage map
      */
-    protected abstract Map<Long, NodeType> getSpatialIndex();
+    protected Map<Long, NodeType> getSpatialIndex() {
+        return spatialIndex;
+    }
 
     // ===== Common Query Operations =====
 
@@ -347,7 +473,10 @@ implements SpatialIndex<ID, Content> {
         long spatialIndex = calculateSpatialIndex(position, level);
 
         // Get or create node
-        NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> createNode());
+        NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
+            sortedSpatialIndices.add(spatialIndex);
+            return createNode();
+        });
 
         // Add entity to node
         boolean shouldSplit = node.addEntity(entityId);
@@ -385,14 +514,168 @@ implements SpatialIndex<ID, Content> {
      * Hook for subclasses when a node is removed
      */
     protected void onNodeRemoved(long spatialIndex) {
-        // Subclasses can override if they need to maintain additional structures
+        sortedSpatialIndices.remove(spatialIndex);
     }
 
     /**
-     * Perform spatial range query specific to the implementation
+     * Perform spatial range query with optimization
+     * 
+     * @param bounds the volume bounds to query
+     * @param includeIntersecting whether to include intersecting nodes
+     * @return stream of node entries that match the query
      */
-    protected abstract Stream<Map.Entry<Long, NodeType>> spatialRangeQuery(VolumeBounds bounds,
-                                                                           boolean includeIntersecting);
+    protected Stream<Map.Entry<Long, NodeType>> spatialRangeQuery(VolumeBounds bounds,
+                                                                  boolean includeIntersecting) {
+        // Get range of spatial indices that could contain or intersect the bounds
+        NavigableSet<Long> candidateIndices = getSpatialIndexRange(bounds);
+        
+        return candidateIndices.stream()
+            .map(index -> Map.entry(index, getSpatialIndex().get(index)))
+            .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
+            .filter(entry -> {
+                // Final precise filtering
+                if (includeIntersecting) {
+                    return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
+                } else {
+                    return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
+                }
+            });
+    }
+    
+    /**
+     * Get the range of spatial indices that could intersect with the given bounds
+     * This method should be overridden by subclasses for specific optimizations
+     * 
+     * @param bounds the volume bounds
+     * @return navigable set of spatial indices
+     */
+    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
+        // Default implementation: return all indices
+        // Subclasses should override for better performance
+        return new TreeSet<>(sortedSpatialIndices);
+    }
+    
+    /**
+     * Create a spatial volume from bounds for filtering
+     * 
+     * @param bounds the volume bounds
+     * @return spatial volume
+     */
+    protected Spatial createSpatialFromBounds(VolumeBounds bounds) {
+        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), 
+                               bounds.maxX(), bounds.maxY(), bounds.maxZ());
+    }
+
+    // ===== Common k-NN Search Implementation =====
+
+    /**
+     * Find k nearest neighbors to a query point
+     *
+     * @param queryPoint  the point to search from
+     * @param k           the number of neighbors to find
+     * @param maxDistance maximum search distance
+     * @return list of entity IDs sorted by distance (closest first)
+     */
+    public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
+        validateSpatialConstraints(queryPoint);
+        
+        if (k <= 0) {
+            return Collections.emptyList();
+        }
+
+        lock.readLock().lock();
+        try {
+            // Priority queue to keep track of k nearest entities (max heap)
+            PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(
+                EntityDistance.maxHeapComparator()
+            );
+
+            // Track visited entities to avoid duplicates
+            Set<ID> visited = new HashSet<>();
+
+            // Start with the containing spatial cell
+            long initialIndex = calculateSpatialIndex(queryPoint, maxDepth);
+
+            // Use a queue for breadth-first search
+            Queue<Long> toVisit = new LinkedList<>();
+            Set<Long> visitedNodes = new HashSet<>();
+
+            // Initialize search
+            NodeType initialNode = getSpatialIndex().get(initialIndex);
+            if (initialNode != null) {
+                toVisit.add(initialIndex);
+            } else {
+                // If exact node doesn't exist, start from all existing nodes
+                toVisit.addAll(getSpatialIndex().keySet());
+            }
+
+            while (!toVisit.isEmpty()) {
+                Long current = toVisit.poll();
+                if (!visitedNodes.add(current)) {
+                    continue; // Already visited this node
+                }
+
+                NodeType node = getSpatialIndex().get(current);
+                if (node == null) {
+                    continue;
+                }
+
+                // Check all entities in this node
+                for (ID entityId : node.getEntityIds()) {
+                    if (visited.add(entityId)) {
+                        Point3f entityPos = entityManager.getEntityPosition(entityId);
+                        if (entityPos != null) {
+                            float distance = queryPoint.distance(entityPos);
+                            if (distance <= maxDistance) {
+                                candidates.add(new EntityDistance<>(entityId, distance));
+
+                                // Keep only k elements
+                                if (candidates.size() > k) {
+                                    candidates.poll();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Add neighboring nodes if we haven't found enough candidates
+                if (candidates.size() < k || shouldContinueKNNSearch(current, queryPoint, candidates)) {
+                    addNeighboringNodes(current, toVisit, visitedNodes);
+                }
+            }
+
+            // Convert to sorted list (closest first)
+            List<EntityDistance<ID>> sorted = new ArrayList<>(candidates);
+            sorted.sort(Comparator.comparingDouble(EntityDistance::distance));
+
+            return sorted.stream()
+                .map(EntityDistance::entityId)
+                .collect(Collectors.toList());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Check if k-NN search should continue based on current candidates
+     * 
+     * @param nodeIndex current node index
+     * @param queryPoint the query point
+     * @param candidates current candidate entities
+     * @return true if search should continue
+     */
+    protected abstract boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint, 
+                                                      PriorityQueue<EntityDistance<ID>> candidates);
+
+    /**
+     * Add neighboring nodes to the k-NN search queue
+     * 
+     * @param nodeIndex current node index
+     * @param toVisit queue of nodes to visit
+     * @param visitedNodes set of already visited nodes
+     */
+    protected abstract void addNeighboringNodes(long nodeIndex, Queue<Long> toVisit, 
+                                               Set<Long> visitedNodes);
 
     // ===== Common Spatial Query Base =====
 

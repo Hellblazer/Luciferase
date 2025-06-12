@@ -46,11 +46,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     private static final int NEIGHBOR_SEARCH_RADIUS        = 1; // For k-NN neighbor search
     private static final int OCTREE_CHILDREN               = 8;
 
-    // Spatial index: Morton code → Node containing entity IDs
-    private final Map<Long, OctreeNode<ID>> spatialIndex;
-    // Sorted Morton codes for efficient range queries
-    private final NavigableSet<Long>        sortedMortonCodes;
-
     /**
      * Create an octree with default configuration
      */
@@ -71,8 +66,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
-        this.spatialIndex = new HashMap<>();
-        this.sortedMortonCodes = new TreeSet<>();
     }
 
     // ===== Abstract Method Implementations =====
@@ -178,89 +171,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
     }
 
-    /**
-     * Find k nearest neighbors to a query point
-     *
-     * @param queryPoint  the point to search from
-     * @param k           the number of neighbors to find
-     * @param maxDistance maximum search distance
-     * @return list of entity IDs sorted by distance
-     */
-    public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
-        if (k <= 0) {
-            return Collections.emptyList();
-        }
-
-        // Priority queue to keep track of k nearest entities
-        PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(EntityDistance.maxHeapComparator()
-                                                                           // Max heap
-        );
-
-        // Track visited entities to avoid duplicates
-        Set<ID> visited = new HashSet<>();
-
-        // Start with nodes containing the query point
-        byte startLevel = maxDepth;
-        long initialMortonCode = calculateMortonCode(queryPoint, startLevel);
-
-        // Use a queue for breadth-first search
-        Queue<Long> toVisit = new LinkedList<>();
-
-        // First, try to find the initial node or its parent
-        OctreeNode<ID> initialNode = spatialIndex.get(initialMortonCode);
-        if (initialNode != null) {
-            toVisit.add(initialMortonCode);
-        } else {
-            // If exact node doesn't exist, start from all existing nodes
-            // This is a simple approach - could be optimized with parent search
-            toVisit.addAll(spatialIndex.keySet());
-        }
-
-        // Track visited nodes to avoid cycles
-        Set<Long> visitedNodes = new HashSet<>();
-
-        while (!toVisit.isEmpty()) {
-            Long current = toVisit.poll();
-            if (!visitedNodes.add(current)) {
-                continue; // Already visited this node
-            }
-
-            OctreeNode<ID> node = spatialIndex.get(current);
-            if (node == null) {
-                continue;
-            }
-
-            // Check all entities in this node
-            for (ID entityId : node.getEntityIds()) {
-                if (visited.add(entityId)) {
-                    Point3f entityPos = entityManager.getEntityPosition(entityId);
-                    if (entityPos != null) {
-                        float distance = queryPoint.distance(entityPos);
-                        if (distance <= maxDistance) {
-                            candidates.add(new EntityDistance<>(entityId, distance));
-
-                            // Keep only k elements
-                            if (candidates.size() > k) {
-                                candidates.poll();
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add neighboring nodes if we haven't found enough candidates
-            // or if the furthest candidate might be improved
-            if (candidates.size() < k || !isSearchComplete(current, queryPoint, candidates, maxDistance)) {
-                addNeighboringNodes(current, toVisit, visitedNodes);
-            }
-        }
-
-        // Convert to sorted list (closest first)
-        List<EntityDistance<ID>> sorted = new ArrayList<>(candidates);
-        sorted.sort(Comparator.comparingDouble(EntityDistance::distance));
-
-        return sorted.stream().map(EntityDistance::entityId).collect(Collectors.toList());
-    }
+    // k-NN search is now provided by AbstractSpatialIndex
 
     /**
      * Lookup entities at a specific position
@@ -325,10 +236,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
     }
 
-    @Override
-    protected Map<Long, OctreeNode<ID>> getSpatialIndex() {
-        return spatialIndex;
-    }
 
     @Override
     protected void handleNodeSubdivision(long parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
@@ -366,7 +273,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             if (!childEntities.isEmpty()) {
                 // Create or get child node
                 OctreeNode<ID> childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
-                    sortedMortonCodes.add(childMorton);
+                    sortedSpatialIndices.add(childMorton);
                     return new OctreeNode<>(maxEntitiesPerNode);
                 });
 
@@ -408,7 +315,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
         // Get or create node
         OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> {
-            sortedMortonCodes.add(mortonCode);
+            sortedSpatialIndices.add(mortonCode);
             return new OctreeNode<>(maxEntitiesPerNode);
         });
 
@@ -435,7 +342,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         // Add entity to all intersecting nodes
         for (Long mortonCode : intersectingNodes) {
             OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> {
-                sortedMortonCodes.add(mortonCode);
+                sortedSpatialIndices.add(mortonCode);
                 return new OctreeNode<>(maxEntitiesPerNode);
             });
 
@@ -458,19 +365,10 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     // Private helper methods
 
-    @Override
-    protected void onNodeRemoved(long spatialIndex) {
-        sortedMortonCodes.remove(spatialIndex);
-    }
 
     @Override
-    protected Stream<Map.Entry<Long, OctreeNode<ID>>> spatialRangeQuery(VolumeBounds bounds,
-                                                                        boolean includeIntersecting) {
-        // Use Morton code range optimization for better performance
-        NavigableSet<Long> extendedCodes = getMortonCodeRange(bounds);
-
-        return extendedCodes.stream().map(mortonIndex -> Map.entry(mortonIndex, spatialIndex.get(mortonIndex))).filter(
-        entry -> entry.getValue() != null && !entry.getValue().isEmpty());
+    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
+        return getMortonCodeRange(bounds);
     }
 
     @Override
@@ -539,10 +437,45 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         };
     }
 
-    /**
-     * Add neighboring nodes to the search queue
-     */
-    private void addNeighboringNodes(long nodeCode, Queue<Long> toVisit, Set<Long> visitedNodes) {
+    @Override
+    protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint, 
+                                            PriorityQueue<EntityDistance<ID>> candidates) {
+        if (candidates.isEmpty()) {
+            return true;
+        }
+
+        // Get the furthest candidate distance
+        EntityDistance<ID> furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+
+        // Calculate distance from query point to node bounds
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Calculate closest point on node to query
+        float nodeMinX = coords[0];
+        float nodeMinY = coords[1];
+        float nodeMinZ = coords[2];
+        float nodeMaxX = nodeMinX + cellSize;
+        float nodeMaxY = nodeMinY + cellSize;
+        float nodeMaxZ = nodeMinZ + cellSize;
+
+        float closestX = Math.max(nodeMinX, Math.min(queryPoint.x, nodeMaxX));
+        float closestY = Math.max(nodeMinY, Math.min(queryPoint.y, nodeMaxY));
+        float closestZ = Math.max(nodeMinZ, Math.min(queryPoint.z, nodeMaxZ));
+
+        float nodeDistance = new Point3f(closestX, closestY, closestZ).distance(queryPoint);
+
+        // If the closest point on this node is further than our furthest candidate,
+        // we don't need to explore further
+        return nodeDistance <= furthest.distance();
+    }
+
+    @Override
+    protected void addNeighboringNodes(long nodeCode, Queue<Long> toVisit, Set<Long> visitedNodes) {
         int[] coords = MortonCurve.decode(nodeCode);
         byte level = Constants.toLevel(nodeCode);
         int cellSize = Constants.lengthAtLevel(level);
@@ -629,15 +562,15 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         long maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), maxDepth);
 
         // Use sorted Morton codes for efficient range query
-        NavigableSet<Long> candidateCodes = sortedMortonCodes.subSet(minMorton, true, maxMorton, true);
+        NavigableSet<Long> candidateCodes = sortedSpatialIndices.subSet(minMorton, true, maxMorton, true);
 
         // Also check codes just outside the range as Morton curve can be non-contiguous
         NavigableSet<Long> extendedCodes = new TreeSet<>(candidateCodes);
-        Long lower = sortedMortonCodes.lower(minMorton);
+        Long lower = sortedSpatialIndices.lower(minMorton);
         if (lower != null) {
             extendedCodes.add(lower);
         }
-        Long higher = sortedMortonCodes.higher(maxMorton);
+        Long higher = sortedSpatialIndices.higher(maxMorton);
         if (higher != null) {
             extendedCodes.add(higher);
         }
@@ -645,44 +578,5 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return extendedCodes;
     }
 
-    /**
-     * Check if we can stop searching based on current candidates
-     */
-    private boolean isSearchComplete(long nodeCode, Point3f queryPoint, PriorityQueue<EntityDistance<ID>> candidates,
-                                     float maxDistance) {
-        if (candidates.isEmpty()) {
-            return false;
-        }
-
-        // Get the furthest candidate distance
-        EntityDistance<ID> furthest = candidates.peek();
-        if (furthest == null) {
-            return false;
-        }
-
-        // Calculate distance from query point to node bounds
-        int[] coords = MortonCurve.decode(nodeCode);
-        byte level = Constants.toLevel(nodeCode);
-        int cellSize = Constants.lengthAtLevel(level);
-
-        // Simple heuristic: if node is far from query, we can skip it
-        float nodeMinX = coords[0];
-        float nodeMinY = coords[1];
-        float nodeMinZ = coords[2];
-        float nodeMaxX = nodeMinX + cellSize;
-        float nodeMaxY = nodeMinY + cellSize;
-        float nodeMaxZ = nodeMinZ + cellSize;
-
-        // Calculate closest point on node to query
-        float closestX = Math.max(nodeMinX, Math.min(queryPoint.x, nodeMaxX));
-        float closestY = Math.max(nodeMinY, Math.min(queryPoint.y, nodeMaxY));
-        float closestZ = Math.max(nodeMinZ, Math.min(queryPoint.z, nodeMaxZ));
-
-        float nodeDistance = new Point3f(closestX, closestY, closestZ).distance(queryPoint);
-
-        // If the closest point on this node is further than our furthest candidate,
-        // we don't need to explore further
-        return nodeDistance > furthest.distance();
-    }
 
 }

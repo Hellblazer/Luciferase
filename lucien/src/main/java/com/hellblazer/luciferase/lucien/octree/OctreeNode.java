@@ -27,6 +27,10 @@ import java.util.List;
 /**
  * Enhanced octree node that stores multiple entity IDs instead of content. Mimics C++ EntityContainer approach for
  * multiple entities per node. Extends AbstractSpatialNode to share common functionality with TetreeNode.
+ * 
+ * Thread Safety: This class is NOT thread-safe on its own. It relies on external synchronization
+ * provided by AbstractSpatialIndex's read-write lock. All access to node instances must be
+ * performed within the appropriate lock context.
  *
  * @param <ID> The type of EntityID used
  * @author hal.hildebrand

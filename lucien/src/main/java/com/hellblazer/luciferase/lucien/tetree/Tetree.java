@@ -47,11 +47,6 @@ import java.util.stream.Stream;
  */
 public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<ID, Content, TetreeNodeImpl<ID>> {
 
-    // Spatial index: Tetrahedral index → Node containing entity IDs
-    private final Map<Long, TetreeNodeImpl<ID>> spatialIndex;
-    // Sorted tetrahedral indices for efficient range queries
-    private final NavigableSet<Long>            sortedTetIndices;
-
     /**
      * Create a Tetree with default configuration
      */
@@ -72,8 +67,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
-        this.spatialIndex = new HashMap<>();
-        this.sortedTetIndices = new TreeSet<>();
     }
 
     // ===== Abstract Method Implementations =====
@@ -168,88 +161,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return bounding(volume).findFirst().orElse(null);
     }
 
-    /**
-     * Find k nearest neighbors to a query point within tetrahedral space
-     *
-     * @param queryPoint  the point to search from (must have positive coordinates)
-     * @param k           the number of neighbors to find
-     * @param maxDistance maximum search distance
-     * @return list of entity IDs sorted by distance (closest first)
-     */
-    public List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance) {
-        validatePositiveCoordinates(queryPoint);
-
-        if (k <= 0) {
-            return Collections.emptyList();
-        }
-
-        // Priority queue to keep track of k nearest entities (max heap)
-        PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(EntityDistance.maxHeapComparator()
-                                                                           // Max heap
-        );
-
-        // Track visited entities to avoid duplicates
-        Set<ID> visited = new HashSet<>();
-
-        // Start with the tetrahedron containing the query point
-        Tet initialTet = locate(queryPoint, maxDepth);
-        long initialIndex = initialTet.index();
-
-        // Use a queue for breadth-first search through tetrahedral space
-        Queue<Long> toVisit = new LinkedList<>();
-        Set<Long> visitedNodes = new HashSet<>();
-
-        // Start from the initial tetrahedron
-        TetreeNodeImpl<ID> initialNode = spatialIndex.get(initialIndex);
-        if (initialNode != null) {
-            toVisit.add(initialIndex);
-        } else {
-            // If exact node doesn't exist, search all nodes
-            // This is less efficient but ensures we find entities
-            toVisit.addAll(spatialIndex.keySet());
-        }
-
-        while (!toVisit.isEmpty()) {
-            Long current = toVisit.poll();
-            if (!visitedNodes.add(current)) {
-                continue; // Already visited this node
-            }
-
-            TetreeNodeImpl<ID> node = spatialIndex.get(current);
-            if (node == null) {
-                continue;
-            }
-
-            // Check all entities in this tetrahedron
-            for (ID entityId : node.getEntityIds()) {
-                if (visited.add(entityId)) {
-                    Point3f entityPos = entityManager.getEntityPosition(entityId);
-                    if (entityPos != null) {
-                        float distance = queryPoint.distance(entityPos);
-                        if (distance <= maxDistance) {
-                            candidates.add(new EntityDistance<>(entityId, distance));
-
-                            // Keep only k elements
-                            if (candidates.size() > k) {
-                                candidates.poll();
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add neighboring tetrahedra if we haven't found enough candidates
-            if (candidates.size() < k || shouldContinueSearch(current, candidates)) {
-                addNeighboringTetrahedra(current, toVisit, visitedNodes);
-            }
-        }
-
-        // Convert to sorted list (closest first)
-        List<EntityDistance<ID>> sorted = new ArrayList<>(candidates);
-        sorted.sort(Comparator.comparingDouble(EntityDistance::distance));
-
-        return sorted.stream().map(EntityDistance::entityId).collect(Collectors.toList());
-    }
+    // k-NN search is now provided by AbstractSpatialIndex
 
     /**
      * Public access to locate method for finding containing tetrahedron
@@ -325,32 +237,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
     }
 
-    @Override
-    protected Map<Long, TetreeNodeImpl<ID>> getSpatialIndex() {
-        return spatialIndex;
-    }
 
-    @Override
-    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
-        long tetIndex = calculateSpatialIndex(position, level);
-
-        // Get or create node
-        TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
-            sortedTetIndices.add(tetIndex);
-            return createNode();
-        });
-
-        // Add entity to node
-        boolean shouldSplit = node.addEntity(entityId);
-
-        // Track entity location
-        entityManager.addEntityLocation(entityId, tetIndex);
-
-        // Handle subdivision if needed (delegated to subclasses)
-        if (shouldSplit && level < maxDepth) {
-            handleNodeSubdivision(tetIndex, level, node);
-        }
-    }
 
     @Override
     protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
@@ -358,31 +245,18 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return tetrahedronContainedInVolume(tet, volume);
     }
 
-    @Override
-    protected void onNodeRemoved(long spatialIndex) {
-        sortedTetIndices.remove(spatialIndex);
-    }
 
     @Override
-    protected Stream<Map.Entry<Long, TetreeNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds,
-                                                                            boolean includeIntersecting) {
+    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
         // Use SFC properties to find ranges of indices that could intersect the volume
-        var sfcRanges = computeSFCRanges(bounds, includeIntersecting);
-
-        return sfcRanges.stream().flatMap(range -> {
+        var sfcRanges = computeSFCRanges(bounds, true); // Use inclusive for range finding
+        
+        NavigableSet<Long> result = new TreeSet<>();
+        for (var range : sfcRanges) {
             // Use sorted indices for efficient range queries
-            NavigableSet<Long> candidateIndices = sortedTetIndices.subSet(range.start, true, range.end, true);
-            return candidateIndices.stream().map(tetIndex -> Map.entry(tetIndex, spatialIndex.get(tetIndex))).filter(
-            entry -> entry.getValue() != null);
-        }).filter(entry -> {
-            // Final precise filtering for elements that passed SFC range test
-            var tet = Tet.tetrahedron(entry.getKey());
-            if (includeIntersecting) {
-                return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
-            } else {
-                return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
-            }
-        });
+            result.addAll(sortedSpatialIndices.subSet(range.start, true, range.end, true));
+        }
+        return result;
     }
 
     @Override
@@ -397,10 +271,32 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     // These methods are now handled by AbstractSpatialIndex
 
-    /**
-     * Add neighboring tetrahedra to the search queue Tetrahedral neighborhoods are more complex than cubic ones
-     */
-    private void addNeighboringTetrahedra(long tetIndex, Queue<Long> toVisit, Set<Long> visitedNodes) {
+    @Override
+    protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint, 
+                                            PriorityQueue<EntityDistance<ID>> candidates) {
+        if (candidates.isEmpty()) {
+            return true;
+        }
+
+        // Get the furthest candidate distance
+        EntityDistance<ID> furthest = candidates.peek();
+        if (furthest == null) {
+            return true;
+        }
+
+        // For tetrahedral geometry, this is more complex than cubic
+        // For now, use a simple heuristic based on level
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        byte level = tet.l();
+        float cellSize = Constants.lengthAtLevel(level);
+
+        // Conservative estimate: if we're within 2x the cell size of the furthest candidate,
+        // continue searching
+        return cellSize < furthest.distance() * 2;
+    }
+
+    @Override
+    protected void addNeighboringNodes(long tetIndex, Queue<Long> toVisit, Set<Long> visitedNodes) {
         Tet currentTet = Tet.tetrahedron(tetIndex);
 
         // For tetrahedral mesh, neighbors include:
@@ -526,11 +422,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return mergeRanges(ranges);
     }
 
-    // Create a spatial volume from bounds for final filtering
-    private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
-                                bounds.maxZ());
-    }
 
     // These methods are inherited from AbstractSpatialIndex
 
@@ -620,30 +511,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return merged;
     }
 
-    /**
-     * Check if we should continue searching based on current candidates
-     */
-    private boolean shouldContinueSearch(long tetIndex, PriorityQueue<EntityDistance<ID>> candidates) {
-        if (candidates.isEmpty()) {
-            return true;
-        }
-
-        // Get the furthest candidate distance
-        EntityDistance<ID> furthest = candidates.peek();
-        if (furthest == null) {
-            return true;
-        }
-
-        // For tetrahedral geometry, this is more complex than cubic
-        // For now, use a simple heuristic based on level
-        Tet tet = Tet.tetrahedron(tetIndex);
-        byte level = tet.l();
-        float cellSize = Constants.lengthAtLevel(level);
-
-        // Conservative estimate: if we're within 2x the cell size of the furthest candidate,
-        // continue searching
-        return cellSize < furthest.distance() * 2;
-    }
 
     // This method has been moved to the override section
 
