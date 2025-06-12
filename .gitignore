@@ -30,8 +30,6 @@
 /CLAUDE.local.md
 /OCTREE_ENTITY_PERFORMANCE_ANALYSIS.md
 /OCTREE_ENTITY_INTEGRATION_GUIDE.md
-/lucien/src/test/java/com/hellblazer/luciferase/lucien/entity/OctreePerformanceBenchmark.java
-/lucien/src/test/java/com/hellblazer/luciferase/lucien/MultiEntityContainmentSearchTest.java
 /OCTREE_WITH_ENTITIES_MIGRATION.md
 /OCTREE_REMOVAL_PLAN.md
 /lucien/SPATIAL_INDEX_MULTI_ENTITY_PLAN.md
