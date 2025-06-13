@@ -22,7 +22,7 @@ package com.hellblazer.luciferase.lucien.entity;
  *
  * @author hal.hildebrand
  */
-public interface EntityID {
+public interface EntityID extends Comparable<EntityID> {
     /**
      * Get a string representation suitable for debugging
      */

@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
+import com.hellblazer.luciferase.lucien.collision.CollisionShape;
+
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -260,5 +262,23 @@ public class EntityManager<ID extends EntityID, Content> {
             throw new IllegalArgumentException("Entity not found: " + entityId);
         }
         entity.setPosition(newPosition);
+    }
+    
+    /**
+     * Get collision shape for an entity
+     */
+    public CollisionShape getEntityCollisionShape(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getCollisionShape() : null;
+    }
+    
+    /**
+     * Set collision shape for an entity
+     */
+    public void setEntityCollisionShape(ID entityId, CollisionShape shape) {
+        Entity<Content> entity = entities.get(entityId);
+        if (entity != null) {
+            entity.setCollisionShape(shape);
+        }
     }
 }

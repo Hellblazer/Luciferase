@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
+import com.hellblazer.luciferase.lucien.collision.CollisionShape;
+
 import javax.vecmath.Point3f;
 import java.util.HashSet;
 import java.util.Set;
@@ -28,10 +30,11 @@ import java.util.Set;
  * @author hal.hildebrand
  */
 public class Entity<Content> {
-    private final Content      content;
-    private final Set<Long>    locations;
-    private       Point3f      position;
-    private       EntityBounds bounds;
+    private final Content        content;
+    private final Set<Long>      locations;
+    private       Point3f        position;
+    private       EntityBounds   bounds;
+    private       CollisionShape collisionShape;
 
     /**
      * Create an entity with content and position
@@ -135,5 +138,26 @@ public class Entity<Content> {
      */
     public void setPosition(Point3f newPosition) {
         this.position = new Point3f(newPosition);
+    }
+    
+    /**
+     * Get the collision shape for this entity
+     */
+    public CollisionShape getCollisionShape() {
+        return collisionShape;
+    }
+    
+    /**
+     * Set the collision shape for this entity
+     */
+    public void setCollisionShape(CollisionShape shape) {
+        this.collisionShape = shape;
+    }
+    
+    /**
+     * Check if entity has a collision shape
+     */
+    public boolean hasCollisionShape() {
+        return collisionShape != null;
     }
 }

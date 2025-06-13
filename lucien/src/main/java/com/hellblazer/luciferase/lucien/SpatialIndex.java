@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
@@ -282,6 +283,56 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     void updateEntity(ID entityId, Point3f newPosition, byte level);
 
+    // ===== Collision Detection Operations =====
+
+    /**
+     * Find all collision pairs within the spatial index
+     *
+     * @return list of collision pairs
+     */
+    List<CollisionPair<ID, Content>> findAllCollisions();
+
+    /**
+     * Find collisions involving a specific entity
+     *
+     * @param entityId the entity to check
+     * @return list of collision pairs involving this entity
+     */
+    List<CollisionPair<ID, Content>> findCollisions(ID entityId);
+
+    /**
+     * Find collisions within a spatial region
+     *
+     * @param region the region to check
+     * @return list of collision pairs within the region
+     */
+    List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region);
+
+    /**
+     * Check if two specific entities are colliding
+     *
+     * @param entityId1 first entity
+     * @param entityId2 second entity
+     * @return collision pair if colliding, empty otherwise
+     */
+    Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2);
+    
+    /**
+     * Set collision shape for an entity. If not set, AABB will be used for collision detection.
+     *
+     * @param entityId the entity ID
+     * @param shape    the collision shape (null to use AABB)
+     */
+    void setCollisionShape(ID entityId, CollisionShape shape);
+    
+    /**
+     * Get collision shape for an entity
+     *
+     * @param entityId the entity ID
+     * @return the collision shape, or null if using default AABB
+     */
+    CollisionShape getCollisionShape(ID entityId);
+
     // ===== Statistics =====
 
     /**
@@ -351,6 +402,75 @@ public interface SpatialIndex<ID extends EntityID, Content> {
          */
         public boolean hasBounds() {
             return bounds != null;
+        }
+    }
+
+    /**
+     * Result of a collision detection between two entities
+     *
+     * @param <ID>      The type of EntityID used for entity identification
+     * @param <Content> The type of content stored with each entity
+     */
+    record CollisionPair<ID extends EntityID, Content>(ID entityId1, Content content1, EntityBounds bounds1,
+                                                       ID entityId2, Content content2, EntityBounds bounds2,
+                                                       Point3f contactPoint, Vector3f contactNormal,
+                                                       float penetrationDepth)
+    implements Comparable<CollisionPair<ID, Content>> {
+
+        /**
+         * Create a collision pair ensuring consistent ordering (smaller ID first)
+         */
+        public static <ID extends EntityID, Content> CollisionPair<ID, Content> create(ID id1, Content content1,
+                                                                                      EntityBounds bounds1, ID id2,
+                                                                                      Content content2,
+                                                                                      EntityBounds bounds2,
+                                                                                      Point3f contactPoint,
+                                                                                      Vector3f contactNormal,
+                                                                                      float penetrationDepth) {
+            // Ensure consistent ordering for deduplication
+            if (id1.compareTo(id2) > 0) {
+                // Swap entities and invert normal
+                Vector3f invertedNormal = new Vector3f(contactNormal);
+                invertedNormal.negate();
+                return new CollisionPair<>(id2, content2, bounds2, id1, content1, bounds1, contactPoint, invertedNormal,
+                                         penetrationDepth);
+            }
+            return new CollisionPair<>(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
+                                     penetrationDepth);
+        }
+
+        /**
+         * Compare collision pairs by penetration depth (deeper collisions first)
+         */
+        @Override
+        public int compareTo(CollisionPair<ID, Content> other) {
+            return Float.compare(other.penetrationDepth, this.penetrationDepth);
+        }
+
+        /**
+         * Check if this collision involves a specific entity
+         */
+        public boolean involves(ID entityId) {
+            return entityId1.equals(entityId) || entityId2.equals(entityId);
+        }
+
+        /**
+         * Get the other entity in this collision
+         */
+        public ID getOtherEntity(ID entityId) {
+            if (entityId1.equals(entityId)) {
+                return entityId2;
+            } else if (entityId2.equals(entityId)) {
+                return entityId1;
+            }
+            throw new IllegalArgumentException("Entity not involved in this collision: " + entityId);
+        }
+
+        /**
+         * Check if both entities have bounds (not point entities)
+         */
+        public boolean hasBounds() {
+            return bounds1 != null && bounds2 != null;
         }
     }
 }

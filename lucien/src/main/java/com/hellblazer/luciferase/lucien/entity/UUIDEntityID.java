@@ -40,6 +40,15 @@ public final class UUIDEntityID implements EntityID {
     }
 
     @Override
+    public int compareTo(EntityID other) {
+        if (other instanceof UUIDEntityID uuidOther) {
+            return this.id.compareTo(uuidOther.id);
+        }
+        // Compare by class name if different types
+        return this.getClass().getName().compareTo(other.getClass().getName());
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

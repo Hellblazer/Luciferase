@@ -22,7 +22,7 @@ package com.hellblazer.luciferase.lucien.entity;
  *
  * @author hal.hildebrand
  */
-public final class LongEntityID implements EntityID, Comparable<LongEntityID> {
+public final class LongEntityID implements EntityID {
     private final long id;
 
     public LongEntityID(long id) {
@@ -30,8 +30,12 @@ public final class LongEntityID implements EntityID, Comparable<LongEntityID> {
     }
 
     @Override
-    public int compareTo(LongEntityID other) {
-        return Long.compare(this.id, other.id);
+    public int compareTo(EntityID other) {
+        if (other instanceof LongEntityID longOther) {
+            return Long.compare(this.id, longOther.id);
+        }
+        // Compare by class name if different types
+        return this.getClass().getName().compareTo(other.getClass().getName());
     }
 
     @Override
