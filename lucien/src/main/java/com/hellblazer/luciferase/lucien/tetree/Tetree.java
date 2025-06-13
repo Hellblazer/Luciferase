@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityDistance;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
 import com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy;
+import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -391,6 +392,143 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     @Override
     protected void validateSpatialConstraints(Spatial volume) {
         validatePositiveCoordinates(volume);
+    }
+
+    // ===== Tree Balancing Implementation =====
+    
+    @Override
+    protected TreeBalancer<ID> createTreeBalancer() {
+        return new TetreeBalancer();
+    }
+    
+    @Override
+    protected List<Long> getChildNodes(long tetIndex) {
+        List<Long> children = new ArrayList<>();
+        Tet parentTet = Tet.tetrahedron(tetIndex);
+        byte level = parentTet.l();
+        
+        if (level >= maxDepth) {
+            return children; // No children possible at max depth
+        }
+        
+        // For tetrahedral decomposition, children are at the next finer level
+        // Each parent cell can contain multiple child cells
+        byte childLevel = (byte) (level + 1);
+        int parentCellSize = Constants.lengthAtLevel(level);
+        int childCellSize = Constants.lengthAtLevel(childLevel);
+        
+        // Check all child cells that could be contained within parent cell
+        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
+            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
+                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
+                    // Check all 6 tetrahedron types in each child cell
+                    for (byte type = 0; type < 6; type++) {
+                        Tet childTet = new Tet(x, y, z, childLevel, type);
+                        long childIndex = childTet.index();
+                        
+                        // Only add if child exists in spatial index
+                        if (spatialIndex.containsKey(childIndex)) {
+                            children.add(childIndex);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return children;
+    }
+    
+    @Override
+    protected boolean hasChildren(long tetIndex) {
+        TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+        return node != null && node.hasChildren();
+    }
+    
+    @Override
+    protected void handleNodeSubdivision(long parentTetIndex, byte parentLevel, TetreeNodeImpl<ID> parentNode) {
+        // Can't subdivide beyond max depth
+        if (parentLevel >= maxDepth) {
+            return;
+        }
+
+        byte childLevel = (byte) (parentLevel + 1);
+        
+        // Get entities to redistribute
+        List<ID> parentEntities = new ArrayList<>(parentNode.getEntityIds());
+        if (parentEntities.isEmpty()) {
+            return; // Nothing to subdivide
+        }
+
+        // Create map to group entities by their child tetrahedron
+        Map<Long, List<ID>> childEntityMap = new HashMap<>();
+        
+        // Determine which child tetrahedron each entity belongs to
+        for (ID entityId : parentEntities) {
+            Point3f entityPos = entityManager.getEntityPosition(entityId);
+            if (entityPos != null) {
+                // Find the containing tetrahedron at the finer level
+                Tet childTet = locate(entityPos, childLevel);
+                long childTetIndex = childTet.index();
+                childEntityMap.computeIfAbsent(childTetIndex, k -> new ArrayList<>()).add(entityId);
+            }
+        }
+
+        // Check if subdivision would actually distribute entities
+        if (childEntityMap.size() == 1 && childEntityMap.containsKey(parentTetIndex)) {
+            // All entities map to the same tetrahedron even at the child level
+            // This can happen when all entities are at the same position
+            // Don't subdivide - it won't help distribute the load
+            System.out.println("Subdivision stopped: all entities map to same tetrahedron at child level");
+            return;
+        }
+
+        // Create child nodes and redistribute entities
+        System.out.println("Proceeding with tetrahedral subdivision: " + childEntityMap.size() + " child tetrahedra to create");
+        
+        // Track which entities we need to remove from parent
+        Set<ID> entitiesToRemoveFromParent = new HashSet<>();
+        
+        // Add entities to child nodes
+        for (Map.Entry<Long, List<ID>> entry : childEntityMap.entrySet()) {
+            long childTetIndex = entry.getKey();
+            List<ID> childEntities = entry.getValue();
+
+            if (!childEntities.isEmpty()) {
+                TetreeNodeImpl<ID> childNode;
+                
+                if (childTetIndex == parentTetIndex) {
+                    // Special case: child has same tetrahedral index as parent
+                    // The entities can stay in the parent node - don't redistribute them
+                    System.out.println("Entities " + childEntities + " stay in parent node (same tet index " + childTetIndex + ")");
+                    // Don't mark these entities for removal from parent
+                    continue;
+                } else {
+                    // Create or get child node
+                    System.out.println("Creating new child tetrahedron for index " + childTetIndex + " with entities " + childEntities);
+                    childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
+                        sortedSpatialIndices.add(childTetIndex);
+                        return new TetreeNodeImpl<>(maxEntitiesPerNode);
+                    });
+                    
+                    // Add entities to child and mark for removal from parent
+                    for (ID entityId : childEntities) {
+                        childNode.addEntity(entityId);
+                        // Update entity locations - add child location
+                        entityManager.addEntityLocation(entityId, childTetIndex);
+                        entitiesToRemoveFromParent.add(entityId);
+                    }
+                }
+            }
+        }
+
+        // Remove only the entities that were moved to different child nodes
+        for (ID entityId : entitiesToRemoveFromParent) {
+            parentNode.removeEntity(entityId);
+            entityManager.removeEntityLocation(entityId, parentTetIndex);
+        }
+        
+        // Mark that this node has been subdivided
+        parentNode.setHasChildren(true);
     }
 
     /**
@@ -774,6 +912,200 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         @Override
         public int compareTo(TetDistance other) {
             return Float.compare(this.distance, other.distance);
+        }
+    }
+    
+    /**
+     * Tetree-specific tree balancer implementation
+     */
+    protected class TetreeBalancer extends DefaultTreeBalancer {
+        
+        @Override
+        public List<Long> splitNode(long tetIndex, byte tetLevel) {
+            if (tetLevel >= maxDepth) {
+                return Collections.emptyList();
+            }
+            
+            TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+            if (node == null || node.isEmpty()) {
+                return Collections.emptyList();
+            }
+            
+            // Get entities to redistribute
+            Set<ID> entities = new HashSet<>(node.getEntityIds());
+            
+            // Calculate child coordinates and level
+            Tet parentTet = Tet.tetrahedron(tetIndex);
+            byte childLevel = (byte) (tetLevel + 1);
+            int parentCellSize = Constants.lengthAtLevel(tetLevel);
+            int childCellSize = Constants.lengthAtLevel(childLevel);
+            
+            // Create child nodes
+            List<Long> createdChildren = new ArrayList<>();
+            Map<Long, Set<ID>> childEntityMap = new HashMap<>();
+            
+            // Distribute entities to children based on their positions
+            for (ID entityId : entities) {
+                Point3f pos = entityManager.getEntityPosition(entityId);
+                if (pos == null) continue;
+                
+                // Find the containing tetrahedron at the child level
+                Tet childTet = locate(pos, childLevel);
+                long childTetIndex = childTet.index();
+                childEntityMap.computeIfAbsent(childTetIndex, k -> new HashSet<>()).add(entityId);
+            }
+            
+            // Check if all entities map to the same child - if so, don't split
+            if (childEntityMap.size() == 1 && childEntityMap.containsKey(tetIndex)) {
+                // All entities map to the same tetrahedron as the parent - splitting won't help
+                return Collections.emptyList();
+            }
+            
+            // Create child nodes and add entities
+            for (Map.Entry<Long, Set<ID>> entry : childEntityMap.entrySet()) {
+                long childTetIndex = entry.getKey();
+                Set<ID> childEntities = entry.getValue();
+                
+                if (!childEntities.isEmpty()) {
+                    TetreeNodeImpl<ID> childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
+                        sortedSpatialIndices.add(childTetIndex);
+                        return new TetreeNodeImpl<>(maxEntitiesPerNode);
+                    });
+                    
+                    for (ID entityId : childEntities) {
+                        childNode.addEntity(entityId);
+                        entityManager.addEntityLocation(entityId, childTetIndex);
+                    }
+                    
+                    createdChildren.add(childTetIndex);
+                }
+            }
+            
+            // Clear parent node and update entity locations
+            node.clearEntities();
+            node.setHasChildren(true);
+            for (ID entityId : entities) {
+                entityManager.removeEntityLocation(entityId, tetIndex);
+            }
+            
+            return createdChildren;
+        }
+        
+        @Override
+        public boolean mergeNodes(Set<Long> tetIndices, long parentIndex) {
+            if (tetIndices.isEmpty()) {
+                return false;
+            }
+            
+            // Collect all entities from nodes to be merged
+            Set<ID> allEntities = new HashSet<>();
+            for (Long tetIndex : tetIndices) {
+                TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+                if (node != null && !node.isEmpty()) {
+                    allEntities.addAll(node.getEntityIds());
+                }
+            }
+            
+            if (allEntities.isEmpty()) {
+                // Just remove empty nodes
+                for (Long tetIndex : tetIndices) {
+                    spatialIndex.remove(tetIndex);
+                    sortedSpatialIndices.remove(tetIndex);
+                }
+                return true;
+            }
+            
+            // Get or create parent node
+            TetreeNodeImpl<ID> parentNode = spatialIndex.computeIfAbsent(parentIndex, k -> {
+                sortedSpatialIndices.add(parentIndex);
+                return new TetreeNodeImpl<>(maxEntitiesPerNode);
+            });
+            
+            // Move all entities to parent
+            for (ID entityId : allEntities) {
+                // Remove from child locations
+                for (Long tetIndex : tetIndices) {
+                    entityManager.removeEntityLocation(entityId, tetIndex);
+                }
+                
+                // Add to parent
+                parentNode.addEntity(entityId);
+                entityManager.addEntityLocation(entityId, parentIndex);
+            }
+            
+            // Remove child nodes
+            for (Long tetIndex : tetIndices) {
+                spatialIndex.remove(tetIndex);
+                sortedSpatialIndices.remove(tetIndex);
+            }
+            
+            // Parent no longer has children after merge
+            parentNode.setHasChildren(false);
+            
+            return true;
+        }
+        
+        @Override
+        protected Set<Long> findSiblings(long tetIndex) {
+            Tet tet = Tet.tetrahedron(tetIndex);
+            byte level = tet.l();
+            if (level == 0) {
+                return Collections.emptySet(); // Root has no siblings
+            }
+            
+            // For tetrahedral decomposition, siblings are other tetrahedra in the same parent cell
+            // Calculate parent cell coordinates
+            int cellSize = Constants.lengthAtLevel(level);
+            int parentCellSize = cellSize * 2;
+            
+            // Find parent cell coordinates
+            int parentX = (tet.x() / parentCellSize) * parentCellSize;
+            int parentY = (tet.y() / parentCellSize) * parentCellSize;
+            int parentZ = (tet.z() / parentCellSize) * parentCellSize;
+            
+            Set<Long> siblings = new HashSet<>();
+            
+            // Check all child cells within parent cell for all tetrahedron types
+            for (int x = parentX; x < parentX + parentCellSize; x += cellSize) {
+                for (int y = parentY; y < parentY + parentCellSize; y += cellSize) {
+                    for (int z = parentZ; z < parentZ + parentCellSize; z += cellSize) {
+                        for (byte type = 0; type < 6; type++) {
+                            Tet siblingTet = new Tet(x, y, z, level, type);
+                            long siblingIndex = siblingTet.index();
+                            
+                            // Add if it's not the current node and exists
+                            if (siblingIndex != tetIndex && spatialIndex.containsKey(siblingIndex)) {
+                                siblings.add(siblingIndex);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return siblings;
+        }
+        
+        @Override
+        protected long getParentIndex(long tetIndex) {
+            Tet tet = Tet.tetrahedron(tetIndex);
+            byte level = tet.l();
+            if (level == 0) {
+                return -1; // Root has no parent
+            }
+            
+            int cellSize = Constants.lengthAtLevel(level);
+            int parentCellSize = cellSize * 2;
+            byte parentLevel = (byte) (level - 1);
+            
+            // Calculate parent coordinates
+            int parentX = (tet.x() / parentCellSize) * parentCellSize;
+            int parentY = (tet.y() / parentCellSize) * parentCellSize;
+            int parentZ = (tet.z() / parentCellSize) * parentCellSize;
+            
+            // For tetrahedral decomposition, find the parent tetrahedron that contains this position
+            Point3f position = new Point3f(tet.x() + cellSize/2.0f, tet.y() + cellSize/2.0f, tet.z() + cellSize/2.0f);
+            Tet parentTet = locate(position, parentLevel);
+            return parentTet.index();
         }
     }
 }

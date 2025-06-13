@@ -31,7 +31,7 @@ public class OctreeKNearestNeighborTest {
         octree.insert(new Point3f(10, 0, 0), level, "Near1");
         octree.insert(new Point3f(0, 10, 0), level, "Near2");
         octree.insert(new Point3f(0, 0, 10), level, "Near3");
-        octree.insert(new Point3f(100, 100, 100), level, "Far");
+        octree.insert(new Point3f(1000, 1000, 1000), level, "Far");
 
         // Find 3 nearest neighbors to origin
         Point3f queryPoint = new Point3f(0, 0, 0);
@@ -117,7 +117,7 @@ public class OctreeKNearestNeighborTest {
 
         // Add some distant entities
         for (int i = 0; i < 10; i++) {
-            octree.insert(new Point3f(100 + i, 100 + i, 100 + i), level, "Distant" + i);
+            octree.insert(new Point3f(1000 + i, 1000 + i, 1000 + i), level, "Distant" + i);
         }
 
         // Query from center of cluster

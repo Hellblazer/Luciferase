@@ -16,14 +16,14 @@
  */
 package com.hellblazer.luciferase.lucien;
 
-import com.hellblazer.luciferase.lucien.collision.CollisionShape;
-import com.hellblazer.luciferase.lucien.entity.*;
-import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
-import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
-import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
+import com.hellblazer.luciferase.lucien.balancing.DefaultBalancingStrategy;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
-import com.hellblazer.luciferase.lucien.balancing.DefaultBalancingStrategy;
+import com.hellblazer.luciferase.lucien.collision.CollisionShape;
+import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
+import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
+import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -57,11 +57,11 @@ implements SpatialIndex<ID, Content> {
     protected final NavigableSet<Long>         sortedSpatialIndices;
     // Read-write lock for thread safety
     private final   ReadWriteLock              lock;
+    private final   TreeBalancer<ID>           treeBalancer;
     // Tree balancing support
-    private TreeBalancingStrategy<ID> balancingStrategy;
-    private boolean autoBalancingEnabled = false;
-    private long lastBalancingTime = 0;
-    private TreeBalancer<ID> treeBalancer;
+    private         TreeBalancingStrategy<ID>  balancingStrategy;
+    private         boolean                    autoBalancingEnabled = false;
+    private         long                       lastBalancingTime    = 0;
 
     /**
      * Constructor with common parameters
@@ -126,6 +126,44 @@ implements SpatialIndex<ID, Content> {
     }
 
     @Override
+    public Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2) {
+        if (entityId1.equals(entityId2)) {
+            return Optional.empty();
+        }
+
+        lock.readLock().lock();
+        try {
+            EntityBounds bounds1 = entityManager.getEntityBounds(entityId1);
+            EntityBounds bounds2 = entityManager.getEntityBounds(entityId2);
+
+            // Quick AABB check first
+            if (bounds1 != null && bounds2 != null) {
+                if (!boundsIntersect(bounds1, bounds2)) {
+                    return Optional.empty();
+                }
+            } else {
+                // For point entities, check distance
+                Point3f pos1 = entityManager.getEntityPosition(entityId1);
+                Point3f pos2 = entityManager.getEntityPosition(entityId2);
+
+                if (pos1 == null || pos2 == null) {
+                    return Optional.empty();
+                }
+
+                float threshold = 0.1f; // Small threshold for point entities
+                if (pos1.distance(pos2) > threshold) {
+                    return Optional.empty();
+                }
+            }
+
+            // Perform detailed collision check
+            return performDetailedCollisionCheck(entityId1, entityId2);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
     public boolean containsEntity(ID entityId) {
         lock.readLock().lock();
         try {
@@ -144,6 +182,258 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    @Override
+    public List<CollisionPair<ID, Content>> findAllCollisions() {
+        lock.readLock().lock();
+        try {
+            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
+            Set<UnorderedPair<ID>> checkedPairs = new HashSet<>();
+
+            // Iterate through all nodes
+            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
+                NodeType node = entry.getValue();
+                if (node.isEmpty()) {
+                    continue;
+                }
+
+                List<ID> nodeEntities = new ArrayList<>(node.getEntityIds());
+
+                // Check entities within the same node
+                for (int i = 0; i < nodeEntities.size(); i++) {
+                    for (int j = i + 1; j < nodeEntities.size(); j++) {
+                        ID id1 = nodeEntities.get(i);
+                        ID id2 = nodeEntities.get(j);
+                        UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
+
+                        if (checkedPairs.add(pair)) {
+                            checkAndAddCollision(id1, id2, collisions);
+                        }
+                    }
+                }
+
+                // Check against neighboring nodes
+                long nodeIndex = entry.getKey();
+                Queue<Long> neighbors = new LinkedList<>();
+                Set<Long> visitedNeighbors = new HashSet<>();
+                addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
+
+                while (!neighbors.isEmpty()) {
+                    Long neighborIndex = neighbors.poll();
+                    NodeType neighborNode = spatialIndex.get(neighborIndex);
+                    if (neighborNode == null || neighborNode.isEmpty()) {
+                        continue;
+                    }
+
+                    // Check entities between nodes
+                    for (ID id1 : nodeEntities) {
+                        for (ID id2 : neighborNode.getEntityIds()) {
+                            UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
+                            if (checkedPairs.add(pair)) {
+                                checkAndAddCollision(id1, id2, collisions);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sort by penetration depth (deepest first)
+            Collections.sort(collisions);
+            return collisions;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
+        lock.readLock().lock();
+        try {
+            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
+
+            // Get entity's locations
+            Set<Long> locations = entityManager.getEntityLocations(entityId);
+            if (locations.isEmpty()) {
+                return collisions;
+            }
+
+            Set<ID> checkedEntities = new HashSet<>();
+            checkedEntities.add(entityId);
+
+            // Check all nodes where this entity appears
+            for (Long nodeIndex : locations) {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null) {
+                    continue;
+                }
+
+                // Check against other entities in the same node
+                for (ID otherId : node.getEntityIds()) {
+                    if (!checkedEntities.add(otherId)) {
+                        continue;
+                    }
+                    checkAndAddCollision(entityId, otherId, collisions);
+                }
+
+                // Check neighboring nodes
+                Queue<Long> neighbors = new LinkedList<>();
+                Set<Long> visitedNeighbors = new HashSet<>();
+                addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
+
+                while (!neighbors.isEmpty()) {
+                    Long neighborIndex = neighbors.poll();
+                    NodeType neighborNode = spatialIndex.get(neighborIndex);
+                    if (neighborNode == null || neighborNode.isEmpty()) {
+                        continue;
+                    }
+
+                    for (ID otherId : neighborNode.getEntityIds()) {
+                        if (!checkedEntities.add(otherId)) {
+                            continue;
+                        }
+                        checkAndAddCollision(entityId, otherId, collisions);
+                    }
+                }
+            }
+
+            Collections.sort(collisions);
+            return collisions;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
+        lock.readLock().lock();
+        try {
+            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
+            Set<UnorderedPair<ID>> checkedPairs = new HashSet<>();
+
+            // Find all nodes intersecting the region
+            var bounds = getVolumeBounds(region);
+            if (bounds == null) {
+                return collisions;
+            }
+
+            Stream<Map.Entry<Long, NodeType>> nodesInRegion = spatialRangeQuery(bounds, true);
+            List<Map.Entry<Long, NodeType>> nodeList = nodesInRegion.collect(Collectors.toList());
+
+            // Check entities within and between nodes
+            for (int i = 0; i < nodeList.size(); i++) {
+                List<ID> nodeEntities = new ArrayList<>(nodeList.get(i).getValue().getEntityIds());
+
+                // Check within node
+                for (int j = 0; j < nodeEntities.size(); j++) {
+                    for (int k = j + 1; k < nodeEntities.size(); k++) {
+                        ID id1 = nodeEntities.get(j);
+                        ID id2 = nodeEntities.get(k);
+
+                        // Check if both entities are actually in the region
+                        if (isEntityInRegion(id1, region) && isEntityInRegion(id2, region)) {
+                            UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
+                            if (checkedPairs.add(pair)) {
+                                checkAndAddCollision(id1, id2, collisions);
+                            }
+                        }
+                    }
+                }
+
+                // Check between nodes
+                for (int j = i + 1; j < nodeList.size(); j++) {
+                    for (ID id1 : nodeEntities) {
+                        if (!isEntityInRegion(id1, region)) {
+                            continue;
+                        }
+
+                        for (ID id2 : nodeList.get(j).getValue().getEntityIds()) {
+                            if (!isEntityInRegion(id2, region)) {
+                                continue;
+                            }
+
+                            UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
+                            if (checkedPairs.add(pair)) {
+                                checkAndAddCollision(id1, id2, collisions);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Collections.sort(collisions);
+            return collisions;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get balancing statistics for the tree.
+     */
+    public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
+        lock.readLock().lock();
+        try {
+            int totalNodes = 0;
+            int underpopulatedNodes = 0;
+            int overpopulatedNodes = 0;
+            int emptyNodes = 0;
+            int maxDepth = 0;
+            long totalEntities = 0;
+
+            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
+                NodeType node = entry.getValue();
+                byte level = getLevelFromIndex(entry.getKey());
+                maxDepth = Math.max(maxDepth, level);
+
+                if (node.isEmpty()) {
+                    emptyNodes++;
+                    totalNodes++;
+                } else {
+                    totalNodes++;
+                    int entityCount = node.getEntityCount();
+                    totalEntities += entityCount;
+
+                    int mergeThreshold = balancingStrategy.getMergeThreshold(level, maxEntitiesPerNode);
+                    int splitThreshold = balancingStrategy.getSplitThreshold(level, maxEntitiesPerNode);
+
+                    if (entityCount < mergeThreshold) {
+                        underpopulatedNodes++;
+                    } else if (entityCount > splitThreshold) {
+                        overpopulatedNodes++;
+                    }
+                }
+            }
+
+            double averageLoad = totalNodes > 0 ? (double) totalEntities / totalNodes : 0;
+
+            // Calculate variance
+            double variance = 0;
+            if (totalNodes > 0) {
+                for (NodeType node : spatialIndex.values()) {
+                    double diff = node.getEntityCount() - averageLoad;
+                    variance += diff * diff;
+                }
+                variance /= totalNodes;
+            }
+
+            return new TreeBalancingStrategy.TreeBalancingStats(totalNodes, underpopulatedNodes, overpopulatedNodes,
+                                                                emptyNodes, maxDepth, averageLoad, variance);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public CollisionShape getCollisionShape(ID entityId) {
+        lock.readLock().lock();
+        try {
+            return entityManager.getEntityCollisionShape(entityId);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    // ===== Common Entity Management Methods =====
 
     @Override
     public List<Content> getEntities(List<ID> entityIds) {
@@ -205,8 +495,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Entity Management Methods =====
-
     @Override
     public NavigableMap<Long, Set<ID>> getSpatialMap() {
         lock.readLock().lock();
@@ -248,6 +536,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Common Insert Operations =====
 
     @Override
     public boolean hasNode(long spatialIndex) {
@@ -305,6 +595,18 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Check if automatic balancing is enabled.
+     */
+    public boolean isAutoBalancingEnabled() {
+        lock.readLock().lock();
+        try {
+            return autoBalancingEnabled;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
      * Find k nearest neighbors to a query point
      *
      * @param queryPoint  the point to search from
@@ -327,15 +629,24 @@ implements SpatialIndex<ID, Content> {
             // Track visited entities to avoid duplicates
             Set<ID> visited = new HashSet<>();
 
-            // Start with the containing spatial cell
-            long initialIndex = calculateSpatialIndex(queryPoint, maxDepth);
-
             // Use a queue for breadth-first search
             Queue<Long> toVisit = new LinkedList<>();
             Set<Long> visitedNodes = new HashSet<>();
 
-            // Initialize search with the containing spatial cell
-            toVisit.add(initialIndex);
+            // Start with the containing spatial cell at different levels to find an existing node
+            boolean foundStartNode = false;
+            for (byte level = maxDepth; level >= 0 && !foundStartNode; level--) {
+                long initialIndex = calculateSpatialIndex(queryPoint, level);
+                if (getSpatialIndex().containsKey(initialIndex)) {
+                    toVisit.add(initialIndex);
+                    foundStartNode = true;
+                }
+            }
+
+            // If no existing node found, use all existing nodes as starting points
+            if (!foundStartNode && !getSpatialIndex().isEmpty()) {
+                toVisit.addAll(getSpatialIndex().keySet());
+            }
 
             while (!toVisit.isEmpty()) {
                 Long current = toVisit.poll();
@@ -382,6 +693,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Remove Operations =====
+
     @Override
     public int nodeCount() {
         lock.readLock().lock();
@@ -391,8 +704,6 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
-
-    // ===== Common Insert Operations =====
 
     @Override
     public Stream<SpatialNode<ID>> nodes() {
@@ -535,6 +846,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Update Operations =====
+
     @Override
     public List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance) {
         validateSpatialConstraints(ray.origin());
@@ -600,6 +913,20 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Query Operations =====
+
+    /**
+     * Manually trigger tree rebalancing.
+     */
+    public TreeBalancer.RebalancingResult rebalanceTree() {
+        lock.writeLock().lock();
+        try {
+            return treeBalancer.rebalanceTree();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     @Override
     public boolean removeEntity(ID entityId) {
         lock.writeLock().lock();
@@ -625,13 +952,137 @@ implements SpatialIndex<ID, Content> {
                     }
                 }
             }
-            
+
             // Check for auto-balancing after removal
             checkAutoBalance();
 
             return true;
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Enable or disable automatic balancing.
+     */
+    public void setAutoBalancingEnabled(boolean enabled) {
+        lock.writeLock().lock();
+        try {
+            this.autoBalancingEnabled = enabled;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Set the balancing strategy.
+     */
+    public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
+        lock.writeLock().lock();
+        try {
+            this.balancingStrategy = Objects.requireNonNull(strategy);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    // ===== Common Statistics =====
+
+    @Override
+    public void setCollisionShape(ID entityId, CollisionShape shape) {
+        lock.writeLock().lock();
+        try {
+            entityManager.setEntityCollisionShape(entityId, shape);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    // ===== Common Utility Methods =====
+
+    @Override
+    public void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy) {
+        lock.readLock().lock();
+        try {
+            // Count total nodes and entities
+            int totalNodes = nodeCount();
+            int totalEntities = entityCount();
+
+            visitor.beginTraversal(totalNodes, totalEntities);
+
+            TraversalContext<ID> context = new TraversalContext<>();
+
+            // Get root nodes based on implementation
+            Set<Long> rootNodes = getRootNodes();
+
+            for (Long rootIndex : rootNodes) {
+                if (context.isCancelled()) {
+                    break;
+                }
+                traverseNode(rootIndex, visitor, strategy, context, -1, 0);
+            }
+
+            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex) {
+        lock.readLock().lock();
+        try {
+            if (!hasNode(startNodeIndex)) {
+                visitor.beginTraversal(0, 0);
+                visitor.endTraversal(0, 0);
+                return;
+            }
+
+            visitor.beginTraversal(-1, -1); // Unknown totals
+
+            TraversalContext<ID> context = new TraversalContext<>();
+            traverseNode(startNodeIndex, visitor, strategy, context, -1, 0);
+
+            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy) {
+        lock.readLock().lock();
+        try {
+            validateSpatialConstraints(region);
+
+            var bounds = getVolumeBounds(region);
+            if (bounds == null) {
+                visitor.beginTraversal(0, 0);
+                visitor.endTraversal(0, 0);
+                return;
+            }
+
+            // Find nodes in region
+            List<Long> nodesInRegion = spatialRangeQuery(bounds, true).map(Map.Entry::getKey).collect(
+            Collectors.toList());
+
+            visitor.beginTraversal(nodesInRegion.size(), -1);
+
+            TraversalContext<ID> context = new TraversalContext<>();
+
+            for (Long nodeIndex : nodesInRegion) {
+                if (context.isCancelled()) {
+                    break;
+                }
+
+                if (!context.isVisited(nodeIndex)) {
+                    traverseNode(nodeIndex, visitor, strategy, context, -1, 0);
+                }
+            }
+
+            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
@@ -664,8 +1115,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Remove Operations =====
-
     /**
      * Add neighboring nodes to the k-NN search queue
      *
@@ -675,10 +1124,32 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract void addNeighboringNodes(long nodeIndex, Queue<Long> toVisit, Set<Long> visitedNodes);
 
+    // ===== Common k-NN Search Implementation =====
+
     /**
      * Calculate the spatial index for a position at a given level
      */
     protected abstract long calculateSpatialIndex(Point3f position, byte level);
+
+    /**
+     * Check and perform automatic balancing if needed.
+     */
+    protected void checkAutoBalance() {
+        if (!autoBalancingEnabled) {
+            return;
+        }
+
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastBalancingTime < balancingStrategy.getMinRebalancingInterval()) {
+            return;
+        }
+
+        TreeBalancingStrategy.TreeBalancingStats stats = getBalancingStats();
+        if (balancingStrategy.shouldRebalanceTree(stats)) {
+            lastBalancingTime = currentTime;
+            treeBalancer.rebalanceTree();
+        }
+    }
 
     /**
      * Clean up empty nodes from the spatial index
@@ -690,12 +1161,12 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Spatial Query Base =====
+
     /**
      * Create a new node instance
      */
     protected abstract NodeType createNode();
-
-    // ===== Common Update Operations =====
 
     /**
      * Create a spatial volume from bounds for filtering
@@ -708,7 +1179,15 @@ implements SpatialIndex<ID, Content> {
                                 bounds.maxZ());
     }
 
-    // ===== Common Query Operations =====
+    // ===== Ray Intersection Abstract Methods =====
+
+    /**
+     * Create a tree balancer instance. Default implementation provides basic balancing. Subclasses can override to
+     * provide specialized balancing.
+     */
+    protected TreeBalancer<ID> createTreeBalancer() {
+        return new DefaultTreeBalancer();
+    }
 
     /**
      * Check if a node's bounds intersect with a volume
@@ -723,6 +1202,8 @@ implements SpatialIndex<ID, Content> {
      * @return true if the ray intersects the node
      */
     protected abstract boolean doesRayIntersectNode(long nodeIndex, Ray3D ray);
+
+    // ===== Ray Intersection Implementation =====
 
     /**
      * Find minimum containing level for bounds
@@ -744,14 +1225,18 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract int getCellSizeAtLevel(byte level);
 
-    // ===== Common Statistics =====
+    /**
+     * Get child nodes of a given node. Default implementation returns empty list. Subclasses should override to provide
+     * actual parent-child relationships.
+     */
+    protected List<Long> getChildNodes(long nodeIndex) {
+        return Collections.emptyList();
+    }
 
     /**
      * Extract the level from a spatial index
      */
     protected abstract byte getLevelFromIndex(long index);
-
-    // ===== Common Utility Methods =====
 
     /**
      * Get the spatial bounds of a node
@@ -778,6 +1263,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Collision Detection Implementation =====
+
     /**
      * Get the distance from ray origin to node intersection
      *
@@ -796,13 +1283,34 @@ implements SpatialIndex<ID, Content> {
     protected abstract Stream<Long> getRayTraversalOrder(Ray3D ray);
 
     /**
+     * Get root nodes for traversal. Default implementation returns all nodes at the minimum level. Subclasses can
+     * override for specific root node logic.
+     */
+    protected Set<Long> getRootNodes() {
+        Set<Long> roots = new HashSet<>();
+        byte minLevel = Byte.MAX_VALUE;
+
+        // Find minimum level
+        for (Long index : spatialIndex.keySet()) {
+            byte level = getLevelFromIndex(index);
+            if (level < minLevel) {
+                minLevel = level;
+                roots.clear();
+                roots.add(index);
+            } else if (level == minLevel) {
+                roots.add(index);
+            }
+        }
+
+        return roots;
+    }
+
+    /**
      * Get the spatial index storage map
      */
     protected Map<Long, NodeType> getSpatialIndex() {
         return spatialIndex;
     }
-
-    // ===== Common k-NN Search Implementation =====
 
     /**
      * Get the range of spatial indices that could intersect with the given bounds This method should be overridden by
@@ -818,7 +1326,7 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
-     * Get volume bounds helper
+     * 1     * 1 Get volume bounds helper
      */
     protected VolumeBounds getVolumeBounds(Spatial volume) {
         return VolumeBounds.from(volume);
@@ -830,8 +1338,6 @@ implements SpatialIndex<ID, Content> {
     protected void handleNodeSubdivision(long spatialIndex, byte level, NodeType node) {
         // Default: no subdivision. Subclasses can override
     }
-
-    // ===== Common Spatial Query Base =====
 
     /**
      * Check if a node has children (to be implemented by subclasses if needed)
@@ -862,12 +1368,10 @@ implements SpatialIndex<ID, Content> {
         if (shouldSplit && level < maxDepth) {
             handleNodeSubdivision(spatialIndex, level, node);
         }
-        
+
         // Check for auto-balancing after insertion
         checkAutoBalance();
     }
-
-    // ===== Ray Intersection Abstract Methods =====
 
     /**
      * Hook for subclasses to handle entity spanning
@@ -891,8 +1395,6 @@ implements SpatialIndex<ID, Content> {
     protected void onNodeRemoved(long spatialIndex) {
         sortedSpatialIndices.remove(spatialIndex);
     }
-
-    // ===== Ray Intersection Implementation =====
 
     /**
      * Ray-AABB intersection test
@@ -1018,228 +1520,112 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract void validateSpatialConstraints(Spatial volume);
 
-    // ===== Collision Detection Implementation =====
-
-    @Override
-    public List<CollisionPair<ID, Content>> findAllCollisions() {
-        lock.readLock().lock();
-        try {
-            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
-            Set<UnorderedPair<ID>> checkedPairs = new HashSet<>();
-
-            // Iterate through all nodes
-            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
-                NodeType node = entry.getValue();
-                if (node.isEmpty()) {
-                    continue;
-                }
-
-                List<ID> nodeEntities = new ArrayList<>(node.getEntityIds());
-                
-                // Check entities within the same node
-                for (int i = 0; i < nodeEntities.size(); i++) {
-                    for (int j = i + 1; j < nodeEntities.size(); j++) {
-                        ID id1 = nodeEntities.get(i);
-                        ID id2 = nodeEntities.get(j);
-                        UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
-                        
-                        if (checkedPairs.add(pair)) {
-                            checkAndAddCollision(id1, id2, collisions);
-                        }
-                    }
-                }
-
-                // Check against neighboring nodes
-                long nodeIndex = entry.getKey();
-                Queue<Long> neighbors = new LinkedList<>();
-                Set<Long> visitedNeighbors = new HashSet<>();
-                addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
-
-                while (!neighbors.isEmpty()) {
-                    Long neighborIndex = neighbors.poll();
-                    NodeType neighborNode = spatialIndex.get(neighborIndex);
-                    if (neighborNode == null || neighborNode.isEmpty()) {
-                        continue;
-                    }
-
-                    // Check entities between nodes
-                    for (ID id1 : nodeEntities) {
-                        for (ID id2 : neighborNode.getEntityIds()) {
-                            UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
-                            if (checkedPairs.add(pair)) {
-                                checkAndAddCollision(id1, id2, collisions);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Sort by penetration depth (deepest first)
-            Collections.sort(collisions);
-            return collisions;
-        } finally {
-            lock.readLock().unlock();
-        }
+    /**
+     * Check if two bounds intersect
+     */
+    private boolean boundsIntersect(EntityBounds b1, EntityBounds b2) {
+        return b1.getMaxX() >= b2.getMinX() && b1.getMinX() <= b2.getMaxX() && b1.getMaxY() >= b2.getMinY()
+        && b1.getMinY() <= b2.getMaxY() && b1.getMaxZ() >= b2.getMinZ() && b1.getMinZ() <= b2.getMaxZ();
     }
 
-    @Override
-    public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
-        lock.readLock().lock();
-        try {
-            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
-            
-            // Get entity's locations
-            Set<Long> locations = entityManager.getEntityLocations(entityId);
-            if (locations.isEmpty()) {
-                return collisions;
+    // ===== Tree Traversal Implementation =====
+
+    /**
+     * Check if bounds intersect with a volume
+     */
+    private boolean boundsIntersectVolume(EntityBounds bounds, Spatial volume) {
+        return switch (volume) {
+            case Spatial.Cube cube ->
+            bounds.getMaxX() >= cube.originX() && bounds.getMinX() <= cube.originX() + cube.extent()
+            && bounds.getMaxY() >= cube.originY() && bounds.getMinY() <= cube.originY() + cube.extent()
+            && bounds.getMaxZ() >= cube.originZ() && bounds.getMinZ() <= cube.originZ() + cube.extent();
+
+            case Spatial.Sphere sphere -> {
+                // Find closest point on bounds to sphere center
+                float closestX = Math.max(bounds.getMinX(), Math.min(sphere.centerX(), bounds.getMaxX()));
+                float closestY = Math.max(bounds.getMinY(), Math.min(sphere.centerY(), bounds.getMaxY()));
+                float closestZ = Math.max(bounds.getMinZ(), Math.min(sphere.centerZ(), bounds.getMaxZ()));
+
+                float dx = closestX - sphere.centerX();
+                float dy = closestY - sphere.centerY();
+                float dz = closestZ - sphere.centerZ();
+                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
             }
 
-            Set<ID> checkedEntities = new HashSet<>();
-            checkedEntities.add(entityId);
-
-            // Check all nodes where this entity appears
-            for (Long nodeIndex : locations) {
-                NodeType node = spatialIndex.get(nodeIndex);
-                if (node == null) {
-                    continue;
-                }
-
-                // Check against other entities in the same node
-                for (ID otherId : node.getEntityIds()) {
-                    if (!checkedEntities.add(otherId)) {
-                        continue;
-                    }
-                    checkAndAddCollision(entityId, otherId, collisions);
-                }
-
-                // Check neighboring nodes
-                Queue<Long> neighbors = new LinkedList<>();
-                Set<Long> visitedNeighbors = new HashSet<>();
-                addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
-
-                while (!neighbors.isEmpty()) {
-                    Long neighborIndex = neighbors.poll();
-                    NodeType neighborNode = spatialIndex.get(neighborIndex);
-                    if (neighborNode == null || neighborNode.isEmpty()) {
-                        continue;
-                    }
-
-                    for (ID otherId : neighborNode.getEntityIds()) {
-                        if (!checkedEntities.add(otherId)) {
-                            continue;
-                        }
-                        checkAndAddCollision(entityId, otherId, collisions);
-                    }
-                }
-            }
-
-            Collections.sort(collisions);
-            return collisions;
-        } finally {
-            lock.readLock().unlock();
-        }
+            default -> true;
+        };
     }
 
-    @Override
-    public List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
-        lock.readLock().lock();
-        try {
-            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
-            Set<UnorderedPair<ID>> checkedPairs = new HashSet<>();
+    /**
+     * Calculate contact normal between two AABBs
+     */
+    private Vector3f calculateContactNormal(EntityBounds b1, EntityBounds b2) {
+        // Find the axis with minimum penetration
+        float[] penetrations = new float[6];
+        penetrations[0] = b1.getMaxX() - b2.getMinX(); // +X
+        penetrations[1] = b2.getMaxX() - b1.getMinX(); // -X
+        penetrations[2] = b1.getMaxY() - b2.getMinY(); // +Y
+        penetrations[3] = b2.getMaxY() - b1.getMinY(); // -Y
+        penetrations[4] = b1.getMaxZ() - b2.getMinZ(); // +Z
+        penetrations[5] = b2.getMaxZ() - b1.getMinZ(); // -Z
 
-            // Find all nodes intersecting the region
-            var bounds = getVolumeBounds(region);
-            if (bounds == null) {
-                return collisions;
+        int minAxis = 0;
+        float minPenetration = penetrations[0];
+        for (int i = 1; i < 6; i++) {
+            if (penetrations[i] < minPenetration) {
+                minPenetration = penetrations[i];
+                minAxis = i;
             }
-
-            Stream<Map.Entry<Long, NodeType>> nodesInRegion = spatialRangeQuery(bounds, true);
-            List<Map.Entry<Long, NodeType>> nodeList = nodesInRegion.collect(Collectors.toList());
-
-            // Check entities within and between nodes
-            for (int i = 0; i < nodeList.size(); i++) {
-                List<ID> nodeEntities = new ArrayList<>(nodeList.get(i).getValue().getEntityIds());
-                
-                // Check within node
-                for (int j = 0; j < nodeEntities.size(); j++) {
-                    for (int k = j + 1; k < nodeEntities.size(); k++) {
-                        ID id1 = nodeEntities.get(j);
-                        ID id2 = nodeEntities.get(k);
-                        
-                        // Check if both entities are actually in the region
-                        if (isEntityInRegion(id1, region) && isEntityInRegion(id2, region)) {
-                            UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
-                            if (checkedPairs.add(pair)) {
-                                checkAndAddCollision(id1, id2, collisions);
-                            }
-                        }
-                    }
-                }
-
-                // Check between nodes
-                for (int j = i + 1; j < nodeList.size(); j++) {
-                    for (ID id1 : nodeEntities) {
-                        if (!isEntityInRegion(id1, region)) {
-                            continue;
-                        }
-                        
-                        for (ID id2 : nodeList.get(j).getValue().getEntityIds()) {
-                            if (!isEntityInRegion(id2, region)) {
-                                continue;
-                            }
-                            
-                            UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
-                            if (checkedPairs.add(pair)) {
-                                checkAndAddCollision(id1, id2, collisions);
-                            }
-                        }
-                    }
-                }
-            }
-
-            Collections.sort(collisions);
-            return collisions;
-        } finally {
-            lock.readLock().unlock();
         }
+
+        // Return normal based on minimum penetration axis
+        return switch (minAxis) {
+            case 0 -> new Vector3f(1, 0, 0);   // +X
+            case 1 -> new Vector3f(-1, 0, 0);  // -X
+            case 2 -> new Vector3f(0, 1, 0);   // +Y
+            case 3 -> new Vector3f(0, -1, 0);  // -Y
+            case 4 -> new Vector3f(0, 0, 1);   // +Z
+            case 5 -> new Vector3f(0, 0, -1);  // -Z
+            default -> new Vector3f(1, 0, 0);
+        };
     }
 
-    @Override
-    public Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2) {
-        if (entityId1.equals(entityId2)) {
-            return Optional.empty();
+    /**
+     * Calculate contact point between two AABBs
+     */
+    private Point3f calculateContactPoint(EntityBounds b1, EntityBounds b2) {
+        // Use the center of the intersection volume
+        float minX = Math.max(b1.getMinX(), b2.getMinX());
+        float minY = Math.max(b1.getMinY(), b2.getMinY());
+        float minZ = Math.max(b1.getMinZ(), b2.getMinZ());
+        float maxX = Math.min(b1.getMaxX(), b2.getMaxX());
+        float maxY = Math.min(b1.getMaxY(), b2.getMaxY());
+        float maxZ = Math.min(b1.getMaxZ(), b2.getMaxZ());
+
+        return new Point3f((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+    }
+
+    /**
+     * Calculate penetration depth between two AABBs
+     */
+    private float calculatePenetrationDepth(EntityBounds b1, EntityBounds b2) {
+        float xPenetration = Math.min(b1.getMaxX() - b2.getMinX(), b2.getMaxX() - b1.getMinX());
+        float yPenetration = Math.min(b1.getMaxY() - b2.getMinY(), b2.getMaxY() - b1.getMinY());
+        float zPenetration = Math.min(b1.getMaxZ() - b2.getMinZ(), b2.getMaxZ() - b1.getMinZ());
+
+        return Math.min(Math.min(xPenetration, yPenetration), zPenetration);
+    }
+
+    /**
+     * Check two entities for collision and add to list if colliding
+     */
+    private void checkAndAddCollision(ID id1, ID id2, List<CollisionPair<ID, Content>> collisions) {
+        if (id1.equals(id2)) {
+            return;
         }
 
-        lock.readLock().lock();
-        try {
-            EntityBounds bounds1 = entityManager.getEntityBounds(entityId1);
-            EntityBounds bounds2 = entityManager.getEntityBounds(entityId2);
-
-            // Quick AABB check first
-            if (bounds1 != null && bounds2 != null) {
-                if (!boundsIntersect(bounds1, bounds2)) {
-                    return Optional.empty();
-                }
-            } else {
-                // For point entities, check distance
-                Point3f pos1 = entityManager.getEntityPosition(entityId1);
-                Point3f pos2 = entityManager.getEntityPosition(entityId2);
-                
-                if (pos1 == null || pos2 == null) {
-                    return Optional.empty();
-                }
-
-                float threshold = 0.1f; // Small threshold for point entities
-                if (pos1.distance(pos2) > threshold) {
-                    return Optional.empty();
-                }
-            }
-
-            // Perform detailed collision check
-            return performDetailedCollisionCheck(entityId1, entityId2);
-        } finally {
-            lock.readLock().unlock();
-        }
+        Optional<CollisionPair<ID, Content>> collision = performDetailedCollisionCheck(id1, id2);
+        collision.ifPresent(collisions::add);
     }
 
     /**
@@ -1303,57 +1689,19 @@ implements SpatialIndex<ID, Content> {
     private boolean isPointInVolume(Point3f point, Spatial volume) {
         return switch (volume) {
             case Spatial.Cube cube ->
-                point.x >= cube.originX() && point.x <= cube.originX() + cube.extent() &&
-                point.y >= cube.originY() && point.y <= cube.originY() + cube.extent() &&
-                point.z >= cube.originZ() && point.z <= cube.originZ() + cube.extent();
-            
+            point.x >= cube.originX() && point.x <= cube.originX() + cube.extent() && point.y >= cube.originY()
+            && point.y <= cube.originY() + cube.extent() && point.z >= cube.originZ()
+            && point.z <= cube.originZ() + cube.extent();
+
             case Spatial.Sphere sphere -> {
                 float dx = point.x - sphere.centerX();
                 float dy = point.y - sphere.centerY();
                 float dz = point.z - sphere.centerZ();
                 yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
             }
-            
+
             default -> true; // Conservative for unknown types
         };
-    }
-
-    /**
-     * Check if bounds intersect with a volume
-     */
-    private boolean boundsIntersectVolume(EntityBounds bounds, Spatial volume) {
-        return switch (volume) {
-            case Spatial.Cube cube ->
-                bounds.getMaxX() >= cube.originX() && bounds.getMinX() <= cube.originX() + cube.extent() &&
-                bounds.getMaxY() >= cube.originY() && bounds.getMinY() <= cube.originY() + cube.extent() &&
-                bounds.getMaxZ() >= cube.originZ() && bounds.getMinZ() <= cube.originZ() + cube.extent();
-            
-            case Spatial.Sphere sphere -> {
-                // Find closest point on bounds to sphere center
-                float closestX = Math.max(bounds.getMinX(), Math.min(sphere.centerX(), bounds.getMaxX()));
-                float closestY = Math.max(bounds.getMinY(), Math.min(sphere.centerY(), bounds.getMaxY()));
-                float closestZ = Math.max(bounds.getMinZ(), Math.min(sphere.centerZ(), bounds.getMaxZ()));
-                
-                float dx = closestX - sphere.centerX();
-                float dy = closestY - sphere.centerY();
-                float dz = closestZ - sphere.centerZ();
-                yield (dx * dx + dy * dy + dz * dz) <= (sphere.radius() * sphere.radius());
-            }
-            
-            default -> true;
-        };
-    }
-
-    /**
-     * Check two entities for collision and add to list if colliding
-     */
-    private void checkAndAddCollision(ID id1, ID id2, List<CollisionPair<ID, Content>> collisions) {
-        if (id1.equals(id2)) {
-            return;
-        }
-
-        Optional<CollisionPair<ID, Content>> collision = performDetailedCollisionCheck(id1, id2);
-        collision.ifPresent(collisions::add);
     }
 
     /**
@@ -1364,20 +1712,18 @@ implements SpatialIndex<ID, Content> {
         EntityBounds bounds2 = entityManager.getEntityBounds(id2);
         Content content1 = entityManager.getEntityContent(id1);
         Content content2 = entityManager.getEntityContent(id2);
-        
+
         // Check if we have collision shapes for narrow-phase detection
         CollisionShape shape1 = entityManager.getEntityCollisionShape(id1);
         CollisionShape shape2 = entityManager.getEntityCollisionShape(id2);
-        
+
         if (shape1 != null && shape2 != null) {
             // Use narrow-phase collision detection
             CollisionShape.CollisionResult result = shape1.collidesWith(shape2);
             if (result.collides) {
-                return Optional.of(CollisionPair.create(
-                    id1, content1, bounds1,
-                    id2, content2, bounds2,
-                    result.contactPoint, result.contactNormal, result.penetrationDepth
-                ));
+                return Optional.of(
+                CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, result.contactPoint,
+                                     result.contactNormal, result.penetrationDepth));
             }
             return Optional.empty();
         }
@@ -1390,26 +1736,24 @@ implements SpatialIndex<ID, Content> {
                 Point3f contactPoint = calculateContactPoint(bounds1, bounds2);
                 Vector3f contactNormal = calculateContactNormal(bounds1, bounds2);
                 float penetrationDepth = calculatePenetrationDepth(bounds1, bounds2);
-                
-                return Optional.of(CollisionPair.create(
-                    id1, content1, bounds1,
-                    id2, content2, bounds2,
-                    contactPoint, contactNormal, penetrationDepth
-                ));
+
+                return Optional.of(
+                CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
+                                     penetrationDepth));
             }
         } else {
             // Point-based collision (one or both entities are points)
             Point3f pos1 = entityManager.getEntityPosition(id1);
             Point3f pos2 = entityManager.getEntityPosition(id2);
-            
+
             if (pos1 != null && pos2 != null) {
                 float distance = pos1.distance(pos2);
                 float threshold = 0.1f; // Collision threshold for points
-                
+
                 if (distance <= threshold) {
                     Point3f contactPoint = new Point3f();
                     contactPoint.interpolate(pos1, pos2, 0.5f);
-                    
+
                     Vector3f contactNormal = new Vector3f();
                     contactNormal.sub(pos2, pos1);
                     if (contactNormal.length() > 0) {
@@ -1417,14 +1761,12 @@ implements SpatialIndex<ID, Content> {
                     } else {
                         contactNormal.set(1, 0, 0); // Default normal
                     }
-                    
+
                     float penetrationDepth = Math.max(0, threshold - distance);
-                    
-                    return Optional.of(CollisionPair.create(
-                        id1, content1, bounds1,
-                        id2, content2, bounds2,
-                        contactPoint, contactNormal, penetrationDepth
-                    ));
+
+                    return Optional.of(
+                    CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
+                                         penetrationDepth));
                 }
             }
         }
@@ -1433,245 +1775,47 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
-     * Check if two bounds intersect
+     * Process nodes in breadth-first order
      */
-    private boolean boundsIntersect(EntityBounds b1, EntityBounds b2) {
-        return b1.getMaxX() >= b2.getMinX() && b1.getMinX() <= b2.getMaxX() &&
-               b1.getMaxY() >= b2.getMinY() && b1.getMinY() <= b2.getMaxY() &&
-               b1.getMaxZ() >= b2.getMinZ() && b1.getMinZ() <= b2.getMaxZ();
+    private void processBreadthFirstQueue(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy,
+                                          TraversalContext<ID> context) {
+        Long nodeIndex;
+        while ((nodeIndex = context.popNode()) != null) {
+            int level = context.getNodeLevel(nodeIndex);
+            traverseNode(nodeIndex, visitor, strategy, context, -1, level);
+        }
     }
 
-    /**
-     * Calculate contact point between two AABBs
-     */
-    private Point3f calculateContactPoint(EntityBounds b1, EntityBounds b2) {
-        // Use the center of the intersection volume
-        float minX = Math.max(b1.getMinX(), b2.getMinX());
-        float minY = Math.max(b1.getMinY(), b2.getMinY());
-        float minZ = Math.max(b1.getMinZ(), b2.getMinZ());
-        float maxX = Math.min(b1.getMaxX(), b2.getMaxX());
-        float maxY = Math.min(b1.getMaxY(), b2.getMaxY());
-        float maxZ = Math.min(b1.getMaxZ(), b2.getMaxZ());
-        
-        return new Point3f((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-    }
-
-    /**
-     * Calculate contact normal between two AABBs
-     */
-    private Vector3f calculateContactNormal(EntityBounds b1, EntityBounds b2) {
-        // Find the axis with minimum penetration
-        float[] penetrations = new float[6];
-        penetrations[0] = b1.getMaxX() - b2.getMinX(); // +X
-        penetrations[1] = b2.getMaxX() - b1.getMinX(); // -X
-        penetrations[2] = b1.getMaxY() - b2.getMinY(); // +Y
-        penetrations[3] = b2.getMaxY() - b1.getMinY(); // -Y
-        penetrations[4] = b1.getMaxZ() - b2.getMinZ(); // +Z
-        penetrations[5] = b2.getMaxZ() - b1.getMinZ(); // -Z
-        
-        int minAxis = 0;
-        float minPenetration = penetrations[0];
-        for (int i = 1; i < 6; i++) {
-            if (penetrations[i] < minPenetration) {
-                minPenetration = penetrations[i];
-                minAxis = i;
-            }
-        }
-        
-        // Return normal based on minimum penetration axis
-        return switch (minAxis) {
-            case 0 -> new Vector3f(1, 0, 0);   // +X
-            case 1 -> new Vector3f(-1, 0, 0);  // -X
-            case 2 -> new Vector3f(0, 1, 0);   // +Y
-            case 3 -> new Vector3f(0, -1, 0);  // -Y
-            case 4 -> new Vector3f(0, 0, 1);   // +Z
-            case 5 -> new Vector3f(0, 0, -1);  // -Z
-            default -> new Vector3f(1, 0, 0);
-        };
-    }
-
-    /**
-     * Calculate penetration depth between two AABBs
-     */
-    private float calculatePenetrationDepth(EntityBounds b1, EntityBounds b2) {
-        float xPenetration = Math.min(b1.getMaxX() - b2.getMinX(), b2.getMaxX() - b1.getMinX());
-        float yPenetration = Math.min(b1.getMaxY() - b2.getMinY(), b2.getMaxY() - b1.getMinY());
-        float zPenetration = Math.min(b1.getMaxZ() - b2.getMinZ(), b2.getMaxZ() - b1.getMinZ());
-        
-        return Math.min(Math.min(xPenetration, yPenetration), zPenetration);
-    }
-
-    /**
-     * Helper class for unordered entity pairs
-     */
-    private static class UnorderedPair<T extends EntityID> {
-        private final T first;
-        private final T second;
-
-        UnorderedPair(T a, T b) {
-            if (a.compareTo(b) <= 0) {
-                this.first = a;
-                this.second = b;
-            } else {
-                this.first = b;
-                this.second = a;
-            }
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof UnorderedPair<?> that)) return false;
-            return Objects.equals(first, that.first) && Objects.equals(second, that.second);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(first, second);
-        }
-    }
-    
-    @Override
-    public void setCollisionShape(ID entityId, CollisionShape shape) {
-        lock.writeLock().lock();
-        try {
-            entityManager.setEntityCollisionShape(entityId, shape);
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-    
-    @Override
-    public CollisionShape getCollisionShape(ID entityId) {
-        lock.readLock().lock();
-        try {
-            return entityManager.getEntityCollisionShape(entityId);
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
-    // ===== Tree Traversal Implementation =====
-    
-    @Override
-    public void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy) {
-        lock.readLock().lock();
-        try {
-            // Count total nodes and entities
-            int totalNodes = nodeCount();
-            int totalEntities = entityCount();
-            
-            visitor.beginTraversal(totalNodes, totalEntities);
-            
-            TraversalContext<ID> context = new TraversalContext<>();
-            
-            // Get root nodes based on implementation
-            Set<Long> rootNodes = getRootNodes();
-            
-            for (Long rootIndex : rootNodes) {
-                if (context.isCancelled()) {
-                    break;
-                }
-                traverseNode(rootIndex, visitor, strategy, context, -1, 0);
-            }
-            
-            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
-    @Override
-    public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex) {
-        lock.readLock().lock();
-        try {
-            if (!hasNode(startNodeIndex)) {
-                visitor.beginTraversal(0, 0);
-                visitor.endTraversal(0, 0);
-                return;
-            }
-            
-            visitor.beginTraversal(-1, -1); // Unknown totals
-            
-            TraversalContext<ID> context = new TraversalContext<>();
-            traverseNode(startNodeIndex, visitor, strategy, context, -1, 0);
-            
-            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
-    @Override
-    public void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy) {
-        lock.readLock().lock();
-        try {
-            validateSpatialConstraints(region);
-            
-            var bounds = getVolumeBounds(region);
-            if (bounds == null) {
-                visitor.beginTraversal(0, 0);
-                visitor.endTraversal(0, 0);
-                return;
-            }
-            
-            // Find nodes in region
-            List<Long> nodesInRegion = spatialRangeQuery(bounds, true)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-            
-            visitor.beginTraversal(nodesInRegion.size(), -1);
-            
-            TraversalContext<ID> context = new TraversalContext<>();
-            
-            for (Long nodeIndex : nodesInRegion) {
-                if (context.isCancelled()) {
-                    break;
-                }
-                
-                if (!context.isVisited(nodeIndex)) {
-                    traverseNode(nodeIndex, visitor, strategy, context, -1, 0);
-                }
-            }
-            
-            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
     /**
      * Traverse a single node and its children recursively
      */
-    private void traverseNode(long nodeIndex, TreeVisitor<ID, Content> visitor, 
-                             TraversalStrategy strategy, TraversalContext<ID> context,
-                             long parentIndex, int level) {
-        
+    private void traverseNode(long nodeIndex, TreeVisitor<ID, Content> visitor, TraversalStrategy strategy,
+                              TraversalContext<ID> context, long parentIndex, int level) {
+
         if (context.isCancelled() || context.isVisited(nodeIndex)) {
             return;
         }
-        
+
         // Check max depth
         if (visitor.getMaxDepth() >= 0 && level > visitor.getMaxDepth()) {
             return;
         }
-        
+
         // Get node
         NodeType node = spatialIndex.get(nodeIndex);
         if (node == null || node.isEmpty()) {
             return;
         }
-        
+
         // Create SpatialNode wrapper
-        SpatialNode<ID> spatialNode = new SpatialNode<>(nodeIndex, 
-            new HashSet<>(node.getEntityIds()));
-        
+        SpatialNode<ID> spatialNode = new SpatialNode<>(nodeIndex, new HashSet<>(node.getEntityIds()));
+
         // Mark as visited
         context.markVisited(nodeIndex);
-        
+
         // Pre-order visit
         boolean shouldContinue = visitor.visitNode(spatialNode, level, parentIndex);
-        
+
         // Visit entities if requested
         if (shouldContinue && visitor.shouldVisitEntities()) {
             for (ID entityId : node.getEntityIds()) {
@@ -1680,17 +1824,17 @@ implements SpatialIndex<ID, Content> {
                 context.incrementEntitiesVisited();
             }
         }
-        
+
         // Visit children if requested
         if (shouldContinue) {
             List<Long> children = getChildNodes(nodeIndex);
             int childCount = 0;
-            
+
             for (Long childIndex : children) {
                 if (context.isCancelled()) {
                     break;
                 }
-                
+
                 // Apply traversal strategy
                 switch (strategy) {
                     case DEPTH_FIRST, PRE_ORDER -> {
@@ -1713,230 +1857,197 @@ implements SpatialIndex<ID, Content> {
                     }
                 }
             }
-            
+
             // Process breadth-first queue
-            if (strategy == TraversalStrategy.BREADTH_FIRST || 
-                strategy == TraversalStrategy.LEVEL_ORDER) {
+            if (strategy == TraversalStrategy.BREADTH_FIRST || strategy == TraversalStrategy.LEVEL_ORDER) {
                 processBreadthFirstQueue(visitor, strategy, context);
             }
-            
+
             // Post-order visit
             visitor.leaveNode(spatialNode, level, childCount);
         }
     }
-    
+
     /**
-     * Process nodes in breadth-first order
+     * Helper class for unordered entity pairs
      */
-    private void processBreadthFirstQueue(TreeVisitor<ID, Content> visitor,
-                                        TraversalStrategy strategy,
-                                        TraversalContext<ID> context) {
-        Long nodeIndex;
-        while ((nodeIndex = context.popNode()) != null) {
-            int level = context.getNodeLevel(nodeIndex);
-            traverseNode(nodeIndex, visitor, strategy, context, -1, level);
-        }
-    }
-    
-    /**
-     * Get root nodes for traversal. Default implementation returns all nodes
-     * at the minimum level. Subclasses can override for specific root node logic.
-     */
-    protected Set<Long> getRootNodes() {
-        Set<Long> roots = new HashSet<>();
-        byte minLevel = Byte.MAX_VALUE;
-        
-        // Find minimum level
-        for (Long index : spatialIndex.keySet()) {
-            byte level = getLevelFromIndex(index);
-            if (level < minLevel) {
-                minLevel = level;
-                roots.clear();
-                roots.add(index);
-            } else if (level == minLevel) {
-                roots.add(index);
+    private static class UnorderedPair<T extends EntityID> {
+        private final T first;
+        private final T second;
+
+        UnorderedPair(T a, T b) {
+            if (a.compareTo(b) <= 0) {
+                this.first = a;
+                this.second = b;
+            } else {
+                this.first = b;
+                this.second = a;
             }
         }
-        
-        return roots;
-    }
-    
-    /**
-     * Get child nodes of a given node. Default implementation returns empty list.
-     * Subclasses should override to provide actual parent-child relationships.
-     */
-    protected List<Long> getChildNodes(long nodeIndex) {
-        return Collections.emptyList();
-    }
-    
-    /**
-     * Create a tree balancer instance. Default implementation provides basic balancing.
-     * Subclasses can override to provide specialized balancing.
-     */
-    protected TreeBalancer<ID> createTreeBalancer() {
-        return new DefaultTreeBalancer();
-    }
-    
-    /**
-     * Get balancing statistics for the tree.
-     */
-    public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
-        lock.readLock().lock();
-        try {
-            int totalNodes = 0;
-            int underpopulatedNodes = 0;
-            int overpopulatedNodes = 0;
-            int emptyNodes = 0;
-            int maxDepth = 0;
-            long totalEntities = 0;
-            
-            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
-                NodeType node = entry.getValue();
-                byte level = getLevelFromIndex(entry.getKey());
-                maxDepth = Math.max(maxDepth, level);
-                
-                if (node.isEmpty()) {
-                    emptyNodes++;
-                    totalNodes++;
-                } else {
-                    totalNodes++;
-                    int entityCount = node.getEntityCount();
-                    totalEntities += entityCount;
-                    
-                    int mergeThreshold = balancingStrategy.getMergeThreshold(level, maxEntitiesPerNode);
-                    int splitThreshold = balancingStrategy.getSplitThreshold(level, maxEntitiesPerNode);
-                    
-                    if (entityCount < mergeThreshold) {
-                        underpopulatedNodes++;
-                    } else if (entityCount > splitThreshold) {
-                        overpopulatedNodes++;
-                    }
-                }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
             }
-            
-            double averageLoad = totalNodes > 0 ? (double) totalEntities / totalNodes : 0;
-            
-            // Calculate variance
-            double variance = 0;
-            if (totalNodes > 0) {
-                for (NodeType node : spatialIndex.values()) {
-                    double diff = node.getEntityCount() - averageLoad;
-                    variance += diff * diff;
-                }
-                variance /= totalNodes;
+            if (!(o instanceof UnorderedPair<?> that)) {
+                return false;
             }
-            
-            return new TreeBalancingStrategy.TreeBalancingStats(
-                totalNodes, underpopulatedNodes, overpopulatedNodes, emptyNodes,
-                maxDepth, averageLoad, variance
-            );
-        } finally {
-            lock.readLock().unlock();
+            return Objects.equals(first, that.first) && Objects.equals(second, that.second);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(first, second);
         }
     }
-    
-    /**
-     * Set the balancing strategy.
-     */
-    public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
-        lock.writeLock().lock();
-        try {
-            this.balancingStrategy = Objects.requireNonNull(strategy);
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-    
-    /**
-     * Enable or disable automatic balancing.
-     */
-    public void setAutoBalancingEnabled(boolean enabled) {
-        lock.writeLock().lock();
-        try {
-            this.autoBalancingEnabled = enabled;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-    
-    /**
-     * Check if automatic balancing is enabled.
-     */
-    public boolean isAutoBalancingEnabled() {
-        lock.readLock().lock();
-        try {
-            return autoBalancingEnabled;
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
-    /**
-     * Manually trigger tree rebalancing.
-     */
-    public TreeBalancer.RebalancingResult rebalanceTree() {
-        lock.writeLock().lock();
-        try {
-            return treeBalancer.rebalanceTree();
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-    
-    /**
-     * Check and perform automatic balancing if needed.
-     */
-    protected void checkAutoBalance() {
-        if (!autoBalancingEnabled) {
-            return;
-        }
-        
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - lastBalancingTime < balancingStrategy.getMinRebalancingInterval()) {
-            return;
-        }
-        
-        TreeBalancingStrategy.TreeBalancingStats stats = getBalancingStats();
-        if (balancingStrategy.shouldRebalanceTree(stats)) {
-            lastBalancingTime = currentTime;
-            treeBalancer.rebalanceTree();
-        }
-    }
-    
+
     /**
      * Default tree balancer implementation.
      */
     protected class DefaultTreeBalancer implements TreeBalancer<ID> {
-        
+
         @Override
-        public List<Long> splitNode(long nodeIndex, byte nodeLevel) {
-            // Default implementation does not support splitting
-            // Subclasses should override for actual splitting logic
-            return Collections.emptyList();
+        public BalancingAction checkNodeBalance(long nodeIndex) {
+            NodeType node = spatialIndex.get(nodeIndex);
+            if (node == null) {
+                return BalancingAction.NONE;
+            }
+
+            byte level = getLevelFromIndex(nodeIndex);
+            int entityCount = node.getEntityCount();
+
+            // Check split condition
+            if (balancingStrategy.shouldSplit(entityCount, level, maxEntitiesPerNode)) {
+                return BalancingAction.SPLIT;
+            }
+
+            // Check merge condition
+            int[] siblingCounts = getSiblingEntityCounts(nodeIndex);
+            if (balancingStrategy.shouldMerge(entityCount, level, siblingCounts)) {
+                return BalancingAction.MERGE;
+            }
+
+            return BalancingAction.NONE;
         }
-        
+
+        @Override
+        public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
+            return AbstractSpatialIndex.this.getBalancingStats();
+        }
+
+        @Override
+        public boolean isAutoBalancingEnabled() {
+            return AbstractSpatialIndex.this.isAutoBalancingEnabled();
+        }
+
         @Override
         public boolean mergeNodes(Set<Long> nodeIndices, long parentIndex) {
             // Default implementation does not support merging
             // Subclasses should override for actual merging logic
             return false;
         }
-        
+
         @Override
         public int rebalanceSubtree(long rootNodeIndex) {
+            return rebalanceSubtreeImpl(rootNodeIndex, new HashSet<>());
+        }
+
+        @Override
+        public RebalancingResult rebalanceTree() {
+            long startTime = System.currentTimeMillis();
+            int nodesCreated = 0;
+            int nodesRemoved = 0;
+            int nodesMerged = 0;
+            int nodesSplit = 0;
+            int entitiesRelocated = 0;
+
+            try {
+                // Get root nodes and rebalance each subtree
+                Set<Long> roots = getRootNodes();
+                for (Long root : roots) {
+                    int modifications = rebalanceSubtree(root);
+                    // Track modifications (simplified)
+                    nodesSplit += modifications;
+                }
+
+                long timeTaken = System.currentTimeMillis() - startTime;
+                return new RebalancingResult(nodesCreated, nodesRemoved, nodesMerged, nodesSplit, entitiesRelocated,
+                                             timeTaken, true);
+            } catch (Exception e) {
+                long timeTaken = System.currentTimeMillis() - startTime;
+                return new RebalancingResult(0, 0, 0, 0, 0, timeTaken, false);
+            }
+        }
+
+        @Override
+        public void setAutoBalancingEnabled(boolean enabled) {
+            AbstractSpatialIndex.this.setAutoBalancingEnabled(enabled);
+        }
+
+        @Override
+        public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
+            AbstractSpatialIndex.this.setBalancingStrategy(strategy);
+        }
+
+        @Override
+        public List<Long> splitNode(long nodeIndex, byte nodeLevel) {
+            // Default implementation does not support splitting
+            // Subclasses should override for actual splitting logic
+            return Collections.emptyList();
+        }
+
+        /**
+         * Find sibling nodes for the given node.
+         */
+        protected Set<Long> findSiblings(long nodeIndex) {
+            // Default implementation: no siblings
+            // Subclasses should override based on their structure
+            return Collections.emptySet();
+        }
+
+        /**
+         * Get parent node index.
+         */
+        protected long getParentIndex(long nodeIndex) {
+            // Default implementation: no parent tracking
+            // Subclasses should override based on their structure
+            return -1;
+        }
+
+        /**
+         * Get entity counts of sibling nodes.
+         */
+        protected int[] getSiblingEntityCounts(long nodeIndex) {
+            Set<Long> siblings = findSiblings(nodeIndex);
+            int[] counts = new int[siblings.size()];
+            int i = 0;
+            for (Long sibling : siblings) {
+                NodeType node = spatialIndex.get(sibling);
+                counts[i++] = node != null ? node.getEntityCount() : 0;
+            }
+            return counts;
+        }
+
+        private int rebalanceSubtreeImpl(long rootNodeIndex, Set<Long> visited) {
+            // Prevent infinite recursion
+            if (!visited.add(rootNodeIndex)) {
+                return 0; // Already processed this node
+            }
+
             int modifications = 0;
-            
+
             NodeType node = spatialIndex.get(rootNodeIndex);
             if (node == null) {
                 return 0;
             }
-            
+
             byte level = getLevelFromIndex(rootNodeIndex);
             int entityCount = node.getEntityCount();
-            
+
             // Check if node needs balancing
             BalancingAction action = checkNodeBalance(rootNodeIndex);
-            
+
             switch (action) {
                 case SPLIT -> {
                     if (level < maxDepth) {
@@ -1961,121 +2072,14 @@ implements SpatialIndex<ID, Content> {
                     // No action needed
                 }
             }
-            
+
             // Recursively balance children
             List<Long> children = getChildNodes(rootNodeIndex);
             for (Long child : children) {
-                modifications += rebalanceSubtree(child);
+                modifications += rebalanceSubtreeImpl(child, visited);
             }
-            
+
             return modifications;
-        }
-        
-        @Override
-        public RebalancingResult rebalanceTree() {
-            long startTime = System.currentTimeMillis();
-            int nodesCreated = 0;
-            int nodesRemoved = 0;
-            int nodesMerged = 0;
-            int nodesSplit = 0;
-            int entitiesRelocated = 0;
-            
-            try {
-                // Get root nodes and rebalance each subtree
-                Set<Long> roots = getRootNodes();
-                for (Long root : roots) {
-                    int modifications = rebalanceSubtree(root);
-                    // Track modifications (simplified)
-                    nodesSplit += modifications;
-                }
-                
-                long timeTaken = System.currentTimeMillis() - startTime;
-                return new RebalancingResult(
-                    nodesCreated, nodesRemoved, nodesMerged, nodesSplit,
-                    entitiesRelocated, timeTaken, true
-                );
-            } catch (Exception e) {
-                long timeTaken = System.currentTimeMillis() - startTime;
-                return new RebalancingResult(
-                    0, 0, 0, 0, 0, timeTaken, false
-                );
-            }
-        }
-        
-        @Override
-        public BalancingAction checkNodeBalance(long nodeIndex) {
-            NodeType node = spatialIndex.get(nodeIndex);
-            if (node == null) {
-                return BalancingAction.NONE;
-            }
-            
-            byte level = getLevelFromIndex(nodeIndex);
-            int entityCount = node.getEntityCount();
-            
-            // Check split condition
-            if (balancingStrategy.shouldSplit(entityCount, level, maxEntitiesPerNode)) {
-                return BalancingAction.SPLIT;
-            }
-            
-            // Check merge condition
-            int[] siblingCounts = getSiblingEntityCounts(nodeIndex);
-            if (balancingStrategy.shouldMerge(entityCount, level, siblingCounts)) {
-                return BalancingAction.MERGE;
-            }
-            
-            return BalancingAction.NONE;
-        }
-        
-        @Override
-        public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
-            return AbstractSpatialIndex.this.getBalancingStats();
-        }
-        
-        @Override
-        public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
-            AbstractSpatialIndex.this.setBalancingStrategy(strategy);
-        }
-        
-        @Override
-        public void setAutoBalancingEnabled(boolean enabled) {
-            AbstractSpatialIndex.this.setAutoBalancingEnabled(enabled);
-        }
-        
-        @Override
-        public boolean isAutoBalancingEnabled() {
-            return AbstractSpatialIndex.this.isAutoBalancingEnabled();
-        }
-        
-        /**
-         * Find sibling nodes for the given node.
-         */
-        protected Set<Long> findSiblings(long nodeIndex) {
-            // Default implementation: no siblings
-            // Subclasses should override based on their structure
-            return Collections.emptySet();
-        }
-        
-        /**
-         * Get parent node index.
-         */
-        protected long getParentIndex(long nodeIndex) {
-            // Default implementation: no parent tracking
-            // Subclasses should override based on their structure
-            return -1;
-        }
-        
-        /**
-         * Get entity counts of sibling nodes.
-         */
-        protected int[] getSiblingEntityCounts(long nodeIndex) {
-            Set<Long> siblings = findSiblings(nodeIndex);
-            int[] counts = new int[siblings.size()];
-            int i = 0;
-            for (Long sibling : siblings) {
-                NodeType node = spatialIndex.get(sibling);
-                counts[i++] = node != null ? node.getEntityCount() : 0;
-            }
-            return counts;
         }
     }
 }

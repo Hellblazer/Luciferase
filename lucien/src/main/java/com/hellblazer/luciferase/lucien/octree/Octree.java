@@ -81,22 +81,31 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         float midZ = (bounds.minZ() + bounds.maxZ()) / 2.0f;
         Point3f center = new Point3f(midX, midY, midZ);
 
-        long mortonIndex = Constants.calculateMortonIndex(center, level);
-        var node = spatialIndex.get(mortonIndex);
-        if (node != null && !node.isEmpty()) {
-            return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+        // Start at the calculated level and search down to find entities
+        for (byte searchLevel = level; searchLevel <= maxDepth; searchLevel++) {
+            long mortonIndex = Constants.calculateMortonIndex(center, searchLevel);
+            var node = spatialIndex.get(mortonIndex);
+            if (node != null && !node.isEmpty()) {
+                return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+            }
         }
+        
         return null;
     }
 
     @Override
     public SpatialNode<ID> enclosing(Tuple3i point, byte level) {
         Point3f position = new Point3f(point.x, point.y, point.z);
-        long mortonIndex = Constants.calculateMortonIndex(position, level);
-        var node = spatialIndex.get(mortonIndex);
-        if (node != null && !node.isEmpty()) {
-            return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+        
+        // Start at the specified level and search down to find entities
+        for (byte searchLevel = level; searchLevel <= maxDepth; searchLevel++) {
+            long mortonIndex = Constants.calculateMortonIndex(position, searchLevel);
+            var node = spatialIndex.get(mortonIndex);
+            if (node != null && !node.isEmpty()) {
+                return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+            }
         }
+        
         return null;
     }
 
@@ -215,8 +224,9 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     int ny = coords[1] + dy * cellSize;
                     int nz = coords[2] + dz * cellSize;
 
-                    // Check bounds
-                    if (nx >= 0 && ny >= 0 && nz >= 0) {
+                    // Check bounds (must be within valid coordinate range)
+                    if (nx >= 0 && ny >= 0 && nz >= 0 && 
+                        nx <= Constants.MAX_COORD && ny <= Constants.MAX_COORD && nz <= Constants.MAX_COORD) {
                         // Use level-aware encoding
                         Point3f neighborPos = new Point3f(nx + cellSize/2.0f, ny + cellSize/2.0f, nz + cellSize/2.0f);
                         long neighborCode = Constants.calculateMortonIndex(neighborPos, level);
@@ -371,40 +381,57 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             // All entities map to the same cell even at the child level
             // This happens when all entities are at the same position
             // Don't subdivide - it won't help distribute the load
+            System.out.println("Subdivision stopped: all entities map to same cell at child level");
             return;
         }
 
         // Create child nodes and redistribute entities
+        System.out.println("Proceeding with subdivision: " + childEntityMap.size() + " child nodes to create");
         
-        // First, remove parent locations from all entities
-        for (ID entityId : parentEntities) {
-            entityManager.removeEntityLocation(entityId, parentMorton);
-        }
+        // Track which entities we need to remove from parent
+        Set<ID> entitiesToRemoveFromParent = new HashSet<>();
         
-        // Then add entities to child nodes
+        // Add entities to child nodes
         for (Map.Entry<Long, List<ID>> entry : childEntityMap.entrySet()) {
             long childMorton = entry.getKey();
             List<ID> childEntities = entry.getValue();
 
             if (!childEntities.isEmpty()) {
-                // Create or get child node
-                OctreeNode<ID> childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
-                    sortedSpatialIndices.add(childMorton);
-                    return new OctreeNode<>(maxEntitiesPerNode);
-                });
-
-                // Add entities to child
-                for (ID entityId : childEntities) {
-                    childNode.addEntity(entityId);
-                    // Update entity locations - add child location
-                    entityManager.addEntityLocation(entityId, childMorton);
+                OctreeNode<ID> childNode;
+                
+                if (childMorton == parentMorton) {
+                    // Special case: child has same Morton code as parent
+                    // The entities can stay in the parent node - don't redistribute them
+                    System.out.println("Entities " + childEntities + " stay in parent node (same morton " + childMorton + ")");
+                    // Don't mark these entities for removal from parent
+                    continue;
+                } else {
+                    // Create or get child node
+                    System.out.println("Creating new child node for morton " + childMorton + " with entities " + childEntities);
+                    childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
+                        sortedSpatialIndices.add(childMorton);
+                        return new OctreeNode<>(maxEntitiesPerNode);
+                    });
+                    
+                    // Add entities to child and mark for removal from parent
+                    for (ID entityId : childEntities) {
+                        childNode.addEntity(entityId);
+                        // Update entity locations - add child location
+                        entityManager.addEntityLocation(entityId, childMorton);
+                        entitiesToRemoveFromParent.add(entityId);
+                    }
                 }
             }
         }
 
-        // Clear entities from parent node (they've been redistributed to children)
-        parentNode.clearEntities();
-        parentNode.setHasChildren(true); // Mark that this node has been subdivided
+        // Remove only the entities that were moved to different child nodes
+        for (ID entityId : entitiesToRemoveFromParent) {
+            parentNode.removeEntity(entityId);
+            entityManager.removeEntityLocation(entityId, parentMorton);
+        }
+        
+        // Mark that this node has been subdivided
+        parentNode.setHasChildren(true);
     }
 
     @Override
@@ -427,6 +454,15 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             sortedSpatialIndices.add(mortonCode);
             return new OctreeNode<>(maxEntitiesPerNode);
         });
+
+        // If the node has been subdivided, insert into the appropriate child node
+        if (node.hasChildren() || node.isEmpty()) {
+            byte childLevel = (byte) (level + 1);
+            if (childLevel <= maxDepth) {
+                insertAtPosition(entityId, position, childLevel);
+                return;
+            }
+        }
 
         // Add entity to node
         boolean shouldSplit = node.addEntity(entityId);
@@ -636,7 +672,11 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     float cellOriginZ = z * cellSize;
 
                     if (bounds.intersectsCube(cellOriginX, cellOriginY, cellOriginZ, cellSize)) {
-                        long mortonCode = MortonCurve.encode(x, y, z);
+                        // Use level-aware morton encoding
+                        Point3f cellCenter = new Point3f(cellOriginX + cellSize/2.0f, 
+                                                        cellOriginY + cellSize/2.0f, 
+                                                        cellOriginZ + cellSize/2.0f);
+                        long mortonCode = Constants.calculateMortonIndex(cellCenter, level);
                         result.add(mortonCode);
                     }
                 }
@@ -860,6 +900,12 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 
                 long childIndex = MortonCurve.encode(childX, childY, childZ);
                 childEntityMap.computeIfAbsent(childIndex, k -> new HashSet<>()).add(entityId);
+            }
+            
+            // Check if all entities map to the same child - if so, don't split
+            if (childEntityMap.size() == 1 && childEntityMap.containsKey(nodeIndex)) {
+                // All entities map to the same cell as the parent - splitting won't help
+                return Collections.emptyList();
             }
             
             // Create child nodes and add entities
