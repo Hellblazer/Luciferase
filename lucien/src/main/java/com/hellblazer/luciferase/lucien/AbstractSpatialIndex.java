@@ -18,6 +18,9 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
+import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
+import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -1536,5 +1539,223 @@ implements SpatialIndex<ID, Content> {
         } finally {
             lock.readLock().unlock();
         }
+    }
+    
+    // ===== Tree Traversal Implementation =====
+    
+    @Override
+    public void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy) {
+        lock.readLock().lock();
+        try {
+            // Count total nodes and entities
+            int totalNodes = nodeCount();
+            int totalEntities = entityCount();
+            
+            visitor.beginTraversal(totalNodes, totalEntities);
+            
+            TraversalContext<ID> context = new TraversalContext<>();
+            
+            // Get root nodes based on implementation
+            Set<Long> rootNodes = getRootNodes();
+            
+            for (Long rootIndex : rootNodes) {
+                if (context.isCancelled()) {
+                    break;
+                }
+                traverseNode(rootIndex, visitor, strategy, context, -1, 0);
+            }
+            
+            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    @Override
+    public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex) {
+        lock.readLock().lock();
+        try {
+            if (!hasNode(startNodeIndex)) {
+                visitor.beginTraversal(0, 0);
+                visitor.endTraversal(0, 0);
+                return;
+            }
+            
+            visitor.beginTraversal(-1, -1); // Unknown totals
+            
+            TraversalContext<ID> context = new TraversalContext<>();
+            traverseNode(startNodeIndex, visitor, strategy, context, -1, 0);
+            
+            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    @Override
+    public void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy) {
+        lock.readLock().lock();
+        try {
+            validateSpatialConstraints(region);
+            
+            var bounds = getVolumeBounds(region);
+            if (bounds == null) {
+                visitor.beginTraversal(0, 0);
+                visitor.endTraversal(0, 0);
+                return;
+            }
+            
+            // Find nodes in region
+            List<Long> nodesInRegion = spatialRangeQuery(bounds, true)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+            
+            visitor.beginTraversal(nodesInRegion.size(), -1);
+            
+            TraversalContext<ID> context = new TraversalContext<>();
+            
+            for (Long nodeIndex : nodesInRegion) {
+                if (context.isCancelled()) {
+                    break;
+                }
+                
+                if (!context.isVisited(nodeIndex)) {
+                    traverseNode(nodeIndex, visitor, strategy, context, -1, 0);
+                }
+            }
+            
+            visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Traverse a single node and its children recursively
+     */
+    private void traverseNode(long nodeIndex, TreeVisitor<ID, Content> visitor, 
+                             TraversalStrategy strategy, TraversalContext<ID> context,
+                             long parentIndex, int level) {
+        
+        if (context.isCancelled() || context.isVisited(nodeIndex)) {
+            return;
+        }
+        
+        // Check max depth
+        if (visitor.getMaxDepth() >= 0 && level > visitor.getMaxDepth()) {
+            return;
+        }
+        
+        // Get node
+        NodeType node = spatialIndex.get(nodeIndex);
+        if (node == null || node.isEmpty()) {
+            return;
+        }
+        
+        // Create SpatialNode wrapper
+        SpatialNode<ID> spatialNode = new SpatialNode<>(nodeIndex, 
+            new HashSet<>(node.getEntityIds()));
+        
+        // Mark as visited
+        context.markVisited(nodeIndex);
+        
+        // Pre-order visit
+        boolean shouldContinue = visitor.visitNode(spatialNode, level, parentIndex);
+        
+        // Visit entities if requested
+        if (shouldContinue && visitor.shouldVisitEntities()) {
+            for (ID entityId : node.getEntityIds()) {
+                Content content = entityManager.getEntityContent(entityId);
+                visitor.visitEntity(entityId, content, nodeIndex, level);
+                context.incrementEntitiesVisited();
+            }
+        }
+        
+        // Visit children if requested
+        if (shouldContinue) {
+            List<Long> children = getChildNodes(nodeIndex);
+            int childCount = 0;
+            
+            for (Long childIndex : children) {
+                if (context.isCancelled()) {
+                    break;
+                }
+                
+                // Apply traversal strategy
+                switch (strategy) {
+                    case DEPTH_FIRST, PRE_ORDER -> {
+                        traverseNode(childIndex, visitor, strategy, context, nodeIndex, level + 1);
+                        childCount++;
+                    }
+                    case BREADTH_FIRST, LEVEL_ORDER -> {
+                        context.pushNode(childIndex, level + 1);
+                        childCount++;
+                    }
+                    case POST_ORDER -> {
+                        // Queue for post-order processing
+                        context.pushNode(childIndex, level + 1);
+                        childCount++;
+                    }
+                    case IN_ORDER -> {
+                        // For spatial trees, treat as pre-order
+                        traverseNode(childIndex, visitor, strategy, context, nodeIndex, level + 1);
+                        childCount++;
+                    }
+                }
+            }
+            
+            // Process breadth-first queue
+            if (strategy == TraversalStrategy.BREADTH_FIRST || 
+                strategy == TraversalStrategy.LEVEL_ORDER) {
+                processBreadthFirstQueue(visitor, strategy, context);
+            }
+            
+            // Post-order visit
+            visitor.leaveNode(spatialNode, level, childCount);
+        }
+    }
+    
+    /**
+     * Process nodes in breadth-first order
+     */
+    private void processBreadthFirstQueue(TreeVisitor<ID, Content> visitor,
+                                        TraversalStrategy strategy,
+                                        TraversalContext<ID> context) {
+        Long nodeIndex;
+        while ((nodeIndex = context.popNode()) != null) {
+            int level = context.getNodeLevel(nodeIndex);
+            traverseNode(nodeIndex, visitor, strategy, context, -1, level);
+        }
+    }
+    
+    /**
+     * Get root nodes for traversal. Default implementation returns all nodes
+     * at the minimum level. Subclasses can override for specific root node logic.
+     */
+    protected Set<Long> getRootNodes() {
+        Set<Long> roots = new HashSet<>();
+        byte minLevel = Byte.MAX_VALUE;
+        
+        // Find minimum level
+        for (Long index : spatialIndex.keySet()) {
+            byte level = getLevelFromIndex(index);
+            if (level < minLevel) {
+                minLevel = level;
+                roots.clear();
+                roots.add(index);
+            } else if (level == minLevel) {
+                roots.add(index);
+            }
+        }
+        
+        return roots;
+    }
+    
+    /**
+     * Get child nodes of a given node. Default implementation returns empty list.
+     * Subclasses should override to provide actual parent-child relationships.
+     */
+    protected List<Long> getChildNodes(long nodeIndex) {
+        return Collections.emptyList();
     }
 }

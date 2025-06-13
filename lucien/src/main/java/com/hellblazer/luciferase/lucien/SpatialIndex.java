@@ -19,6 +19,8 @@ package com.hellblazer.luciferase.lucien;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
+import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
@@ -473,4 +475,32 @@ public interface SpatialIndex<ID extends EntityID, Content> {
             return bounds1 != null && bounds2 != null;
         }
     }
+    
+    // ===== Tree Traversal =====
+    
+    /**
+     * Traverse the spatial tree using the visitor pattern.
+     * 
+     * @param visitor The visitor to apply to each node
+     * @param strategy The traversal strategy to use
+     */
+    void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy);
+    
+    /**
+     * Traverse the spatial tree starting from a specific node.
+     * 
+     * @param visitor The visitor to apply to each node
+     * @param strategy The traversal strategy to use
+     * @param startNodeIndex The spatial index of the starting node
+     */
+    void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex);
+    
+    /**
+     * Traverse only nodes that intersect with the given region.
+     * 
+     * @param visitor The visitor to apply to each node
+     * @param region The spatial region to constrain traversal
+     * @param strategy The traversal strategy to use
+     */
+    void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy);
 }
