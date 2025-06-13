@@ -21,6 +21,9 @@ import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
+import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
+import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
+import com.hellblazer.luciferase.lucien.balancing.DefaultBalancingStrategy;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -54,6 +57,11 @@ implements SpatialIndex<ID, Content> {
     protected final NavigableSet<Long>         sortedSpatialIndices;
     // Read-write lock for thread safety
     private final   ReadWriteLock              lock;
+    // Tree balancing support
+    private TreeBalancingStrategy<ID> balancingStrategy;
+    private boolean autoBalancingEnabled = false;
+    private long lastBalancingTime = 0;
+    private TreeBalancer<ID> treeBalancer;
 
     /**
      * Constructor with common parameters
@@ -67,6 +75,8 @@ implements SpatialIndex<ID, Content> {
         this.spatialIndex = new HashMap<>();
         this.sortedSpatialIndices = new TreeSet<>();
         this.lock = new ReentrantReadWriteLock();
+        this.balancingStrategy = new DefaultBalancingStrategy<>();
+        this.treeBalancer = createTreeBalancer();
     }
 
     // ===== Abstract Methods for Subclasses =====
@@ -324,14 +334,8 @@ implements SpatialIndex<ID, Content> {
             Queue<Long> toVisit = new LinkedList<>();
             Set<Long> visitedNodes = new HashSet<>();
 
-            // Initialize search
-            NodeType initialNode = getSpatialIndex().get(initialIndex);
-            if (initialNode != null) {
-                toVisit.add(initialIndex);
-            } else {
-                // If exact node doesn't exist, start from all existing nodes
-                toVisit.addAll(getSpatialIndex().keySet());
-            }
+            // Initialize search with the containing spatial cell
+            toVisit.add(initialIndex);
 
             while (!toVisit.isEmpty()) {
                 Long current = toVisit.poll();
@@ -621,6 +625,9 @@ implements SpatialIndex<ID, Content> {
                     }
                 }
             }
+            
+            // Check for auto-balancing after removal
+            checkAutoBalance();
 
             return true;
         } finally {
@@ -855,6 +862,9 @@ implements SpatialIndex<ID, Content> {
         if (shouldSplit && level < maxDepth) {
             handleNodeSubdivision(spatialIndex, level, node);
         }
+        
+        // Check for auto-balancing after insertion
+        checkAutoBalance();
     }
 
     // ===== Ray Intersection Abstract Methods =====
@@ -1757,5 +1767,315 @@ implements SpatialIndex<ID, Content> {
      */
     protected List<Long> getChildNodes(long nodeIndex) {
         return Collections.emptyList();
+    }
+    
+    /**
+     * Create a tree balancer instance. Default implementation provides basic balancing.
+     * Subclasses can override to provide specialized balancing.
+     */
+    protected TreeBalancer<ID> createTreeBalancer() {
+        return new DefaultTreeBalancer();
+    }
+    
+    /**
+     * Get balancing statistics for the tree.
+     */
+    public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
+        lock.readLock().lock();
+        try {
+            int totalNodes = 0;
+            int underpopulatedNodes = 0;
+            int overpopulatedNodes = 0;
+            int emptyNodes = 0;
+            int maxDepth = 0;
+            long totalEntities = 0;
+            
+            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
+                NodeType node = entry.getValue();
+                byte level = getLevelFromIndex(entry.getKey());
+                maxDepth = Math.max(maxDepth, level);
+                
+                if (node.isEmpty()) {
+                    emptyNodes++;
+                    totalNodes++;
+                } else {
+                    totalNodes++;
+                    int entityCount = node.getEntityCount();
+                    totalEntities += entityCount;
+                    
+                    int mergeThreshold = balancingStrategy.getMergeThreshold(level, maxEntitiesPerNode);
+                    int splitThreshold = balancingStrategy.getSplitThreshold(level, maxEntitiesPerNode);
+                    
+                    if (entityCount < mergeThreshold) {
+                        underpopulatedNodes++;
+                    } else if (entityCount > splitThreshold) {
+                        overpopulatedNodes++;
+                    }
+                }
+            }
+            
+            double averageLoad = totalNodes > 0 ? (double) totalEntities / totalNodes : 0;
+            
+            // Calculate variance
+            double variance = 0;
+            if (totalNodes > 0) {
+                for (NodeType node : spatialIndex.values()) {
+                    double diff = node.getEntityCount() - averageLoad;
+                    variance += diff * diff;
+                }
+                variance /= totalNodes;
+            }
+            
+            return new TreeBalancingStrategy.TreeBalancingStats(
+                totalNodes, underpopulatedNodes, overpopulatedNodes, emptyNodes,
+                maxDepth, averageLoad, variance
+            );
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Set the balancing strategy.
+     */
+    public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
+        lock.writeLock().lock();
+        try {
+            this.balancingStrategy = Objects.requireNonNull(strategy);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Enable or disable automatic balancing.
+     */
+    public void setAutoBalancingEnabled(boolean enabled) {
+        lock.writeLock().lock();
+        try {
+            this.autoBalancingEnabled = enabled;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Check if automatic balancing is enabled.
+     */
+    public boolean isAutoBalancingEnabled() {
+        lock.readLock().lock();
+        try {
+            return autoBalancingEnabled;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Manually trigger tree rebalancing.
+     */
+    public TreeBalancer.RebalancingResult rebalanceTree() {
+        lock.writeLock().lock();
+        try {
+            return treeBalancer.rebalanceTree();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Check and perform automatic balancing if needed.
+     */
+    protected void checkAutoBalance() {
+        if (!autoBalancingEnabled) {
+            return;
+        }
+        
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastBalancingTime < balancingStrategy.getMinRebalancingInterval()) {
+            return;
+        }
+        
+        TreeBalancingStrategy.TreeBalancingStats stats = getBalancingStats();
+        if (balancingStrategy.shouldRebalanceTree(stats)) {
+            lastBalancingTime = currentTime;
+            treeBalancer.rebalanceTree();
+        }
+    }
+    
+    /**
+     * Default tree balancer implementation.
+     */
+    protected class DefaultTreeBalancer implements TreeBalancer<ID> {
+        
+        @Override
+        public List<Long> splitNode(long nodeIndex, byte nodeLevel) {
+            // Default implementation does not support splitting
+            // Subclasses should override for actual splitting logic
+            return Collections.emptyList();
+        }
+        
+        @Override
+        public boolean mergeNodes(Set<Long> nodeIndices, long parentIndex) {
+            // Default implementation does not support merging
+            // Subclasses should override for actual merging logic
+            return false;
+        }
+        
+        @Override
+        public int rebalanceSubtree(long rootNodeIndex) {
+            int modifications = 0;
+            
+            NodeType node = spatialIndex.get(rootNodeIndex);
+            if (node == null) {
+                return 0;
+            }
+            
+            byte level = getLevelFromIndex(rootNodeIndex);
+            int entityCount = node.getEntityCount();
+            
+            // Check if node needs balancing
+            BalancingAction action = checkNodeBalance(rootNodeIndex);
+            
+            switch (action) {
+                case SPLIT -> {
+                    if (level < maxDepth) {
+                        List<Long> children = splitNode(rootNodeIndex, level);
+                        modifications += children.size();
+                    }
+                }
+                case MERGE -> {
+                    // Find siblings for merging
+                    Set<Long> siblings = findSiblings(rootNodeIndex);
+                    if (!siblings.isEmpty()) {
+                        long parent = getParentIndex(rootNodeIndex);
+                        if (mergeNodes(siblings, parent)) {
+                            modifications++;
+                        }
+                    }
+                }
+                case REDISTRIBUTE -> {
+                    // Redistribution not implemented in default balancer
+                }
+                case NONE -> {
+                    // No action needed
+                }
+            }
+            
+            // Recursively balance children
+            List<Long> children = getChildNodes(rootNodeIndex);
+            for (Long child : children) {
+                modifications += rebalanceSubtree(child);
+            }
+            
+            return modifications;
+        }
+        
+        @Override
+        public RebalancingResult rebalanceTree() {
+            long startTime = System.currentTimeMillis();
+            int nodesCreated = 0;
+            int nodesRemoved = 0;
+            int nodesMerged = 0;
+            int nodesSplit = 0;
+            int entitiesRelocated = 0;
+            
+            try {
+                // Get root nodes and rebalance each subtree
+                Set<Long> roots = getRootNodes();
+                for (Long root : roots) {
+                    int modifications = rebalanceSubtree(root);
+                    // Track modifications (simplified)
+                    nodesSplit += modifications;
+                }
+                
+                long timeTaken = System.currentTimeMillis() - startTime;
+                return new RebalancingResult(
+                    nodesCreated, nodesRemoved, nodesMerged, nodesSplit,
+                    entitiesRelocated, timeTaken, true
+                );
+            } catch (Exception e) {
+                long timeTaken = System.currentTimeMillis() - startTime;
+                return new RebalancingResult(
+                    0, 0, 0, 0, 0, timeTaken, false
+                );
+            }
+        }
+        
+        @Override
+        public BalancingAction checkNodeBalance(long nodeIndex) {
+            NodeType node = spatialIndex.get(nodeIndex);
+            if (node == null) {
+                return BalancingAction.NONE;
+            }
+            
+            byte level = getLevelFromIndex(nodeIndex);
+            int entityCount = node.getEntityCount();
+            
+            // Check split condition
+            if (balancingStrategy.shouldSplit(entityCount, level, maxEntitiesPerNode)) {
+                return BalancingAction.SPLIT;
+            }
+            
+            // Check merge condition
+            int[] siblingCounts = getSiblingEntityCounts(nodeIndex);
+            if (balancingStrategy.shouldMerge(entityCount, level, siblingCounts)) {
+                return BalancingAction.MERGE;
+            }
+            
+            return BalancingAction.NONE;
+        }
+        
+        @Override
+        public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
+            return AbstractSpatialIndex.this.getBalancingStats();
+        }
+        
+        @Override
+        public void setBalancingStrategy(TreeBalancingStrategy<ID> strategy) {
+            AbstractSpatialIndex.this.setBalancingStrategy(strategy);
+        }
+        
+        @Override
+        public void setAutoBalancingEnabled(boolean enabled) {
+            AbstractSpatialIndex.this.setAutoBalancingEnabled(enabled);
+        }
+        
+        @Override
+        public boolean isAutoBalancingEnabled() {
+            return AbstractSpatialIndex.this.isAutoBalancingEnabled();
+        }
+        
+        /**
+         * Find sibling nodes for the given node.
+         */
+        protected Set<Long> findSiblings(long nodeIndex) {
+            // Default implementation: no siblings
+            // Subclasses should override based on their structure
+            return Collections.emptySet();
+        }
+        
+        /**
+         * Get parent node index.
+         */
+        protected long getParentIndex(long nodeIndex) {
+            // Default implementation: no parent tracking
+            // Subclasses should override based on their structure
+            return -1;
+        }
+        
+        /**
+         * Get entity counts of sibling nodes.
+         */
+        protected int[] getSiblingEntityCounts(long nodeIndex) {
+            Set<Long> siblings = findSiblings(nodeIndex);
+            int[] counts = new int[siblings.size()];
+            int i = 0;
+            for (Long sibling : siblings) {
+                NodeType node = spatialIndex.get(sibling);
+                counts[i++] = node != null ? node.getEntityCount() : 0;
+            }
+            return counts;
+        }
     }
 }

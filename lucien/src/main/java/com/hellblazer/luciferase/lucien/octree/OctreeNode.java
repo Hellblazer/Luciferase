@@ -113,6 +113,21 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
     public boolean hasChildren() {
         return childrenMask != 0;
     }
+    
+    /**
+     * Set whether this node has children (used during balancing operations)
+     */
+    public void setHasChildren(boolean hasChildren) {
+        if (hasChildren) {
+            // Set at least one bit to indicate children exist
+            if (childrenMask == 0) {
+                childrenMask = 1; // Set first bit as a flag
+            }
+        } else {
+            // Clear all bits
+            childrenMask = 0;
+        }
+    }
 
     /**
      * Set a bit in the children mask to indicate a child exists
