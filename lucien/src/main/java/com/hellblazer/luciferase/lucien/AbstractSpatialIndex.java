@@ -56,7 +56,7 @@ implements SpatialIndex<ID, Content> {
     // Sorted spatial indices for efficient range queries
     protected final NavigableSet<Long>         sortedSpatialIndices;
     // Read-write lock for thread safety
-    private final   ReadWriteLock              lock;
+    protected final ReadWriteLock              lock;
     private final   TreeBalancer<ID>           treeBalancer;
     // Tree balancing support
     private         TreeBalancingStrategy<ID>  balancingStrategy;
@@ -584,7 +584,13 @@ implements SpatialIndex<ID, Content> {
 
             // If spanning is enabled and entity has bounds, check for spanning
             if (spanningPolicy.isSpanningEnabled() && bounds != null) {
-                insertWithSpanning(entityId, bounds, level);
+                // Use advanced spanning logic
+                if (shouldSpanEntity(bounds, level)) {
+                    insertWithAdvancedSpanning(entityId, bounds, level);
+                } else {
+                    // Standard single-node insertion even with bounds
+                    insertAtPosition(entityId, position, level);
+                }
             } else {
                 // Standard single-node insertion
                 insertAtPosition(entityId, position, level);
@@ -1383,6 +1389,114 @@ implements SpatialIndex<ID, Content> {
             insertAtPosition(entityId, position, level);
         }
     }
+    
+    /**
+     * Check if an entity should span multiple nodes using advanced policies
+     */
+    protected boolean shouldSpanEntity(EntityBounds bounds, byte level) {
+        if (bounds == null || !spanningPolicy.isSpanningEnabled()) {
+            return false;
+        }
+        
+        // Calculate entity size
+        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(),
+                                            bounds.getMaxY() - bounds.getMinY()),
+                                   bounds.getMaxZ() - bounds.getMinZ());
+        
+        // Get node size at this level
+        int nodeSize = getCellSizeAtLevel(level);
+        
+        // Use advanced spanning logic
+        return spanningPolicy.shouldSpanAdvanced(entitySize, nodeSize, spatialIndex.size(), 
+                                                entityManager.getEntityCount(), level);
+    }
+    
+    /**
+     * Insert entity with advanced spanning strategies
+     */
+    protected void insertWithAdvancedSpanning(ID entityId, EntityBounds bounds, byte level) {
+        // Calculate entity size for policy decisions
+        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(),
+                                            bounds.getMaxY() - bounds.getMinY()),
+                                   bounds.getMaxZ() - bounds.getMinZ());
+        int nodeSize = getCellSizeAtLevel(level);
+        
+        // Calculate maximum span nodes based on policy
+        int maxSpanNodes = spanningPolicy.calculateMaxSpanNodes(entitySize, nodeSize, spatialIndex.size());
+        
+        // Apply spanning optimization strategy
+        switch (spanningPolicy.getOptimization()) {
+            case MEMORY_EFFICIENT -> insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes);
+            case PERFORMANCE_FOCUSED -> insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
+            case ADAPTIVE -> insertWithAdaptiveSpanning(entityId, bounds, level, maxSpanNodes);
+            default -> insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
+        }
+    }
+    
+    /**
+     * Memory-efficient spanning implementation
+     */
+    protected void insertWithMemoryEfficientSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Use conservative spanning to minimize memory usage
+        Point3f center = bounds.getCenter();
+        
+        // Start with center node
+        insertAtPosition(entityId, center, level);
+        
+        // Only span to immediately adjacent nodes if entity is very large
+        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(),
+                                            bounds.getMaxY() - bounds.getMinY()),
+                                   bounds.getMaxZ() - bounds.getMinZ());
+        int nodeSize = getCellSizeAtLevel(level);
+        
+        if (entitySize > nodeSize * 2.0f && maxSpanNodes > 1) {
+            // Delegate to subclass for specific spanning implementation
+            insertWithSpanning(entityId, bounds, level);
+        }
+    }
+    
+    /**
+     * Performance-optimized spanning implementation
+     */
+    protected void insertWithPerformanceOptimizedSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Use aggressive spanning for better query performance
+        insertWithSpanning(entityId, bounds, level);
+    }
+    
+    /**
+     * Adaptive spanning implementation
+     */
+    protected void insertWithAdaptiveSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Adapt spanning strategy based on current system state
+        int currentNodeCount = spatialIndex.size();
+        int entityCount = entityManager.getEntityCount();
+        
+        if (entityCount > 0) {
+            float avgNodesPerEntity = (float) currentNodeCount / entityCount;
+            
+            if (avgNodesPerEntity > 100) {
+                // High memory usage - use conservative spanning
+                insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes / 2);
+            } else if (avgNodesPerEntity < 10) {
+                // Low memory usage - use aggressive spanning
+                insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
+            } else {
+                // Balanced spanning
+                insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
+            }
+        } else {
+            // First entity - use balanced approach
+            insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
+        }
+    }
+    
+    /**
+     * Balanced spanning implementation
+     */
+    protected void insertWithBalancedSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Use standard spanning implementation
+        insertWithSpanning(entityId, bounds, level);
+    }
 
     /**
      * Check if a node's bounds are contained within a volume
@@ -1499,15 +1613,17 @@ implements SpatialIndex<ID, Content> {
         // Get range of spatial indices that could contain or intersect the bounds
         NavigableSet<Long> candidateIndices = getSpatialIndexRange(bounds);
 
-        return candidateIndices.stream().map(index -> Map.entry(index, getSpatialIndex().get(index))).filter(
-        entry -> entry.getValue() != null && !entry.getValue().isEmpty()).filter(entry -> {
-            // Final precise filtering
-            if (includeIntersecting) {
-                return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
-            } else {
-                return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
-            }
-        });
+        return candidateIndices.stream()
+                .map(index -> Map.entry(index, getSpatialIndex().get(index)))
+                .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
+                .filter(entry -> {
+                    // Final precise filtering
+                    if (includeIntersecting) {
+                        return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
+                    } else {
+                        return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
+                    }
+                });
     }
 
     /**
