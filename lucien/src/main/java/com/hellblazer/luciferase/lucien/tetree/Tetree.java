@@ -710,6 +710,25 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         validatePositiveCoordinates(volume);
     }
 
+    @Override
+    protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
+        // Get tetrahedron from index
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        
+        // Calculate proper tetrahedron centroid using actual vertices
+        var vertices = tet.coordinates();
+        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
+        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
+        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
+        
+        // Return distance from query point to tetrahedron centroid
+        float dx = queryPoint.x - centerX;
+        float dy = queryPoint.y - centerY;
+        float dz = queryPoint.z - centerZ;
+        
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     // ===== Tree Balancing Implementation =====
     
     @Override
@@ -1681,7 +1700,13 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             int parentZ = (tet.z() / parentCellSize) * parentCellSize;
             
             // For tetrahedral decomposition, find the parent tetrahedron that contains this position
-            Point3f position = new Point3f(tet.x() + cellSize/2.0f, tet.y() + cellSize/2.0f, tet.z() + cellSize/2.0f);
+            // Use the tetrahedron centroid instead of cube center
+            var vertices = tet.coordinates();
+            Point3f position = new Point3f(
+                (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f,
+                (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f,
+                (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f
+            );
             Tet parentTet = locate(position, parentLevel);
             return parentTet.index();
         }

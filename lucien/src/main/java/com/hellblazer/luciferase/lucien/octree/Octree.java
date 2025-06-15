@@ -497,6 +497,26 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     @Override
+    protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
+        // Get node bounds from Morton code
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Calculate node center
+        float centerX = coords[0] + cellSize / 2.0f;
+        float centerY = coords[1] + cellSize / 2.0f;
+        float centerZ = coords[2] + cellSize / 2.0f;
+        
+        // Return distance from query point to node center
+        float dx = queryPoint.x - centerX;
+        float dy = queryPoint.y - centerY;
+        float dz = queryPoint.z - centerZ;
+        
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    @Override
     protected boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint,
                                               PriorityQueue<EntityDistance<ID>> candidates) {
         if (candidates.isEmpty()) {

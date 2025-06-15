@@ -192,56 +192,20 @@ implements SpatialIndex<ID, Content> {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
             Set<UnorderedPair<ID>> checkedPairs = new HashSet<>();
             
-            // Get all entities and check which ones have bounds
-            Map<ID, EntityBounds> entityBoundsMap = new HashMap<>();
-            for (ID entityId : entityManager.getAllEntityIds()) {
-                EntityBounds bounds = entityManager.getEntityBounds(entityId);
-                if (bounds != null) {
-                    entityBoundsMap.put(entityId, bounds);
-                }
-            }
-
-            // Process entities with bounds separately to ensure proper collision checking
-            for (Map.Entry<ID, EntityBounds> entry : entityBoundsMap.entrySet()) {
-                ID entityId = entry.getKey();
-                EntityBounds bounds = entry.getValue();
-                
-                // Find all nodes that intersect with this entity's bounds
-                Set<Long> intersectingNodes = findNodesIntersectingBounds(bounds);
-                
-                // Check against all entities in intersecting nodes
-                for (Long nodeIndex : intersectingNodes) {
-                    NodeType node = spatialIndex.get(nodeIndex);
-                    if (node == null || node.isEmpty()) {
-                        continue;
-                    }
-                    
-                    for (ID otherId : node.getEntityIds()) {
-                        if (!entityId.equals(otherId)) {
-                            UnorderedPair<ID> pair = new UnorderedPair<>(entityId, otherId);
-                            if (checkedPairs.add(pair)) {
-                                checkAndAddCollision(entityId, otherId, collisions);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Process point entities using the original approach
-            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
-                NodeType node = entry.getValue();
-                if (node.isEmpty()) {
+            // Locality-constrained collision detection: Only check spatially adjacent entities
+            // This avoids the O(n²) problem of checking every entity against every other entity
+            
+            for (Long nodeIndex : sortedSpatialIndices) {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
                     continue;
                 }
 
                 List<ID> nodeEntities = new ArrayList<>(node.getEntityIds());
-
-                // Check entities within the same node (for point entities)
+                
+                // 1. Check entities within the same node (spatial locality guarantee)
                 for (int i = 0; i < nodeEntities.size(); i++) {
                     ID id1 = nodeEntities.get(i);
-                    if (entityBoundsMap.containsKey(id1)) {
-                        continue; // Skip bounded entities (already processed)
-                    }
                     
                     for (int j = i + 1; j < nodeEntities.size(); j++) {
                         ID id2 = nodeEntities.get(j);
@@ -251,25 +215,57 @@ implements SpatialIndex<ID, Content> {
                             checkAndAddCollision(id1, id2, collisions);
                         }
                     }
+                    
+                    // 2. For bounded entities, check spatial bounds intersection with nearby nodes
+                    EntityBounds bounds = entityManager.getEntityBounds(id1);
+                    if (bounds != null) {
+                        // Only search nodes that could intersect with this entity's bounds
+                        Set<Long> intersectingNodes = findNodesIntersectingBounds(bounds);
+                        
+                        for (Long intersectingNodeIndex : intersectingNodes) {
+                            // Skip self (we already checked entities within the same node above)
+                            if (intersectingNodeIndex.equals(nodeIndex)) {
+                                continue;
+                            }
+                            
+                            NodeType intersectingNode = spatialIndex.get(intersectingNodeIndex);
+                            if (intersectingNode == null || intersectingNode.isEmpty()) {
+                                continue;
+                            }
+                            
+                            for (ID otherId : intersectingNode.getEntityIds()) {
+                                UnorderedPair<ID> pair = new UnorderedPair<>(id1, otherId);
+                                if (checkedPairs.add(pair)) {
+                                    checkAndAddCollision(id1, otherId, collisions);
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // Check against neighboring nodes (for point entities)
-                long nodeIndex = entry.getKey();
+                // 3. Check against immediate neighboring nodes (for point entities and close proximity)
                 Queue<Long> neighbors = new LinkedList<>();
                 Set<Long> visitedNeighbors = new HashSet<>();
                 addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
 
                 while (!neighbors.isEmpty()) {
                     Long neighborIndex = neighbors.poll();
+                    
+                    // Skip already processed nodes (SFC ordering optimization)
+                    if (neighborIndex < nodeIndex) {
+                        continue;
+                    }
+                    
                     NodeType neighborNode = spatialIndex.get(neighborIndex);
                     if (neighborNode == null || neighborNode.isEmpty()) {
                         continue;
                     }
 
-                    // Check entities between nodes
+                    // Check entities between adjacent nodes
                     for (ID id1 : nodeEntities) {
-                        if (entityBoundsMap.containsKey(id1)) {
-                            continue; // Skip bounded entities (already processed)
+                        // Skip bounded entities (already handled above)
+                        if (entityManager.getEntityBounds(id1) != null) {
+                            continue;
                         }
                         
                         for (ID id2 : neighborNode.getEntityIds()) {
@@ -449,9 +445,15 @@ implements SpatialIndex<ID, Content> {
             int maxDepth = 0;
             long totalEntities = 0;
 
-            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
-                NodeType node = entry.getValue();
-                byte level = getLevelFromIndex(entry.getKey());
+            // SFC-optimized balancing stats: Process nodes in spatial order for better cache locality
+            // This improves memory access patterns during statistics calculation
+            for (Long nodeIndex : sortedSpatialIndices) {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null) {
+                    continue;
+                }
+                
+                byte level = getLevelFromIndex(nodeIndex);
                 maxDepth = Math.max(maxDepth, level);
 
                 if (node.isEmpty()) {
@@ -475,12 +477,15 @@ implements SpatialIndex<ID, Content> {
 
             double averageLoad = totalNodes > 0 ? (double) totalEntities / totalNodes : 0;
 
-            // Calculate variance
+            // Calculate variance using SFC ordering for improved cache performance
             double variance = 0;
             if (totalNodes > 0) {
-                for (NodeType node : spatialIndex.values()) {
-                    double diff = node.getEntityCount() - averageLoad;
-                    variance += diff * diff;
+                for (Long nodeIndex : sortedSpatialIndices) {
+                    NodeType node = spatialIndex.get(nodeIndex);
+                    if (node != null) {
+                        double diff = node.getEntityCount() - averageLoad;
+                        variance += diff * diff;
+                    }
                 }
                 variance /= totalNodes;
             }
@@ -682,7 +687,7 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
-     * Find k nearest neighbors to a query point
+     * Find k nearest neighbors to a query point using spatial locality optimization
      *
      * @param queryPoint  the point to search from
      * @param k           the number of neighbors to find
@@ -704,57 +709,125 @@ implements SpatialIndex<ID, Content> {
             // Track visited entities to avoid duplicates
             Set<ID> visited = new HashSet<>();
 
-            // Use a queue for breadth-first search
-            Queue<Long> toVisit = new LinkedList<>();
-            Set<Long> visitedNodes = new HashSet<>();
-
-            // Start with the containing spatial cell at different levels to find an existing node
-            boolean foundStartNode = false;
-            for (byte level = maxDepth; level >= 0 && !foundStartNode; level--) {
-                long initialIndex = calculateSpatialIndex(queryPoint, level);
-                if (getSpatialIndex().containsKey(initialIndex)) {
-                    toVisit.add(initialIndex);
-                    foundStartNode = true;
-                }
-            }
-
-            // If no existing node found, use all existing nodes as starting points
-            if (!foundStartNode && !getSpatialIndex().isEmpty()) {
-                toVisit.addAll(getSpatialIndex().keySet());
-            }
-
-            while (!toVisit.isEmpty()) {
-                Long current = toVisit.poll();
-                if (!visitedNodes.add(current)) {
-                    continue; // Already visited this node
-                }
-
-                NodeType node = getSpatialIndex().get(current);
-                if (node == null) {
-                    continue;
-                }
-
-                // Check all entities in this node
-                for (ID entityId : node.getEntityIds()) {
-                    if (visited.add(entityId)) {
-                        Point3f entityPos = entityManager.getEntityPosition(entityId);
-                        if (entityPos != null) {
-                            float distance = queryPoint.distance(entityPos);
-                            if (distance <= maxDistance) {
-                                candidates.add(new EntityDistance<>(entityId, distance));
-
-                                // Keep only k elements
-                                if (candidates.size() > k) {
-                                    candidates.poll();
+            // Use spatial locality: start with nodes closest to query point and expand outward
+            // This avoids the O(n) problem of checking all nodes
+            
+            // Create expanding search radius around query point
+            float searchRadius = Math.min(maxDistance, getCellSizeAtLevel(maxDepth));
+            int searchExpansions = 0;
+            final int maxExpansions = 5; // Limit search expansion to prevent runaway searches
+            
+            while (candidates.size() < k && searchRadius <= maxDistance && searchExpansions < maxExpansions) {
+                // Create search bounds around query point
+                VolumeBounds searchBounds = new VolumeBounds(
+                    queryPoint.x - searchRadius, queryPoint.y - searchRadius, queryPoint.z - searchRadius,
+                    queryPoint.x + searchRadius, queryPoint.y + searchRadius, queryPoint.z + searchRadius
+                );
+                
+                // Find nodes that intersect with search bounds (spatial locality constraint)
+                boolean foundNewEntities = false;
+                spatialRangeQuery(searchBounds, true).forEach(entry -> {
+                    Long nodeIndex = entry.getKey();
+                    NodeType node = entry.getValue();
+                    
+                    if (node == null || node.isEmpty()) {
+                        return;
+                    }
+                    
+                    // Check all entities in this spatially-relevant node
+                    for (ID entityId : node.getEntityIds()) {
+                        if (visited.add(entityId)) {
+                            Point3f entityPos = entityManager.getEntityPosition(entityId);
+                            if (entityPos != null) {
+                                float distance = queryPoint.distance(entityPos);
+                                if (distance <= maxDistance) {
+                                    candidates.add(new EntityDistance<>(entityId, distance));
+                                    
+                                    // Keep only k elements (maintain heap property)
+                                    if (candidates.size() > k) {
+                                        candidates.poll();
+                                    }
                                 }
                             }
                         }
                     }
+                });
+                
+                // If we didn't find enough candidates, expand search radius
+                if (candidates.size() < k) {
+                    searchRadius *= 2.0f;
+                    searchExpansions++;
+                } else {
+                    break;
                 }
-
-                // Add neighboring nodes if we haven't found enough candidates
-                if (candidates.size() < k || shouldContinueKNNSearch(current, queryPoint, candidates)) {
-                    addNeighboringNodes(current, toVisit, visitedNodes);
+            }
+            
+            // If still no candidates found and search area is small, do a targeted search
+            // using the sorted spatial indices for better cache locality
+            if (candidates.isEmpty() && !sortedSpatialIndices.isEmpty()) {
+                // Find the nearest nodes to query point using SFC ordering
+                float bestDistance = Float.MAX_VALUE;
+                Long nearestNodeIndex = null;
+                
+                // Use SFC ordering to find the nearest node efficiently
+                for (Long nodeIndex : sortedSpatialIndices) {
+                    NodeType node = spatialIndex.get(nodeIndex);
+                    if (node == null || node.isEmpty()) {
+                        continue;
+                    }
+                    
+                    // Estimate distance from query point to node center
+                    float nodeDistance = estimateNodeDistance(nodeIndex, queryPoint);
+                    if (nodeDistance < bestDistance) {
+                        bestDistance = nodeDistance;
+                        nearestNodeIndex = nodeIndex;
+                    }
+                    
+                    // Early termination: if we find a very close node, start there
+                    if (nodeDistance < getCellSizeAtLevel(maxDepth)) {
+                        break;
+                    }
+                }
+                
+                // If we found a starting node, search from there
+                if (nearestNodeIndex != null) {
+                    Queue<Long> toVisit = new LinkedList<>();
+                    Set<Long> visitedNodes = new HashSet<>();
+                    toVisit.add(nearestNodeIndex);
+                    
+                    // Breadth-first search from nearest node with distance-based pruning
+                    while (!toVisit.isEmpty() && candidates.size() < k) {
+                        Long current = toVisit.poll();
+                        if (!visitedNodes.add(current)) {
+                            continue;
+                        }
+                        
+                        NodeType node = spatialIndex.get(current);
+                        if (node == null) {
+                            continue;
+                        }
+                        
+                        // Check entities in current node
+                        for (ID entityId : node.getEntityIds()) {
+                            if (visited.add(entityId)) {
+                                Point3f entityPos = entityManager.getEntityPosition(entityId);
+                                if (entityPos != null) {
+                                    float distance = queryPoint.distance(entityPos);
+                                    if (distance <= maxDistance) {
+                                        candidates.add(new EntityDistance<>(entityId, distance));
+                                        if (candidates.size() > k) {
+                                            candidates.poll();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Add neighboring nodes if we need more candidates
+                        if (candidates.size() < k || shouldContinueKNNSearch(current, queryPoint, candidates)) {
+                            addNeighboringNodes(current, toVisit, visitedNodes);
+                        }
+                    }
                 }
             }
 
@@ -1424,6 +1497,68 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Get the sorted spatial indices for SFC-ordered operations.
+     * This provides spatially-ordered access to improve cache locality.
+     *
+     * @return NavigableSet containing spatial indices in SFC order
+     */
+    protected NavigableSet<Long> getSortedSpatialIndices() {
+        return sortedSpatialIndices;
+    }
+
+    /**
+     * Process all nodes in SFC order with the given consumer.
+     * This utility method provides a convenient way to iterate over all nodes
+     * in spatial order for improved cache performance.
+     *
+     * @param nodeProcessor function to process each non-empty node
+     */
+    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Long, NodeType> nodeProcessor) {
+        for (Long nodeIndex : sortedSpatialIndices) {
+            NodeType node = spatialIndex.get(nodeIndex);
+            if (node != null && !node.isEmpty()) {
+                nodeProcessor.accept(nodeIndex, node);
+            }
+        }
+    }
+
+    /**
+     * Process all entities in SFC order with the given consumer.
+     * This utility method provides a convenient way to iterate over all entities
+     * in spatial order for improved cache performance.
+     *
+     * @param entityProcessor function to process each entity ID with its containing node index
+     */
+    protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Long, ID> entityProcessor) {
+        for (Long nodeIndex : sortedSpatialIndices) {
+            NodeType node = spatialIndex.get(nodeIndex);
+            if (node != null && !node.isEmpty()) {
+                for (ID entityId : node.getEntityIds()) {
+                    entityProcessor.accept(nodeIndex, entityId);
+                }
+            }
+        }
+    }
+
+    /**
+     * Filter nodes in SFC order using the given predicate and collect them into a list.
+     * This utility method combines spatial ordering with filtering for better performance.
+     *
+     * @param nodePredicate predicate to test each node
+     * @return list of node indices that match the predicate, in SFC order
+     */
+    protected List<Long> filterNodesInSFCOrder(java.util.function.BiPredicate<Long, NodeType> nodePredicate) {
+        List<Long> filteredNodes = new ArrayList<>();
+        for (Long nodeIndex : sortedSpatialIndices) {
+            NodeType node = spatialIndex.get(nodeIndex);
+            if (node != null && !node.isEmpty() && nodePredicate.test(nodeIndex, node)) {
+                filteredNodes.add(nodeIndex);
+            }
+        }
+        return filteredNodes;
+    }
+
+    /**
      * Get the range of spatial indices that could intersect with the given bounds This method should be overridden by
      * subclasses for specific optimizations
      *
@@ -1742,6 +1877,16 @@ implements SpatialIndex<ID, Content> {
         
         return -1;
     }
+
+    /**
+     * Estimate the distance from a query point to the center of a spatial node.
+     * This is used for k-NN search optimization to find the nearest starting nodes.
+     *
+     * @param nodeIndex  the spatial node index
+     * @param queryPoint the query point
+     * @return estimated distance from query point to node center
+     */
+    protected abstract float estimateNodeDistance(long nodeIndex, Point3f queryPoint);
 
     /**
      * Check if k-NN search should continue based on current candidates
