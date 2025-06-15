@@ -130,6 +130,13 @@ public class CapsuleShape extends CollisionShape {
     }
     
     @Override
+    public void translate(Vector3f delta) {
+        position.add(delta);
+        endpoint1.add(delta);
+        endpoint2.add(delta);
+    }
+    
+    @Override
     public EntityBounds getAABB() {
         float minX = Math.min(endpoint1.x, endpoint2.x) - radius;
         float minY = Math.min(endpoint1.y, endpoint2.y) - radius;

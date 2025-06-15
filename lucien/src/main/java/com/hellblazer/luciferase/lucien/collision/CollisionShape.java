@@ -44,6 +44,12 @@ public abstract class CollisionShape {
     }
     
     /**
+     * Translate this shape by the given delta
+     * @param delta the translation vector
+     */
+    public abstract void translate(Vector3f delta);
+    
+    /**
      * Get the axis-aligned bounding box for this shape
      */
     public abstract EntityBounds getAABB();

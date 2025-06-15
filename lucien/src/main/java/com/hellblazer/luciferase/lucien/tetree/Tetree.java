@@ -319,39 +319,25 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
-        // Use a priority queue to order tetrahedra by ray intersection distance
-        PriorityQueue<TetDistance> tetQueue = new PriorityQueue<>();
-        Set<Long> visitedTets = new HashSet<>();
-
-        // Find the tetrahedron containing the ray origin
-        Tet startTet = locate(ray.origin(), maxDepth);
-        long startIndex = startTet.index();
-
-        // Add starting tetrahedron
-        float startDistance = getRayNodeIntersectionDistance(startIndex, ray);
-        if (startDistance <= ray.maxDistance()) {
-            tetQueue.add(new TetDistance(startIndex, startDistance));
-        }
-
-        // Build ordered stream of tetrahedra
-        List<Long> orderedTets = new ArrayList<>();
-
-        while (!tetQueue.isEmpty()) {
-            TetDistance current = tetQueue.poll();
-            if (!visitedTets.add(current.tetIndex)) {
-                continue;
+        // First approach: check all existing nodes in the spatial index
+        // This ensures we don't miss any nodes that actually contain entities
+        List<TetDistance> nodeDistances = new ArrayList<>();
+        
+        for (Long nodeIndex : spatialIndex.keySet()) {
+            // Check if ray intersects this node
+            if (doesRayIntersectNode(nodeIndex, ray)) {
+                float distance = getRayNodeIntersectionDistance(nodeIndex, ray);
+                if (distance >= 0 && distance <= ray.maxDistance()) {
+                    nodeDistances.add(new TetDistance(nodeIndex, distance));
+                }
             }
-
-            // Check if tetrahedron exists in spatial index
-            if (spatialIndex.containsKey(current.tetIndex)) {
-                orderedTets.add(current.tetIndex);
-            }
-
-            // Add neighboring tetrahedra that intersect the ray
-            addIntersectingNeighbors(current.tetIndex, ray, tetQueue, visitedTets);
         }
-
-        return orderedTets.stream();
+        
+        // Sort by distance to get traversal order
+        Collections.sort(nodeDistances);
+        
+        // Return stream of node indices in order
+        return nodeDistances.stream().map(td -> td.tetIndex);
     }
 
     // These methods are now handled by AbstractSpatialIndex
@@ -859,6 +845,37 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         
         // Mark that this node has been subdivided
         parentNode.setHasChildren(true);
+    }
+
+    /**
+     * Add intersecting child tetrahedra to the ray traversal queue
+     */
+    private void addIntersectingChildren(long parentIndex, byte parentLevel, Ray3D ray,
+                                        PriorityQueue<TetDistance> tetQueue, Set<Long> visitedTets) {
+        Tet parentTet = Tet.tetrahedron(parentIndex);
+        byte childLevel = (byte) (parentLevel + 1);
+        int parentCellSize = Constants.lengthAtLevel(parentLevel);
+        int childCellSize = Constants.lengthAtLevel(childLevel);
+        
+        // Check all child cells that could be contained within parent cell
+        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
+            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
+                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
+                    // Check all 6 tetrahedron types in each child cell
+                    for (byte type = 0; type < 6; type++) {
+                        Tet childTet = new Tet(x, y, z, childLevel, type);
+                        long childIndex = childTet.index();
+                        
+                        if (!visitedTets.contains(childIndex)) {
+                            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
+                            if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                                tetQueue.add(new TetDistance(childIndex, intersection.distance));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**

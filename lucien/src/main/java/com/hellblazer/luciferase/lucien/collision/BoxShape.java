@@ -30,7 +30,7 @@ import javax.vecmath.Vector3f;
 public class BoxShape extends CollisionShape {
     
     private final Vector3f halfExtents;
-    private final EntityBounds bounds;
+    private EntityBounds bounds;
     
     public BoxShape(Point3f center, Vector3f halfExtents) {
         super(center);
@@ -59,6 +59,15 @@ public class BoxShape extends CollisionShape {
         float y = Math.max(bounds.getMinY(), Math.min(point.y, bounds.getMaxY()));
         float z = Math.max(bounds.getMinZ(), Math.min(point.z, bounds.getMaxZ()));
         return new Point3f(x, y, z);
+    }
+    
+    @Override
+    public void translate(Vector3f delta) {
+        position.add(delta);
+        // Update bounds
+        Point3f min = new Point3f(bounds.getMinX() + delta.x, bounds.getMinY() + delta.y, bounds.getMinZ() + delta.z);
+        Point3f max = new Point3f(bounds.getMaxX() + delta.x, bounds.getMaxY() + delta.y, bounds.getMaxZ() + delta.z);
+        this.bounds = new EntityBounds(min, max);
     }
     
     /**

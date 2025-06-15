@@ -44,6 +44,11 @@ public class SphereShape extends CollisionShape {
     }
     
     @Override
+    public void translate(Vector3f delta) {
+        position.add(delta);
+    }
+    
+    @Override
     public EntityBounds getAABB() {
         return new EntityBounds(position, radius);
     }

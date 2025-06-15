@@ -152,6 +152,10 @@ public class Entity<Content> {
      */
     public void setCollisionShape(CollisionShape shape) {
         this.collisionShape = shape;
+        // Update bounds from collision shape's AABB
+        if (shape != null) {
+            this.bounds = shape.getAABB();
+        }
     }
     
     /**

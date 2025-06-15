@@ -152,6 +152,9 @@ public class TetrahedralGeometry {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
+        // First check if ray origin is inside the tetrahedron
+        boolean rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
+        
         float closestDistance = Float.MAX_VALUE;
         Point3f closestIntersection = null;
         Vector3f closestNormal = null;
@@ -171,6 +174,19 @@ public class TetrahedralGeometry {
             }
         }
 
+        // If ray starts inside the tetrahedron, we have an intersection
+        if (rayStartsInside) {
+            if (closestIntersection != null) {
+                // Ray exits the tetrahedron
+                return new RayTetrahedronIntersection(true, closestDistance, closestIntersection, closestNormal,
+                                                      closestFace);
+            } else {
+                // Ray doesn't exit within maxDistance, but still intersects
+                return new RayTetrahedronIntersection(true, 0.0f, ray.origin(), null, -1);
+            }
+        }
+        
+        // Ray starts outside - only intersects if we found an entry point
         if (closestIntersection != null) {
             return new RayTetrahedronIntersection(true, closestDistance, closestIntersection, closestNormal,
                                                   closestFace);

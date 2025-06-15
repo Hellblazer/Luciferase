@@ -51,6 +51,11 @@ public class OrientedBoxShape extends CollisionShape {
         return new Matrix3f(orientation);
     }
     
+    @Override
+    public void translate(Vector3f delta) {
+        position.add(delta);
+    }
+    
     /**
      * Transform a point from world space to local (box) space
      */

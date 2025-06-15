@@ -281,4 +281,14 @@ public class EntityManager<ID extends EntityID, Content> {
             entity.setCollisionShape(shape);
         }
     }
+    
+    /**
+     * Set entity bounds
+     */
+    public void setEntityBounds(ID entityId, EntityBounds bounds) {
+        Entity<Content> entity = entities.get(entityId);
+        if (entity != null) {
+            entity.setBounds(bounds);
+        }
+    }
 }

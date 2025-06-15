@@ -306,39 +306,25 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
-        // Use a priority queue to order nodes by ray intersection distance
-        PriorityQueue<NodeDistance> nodeQueue = new PriorityQueue<>();
-        Set<Long> visitedNodes = new HashSet<>();
-
-        // Start with root node (level 0)
-        long rootIndex = 0L;
-        float rootDistance = getRayNodeIntersectionDistance(rootIndex, ray);
-        if (rootDistance < Float.MAX_VALUE && rootDistance <= ray.maxDistance()) {
-            nodeQueue.add(new NodeDistance(rootIndex, rootDistance));
-        }
-
-        // Build ordered stream of nodes
-        List<Long> orderedNodes = new ArrayList<>();
-
-        while (!nodeQueue.isEmpty()) {
-            NodeDistance current = nodeQueue.poll();
-            if (!visitedNodes.add(current.nodeIndex)) {
-                continue;
-            }
-
-            // Check if node exists in spatial index
-            if (spatialIndex.containsKey(current.nodeIndex)) {
-                orderedNodes.add(current.nodeIndex);
-            }
-
-            // Add children if they intersect the ray
-            byte currentLevel = Constants.toLevel(current.nodeIndex);
-            if (currentLevel < maxDepth) {
-                addIntersectingChildren(current.nodeIndex, currentLevel, ray, nodeQueue, visitedNodes);
+        // First approach: check all existing nodes in the spatial index
+        // This ensures we don't miss any nodes that actually contain entities
+        List<NodeDistance> nodeDistances = new ArrayList<>();
+        
+        for (Long nodeIndex : spatialIndex.keySet()) {
+            // Check if ray intersects this node
+            if (doesRayIntersectNode(nodeIndex, ray)) {
+                float distance = getRayNodeIntersectionDistance(nodeIndex, ray);
+                if (distance >= 0 && distance <= ray.maxDistance()) {
+                    nodeDistances.add(new NodeDistance(nodeIndex, distance));
+                }
             }
         }
-
-        return orderedNodes.stream();
+        
+        // Sort by distance to get traversal order
+        Collections.sort(nodeDistances);
+        
+        // Return stream of node indices in order
+        return nodeDistances.stream().map(nd -> nd.nodeIndex);
     }
 
     @Override
@@ -629,7 +615,12 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
             int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
 
-            long childIndex = MortonCurve.encode(childX, childY, childZ);
+            // Calculate child morton code at the child level
+            Point3f childCenter = new Point3f(childX + childCellSize/2.0f, 
+                                            childY + childCellSize/2.0f, 
+                                            childZ + childCellSize/2.0f);
+            long childIndex = Constants.calculateMortonIndex(childCenter, childLevel);
+            
             if (!visitedNodes.contains(childIndex)) {
                 float distance = rayIntersectsAABB(ray, childX, childY, childZ, childX + childCellSize,
                                                    childY + childCellSize, childZ + childCellSize);
@@ -693,8 +684,24 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         long minMorton = calculateMortonCode(new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), maxDepth);
         long maxMorton = calculateMortonCode(new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()), maxDepth);
 
+        // Ensure min <= max to avoid IllegalArgumentException
+        if (minMorton > maxMorton) {
+            long temp = minMorton;
+            minMorton = maxMorton;
+            maxMorton = temp;
+        }
+
         // Use sorted Morton codes for efficient range query
-        NavigableSet<Long> candidateCodes = sortedSpatialIndices.subSet(minMorton, true, maxMorton, true);
+        NavigableSet<Long> candidateCodes;
+        if (minMorton == maxMorton) {
+            // Special case: single point or very small bounds
+            candidateCodes = new TreeSet<>();
+            if (sortedSpatialIndices.contains(minMorton)) {
+                candidateCodes.add(minMorton);
+            }
+        } else {
+            candidateCodes = sortedSpatialIndices.subSet(minMorton, true, maxMorton, true);
+        }
 
         // Also check codes just outside the range as Morton curve can be non-contiguous
         NavigableSet<Long> extendedCodes = new TreeSet<>(candidateCodes);
