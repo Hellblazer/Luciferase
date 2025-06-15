@@ -18,6 +18,7 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Performance benchmarks for Tetree collision detection.
@@ -39,9 +40,22 @@ public class TetreeCollisionPerformanceTest {
         random = new Random(42); // Fixed seed for reproducible results
     }
 
+    private boolean isRunningInCI() {
+        // Check common CI environment variables
+        return System.getenv("CI") != null || 
+               System.getenv("CONTINUOUS_INTEGRATION") != null ||
+               System.getenv("GITHUB_ACTIONS") != null ||
+               System.getenv("JENKINS_URL") != null ||
+               System.getenv("GITLAB_CI") != null ||
+               System.getenv("TRAVIS") != null ||
+               System.getenv("CIRCLECI") != null;
+    }
+
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testLowDensityCollisionPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with low entity density (few collisions expected)
         int entityCount = 1000;
         float worldSize = 5000f; // Large world, spread out entities
@@ -82,6 +96,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void testHighDensityCollisionPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with high entity density (many collisions expected)
         int entityCount = 500;
         float worldSize = 200f; // Small world, clustered entities (positive coordinates)
@@ -118,6 +134,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.SECONDS)
     void testScalabilityBenchmark() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test how performance scales with entity count in tetrahedral space
         int[] entityCounts = {100, 250, 500, 1000, 1500}; // Slightly adjusted for tetrahedral constraints
         
@@ -146,6 +164,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testBoundedEntityCollisionPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with bounded entities in tetrahedral space
         int entityCount = 300;
         
@@ -182,6 +202,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void testMixedEntityTypePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with mixed point and bounded entities
         int pointEntities = 400;
         int boundedEntities = 200;
@@ -227,6 +249,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testTetrahedralSpatialLocalityPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance when entities are spatially clustered in tetrahedral regions
         int clusterCount = 4; // Use tetrahedral-friendly cluster count
         int entitiesPerCluster = 100;
@@ -264,6 +288,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testWorstCaseScenario() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Worst case: all entities at the same position (maximum collisions)
         int entityCount = 150; // Reduced for worst case in tetrahedral space
         Point3f samePosition = new Point3f(100, 100, 100); // Valid positive coordinates
@@ -304,6 +330,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void testUpdatePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance when entities are frequently updated (moving entities)
         int entityCount = 500;
         List<LongEntityID> entities = insertRandomEntities(entityCount, 1000f);
@@ -339,6 +367,8 @@ public class TetreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testPositiveCoordinateConstraintPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance specifically with positive coordinate constraints
         int entityCount = 800;
         

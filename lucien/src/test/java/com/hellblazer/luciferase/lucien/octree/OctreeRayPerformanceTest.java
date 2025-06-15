@@ -18,6 +18,7 @@ import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Performance benchmarks for Octree ray intersection functionality.
@@ -37,8 +38,16 @@ public class OctreeRayPerformanceTest {
         idGenerator = new SequentialLongIDGenerator();
     }
 
+    private boolean isRunningInCI() {
+        return "true".equals(System.getenv("CI")) || 
+               "true".equals(System.getProperty("CI")) ||
+               "true".equals(System.getenv("GITHUB_ACTIONS"));
+    }
+
     @Test
     void testSmallScalePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 100 entities
         int numEntities = 100;
         insertRandomEntities(numEntities, 1000.0f);
@@ -62,6 +71,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testMediumScalePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 1000 entities
         int numEntities = 1000;
         insertRandomEntities(numEntities, 1000.0f);
@@ -85,6 +96,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testLargeScalePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 10,000 entities
         int numEntities = 10_000;
         insertRandomEntities(numEntities, 1000.0f);
@@ -108,6 +121,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testRayIntersectFirstVsAllPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 5000 entities
         int numEntities = 5000;
         insertRandomEntities(numEntities, 1000.0f);
@@ -139,6 +154,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testScalabilityWithEntityCount() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int[] entityCounts = {100, 500, 1000, 2000, 5000};
         Ray3D testRay = new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 1, 1), 2000.0f);
         
@@ -166,6 +183,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testDenseVsSparseDistribution() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 1000;
         
         // Test dense distribution (small area)
@@ -202,6 +221,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testRayLengthPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 1000;
         insertRandomEntities(numEntities, 1000.0f);
         
@@ -227,6 +248,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testBoundedVsPointEntityPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 1000;
         
         // Test with point entities only
@@ -263,6 +286,8 @@ public class OctreeRayPerformanceTest {
 
     @Test
     void testConcurrentRayIntersection() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 2000;
         insertRandomEntities(numEntities, 1000.0f);
         

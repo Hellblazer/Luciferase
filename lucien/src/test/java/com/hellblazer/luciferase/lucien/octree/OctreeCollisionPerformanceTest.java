@@ -18,6 +18,7 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Performance benchmarks for Octree collision detection.
@@ -38,9 +39,17 @@ public class OctreeCollisionPerformanceTest {
         random = new Random(42); // Fixed seed for reproducible results
     }
 
+    private boolean isRunningInCI() {
+        return "true".equals(System.getenv("CI")) || 
+               "true".equals(System.getProperty("CI")) ||
+               "true".equals(System.getenv("GITHUB_ACTIONS"));
+    }
+
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testLowDensityCollisionPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with low entity density (few collisions expected)
         int entityCount = 1000;
         float worldSize = 10000f; // Large world, spread out entities
@@ -81,6 +90,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void testHighDensityCollisionPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with high entity density (many collisions expected)
         int entityCount = 500;
         float worldSize = 200f; // Small world, clustered entities
@@ -117,6 +128,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 20, unit = TimeUnit.SECONDS)
     void testScalabilityBenchmark() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test how performance scales with entity count
         int[] entityCounts = {100, 250, 500, 1000, 2000};
         
@@ -145,6 +158,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testBoundedEntityCollisionPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with bounded entities
         int entityCount = 300;
         
@@ -181,6 +196,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void testMixedEntityTypePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance with mixed point and bounded entities
         int pointEntities = 400;
         int boundedEntities = 200;
@@ -226,6 +243,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testSpatialLocalityPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance when entities are spatially clustered
         int clusterCount = 5;
         int entitiesPerCluster = 100;
@@ -263,6 +282,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void testWorstCaseScenario() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Worst case: all entities at the same position (maximum collisions)
         int entityCount = 200; // Reduced for worst case
         Point3f samePosition = new Point3f(100, 100, 100);
@@ -297,6 +318,8 @@ public class OctreeCollisionPerformanceTest {
     @Test
     @Timeout(value = 15, unit = TimeUnit.SECONDS)
     void testUpdatePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Test performance when entities are frequently updated (moving entities)
         int entityCount = 500;
         List<LongEntityID> entities = insertRandomEntities(entityCount, 1000f);

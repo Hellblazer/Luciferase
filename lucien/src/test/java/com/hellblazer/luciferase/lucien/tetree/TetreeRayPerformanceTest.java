@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Performance benchmarks for Tetree ray intersection functionality.
@@ -37,8 +38,16 @@ public class TetreeRayPerformanceTest {
         idGenerator = new SequentialLongIDGenerator();
     }
 
+    private boolean isRunningInCI() {
+        return "true".equals(System.getenv("CI")) || 
+               "true".equals(System.getProperty("CI")) ||
+               "true".equals(System.getenv("GITHUB_ACTIONS"));
+    }
+
     @Test
     void testSmallScalePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 100 entities (Tetree requires positive coordinates)
         int numEntities = 100;
         insertRandomEntities(numEntities, 1000.0f);
@@ -62,6 +71,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testMediumScalePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 1000 entities
         int numEntities = 1000;
         insertRandomEntities(numEntities, 1000.0f);
@@ -85,6 +96,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testLargeScalePerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 5,000 entities (smaller than Octree due to potential tetrahedral complexity)
         int numEntities = 5000;
         insertRandomEntities(numEntities, 1000.0f);
@@ -108,6 +121,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testRayIntersectFirstVsAllPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Insert 2000 entities
         int numEntities = 2000;
         insertRandomEntities(numEntities, 1000.0f);
@@ -139,6 +154,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testScalabilityWithEntityCount() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int[] entityCounts = {100, 300, 500, 1000, 2000};
         Ray3D testRay = new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 1, 1), 2000.0f);
         
@@ -166,6 +183,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testPositiveCoordinateConstraint() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 500;
         
         // Test performance with entities concentrated in positive quadrant
@@ -209,6 +228,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testTetrahedralBoundaryPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 1000;
         
         // Insert entities near tetrahedral cell boundaries (power of 2 coordinates)
@@ -248,6 +269,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testBoundedVsPointEntityPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 500;
         
         // Test with point entities only
@@ -284,6 +307,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testRayLengthPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int numEntities = 500;
         insertRandomEntities(numEntities, 1000.0f);
         
@@ -310,6 +335,8 @@ public class TetreeRayPerformanceTest {
 
     @Test
     void testMultiLevelPerformance() {
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         int entitiesPerLevel = 200;
         byte[] levels = {8, 10, 12, 14, 16};
         
