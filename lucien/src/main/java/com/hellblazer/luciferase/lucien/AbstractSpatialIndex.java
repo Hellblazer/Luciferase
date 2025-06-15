@@ -1447,6 +1447,514 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Plane Intersection Abstract Methods =====
+
+    /**
+     * Test if a plane intersects with a node
+     *
+     * @param nodeIndex the node's spatial index
+     * @param plane     the plane to test
+     * @return true if the plane intersects the node
+     */
+    protected abstract boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane);
+
+    /**
+     * Get nodes that should be traversed for plane intersection, ordered by distance from plane
+     *
+     * @param plane the plane to test
+     * @return stream of node indices ordered by distance from plane
+     */
+    protected abstract Stream<Long> getPlaneTraversalOrder(Plane3D plane);
+
+    /**
+     * Check if a frustum intersects with the given node
+     *
+     * @param nodeIndex the node's spatial index
+     * @param frustum   the frustum to test
+     * @return true if the frustum intersects the node
+     */
+    protected abstract boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum);
+
+    /**
+     * Get nodes that should be traversed for frustum culling, ordered by distance from camera
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return stream of node indices ordered by distance from camera
+     */
+    protected abstract Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
+
+    // ===== Plane Intersection Implementation =====
+
+    /**
+     * Find all entities that intersect with the given plane. Returns entities that either intersect the plane or are
+     * within the specified tolerance distance from it.
+     *
+     * @param plane     the plane to test intersection with
+     * @param tolerance maximum distance from plane to consider as intersection (use 0 for exact intersection)
+     * @return list of plane intersections sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane, float tolerance) {
+        lock.readLock().lock();
+        try {
+            List<PlaneIntersection<ID, Content>> intersections = new ArrayList<>();
+
+            // Traverse nodes that could intersect with the plane
+            getPlaneTraversalOrder(plane).forEach(nodeIndex -> {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    return;
+                }
+
+                // Check if plane intersects this node
+                if (!doesPlaneIntersectNode(nodeIndex, plane)) {
+                    return;
+                }
+
+                // Check each entity in the node
+                for (ID entityId : node.getEntityIds()) {
+                    Content content = entityManager.getEntityContent(entityId);
+                    if (content == null) {
+                        continue;
+                    }
+
+                    Point3f entityPos = entityManager.getEntityPosition(entityId);
+                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
+
+                    // Calculate plane-entity intersection
+                    PlaneIntersection<ID, Content> intersection = calculatePlaneEntityIntersection(plane, entityId,
+                                                                                                   content, entityPos,
+                                                                                                   bounds, tolerance);
+
+                    if (intersection != null) {
+                        intersections.add(intersection);
+                    }
+                }
+            });
+
+            Collections.sort(intersections);
+            return intersections;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Find all entities that intersect with the given plane (exact intersection only).
+     *
+     * @param plane the plane to test intersection with
+     * @return list of plane intersections sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane) {
+        return planeIntersectAll(plane, 0.0f);
+    }
+
+    /**
+     * Find all entities on the positive side of the plane (in direction of normal).
+     *
+     * @param plane the plane to test
+     * @return list of entities on positive side, sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectPositiveSide(Plane3D plane) {
+        return planeIntersectAll(plane, Float.MAX_VALUE).stream()
+               .filter(PlaneIntersection::isOnPositiveSide)
+               .collect(Collectors.toList());
+    }
+
+    /**
+     * Find all entities on the negative side of the plane (opposite to normal).
+     *
+     * @param plane the plane to test
+     * @return list of entities on negative side, sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectNegativeSide(Plane3D plane) {
+        return planeIntersectAll(plane, Float.MAX_VALUE).stream()
+               .filter(PlaneIntersection::isOnNegativeSide)
+               .collect(Collectors.toList());
+    }
+
+    /**
+     * Find all entities within the specified distance from the plane (on either side).
+     *
+     * @param plane       the plane to test
+     * @param maxDistance maximum distance from plane to include
+     * @return list of entities within distance, sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectWithinDistance(Plane3D plane, float maxDistance) {
+        return planeIntersectAll(plane, maxDistance).stream()
+               .filter(intersection -> Math.abs(intersection.distanceFromPlane()) <= maxDistance)
+               .collect(Collectors.toList());
+    }
+
+    /**
+     * Calculate the intersection between a plane and an entity.
+     *
+     * @param plane     the plane
+     * @param entityId  the entity ID
+     * @param content   the entity content
+     * @param entityPos the entity position
+     * @param bounds    the entity bounds (null for point entities)
+     * @param tolerance tolerance for intersection detection
+     * @return plane intersection result, or null if no intersection within tolerance
+     */
+    protected PlaneIntersection<ID, Content> calculatePlaneEntityIntersection(Plane3D plane, ID entityId,
+                                                                               Content content, Point3f entityPos,
+                                                                               EntityBounds bounds, float tolerance) {
+        if (bounds != null) {
+            // For bounded entities, perform plane-AABB intersection
+            return planeAABBIntersection(plane, entityId, content, bounds, tolerance);
+        } else {
+            // For point entities, calculate distance to plane
+            return planePointIntersection(plane, entityId, content, entityPos, tolerance);
+        }
+    }
+
+    /**
+     * Plane-AABB intersection test
+     *
+     * @param plane     the plane
+     * @param entityId  the entity ID
+     * @param content   the entity content
+     * @param bounds    the AABB bounds
+     * @param tolerance tolerance for intersection
+     * @return plane intersection result, or null if outside tolerance
+     */
+    protected PlaneIntersection<ID, Content> planeAABBIntersection(Plane3D plane, ID entityId, Content content,
+                                                                   EntityBounds bounds, float tolerance) {
+        float minX = bounds.getMinX();
+        float minY = bounds.getMinY();
+        float minZ = bounds.getMinZ();
+        float maxX = bounds.getMaxX();
+        float maxY = bounds.getMaxY();
+        float maxZ = bounds.getMaxZ();
+
+        // Calculate distances to all 8 corners of the AABB
+        Point3f[] corners = {
+            new Point3f(minX, minY, minZ), new Point3f(maxX, minY, minZ),
+            new Point3f(minX, maxY, minZ), new Point3f(maxX, maxY, minZ),
+            new Point3f(minX, minY, maxZ), new Point3f(maxX, minY, maxZ),
+            new Point3f(minX, maxY, maxZ), new Point3f(maxX, maxY, maxZ)
+        };
+
+        float minDistance = Float.POSITIVE_INFINITY;
+        float maxDistance = Float.NEGATIVE_INFINITY;
+        Point3f closestPoint = new Point3f();
+
+        // Find min and max distances to plane
+        for (Point3f corner : corners) {
+            float distance = plane.distanceToPoint(corner);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestPoint.set(corner);
+            }
+            if (distance > maxDistance) {
+                maxDistance = distance;
+            }
+        }
+
+        // Determine intersection type
+        PlaneIntersection.IntersectionType intersectionType;
+        float resultDistance;
+
+        if (Math.abs(minDistance) <= tolerance && Math.abs(maxDistance) <= tolerance) {
+            // Box lies on plane
+            intersectionType = PlaneIntersection.IntersectionType.ON_PLANE;
+            resultDistance = (minDistance + maxDistance) / 2.0f;
+        } else if (minDistance * maxDistance <= 0) {
+            // Box spans plane
+            intersectionType = PlaneIntersection.IntersectionType.INTERSECTING;
+            resultDistance = Math.abs(minDistance) < Math.abs(maxDistance) ? minDistance : maxDistance;
+        } else if (minDistance > 0) {
+            // Box is on positive side
+            intersectionType = PlaneIntersection.IntersectionType.POSITIVE_SIDE;
+            resultDistance = minDistance;
+        } else {
+            // Box is on negative side
+            intersectionType = PlaneIntersection.IntersectionType.NEGATIVE_SIDE;
+            resultDistance = maxDistance;
+        }
+
+        // Check tolerance
+        if (tolerance > 0 && Math.abs(resultDistance) > tolerance) {
+            return null;
+        }
+
+        // Calculate closest point on AABB to plane
+        if (intersectionType == PlaneIntersection.IntersectionType.INTERSECTING) {
+            // For intersecting boxes, find actual closest point on box surface to plane
+            closestPoint = findClosestPointOnAABBToPlane(plane, bounds);
+        }
+
+        return new PlaneIntersection<>(entityId, content, resultDistance, closestPoint, intersectionType, bounds);
+    }
+
+    /**
+     * Plane-point intersection test
+     *
+     * @param plane     the plane
+     * @param entityId  the entity ID
+     * @param content   the entity content
+     * @param point     the point position
+     * @param tolerance tolerance for intersection
+     * @return plane intersection result, or null if outside tolerance
+     */
+    protected PlaneIntersection<ID, Content> planePointIntersection(Plane3D plane, ID entityId, Content content,
+                                                                    Point3f point, float tolerance) {
+        float distance = plane.distanceToPoint(point);
+
+        // Check tolerance
+        if (tolerance > 0 && Math.abs(distance) > tolerance) {
+            return null;
+        }
+
+        // Determine intersection type
+        PlaneIntersection.IntersectionType intersectionType;
+        if (Math.abs(distance) <= 1e-6f) {
+            intersectionType = PlaneIntersection.IntersectionType.ON_PLANE;
+        } else if (distance > 0) {
+            intersectionType = PlaneIntersection.IntersectionType.POSITIVE_SIDE;
+        } else {
+            intersectionType = PlaneIntersection.IntersectionType.NEGATIVE_SIDE;
+        }
+
+        return new PlaneIntersection<>(entityId, content, distance, new Point3f(point), intersectionType, null);
+    }
+
+    /**
+     * Find the closest point on an AABB to a plane
+     *
+     * @param plane  the plane
+     * @param bounds the AABB bounds
+     * @return closest point on AABB surface to the plane
+     */
+    protected Point3f findClosestPointOnAABBToPlane(Plane3D plane, EntityBounds bounds) {
+        Vector3f normal = plane.getNormal();
+        
+        // Find the point on the AABB closest to the plane
+        float x = (normal.x >= 0) ? bounds.getMinX() : bounds.getMaxX();
+        float y = (normal.y >= 0) ? bounds.getMinY() : bounds.getMaxY();
+        float z = (normal.z >= 0) ? bounds.getMinZ() : bounds.getMaxZ();
+        
+        return new Point3f(x, y, z);
+    }
+
+    // ===== Frustum Culling Implementation =====
+
+    /**
+     * Find all entities that are visible within the given frustum.
+     * Returns entities that are either completely inside or intersecting the frustum.
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return list of frustum intersections sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
+        lock.readLock().lock();
+        try {
+            List<FrustumIntersection<ID, Content>> intersections = new ArrayList<>();
+            Set<ID> visitedEntities = new HashSet<>();
+
+            // Traverse nodes that could intersect with the frustum
+            getFrustumTraversalOrder(frustum, cameraPosition).forEach(nodeIndex -> {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    return;
+                }
+
+                // Check if frustum intersects this node
+                if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
+                    return;
+                }
+
+                // Check each entity in the node
+                for (ID entityId : node.getEntityIds()) {
+                    // Skip if already processed (for spanning entities)
+                    if (!visitedEntities.add(entityId)) {
+                        continue;
+                    }
+
+                    Content content = entityManager.getEntityContent(entityId);
+                    if (content == null) {
+                        continue;
+                    }
+
+                    Point3f entityPos = entityManager.getEntityPosition(entityId);
+                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
+
+                    // Calculate frustum-entity intersection
+                    FrustumIntersection<ID, Content> intersection = calculateFrustumEntityIntersection(frustum,
+                                                                                                       cameraPosition,
+                                                                                                       entityId, content,
+                                                                                                       entityPos, bounds);
+
+                    if (intersection != null && intersection.isVisible()) {
+                        intersections.add(intersection);
+                    }
+                }
+            });
+
+            Collections.sort(intersections);
+            return intersections;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Find all entities that are completely inside the frustum (not partially visible).
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return list of entities completely inside the frustum, sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullInside(Frustum3D frustum, Point3f cameraPosition) {
+        return frustumCullVisible(frustum, cameraPosition).stream()
+               .filter(FrustumIntersection::isCompletelyInside)
+               .collect(Collectors.toList());
+    }
+
+    /**
+     * Find all entities that intersect the frustum boundary (partially visible).
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return list of entities intersecting frustum boundary, sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullIntersecting(Frustum3D frustum, Point3f cameraPosition) {
+        return frustumCullVisible(frustum, cameraPosition).stream()
+               .filter(FrustumIntersection::isPartiallyVisible)
+               .collect(Collectors.toList());
+    }
+
+    /**
+     * Find all entities within the specified distance from the camera that are visible in the frustum.
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position
+     * @param maxDistance    maximum distance from camera to include
+     * @return list of entities within distance, sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullWithinDistance(Frustum3D frustum, Point3f cameraPosition, float maxDistance) {
+        return frustumCullVisible(frustum, cameraPosition).stream()
+               .filter(intersection -> intersection.distanceFromCamera() <= maxDistance)
+               .collect(Collectors.toList());
+    }
+
+    /**
+     * Calculate the intersection between a frustum and an entity.
+     *
+     * @param frustum        the frustum
+     * @param cameraPosition the camera position
+     * @param entityId       the entity ID
+     * @param content        the entity content
+     * @param entityPos      the entity position
+     * @param bounds         the entity bounds (null for point entities)
+     * @return frustum intersection result, or null if outside frustum
+     */
+    protected FrustumIntersection<ID, Content> calculateFrustumEntityIntersection(Frustum3D frustum, Point3f cameraPosition,
+                                                                                   ID entityId, Content content,
+                                                                                   Point3f entityPos, EntityBounds bounds) {
+        if (bounds != null) {
+            // For bounded entities, perform frustum-AABB intersection
+            return frustumAABBIntersection(frustum, cameraPosition, entityId, content, bounds);
+        } else {
+            // For point entities, test point containment
+            return frustumPointIntersection(frustum, cameraPosition, entityId, content, entityPos);
+        }
+    }
+
+    /**
+     * Frustum-AABB intersection test
+     *
+     * @param frustum        the frustum
+     * @param cameraPosition the camera position
+     * @param entityId       the entity ID
+     * @param content        the entity content
+     * @param bounds         the AABB bounds
+     * @return frustum intersection result, or null if outside frustum
+     */
+    protected FrustumIntersection<ID, Content> frustumAABBIntersection(Frustum3D frustum, Point3f cameraPosition,
+                                                                       ID entityId, Content content, EntityBounds bounds) {
+        float minX = bounds.getMinX();
+        float minY = bounds.getMinY();
+        float minZ = bounds.getMinZ();
+        float maxX = bounds.getMaxX();
+        float maxY = bounds.getMaxY();
+        float maxZ = bounds.getMaxZ();
+
+        // Check if AABB is completely inside frustum
+        boolean completelyInside = frustum.containsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+        
+        // Check if AABB intersects frustum
+        boolean intersects = frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+
+        if (!intersects) {
+            // Outside frustum
+            return null;
+        }
+
+        // Determine visibility type
+        FrustumIntersection.VisibilityType visibilityType;
+        if (completelyInside) {
+            visibilityType = FrustumIntersection.VisibilityType.INSIDE;
+        } else {
+            visibilityType = FrustumIntersection.VisibilityType.INTERSECTING;
+        }
+
+        // Calculate distance from camera to entity center
+        Point3f entityCenter = bounds.getCenter();
+        float distanceFromCamera = cameraPosition.distance(entityCenter);
+
+        // Calculate closest point on AABB to camera
+        Point3f closestPoint = findClosestPointOnAABBToCamera(cameraPosition, bounds);
+
+        return new FrustumIntersection<>(entityId, content, distanceFromCamera, closestPoint, visibilityType, bounds);
+    }
+
+    /**
+     * Frustum-point intersection test
+     *
+     * @param frustum        the frustum
+     * @param cameraPosition the camera position
+     * @param entityId       the entity ID
+     * @param content        the entity content
+     * @param point          the point position
+     * @return frustum intersection result, or null if outside frustum
+     */
+    protected FrustumIntersection<ID, Content> frustumPointIntersection(Frustum3D frustum, Point3f cameraPosition,
+                                                                        ID entityId, Content content, Point3f point) {
+        // Check if point is inside frustum
+        boolean isInside = frustum.containsPoint(point);
+
+        if (!isInside) {
+            return null;
+        }
+
+        // Calculate distance from camera to point
+        float distanceFromCamera = cameraPosition.distance(point);
+
+        // Point is always completely inside if it passes the containment test
+        FrustumIntersection.VisibilityType visibilityType = FrustumIntersection.VisibilityType.INSIDE;
+
+        return new FrustumIntersection<>(entityId, content, distanceFromCamera, new Point3f(point), visibilityType, null);
+    }
+
+    /**
+     * Find the closest point on an AABB to the camera
+     *
+     * @param cameraPosition the camera position
+     * @param bounds         the AABB bounds
+     * @return closest point on AABB surface to the camera
+     */
+    protected Point3f findClosestPointOnAABBToCamera(Point3f cameraPosition, EntityBounds bounds) {
+        // Clamp camera position to AABB bounds
+        float x = Math.max(bounds.getMinX(), Math.min(cameraPosition.x, bounds.getMaxX()));
+        float y = Math.max(bounds.getMinY(), Math.min(cameraPosition.y, bounds.getMaxY()));
+        float z = Math.max(bounds.getMinZ(), Math.min(cameraPosition.z, bounds.getMaxZ()));
+        
+        return new Point3f(x, y, z);
+    }
+
     // ===== Collision Detection Implementation =====
 
     /**

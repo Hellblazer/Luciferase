@@ -290,6 +290,140 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return intersection.intersects;
     }
 
+    // ===== Plane Intersection Implementation =====
+
+    @Override
+    protected boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane) {
+        // Check if plane intersects with the tetrahedron
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        return planeIntersectsTetrahedron(plane, tet);
+    }
+
+    @Override
+    protected Stream<Long> getPlaneTraversalOrder(Plane3D plane) {
+        // For tetree, use spatial ordering to traverse nodes that could intersect with the plane
+        // Order by distance from plane to tetrahedron centroid for better early termination
+        return sortedSpatialIndices.stream()
+            .filter(nodeIndex -> {
+                TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+                return node != null && !node.isEmpty();
+            })
+            .sorted((n1, n2) -> {
+                float dist1 = getPlaneTetrahedronDistance(n1, plane);
+                float dist2 = getPlaneTetrahedronDistance(n2, plane);
+                return Float.compare(Math.abs(dist1), Math.abs(dist2));
+            });
+    }
+
+    /**
+     * Check if plane intersects with a tetrahedron
+     */
+    private boolean planeIntersectsTetrahedron(Plane3D plane, Tet tet) {
+        var vertices = tet.coordinates();
+        
+        // Calculate signed distances from each vertex to the plane
+        float[] distances = new float[4];
+        for (int i = 0; i < 4; i++) {
+            distances[i] = plane.distanceToPoint(new Point3f(vertices[i].x, vertices[i].y, vertices[i].z));
+        }
+        
+        // Check if vertices span both sides of the plane
+        boolean hasPositive = false;
+        boolean hasNegative = false;
+        
+        for (float distance : distances) {
+            if (distance > 1e-6f) {
+                hasPositive = true;
+            } else if (distance < -1e-6f) {
+                hasNegative = true;
+            }
+        }
+        
+        // If vertices are on both sides, the tetrahedron intersects the plane
+        return hasPositive && hasNegative;
+    }
+
+    /**
+     * Calculate distance from plane to tetrahedron centroid
+     */
+    private float getPlaneTetrahedronDistance(long nodeIndex, Plane3D plane) {
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        
+        // Calculate tetrahedron centroid using actual vertices
+        var vertices = tet.coordinates();
+        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
+        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
+        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
+        
+        // Return signed distance from plane to tetrahedron centroid
+        return plane.distanceToPoint(new Point3f(centerX, centerY, centerZ));
+    }
+
+    // ===== Frustum Intersection Implementation =====
+
+    @Override
+    protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
+        // Get the tetrahedron from the node index
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        
+        // For tetrahedral nodes, we need to check if the frustum intersects with the tetrahedron
+        // We'll use a conservative approach: check if the frustum intersects the tetrahedron's bounding box
+        var vertices = tet.coordinates();
+        
+        // Calculate bounding box of the tetrahedron
+        float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
+        float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
+        float minZ = Float.MAX_VALUE, maxZ = Float.MIN_VALUE;
+        
+        for (var vertex : vertices) {
+            minX = Math.min(minX, vertex.x);
+            maxX = Math.max(maxX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            maxY = Math.max(maxY, vertex.y);
+            minZ = Math.min(minZ, vertex.z);
+            maxZ = Math.max(maxZ, vertex.z);
+        }
+        
+        // Use the frustum's AABB intersection test
+        return frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    @Override
+    protected Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
+        // For tetree, use spatial ordering to traverse nodes that could intersect with the frustum
+        // Order by distance from camera to tetrahedron centroid for optimal culling traversal
+        return sortedSpatialIndices.stream()
+            .filter(nodeIndex -> {
+                TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+                return node != null && !node.isEmpty();
+            })
+            .sorted((n1, n2) -> {
+                float dist1 = getFrustumTetrahedronDistance(n1, cameraPosition);
+                float dist2 = getFrustumTetrahedronDistance(n2, cameraPosition);
+                return Float.compare(dist1, dist2);
+            });
+    }
+
+    /**
+     * Calculate distance from camera position to tetrahedron centroid for frustum culling traversal order
+     */
+    private float getFrustumTetrahedronDistance(long nodeIndex, Point3f cameraPosition) {
+        Tet tet = Tet.tetrahedron(nodeIndex);
+        
+        // Calculate tetrahedron centroid using actual vertices
+        var vertices = tet.coordinates();
+        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
+        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
+        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
+        
+        // Return distance from camera to tetrahedron centroid
+        float dx = cameraPosition.x - centerX;
+        float dy = cameraPosition.y - centerY;
+        float dz = cameraPosition.z - centerZ;
+        
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     // These methods are now handled by AbstractSpatialIndex
 
     @Override

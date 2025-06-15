@@ -304,6 +304,57 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return distance >= 0 ? distance : Float.MAX_VALUE;
     }
 
+    // ===== Plane Intersection Implementation =====
+
+    @Override
+    protected boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane) {
+        Spatial.Cube cube = getCubeFromIndex(nodeIndex);
+        return plane.intersectsCube(cube);
+    }
+
+    @Override
+    protected Stream<Long> getPlaneTraversalOrder(Plane3D plane) {
+        // For octree, use spatial ordering to traverse nodes that could intersect with the plane
+        // Order by distance from plane to node center for better early termination
+        return sortedSpatialIndices.stream()
+            .filter(nodeIndex -> {
+                OctreeNode<ID> node = spatialIndex.get(nodeIndex);
+                return node != null && !node.isEmpty();
+            })
+            .sorted((n1, n2) -> {
+                float dist1 = getPlaneNodeDistance(n1, plane);
+                float dist2 = getPlaneNodeDistance(n2, plane);
+                return Float.compare(Math.abs(dist1), Math.abs(dist2));
+            });
+    }
+
+    // ===== Frustum Intersection Implementation =====
+
+    @Override
+    protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
+        // Get the node's cube bounds
+        Spatial.Cube nodeCube = getCubeFromIndex(nodeIndex);
+        
+        // Use Frustum3D's intersectsCube method for efficient frustum-AABB intersection
+        return frustum.intersectsCube(nodeCube);
+    }
+
+    @Override
+    protected Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
+        // For octree, use spatial ordering to traverse nodes that could intersect with the frustum
+        // Order by distance from camera to node center for optimal culling traversal
+        return sortedSpatialIndices.stream()
+            .filter(nodeIndex -> {
+                OctreeNode<ID> node = spatialIndex.get(nodeIndex);
+                return node != null && !node.isEmpty();
+            })
+            .sorted((n1, n2) -> {
+                float dist1 = getFrustumNodeDistance(n1, cameraPosition);
+                float dist2 = getFrustumNodeDistance(n2, cameraPosition);
+                return Float.compare(dist1, dist2);
+            });
+    }
+
     @Override
     protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
         // First approach: check all existing nodes in the spatial index
@@ -735,6 +786,54 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
 
         return extendedCodes;
+    }
+
+    /**
+     * Helper method to get cube from node index
+     */
+    private Spatial.Cube getCubeFromIndex(long nodeIndex) {
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+        return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
+    }
+
+    /**
+     * Calculate distance from plane to node center
+     */
+    private float getPlaneNodeDistance(long nodeIndex, Plane3D plane) {
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Calculate node center
+        float centerX = coords[0] + cellSize / 2.0f;
+        float centerY = coords[1] + cellSize / 2.0f;
+        float centerZ = coords[2] + cellSize / 2.0f;
+        
+        // Return signed distance from plane to node center
+        return plane.distanceToPoint(new Point3f(centerX, centerY, centerZ));
+    }
+
+    /**
+     * Calculate distance from camera position to node center for frustum culling traversal order
+     */
+    private float getFrustumNodeDistance(long nodeIndex, Point3f cameraPosition) {
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Calculate node center
+        float centerX = coords[0] + cellSize / 2.0f;
+        float centerY = coords[1] + cellSize / 2.0f;
+        float centerZ = coords[2] + cellSize / 2.0f;
+        
+        // Return distance from camera to node center
+        float dx = cameraPosition.x - centerX;
+        float dy = cameraPosition.y - centerY;
+        float dz = cameraPosition.z - centerZ;
+        
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**
