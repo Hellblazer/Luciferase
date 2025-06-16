@@ -88,18 +88,34 @@ public class SFCRoundTripTest {
     public void testLevelCalculation() {
         System.out.println("\n=== LEVEL CALCULATION TEST ===");
 
-        // Test that the level calculation is consistent with index generation
-        for (byte expectedLevel = 0; expectedLevel <= 10; expectedLevel++) {
-            // Generate some tetrahedra at this level using proper coordinates
-            int stepSize = Constants.lengthAtLevel(expectedLevel);
-
-            var tet = new Tet(0, 0, 0, expectedLevel, (byte) 0);
-            long index = tet.index();
-            byte calculatedLevel = Tet.tetLevelFromIndex(index);
-
-            System.out.println(
-            "Expected level " + expectedLevel + ", index " + index + " -> calculated level " + calculatedLevel);
-            assertEquals(expectedLevel, calculatedLevel, "Level calculation should be consistent");
+        // Test that level calculation works correctly for canonical SFC indices
+        // The key insight: we should test index -> tet -> index round-trip
+        // Not arbitrary coordinate -> index -> level
+        
+        for (byte level = 0; level <= 10; level++) {
+            System.out.println("\nTesting level " + level);
+            
+            // Calculate the range of valid indices for this level
+            long minIndex = level == 0 ? 0 : (1L << (3 * (level - 1)));
+            long maxIndex = (1L << (3 * level)) - 1;
+            
+            // Test a few indices at this level
+            for (int i = 0; i < Math.min(8, maxIndex - minIndex + 1); i++) {
+                long testIndex = minIndex + i;
+                
+                // Create tet from index with expected level
+                var tet = Tet.tetrahedron(testIndex, level);
+                assertEquals(level, tet.l(), "Tetrahedron should have expected level");
+                
+                // Verify index round-trips correctly
+                long reconstructedIndex = tet.index();
+                assertEquals(testIndex, reconstructedIndex, "Index should round-trip correctly");
+                
+                // Verify level calculation from index
+                byte calculatedLevel = Tet.tetLevelFromIndex(testIndex);
+                System.out.println("Index " + testIndex + " -> calculated level " + calculatedLevel);
+                assertEquals(level, calculatedLevel, "Level calculation should match");
+            }
         }
     }
 

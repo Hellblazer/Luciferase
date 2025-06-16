@@ -153,7 +153,11 @@ public class TetrahedralGeometry {
         var vertices = tet.coordinates();
 
         // First check if ray origin is inside the tetrahedron
-        boolean rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
+        // Only check if ray origin has positive coordinates (tetrahedra only exist in positive space)
+        boolean rayStartsInside = false;
+        if (ray.origin().x >= 0 && ray.origin().y >= 0 && ray.origin().z >= 0) {
+            rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
+        }
         
         float closestDistance = Float.MAX_VALUE;
         Point3f closestIntersection = null;

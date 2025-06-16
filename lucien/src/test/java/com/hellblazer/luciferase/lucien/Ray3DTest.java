@@ -100,13 +100,15 @@ public class Ray3DTest {
     }
 
     @Test
-    public void testNegativeOriginThrows() {
+    public void testNegativeOriginAllowed() {
+        // Ray origins can be anywhere in 3D space, including negative coordinates
+        // Only entities in the spatial index must have positive coordinates
         Point3f negativeOrigin = new Point3f(-1, 2, 3);
         Vector3f direction = new Vector3f(1, 0, 0);
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            new Ray3D(negativeOrigin, direction);
-        });
+        // Should not throw - negative origins are allowed for rays
+        Ray3D ray = new Ray3D(negativeOrigin, direction);
+        assertEquals(negativeOrigin, ray.origin());
     }
 
     @Test

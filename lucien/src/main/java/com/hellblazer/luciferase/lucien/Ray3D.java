@@ -19,14 +19,14 @@ public record Ray3D(Point3f origin, Vector3f direction, float maxDistance) {
     /**
      * Create a ray with validation
      *
-     * @param origin      the starting point of the ray (must have positive coordinates)
+     * @param origin      the starting point of the ray (can be anywhere in 3D space)
      * @param direction   the direction vector (will be normalized)
      * @param maxDistance the maximum distance along the ray (must be positive, can be UNBOUNDED)
      */
     public Ray3D {
-        if (origin.x < 0 || origin.y < 0 || origin.z < 0) {
-            throw new IllegalArgumentException("Ray origin must have positive coordinates: " + origin);
-        }
+        // Note: Ray origins can be anywhere in 3D space, including negative coordinates.
+        // Only entities in the spatial index must have positive coordinates.
+        
         if (maxDistance <= 0 && maxDistance != UNBOUNDED) {
             throw new IllegalArgumentException("Ray max distance must be positive or unbounded: " + maxDistance);
         }

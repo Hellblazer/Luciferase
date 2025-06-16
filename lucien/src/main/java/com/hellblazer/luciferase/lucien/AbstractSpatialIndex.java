@@ -2106,6 +2106,9 @@ implements SpatialIndex<ID, Content> {
     protected void insertAtPosition(ID entityId, Point3f position, byte level) {
         long spatialIndex = calculateSpatialIndex(position, level);
 
+        // Ensure all ancestor nodes exist in the tree structure
+        ensureAncestorNodes(spatialIndex, level);
+
         // Get or create node
         NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
             sortedSpatialIndices.add(spatialIndex);
@@ -2138,6 +2141,12 @@ implements SpatialIndex<ID, Content> {
         }
     }
     
+    /**
+     * Ensure all ancestor nodes exist in the tree structure.
+     * This method creates any missing parent nodes up to the root level.
+     */
+    protected abstract void ensureAncestorNodes(long spatialIndex, byte level);
+
     /**
      * Check if an entity should span multiple nodes using advanced policies
      */

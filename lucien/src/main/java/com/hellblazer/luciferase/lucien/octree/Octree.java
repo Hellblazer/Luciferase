@@ -979,6 +979,35 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         
         return children;
     }
+
+    @Override
+    protected void ensureAncestorNodes(long spatialIndex, byte level) {
+        if (level == 0) {
+            return; // Root level has no ancestors
+        }
+        
+        // Create all ancestor nodes from root to the current level
+        // For Morton codes, we can calculate ancestor indices directly
+        int[] coords = MortonCurve.decode(spatialIndex);
+        
+        // Walk up the parent chain and ensure all ancestors exist
+        for (byte parentLevel = 0; parentLevel < level; parentLevel++) {
+            // Calculate ancestor coordinates at this level
+            int cellSize = Constants.lengthAtLevel(parentLevel);
+            int ancestorX = (coords[0] / cellSize) * cellSize;
+            int ancestorY = (coords[1] / cellSize) * cellSize;
+            int ancestorZ = (coords[2] / cellSize) * cellSize;
+            
+            long ancestorIndex = MortonCurve.encode(ancestorX, ancestorY, ancestorZ);
+            
+            // Ensure this ancestor node exists in the spatial index
+            // Use computeIfAbsent to atomically create node and update sorted indices
+            getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
+                getSortedSpatialIndices().add(ancestorIndex);
+                return createNode();
+            });
+        }
+    }
     
     /**
      * Octree-specific tree balancer implementation

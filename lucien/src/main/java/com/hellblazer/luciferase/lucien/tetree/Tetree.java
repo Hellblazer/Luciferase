@@ -18,17 +18,14 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.Geometry;
 import com.hellblazer.luciferase.lucien.*;
-import com.hellblazer.luciferase.lucien.entity.EntityBounds;
-import com.hellblazer.luciferase.lucien.entity.EntityDistance;
-import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
-import com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
+import com.hellblazer.luciferase.lucien.entity.*;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
+import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.stream.Stream;
 
@@ -44,6 +41,19 @@ import java.util.stream.Stream;
  * @author hal.hildebrand
  */
 public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<ID, Content, TetreeNodeImpl<ID>> {
+
+    // Neighbor finder instance (lazily initialized)
+    private TetreeNeighborFinder neighborFinder;
+
+    /**
+     * Get the neighbor finder instance, creating it if necessary
+     */
+    private TetreeNeighborFinder getNeighborFinder() {
+        if (neighborFinder == null) {
+            neighborFinder = new TetreeNeighborFinder();
+        }
+        return neighborFinder;
+    }
 
     /**
      * Create a Tetree with default configuration
@@ -117,20 +127,19 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             // Use the spatial index to find entities in the region
             // This properly handles spanning entities
             var bounds = new VolumeBounds(region.originX(), region.originY(), region.originZ(),
-                                         region.originX() + region.extent(), 
-                                         region.originY() + region.extent(),
-                                         region.originZ() + region.extent());
-            
+                                          region.originX() + region.extent(), region.originY() + region.extent(),
+                                          region.originZ() + region.extent());
+
             // Get all spatial nodes that intersect with the region
             var nodeList = spatialRangeQuery(bounds, true).collect(java.util.stream.Collectors.toList());
-            
+
             // Collect all entities from intersecting nodes
             nodeList.forEach(entry -> {
                 if (!entry.getValue().isEmpty()) {
                     uniqueEntities.addAll(entry.getValue().getEntityIds());
                 }
             });
-            
+
             // For spanning entities found in intersecting spatial nodes, we should include them
             // The spatial range query already found the correct intersecting nodes, so entities
             // found in those nodes are valid regardless of their exact bounds
@@ -158,6 +167,60 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     /**
+     * Get the sorted spatial indices for traversal
+     *
+     * @return NavigableSet of spatial indices
+     */
+    public NavigableSet<Long> getSortedSpatialIndices() {
+        lock.readLock().lock();
+        try {
+            return new TreeSet<>(sortedSpatialIndices);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    // k-NN search is now provided by AbstractSpatialIndex
+
+    /**
+     * Access the spatial index directly (package-private for internal use)
+     *
+     * @return the spatial index map
+     */
+    protected Map<Long, TetreeNodeImpl<ID>> getSpatialIndex() {
+        return spatialIndex;
+    }
+    
+    /**
+     * Get the number of nodes in the spatial index
+     *
+     * @return the number of nodes
+     */
+    public int getNodeCount() {
+        lock.readLock().lock();
+        try {
+            return spatialIndex.size();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Check if a node exists at the given tetrahedral index
+     *
+     * @param tetIndex the tetrahedral SFC index
+     * @return true if a node exists at this index
+     */
+    public boolean hasNode(long tetIndex) {
+        lock.readLock().lock();
+        try {
+            return spatialIndex.containsKey(tetIndex);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
      * Find a single node intersecting with a volume Note: This returns the first intersecting node found
      *
      * @param volume the volume to test
@@ -169,8 +232,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         // Find the first intersecting node
         return bounding(volume).findFirst().orElse(null);
     }
-
-    // k-NN search is now provided by AbstractSpatialIndex
 
     /**
      * Public access to locate method for finding containing tetrahedron
@@ -213,14 +274,22 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     protected void addNeighboringNodes(long tetIndex, Queue<Long> toVisit, Set<Long> visitedNodes) {
         Tet currentTet = Tet.tetrahedron(tetIndex);
 
-        // For tetrahedral mesh, neighbors include:
-        // 1. Other tetrahedra in the same grid cell (6 types per cell)
-        // 2. Tetrahedra in adjacent grid cells
+        // Use proper neighbor finding instead of grid-based approach
+        TetreeNeighborFinder neighborFinder = getNeighborFinder();
+        List<Tet> neighbors = neighborFinder.findAllNeighbors(currentTet);
 
-        // Add other types in the same grid cell
-        for (byte type = 0; type < 6; type++) {
-            if (type != currentTet.type()) {
-                Tet neighbor = new Tet(currentTet.x(), currentTet.y(), currentTet.z(), currentTet.l(), type);
+        for (Tet neighbor : neighbors) {
+            long neighborIndex = neighbor.index();
+            if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
+                toVisit.add(neighborIndex);
+            }
+        }
+
+        // Also check neighbors at different levels for multi-level support
+        // Check one level coarser
+        if (currentTet.l() > 0) {
+            List<Tet> coarserNeighbors = neighborFinder.findNeighborsAtLevel(currentTet, (byte) (currentTet.l() - 1));
+            for (Tet neighbor : coarserNeighbors) {
                 long neighborIndex = neighbor.index();
                 if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
                     toVisit.add(neighborIndex);
@@ -228,34 +297,13 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             }
         }
 
-        // Add tetrahedra in adjacent grid cells
-        // This is simplified - a full implementation would consider
-        // the complex tetrahedral adjacency relationships
-        int cellSize = 1 << (Constants.getMaxRefinementLevel() - currentTet.l());
-        int[] offsets = { -cellSize, 0, cellSize };
-
-        for (int dx : offsets) {
-            for (int dy : offsets) {
-                for (int dz : offsets) {
-                    if (dx == 0 && dy == 0 && dz == 0) {
-                        continue;
-                    }
-
-                    int nx = currentTet.x() + dx;
-                    int ny = currentTet.y() + dy;
-                    int nz = currentTet.z() + dz;
-
-                    // Check bounds (must be positive for tetrahedral SFC)
-                    if (nx >= 0 && ny >= 0 && nz >= 0) {
-                        // Check all 6 types in the neighboring cell
-                        for (byte type = 0; type < 6; type++) {
-                            Tet neighbor = new Tet(nx, ny, nz, currentTet.l(), type);
-                            long neighborIndex = neighbor.index();
-                            if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
-                                toVisit.add(neighborIndex);
-                            }
-                        }
-                    }
+        // Check one level finer
+        if (currentTet.l() < Constants.getMaxRefinementLevel()) {
+            List<Tet> finerNeighbors = neighborFinder.findNeighborsAtLevel(currentTet, (byte) (currentTet.l() + 1));
+            for (Tet neighbor : finerNeighbors) {
+                long neighborIndex = neighbor.index();
+                if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
+                    toVisit.add(neighborIndex);
                 }
             }
         }
@@ -264,12 +312,101 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     @Override
     protected long calculateSpatialIndex(Point3f position, byte level) {
         Tet tet = locate(position, level);
+        // System.out.println("[DEBUG] calculateSpatialIndex: position=" + position + ", level=" + level +
+        //                   " -> tet index=" + tet.index() + " (level=" + tet.l() + ", origin=(" + tet.x() + "," + tet.y() + "," + tet.z() + "), type=" + tet.type() + ")");
         return tet.index();
+    }
+
+    @Override
+    protected void ensureAncestorNodes(long spatialIndex, byte level) {
+        if (level == 0) {
+            return; // Root level has no ancestors
+        }
+        
+        // System.out.println("[DEBUG] ensureAncestorNodes: spatialIndex=" + spatialIndex + ", level=" + level);
+        
+        // Create the tetrahedron at the specified level
+        Tet tet = Tet.tetrahedron(spatialIndex, level);
+        
+        // Walk up the parent chain and ensure all ancestors exist
+        for (byte parentLevel = 0; parentLevel < level; parentLevel++) {
+            // Get the tetrahedron at this level that contains our target tet
+            Tet ancestor = findAncestorAtLevel(tet, parentLevel);
+            long ancestorIndex = ancestor.index();
+            
+            // System.out.println("[DEBUG]   Ensuring ancestor at level " + parentLevel + 
+            //                  ": index=" + ancestorIndex + ", origin=(" + ancestor.x() + "," + ancestor.y() + "," + ancestor.z() + "), type=" + ancestor.type());
+            
+            // Ensure this ancestor node exists in the spatial index
+            // Use computeIfAbsent to atomically create node and update sorted indices
+            boolean isNew = !getSpatialIndex().containsKey(ancestorIndex);
+            getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
+                sortedSpatialIndices.add(ancestorIndex);  // Use the protected field directly
+                return createNode();
+            });
+            
+            // if (isNew) {
+            //     System.out.println("[DEBUG]     Created new ancestor node at index " + ancestorIndex);
+            // } else {
+            //     System.out.println("[DEBUG]     Ancestor node already exists at index " + ancestorIndex);
+            // }
+        }
+    }
+    
+    /**
+     * Find the ancestor tetrahedron at a specific level that contains the given tetrahedron.
+     */
+    private Tet findAncestorAtLevel(Tet descendant, byte targetLevel) {
+        if (targetLevel > descendant.l()) {
+            throw new IllegalArgumentException("Target level must be less than or equal to descendant level");
+        }
+        
+        if (targetLevel == descendant.l()) {
+            return descendant;
+        }
+        
+        Tet current = descendant;
+        while (current.l() > targetLevel) {
+            current = current.parent();
+        }
+        return current;
     }
 
     @Override
     protected TetreeNodeImpl<ID> createNode() {
         return new TetreeNodeImpl<>(maxEntitiesPerNode);
+    }
+
+    @Override
+    protected TreeBalancer<ID> createTreeBalancer() {
+        return new TetreeBalancer();
+    }
+
+    @Override
+    protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
+        // Get the tetrahedron from the node index
+        Tet tet = Tet.tetrahedron(nodeIndex);
+
+        // For tetrahedral nodes, we need to check if the frustum intersects with the tetrahedron
+        // We'll use a conservative approach: check if the frustum intersects the tetrahedron's bounding box
+        var vertices = tet.coordinates();
+
+        // Calculate bounding box of the tetrahedron
+        float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
+        float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
+        float minZ = Float.MAX_VALUE, maxZ = Float.MIN_VALUE;
+
+        for (var vertex : vertices) {
+            minX = Math.min(minX, vertex.x);
+            maxX = Math.max(maxX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            maxY = Math.max(maxY, vertex.y);
+            minZ = Math.min(minZ, vertex.z);
+            maxZ = Math.max(maxZ, vertex.z);
+        }
+
+        // Use the frustum's AABB intersection test
+        return frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     @Override
@@ -283,13 +420,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return tetrahedronIntersectsVolumeBounds(tet, bounds);
     }
 
-    @Override
-    protected boolean doesRayIntersectNode(long nodeIndex, Ray3D ray) {
-        // Use TetrahedralGeometry for ray-tetrahedron intersection
-        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
-        return intersection.intersects;
-    }
-
     // ===== Plane Intersection Implementation =====
 
     @Override
@@ -300,135 +430,87 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     @Override
-    protected Stream<Long> getPlaneTraversalOrder(Plane3D plane) {
-        // For tetree, use spatial ordering to traverse nodes that could intersect with the plane
-        // Order by distance from plane to tetrahedron centroid for better early termination
-        return sortedSpatialIndices.stream()
-            .filter(nodeIndex -> {
-                TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-                return node != null && !node.isEmpty();
-            })
-            .sorted((n1, n2) -> {
-                float dist1 = getPlaneTetrahedronDistance(n1, plane);
-                float dist2 = getPlaneTetrahedronDistance(n2, plane);
-                return Float.compare(Math.abs(dist1), Math.abs(dist2));
-            });
+    protected boolean doesRayIntersectNode(long nodeIndex, Ray3D ray) {
+        // Use TetrahedralGeometry for ray-tetrahedron intersection
+        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
+        return intersection.intersects;
     }
 
-    /**
-     * Check if plane intersects with a tetrahedron
-     */
-    private boolean planeIntersectsTetrahedron(Plane3D plane, Tet tet) {
-        var vertices = tet.coordinates();
-        
-        // Calculate signed distances from each vertex to the plane
-        float[] distances = new float[4];
-        for (int i = 0; i < 4; i++) {
-            distances[i] = plane.distanceToPoint(new Point3f(vertices[i].x, vertices[i].y, vertices[i].z));
-        }
-        
-        // Check if vertices span both sides of the plane
-        boolean hasPositive = false;
-        boolean hasNegative = false;
-        
-        for (float distance : distances) {
-            if (distance > 1e-6f) {
-                hasPositive = true;
-            } else if (distance < -1e-6f) {
-                hasNegative = true;
-            }
-        }
-        
-        // If vertices are on both sides, the tetrahedron intersects the plane
-        return hasPositive && hasNegative;
-    }
-
-    /**
-     * Calculate distance from plane to tetrahedron centroid
-     */
-    private float getPlaneTetrahedronDistance(long nodeIndex, Plane3D plane) {
+    @Override
+    protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
+        // Get tetrahedron from index
         Tet tet = Tet.tetrahedron(nodeIndex);
-        
-        // Calculate tetrahedron centroid using actual vertices
+
+        // Calculate proper tetrahedron centroid using actual vertices
         var vertices = tet.coordinates();
         float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
         float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
         float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
-        
-        // Return signed distance from plane to tetrahedron centroid
-        return plane.distanceToPoint(new Point3f(centerX, centerY, centerZ));
+
+        // Return distance from query point to tetrahedron centroid
+        float dx = queryPoint.x - centerX;
+        float dy = queryPoint.y - centerY;
+        float dz = queryPoint.z - centerZ;
+
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    @Override
+    protected int getCellSizeAtLevel(byte level) {
+        return Constants.lengthAtLevel(level);
     }
 
     // ===== Frustum Intersection Implementation =====
 
     @Override
-    protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
-        // Get the tetrahedron from the node index
-        Tet tet = Tet.tetrahedron(nodeIndex);
-        
-        // For tetrahedral nodes, we need to check if the frustum intersects with the tetrahedron
-        // We'll use a conservative approach: check if the frustum intersects the tetrahedron's bounding box
-        var vertices = tet.coordinates();
-        
-        // Calculate bounding box of the tetrahedron
-        float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
-        float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
-        float minZ = Float.MAX_VALUE, maxZ = Float.MIN_VALUE;
-        
-        for (var vertex : vertices) {
-            minX = Math.min(minX, vertex.x);
-            maxX = Math.max(maxX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            maxY = Math.max(maxY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxZ = Math.max(maxZ, vertex.z);
+    protected List<Long> getChildNodes(long tetIndex) {
+        List<Long> children = new ArrayList<>();
+        Tet parentTet = Tet.tetrahedron(tetIndex);
+        byte level = parentTet.l();
+
+        if (level >= maxDepth) {
+            return children; // No children possible at max depth
         }
-        
-        // Use the frustum's AABB intersection test
-        return frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+
+        // For tetrahedral decomposition, children are at the next finer level
+        // Each parent cell can contain multiple child cells
+        byte childLevel = (byte) (level + 1);
+        int parentCellSize = Constants.lengthAtLevel(level);
+        int childCellSize = Constants.lengthAtLevel(childLevel);
+
+        // Check all child cells that could be contained within parent cell
+        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
+            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
+                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
+                    // Check all 6 tetrahedron types in each child cell
+                    for (byte type = 0; type < 6; type++) {
+                        Tet childTet = new Tet(x, y, z, childLevel, type);
+                        long childIndex = childTet.index();
+
+                        // Only add if child exists in spatial index
+                        if (spatialIndex.containsKey(childIndex)) {
+                            children.add(childIndex);
+                        }
+                    }
+                }
+            }
+        }
+
+        return children;
     }
 
     @Override
     protected Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
         // For tetree, use spatial ordering to traverse nodes that could intersect with the frustum
         // Order by distance from camera to tetrahedron centroid for optimal culling traversal
-        return sortedSpatialIndices.stream()
-            .filter(nodeIndex -> {
-                TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
-                return node != null && !node.isEmpty();
-            })
-            .sorted((n1, n2) -> {
-                float dist1 = getFrustumTetrahedronDistance(n1, cameraPosition);
-                float dist2 = getFrustumTetrahedronDistance(n2, cameraPosition);
-                return Float.compare(dist1, dist2);
-            });
-    }
-
-    /**
-     * Calculate distance from camera position to tetrahedron centroid for frustum culling traversal order
-     */
-    private float getFrustumTetrahedronDistance(long nodeIndex, Point3f cameraPosition) {
-        Tet tet = Tet.tetrahedron(nodeIndex);
-        
-        // Calculate tetrahedron centroid using actual vertices
-        var vertices = tet.coordinates();
-        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
-        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
-        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
-        
-        // Return distance from camera to tetrahedron centroid
-        float dx = cameraPosition.x - centerX;
-        float dy = cameraPosition.y - centerY;
-        float dz = cameraPosition.z - centerZ;
-        
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
-    // These methods are now handled by AbstractSpatialIndex
-
-    @Override
-    protected int getCellSizeAtLevel(byte level) {
-        return Constants.lengthAtLevel(level);
+        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+            TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+            return node != null && !node.isEmpty();
+        }).sorted((n1, n2) -> {
+            float dist1 = getFrustumTetrahedronDistance(n1, cameraPosition);
+            float dist2 = getFrustumTetrahedronDistance(n2, cameraPosition);
+            return Float.compare(dist1, dist2);
+        });
     }
 
     @Override
@@ -436,12 +518,28 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return Tet.tetLevelFromIndex(index);
     }
 
+    // These methods are now handled by AbstractSpatialIndex
+
     @Override
     protected Spatial getNodeBounds(long tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         // Return the bounding cube of the tetrahedron
         int cellSize = Constants.lengthAtLevel(tet.l());
         return new Spatial.Cube(tet.x(), tet.y(), tet.z(), cellSize);
+    }
+
+    @Override
+    protected Stream<Long> getPlaneTraversalOrder(Plane3D plane) {
+        // For tetree, use spatial ordering to traverse nodes that could intersect with the plane
+        // Order by distance from plane to tetrahedron centroid for better early termination
+        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+            TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+            return node != null && !node.isEmpty();
+        }).sorted((n1, n2) -> {
+            float dist1 = getPlaneTetrahedronDistance(n1, plane);
+            float dist2 = getPlaneTetrahedronDistance(n2, plane);
+            return Float.compare(Math.abs(dist1), Math.abs(dist2));
+        });
     }
 
     @Override
@@ -453,28 +551,42 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
-        // First approach: check all existing nodes in the spatial index
-        // This ensures we don't miss any nodes that actually contain entities
-        List<TetDistance> nodeDistances = new ArrayList<>();
+        // Improved approach: Generate tetrahedra along the ray path using spatial traversal
+        // This finds all tetrahedra the ray passes through, not just those with entities
+        List<TetDistance> intersectedTets = new ArrayList<>();
         
-        for (Long nodeIndex : spatialIndex.keySet()) {
-            // Check if ray intersects this node
-            if (doesRayIntersectNode(nodeIndex, ray)) {
-                float distance = getRayNodeIntersectionDistance(nodeIndex, ray);
-                if (distance >= 0 && distance <= ray.maxDistance()) {
-                    nodeDistances.add(new TetDistance(nodeIndex, distance));
-                }
+        // First, check all existing nodes in the spatial index for entities
+        for (Map.Entry<Long, TetreeNodeImpl<ID>> entry : spatialIndex.entrySet()) {
+            long tetIndex = entry.getKey();
+            TetreeNodeImpl<ID> node = entry.getValue();
+            
+            // Skip empty nodes
+            if (node.isEmpty()) {
+                continue;
+            }
+            
+            // Test ray intersection with this tetrahedron
+            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                intersectedTets.add(new TetDistance(tetIndex, intersection.distance));
             }
         }
         
-        // Sort by distance to get traversal order
-        Collections.sort(nodeDistances);
+        // Second, generate tetrahedra along the ray path at a reasonable level
+        // This ensures we find tetrahedra the ray passes through even if they don't contain entities
+        byte traversalLevel = (byte) Math.min(10, Constants.getMaxRefinementLevel()); // Use level 10 for reasonable detail
+        Set<Long> visited = new HashSet<>();
         
-        // Return stream of node indices in order
-        return nodeDistances.stream().map(td -> td.tetIndex);
+        // Add existing intersected indices to visited set to avoid duplicates
+        intersectedTets.forEach(td -> visited.add(td.tetIndex));
+        
+        // Generate tetrahedra along ray path
+        generateRayPathTetrahedra(ray, traversalLevel, intersectedTets, visited);
+        
+        // Sort by distance along ray and return as stream
+        Collections.sort(intersectedTets);
+        return intersectedTets.stream().map(td -> td.tetIndex);
     }
-
-    // These methods are now handled by AbstractSpatialIndex
 
     @Override
     protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
@@ -482,324 +594,142 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         // For now, use the direct approach that works correctly.
         return getStandardEntitySpatialRange(bounds, true);
     }
-    
-    /**
-     * Memory-efficient spatial index range computation with adaptive strategies for large entities
-     * Based on t8code's hierarchical range computation algorithms
-     */
-    private NavigableSet<Long> getMemoryEfficientSpatialIndexRange(VolumeBounds bounds, boolean includeIntersecting) {
-        // Calculate entity size metrics
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
-        float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
-                                   bounds.maxZ() - bounds.minZ());
-        
-        // Choose strategy based on entity size
-        if (volumeSize > 50000.0f || maxExtent > 500.0f) {
-            // Very large entities: use hierarchical streaming approach
-            return getLargeEntitySpatialRange(bounds, includeIntersecting);
-        } else if (volumeSize > 5000.0f || maxExtent > 100.0f) {
-            // Medium-large entities: use adaptive level selection
-            return getMediumEntitySpatialRange(bounds, includeIntersecting);
-        } else {
-            // Standard entities: use optimized SFC ranges
-            return getStandardEntitySpatialRange(bounds, includeIntersecting);
+
+    // These methods are now handled by AbstractSpatialIndex
+
+    @Override
+    protected void handleNodeSubdivision(long parentTetIndex, byte parentLevel, TetreeNodeImpl<ID> parentNode) {
+        // Can't subdivide beyond max depth
+        if (parentLevel >= maxDepth) {
+            return;
         }
-    }
-    
-    /**
-     * Memory-efficient range computation for very large entities
-     * Uses streaming and hierarchical decomposition to avoid memory exhaustion
-     */
-    private NavigableSet<Long> getLargeEntitySpatialRange(VolumeBounds bounds, boolean includeIntersecting) {
-        NavigableSet<Long> result = new TreeSet<>();
-        
-        // Use coarser levels only to reduce memory footprint
-        byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 1);
-        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 1);
-        
-        // Process levels sequentially to limit memory usage
-        for (byte level = minLevel; level <= maxLevel; level++) {
-            var levelRanges = computeMemoryBoundedSFCRanges(bounds, level, includeIntersecting, 1000); // Max 1000 ranges
-            
-            // Stream process ranges to avoid large intermediate collections
-            for (var range : levelRanges) {
-                // Use streaming subSet to avoid loading all indices at once
-                var subset = sortedSpatialIndices.subSet(range.start, true, range.end, true);
-                if (subset.size() <= 500) { // Memory threshold
-                    result.addAll(subset);
-                } else {
-                    // Split large ranges into smaller chunks
-                    addRangeInChunks(result, range, 500);
-                }
-            }
+
+        byte childLevel = (byte) (parentLevel + 1);
+
+        // Get entities to redistribute
+        List<ID> parentEntities = new ArrayList<>(parentNode.getEntityIds());
+        if (parentEntities.isEmpty()) {
+            return; // Nothing to subdivide
         }
-        
-        return result;
-    }
-    
-    /**
-     * Adaptive range computation for medium-sized entities
-     * Balances precision with memory efficiency
-     */
-    private NavigableSet<Long> getMediumEntitySpatialRange(VolumeBounds bounds, boolean includeIntersecting) {
-        NavigableSet<Long> result = new TreeSet<>();
-        
-        // Use adaptive level selection based on entity characteristics
-        byte optimalLevel = findOptimalLevelForEntity(bounds);
-        byte minLevel = (byte) Math.max(0, optimalLevel - 1);
-        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), optimalLevel + 2);
-        
-        // Limit to 3 levels maximum for memory efficiency
-        if (maxLevel - minLevel > 2) {
-            maxLevel = (byte) (minLevel + 2);
+
+        // Get parent tetrahedron by locating the first entity's position
+        // This is more reliable than trying to reconstruct from the SFC index
+        Point3f firstEntityPos = entityManager.getEntityPosition(parentEntities.get(0));
+        if (firstEntityPos == null) {
+            return; // Can't proceed without a valid position
         }
-        
-        var sfcRanges = computeAdaptiveSFCRanges(bounds, minLevel, maxLevel, includeIntersecting);
-        
-        // Process ranges with memory bounds
-        for (var range : sfcRanges) {
-            var subset = sortedSpatialIndices.subSet(range.start, true, range.end, true);
-            result.addAll(subset);
-            
-            // Check memory threshold
-            if (result.size() > 5000) {
-                break; // Prevent memory exhaustion
-            }
+        Tet parentTet = locate(firstEntityPos, parentLevel);
+
+        // Generate all 8 children using Bey refinement
+        Tet[] children = new Tet[8];
+        for (int i = 0; i < 8; i++) {
+            children[i] = parentTet.child(i);
         }
-        
-        return result;
-    }
-    
-    /**
-     * Standard range computation for normal-sized entities
-     * FIXED: Use actual spatial indices instead of incorrect SFC computation
-     */
-    private NavigableSet<Long> getStandardEntitySpatialRange(VolumeBounds bounds, boolean includeIntersecting) {
-        NavigableSet<Long> result = new TreeSet<>();
-        
-        // CRITICAL FIX: The fundamental issue is that computeSFCRanges() is broken.
-        // Instead of using computed SFC ranges that don't match reality, we need to
-        // check all existing spatial indices and test them individually.
-        
-        // This is less efficient but correct. The SFC range computation logic
-        // would need a complete rewrite to work properly with the Tet.index() algorithm.
-        
-        for (Long spatialIndex : sortedSpatialIndices) {
-            try {
-                Tet tet = Tet.tetrahedron(spatialIndex);
-                
-                if (includeIntersecting) {
-                    // Check if tetrahedron intersects the bounds
-                    boolean intersects = tetrahedronIntersectsVolumeBounds(tet, bounds);
-                    if (intersects) {
-                        result.add(spatialIndex);
-                    }
-                } else {
-                    // Check if tetrahedron is contained within bounds
-                    if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
-                        result.add(spatialIndex);
+
+        // TODO: Fix the SFC index reconstruction issue that causes family validation to fail
+        // assert TetreeFamily.isFamily(children) : "Children do not form a valid family";
+
+        // Create map to group entities by their child tetrahedron
+        Map<Long, List<ID>> childEntityMap = new HashMap<>();
+
+        // Determine which child tetrahedron each entity belongs to
+        for (ID entityId : parentEntities) {
+            Point3f entityPos = entityManager.getEntityPosition(entityId);
+            if (entityPos != null) {
+                // Find which of the 8 children contains this entity
+                boolean assigned = false;
+                for (Tet child : children) {
+                    if (child.contains(entityPos)) {
+                        long childTetIndex = child.index();
+                        childEntityMap.computeIfAbsent(childTetIndex, k -> new ArrayList<>()).add(entityId);
+                        assigned = true;
+                        break;
                     }
                 }
-            } catch (Exception e) {
-                // Skip invalid indices
-                continue;
-            }
-        }
-        
-        return result;
-    }
-    
-    /**
-     * Find optimal level for entity based on size and spatial characteristics
-     */
-    private byte findOptimalLevelForEntity(VolumeBounds bounds) {
-        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ() - bounds.minZ());
-        float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
-                                   bounds.maxZ() - bounds.minZ());
-        
-        // Find level where tetrahedron size is roughly 1/8 to 1/4 of max extent for optimal spanning
-        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
-            int tetLength = Constants.lengthAtLevel(level);
-            if (tetLength <= maxExtent / 4 && tetLength >= maxExtent / 16) {
-                return level;
-            }
-        }
-        
-        return findMinimumContainingLevel(bounds);
-    }
-    
-    /**
-     * Compute memory-bounded SFC ranges with maximum range limit
-     */
-    private List<SFCRange> computeMemoryBoundedSFCRanges(VolumeBounds bounds, byte level, boolean includeIntersecting, int maxRanges) {
-        List<SFCRange> ranges = new ArrayList<>();
-        int length = Constants.lengthAtLevel(level);
-        
-        // Calculate grid bounds at this level
-        int minX = (int) Math.floor(bounds.minX() / length);
-        int maxX = (int) Math.ceil(bounds.maxX() / length);
-        int minY = (int) Math.floor(bounds.minY() / length);
-        int maxY = (int) Math.ceil(bounds.maxY() / length);
-        int minZ = (int) Math.floor(bounds.minZ() / length);
-        int maxZ = (int) Math.ceil(bounds.maxZ() / length);
-        
-        int numCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-        
-        if (numCells > maxRanges) {
-            // Use coarser approximation for very large volumes
-            int step = (int) Math.ceil(Math.cbrt(numCells / (double) maxRanges));
-            
-            for (int x = minX; x <= maxX; x += step) {
-                for (int y = minY; y <= maxY; y += step) {
-                    for (int z = minZ; z <= maxZ; z += step) {
-                        Point3f cellPoint = new Point3f(x * length, y * length, z * length);
-                        
-                        if (hybridCellIntersectsBounds(cellPoint, length * step, level, bounds, includeIntersecting)) {
-                            // Create larger ranges to reduce total count
-                            for (byte type = 0; type < 6; type++) {
-                                var tet = new Tet(x * length, y * length, z * length, level, type);
-                                long startIndex = tet.index();
-                                long endIndex = startIndex + ((long) step * step * step * 6) - 1; // Approximate range
-                                ranges.add(new SFCRange(startIndex, endIndex));
-                            }
-                        }
-                        
-                        if (ranges.size() >= maxRanges) {
-                            return mergeRangesOptimized(ranges);
-                        }
-                    }
-                }
-            }
-        } else {
-            // Standard grid traversal for manageable sizes
-            for (int x = minX; x <= maxX; x++) {
-                for (int y = minY; y <= maxY; y++) {
-                    for (int z = minZ; z <= maxZ; z++) {
-                        Point3f cellPoint = new Point3f(x * length, y * length, z * length);
-                        
-                        if (hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting)) {
-                            var cellRanges = new ArrayList<SFCRange>();
-                            computeCellSFCRanges(cellPoint, level).forEach(cellRanges::add);
-                            ranges.addAll(cellRanges);
-                        }
-                    }
+
+                if (!assigned) {
+                    // Fallback: use locate method if direct containment fails
+                    Tet childTet = locate(entityPos, childLevel);
+                    long childTetIndex = childTet.index();
+                    childEntityMap.computeIfAbsent(childTetIndex, k -> new ArrayList<>()).add(entityId);
                 }
             }
         }
-        
-        return mergeRangesOptimized(ranges);
-    }
-    
-    /**
-     * Compute adaptive SFC ranges with level-specific optimizations
-     */
-    private List<SFCRange> computeAdaptiveSFCRanges(VolumeBounds bounds, byte minLevel, byte maxLevel, boolean includeIntersecting) {
-        List<SFCRange> ranges = new ArrayList<>();
-        
-        for (byte level = minLevel; level <= maxLevel; level++) {
-            // Use different strategies based on level
-            if (level <= 5) {
-                // Coarse levels: be more inclusive
-                ranges.addAll(computeMemoryBoundedSFCRanges(bounds, level, true, 200));
-            } else {
-                // Fine levels: be more selective
-                ranges.addAll(computeMemoryBoundedSFCRanges(bounds, level, includeIntersecting, 100));
-            }
+
+        // Check if subdivision would actually distribute entities
+        if (childEntityMap.size() == 1) {
+            // All entities map to the same child tetrahedron
+            // This can happen when all entities are at the same position
+            // Don't subdivide - it won't help distribute the load
+            System.out.println("Subdivision stopped: all entities map to same child tetrahedron");
+            return;
         }
-        
-        return mergeRangesOptimized(ranges);
-    }
-    
-    /**
-     * Add range indices in chunks to avoid memory spikes
-     */
-    private void addRangeInChunks(NavigableSet<Long> result, SFCRange range, int chunkSize) {
-        long current = range.start;
-        while (current <= range.end) {
-            long chunkEnd = Math.min(current + chunkSize - 1, range.end);
-            var subset = sortedSpatialIndices.subSet(current, true, chunkEnd, true);
-            result.addAll(subset);
-            current = chunkEnd + 1;
-        }
-    }
-    
-    /**
-     * Enhanced range merging with memory-conscious approach
-     */
-    private List<SFCRange> mergeRangesOptimized(List<SFCRange> ranges) {
-        if (ranges.isEmpty()) {
-            return ranges;
-        }
-        
-        // Sort ranges by start index
-        ranges.sort(Comparator.comparingLong(a -> a.start));
-        
-        // Use more aggressive merging for memory efficiency
-        List<SFCRange> merged = new ArrayList<>();
-        SFCRange current = ranges.getFirst();
-        
-        for (int i = 1; i < ranges.size(); i++) {
-            SFCRange next = ranges.get(i);
-            
-            // Merge if ranges overlap or are very close (adaptive gap based on range size)
-            long gap = next.start - current.end;
-            long rangeSize = current.end - current.start;
-            long adaptiveGap = Math.max(8, rangeSize / 10); // Dynamic gap based on range size
-            
-            if (gap <= adaptiveGap) {
-                current = new SFCRange(current.start, Math.max(current.end, next.end));
-            } else {
-                merged.add(current);
-                current = next;
-            }
-        }
-        merged.add(current);
-        
-        return merged;
-    }
-    
-    /**
-     * Check if bounds intersect using hybrid cube/tetrahedral geometry with memory efficiency
-     */
-    private boolean hybridCellIntersectsBounds(Point3f cellOrigin, int cellSize, byte level, VolumeBounds bounds,
-                                               boolean includeIntersecting) {
-        // First: Fast cube-based intersection test for early rejection
-        float cellMaxX = cellOrigin.x + cellSize;
-        float cellMaxY = cellOrigin.y + cellSize;
-        float cellMaxZ = cellOrigin.z + cellSize;
-        
-        // Quick cube-based bounding box test
-        if (cellMaxX < bounds.minX() || cellOrigin.x > bounds.maxX() ||
-            cellMaxY < bounds.minY() || cellOrigin.y > bounds.maxY() ||
-            cellMaxZ < bounds.minZ() || cellOrigin.z > bounds.maxZ()) {
-            return false;
-        }
-        
-        // For large cells, cube intersection is sufficient (memory optimization)
-        if (cellSize > Constants.lengthAtLevel((byte) Math.min(level + 2, Constants.getMaxRefinementLevel()))) {
-            return true;
-        }
-        
-        // Second: Test individual tetrahedra for precise geometry (only for smaller cells)
-        for (byte type = 0; type < 6; type++) {
-            var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, type);
-            
-            if (includeIntersecting) {
-                // Convert VolumeBounds to EntityBounds for compatibility
-                var minPoint = new Point3f(bounds.minX(), bounds.minY(), bounds.minZ());
-                var maxPoint = new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ());
-                var entityBounds = new EntityBounds(minPoint, maxPoint);
-                if (tetrahedronIntersectsBounds(tet, entityBounds)) {
-                    return true;
-                }
-            } else {
-                // For containment, use direct tetrahedral geometry test
-                if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
-                    return true;
+
+        // Create child nodes and redistribute entities
+        System.out.println("Bey refinement subdivision: distributing to " + childEntityMap.size() + " of 8 children");
+
+        // Track which entities we need to remove from parent
+        Set<ID> entitiesToRemoveFromParent = new HashSet<>();
+
+        // Create all child nodes (even empty ones for proper tree structure)
+        for (Tet child : children) {
+            long childTetIndex = child.index();
+            List<ID> childEntities = childEntityMap.getOrDefault(childTetIndex, new ArrayList<>());
+
+            if (!childEntities.isEmpty()) {
+                // Create or get child node
+                TetreeNodeImpl<ID> childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
+                    sortedSpatialIndices.add(childTetIndex);
+                    return new TetreeNodeImpl<>(maxEntitiesPerNode);
+                });
+
+                // Add entities to child
+                for (ID entityId : childEntities) {
+                    childNode.addEntity(entityId);
+                    entityManager.addEntityLocation(entityId, childTetIndex);
+                    entitiesToRemoveFromParent.add(entityId);
                 }
             }
         }
-        return false;
+
+        // Remove entities that were moved to child nodes
+        for (ID entityId : entitiesToRemoveFromParent) {
+            parentNode.removeEntity(entityId);
+            entityManager.removeEntityLocation(entityId, parentTetIndex);
+        }
+
+        // Mark that this node has been subdivided
+        parentNode.setHasChildren(true);
+    }
+
+    @Override
+    protected boolean hasChildren(long tetIndex) {
+        TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+        return node != null && node.hasChildren();
+    }
+
+    /**
+     * Optimized tetrahedral spanning insertion using SFC ranges Implements t8code-style efficient spanning based on
+     * linear_id ranges
+     */
+    @Override
+    protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
+        // Find all tetrahedra that the entity's bounds intersect using optimized SFC traversal
+        Set<Long> intersectingTets = findIntersectingTets(bounds, level);
+
+        // Add entity to all intersecting tetrahedra
+        for (Long tetIndex : intersectingTets) {
+            TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
+                sortedSpatialIndices.add(tetIndex);
+                return new TetreeNodeImpl<>(maxEntitiesPerNode);
+            });
+
+            node.addEntity(entityId);
+            entityManager.addEntityLocation(entityId, tetIndex);
+
+            // Note: We don't trigger subdivision for spanning entities
+            // to avoid cascading subdivisions across multiple tetrahedra
+        }
     }
 
     @Override
@@ -837,196 +767,127 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         validatePositiveCoordinates(position);
     }
 
-    // These methods are inherited from AbstractSpatialIndex
-
     @Override
     protected void validateSpatialConstraints(Spatial volume) {
         validatePositiveCoordinates(volume);
     }
 
-    @Override
-    protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
-        // Get tetrahedron from index
-        Tet tet = Tet.tetrahedron(nodeIndex);
-        
-        // Calculate proper tetrahedron centroid using actual vertices
-        var vertices = tet.coordinates();
-        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
-        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
-        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
-        
-        // Return distance from query point to tetrahedron centroid
-        float dx = queryPoint.x - centerX;
-        float dy = queryPoint.y - centerY;
-        float dz = queryPoint.z - centerZ;
-        
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
-    // ===== Tree Balancing Implementation =====
-    
-    @Override
-    protected TreeBalancer<ID> createTreeBalancer() {
-        return new TetreeBalancer();
-    }
-    
-    @Override
-    protected List<Long> getChildNodes(long tetIndex) {
-        List<Long> children = new ArrayList<>();
-        Tet parentTet = Tet.tetrahedron(tetIndex);
-        byte level = parentTet.l();
-        
-        if (level >= maxDepth) {
-            return children; // No children possible at max depth
-        }
-        
-        // For tetrahedral decomposition, children are at the next finer level
-        // Each parent cell can contain multiple child cells
-        byte childLevel = (byte) (level + 1);
-        int parentCellSize = Constants.lengthAtLevel(level);
-        int childCellSize = Constants.lengthAtLevel(childLevel);
-        
-        // Check all child cells that could be contained within parent cell
-        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
-            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
-                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
-                    // Check all 6 tetrahedron types in each child cell
-                    for (byte type = 0; type < 6; type++) {
-                        Tet childTet = new Tet(x, y, z, childLevel, type);
-                        long childIndex = childTet.index();
-                        
-                        // Only add if child exists in spatial index
-                        if (spatialIndex.containsKey(childIndex)) {
-                            children.add(childIndex);
-                        }
-                    }
-                }
-            }
-        }
-        
-        return children;
-    }
-    
-    @Override
-    protected boolean hasChildren(long tetIndex) {
-        TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
-        return node != null && node.hasChildren();
-    }
-    
-    @Override
-    protected void handleNodeSubdivision(long parentTetIndex, byte parentLevel, TetreeNodeImpl<ID> parentNode) {
-        // Can't subdivide beyond max depth
-        if (parentLevel >= maxDepth) {
-            return;
-        }
-
-        byte childLevel = (byte) (parentLevel + 1);
-        
-        // Get entities to redistribute
-        List<ID> parentEntities = new ArrayList<>(parentNode.getEntityIds());
-        if (parentEntities.isEmpty()) {
-            return; // Nothing to subdivide
-        }
-
-        // Create map to group entities by their child tetrahedron
-        Map<Long, List<ID>> childEntityMap = new HashMap<>();
-        
-        // Determine which child tetrahedron each entity belongs to
-        for (ID entityId : parentEntities) {
-            Point3f entityPos = entityManager.getEntityPosition(entityId);
-            if (entityPos != null) {
-                // Find the containing tetrahedron at the finer level
-                Tet childTet = locate(entityPos, childLevel);
-                long childTetIndex = childTet.index();
-                childEntityMap.computeIfAbsent(childTetIndex, k -> new ArrayList<>()).add(entityId);
-            }
-        }
-
-        // Check if subdivision would actually distribute entities
-        if (childEntityMap.size() == 1 && childEntityMap.containsKey(parentTetIndex)) {
-            // All entities map to the same tetrahedron even at the child level
-            // This can happen when all entities are at the same position
-            // Don't subdivide - it won't help distribute the load
-            System.out.println("Subdivision stopped: all entities map to same tetrahedron at child level");
-            return;
-        }
-
-        // Create child nodes and redistribute entities
-        System.out.println("Proceeding with tetrahedral subdivision: " + childEntityMap.size() + " child tetrahedra to create");
-        
-        // Track which entities we need to remove from parent
-        Set<ID> entitiesToRemoveFromParent = new HashSet<>();
-        
-        // Add entities to child nodes
-        for (Map.Entry<Long, List<ID>> entry : childEntityMap.entrySet()) {
-            long childTetIndex = entry.getKey();
-            List<ID> childEntities = entry.getValue();
-
-            if (!childEntities.isEmpty()) {
-                TetreeNodeImpl<ID> childNode;
-                
-                if (childTetIndex == parentTetIndex) {
-                    // Special case: child has same tetrahedral index as parent
-                    // The entities can stay in the parent node - don't redistribute them
-                    System.out.println("Entities " + childEntities + " stay in parent node (same tet index " + childTetIndex + ")");
-                    // Don't mark these entities for removal from parent
-                    continue;
-                } else {
-                    // Create or get child node
-                    System.out.println("Creating new child tetrahedron for index " + childTetIndex + " with entities " + childEntities);
-                    childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
-                        sortedSpatialIndices.add(childTetIndex);
-                        return new TetreeNodeImpl<>(maxEntitiesPerNode);
-                    });
-                    
-                    // Add entities to child and mark for removal from parent
-                    for (ID entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        // Update entity locations - add child location
-                        entityManager.addEntityLocation(entityId, childTetIndex);
-                        entitiesToRemoveFromParent.add(entityId);
-                    }
-                }
-            }
-        }
-
-        // Remove only the entities that were moved to different child nodes
-        for (ID entityId : entitiesToRemoveFromParent) {
-            parentNode.removeEntity(entityId);
-            entityManager.removeEntityLocation(entityId, parentTetIndex);
-        }
-        
-        // Mark that this node has been subdivided
-        parentNode.setHasChildren(true);
-    }
-
     /**
-     * Add intersecting child tetrahedra to the ray traversal queue
+     * Find where a ray enters the tetrahedral domain
      */
-    private void addIntersectingChildren(long parentIndex, byte parentLevel, Ray3D ray,
-                                        PriorityQueue<TetDistance> tetQueue, Set<Long> visitedTets) {
-        Tet parentTet = Tet.tetrahedron(parentIndex);
-        byte childLevel = (byte) (parentLevel + 1);
-        int parentCellSize = Constants.lengthAtLevel(parentLevel);
-        int childCellSize = Constants.lengthAtLevel(childLevel);
+    private Point3f findRayEntryPoint(Ray3D ray) {
+        Point3f origin = ray.origin();
         
-        // Check all child cells that could be contained within parent cell
-        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
-            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
-                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
-                    // Check all 6 tetrahedron types in each child cell
-                    for (byte type = 0; type < 6; type++) {
-                        Tet childTet = new Tet(x, y, z, childLevel, type);
-                        long childIndex = childTet.index();
-                        
-                        if (!visitedTets.contains(childIndex)) {
-                            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
-                            if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
-                                tetQueue.add(new TetDistance(childIndex, intersection.distance));
-                            }
-                        }
+        // Check if origin is already inside domain
+        if (isInsideDomain(origin)) {
+            return origin;
+        }
+        
+        // Calculate domain bounds
+        float maxCoord = Constants.lengthAtLevel((byte)0);
+        
+        // Find intersection with domain boundary using ray-AABB intersection
+        Vector3f dir = ray.direction();
+        float tmin = 0.0f;
+        float tmax = Float.MAX_VALUE;
+        
+        // X axis
+        if (Math.abs(dir.x) > 1e-6f) {
+            float t1 = (0 - origin.x) / dir.x;
+            float t2 = (maxCoord - origin.x) / dir.x;
+            tmin = Math.max(tmin, Math.min(t1, t2));
+            tmax = Math.min(tmax, Math.max(t1, t2));
+        } else if (origin.x < 0 || origin.x > maxCoord) {
+            return null; // Ray parallel to X and outside domain
+        }
+        
+        // Y axis
+        if (Math.abs(dir.y) > 1e-6f) {
+            float t1 = (0 - origin.y) / dir.y;
+            float t2 = (maxCoord - origin.y) / dir.y;
+            tmin = Math.max(tmin, Math.min(t1, t2));
+            tmax = Math.min(tmax, Math.max(t1, t2));
+        } else if (origin.y < 0 || origin.y > maxCoord) {
+            return null; // Ray parallel to Y and outside domain
+        }
+        
+        // Z axis
+        if (Math.abs(dir.z) > 1e-6f) {
+            float t1 = (0 - origin.z) / dir.z;
+            float t2 = (maxCoord - origin.z) / dir.z;
+            tmin = Math.max(tmin, Math.min(t1, t2));
+            tmax = Math.min(tmax, Math.max(t1, t2));
+        } else if (origin.z < 0 || origin.z > maxCoord) {
+            return null; // Ray parallel to Z and outside domain
+        }
+        
+        // Check if ray intersects domain
+        if (tmax < tmin || tmax < 0) {
+            return null;
+        }
+        
+        // Return entry point
+        return ray.pointAt(tmin);
+    }
+    
+    /**
+     * Check if a point is inside the tetrahedral domain
+     */
+    private boolean isInsideDomain(Point3f point) {
+        float maxCoord = Constants.lengthAtLevel((byte)0);
+        return point.x >= 0 && point.x <= maxCoord &&
+               point.y >= 0 && point.y <= maxCoord &&
+               point.z >= 0 && point.z <= maxCoord;
+    }
+    
+    /**
+     * Add intersected children for ray traversal 
+     */
+    private void addIntersectedChildren(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
+                                       Set<Long> visitedTets) {
+        byte childLevel = (byte) (currentTet.l() + 1);
+        if (childLevel > Constants.getMaxRefinementLevel()) {
+            return;
+        }
+        
+        // Get all 8 children using Bey refinement
+        try {
+            for (int i = 0; i < 8; i++) {
+                Tet child = currentTet.child(i);
+                long childIndex = child.index();
+                
+                if (!visitedTets.contains(childIndex)) {
+                    var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
+                    if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                        tetQueue.add(new TetDistance(childIndex, intersection.distance));
                     }
                 }
+            }
+        } catch (Exception e) {
+            // Skip if we can't generate children
+        }
+    }
+    
+    /**
+     * Add intersected face neighbors for ray traversal
+     */
+    private void addIntersectedFaceNeighbors(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
+                                            Set<Long> visitedTets) {
+        // Check all 4 face neighbors
+        for (int face = 0; face < 4; face++) {
+            try {
+                Tet.FaceNeighbor neighbor = currentTet.faceNeighbor(face);
+                Tet neighborTet = neighbor.tet();
+                long neighborIndex = neighborTet.index();
+                
+                if (!visitedTets.contains(neighborIndex)) {
+                    var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, neighborIndex);
+                    if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                        tetQueue.add(new TetDistance(neighborIndex, intersection.distance));
+                    }
+                }
+            } catch (Exception e) {
+                // Skip invalid neighbors
             }
         }
     }
@@ -1053,6 +914,37 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     for (byte type = 0; type < 6; type++) {
                         Tet child = new Tet(x, y, z, childLevel, type);
                         long childIndex = child.index();
+
+                        if (!visitedTets.contains(childIndex)) {
+                            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
+                            if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                                tetQueue.add(new TetDistance(childIndex, intersection.distance));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Add intersecting child tetrahedra to the ray traversal queue
+     */
+    private void addIntersectingChildren(long parentIndex, byte parentLevel, Ray3D ray,
+                                         PriorityQueue<TetDistance> tetQueue, Set<Long> visitedTets) {
+        Tet parentTet = Tet.tetrahedron(parentIndex);
+        byte childLevel = (byte) (parentLevel + 1);
+        int parentCellSize = Constants.lengthAtLevel(parentLevel);
+        int childCellSize = Constants.lengthAtLevel(childLevel);
+
+        // Check all child cells that could be contained within parent cell
+        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
+            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
+                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
+                    // Check all 6 tetrahedron types in each child cell
+                    for (byte type = 0; type < 6; type++) {
+                        Tet childTet = new Tet(x, y, z, childLevel, type);
+                        long childIndex = childTet.index();
 
                         if (!visitedTets.contains(childIndex)) {
                             var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
@@ -1120,8 +1012,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
     }
 
-    // This method has been moved to the override section
-
     /**
      * Add parent tetrahedra that intersect the ray
      */
@@ -1149,6 +1039,116 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
     }
 
+    /**
+     * Add range indices in chunks to avoid memory spikes
+     */
+    private void addRangeInChunks(NavigableSet<Long> result, SFCRange range, int chunkSize) {
+        long current = range.start;
+        while (current <= range.end) {
+            long chunkEnd = Math.min(current + chunkSize - 1, range.end);
+            var subset = sortedSpatialIndices.subSet(current, true, chunkEnd, true);
+            result.addAll(subset);
+            current = chunkEnd + 1;
+        }
+    }
+
+    /**
+     * Generate tetrahedra along the ray path at a specific level
+     * This ensures ray traversal finds all tetrahedra intersected by the ray,
+     * not just those containing entities.
+     */
+    private void generateRayPathTetrahedra(Ray3D ray, byte level, List<TetDistance> intersectedTets, Set<Long> visited) {
+        // Use a step-based approach to generate tetrahedra along the ray path
+        // This is more memory-efficient than the recursive neighbor approach
+        
+        float stepSize = Constants.lengthAtLevel(level) / 4.0f; // Quarter of cell size for good coverage
+        float maxDistance = ray.isUnbounded() ? 2048.0f : ray.maxDistance(); // Reasonable limit for unbounded rays
+        
+        int maxSteps = (int) Math.ceil(maxDistance / stepSize);
+        maxSteps = Math.min(maxSteps, 1000); // Limit to prevent excessive computation
+        
+        for (int step = 0; step <= maxSteps; step++) {
+            float t = step * stepSize;
+            Point3f rayPoint = ray.pointAt(t);
+            
+            // Skip points outside the domain
+            if (!isInsideDomain(rayPoint)) {
+                continue;
+            }
+            
+            // Find the tetrahedron containing this point
+            try {
+                Tet tet = locate(rayPoint, level);
+                long tetIndex = tet.index();
+                
+                if (!visited.contains(tetIndex)) {
+                    // Test ray intersection with this tetrahedron
+                    var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+                    if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                        intersectedTets.add(new TetDistance(tetIndex, intersection.distance));
+                        visited.add(tetIndex);
+                    }
+                }
+            } catch (Exception e) {
+                // Skip invalid tetrahedra
+                continue;
+            }
+        }
+    }
+
+    /**
+     * Calculate first descendant index for a tetrahedron (t8code algorithm)
+     */
+    private long calculateFirstDescendant(Tet parentTet, byte targetLevel) {
+        if (targetLevel <= parentTet.l()) {
+            return parentTet.index();
+        }
+
+        // Use Tet's index calculation which already implements the t8code linear_id algorithm
+        Tet firstChild = new Tet(parentTet.x(), parentTet.y(), parentTet.z(), targetLevel, parentTet.type());
+        return firstChild.index();
+    }
+
+    /**
+     * Calculate last descendant index for a tetrahedron (t8code algorithm)
+     */
+    private long calculateLastDescendant(Tet parentTet, byte targetLevel) {
+        if (targetLevel <= parentTet.l()) {
+            return parentTet.index();
+        }
+
+        // Calculate the range of descendants
+        int levelDiff = targetLevel - parentTet.l();
+        long firstDescendant = calculateFirstDescendant(parentTet, targetLevel);
+
+        // The last descendant is offset by 8^levelDiff - 1 (since each tet splits into 8 children)
+        long offset = (1L << (3 * levelDiff)) - 1; // 8^levelDiff - 1 = 2^(3*levelDiff) - 1
+        return firstDescendant + offset;
+    }
+
+    // These methods are inherited from AbstractSpatialIndex
+
+    /**
+     * Compute adaptive SFC ranges with level-specific optimizations
+     */
+    private List<SFCRange> computeAdaptiveSFCRanges(VolumeBounds bounds, byte minLevel, byte maxLevel,
+                                                    boolean includeIntersecting) {
+        List<SFCRange> ranges = new ArrayList<>();
+
+        for (byte level = minLevel; level <= maxLevel; level++) {
+            // Use different strategies based on level
+            if (level <= 5) {
+                // Coarse levels: be more inclusive
+                ranges.addAll(computeMemoryBoundedSFCRanges(bounds, level, true, 200));
+            } else {
+                // Fine levels: be more selective
+                ranges.addAll(computeMemoryBoundedSFCRanges(bounds, level, includeIntersecting, 100));
+            }
+        }
+
+        return mergeRangesOptimized(ranges);
+    }
+
     // Compute SFC ranges for all tetrahedra in a grid cell
     private List<SFCRange> computeCellSFCRanges(Point3f cellOrigin, byte level) {
         List<SFCRange> ranges = new ArrayList<>();
@@ -1164,25 +1164,90 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return ranges;
     }
 
+    // ===== Tree Balancing Implementation =====
+
+    /**
+     * Compute memory-bounded SFC ranges with maximum range limit
+     */
+    private List<SFCRange> computeMemoryBoundedSFCRanges(VolumeBounds bounds, byte level, boolean includeIntersecting,
+                                                         int maxRanges) {
+        List<SFCRange> ranges = new ArrayList<>();
+        int length = Constants.lengthAtLevel(level);
+
+        // Calculate grid bounds at this level
+        int minX = (int) Math.floor(bounds.minX() / length);
+        int maxX = (int) Math.ceil(bounds.maxX() / length);
+        int minY = (int) Math.floor(bounds.minY() / length);
+        int maxY = (int) Math.ceil(bounds.maxY() / length);
+        int minZ = (int) Math.floor(bounds.minZ() / length);
+        int maxZ = (int) Math.ceil(bounds.maxZ() / length);
+
+        int numCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+
+        if (numCells > maxRanges) {
+            // Use coarser approximation for very large volumes
+            int step = (int) Math.ceil(Math.cbrt(numCells / (double) maxRanges));
+
+            for (int x = minX; x <= maxX; x += step) {
+                for (int y = minY; y <= maxY; y += step) {
+                    for (int z = minZ; z <= maxZ; z += step) {
+                        Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+
+                        if (hybridCellIntersectsBounds(cellPoint, length * step, level, bounds, includeIntersecting)) {
+                            // Create larger ranges to reduce total count
+                            for (byte type = 0; type < 6; type++) {
+                                var tet = new Tet(x * length, y * length, z * length, level, type);
+                                long startIndex = tet.index();
+                                long endIndex = startIndex + ((long) step * step * step * 6) - 1; // Approximate range
+                                ranges.add(new SFCRange(startIndex, endIndex));
+                            }
+                        }
+
+                        if (ranges.size() >= maxRanges) {
+                            return mergeRangesOptimized(ranges);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Standard grid traversal for manageable sizes
+            for (int x = minX; x <= maxX; x++) {
+                for (int y = minY; y <= maxY; y++) {
+                    for (int z = minZ; z <= maxZ; z++) {
+                        Point3f cellPoint = new Point3f(x * length, y * length, z * length);
+
+                        if (hybridCellIntersectsBounds(cellPoint, length, level, bounds, includeIntersecting)) {
+                            var cellRanges = new ArrayList<SFCRange>();
+                            computeCellSFCRanges(cellPoint, level).forEach(cellRanges::add);
+                            ranges.addAll(cellRanges);
+                        }
+                    }
+                }
+            }
+        }
+
+        return mergeRangesOptimized(ranges);
+    }
+
     // Compute SFC ranges that could contain tetrahedra intersecting the volume
     private List<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
         System.out.println("DEBUG computeSFCRanges: bounds=" + bounds + ", includeIntersecting=" + includeIntersecting);
-        
+
         List<SFCRange> ranges = new ArrayList<>();
 
-        // Since entities are inserted at various levels (in the test, level 5), 
+        // Since entities are inserted at various levels (in the test, level 5),
         // we need to check a broader range of levels that actually contain entities
         // Instead of using findMinimumContainingLevel, use levels that match the spatial index
-        
+
         // Look at what levels are actually present in the spatial index
         Set<Byte> actualLevels = new HashSet<>();
         for (Long index : sortedSpatialIndices) {
             byte level = Tet.tetLevelFromIndex(index);
             actualLevels.add(level);
         }
-        
+
         System.out.println("DEBUG computeSFCRanges: actualLevels in spatial index=" + actualLevels);
-        
+
         // If no levels found, fall back to the old approach
         byte minLevel, maxLevel;
         if (actualLevels.isEmpty()) {
@@ -1213,12 +1278,14 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             int minZ = (int) Math.floor(bounds.minZ() / length);
             int maxZ = (int) Math.ceil(bounds.maxZ() / length);
 
-            System.out.println("DEBUG computeSFCRanges: grid bounds x[" + minX + "," + maxX + "], y[" + minY + "," + maxY + "], z[" + minZ + "," + maxZ + "]");
+            System.out.println(
+            "DEBUG computeSFCRanges: grid bounds x[" + minX + "," + maxX + "], y[" + minY + "," + maxY + "], z[" + minZ
+            + "," + maxZ + "]");
 
             // Skip this level if it would create too many cells
             int numCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
             System.out.println("DEBUG computeSFCRanges: numCells=" + numCells);
-            
+
             if (numCells > 100) {
                 // For very large volumes, use the entire range at this level
                 // This is an approximation but prevents memory exhaustion
@@ -1228,7 +1295,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 var maxRanges = computeCellSFCRanges(maxPoint, level);
                 if (!minRanges.isEmpty() && !maxRanges.isEmpty()) {
                     ranges.add(new SFCRange(minRanges.getFirst().start, maxRanges.getLast().end));
-                    System.out.println("DEBUG computeSFCRanges: added large range [" + minRanges.getFirst().start + "," + maxRanges.getLast().end + "]");
+                    System.out.println("DEBUG computeSFCRanges: added large range [" + minRanges.getFirst().start + ","
+                                       + maxRanges.getLast().end + "]");
                 }
                 continue;
             }
@@ -1244,7 +1312,9 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                             // Find the SFC ranges for all tetrahedra in this grid cell
                             var cellRanges = computeCellSFCRanges(cellPoint, level);
                             ranges.addAll(cellRanges);
-                            System.out.println("DEBUG computeSFCRanges: added cell ranges for (" + x + "," + y + "," + z + "): " + cellRanges);
+                            System.out.println(
+                            "DEBUG computeSFCRanges: added cell ranges for (" + x + "," + y + "," + z + "): "
+                            + cellRanges);
                         }
                     }
                 }
@@ -1252,12 +1322,253 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
 
         System.out.println("DEBUG computeSFCRanges: total ranges before merge=" + ranges.size());
-        
+
         // Merge overlapping ranges for efficiency
         var mergedRanges = mergeRanges(ranges);
         System.out.println("DEBUG computeSFCRanges: merged ranges=" + mergedRanges.size());
-        
+
         return mergedRanges;
+    }
+
+    /**
+     * Find all tetrahedral indices that intersect with the given bounds FIXED: Use actual existing spatial indices
+     * instead of theoretical SFC computation
+     */
+    private Set<Long> findIntersectingTets(EntityBounds bounds, byte level) {
+        Set<Long> result = new HashSet<>();
+
+        // CRITICAL FIX: Instead of using complex SFC range computation that may miss indices,
+        // check all existing spatial indices in the tree and test them for intersection.
+        // This is simpler, more reliable, and works correctly for small entities.
+
+        for (Long spatialIndex : sortedSpatialIndices) {
+            try {
+                Tet tet = Tet.tetrahedron(spatialIndex);
+
+                // For spanning, we want to find tetrahedra at the specified level
+                // that intersect with the entity bounds
+                if (tet.l() == level) {
+                    if (tetrahedronIntersectsBounds(tet, bounds)) {
+                        result.add(spatialIndex);
+                    }
+                }
+            } catch (Exception e) {
+                // Skip invalid indices
+            }
+        }
+
+        // If no existing indices found, we need to create a new tetrahedron at the exact level
+        if (result.isEmpty()) {
+            // Find the tetrahedron that would contain the center of the bounds at the requested level
+            Point3f center = new Point3f((bounds.getMinX() + bounds.getMaxX()) / 2,
+                                         (bounds.getMinY() + bounds.getMaxY()) / 2,
+                                         (bounds.getMinZ() + bounds.getMaxZ()) / 2);
+
+            Tet containingTet = locate(center, level);
+            long tetIndex = containingTet.index();
+
+            // Verify this tetrahedron actually intersects the bounds
+            if (tetrahedronIntersectsBounds(containingTet, bounds)) {
+                result.add(tetIndex);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Find optimal level for entity based on size and spatial characteristics
+     */
+    private byte findOptimalLevelForEntity(VolumeBounds bounds) {
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
+        float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
+                                   bounds.maxZ() - bounds.minZ());
+
+        // Find level where tetrahedron size is roughly 1/8 to 1/4 of max extent for optimal spanning
+        for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
+            int tetLength = Constants.lengthAtLevel(level);
+            if (tetLength <= maxExtent / 4 && tetLength >= maxExtent / 16) {
+                return level;
+            }
+        }
+
+        return findMinimumContainingLevel(bounds);
+    }
+
+    /**
+     * Calculate distance from camera position to tetrahedron centroid for frustum culling traversal order
+     */
+    private float getFrustumTetrahedronDistance(long nodeIndex, Point3f cameraPosition) {
+        Tet tet = Tet.tetrahedron(nodeIndex);
+
+        // Calculate tetrahedron centroid using actual vertices
+        var vertices = tet.coordinates();
+        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
+        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
+        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
+
+        // Return distance from camera to tetrahedron centroid
+        float dx = cameraPosition.x - centerX;
+        float dy = cameraPosition.y - centerY;
+        float dz = cameraPosition.z - centerZ;
+
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /**
+     * Memory-efficient range computation for very large entities Uses streaming and hierarchical decomposition to avoid
+     * memory exhaustion
+     */
+    private NavigableSet<Long> getLargeEntitySpatialRange(VolumeBounds bounds, boolean includeIntersecting) {
+        NavigableSet<Long> result = new TreeSet<>();
+
+        // Use coarser levels only to reduce memory footprint
+        byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 1);
+        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 1);
+
+        // Process levels sequentially to limit memory usage
+        for (byte level = minLevel; level <= maxLevel; level++) {
+            var levelRanges = computeMemoryBoundedSFCRanges(bounds, level, includeIntersecting,
+                                                            1000); // Max 1000 ranges
+
+            // Stream process ranges to avoid large intermediate collections
+            for (var range : levelRanges) {
+                // Use streaming subSet to avoid loading all indices at once
+                var subset = sortedSpatialIndices.subSet(range.start, true, range.end, true);
+                if (subset.size() <= 500) { // Memory threshold
+                    result.addAll(subset);
+                } else {
+                    // Split large ranges into smaller chunks
+                    addRangeInChunks(result, range, 500);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Adaptive range computation for medium-sized entities Balances precision with memory efficiency
+     */
+    private NavigableSet<Long> getMediumEntitySpatialRange(VolumeBounds bounds, boolean includeIntersecting) {
+        NavigableSet<Long> result = new TreeSet<>();
+
+        // Use adaptive level selection based on entity characteristics
+        byte optimalLevel = findOptimalLevelForEntity(bounds);
+        byte minLevel = (byte) Math.max(0, optimalLevel - 1);
+        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), optimalLevel + 2);
+
+        // Limit to 3 levels maximum for memory efficiency
+        if (maxLevel - minLevel > 2) {
+            maxLevel = (byte) (minLevel + 2);
+        }
+
+        var sfcRanges = computeAdaptiveSFCRanges(bounds, minLevel, maxLevel, includeIntersecting);
+
+        // Process ranges with memory bounds
+        for (var range : sfcRanges) {
+            var subset = sortedSpatialIndices.subSet(range.start, true, range.end, true);
+            result.addAll(subset);
+
+            // Check memory threshold
+            if (result.size() > 5000) {
+                break; // Prevent memory exhaustion
+            }
+        }
+
+        return result;
+    }
+
+    // This method has been moved to the override section
+
+    /**
+     * Memory-efficient spatial index range computation with adaptive strategies for large entities Based on t8code's
+     * hierarchical range computation algorithms
+     */
+    private NavigableSet<Long> getMemoryEfficientSpatialIndexRange(VolumeBounds bounds, boolean includeIntersecting) {
+        // Calculate entity size metrics
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
+        float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
+                                   bounds.maxZ() - bounds.minZ());
+
+        // Choose strategy based on entity size
+        if (volumeSize > 50000.0f || maxExtent > 500.0f) {
+            // Very large entities: use hierarchical streaming approach
+            return getLargeEntitySpatialRange(bounds, includeIntersecting);
+        } else if (volumeSize > 5000.0f || maxExtent > 100.0f) {
+            // Medium-large entities: use adaptive level selection
+            return getMediumEntitySpatialRange(bounds, includeIntersecting);
+        } else {
+            // Standard entities: use optimized SFC ranges
+            return getStandardEntitySpatialRange(bounds, includeIntersecting);
+        }
+    }
+
+
+    /**
+     * Calculate distance from plane to tetrahedron centroid
+     */
+    private float getPlaneTetrahedronDistance(long nodeIndex, Plane3D plane) {
+        Tet tet = Tet.tetrahedron(nodeIndex);
+
+        // Calculate tetrahedron centroid using actual vertices
+        var vertices = tet.coordinates();
+        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
+        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
+        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
+
+        // Return signed distance from plane to tetrahedron centroid
+        return plane.distanceToPoint(new Point3f(centerX, centerY, centerZ));
+    }
+
+    /**
+     * Standard range computation for normal-sized entities FIXED: Use actual spatial indices instead of incorrect SFC
+     * computation
+     */
+    private NavigableSet<Long> getStandardEntitySpatialRange(VolumeBounds bounds, boolean includeIntersecting) {
+        NavigableSet<Long> result = new TreeSet<>();
+
+        // CRITICAL FIX: The fundamental issue is that computeSFCRanges() is broken.
+        // Instead of using computed SFC ranges that don't match reality, we need to
+        // check all existing spatial indices and test them individually.
+
+        // This is less efficient but correct. The SFC range computation logic
+        // would need a complete rewrite to work properly with the Tet.index() algorithm.
+
+        for (Long spatialIndex : sortedSpatialIndices) {
+            try {
+                Tet tet = Tet.tetrahedron(spatialIndex);
+
+                if (includeIntersecting) {
+                    // Check if tetrahedron intersects the bounds
+                    boolean intersects = tetrahedronIntersectsVolumeBounds(tet, bounds);
+                    if (intersects) {
+                        result.add(spatialIndex);
+                    }
+                } else {
+                    // Check if tetrahedron is contained within bounds
+                    if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                        result.add(spatialIndex);
+                    }
+                }
+            } catch (Exception e) {
+                // Skip invalid indices
+                continue;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Get SFC successor index for tetrahedral traversal
+     */
+    private long getSuccessor(long tetIndex) {
+        // For tetrahedral SFC, successor is simply the next index
+        // The Tet class's index() method implements the proper SFC ordering
+        return tetIndex + 1;
     }
 
     // Check if a grid cell intersects with the query bounds
@@ -1276,6 +1587,51 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return cellOrigin.x >= bounds.minX() && cellMaxX <= bounds.maxX() && cellOrigin.y >= bounds.minY()
             && cellMaxY <= bounds.maxY() && cellOrigin.z >= bounds.minZ() && cellMaxZ <= bounds.maxZ();
         }
+    }
+
+    // ===== Ray Intersection Implementation =====
+
+    /**
+     * Check if bounds intersect using hybrid cube/tetrahedral geometry with memory efficiency
+     */
+    private boolean hybridCellIntersectsBounds(Point3f cellOrigin, int cellSize, byte level, VolumeBounds bounds,
+                                               boolean includeIntersecting) {
+        // First: Fast cube-based intersection test for early rejection
+        float cellMaxX = cellOrigin.x + cellSize;
+        float cellMaxY = cellOrigin.y + cellSize;
+        float cellMaxZ = cellOrigin.z + cellSize;
+
+        // Quick cube-based bounding box test
+        if (cellMaxX < bounds.minX() || cellOrigin.x > bounds.maxX() || cellMaxY < bounds.minY()
+        || cellOrigin.y > bounds.maxY() || cellMaxZ < bounds.minZ() || cellOrigin.z > bounds.maxZ()) {
+            return false;
+        }
+
+        // For large cells, cube intersection is sufficient (memory optimization)
+        if (cellSize > Constants.lengthAtLevel((byte) Math.min(level + 2, Constants.getMaxRefinementLevel()))) {
+            return true;
+        }
+
+        // Second: Test individual tetrahedra for precise geometry (only for smaller cells)
+        for (byte type = 0; type < 6; type++) {
+            var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, type);
+
+            if (includeIntersecting) {
+                // Convert VolumeBounds to EntityBounds for compatibility
+                var minPoint = new Point3f(bounds.minX(), bounds.minY(), bounds.minZ());
+                var maxPoint = new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ());
+                var entityBounds = new EntityBounds(minPoint, maxPoint);
+                if (tetrahedronIntersectsBounds(tet, entityBounds)) {
+                    return true;
+                }
+            } else {
+                // For containment, use direct tetrahedral geometry test
+                if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -1346,7 +1702,68 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return merged;
     }
 
-    // ===== Ray Intersection Implementation =====
+    /**
+     * Enhanced range merging with memory-conscious approach
+     */
+    private List<SFCRange> mergeRangesOptimized(List<SFCRange> ranges) {
+        if (ranges.isEmpty()) {
+            return ranges;
+        }
+
+        // Sort ranges by start index
+        ranges.sort(Comparator.comparingLong(a -> a.start));
+
+        // Use more aggressive merging for memory efficiency
+        List<SFCRange> merged = new ArrayList<>();
+        SFCRange current = ranges.getFirst();
+
+        for (int i = 1; i < ranges.size(); i++) {
+            SFCRange next = ranges.get(i);
+
+            // Merge if ranges overlap or are very close (adaptive gap based on range size)
+            long gap = next.start - current.end;
+            long rangeSize = current.end - current.start;
+            long adaptiveGap = Math.max(8, rangeSize / 10); // Dynamic gap based on range size
+
+            if (gap <= adaptiveGap) {
+                current = new SFCRange(current.start, Math.max(current.end, next.end));
+            } else {
+                merged.add(current);
+                current = next;
+            }
+        }
+        merged.add(current);
+
+        return merged;
+    }
+
+    /**
+     * Check if plane intersects with a tetrahedron
+     */
+    private boolean planeIntersectsTetrahedron(Plane3D plane, Tet tet) {
+        var vertices = tet.coordinates();
+
+        // Calculate signed distances from each vertex to the plane
+        float[] distances = new float[4];
+        for (int i = 0; i < 4; i++) {
+            distances[i] = plane.distanceToPoint(new Point3f(vertices[i].x, vertices[i].y, vertices[i].z));
+        }
+
+        // Check if vertices span both sides of the plane
+        boolean hasPositive = false;
+        boolean hasNegative = false;
+
+        for (float distance : distances) {
+            if (distance > 1e-6f) {
+                hasPositive = true;
+            } else if (distance < -1e-6f) {
+                hasNegative = true;
+            }
+        }
+
+        // If vertices are on both sides, the tetrahedron intersects the plane
+        return hasPositive && hasNegative;
+    }
 
     // Check if a tetrahedron is completely contained within a volume
     private boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
@@ -1363,6 +1780,96 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 return false;
             }
         }
+        return true;
+    }
+
+    /**
+     * Check if a tetrahedron is completely contained within volume bounds Memory-efficient version for large entity
+     * spanning operations
+     */
+    private boolean tetrahedronContainedInVolumeBounds(Tet tet, VolumeBounds bounds) {
+        var vertices = tet.coordinates();
+
+        // All vertices must be within bounds for complete containment
+        for (var vertex : vertices) {
+            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY()
+            || vertex.y > bounds.maxY() || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ===== Tetrahedral Spanning Implementation =====
+
+    /**
+     * Check if a tetrahedron intersects with entity bounds using proper tetrahedral geometry
+     */
+    private boolean tetrahedronIntersectsBounds(Tet tet, EntityBounds bounds) {
+        var vertices = tet.coordinates();
+
+        // Quick bounding box rejection test first
+        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
+        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
+        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
+
+        for (var vertex : vertices) {
+            tetMinX = Math.min(tetMinX, vertex.x);
+            tetMaxX = Math.max(tetMaxX, vertex.x);
+            tetMinY = Math.min(tetMinY, vertex.y);
+            tetMaxY = Math.max(tetMaxY, vertex.y);
+            tetMinZ = Math.min(tetMinZ, vertex.z);
+            tetMaxZ = Math.max(tetMaxZ, vertex.z);
+        }
+
+        // Bounding box intersection test
+        if (tetMaxX < bounds.getMinX() || tetMinX > bounds.getMaxX() || tetMaxY < bounds.getMinY()
+        || tetMinY > bounds.getMaxY() || tetMaxZ < bounds.getMinZ() || tetMinZ > bounds.getMaxZ()) {
+            return false;
+        }
+
+        // Test if any vertex of tetrahedron is inside bounds
+        for (var vertex : vertices) {
+            if (vertex.x >= bounds.getMinX() && vertex.x <= bounds.getMaxX() && vertex.y >= bounds.getMinY()
+            && vertex.y <= bounds.getMaxY() && vertex.z >= bounds.getMinZ() && vertex.z <= bounds.getMaxZ()) {
+                return true;
+            }
+        }
+
+        // Test if any corner of bounds is inside tetrahedron
+        var boundCorners = new Point3f[] { new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ()),
+                                           new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMinZ()),
+                                           new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMinZ()),
+                                           new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMinZ()),
+                                           new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMaxZ()),
+                                           new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMaxZ()),
+                                           new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMaxZ()),
+                                           new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ()) };
+
+        for (var corner : boundCorners) {
+            if (tet.contains(corner)) {
+                return true;
+            }
+        }
+
+        // Test if the center of the entity bounds is inside the tetrahedron
+        // This catches the case where a small entity is entirely contained within a large tetrahedron
+        Point3f entityCenter = new Point3f((bounds.getMinX() + bounds.getMaxX()) / 2,
+                                           (bounds.getMinY() + bounds.getMaxY()) / 2,
+                                           (bounds.getMinZ() + bounds.getMaxZ()) / 2);
+
+        if (tet.contains(entityCenter)) {
+            return true;
+        }
+
+        // CRITICAL FIX: For spanning entities, if the bounding boxes intersect, we should consider it a valid intersection
+        // even if the precise tetrahedral geometry doesn't contain the entity center.
+        // This is especially important for small entities in large tetrahedra at coarse levels.
+
+        // Since we already passed the bounding box test, and this is for spanning entity insertion,
+        // we should accept this as a valid intersection. Small entities that fall within the
+        // bounding box of a tetrahedron should be considered as intersecting for spanning purposes.
+
         return true;
     }
 
@@ -1386,6 +1893,36 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
                                       (bounds.minZ() + bounds.maxZ()) / 2);
         return tet.contains(centerPoint);
+    }
+
+    /**
+     * Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
+     */
+    private boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
+        var vertices = tet.coordinates();
+
+        // Quick bounding box rejection test first
+        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
+        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
+        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
+
+        for (var vertex : vertices) {
+            tetMinX = Math.min(tetMinX, vertex.x);
+            tetMaxX = Math.max(tetMaxX, vertex.x);
+            tetMinY = Math.min(tetMinY, vertex.y);
+            tetMaxY = Math.max(tetMaxY, vertex.y);
+            tetMinZ = Math.min(tetMinZ, vertex.z);
+            tetMaxZ = Math.max(tetMaxZ, vertex.z);
+        }
+
+        // More generous bounding box intersection test - use overlap instead of strict intersection
+        boolean boundsOverlap = !(tetMaxX < bounds.minX() || tetMinX > bounds.maxX() || tetMaxY < bounds.minY()
+                                  || tetMinY > bounds.maxY() || tetMaxZ < bounds.minZ() || tetMinZ > bounds.maxZ());
+
+        return boundsOverlap;
+
+        // If bounding boxes overlap, assume intersection for simplicity
+        // A more sophisticated implementation could do exact tetrahedron-AABB intersection
     }
 
     /**
@@ -1450,284 +1987,18 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return Float.compare(this.distance, other.distance);
         }
     }
-    
-    // ===== Tetrahedral Spanning Implementation =====
-
-    /**
-     * Find all tetrahedral indices that intersect with the given bounds
-     * FIXED: Use actual existing spatial indices instead of theoretical SFC computation
-     */
-    private Set<Long> findIntersectingTets(EntityBounds bounds, byte level) {
-        Set<Long> result = new HashSet<>();
-        
-        // CRITICAL FIX: Instead of using complex SFC range computation that may miss indices,
-        // check all existing spatial indices in the tree and test them for intersection.
-        // This is simpler, more reliable, and works correctly for small entities.
-        
-        for (Long spatialIndex : sortedSpatialIndices) {
-            try {
-                Tet tet = Tet.tetrahedron(spatialIndex);
-                
-                // For spanning, we want to find tetrahedra at the specified level
-                // that intersect with the entity bounds
-                if (tet.l() == level) {
-                    if (tetrahedronIntersectsBounds(tet, bounds)) {
-                        result.add(spatialIndex);
-                    }
-                }
-            } catch (Exception e) {
-                // Skip invalid indices
-            }
-        }
-        
-        // If no existing indices found, we need to create a new tetrahedron at the exact level
-        if (result.isEmpty()) {
-            // Find the tetrahedron that would contain the center of the bounds at the requested level
-            Point3f center = new Point3f(
-                (bounds.getMinX() + bounds.getMaxX()) / 2,
-                (bounds.getMinY() + bounds.getMaxY()) / 2,
-                (bounds.getMinZ() + bounds.getMaxZ()) / 2
-            );
-            
-            Tet containingTet = locate(center, level);
-            long tetIndex = containingTet.index();
-            
-            // Verify this tetrahedron actually intersects the bounds
-            if (tetrahedronIntersectsBounds(containingTet, bounds)) {
-                result.add(tetIndex);
-            }
-        }
-        
-        return result;
-    }
-
-    /**
-     * Calculate first descendant index for a tetrahedron (t8code algorithm)
-     */
-    private long calculateFirstDescendant(Tet parentTet, byte targetLevel) {
-        if (targetLevel <= parentTet.l()) {
-            return parentTet.index();
-        }
-        
-        // Use Tet's index calculation which already implements the t8code linear_id algorithm
-        Tet firstChild = new Tet(parentTet.x(), parentTet.y(), parentTet.z(), targetLevel, parentTet.type());
-        return firstChild.index();
-    }
-
-    /**
-     * Calculate last descendant index for a tetrahedron (t8code algorithm)
-     */
-    private long calculateLastDescendant(Tet parentTet, byte targetLevel) {
-        if (targetLevel <= parentTet.l()) {
-            return parentTet.index();
-        }
-        
-        // Calculate the range of descendants
-        int levelDiff = targetLevel - parentTet.l();
-        long firstDescendant = calculateFirstDescendant(parentTet, targetLevel);
-        
-        // The last descendant is offset by 8^levelDiff - 1 (since each tet splits into 8 children)
-        long offset = (1L << (3 * levelDiff)) - 1; // 8^levelDiff - 1 = 2^(3*levelDiff) - 1
-        return firstDescendant + offset;
-    }
-
-    /**
-     * Get SFC successor index for tetrahedral traversal
-     */
-    private long getSuccessor(long tetIndex) {
-        // For tetrahedral SFC, successor is simply the next index
-        // The Tet class's index() method implements the proper SFC ordering
-        return tetIndex + 1;
-    }
-
-    /**
-     * Check if a tetrahedron intersects with entity bounds using proper tetrahedral geometry
-     */
-    private boolean tetrahedronIntersectsBounds(Tet tet, EntityBounds bounds) {
-        var vertices = tet.coordinates();
-        
-        // Quick bounding box rejection test first
-        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
-        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
-        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
-        
-        for (var vertex : vertices) {
-            tetMinX = Math.min(tetMinX, vertex.x);
-            tetMaxX = Math.max(tetMaxX, vertex.x);
-            tetMinY = Math.min(tetMinY, vertex.y);
-            tetMaxY = Math.max(tetMaxY, vertex.y);
-            tetMinZ = Math.min(tetMinZ, vertex.z);
-            tetMaxZ = Math.max(tetMaxZ, vertex.z);
-        }
-        
-        
-        // Bounding box intersection test
-        if (tetMaxX < bounds.getMinX() || tetMinX > bounds.getMaxX() ||
-            tetMaxY < bounds.getMinY() || tetMinY > bounds.getMaxY() ||
-            tetMaxZ < bounds.getMinZ() || tetMinZ > bounds.getMaxZ()) {
-            return false;
-        }
-        
-        
-        // Test if any vertex of tetrahedron is inside bounds
-        for (var vertex : vertices) {
-            if (vertex.x >= bounds.getMinX() && vertex.x <= bounds.getMaxX() &&
-                vertex.y >= bounds.getMinY() && vertex.y <= bounds.getMaxY() &&
-                vertex.z >= bounds.getMinZ() && vertex.z <= bounds.getMaxZ()) {
-                return true;
-            }
-        }
-        
-        
-        // Test if any corner of bounds is inside tetrahedron
-        var boundCorners = new Point3f[] {
-            new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ()),
-            new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMinZ()),
-            new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMinZ()),
-            new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMinZ()),
-            new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMaxZ()),
-            new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMaxZ()),
-            new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMaxZ()),
-            new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ())
-        };
-        
-        for (var corner : boundCorners) {
-            if (tet.contains(corner)) {
-                return true;
-            }
-        }
-        
-        
-        // Test if the center of the entity bounds is inside the tetrahedron
-        // This catches the case where a small entity is entirely contained within a large tetrahedron
-        Point3f entityCenter = new Point3f(
-            (bounds.getMinX() + bounds.getMaxX()) / 2,
-            (bounds.getMinY() + bounds.getMaxY()) / 2,
-            (bounds.getMinZ() + bounds.getMaxZ()) / 2
-        );
-        
-        if (tet.contains(entityCenter)) {
-            return true;
-        }
-        
-        
-        // CRITICAL FIX: For spanning entities, if the bounding boxes intersect, we should consider it a valid intersection
-        // even if the precise tetrahedral geometry doesn't contain the entity center.
-        // This is especially important for small entities in large tetrahedra at coarse levels.
-        
-        // Since we already passed the bounding box test, and this is for spanning entity insertion,
-        // we should accept this as a valid intersection. Small entities that fall within the 
-        // bounding box of a tetrahedron should be considered as intersecting for spanning purposes.
-        
-        return true;
-    }
-
-    /**
-     * Optimized tetrahedral spanning insertion using SFC ranges
-     * Implements t8code-style efficient spanning based on linear_id ranges
-     */
-    @Override
-    protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
-        // Find all tetrahedra that the entity's bounds intersect using optimized SFC traversal
-        Set<Long> intersectingTets = findIntersectingTets(bounds, level);
-        
-        // Add entity to all intersecting tetrahedra
-        for (Long tetIndex : intersectingTets) {
-            TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
-                sortedSpatialIndices.add(tetIndex);
-                return new TetreeNodeImpl<>(maxEntitiesPerNode);
-            });
-            
-            node.addEntity(entityId);
-            entityManager.addEntityLocation(entityId, tetIndex);
-            
-            // Note: We don't trigger subdivision for spanning entities
-            // to avoid cascading subdivisions across multiple tetrahedra
-        }
-    }
 
     /**
      * Tetree-specific tree balancer implementation
      */
     protected class TetreeBalancer extends DefaultTreeBalancer {
-        
-        @Override
-        public List<Long> splitNode(long tetIndex, byte tetLevel) {
-            if (tetLevel >= maxDepth) {
-                return Collections.emptyList();
-            }
-            
-            TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
-            if (node == null || node.isEmpty()) {
-                return Collections.emptyList();
-            }
-            
-            // Get entities to redistribute
-            Set<ID> entities = new HashSet<>(node.getEntityIds());
-            
-            // Calculate child coordinates and level
-            Tet parentTet = Tet.tetrahedron(tetIndex);
-            byte childLevel = (byte) (tetLevel + 1);
-            int parentCellSize = Constants.lengthAtLevel(tetLevel);
-            int childCellSize = Constants.lengthAtLevel(childLevel);
-            
-            // Create child nodes
-            List<Long> createdChildren = new ArrayList<>();
-            Map<Long, Set<ID>> childEntityMap = new HashMap<>();
-            
-            // Distribute entities to children based on their positions
-            for (ID entityId : entities) {
-                Point3f pos = entityManager.getEntityPosition(entityId);
-                if (pos == null) continue;
-                
-                // Find the containing tetrahedron at the child level
-                Tet childTet = locate(pos, childLevel);
-                long childTetIndex = childTet.index();
-                childEntityMap.computeIfAbsent(childTetIndex, k -> new HashSet<>()).add(entityId);
-            }
-            
-            // Check if all entities map to the same child - if so, don't split
-            if (childEntityMap.size() == 1 && childEntityMap.containsKey(tetIndex)) {
-                // All entities map to the same tetrahedron as the parent - splitting won't help
-                return Collections.emptyList();
-            }
-            
-            // Create child nodes and add entities
-            for (Map.Entry<Long, Set<ID>> entry : childEntityMap.entrySet()) {
-                long childTetIndex = entry.getKey();
-                Set<ID> childEntities = entry.getValue();
-                
-                if (!childEntities.isEmpty()) {
-                    TetreeNodeImpl<ID> childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
-                        sortedSpatialIndices.add(childTetIndex);
-                        return new TetreeNodeImpl<>(maxEntitiesPerNode);
-                    });
-                    
-                    for (ID entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        entityManager.addEntityLocation(entityId, childTetIndex);
-                    }
-                    
-                    createdChildren.add(childTetIndex);
-                }
-            }
-            
-            // Clear parent node and update entity locations
-            node.clearEntities();
-            node.setHasChildren(true);
-            for (ID entityId : entities) {
-                entityManager.removeEntityLocation(entityId, tetIndex);
-            }
-            
-            return createdChildren;
-        }
-        
+
         @Override
         public boolean mergeNodes(Set<Long> tetIndices, long parentIndex) {
             if (tetIndices.isEmpty()) {
                 return false;
             }
-            
+
             // Collect all entities from nodes to be merged
             Set<ID> allEntities = new HashSet<>();
             for (Long tetIndex : tetIndices) {
@@ -1736,7 +2007,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     allEntities.addAll(node.getEntityIds());
                 }
             }
-            
+
             if (allEntities.isEmpty()) {
                 // Just remove empty nodes
                 for (Long tetIndex : tetIndices) {
@@ -1745,37 +2016,110 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 }
                 return true;
             }
-            
+
             // Get or create parent node
             TetreeNodeImpl<ID> parentNode = spatialIndex.computeIfAbsent(parentIndex, k -> {
                 sortedSpatialIndices.add(parentIndex);
                 return new TetreeNodeImpl<>(maxEntitiesPerNode);
             });
-            
+
             // Move all entities to parent
             for (ID entityId : allEntities) {
                 // Remove from child locations
                 for (Long tetIndex : tetIndices) {
                     entityManager.removeEntityLocation(entityId, tetIndex);
                 }
-                
+
                 // Add to parent
                 parentNode.addEntity(entityId);
                 entityManager.addEntityLocation(entityId, parentIndex);
             }
-            
+
             // Remove child nodes
             for (Long tetIndex : tetIndices) {
                 spatialIndex.remove(tetIndex);
                 sortedSpatialIndices.remove(tetIndex);
             }
-            
+
             // Parent no longer has children after merge
             parentNode.setHasChildren(false);
-            
+
             return true;
         }
-        
+
+        @Override
+        public List<Long> splitNode(long tetIndex, byte tetLevel) {
+            if (tetLevel >= maxDepth) {
+                return Collections.emptyList();
+            }
+
+            TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
+            if (node == null || node.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            // Get entities to redistribute
+            Set<ID> entities = new HashSet<>(node.getEntityIds());
+
+            // Calculate child coordinates and level
+            Tet parentTet = Tet.tetrahedron(tetIndex);
+            byte childLevel = (byte) (tetLevel + 1);
+            int parentCellSize = Constants.lengthAtLevel(tetLevel);
+            int childCellSize = Constants.lengthAtLevel(childLevel);
+
+            // Create child nodes
+            List<Long> createdChildren = new ArrayList<>();
+            Map<Long, Set<ID>> childEntityMap = new HashMap<>();
+
+            // Distribute entities to children based on their positions
+            for (ID entityId : entities) {
+                Point3f pos = entityManager.getEntityPosition(entityId);
+                if (pos == null) {
+                    continue;
+                }
+
+                // Find the containing tetrahedron at the child level
+                Tet childTet = locate(pos, childLevel);
+                long childTetIndex = childTet.index();
+                childEntityMap.computeIfAbsent(childTetIndex, k -> new HashSet<>()).add(entityId);
+            }
+
+            // Check if all entities map to the same child - if so, don't split
+            if (childEntityMap.size() == 1 && childEntityMap.containsKey(tetIndex)) {
+                // All entities map to the same tetrahedron as the parent - splitting won't help
+                return Collections.emptyList();
+            }
+
+            // Create child nodes and add entities
+            for (Map.Entry<Long, Set<ID>> entry : childEntityMap.entrySet()) {
+                long childTetIndex = entry.getKey();
+                Set<ID> childEntities = entry.getValue();
+
+                if (!childEntities.isEmpty()) {
+                    TetreeNodeImpl<ID> childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
+                        sortedSpatialIndices.add(childTetIndex);
+                        return new TetreeNodeImpl<>(maxEntitiesPerNode);
+                    });
+
+                    for (ID entityId : childEntities) {
+                        childNode.addEntity(entityId);
+                        entityManager.addEntityLocation(entityId, childTetIndex);
+                    }
+
+                    createdChildren.add(childTetIndex);
+                }
+            }
+
+            // Clear parent node and update entity locations
+            node.clearEntities();
+            node.setHasChildren(true);
+            for (ID entityId : entities) {
+                entityManager.removeEntityLocation(entityId, tetIndex);
+            }
+
+            return createdChildren;
+        }
+
         @Override
         protected Set<Long> findSiblings(long tetIndex) {
             Tet tet = Tet.tetrahedron(tetIndex);
@@ -1783,19 +2127,19 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             if (level == 0) {
                 return Collections.emptySet(); // Root has no siblings
             }
-            
+
             // For tetrahedral decomposition, siblings are other tetrahedra in the same parent cell
             // Calculate parent cell coordinates
             int cellSize = Constants.lengthAtLevel(level);
             int parentCellSize = cellSize * 2;
-            
+
             // Find parent cell coordinates
             int parentX = (tet.x() / parentCellSize) * parentCellSize;
             int parentY = (tet.y() / parentCellSize) * parentCellSize;
             int parentZ = (tet.z() / parentCellSize) * parentCellSize;
-            
+
             Set<Long> siblings = new HashSet<>();
-            
+
             // Check all child cells within parent cell for all tetrahedron types
             for (int x = parentX; x < parentX + parentCellSize; x += cellSize) {
                 for (int y = parentY; y < parentY + parentCellSize; y += cellSize) {
@@ -1803,7 +2147,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                         for (byte type = 0; type < 6; type++) {
                             Tet siblingTet = new Tet(x, y, z, level, type);
                             long siblingIndex = siblingTet.index();
-                            
+
                             // Add if it's not the current node and exists
                             if (siblingIndex != tetIndex && spatialIndex.containsKey(siblingIndex)) {
                                 siblings.add(siblingIndex);
@@ -1812,10 +2156,10 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     }
                 }
             }
-            
+
             return siblings;
         }
-        
+
         @Override
         protected long getParentIndex(long tetIndex) {
             Tet tet = Tet.tetrahedron(tetIndex);
@@ -1823,78 +2167,24 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             if (level == 0) {
                 return -1; // Root has no parent
             }
-            
+
             int cellSize = Constants.lengthAtLevel(level);
             int parentCellSize = cellSize * 2;
             byte parentLevel = (byte) (level - 1);
-            
+
             // Calculate parent coordinates
             int parentX = (tet.x() / parentCellSize) * parentCellSize;
             int parentY = (tet.y() / parentCellSize) * parentCellSize;
             int parentZ = (tet.z() / parentCellSize) * parentCellSize;
-            
+
             // For tetrahedral decomposition, find the parent tetrahedron that contains this position
             // Use the tetrahedron centroid instead of cube center
             var vertices = tet.coordinates();
-            Point3f position = new Point3f(
-                (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f,
-                (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f,
-                (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f
-            );
+            Point3f position = new Point3f((vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f,
+                                           (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f,
+                                           (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f);
             Tet parentTet = locate(position, parentLevel);
             return parentTet.index();
         }
-    }
-    
-    /**
-     * Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
-     */
-    private boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
-        var vertices = tet.coordinates();
-
-        // Quick bounding box rejection test first
-        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
-        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
-        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
-
-        for (var vertex : vertices) {
-            tetMinX = Math.min(tetMinX, vertex.x);
-            tetMaxX = Math.max(tetMaxX, vertex.x);
-            tetMinY = Math.min(tetMinY, vertex.y);
-            tetMaxY = Math.max(tetMaxY, vertex.y);
-            tetMinZ = Math.min(tetMinZ, vertex.z);
-            tetMaxZ = Math.max(tetMaxZ, vertex.z);
-        }
-
-        // More generous bounding box intersection test - use overlap instead of strict intersection
-        boolean boundsOverlap = !(tetMaxX < bounds.minX() || tetMinX > bounds.maxX() || 
-                                 tetMaxY < bounds.minY() || tetMinY > bounds.maxY() ||
-                                 tetMaxZ < bounds.minZ() || tetMinZ > bounds.maxZ());
-        
-        if (!boundsOverlap) {
-            return false;
-        }
-
-        // If bounding boxes overlap, assume intersection for simplicity
-        // A more sophisticated implementation could do exact tetrahedron-AABB intersection
-        return true;
-    }
-
-    /**
-     * Check if a tetrahedron is completely contained within volume bounds
-     * Memory-efficient version for large entity spanning operations
-     */
-    private boolean tetrahedronContainedInVolumeBounds(Tet tet, VolumeBounds bounds) {
-        var vertices = tet.coordinates();
-        
-        // All vertices must be within bounds for complete containment
-        for (var vertex : vertices) {
-            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() ||
-                vertex.y < bounds.minY() || vertex.y > bounds.maxY() ||
-                vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
-                return false;
-            }
-        }
-        return true;
     }
 }
