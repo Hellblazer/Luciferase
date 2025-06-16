@@ -51,12 +51,39 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
      * @return Stream of tetrahedral indices in traversal order
      */
     public Stream<Long> traverseRay(Ray3D ray) {
-        // Get the tetrahedra from the tree's ray traversal
-        List<Long> indices = tree.getRayTraversalOrder(ray).collect(Collectors.toList());
+        // Find the entry tetrahedron
+        Tet entryTet = findEntryTetrahedron(ray);
+        if (entryTet == null) {
+            return Stream.empty();
+        }
         
-        // The tree already sorts by distance, but let's ensure proper ordering
-        // by re-sorting based on the actual ray intersection distances
-        return sortByRayDistance(indices, ray).stream();
+        // Collect all tetrahedra intersected by the ray using BFS
+        List<Long> intersectedIndices = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        Queue<Tet> toProcess = new LinkedList<>();
+        
+        toProcess.offer(entryTet);
+        visited.add(entryTet.index());
+        
+        while (!toProcess.isEmpty()) {
+            Tet current = toProcess.poll();
+            
+            // Check if this tetrahedron is actually intersected by the ray
+            if (rayIntersectsTetrahedron(ray, current)) {
+                intersectedIndices.add(current.index());
+                
+                // Add neighbors to process
+                addIntersectedNeighbors(current, ray, toProcess, visited);
+                
+                // Also check children if they might contain the ray
+                if (shouldCheckChildren(current, ray)) {
+                    addIntersectedChildren(current, ray, toProcess, visited);
+                }
+            }
+        }
+        
+        // Sort by distance along ray and return as stream
+        return sortByRayDistance(intersectedIndices, ray).stream();
     }
     
     /**

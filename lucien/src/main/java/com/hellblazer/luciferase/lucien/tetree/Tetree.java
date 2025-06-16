@@ -44,6 +44,9 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     // Neighbor finder instance (lazily initialized)
     private TetreeNeighborFinder neighborFinder;
+    
+    // Ray traversal instance (lazily initialized)
+    private TetreeSFCRayTraversal<ID, Content> rayTraversal;
 
     /**
      * Get the neighbor finder instance, creating it if necessary
@@ -53,6 +56,16 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             neighborFinder = new TetreeNeighborFinder();
         }
         return neighborFinder;
+    }
+    
+    /**
+     * Get the ray traversal instance, creating it if necessary
+     */
+    private TetreeSFCRayTraversal<ID, Content> getRayTraversal() {
+        if (rayTraversal == null) {
+            rayTraversal = new TetreeSFCRayTraversal<>(this);
+        }
+        return rayTraversal;
     }
 
     /**
@@ -220,6 +233,100 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
     }
 
+    // ===== New Algorithm Integration Methods =====
+    
+    /**
+     * Create an iterator for traversing the tetree in the specified order
+     * 
+     * @param order the traversal order (DFS, BFS, SFC_ORDER, LEVEL_ORDER)
+     * @return a new iterator for this tetree
+     */
+    public TetreeIterator<ID, Content> iterator(TetreeIterator.TraversalOrder order) {
+        return new TetreeIterator<>(this, order);
+    }
+    
+    /**
+     * Create an iterator for traversing the tetree with level constraints
+     * 
+     * @param order the traversal order
+     * @param minLevel minimum level to include (inclusive)
+     * @param maxLevel maximum level to include (inclusive)
+     * @return a new iterator with level constraints
+     */
+    public TetreeIterator<ID, Content> iterator(TetreeIterator.TraversalOrder order, byte minLevel, byte maxLevel) {
+        return new TetreeIterator<ID, Content>(this, order, minLevel, maxLevel, false);
+    }
+    
+    /**
+     * Validate the tetree structure for consistency
+     * 
+     * @return validation result with any issues found
+     */
+    public TetreeValidator.ValidationResult validate() {
+        lock.readLock().lock();
+        try {
+            return TetreeValidator.validateTreeStructure(sortedSpatialIndices);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Get comprehensive statistics about the tetree structure
+     * 
+     * @return tree statistics including depth, node counts, etc.
+     */
+    public TetreeValidator.TreeStats getTreeStatistics() {
+        lock.readLock().lock();
+        try {
+            return TetreeValidator.analyzeTreeIndices(sortedSpatialIndices);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Find face neighbors of the tetrahedron at the given index
+     * 
+     * @param tetIndex the tetrahedral index
+     * @param faceIndex which face (0-3)
+     * @return the neighbor index, or -1 if no neighbor exists
+     */
+    public long findFaceNeighbor(long tetIndex, int faceIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, faceIndex);
+        return neighbor != null ? neighbor.index() : -1;
+    }
+    
+    /**
+     * Find all face neighbors of the tetrahedron
+     * 
+     * @param tetIndex the tetrahedral index
+     * @return array of neighbor indices (length 4), -1 for no neighbor
+     */
+    public long[] findAllFaceNeighbors(long tetIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        long[] neighbors = new long[4];
+        for (int i = 0; i < 4; i++) {
+            Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, i);
+            neighbors[i] = neighbor != null ? neighbor.index() : -1;
+        }
+        return neighbors;
+    }
+    
+    /**
+     * Find neighbors within the same grid cell
+     * 
+     * @param tetIndex the tetrahedral index
+     * @return list of neighbor indices within the same grid cell
+     */
+    public List<Long> findCellNeighbors(long tetIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        // For tetrahedral decomposition, find all neighbors (face-adjacent)
+        List<Tet> neighborTets = getNeighborFinder().findAllNeighbors(tet);
+        return neighborTets.stream().map(Tet::index).collect(java.util.stream.Collectors.toList());
+    }
+    
     /**
      * Find a single node intersecting with a volume Note: This returns the first intersecting node found
      *
@@ -312,8 +419,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     @Override
     protected long calculateSpatialIndex(Point3f position, byte level) {
         Tet tet = locate(position, level);
-        // System.out.println("[DEBUG] calculateSpatialIndex: position=" + position + ", level=" + level +
-        //                   " -> tet index=" + tet.index() + " (level=" + tet.l() + ", origin=(" + tet.x() + "," + tet.y() + "," + tet.z() + "), type=" + tet.type() + ")");
         return tet.index();
     }
 
@@ -322,8 +427,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         if (level == 0) {
             return; // Root level has no ancestors
         }
-        
-        // System.out.println("[DEBUG] ensureAncestorNodes: spatialIndex=" + spatialIndex + ", level=" + level);
         
         // Create the tetrahedron at the specified level
         Tet tet = Tet.tetrahedron(spatialIndex, level);
@@ -334,9 +437,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             Tet ancestor = findAncestorAtLevel(tet, parentLevel);
             long ancestorIndex = ancestor.index();
             
-            // System.out.println("[DEBUG]   Ensuring ancestor at level " + parentLevel + 
-            //                  ": index=" + ancestorIndex + ", origin=(" + ancestor.x() + "," + ancestor.y() + "," + ancestor.z() + "), type=" + ancestor.type());
-            
             // Ensure this ancestor node exists in the spatial index
             // Use computeIfAbsent to atomically create node and update sorted indices
             boolean isNew = !getSpatialIndex().containsKey(ancestorIndex);
@@ -344,12 +444,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 sortedSpatialIndices.add(ancestorIndex);  // Use the protected field directly
                 return createNode();
             });
-            
-            // if (isNew) {
-            //     System.out.println("[DEBUG]     Created new ancestor node at index " + ancestorIndex);
-            // } else {
-            //     System.out.println("[DEBUG]     Ancestor node already exists at index " + ancestorIndex);
-            // }
         }
     }
     
@@ -370,6 +464,29 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             current = current.parent();
         }
         return current;
+    }
+    
+    /**
+     * Check if a tetrahedron index is valid using optimized bit operations
+     * 
+     * @param index the SFC index to validate
+     * @return true if valid, false otherwise
+     */
+    public boolean isValidTetIndex(long index) {
+        return TetreeBits.isValidIndex(index);
+    }
+    
+    /**
+     * Get the child ID of a tetrahedron within its parent using optimized bit operations
+     * 
+     * @param tet the tetrahedron
+     * @return child ID (0-7), or -1 if root
+     */
+    public int getChildId(Tet tet) {
+        if (tet.l() == 0) {
+            return -1;
+        }
+        return TetreeBits.computeChildId(tet);
     }
 
     @Override
@@ -515,7 +632,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     protected byte getLevelFromIndex(long index) {
-        return Tet.tetLevelFromIndex(index);
+        // Use optimized bit extraction from TetreeBits
+        return TetreeBits.extractLevel(index);
     }
 
     // These methods are now handled by AbstractSpatialIndex
@@ -551,41 +669,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
-        // Improved approach: Generate tetrahedra along the ray path using spatial traversal
-        // This finds all tetrahedra the ray passes through, not just those with entities
-        List<TetDistance> intersectedTets = new ArrayList<>();
-        
-        // First, check all existing nodes in the spatial index for entities
-        for (Map.Entry<Long, TetreeNodeImpl<ID>> entry : spatialIndex.entrySet()) {
-            long tetIndex = entry.getKey();
-            TetreeNodeImpl<ID> node = entry.getValue();
-            
-            // Skip empty nodes
-            if (node.isEmpty()) {
-                continue;
-            }
-            
-            // Test ray intersection with this tetrahedron
-            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
-            if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
-                intersectedTets.add(new TetDistance(tetIndex, intersection.distance));
-            }
-        }
-        
-        // Second, generate tetrahedra along the ray path at a reasonable level
-        // This ensures we find tetrahedra the ray passes through even if they don't contain entities
-        byte traversalLevel = (byte) Math.min(10, Constants.getMaxRefinementLevel()); // Use level 10 for reasonable detail
-        Set<Long> visited = new HashSet<>();
-        
-        // Add existing intersected indices to visited set to avoid duplicates
-        intersectedTets.forEach(td -> visited.add(td.tetIndex));
-        
-        // Generate tetrahedra along ray path
-        generateRayPathTetrahedra(ray, traversalLevel, intersectedTets, visited);
-        
-        // Sort by distance along ray and return as stream
-        Collections.sort(intersectedTets);
-        return intersectedTets.stream().map(td -> td.tetIndex);
+        // Use the optimized TetreeSFCRayTraversal implementation
+        return getRayTraversal().traverseRay(ray);
     }
 
     @Override
@@ -626,7 +711,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             children[i] = parentTet.child(i);
         }
 
-        // TODO: Fix the SFC index reconstruction issue that causes family validation to fail
+        // TODO: Validate that the children form a proper family
         // assert TetreeFamily.isFamily(children) : "Children do not form a valid family";
 
         // Create map to group entities by their child tetrahedron
@@ -661,13 +746,10 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             // All entities map to the same child tetrahedron
             // This can happen when all entities are at the same position
             // Don't subdivide - it won't help distribute the load
-            System.out.println("Subdivision stopped: all entities map to same child tetrahedron");
             return;
         }
 
         // Create child nodes and redistribute entities
-        System.out.println("Bey refinement subdivision: distributing to " + childEntityMap.size() + " of 8 children");
-
         // Track which entities we need to remove from parent
         Set<ID> entitiesToRemoveFromParent = new HashSet<>();
 
@@ -1231,8 +1313,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     // Compute SFC ranges that could contain tetrahedra intersecting the volume
     private List<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
-        System.out.println("DEBUG computeSFCRanges: bounds=" + bounds + ", includeIntersecting=" + includeIntersecting);
-
         List<SFCRange> ranges = new ArrayList<>();
 
         // Since entities are inserted at various levels (in the test, level 5),
@@ -1245,8 +1325,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             byte level = Tet.tetLevelFromIndex(index);
             actualLevels.add(level);
         }
-
-        System.out.println("DEBUG computeSFCRanges: actualLevels in spatial index=" + actualLevels);
 
         // If no levels found, fall back to the old approach
         byte minLevel, maxLevel;
@@ -1264,11 +1342,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             maxLevel = (byte) (minLevel + 5);
         }
 
-        System.out.println("DEBUG computeSFCRanges: adjusted minLevel=" + minLevel + ", maxLevel=" + maxLevel);
-
         for (byte level = minLevel; level <= maxLevel; level++) {
             int length = Constants.lengthAtLevel(level);
-            System.out.println("DEBUG computeSFCRanges: level=" + level + ", length=" + length);
 
             // Calculate grid bounds at this level
             int minX = (int) Math.floor(bounds.minX() / length);
@@ -1278,13 +1353,8 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             int minZ = (int) Math.floor(bounds.minZ() / length);
             int maxZ = (int) Math.ceil(bounds.maxZ() / length);
 
-            System.out.println(
-            "DEBUG computeSFCRanges: grid bounds x[" + minX + "," + maxX + "], y[" + minY + "," + maxY + "], z[" + minZ
-            + "," + maxZ + "]");
-
             // Skip this level if it would create too many cells
             int numCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
-            System.out.println("DEBUG computeSFCRanges: numCells=" + numCells);
 
             if (numCells > 100) {
                 // For very large volumes, use the entire range at this level
@@ -1295,8 +1365,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 var maxRanges = computeCellSFCRanges(maxPoint, level);
                 if (!minRanges.isEmpty() && !maxRanges.isEmpty()) {
                     ranges.add(new SFCRange(minRanges.getFirst().start, maxRanges.getLast().end));
-                    System.out.println("DEBUG computeSFCRanges: added large range [" + minRanges.getFirst().start + ","
-                                       + maxRanges.getLast().end + "]");
                 }
                 continue;
             }
@@ -1312,21 +1380,14 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                             // Find the SFC ranges for all tetrahedra in this grid cell
                             var cellRanges = computeCellSFCRanges(cellPoint, level);
                             ranges.addAll(cellRanges);
-                            System.out.println(
-                            "DEBUG computeSFCRanges: added cell ranges for (" + x + "," + y + "," + z + "): "
-                            + cellRanges);
                         }
                     }
                 }
             }
         }
 
-        System.out.println("DEBUG computeSFCRanges: total ranges before merge=" + ranges.size());
-
         // Merge overlapping ranges for efficiency
         var mergedRanges = mergeRanges(ranges);
-        System.out.println("DEBUG computeSFCRanges: merged ranges=" + mergedRanges.size());
-
         return mergedRanges;
     }
 

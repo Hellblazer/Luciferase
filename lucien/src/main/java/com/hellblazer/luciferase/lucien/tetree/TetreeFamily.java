@@ -108,17 +108,6 @@ public class TetreeFamily {
         return siblings;
     }
     
-    /**
-     * Get the complete family from any member.
-     * Returns all 8 tetrahedra that form a family with the given tetrahedron.
-     * 
-     * @param tet any member of the family
-     * @return array of all family members
-     */
-    public static Tet[] getFamily(Tet tet) {
-        // Same as getSiblings since a family is all children of the parent
-        return getSiblings(tet);
-    }
     
     /**
      * Validate parent-child relationships.

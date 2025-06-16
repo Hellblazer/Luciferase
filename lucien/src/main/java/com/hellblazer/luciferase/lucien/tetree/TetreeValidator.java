@@ -232,44 +232,8 @@ public final class TetreeValidator {
         if (!validationEnabled) {
             return true;
         }
-
-        if (tets == null || tets.length != TetreeConnectivity.CHILDREN_PER_TET) {
-            return false;
-        }
-
-        // All must be at same level
-        byte level = tets[0].l();
-        for (Tet tet : tets) {
-            if (tet.l() != level) {
-                return false;
-            }
-        }
-
-        // Check if they all have the same parent
-        Tet parent0 = tets[0].parent();
-        for (int i = 1; i < tets.length; i++) {
-            Tet parent = tets[i].parent();
-            if (!parent.equals(parent0)) {
-                return false;
-            }
-        }
-
-        // Verify they are all distinct children of the parent
-        Set<Integer> childIndices = new HashSet<>();
-        for (Tet tet : tets) {
-            for (int childIdx = 0; childIdx < TetreeConnectivity.CHILDREN_PER_TET; childIdx++) {
-                Tet expectedChild = parent0.child(childIdx);
-                if (tet.equals(expectedChild)) {
-                    if (!childIndices.add(childIdx)) {
-                        return false; // Duplicate child
-                    }
-                    break;
-                }
-            }
-        }
-
-        // All children must be present
-        return childIndices.size() == TetreeConnectivity.CHILDREN_PER_TET;
+        // Delegate to TetreeFamily to avoid duplication
+        return TetreeFamily.isFamily(tets);
     }
 
     /**
@@ -344,21 +308,8 @@ public final class TetreeValidator {
         if (!validationEnabled) {
             return true;
         }
-
-        // Child must be one level deeper
-        if (child.l() != parent.l() + 1) {
-            return false;
-        }
-
-        // Check if child is one of the 8 children
-        for (int i = 0; i < TetreeConnectivity.CHILDREN_PER_TET; i++) {
-            Tet expectedChild = parent.child(i);
-            if (child.equals(expectedChild)) {
-                return true;
-            }
-        }
-
-        return false;
+        // Delegate to TetreeFamily to avoid duplication
+        return TetreeFamily.isParentOf(parent, child);
     }
 
     /**
