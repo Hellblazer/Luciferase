@@ -332,24 +332,6 @@ public abstract class TetrahedralSearchBase {
         return Math.abs(det) / 6.0;
     }
 
-    /**
-     * Validate that coordinates are positive (required for tetrahedral SFC)
-     */
-    protected static void validatePositiveCoordinates(Tuple3f point) {
-        if (point.x < 0 || point.y < 0 || point.z < 0) {
-            throw new IllegalArgumentException("Coordinates must be positive for tetrahedral operations: " + point);
-        }
-    }
-
-    /**
-     * Validate that coordinates are positive (required for tetrahedral SFC)
-     */
-    protected static void validatePositiveCoordinates(float x, float y, float z) {
-        if (x < 0 || y < 0 || z < 0) {
-            throw new IllegalArgumentException(
-            "Coordinates must be positive for tetrahedral operations: (" + x + ", " + y + ", " + z + ")");
-        }
-    }
 
     /**
      * Strategy for aggregating multiple simplicies in the same spatial region

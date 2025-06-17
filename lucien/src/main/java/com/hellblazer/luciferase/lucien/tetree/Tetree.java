@@ -68,7 +68,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     public SpatialNode<ID> enclosing(Spatial volume) {
-        validatePositiveCoordinates(volume);
+        TetreeValidationUtils.validatePositiveCoordinates(volume);
 
         // Extract bounding box of the volume
         var bounds = getVolumeBounds(volume);
@@ -93,7 +93,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     public SpatialNode<ID> enclosing(Tuple3i point, byte level) {
-        validatePositiveCoordinates(point);
+        TetreeValidationUtils.validatePositiveCoordinates(point);
 
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
         TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
@@ -107,7 +107,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     public List<ID> entitiesInRegion(Spatial.Cube region) {
-        validatePositiveCoordinates(region);
+        TetreeValidationUtils.validatePositiveCoordinates(region);
 
         Set<ID> uniqueEntities = new HashSet<>();
 
@@ -265,7 +265,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
      * @return a single intersecting node, or null if none found
      */
     public SpatialNode<ID> intersecting(Spatial volume) {
-        validatePositiveCoordinates(volume);
+        TetreeValidationUtils.validatePositiveCoordinates(volume);
 
         // Find the first intersecting node
         return bounding(volume).findFirst().orElse(null);
@@ -311,13 +311,13 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
      * @return the Tet containing the point
      */
     public Tet locateTetrahedron(Tuple3f point, byte level) {
-        validatePositiveCoordinates(new Point3f(point.x, point.y, point.z));
+        TetreeValidationUtils.validatePositiveCoordinates(point);
         return locate(point, level);
     }
 
     @Override
     public List<ID> lookup(Point3f position, byte level) {
-        validatePositiveCoordinates(position);
+        TetreeValidationUtils.validatePositiveCoordinates(position);
 
         // Find the containing tetrahedron
         Tet tet = locate(position, level);
@@ -444,7 +444,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         if (bounds == null) {
             return false;
         }
-        return tetrahedronIntersectsVolumeBounds(tet, bounds);
+        return Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
     }
 
     @Override
@@ -757,7 +757,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     @Override
     protected boolean isNodeContainedInVolume(long tetIndex, Spatial volume) {
         Tet tet = Tet.tetrahedron(tetIndex);
-        return tetrahedronContainedInVolume(tet, volume);
+        return Tet.tetrahedronContainedInVolume(tet, volume);
     }
 
     @Override
@@ -786,12 +786,12 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     @Override
     protected void validateSpatialConstraints(Point3f position) {
-        validatePositiveCoordinates(position);
+        TetreeValidationUtils.validatePositiveCoordinates(position);
     }
 
     @Override
     protected void validateSpatialConstraints(Spatial volume) {
-        validatePositiveCoordinates(volume);
+        TetreeValidationUtils.validatePositiveCoordinates(volume);
     }
 
     /**
@@ -1572,13 +1572,13 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
                 if (includeIntersecting) {
                     // Check if tetrahedron intersects the bounds
-                    boolean intersects = tetrahedronIntersectsVolumeBounds(tet, bounds);
+                    boolean intersects = Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
                     if (intersects) {
                         result.add(spatialIndex);
                     }
                 } else {
                     // Check if tetrahedron is contained within bounds
-                    if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                    if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
                         result.add(spatialIndex);
                     }
                 }
@@ -1653,7 +1653,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 }
             } else {
                 // For containment, use direct tetrahedral geometry test
-                if (tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
                     return true;
                 }
             }
@@ -1811,42 +1811,9 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return hasPositive && hasNegative;
     }
 
-    // Check if a tetrahedron is completely contained within a volume
-    private boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
-        var vertices = tet.coordinates();
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return false;
-        }
-
-        // Simple AABB containment test - all vertices must be within bounds
-        for (var vertex : vertices) {
-            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY()
-            || vertex.y > bounds.maxY() || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     // ===== Tetrahedral Spanning Implementation =====
 
-    /**
-     * Check if a tetrahedron is completely contained within volume bounds Memory-efficient version for large entity
-     * spanning operations
-     */
-    private boolean tetrahedronContainedInVolumeBounds(Tet tet, VolumeBounds bounds) {
-        var vertices = tet.coordinates();
-
-        // All vertices must be within bounds for complete containment
-        for (var vertex : vertices) {
-            if (vertex.x < bounds.minX() || vertex.x > bounds.maxX() || vertex.y < bounds.minY()
-            || vertex.y > bounds.maxY() || vertex.z < bounds.minZ() || vertex.z > bounds.maxZ()) {
-                return false;
-            }
-        }
-        return true;
-    }
 
     /**
      * Check if a tetrahedron intersects with entity bounds using proper tetrahedral geometry
@@ -1919,98 +1886,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return true;
     }
 
-    // Check if a tetrahedron intersects with a volume
-    private boolean tetrahedronIntersectsVolume(Tet tet, Spatial volume) {
-        var vertices = tet.coordinates();
-        var bounds = getVolumeBounds(volume);
-        if (bounds == null) {
-            return false;
-        }
 
-        // Simple AABB intersection test - any vertex within bounds indicates intersection
-        for (var vertex : vertices) {
-            if (vertex.x >= bounds.minX() && vertex.x <= bounds.maxX() && vertex.y >= bounds.minY()
-            && vertex.y <= bounds.maxY() && vertex.z >= bounds.minZ() && vertex.z <= bounds.maxZ()) {
-                return true;
-            }
-        }
-
-        // Also check if the volume center is inside the tetrahedron
-        var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
-                                      (bounds.minZ() + bounds.maxZ()) / 2);
-        return tet.contains(centerPoint);
-    }
-
-    /**
-     * Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
-     */
-    private boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
-        var vertices = tet.coordinates();
-
-        // Quick bounding box rejection test first
-        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
-        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
-        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
-
-        for (var vertex : vertices) {
-            tetMinX = Math.min(tetMinX, vertex.x);
-            tetMaxX = Math.max(tetMaxX, vertex.x);
-            tetMinY = Math.min(tetMinY, vertex.y);
-            tetMaxY = Math.max(tetMaxY, vertex.y);
-            tetMinZ = Math.min(tetMinZ, vertex.z);
-            tetMaxZ = Math.max(tetMaxZ, vertex.z);
-        }
-
-        // More generous bounding box intersection test - use overlap instead of strict intersection
-        boolean boundsOverlap = !(tetMaxX < bounds.minX() || tetMinX > bounds.maxX() || tetMaxY < bounds.minY()
-                                  || tetMinY > bounds.maxY() || tetMaxZ < bounds.minZ() || tetMinZ > bounds.maxZ());
-
-        return boundsOverlap;
-
-        // If bounding boxes overlap, assume intersection for simplicity
-        // A more sophisticated implementation could do exact tetrahedron-AABB intersection
-    }
-
-    /**
-     * Validate that coordinates are positive (tetrahedral SFC requirement)
-     */
-    private void validatePositiveCoordinates(Point3f point) {
-        if (point.x < 0 || point.y < 0 || point.z < 0) {
-            throw new IllegalArgumentException("Tetree requires positive coordinates. Got: " + point);
-        }
-    }
-
-    private void validatePositiveCoordinates(Tuple3i point) {
-        if (point.x < 0 || point.y < 0 || point.z < 0) {
-            throw new IllegalArgumentException(
-            "Tetree requires positive coordinates. Got: (" + point.x + ", " + point.y + ", " + point.z + ")");
-        }
-    }
-
-    private void validatePositiveCoordinates(Spatial volume) {
-        // Check origin coordinates based on volume type
-        switch (volume) {
-            case Spatial.Cube cube -> {
-                if (cube.originX() < 0 || cube.originY() < 0 || cube.originZ() < 0) {
-                    throw new IllegalArgumentException(
-                    "Tetree requires positive coordinates. Cube origin: (" + cube.originX() + ", " + cube.originY()
-                    + ", " + cube.originZ() + ")");
-                }
-            }
-            case Spatial.Sphere sphere -> {
-                // For sphere, check if any part extends into negative space
-                if (sphere.centerX() - sphere.radius() < 0 || sphere.centerY() - sphere.radius() < 0
-                || sphere.centerZ() - sphere.radius() < 0) {
-                    throw new IllegalArgumentException(
-                    "Tetree requires positive coordinates. Sphere extends into negative space");
-                }
-            }
-            // Add other spatial types as needed
-            default -> {
-                // For now, allow other types but log warning
-            }
-        }
-    }
 
     // Record to represent SFC index ranges
     private record SFCRange(long start, long end) {

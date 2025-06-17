@@ -195,11 +195,18 @@ boolean valid = TetreeValidator.isValidSubdivisionFamily(children, tet);
 
 ### Code Organization
 
-- `Tet.java`: Core tetrahedron operations
-- `Tetree.java`: Spatial index implementation
-- `TetreeConnectivity.java`: Lookup tables and mappings
-- `TetreeValidator.java`: Validation utilities
-- `TetreeBits.java`: Bitwise operations
+- `Tet.java`: Core tetrahedron operations (static geometric methods)
+- `Tetree.java`: Spatial index implementation (extends AbstractSpatialIndex)
+- `TetreeConnectivity.java`: Lookup tables and mappings from t8code
+- `TetreeValidator.java`: Validation utilities (uses TetreeFamily for relationship checks)
+- `TetreeBits.java`: Bitwise operations for SFC calculations
+- `TetreeFamily.java`: Family and sibling relationship operations
+- `TetreeIterator.java`: Tree traversal implementations (DFS, BFS, Morton, Level-order)
+- `TetreeNeighborFinder.java`: Neighbor finding algorithms (face, edge, vertex)
+- `TetreeSFCRayTraversal.java`: Specialized ray traversal using SFC properties
+- `TetreeValidationUtils.java`: Centralized positive coordinate validation
+- `TetreeHelper.java`: Helper utilities for spatial queries
+- `TetrahedralSearchBase.java`: Base class for tetrahedral search operations
 
 ### When Modifying
 
@@ -207,6 +214,20 @@ boolean valid = TetreeValidator.isValidSubdivisionFamily(children, tet);
 2. **Test thoroughly**: Any changes to child/parent algorithms
 3. **Document**: Add comments for non-obvious tetrahedral geometry
 4. **Validate**: Run `TetreeValidatorTest` after changes
+
+## Recent Code Cleanup (June 2025)
+
+### Duplicate Code Elimination
+
+The following duplications have been removed:
+- **Geometric Methods**: Moved to static methods in `Tet.java` for sharing
+- **Validation Methods**: Centralized in `TetreeValidationUtils.java`
+- **Family Checks**: Using `TetreeFamily.isFamily()` instead of duplicates
+- **Parent-Child Checks**: Using `TetreeFamily.isParentOf()` instead of duplicates
+
+### Remaining TODO Items
+
+- `TetreeBits.computeCubeLevel()`: Incomplete t8code parity for type checking (line 264)
 
 ## Summary
 

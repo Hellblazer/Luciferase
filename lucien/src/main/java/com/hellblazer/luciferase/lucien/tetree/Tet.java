@@ -97,59 +97,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return orientation(point, vertices[1], vertices[0], vertices[2]) <= 0.0d;
     }
 
-    /**
-     * Check if a set of tetrahedra form a family (can be merged)
-     *
-     * @param tets array of tetrahedra to check
-     * @return true if they form a valid family
-     */
-    public static boolean isFamily(Tet[] tets) {
-        if (tets == null || tets.length != TetreeConnectivity.CHILDREN_PER_TET) {
-            return false;
-        }
-
-        // All must be at same level
-        byte level = tets[0].l;
-        for (Tet tet : tets) {
-            if (tet.l != level) {
-                return false;
-            }
-        }
-
-        // Check if they all have the same parent
-        Tet parent0 = tets[0].parent();
-        for (int i = 1; i < tets.length; i++) {
-            Tet parent = tets[i].parent();
-            if (!parent.equals(parent0)) {
-                return false;
-            }
-        }
-
-        // Verify they are all distinct children of the parent
-        boolean[] childFound = new boolean[TetreeConnectivity.CHILDREN_PER_TET];
-        for (Tet tet : tets) {
-            // Determine which child this is
-            for (int childIdx = 0; childIdx < TetreeConnectivity.CHILDREN_PER_TET; childIdx++) {
-                Tet expectedChild = parent0.child(childIdx);
-                if (tet.equals(expectedChild)) {
-                    if (childFound[childIdx]) {
-                        return false; // Duplicate child
-                    }
-                    childFound[childIdx] = true;
-                    break;
-                }
-            }
-        }
-
-        // All children must be present
-        for (boolean found : childFound) {
-            if (!found) {
-                return false;
-            }
-        }
-
-        return true;
-    }
 
     public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
         var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
@@ -261,7 +208,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the Stream of indexes in the SFC locating the Tets bounded by the volume
      */
     public Stream<Long> boundedBy(Spatial volume) {
-        var bounds = getVolumeBounds(volume);
+        var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return Stream.empty();
         }
@@ -282,7 +229,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the Stream of indexes in the SFC locating the Tets that minimally bound the volume
      */
     public Stream<Long> bounding(Spatial volume) {
-        var bounds = getVolumeBounds(volume);
+        var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return Stream.empty();
         }
@@ -465,7 +412,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public long enclosing(Spatial volume) {
         // Extract bounding box of the volume
-        var bounds = getVolumeBounds(volume);
+        var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return 0L;
         }
@@ -604,7 +551,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public long intersecting(Spatial volume) {
         // Simple implementation: find first intersecting tetrahedron
-        var bounds = getVolumeBounds(volume);
+        var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return 0L;
         }
@@ -1316,9 +1263,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     // Check if a tetrahedron is completely contained within a volume
-    private boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
+    public static boolean tetrahedronContainedInVolume(Tet tet, Spatial volume) {
         var vertices = tet.coordinates();
-        var bounds = getVolumeBounds(volume);
+        var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return false;
         }
@@ -1334,7 +1281,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     // Check if a tetrahedron is completely contained within volume bounds
-    private boolean tetrahedronContainedInVolumeBounds(Tet tet, VolumeBounds bounds) {
+    public static boolean tetrahedronContainedInVolumeBounds(Tet tet, VolumeBounds bounds) {
         var vertices = tet.coordinates();
 
         // All vertices must be within bounds for complete containment
@@ -1348,9 +1295,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     // Check if a tetrahedron intersects with a volume
-    private boolean tetrahedronIntersectsVolume(Tet tet, Spatial volume) {
+    public static boolean tetrahedronIntersectsVolume(Tet tet, Spatial volume) {
         var vertices = tet.coordinates();
-        var bounds = getVolumeBounds(volume);
+        var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return false;
         }
@@ -1370,7 +1317,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     // Check if a tetrahedron intersects with volume bounds (proper tetrahedral geometry)
-    private boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
+    public static boolean tetrahedronIntersectsVolumeBounds(Tet tet, VolumeBounds bounds) {
         var vertices = tet.coordinates();
 
         // Quick bounding box rejection test first
