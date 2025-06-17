@@ -281,12 +281,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         byte childType = TetreeConnectivity.getChildType(type, beyChildId);
         byte childLevel = (byte) (l + 1);
 
-        // For Bey child 0, use parent anchor directly (interior child)
-        if (beyChildId == 0) {
-            return new Tet(x, y, z, childLevel, childType);
-        }
-
-        // For other children, compute position as midpoint between parent anchor and vertex
+        // For all children, compute position as midpoint between parent anchor and vertex
         // This is the t8code algorithm: child anchor = (parent anchor + parent vertex) / 2
         byte vertex = TetreeConnectivity.getBeyVertex(beyChildId);
         
