@@ -43,7 +43,8 @@ public final class TetreeLevelCache {
     private static final int      PARENT_CACHE_MASK  = 1023; // For fast modulo
 
     // Type transition cache: packed(startType, startLevel, endLevel) -> endType
-    private static final byte[] TYPE_TRANSITION_CACHE = new byte[65536];
+    // Maximum value: (5 << 16) | (21 << 8) | 21 = 327680 + 5376 + 21 = 333077
+    private static final byte[] TYPE_TRANSITION_CACHE = new byte[6 * 256 * 256]; // 6 types * 256 levels * 256 levels
     // De Bruijn lookup table for 64-bit integers
     private static final int[] DeBruijnTable = { 0, 1, 48, 2, 57, 49, 28, 3, 61, 58, 50, 42, 38, 29, 17, 4, 62, 55, 59,
                                                  36, 53, 51, 43, 22, 45, 39, 33, 30, 24, 18, 12, 5, 63, 47, 56, 27, 60,
