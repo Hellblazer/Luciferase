@@ -19,8 +19,8 @@ package com.hellblazer.luciferase.lucien;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
+import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
@@ -57,12 +57,23 @@ public interface SpatialIndex<ID extends EntityID, Content> {
     Stream<SpatialNode<ID>> bounding(Spatial volume);
 
     /**
+     * Check if two specific entities are colliding
+     *
+     * @param entityId1 first entity
+     * @param entityId2 second entity
+     * @return collision pair if colliding, empty otherwise
+     */
+    Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2);
+
+    /**
      * Check if an entity exists
      *
      * @param entityId the entity ID to check
      * @return true if the entity exists
      */
     boolean containsEntity(ID entityId);
+
+    // ===== Lookup Operations =====
 
     /**
      * Find the minimum enclosing node for a volume
@@ -71,8 +82,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the minimum enclosing node, or null if not found
      */
     SpatialNode<ID> enclosing(Spatial volume);
-
-    // ===== Lookup Operations =====
 
     /**
      * Find the enclosing node at a specific level
@@ -83,6 +92,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     SpatialNode<ID> enclosing(Tuple3i point, byte level);
 
+    // ===== Entity Management =====
+
     /**
      * Find all entities within a bounding region
      *
@@ -91,14 +102,45 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     List<ID> entitiesInRegion(Spatial.Cube region);
 
-    // ===== Entity Management =====
-
     /**
      * Get the total number of entities stored
      *
      * @return the number of unique entities
      */
     int entityCount();
+
+    /**
+     * Find all collision pairs within the spatial index
+     *
+     * @return list of collision pairs
+     */
+    List<CollisionPair<ID, Content>> findAllCollisions();
+
+    /**
+     * Find collisions involving a specific entity
+     *
+     * @param entityId the entity to check
+     * @return list of collision pairs involving this entity
+     */
+    List<CollisionPair<ID, Content>> findCollisions(ID entityId);
+
+    /**
+     * Find collisions within a spatial region
+     *
+     * @param region the region to check
+     * @return list of collision pairs within the region
+     */
+    List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region);
+
+    // ===== Entity Position/Bounds Queries =====
+
+    /**
+     * Get collision shape for an entity
+     *
+     * @param entityId the entity ID
+     * @return the collision shape, or null if using default AABB
+     */
+    CollisionShape getCollisionShape(ID entityId);
 
     /**
      * Get content for multiple entity IDs
@@ -123,6 +165,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     Content getEntity(ID entityId);
 
+    // ===== Spatial Queries =====
+
     /**
      * Get the bounds of a specific entity
      *
@@ -130,8 +174,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the entity's bounds, or null if not found or not set
      */
     EntityBounds getEntityBounds(ID entityId);
-
-    // ===== Entity Position/Bounds Queries =====
 
     /**
      * Get the position of a specific entity
@@ -163,7 +205,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     EntityStats getStats();
 
-    // ===== Spatial Queries =====
+    // ===== Map Operations =====
 
     /**
      * Check if a node exists at the given Morton index
@@ -204,6 +246,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds);
 
+    // ===== k-Nearest Neighbor Operations =====
+
     /**
      * Find the k nearest neighbors to a query point
      *
@@ -214,7 +258,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance);
 
-    // ===== Map Operations =====
+    // ===== Ray Intersection Operations =====
 
     /**
      * Look up all entities at a specific position
@@ -239,6 +283,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     Stream<SpatialNode<ID>> nodes();
 
+    // ===== Collision Detection Operations =====
+
     /**
      * Find all entities intersected by a ray, sorted by distance
      *
@@ -247,8 +293,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray);
 
-    // ===== k-Nearest Neighbor Operations =====
-
     /**
      * Find the first entity intersected by a ray
      *
@@ -256,8 +300,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the first intersection, or empty if no intersection
      */
     Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray);
-
-    // ===== Ray Intersection Operations =====
 
     /**
      * Find all entities intersected by a ray within a maximum distance
@@ -277,6 +319,42 @@ public interface SpatialIndex<ID extends EntityID, Content> {
     boolean removeEntity(ID entityId);
 
     /**
+     * Set collision shape for an entity. If not set, AABB will be used for collision detection.
+     *
+     * @param entityId the entity ID
+     * @param shape    the collision shape (null to use AABB)
+     */
+    void setCollisionShape(ID entityId, CollisionShape shape);
+
+    /**
+     * Traverse the spatial tree using the visitor pattern.
+     *
+     * @param visitor  The visitor to apply to each node
+     * @param strategy The traversal strategy to use
+     */
+    void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy);
+
+    // ===== Statistics =====
+
+    /**
+     * Traverse the spatial tree starting from a specific node.
+     *
+     * @param visitor        The visitor to apply to each node
+     * @param strategy       The traversal strategy to use
+     * @param startNodeIndex The spatial index of the starting node
+     */
+    void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex);
+
+    /**
+     * Traverse only nodes that intersect with the given region.
+     *
+     * @param visitor  The visitor to apply to each node
+     * @param region   The spatial region to constrain traversal
+     * @param strategy The traversal strategy to use
+     */
+    void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy);
+
+    /**
      * Update an entity's position
      *
      * @param entityId    the entity ID
@@ -284,58 +362,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param level       the refinement level
      */
     void updateEntity(ID entityId, Point3f newPosition, byte level);
-
-    // ===== Collision Detection Operations =====
-
-    /**
-     * Find all collision pairs within the spatial index
-     *
-     * @return list of collision pairs
-     */
-    List<CollisionPair<ID, Content>> findAllCollisions();
-
-    /**
-     * Find collisions involving a specific entity
-     *
-     * @param entityId the entity to check
-     * @return list of collision pairs involving this entity
-     */
-    List<CollisionPair<ID, Content>> findCollisions(ID entityId);
-
-    /**
-     * Find collisions within a spatial region
-     *
-     * @param region the region to check
-     * @return list of collision pairs within the region
-     */
-    List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region);
-
-    /**
-     * Check if two specific entities are colliding
-     *
-     * @param entityId1 first entity
-     * @param entityId2 second entity
-     * @return collision pair if colliding, empty otherwise
-     */
-    Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2);
-    
-    /**
-     * Set collision shape for an entity. If not set, AABB will be used for collision detection.
-     *
-     * @param entityId the entity ID
-     * @param shape    the collision shape (null to use AABB)
-     */
-    void setCollisionShape(ID entityId, CollisionShape shape);
-    
-    /**
-     * Get collision shape for an entity
-     *
-     * @param entityId the entity ID
-     * @return the collision shape, or null if using default AABB
-     */
-    CollisionShape getCollisionShape(ID entityId);
-
-    // ===== Statistics =====
 
     /**
      * Node wrapper that provides uniform access to spatial data with multiple entities
@@ -348,6 +374,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
             return new Spatial.Cube(mortonIndex);
         }
     }
+
+    // ===== Tree Traversal =====
 
     /**
      * Statistics about the spatial index with entity information
@@ -423,22 +451,22 @@ public interface SpatialIndex<ID extends EntityID, Content> {
          * Create a collision pair ensuring consistent ordering (smaller ID first)
          */
         public static <ID extends EntityID, Content> CollisionPair<ID, Content> create(ID id1, Content content1,
-                                                                                      EntityBounds bounds1, ID id2,
-                                                                                      Content content2,
-                                                                                      EntityBounds bounds2,
-                                                                                      Point3f contactPoint,
-                                                                                      Vector3f contactNormal,
-                                                                                      float penetrationDepth) {
+                                                                                       EntityBounds bounds1, ID id2,
+                                                                                       Content content2,
+                                                                                       EntityBounds bounds2,
+                                                                                       Point3f contactPoint,
+                                                                                       Vector3f contactNormal,
+                                                                                       float penetrationDepth) {
             // Ensure consistent ordering for deduplication
             if (id1.compareTo(id2) > 0) {
                 // Swap entities and invert normal
                 Vector3f invertedNormal = new Vector3f(contactNormal);
                 invertedNormal.negate();
                 return new CollisionPair<>(id2, content2, bounds2, id1, content1, bounds1, contactPoint, invertedNormal,
-                                         penetrationDepth);
+                                           penetrationDepth);
             }
             return new CollisionPair<>(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
-                                     penetrationDepth);
+                                       penetrationDepth);
         }
 
         /**
@@ -447,13 +475,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
         @Override
         public int compareTo(CollisionPair<ID, Content> other) {
             return Float.compare(other.penetrationDepth, this.penetrationDepth);
-        }
-
-        /**
-         * Check if this collision involves a specific entity
-         */
-        public boolean involves(ID entityId) {
-            return entityId1.equals(entityId) || entityId2.equals(entityId);
         }
 
         /**
@@ -474,33 +495,12 @@ public interface SpatialIndex<ID extends EntityID, Content> {
         public boolean hasBounds() {
             return bounds1 != null && bounds2 != null;
         }
+
+        /**
+         * Check if this collision involves a specific entity
+         */
+        public boolean involves(ID entityId) {
+            return entityId1.equals(entityId) || entityId2.equals(entityId);
+        }
     }
-    
-    // ===== Tree Traversal =====
-    
-    /**
-     * Traverse the spatial tree using the visitor pattern.
-     * 
-     * @param visitor The visitor to apply to each node
-     * @param strategy The traversal strategy to use
-     */
-    void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy);
-    
-    /**
-     * Traverse the spatial tree starting from a specific node.
-     * 
-     * @param visitor The visitor to apply to each node
-     * @param strategy The traversal strategy to use
-     * @param startNodeIndex The spatial index of the starting node
-     */
-    void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex);
-    
-    /**
-     * Traverse only nodes that intersect with the given region.
-     * 
-     * @param visitor The visitor to apply to each node
-     * @param region The spatial region to constrain traversal
-     * @param strategy The traversal strategy to use
-     */
-    void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy);
 }

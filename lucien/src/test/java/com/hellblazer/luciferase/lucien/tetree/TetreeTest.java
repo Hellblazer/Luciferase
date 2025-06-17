@@ -197,14 +197,14 @@ public class TetreeTest {
 
         // Query region from (50,50,50) to (250,250,250)
         Spatial.Cube region = new Spatial.Cube(50, 50, 50, 200);
-        
+
         // Debug: Check if entities exist before query
         assertEquals(4, tetree.entityCount(), "Should have 4 entities");
-        
+
         // For now, just verify that we can query without error
         // The spatial range query for Tetree needs more work
         List<LongEntityID> inRegion = tetree.entitiesInRegion(region);
-        
+
         // TODO: Fix spatial range query for Tetree
         // Currently it returns 0 entities due to issues with tetrahedral spatial indexing
         // For now, just verify the method doesn't throw

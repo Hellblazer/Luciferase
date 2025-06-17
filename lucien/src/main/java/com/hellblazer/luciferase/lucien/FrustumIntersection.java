@@ -22,46 +22,22 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import javax.vecmath.Point3f;
 
 /**
- * Represents the result of a frustum culling query with an entity in the spatial index.
- * Contains the entity information, content, distance from camera, closest point on entity to camera,
- * and frustum visibility classification.
+ * Represents the result of a frustum culling query with an entity in the spatial index. Contains the entity
+ * information, content, distance from camera, closest point on entity to camera, and frustum visibility
+ * classification.
  *
  * @param <ID>      The type of EntityID
  * @param <Content> The type of content stored with the entity
  * @author hal.hildebrand
  */
-public record FrustumIntersection<ID extends EntityID, Content>(
-    ID entityId,
-    Content content,
-    float distanceFromCamera,
-    Point3f closestPoint,
-    VisibilityType visibilityType,
-    EntityBounds bounds
-) implements Comparable<FrustumIntersection<ID, Content>> {
+public record FrustumIntersection<ID extends EntityID, Content>(ID entityId, Content content, float distanceFromCamera,
+                                                                Point3f closestPoint, VisibilityType visibilityType,
+                                                                EntityBounds bounds)
+implements Comparable<FrustumIntersection<ID, Content>> {
 
     /**
-     * Enum representing the type of visibility classification for frustum culling
-     */
-    public enum VisibilityType {
-        /**
-         * Entity is completely inside the frustum (fully visible)
-         */
-        INSIDE,
-        
-        /**
-         * Entity intersects the frustum boundary (partially visible)
-         */
-        INTERSECTING,
-        
-        /**
-         * Entity is completely outside the frustum (not visible)
-         */
-        OUTSIDE
-    }
-
-    /**
-     * Compare frustum intersections by distance from camera.
-     * Entities closer to the camera are considered "smaller" and will appear first in sorted collections.
+     * Compare frustum intersections by distance from camera. Entities closer to the camera are considered "smaller" and
+     * will appear first in sorted collections.
      *
      * @param other the other intersection to compare to
      * @return negative if this intersection is closer to camera, positive if farther, 0 if equal
@@ -69,15 +45,6 @@ public record FrustumIntersection<ID extends EntityID, Content>(
     @Override
     public int compareTo(FrustumIntersection<ID, Content> other) {
         return Float.compare(this.distanceFromCamera, other.distanceFromCamera);
-    }
-
-    /**
-     * Check if this entity is visible (either inside or intersecting the frustum)
-     *
-     * @return true if the entity is visible (inside or intersecting)
-     */
-    public boolean isVisible() {
-        return visibilityType == VisibilityType.INSIDE || visibilityType == VisibilityType.INTERSECTING;
     }
 
     /**
@@ -90,6 +57,15 @@ public record FrustumIntersection<ID extends EntityID, Content>(
     }
 
     /**
+     * Check if this entity is completely outside the frustum (not visible)
+     *
+     * @return true if the entity is outside the frustum
+     */
+    public boolean isOutside() {
+        return visibilityType == VisibilityType.OUTSIDE;
+    }
+
+    /**
      * Check if this entity is partially visible (intersecting frustum boundary)
      *
      * @return true if the entity intersects the frustum boundary
@@ -99,17 +75,37 @@ public record FrustumIntersection<ID extends EntityID, Content>(
     }
 
     /**
-     * Check if this entity is completely outside the frustum (not visible)
+     * Check if this entity is visible (either inside or intersecting the frustum)
      *
-     * @return true if the entity is outside the frustum
+     * @return true if the entity is visible (inside or intersecting)
      */
-    public boolean isOutside() {
-        return visibilityType == VisibilityType.OUTSIDE;
+    public boolean isVisible() {
+        return visibilityType == VisibilityType.INSIDE || visibilityType == VisibilityType.INTERSECTING;
     }
 
     @Override
     public String toString() {
-        return String.format("FrustumIntersection[entity=%s, distance=%.3f, visibility=%s, point=%s]",
-                           entityId, distanceFromCamera, visibilityType, closestPoint);
+        return String.format("FrustumIntersection[entity=%s, distance=%.3f, visibility=%s, point=%s]", entityId,
+                             distanceFromCamera, visibilityType, closestPoint);
+    }
+
+    /**
+     * Enum representing the type of visibility classification for frustum culling
+     */
+    public enum VisibilityType {
+        /**
+         * Entity is completely inside the frustum (fully visible)
+         */
+        INSIDE,
+
+        /**
+         * Entity intersects the frustum boundary (partially visible)
+         */
+        INTERSECTING,
+
+        /**
+         * Entity is completely outside the frustum (not visible)
+         */
+        OUTSIDE
     }
 }

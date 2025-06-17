@@ -158,7 +158,7 @@ public class TetrahedralGeometry {
         if (ray.origin().x >= 0 && ray.origin().y >= 0 && ray.origin().z >= 0) {
             rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
         }
-        
+
         float closestDistance = Float.MAX_VALUE;
         Point3f closestIntersection = null;
         Vector3f closestNormal = null;
@@ -189,7 +189,7 @@ public class TetrahedralGeometry {
                 return new RayTetrahedronIntersection(true, 0.0f, ray.origin(), null, -1);
             }
         }
-        
+
         // Ray starts outside - only intersects if we found an entry point
         if (closestIntersection != null) {
             return new RayTetrahedronIntersection(true, closestDistance, closestIntersection, closestNormal,

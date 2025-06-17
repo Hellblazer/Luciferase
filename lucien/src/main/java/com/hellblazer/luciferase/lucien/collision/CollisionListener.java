@@ -20,39 +20,27 @@ import com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 /**
- * Interface for handling collision events.
- * Implement this interface to receive collision notifications.
+ * Interface for handling collision events. Implement this interface to receive collision notifications.
  *
- * @param <ID> The type of EntityID used for entity identification
+ * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
- * 
  * @author hal.hildebrand
  */
 @FunctionalInterface
 public interface CollisionListener<ID extends EntityID, Content> {
-    
-    /**
-     * Called when a collision is detected between two entities.
-     * 
-     * @param collision the collision pair with all collision details
-     * @param response the calculated collision response (may be modified)
-     * @return true to apply the response, false to ignore this collision
-     */
-    boolean onCollision(CollisionPair<ID, Content> collision, CollisionResponse response);
-    
+
     /**
      * Default listener that accepts all collisions
      */
     static <ID extends EntityID, Content> CollisionListener<ID, Content> acceptAll() {
         return (collision, response) -> true;
     }
-    
+
     /**
      * Create a filtered listener that only processes collisions matching a predicate
      */
     static <ID extends EntityID, Content> CollisionListener<ID, Content> filtered(
-            CollisionListener<ID, Content> listener,
-            CollisionFilter<ID, Content> filter) {
+    CollisionListener<ID, Content> listener, CollisionFilter<ID, Content> filter) {
         return (collision, response) -> {
             if (filter.shouldProcess(collision)) {
                 return listener.onCollision(collision, response);
@@ -60,4 +48,13 @@ public interface CollisionListener<ID extends EntityID, Content> {
             return false;
         };
     }
+
+    /**
+     * Called when a collision is detected between two entities.
+     *
+     * @param collision the collision pair with all collision details
+     * @param response  the calculated collision response (may be modified)
+     * @return true to apply the response, false to ignore this collision
+     */
+    boolean onCollision(CollisionPair<ID, Content> collision, CollisionResponse response);
 }

@@ -191,10 +191,10 @@ implements SpatialIndex<ID, Content> {
         try {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
             Set<UnorderedPair<ID>> checkedPairs = new HashSet<>();
-            
+
             // Locality-constrained collision detection: Only check spatially adjacent entities
             // This avoids the O(n²) problem of checking every entity against every other entity
-            
+
             for (Long nodeIndex : sortedSpatialIndices) {
                 NodeType node = spatialIndex.get(nodeIndex);
                 if (node == null || node.isEmpty()) {
@@ -202,11 +202,11 @@ implements SpatialIndex<ID, Content> {
                 }
 
                 List<ID> nodeEntities = new ArrayList<>(node.getEntityIds());
-                
+
                 // 1. Check entities within the same node (spatial locality guarantee)
                 for (int i = 0; i < nodeEntities.size(); i++) {
                     ID id1 = nodeEntities.get(i);
-                    
+
                     for (int j = i + 1; j < nodeEntities.size(); j++) {
                         ID id2 = nodeEntities.get(j);
                         UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
@@ -215,24 +215,24 @@ implements SpatialIndex<ID, Content> {
                             checkAndAddCollision(id1, id2, collisions);
                         }
                     }
-                    
+
                     // 2. For bounded entities, check spatial bounds intersection with nearby nodes
                     EntityBounds bounds = entityManager.getEntityBounds(id1);
                     if (bounds != null) {
                         // Only search nodes that could intersect with this entity's bounds
                         Set<Long> intersectingNodes = findNodesIntersectingBounds(bounds);
-                        
+
                         for (Long intersectingNodeIndex : intersectingNodes) {
                             // Skip self (we already checked entities within the same node above)
                             if (intersectingNodeIndex.equals(nodeIndex)) {
                                 continue;
                             }
-                            
+
                             NodeType intersectingNode = spatialIndex.get(intersectingNodeIndex);
                             if (intersectingNode == null || intersectingNode.isEmpty()) {
                                 continue;
                             }
-                            
+
                             for (ID otherId : intersectingNode.getEntityIds()) {
                                 UnorderedPair<ID> pair = new UnorderedPair<>(id1, otherId);
                                 if (checkedPairs.add(pair)) {
@@ -250,12 +250,12 @@ implements SpatialIndex<ID, Content> {
 
                 while (!neighbors.isEmpty()) {
                     Long neighborIndex = neighbors.poll();
-                    
+
                     // Skip already processed nodes (SFC ordering optimization)
                     if (neighborIndex < nodeIndex) {
                         continue;
                     }
-                    
+
                     NodeType neighborNode = spatialIndex.get(neighborIndex);
                     if (neighborNode == null || neighborNode.isEmpty()) {
                         continue;
@@ -267,7 +267,7 @@ implements SpatialIndex<ID, Content> {
                         if (entityManager.getEntityBounds(id1) != null) {
                             continue;
                         }
-                        
+
                         for (ID id2 : neighborNode.getEntityIds()) {
                             UnorderedPair<ID> pair = new UnorderedPair<>(id1, id2);
                             if (checkedPairs.add(pair)) {
@@ -303,18 +303,18 @@ implements SpatialIndex<ID, Content> {
 
             // Get entity bounds for enhanced search
             EntityBounds entityBounds = entityManager.getEntityBounds(entityId);
-            
+
             if (entityBounds != null) {
                 // For bounded entities, find all nodes that intersect with the bounds
                 Set<Long> nodesToCheck = findNodesIntersectingBounds(entityBounds);
-                
+
                 // Check all nodes that intersect with the entity's bounds
                 for (Long nodeIndex : nodesToCheck) {
                     NodeType node = spatialIndex.get(nodeIndex);
                     if (node == null || node.isEmpty()) {
                         continue;
                     }
-                    
+
                     // Check against all entities in these nodes
                     for (ID otherId : node.getEntityIds()) {
                         if (!checkedEntities.add(otherId)) {
@@ -433,6 +433,110 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Find all entities that are completely inside the frustum (not partially visible).
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return list of entities completely inside the frustum, sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullInside(Frustum3D frustum, Point3f cameraPosition) {
+        return frustumCullVisible(frustum, cameraPosition).stream()
+                                                          .filter(FrustumIntersection::isCompletelyInside)
+                                                          .collect(Collectors.toList());
+    }
+
+    /**
+     * Find all entities that intersect the frustum boundary (partially visible).
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return list of entities intersecting frustum boundary, sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullIntersecting(Frustum3D frustum, Point3f cameraPosition) {
+        return frustumCullVisible(frustum, cameraPosition).stream()
+                                                          .filter(FrustumIntersection::isPartiallyVisible)
+                                                          .collect(Collectors.toList());
+    }
+
+    // ===== Common Entity Management Methods =====
+
+    /**
+     * Find all entities that are visible within the given frustum. Returns entities that are either completely inside
+     * or intersecting the frustum.
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return list of frustum intersections sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
+        lock.readLock().lock();
+        try {
+            List<FrustumIntersection<ID, Content>> intersections = new ArrayList<>();
+            Set<ID> visitedEntities = new HashSet<>();
+
+            // Traverse nodes that could intersect with the frustum
+            getFrustumTraversalOrder(frustum, cameraPosition).forEach(nodeIndex -> {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    return;
+                }
+
+                // Check if frustum intersects this node
+                if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
+                    return;
+                }
+
+                // Check each entity in the node
+                for (ID entityId : node.getEntityIds()) {
+                    // Skip if already processed (for spanning entities)
+                    if (!visitedEntities.add(entityId)) {
+                        continue;
+                    }
+
+                    Content content = entityManager.getEntityContent(entityId);
+                    if (content == null) {
+                        continue;
+                    }
+
+                    Point3f entityPos = entityManager.getEntityPosition(entityId);
+                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
+
+                    // Calculate frustum-entity intersection
+                    FrustumIntersection<ID, Content> intersection = calculateFrustumEntityIntersection(frustum,
+                                                                                                       cameraPosition,
+                                                                                                       entityId,
+                                                                                                       content,
+                                                                                                       entityPos,
+                                                                                                       bounds);
+
+                    if (intersection != null && intersection.isVisible()) {
+                        intersections.add(intersection);
+                    }
+                }
+            });
+
+            Collections.sort(intersections);
+            return intersections;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Find all entities within the specified distance from the camera that are visible in the frustum.
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position
+     * @param maxDistance    maximum distance from camera to include
+     * @return list of entities within distance, sorted by distance from camera
+     */
+    public List<FrustumIntersection<ID, Content>> frustumCullWithinDistance(Frustum3D frustum, Point3f cameraPosition,
+                                                                            float maxDistance) {
+        return frustumCullVisible(frustum, cameraPosition).stream().filter(
+        intersection -> intersection.distanceFromCamera() <= maxDistance).collect(Collectors.toList());
+    }
+
+    /**
      * Get balancing statistics for the tree.
      */
     public TreeBalancingStrategy.TreeBalancingStats getBalancingStats() {
@@ -452,7 +556,7 @@ implements SpatialIndex<ID, Content> {
                 if (node == null) {
                     continue;
                 }
-                
+
                 byte level = getLevelFromIndex(nodeIndex);
                 maxDepth = Math.max(maxDepth, level);
 
@@ -507,8 +611,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Entity Management Methods =====
-
     @Override
     public List<Content> getEntities(List<ID> entityIds) {
         lock.readLock().lock();
@@ -548,6 +650,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Common Insert Operations =====
 
     @Override
     public Point3f getEntityPosition(ID entityId) {
@@ -611,8 +715,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Insert Operations =====
-
     @Override
     public boolean hasNode(long spatialIndex) {
         lock.readLock().lock();
@@ -635,6 +737,8 @@ implements SpatialIndex<ID, Content> {
             lock.writeLock().unlock();
         }
     }
+
+    // ===== Common Remove Operations =====
 
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content) {
@@ -711,29 +815,28 @@ implements SpatialIndex<ID, Content> {
 
             // Use spatial locality: start with nodes closest to query point and expand outward
             // This avoids the O(n) problem of checking all nodes
-            
+
             // Create expanding search radius around query point
             float searchRadius = Math.min(maxDistance, getCellSizeAtLevel(maxDepth));
             int searchExpansions = 0;
             final int maxExpansions = 5; // Limit search expansion to prevent runaway searches
-            
+
             while (candidates.size() < k && searchRadius <= maxDistance && searchExpansions < maxExpansions) {
                 // Create search bounds around query point
-                VolumeBounds searchBounds = new VolumeBounds(
-                    queryPoint.x - searchRadius, queryPoint.y - searchRadius, queryPoint.z - searchRadius,
-                    queryPoint.x + searchRadius, queryPoint.y + searchRadius, queryPoint.z + searchRadius
-                );
-                
+                VolumeBounds searchBounds = new VolumeBounds(queryPoint.x - searchRadius, queryPoint.y - searchRadius,
+                                                             queryPoint.z - searchRadius, queryPoint.x + searchRadius,
+                                                             queryPoint.y + searchRadius, queryPoint.z + searchRadius);
+
                 // Find nodes that intersect with search bounds (spatial locality constraint)
                 boolean foundNewEntities = false;
                 spatialRangeQuery(searchBounds, true).forEach(entry -> {
                     Long nodeIndex = entry.getKey();
                     NodeType node = entry.getValue();
-                    
+
                     if (node == null || node.isEmpty()) {
                         return;
                     }
-                    
+
                     // Check all entities in this spatially-relevant node
                     for (ID entityId : node.getEntityIds()) {
                         if (visited.add(entityId)) {
@@ -742,7 +845,7 @@ implements SpatialIndex<ID, Content> {
                                 float distance = queryPoint.distance(entityPos);
                                 if (distance <= maxDistance) {
                                     candidates.add(new EntityDistance<>(entityId, distance));
-                                    
+
                                     // Keep only k elements (maintain heap property)
                                     if (candidates.size() > k) {
                                         candidates.poll();
@@ -752,7 +855,7 @@ implements SpatialIndex<ID, Content> {
                         }
                     }
                 });
-                
+
                 // If we didn't find enough candidates, expand search radius
                 if (candidates.size() < k) {
                     searchRadius *= 2.0f;
@@ -761,52 +864,52 @@ implements SpatialIndex<ID, Content> {
                     break;
                 }
             }
-            
+
             // If still no candidates found and search area is small, do a targeted search
             // using the sorted spatial indices for better cache locality
             if (candidates.isEmpty() && !sortedSpatialIndices.isEmpty()) {
                 // Find the nearest nodes to query point using SFC ordering
                 float bestDistance = Float.MAX_VALUE;
                 Long nearestNodeIndex = null;
-                
+
                 // Use SFC ordering to find the nearest node efficiently
                 for (Long nodeIndex : sortedSpatialIndices) {
                     NodeType node = spatialIndex.get(nodeIndex);
                     if (node == null || node.isEmpty()) {
                         continue;
                     }
-                    
+
                     // Estimate distance from query point to node center
                     float nodeDistance = estimateNodeDistance(nodeIndex, queryPoint);
                     if (nodeDistance < bestDistance) {
                         bestDistance = nodeDistance;
                         nearestNodeIndex = nodeIndex;
                     }
-                    
+
                     // Early termination: if we find a very close node, start there
                     if (nodeDistance < getCellSizeAtLevel(maxDepth)) {
                         break;
                     }
                 }
-                
+
                 // If we found a starting node, search from there
                 if (nearestNodeIndex != null) {
                     Queue<Long> toVisit = new LinkedList<>();
                     Set<Long> visitedNodes = new HashSet<>();
                     toVisit.add(nearestNodeIndex);
-                    
+
                     // Breadth-first search from nearest node with distance-based pruning
                     while (!toVisit.isEmpty() && candidates.size() < k) {
                         Long current = toVisit.poll();
                         if (!visitedNodes.add(current)) {
                             continue;
                         }
-                        
+
                         NodeType node = spatialIndex.get(current);
                         if (node == null) {
                             continue;
                         }
-                        
+
                         // Check entities in current node
                         for (ID entityId : node.getEntityIds()) {
                             if (visited.add(entityId)) {
@@ -822,7 +925,7 @@ implements SpatialIndex<ID, Content> {
                                 }
                             }
                         }
-                        
+
                         // Add neighboring nodes if we need more candidates
                         if (candidates.size() < k || shouldContinueKNNSearch(current, queryPoint, candidates)) {
                             addNeighboringNodes(current, toVisit, visitedNodes);
@@ -841,7 +944,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Remove Operations =====
+    // ===== Common Update Operations =====
 
     @Override
     public int nodeCount() {
@@ -852,6 +955,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Common Query Operations =====
 
     @Override
     public Stream<SpatialNode<ID>> nodes() {
@@ -866,6 +971,107 @@ implements SpatialIndex<ID, Content> {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    /**
+     * Find all entities that intersect with the given plane. Returns entities that either intersect the plane or are
+     * within the specified tolerance distance from it.
+     *
+     * @param plane     the plane to test intersection with
+     * @param tolerance maximum distance from plane to consider as intersection (use 0 for exact intersection)
+     * @return list of plane intersections sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane, float tolerance) {
+        lock.readLock().lock();
+        try {
+            List<PlaneIntersection<ID, Content>> intersections = new ArrayList<>();
+
+            // Traverse nodes that could intersect with the plane
+            getPlaneTraversalOrder(plane).forEach(nodeIndex -> {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    return;
+                }
+
+                // Check if plane intersects this node
+                if (!doesPlaneIntersectNode(nodeIndex, plane)) {
+                    return;
+                }
+
+                // Check each entity in the node
+                for (ID entityId : node.getEntityIds()) {
+                    Content content = entityManager.getEntityContent(entityId);
+                    if (content == null) {
+                        continue;
+                    }
+
+                    Point3f entityPos = entityManager.getEntityPosition(entityId);
+                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
+
+                    // Calculate plane-entity intersection
+                    PlaneIntersection<ID, Content> intersection = calculatePlaneEntityIntersection(plane, entityId,
+                                                                                                   content, entityPos,
+                                                                                                   bounds, tolerance);
+
+                    if (intersection != null) {
+                        intersections.add(intersection);
+                    }
+                }
+            });
+
+            Collections.sort(intersections);
+            return intersections;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Find all entities that intersect with the given plane (exact intersection only).
+     *
+     * @param plane the plane to test intersection with
+     * @return list of plane intersections sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane) {
+        return planeIntersectAll(plane, 0.0f);
+    }
+
+    /**
+     * Find all entities on the negative side of the plane (opposite to normal).
+     *
+     * @param plane the plane to test
+     * @return list of entities on negative side, sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectNegativeSide(Plane3D plane) {
+        return planeIntersectAll(plane, Float.MAX_VALUE).stream().filter(PlaneIntersection::isOnNegativeSide).collect(
+        Collectors.toList());
+    }
+
+    // ===== Common Statistics =====
+
+    /**
+     * Find all entities on the positive side of the plane (in direction of normal).
+     *
+     * @param plane the plane to test
+     * @return list of entities on positive side, sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectPositiveSide(Plane3D plane) {
+        return planeIntersectAll(plane, Float.MAX_VALUE).stream().filter(PlaneIntersection::isOnPositiveSide).collect(
+        Collectors.toList());
+    }
+
+    // ===== Common Utility Methods =====
+
+    /**
+     * Find all entities within the specified distance from the plane (on either side).
+     *
+     * @param plane       the plane to test
+     * @param maxDistance maximum distance from plane to include
+     * @return list of entities within distance, sorted by distance from plane
+     */
+    public List<PlaneIntersection<ID, Content>> planeIntersectWithinDistance(Plane3D plane, float maxDistance) {
+        return planeIntersectAll(plane, maxDistance).stream().filter(
+        intersection -> Math.abs(intersection.distanceFromPlane()) <= maxDistance).collect(Collectors.toList());
     }
 
     @Override
@@ -994,8 +1200,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Update Operations =====
-
     @Override
     public List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance) {
         validateSpatialConstraints(ray.origin());
@@ -1061,8 +1265,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Query Operations =====
-
     /**
      * Manually trigger tree rebalancing.
      */
@@ -1074,6 +1276,8 @@ implements SpatialIndex<ID, Content> {
             lock.writeLock().unlock();
         }
     }
+
+    // ===== Common k-NN Search Implementation =====
 
     @Override
     public boolean removeEntity(ID entityId) {
@@ -1134,7 +1338,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Statistics =====
+    // ===== Common Spatial Query Base =====
 
     @Override
     public void setCollisionShape(ID entityId, CollisionShape shape) {
@@ -1145,8 +1349,6 @@ implements SpatialIndex<ID, Content> {
             lock.writeLock().unlock();
         }
     }
-
-    // ===== Common Utility Methods =====
 
     @Override
     public void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy) {
@@ -1175,6 +1377,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Ray Intersection Abstract Methods =====
 
     @Override
     public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex) {
@@ -1245,14 +1449,14 @@ implements SpatialIndex<ID, Content> {
             if (oldPosition == null) {
                 throw new IllegalArgumentException("Entity not found: " + entityId);
             }
-            
+
             // Calculate movement delta
             Vector3f delta = new Vector3f();
             delta.sub(newPosition, oldPosition);
 
             // Update entity position
             entityManager.updateEntityPosition(entityId, newPosition);
-            
+
             // Update collision shape position if present
             CollisionShape shape = entityManager.getEntityCollisionShape(entityId);
             if (shape != null) {
@@ -1264,16 +1468,10 @@ implements SpatialIndex<ID, Content> {
                 EntityBounds oldBounds = entityManager.getEntityBounds(entityId);
                 if (oldBounds != null) {
                     // Translate the bounds
-                    Point3f newMin = new Point3f(
-                        oldBounds.getMinX() + delta.x,
-                        oldBounds.getMinY() + delta.y,
-                        oldBounds.getMinZ() + delta.z
-                    );
-                    Point3f newMax = new Point3f(
-                        oldBounds.getMaxX() + delta.x,
-                        oldBounds.getMaxY() + delta.y,
-                        oldBounds.getMaxZ() + delta.z
-                    );
+                    Point3f newMin = new Point3f(oldBounds.getMinX() + delta.x, oldBounds.getMinY() + delta.y,
+                                                 oldBounds.getMinZ() + delta.z);
+                    Point3f newMax = new Point3f(oldBounds.getMaxX() + delta.x, oldBounds.getMaxY() + delta.y,
+                                                 oldBounds.getMaxZ() + delta.z);
                     EntityBounds newBounds = new EntityBounds(newMin, newMax);
                     entityManager.setEntityBounds(entityId, newBounds);
                 }
@@ -1299,6 +1497,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Ray Intersection Implementation =====
+
     /**
      * Add neighboring nodes to the k-NN search queue
      *
@@ -1308,7 +1508,52 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract void addNeighboringNodes(long nodeIndex, Queue<Long> toVisit, Set<Long> visitedNodes);
 
-    // ===== Common k-NN Search Implementation =====
+    /**
+     * Calculate the intersection between a frustum and an entity.
+     *
+     * @param frustum        the frustum
+     * @param cameraPosition the camera position
+     * @param entityId       the entity ID
+     * @param content        the entity content
+     * @param entityPos      the entity position
+     * @param bounds         the entity bounds (null for point entities)
+     * @return frustum intersection result, or null if outside frustum
+     */
+    protected FrustumIntersection<ID, Content> calculateFrustumEntityIntersection(Frustum3D frustum,
+                                                                                  Point3f cameraPosition, ID entityId,
+                                                                                  Content content, Point3f entityPos,
+                                                                                  EntityBounds bounds) {
+        if (bounds != null) {
+            // For bounded entities, perform frustum-AABB intersection
+            return frustumAABBIntersection(frustum, cameraPosition, entityId, content, bounds);
+        } else {
+            // For point entities, test point containment
+            return frustumPointIntersection(frustum, cameraPosition, entityId, content, entityPos);
+        }
+    }
+
+    /**
+     * Calculate the intersection between a plane and an entity.
+     *
+     * @param plane     the plane
+     * @param entityId  the entity ID
+     * @param content   the entity content
+     * @param entityPos the entity position
+     * @param bounds    the entity bounds (null for point entities)
+     * @param tolerance tolerance for intersection detection
+     * @return plane intersection result, or null if no intersection within tolerance
+     */
+    protected PlaneIntersection<ID, Content> calculatePlaneEntityIntersection(Plane3D plane, ID entityId,
+                                                                              Content content, Point3f entityPos,
+                                                                              EntityBounds bounds, float tolerance) {
+        if (bounds != null) {
+            // For bounded entities, perform plane-AABB intersection
+            return planeAABBIntersection(plane, entityId, content, bounds, tolerance);
+        } else {
+            // For point entities, calculate distance to plane
+            return planePointIntersection(plane, entityId, content, entityPos, tolerance);
+        }
+    }
 
     /**
      * Calculate the spatial index for a position at a given level
@@ -1345,7 +1590,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Spatial Query Base =====
+    // ===== Plane Intersection Abstract Methods =====
 
     /**
      * Create a new node instance
@@ -1363,8 +1608,6 @@ implements SpatialIndex<ID, Content> {
                                 bounds.maxZ());
     }
 
-    // ===== Ray Intersection Abstract Methods =====
-
     /**
      * Create a tree balancer instance. Default implementation provides basic balancing. Subclasses can override to
      * provide specialized balancing.
@@ -1374,9 +1617,29 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Check if a frustum intersects with the given node
+     *
+     * @param nodeIndex the node's spatial index
+     * @param frustum   the frustum to test
+     * @return true if the frustum intersects the node
+     */
+    protected abstract boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum);
+
+    // ===== Plane Intersection Implementation =====
+
+    /**
      * Check if a node's bounds intersect with a volume
      */
     protected abstract boolean doesNodeIntersectVolume(long nodeIndex, Spatial volume);
+
+    /**
+     * Test if a plane intersects with a node
+     *
+     * @param nodeIndex the node's spatial index
+     * @param plane     the plane to test
+     * @return true if the plane intersects the node
+     */
+    protected abstract boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane);
 
     /**
      * Test if a ray intersects with a node
@@ -1387,7 +1650,73 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract boolean doesRayIntersectNode(long nodeIndex, Ray3D ray);
 
-    // ===== Ray Intersection Implementation =====
+    /**
+     * Ensure all ancestor nodes exist in the tree structure. This method creates any missing parent nodes up to the
+     * root level.
+     */
+    protected abstract void ensureAncestorNodes(long spatialIndex, byte level);
+
+    /**
+     * Estimate the distance from a query point to the center of a spatial node. This is used for k-NN search
+     * optimization to find the nearest starting nodes.
+     *
+     * @param nodeIndex  the spatial node index
+     * @param queryPoint the query point
+     * @return estimated distance from query point to node center
+     */
+    protected abstract float estimateNodeDistance(long nodeIndex, Point3f queryPoint);
+
+    /**
+     * Filter nodes in SFC order using the given predicate and collect them into a list. This utility method combines
+     * spatial ordering with filtering for better performance.
+     *
+     * @param nodePredicate predicate to test each node
+     * @return list of node indices that match the predicate, in SFC order
+     */
+    protected List<Long> filterNodesInSFCOrder(java.util.function.BiPredicate<Long, NodeType> nodePredicate) {
+        List<Long> filteredNodes = new ArrayList<>();
+        for (Long nodeIndex : sortedSpatialIndices) {
+            NodeType node = spatialIndex.get(nodeIndex);
+            if (node != null && !node.isEmpty() && nodePredicate.test(nodeIndex, node)) {
+                filteredNodes.add(nodeIndex);
+            }
+        }
+        return filteredNodes;
+    }
+
+    /**
+     * Find the closest point on an AABB to the camera
+     *
+     * @param cameraPosition the camera position
+     * @param bounds         the AABB bounds
+     * @return closest point on AABB surface to the camera
+     */
+    protected Point3f findClosestPointOnAABBToCamera(Point3f cameraPosition, EntityBounds bounds) {
+        // Clamp camera position to AABB bounds
+        float x = Math.max(bounds.getMinX(), Math.min(cameraPosition.x, bounds.getMaxX()));
+        float y = Math.max(bounds.getMinY(), Math.min(cameraPosition.y, bounds.getMaxY()));
+        float z = Math.max(bounds.getMinZ(), Math.min(cameraPosition.z, bounds.getMaxZ()));
+
+        return new Point3f(x, y, z);
+    }
+
+    /**
+     * Find the closest point on an AABB to a plane
+     *
+     * @param plane  the plane
+     * @param bounds the AABB bounds
+     * @return closest point on AABB surface to the plane
+     */
+    protected Point3f findClosestPointOnAABBToPlane(Plane3D plane, EntityBounds bounds) {
+        Vector3f normal = plane.getNormal();
+
+        // Find the point on the AABB closest to the plane
+        float x = (normal.x >= 0) ? bounds.getMinX() : bounds.getMaxX();
+        float y = (normal.y >= 0) ? bounds.getMinY() : bounds.getMaxY();
+        float z = (normal.z >= 0) ? bounds.getMinZ() : bounds.getMaxZ();
+
+        return new Point3f(x, y, z);
+    }
 
     /**
      * Find minimum containing level for bounds
@@ -1404,6 +1733,106 @@ implements SpatialIndex<ID, Content> {
         return maxDepth;
     }
 
+    // ===== Frustum Culling Implementation =====
+
+    /**
+     * Find all nodes that intersect with the given entity bounds. This is used for collision detection with bounded
+     * entities.
+     *
+     * @param bounds the entity bounds to check
+     * @return set of node indices that intersect with the bounds
+     */
+    protected Set<Long> findNodesIntersectingBounds(EntityBounds bounds) {
+        Set<Long> intersectingNodes = new HashSet<>();
+
+        // Convert EntityBounds to VolumeBounds for spatial query
+        VolumeBounds volumeBounds = new VolumeBounds(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ(),
+                                                     bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
+
+        // Use spatial range query to find intersecting nodes
+        spatialRangeQuery(volumeBounds, true).forEach(entry -> intersectingNodes.add(entry.getKey()));
+
+        return intersectingNodes;
+    }
+
+    /**
+     * Frustum-AABB intersection test
+     *
+     * @param frustum        the frustum
+     * @param cameraPosition the camera position
+     * @param entityId       the entity ID
+     * @param content        the entity content
+     * @param bounds         the AABB bounds
+     * @return frustum intersection result, or null if outside frustum
+     */
+    protected FrustumIntersection<ID, Content> frustumAABBIntersection(Frustum3D frustum, Point3f cameraPosition,
+                                                                       ID entityId, Content content,
+                                                                       EntityBounds bounds) {
+        float minX = bounds.getMinX();
+        float minY = bounds.getMinY();
+        float minZ = bounds.getMinZ();
+        float maxX = bounds.getMaxX();
+        float maxY = bounds.getMaxY();
+        float maxZ = bounds.getMaxZ();
+
+        // Check if AABB is completely inside frustum
+        boolean completelyInside = frustum.containsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+
+        // Check if AABB intersects frustum
+        boolean intersects = frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
+
+        if (!intersects) {
+            // Outside frustum
+            return null;
+        }
+
+        // Determine visibility type
+        FrustumIntersection.VisibilityType visibilityType;
+        if (completelyInside) {
+            visibilityType = FrustumIntersection.VisibilityType.INSIDE;
+        } else {
+            visibilityType = FrustumIntersection.VisibilityType.INTERSECTING;
+        }
+
+        // Calculate distance from camera to entity center
+        Point3f entityCenter = bounds.getCenter();
+        float distanceFromCamera = cameraPosition.distance(entityCenter);
+
+        // Calculate closest point on AABB to camera
+        Point3f closestPoint = findClosestPointOnAABBToCamera(cameraPosition, bounds);
+
+        return new FrustumIntersection<>(entityId, content, distanceFromCamera, closestPoint, visibilityType, bounds);
+    }
+
+    /**
+     * Frustum-point intersection test
+     *
+     * @param frustum        the frustum
+     * @param cameraPosition the camera position
+     * @param entityId       the entity ID
+     * @param content        the entity content
+     * @param point          the point position
+     * @return frustum intersection result, or null if outside frustum
+     */
+    protected FrustumIntersection<ID, Content> frustumPointIntersection(Frustum3D frustum, Point3f cameraPosition,
+                                                                        ID entityId, Content content, Point3f point) {
+        // Check if point is inside frustum
+        boolean isInside = frustum.containsPoint(point);
+
+        if (!isInside) {
+            return null;
+        }
+
+        // Calculate distance from camera to point
+        float distanceFromCamera = cameraPosition.distance(point);
+
+        // Point is always completely inside if it passes the containment test
+        FrustumIntersection.VisibilityType visibilityType = FrustumIntersection.VisibilityType.INSIDE;
+
+        return new FrustumIntersection<>(entityId, content, distanceFromCamera, new Point3f(point), visibilityType,
+                                         null);
+    }
+
     /**
      * Get the cell size at a given level (to be implemented by subclasses)
      */
@@ -1418,6 +1847,15 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Get nodes that should be traversed for frustum culling, ordered by distance from camera
+     *
+     * @param frustum        the frustum to test
+     * @param cameraPosition the camera position for distance sorting
+     * @return stream of node indices ordered by distance from camera
+     */
+    protected abstract Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
+
+    /**
      * Extract the level from a spatial index
      */
     protected abstract byte getLevelFromIndex(long index);
@@ -1426,6 +1864,16 @@ implements SpatialIndex<ID, Content> {
      * Get the spatial bounds of a node
      */
     protected abstract Spatial getNodeBounds(long index);
+
+    // ===== Collision Detection Implementation =====
+
+    /**
+     * Get nodes that should be traversed for plane intersection, ordered by distance from plane
+     *
+     * @param plane the plane to test
+     * @return stream of node indices ordered by distance from plane
+     */
+    protected abstract Stream<Long> getPlaneTraversalOrder(Plane3D plane);
 
     /**
      * Calculate the distance from ray origin to entity
@@ -1447,166 +1895,234 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Plane Intersection Abstract Methods =====
-
     /**
-     * Test if a plane intersects with a node
+     * Get the distance from ray origin to node intersection
      *
      * @param nodeIndex the node's spatial index
-     * @param plane     the plane to test
-     * @return true if the plane intersects the node
+     * @param ray       the ray to test
+     * @return distance to node entry point, or Float.MAX_VALUE if no intersection
      */
-    protected abstract boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane);
+    protected abstract float getRayNodeIntersectionDistance(long nodeIndex, Ray3D ray);
 
     /**
-     * Get nodes that should be traversed for plane intersection, ordered by distance from plane
+     * Get nodes that should be traversed for ray intersection, ordered by distance
      *
-     * @param plane the plane to test
-     * @return stream of node indices ordered by distance from plane
+     * @param ray the ray to test
+     * @return stream of node indices ordered by ray intersection distance
      */
-    protected abstract Stream<Long> getPlaneTraversalOrder(Plane3D plane);
+    protected abstract Stream<Long> getRayTraversalOrder(Ray3D ray);
 
     /**
-     * Check if a frustum intersects with the given node
-     *
-     * @param nodeIndex the node's spatial index
-     * @param frustum   the frustum to test
-     * @return true if the frustum intersects the node
+     * Get root nodes for traversal. Default implementation returns all nodes at the minimum level. Subclasses can
+     * override for specific root node logic.
      */
-    protected abstract boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum);
+    protected Set<Long> getRootNodes() {
+        Set<Long> roots = new HashSet<>();
+        byte minLevel = Byte.MAX_VALUE;
 
-    /**
-     * Get nodes that should be traversed for frustum culling, ordered by distance from camera
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return stream of node indices ordered by distance from camera
-     */
-    protected abstract Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
-
-    // ===== Plane Intersection Implementation =====
-
-    /**
-     * Find all entities that intersect with the given plane. Returns entities that either intersect the plane or are
-     * within the specified tolerance distance from it.
-     *
-     * @param plane     the plane to test intersection with
-     * @param tolerance maximum distance from plane to consider as intersection (use 0 for exact intersection)
-     * @return list of plane intersections sorted by distance from plane
-     */
-    public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane, float tolerance) {
-        lock.readLock().lock();
-        try {
-            List<PlaneIntersection<ID, Content>> intersections = new ArrayList<>();
-
-            // Traverse nodes that could intersect with the plane
-            getPlaneTraversalOrder(plane).forEach(nodeIndex -> {
-                NodeType node = spatialIndex.get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    return;
-                }
-
-                // Check if plane intersects this node
-                if (!doesPlaneIntersectNode(nodeIndex, plane)) {
-                    return;
-                }
-
-                // Check each entity in the node
-                for (ID entityId : node.getEntityIds()) {
-                    Content content = entityManager.getEntityContent(entityId);
-                    if (content == null) {
-                        continue;
-                    }
-
-                    Point3f entityPos = entityManager.getEntityPosition(entityId);
-                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
-
-                    // Calculate plane-entity intersection
-                    PlaneIntersection<ID, Content> intersection = calculatePlaneEntityIntersection(plane, entityId,
-                                                                                                   content, entityPos,
-                                                                                                   bounds, tolerance);
-
-                    if (intersection != null) {
-                        intersections.add(intersection);
-                    }
-                }
-            });
-
-            Collections.sort(intersections);
-            return intersections;
-        } finally {
-            lock.readLock().unlock();
+        // Find minimum level
+        for (Long index : spatialIndex.keySet()) {
+            byte level = getLevelFromIndex(index);
+            if (level < minLevel) {
+                minLevel = level;
+                roots.clear();
+                roots.add(index);
+            } else if (level == minLevel) {
+                roots.add(index);
+            }
         }
+
+        return roots;
     }
 
     /**
-     * Find all entities that intersect with the given plane (exact intersection only).
+     * Get the sorted spatial indices for SFC-ordered operations. This provides spatially-ordered access to improve
+     * cache locality.
      *
-     * @param plane the plane to test intersection with
-     * @return list of plane intersections sorted by distance from plane
+     * @return NavigableSet containing spatial indices in SFC order
      */
-    public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane) {
-        return planeIntersectAll(plane, 0.0f);
+    protected NavigableSet<Long> getSortedSpatialIndices() {
+        return sortedSpatialIndices;
     }
 
     /**
-     * Find all entities on the positive side of the plane (in direction of normal).
-     *
-     * @param plane the plane to test
-     * @return list of entities on positive side, sorted by distance from plane
+     * Get the spatial index storage map
      */
-    public List<PlaneIntersection<ID, Content>> planeIntersectPositiveSide(Plane3D plane) {
-        return planeIntersectAll(plane, Float.MAX_VALUE).stream()
-               .filter(PlaneIntersection::isOnPositiveSide)
-               .collect(Collectors.toList());
+    protected Map<Long, NodeType> getSpatialIndex() {
+        return spatialIndex;
     }
 
     /**
-     * Find all entities on the negative side of the plane (opposite to normal).
+     * Get the range of spatial indices that could intersect with the given bounds This method should be overridden by
+     * subclasses for specific optimizations
      *
-     * @param plane the plane to test
-     * @return list of entities on negative side, sorted by distance from plane
+     * @param bounds the volume bounds
+     * @return navigable set of spatial indices
      */
-    public List<PlaneIntersection<ID, Content>> planeIntersectNegativeSide(Plane3D plane) {
-        return planeIntersectAll(plane, Float.MAX_VALUE).stream()
-               .filter(PlaneIntersection::isOnNegativeSide)
-               .collect(Collectors.toList());
+    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
+        // Default implementation: return all indices
+        // Subclasses should override for better performance
+        return new TreeSet<>(sortedSpatialIndices);
     }
 
     /**
-     * Find all entities within the specified distance from the plane (on either side).
-     *
-     * @param plane       the plane to test
-     * @param maxDistance maximum distance from plane to include
-     * @return list of entities within distance, sorted by distance from plane
+     * 1     * 1 Get volume bounds helper
      */
-    public List<PlaneIntersection<ID, Content>> planeIntersectWithinDistance(Plane3D plane, float maxDistance) {
-        return planeIntersectAll(plane, maxDistance).stream()
-               .filter(intersection -> Math.abs(intersection.distanceFromPlane()) <= maxDistance)
-               .collect(Collectors.toList());
+    protected VolumeBounds getVolumeBounds(Spatial volume) {
+        return VolumeBounds.from(volume);
     }
 
     /**
-     * Calculate the intersection between a plane and an entity.
-     *
-     * @param plane     the plane
-     * @param entityId  the entity ID
-     * @param content   the entity content
-     * @param entityPos the entity position
-     * @param bounds    the entity bounds (null for point entities)
-     * @param tolerance tolerance for intersection detection
-     * @return plane intersection result, or null if no intersection within tolerance
+     * Hook for subclasses to handle node subdivision
      */
-    protected PlaneIntersection<ID, Content> calculatePlaneEntityIntersection(Plane3D plane, ID entityId,
-                                                                               Content content, Point3f entityPos,
-                                                                               EntityBounds bounds, float tolerance) {
-        if (bounds != null) {
-            // For bounded entities, perform plane-AABB intersection
-            return planeAABBIntersection(plane, entityId, content, bounds, tolerance);
+    protected void handleNodeSubdivision(long spatialIndex, byte level, NodeType node) {
+        // Default: no subdivision. Subclasses can override
+    }
+
+    /**
+     * Check if a node has children (to be implemented by subclasses if needed)
+     */
+    protected boolean hasChildren(long spatialIndex) {
+        return false; // Default: no children tracking
+    }
+
+    /**
+     * Insert entity at a single position (no spanning)
+     */
+    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
+        long spatialIndex = calculateSpatialIndex(position, level);
+
+        // Ensure all ancestor nodes exist in the tree structure
+        ensureAncestorNodes(spatialIndex, level);
+
+        // Get or create node
+        NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
+            sortedSpatialIndices.add(spatialIndex);
+            return createNode();
+        });
+
+        // Add entity to node
+        boolean shouldSplit = node.addEntity(entityId);
+
+        // Track entity location
+        entityManager.addEntityLocation(entityId, spatialIndex);
+
+        // Handle subdivision if needed (delegated to subclasses)
+        if (shouldSplit && level < maxDepth) {
+            handleNodeSubdivision(spatialIndex, level, node);
+        }
+
+        // Check for auto-balancing after insertion
+        checkAutoBalance();
+    }
+
+    /**
+     * Adaptive spanning implementation
+     */
+    protected void insertWithAdaptiveSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Adapt spanning strategy based on current system state
+        int currentNodeCount = spatialIndex.size();
+        int entityCount = entityManager.getEntityCount();
+
+        if (entityCount > 0) {
+            float avgNodesPerEntity = (float) currentNodeCount / entityCount;
+
+            if (avgNodesPerEntity > 100) {
+                // High memory usage - use conservative spanning
+                insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes / 2);
+            } else if (avgNodesPerEntity < 10) {
+                // Low memory usage - use aggressive spanning
+                insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
+            } else {
+                // Balanced spanning
+                insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
+            }
         } else {
-            // For point entities, calculate distance to plane
-            return planePointIntersection(plane, entityId, content, entityPos, tolerance);
+            // First entity - use balanced approach
+            insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
         }
+    }
+
+    /**
+     * Insert entity with advanced spanning strategies
+     */
+    protected void insertWithAdvancedSpanning(ID entityId, EntityBounds bounds, byte level) {
+        // Calculate entity size for policy decisions
+        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
+                                    bounds.getMaxZ() - bounds.getMinZ());
+        int nodeSize = getCellSizeAtLevel(level);
+
+        // Calculate maximum span nodes based on policy
+        int maxSpanNodes = spanningPolicy.calculateMaxSpanNodes(entitySize, nodeSize, spatialIndex.size());
+
+        // Apply spanning optimization strategy
+        switch (spanningPolicy.getOptimization()) {
+            case MEMORY_EFFICIENT -> insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes);
+            case PERFORMANCE_FOCUSED -> insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
+            case ADAPTIVE -> insertWithAdaptiveSpanning(entityId, bounds, level, maxSpanNodes);
+            default -> insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
+        }
+    }
+
+    /**
+     * Balanced spanning implementation
+     */
+    protected void insertWithBalancedSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Use standard spanning implementation
+        insertWithSpanning(entityId, bounds, level);
+    }
+
+    /**
+     * Memory-efficient spanning implementation
+     */
+    protected void insertWithMemoryEfficientSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
+        // Use conservative spanning to minimize memory usage
+        Point3f center = bounds.getCenter();
+
+        // Start with center node
+        insertAtPosition(entityId, center, level);
+
+        // Only span to immediately adjacent nodes if entity is very large
+        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
+                                    bounds.getMaxZ() - bounds.getMinZ());
+        int nodeSize = getCellSizeAtLevel(level);
+
+        if (entitySize > nodeSize * 2.0f && maxSpanNodes > 1) {
+            // Delegate to subclass for specific spanning implementation
+            insertWithSpanning(entityId, bounds, level);
+        }
+    }
+
+    /**
+     * Performance-optimized spanning implementation
+     */
+    protected void insertWithPerformanceOptimizedSpanning(ID entityId, EntityBounds bounds, byte level,
+                                                          int maxSpanNodes) {
+        // Use aggressive spanning for better query performance
+        insertWithSpanning(entityId, bounds, level);
+    }
+
+    /**
+     * Hook for subclasses to handle entity spanning
+     */
+    protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
+        // Default: single node insertion. Subclasses can override for spanning
+        Point3f position = entityManager.getEntityPosition(entityId);
+        if (position != null) {
+            insertAtPosition(entityId, position, level);
+        }
+    }
+
+    /**
+     * Check if a node's bounds are contained within a volume
+     */
+    protected abstract boolean isNodeContainedInVolume(long nodeIndex, Spatial volume);
+
+    /**
+     * Hook for subclasses when a node is removed
+     */
+    protected void onNodeRemoved(long spatialIndex) {
+        sortedSpatialIndices.remove(spatialIndex);
     }
 
     /**
@@ -1629,12 +2145,11 @@ implements SpatialIndex<ID, Content> {
         float maxZ = bounds.getMaxZ();
 
         // Calculate distances to all 8 corners of the AABB
-        Point3f[] corners = {
-            new Point3f(minX, minY, minZ), new Point3f(maxX, minY, minZ),
-            new Point3f(minX, maxY, minZ), new Point3f(maxX, maxY, minZ),
-            new Point3f(minX, minY, maxZ), new Point3f(maxX, minY, maxZ),
-            new Point3f(minX, maxY, maxZ), new Point3f(maxX, maxY, maxZ)
-        };
+        Point3f[] corners = { new Point3f(minX, minY, minZ), new Point3f(maxX, minY, minZ), new Point3f(minX, maxY,
+                                                                                                        minZ),
+                              new Point3f(maxX, maxY, minZ), new Point3f(minX, minY, maxZ), new Point3f(maxX, minY,
+                                                                                                        maxZ),
+                              new Point3f(minX, maxY, maxZ), new Point3f(maxX, maxY, maxZ) };
 
         float minDistance = Float.POSITIVE_INFINITY;
         float maxDistance = Float.NEGATIVE_INFINITY;
@@ -1721,319 +2236,8 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
-     * Find the closest point on an AABB to a plane
-     *
-     * @param plane  the plane
-     * @param bounds the AABB bounds
-     * @return closest point on AABB surface to the plane
-     */
-    protected Point3f findClosestPointOnAABBToPlane(Plane3D plane, EntityBounds bounds) {
-        Vector3f normal = plane.getNormal();
-        
-        // Find the point on the AABB closest to the plane
-        float x = (normal.x >= 0) ? bounds.getMinX() : bounds.getMaxX();
-        float y = (normal.y >= 0) ? bounds.getMinY() : bounds.getMaxY();
-        float z = (normal.z >= 0) ? bounds.getMinZ() : bounds.getMaxZ();
-        
-        return new Point3f(x, y, z);
-    }
-
-    // ===== Frustum Culling Implementation =====
-
-    /**
-     * Find all entities that are visible within the given frustum.
-     * Returns entities that are either completely inside or intersecting the frustum.
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return list of frustum intersections sorted by distance from camera
-     */
-    public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
-        lock.readLock().lock();
-        try {
-            List<FrustumIntersection<ID, Content>> intersections = new ArrayList<>();
-            Set<ID> visitedEntities = new HashSet<>();
-
-            // Traverse nodes that could intersect with the frustum
-            getFrustumTraversalOrder(frustum, cameraPosition).forEach(nodeIndex -> {
-                NodeType node = spatialIndex.get(nodeIndex);
-                if (node == null || node.isEmpty()) {
-                    return;
-                }
-
-                // Check if frustum intersects this node
-                if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
-                    return;
-                }
-
-                // Check each entity in the node
-                for (ID entityId : node.getEntityIds()) {
-                    // Skip if already processed (for spanning entities)
-                    if (!visitedEntities.add(entityId)) {
-                        continue;
-                    }
-
-                    Content content = entityManager.getEntityContent(entityId);
-                    if (content == null) {
-                        continue;
-                    }
-
-                    Point3f entityPos = entityManager.getEntityPosition(entityId);
-                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
-
-                    // Calculate frustum-entity intersection
-                    FrustumIntersection<ID, Content> intersection = calculateFrustumEntityIntersection(frustum,
-                                                                                                       cameraPosition,
-                                                                                                       entityId, content,
-                                                                                                       entityPos, bounds);
-
-                    if (intersection != null && intersection.isVisible()) {
-                        intersections.add(intersection);
-                    }
-                }
-            });
-
-            Collections.sort(intersections);
-            return intersections;
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
-    /**
-     * Find all entities that are completely inside the frustum (not partially visible).
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return list of entities completely inside the frustum, sorted by distance from camera
-     */
-    public List<FrustumIntersection<ID, Content>> frustumCullInside(Frustum3D frustum, Point3f cameraPosition) {
-        return frustumCullVisible(frustum, cameraPosition).stream()
-               .filter(FrustumIntersection::isCompletelyInside)
-               .collect(Collectors.toList());
-    }
-
-    /**
-     * Find all entities that intersect the frustum boundary (partially visible).
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position for distance sorting
-     * @return list of entities intersecting frustum boundary, sorted by distance from camera
-     */
-    public List<FrustumIntersection<ID, Content>> frustumCullIntersecting(Frustum3D frustum, Point3f cameraPosition) {
-        return frustumCullVisible(frustum, cameraPosition).stream()
-               .filter(FrustumIntersection::isPartiallyVisible)
-               .collect(Collectors.toList());
-    }
-
-    /**
-     * Find all entities within the specified distance from the camera that are visible in the frustum.
-     *
-     * @param frustum        the frustum to test
-     * @param cameraPosition the camera position
-     * @param maxDistance    maximum distance from camera to include
-     * @return list of entities within distance, sorted by distance from camera
-     */
-    public List<FrustumIntersection<ID, Content>> frustumCullWithinDistance(Frustum3D frustum, Point3f cameraPosition, float maxDistance) {
-        return frustumCullVisible(frustum, cameraPosition).stream()
-               .filter(intersection -> intersection.distanceFromCamera() <= maxDistance)
-               .collect(Collectors.toList());
-    }
-
-    /**
-     * Calculate the intersection between a frustum and an entity.
-     *
-     * @param frustum        the frustum
-     * @param cameraPosition the camera position
-     * @param entityId       the entity ID
-     * @param content        the entity content
-     * @param entityPos      the entity position
-     * @param bounds         the entity bounds (null for point entities)
-     * @return frustum intersection result, or null if outside frustum
-     */
-    protected FrustumIntersection<ID, Content> calculateFrustumEntityIntersection(Frustum3D frustum, Point3f cameraPosition,
-                                                                                   ID entityId, Content content,
-                                                                                   Point3f entityPos, EntityBounds bounds) {
-        if (bounds != null) {
-            // For bounded entities, perform frustum-AABB intersection
-            return frustumAABBIntersection(frustum, cameraPosition, entityId, content, bounds);
-        } else {
-            // For point entities, test point containment
-            return frustumPointIntersection(frustum, cameraPosition, entityId, content, entityPos);
-        }
-    }
-
-    /**
-     * Frustum-AABB intersection test
-     *
-     * @param frustum        the frustum
-     * @param cameraPosition the camera position
-     * @param entityId       the entity ID
-     * @param content        the entity content
-     * @param bounds         the AABB bounds
-     * @return frustum intersection result, or null if outside frustum
-     */
-    protected FrustumIntersection<ID, Content> frustumAABBIntersection(Frustum3D frustum, Point3f cameraPosition,
-                                                                       ID entityId, Content content, EntityBounds bounds) {
-        float minX = bounds.getMinX();
-        float minY = bounds.getMinY();
-        float minZ = bounds.getMinZ();
-        float maxX = bounds.getMaxX();
-        float maxY = bounds.getMaxY();
-        float maxZ = bounds.getMaxZ();
-
-        // Check if AABB is completely inside frustum
-        boolean completelyInside = frustum.containsAABB(minX, minY, minZ, maxX, maxY, maxZ);
-        
-        // Check if AABB intersects frustum
-        boolean intersects = frustum.intersectsAABB(minX, minY, minZ, maxX, maxY, maxZ);
-
-        if (!intersects) {
-            // Outside frustum
-            return null;
-        }
-
-        // Determine visibility type
-        FrustumIntersection.VisibilityType visibilityType;
-        if (completelyInside) {
-            visibilityType = FrustumIntersection.VisibilityType.INSIDE;
-        } else {
-            visibilityType = FrustumIntersection.VisibilityType.INTERSECTING;
-        }
-
-        // Calculate distance from camera to entity center
-        Point3f entityCenter = bounds.getCenter();
-        float distanceFromCamera = cameraPosition.distance(entityCenter);
-
-        // Calculate closest point on AABB to camera
-        Point3f closestPoint = findClosestPointOnAABBToCamera(cameraPosition, bounds);
-
-        return new FrustumIntersection<>(entityId, content, distanceFromCamera, closestPoint, visibilityType, bounds);
-    }
-
-    /**
-     * Frustum-point intersection test
-     *
-     * @param frustum        the frustum
-     * @param cameraPosition the camera position
-     * @param entityId       the entity ID
-     * @param content        the entity content
-     * @param point          the point position
-     * @return frustum intersection result, or null if outside frustum
-     */
-    protected FrustumIntersection<ID, Content> frustumPointIntersection(Frustum3D frustum, Point3f cameraPosition,
-                                                                        ID entityId, Content content, Point3f point) {
-        // Check if point is inside frustum
-        boolean isInside = frustum.containsPoint(point);
-
-        if (!isInside) {
-            return null;
-        }
-
-        // Calculate distance from camera to point
-        float distanceFromCamera = cameraPosition.distance(point);
-
-        // Point is always completely inside if it passes the containment test
-        FrustumIntersection.VisibilityType visibilityType = FrustumIntersection.VisibilityType.INSIDE;
-
-        return new FrustumIntersection<>(entityId, content, distanceFromCamera, new Point3f(point), visibilityType, null);
-    }
-
-    /**
-     * Find the closest point on an AABB to the camera
-     *
-     * @param cameraPosition the camera position
-     * @param bounds         the AABB bounds
-     * @return closest point on AABB surface to the camera
-     */
-    protected Point3f findClosestPointOnAABBToCamera(Point3f cameraPosition, EntityBounds bounds) {
-        // Clamp camera position to AABB bounds
-        float x = Math.max(bounds.getMinX(), Math.min(cameraPosition.x, bounds.getMaxX()));
-        float y = Math.max(bounds.getMinY(), Math.min(cameraPosition.y, bounds.getMaxY()));
-        float z = Math.max(bounds.getMinZ(), Math.min(cameraPosition.z, bounds.getMaxZ()));
-        
-        return new Point3f(x, y, z);
-    }
-
-    // ===== Collision Detection Implementation =====
-
-    /**
-     * Get the distance from ray origin to node intersection
-     *
-     * @param nodeIndex the node's spatial index
-     * @param ray       the ray to test
-     * @return distance to node entry point, or Float.MAX_VALUE if no intersection
-     */
-    protected abstract float getRayNodeIntersectionDistance(long nodeIndex, Ray3D ray);
-
-    /**
-     * Get nodes that should be traversed for ray intersection, ordered by distance
-     *
-     * @param ray the ray to test
-     * @return stream of node indices ordered by ray intersection distance
-     */
-    protected abstract Stream<Long> getRayTraversalOrder(Ray3D ray);
-
-    /**
-     * Get root nodes for traversal. Default implementation returns all nodes at the minimum level. Subclasses can
-     * override for specific root node logic.
-     */
-    protected Set<Long> getRootNodes() {
-        Set<Long> roots = new HashSet<>();
-        byte minLevel = Byte.MAX_VALUE;
-
-        // Find minimum level
-        for (Long index : spatialIndex.keySet()) {
-            byte level = getLevelFromIndex(index);
-            if (level < minLevel) {
-                minLevel = level;
-                roots.clear();
-                roots.add(index);
-            } else if (level == minLevel) {
-                roots.add(index);
-            }
-        }
-
-        return roots;
-    }
-
-    /**
-     * Get the spatial index storage map
-     */
-    protected Map<Long, NodeType> getSpatialIndex() {
-        return spatialIndex;
-    }
-
-    /**
-     * Get the sorted spatial indices for SFC-ordered operations.
-     * This provides spatially-ordered access to improve cache locality.
-     *
-     * @return NavigableSet containing spatial indices in SFC order
-     */
-    protected NavigableSet<Long> getSortedSpatialIndices() {
-        return sortedSpatialIndices;
-    }
-
-    /**
-     * Process all nodes in SFC order with the given consumer.
-     * This utility method provides a convenient way to iterate over all nodes
-     * in spatial order for improved cache performance.
-     *
-     * @param nodeProcessor function to process each non-empty node
-     */
-    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Long, NodeType> nodeProcessor) {
-        for (Long nodeIndex : sortedSpatialIndices) {
-            NodeType node = spatialIndex.get(nodeIndex);
-            if (node != null && !node.isEmpty()) {
-                nodeProcessor.accept(nodeIndex, node);
-            }
-        }
-    }
-
-    /**
-     * Process all entities in SFC order with the given consumer.
-     * This utility method provides a convenient way to iterate over all entities
-     * in spatial order for improved cache performance.
+     * Process all entities in SFC order with the given consumer. This utility method provides a convenient way to
+     * iterate over all entities in spatial order for improved cache performance.
      *
      * @param entityProcessor function to process each entity ID with its containing node index
      */
@@ -2049,245 +2253,18 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
-     * Filter nodes in SFC order using the given predicate and collect them into a list.
-     * This utility method combines spatial ordering with filtering for better performance.
+     * Process all nodes in SFC order with the given consumer. This utility method provides a convenient way to iterate
+     * over all nodes in spatial order for improved cache performance.
      *
-     * @param nodePredicate predicate to test each node
-     * @return list of node indices that match the predicate, in SFC order
+     * @param nodeProcessor function to process each non-empty node
      */
-    protected List<Long> filterNodesInSFCOrder(java.util.function.BiPredicate<Long, NodeType> nodePredicate) {
-        List<Long> filteredNodes = new ArrayList<>();
+    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Long, NodeType> nodeProcessor) {
         for (Long nodeIndex : sortedSpatialIndices) {
             NodeType node = spatialIndex.get(nodeIndex);
-            if (node != null && !node.isEmpty() && nodePredicate.test(nodeIndex, node)) {
-                filteredNodes.add(nodeIndex);
+            if (node != null && !node.isEmpty()) {
+                nodeProcessor.accept(nodeIndex, node);
             }
         }
-        return filteredNodes;
-    }
-
-    /**
-     * Get the range of spatial indices that could intersect with the given bounds This method should be overridden by
-     * subclasses for specific optimizations
-     *
-     * @param bounds the volume bounds
-     * @return navigable set of spatial indices
-     */
-    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
-        // Default implementation: return all indices
-        // Subclasses should override for better performance
-        return new TreeSet<>(sortedSpatialIndices);
-    }
-
-    /**
-     * 1     * 1 Get volume bounds helper
-     */
-    protected VolumeBounds getVolumeBounds(Spatial volume) {
-        return VolumeBounds.from(volume);
-    }
-
-    /**
-     * Hook for subclasses to handle node subdivision
-     */
-    protected void handleNodeSubdivision(long spatialIndex, byte level, NodeType node) {
-        // Default: no subdivision. Subclasses can override
-    }
-
-    /**
-     * Check if a node has children (to be implemented by subclasses if needed)
-     */
-    protected boolean hasChildren(long spatialIndex) {
-        return false; // Default: no children tracking
-    }
-
-    /**
-     * Insert entity at a single position (no spanning)
-     */
-    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
-        long spatialIndex = calculateSpatialIndex(position, level);
-
-        // Ensure all ancestor nodes exist in the tree structure
-        ensureAncestorNodes(spatialIndex, level);
-
-        // Get or create node
-        NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
-            sortedSpatialIndices.add(spatialIndex);
-            return createNode();
-        });
-
-        // Add entity to node
-        boolean shouldSplit = node.addEntity(entityId);
-
-        // Track entity location
-        entityManager.addEntityLocation(entityId, spatialIndex);
-
-        // Handle subdivision if needed (delegated to subclasses)
-        if (shouldSplit && level < maxDepth) {
-            handleNodeSubdivision(spatialIndex, level, node);
-        }
-
-        // Check for auto-balancing after insertion
-        checkAutoBalance();
-    }
-
-    /**
-     * Hook for subclasses to handle entity spanning
-     */
-    protected void insertWithSpanning(ID entityId, EntityBounds bounds, byte level) {
-        // Default: single node insertion. Subclasses can override for spanning
-        Point3f position = entityManager.getEntityPosition(entityId);
-        if (position != null) {
-            insertAtPosition(entityId, position, level);
-        }
-    }
-    
-    /**
-     * Ensure all ancestor nodes exist in the tree structure.
-     * This method creates any missing parent nodes up to the root level.
-     */
-    protected abstract void ensureAncestorNodes(long spatialIndex, byte level);
-
-    /**
-     * Check if an entity should span multiple nodes using advanced policies
-     */
-    protected boolean shouldSpanEntity(EntityBounds bounds, byte level) {
-        if (bounds == null || !spanningPolicy.isSpanningEnabled()) {
-            return false;
-        }
-        
-        // Calculate entity size
-        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(),
-                                            bounds.getMaxY() - bounds.getMinY()),
-                                   bounds.getMaxZ() - bounds.getMinZ());
-        
-        // Get node size at this level
-        int nodeSize = getCellSizeAtLevel(level);
-        
-        // Use advanced spanning logic
-        return spanningPolicy.shouldSpanAdvanced(entitySize, nodeSize, spatialIndex.size(), 
-                                                entityManager.getEntityCount(), level);
-    }
-    
-    /**
-     * Insert entity with advanced spanning strategies
-     */
-    protected void insertWithAdvancedSpanning(ID entityId, EntityBounds bounds, byte level) {
-        // Calculate entity size for policy decisions
-        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(),
-                                            bounds.getMaxY() - bounds.getMinY()),
-                                   bounds.getMaxZ() - bounds.getMinZ());
-        int nodeSize = getCellSizeAtLevel(level);
-        
-        // Calculate maximum span nodes based on policy
-        int maxSpanNodes = spanningPolicy.calculateMaxSpanNodes(entitySize, nodeSize, spatialIndex.size());
-        
-        // Apply spanning optimization strategy
-        switch (spanningPolicy.getOptimization()) {
-            case MEMORY_EFFICIENT -> insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes);
-            case PERFORMANCE_FOCUSED -> insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
-            case ADAPTIVE -> insertWithAdaptiveSpanning(entityId, bounds, level, maxSpanNodes);
-            default -> insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
-        }
-    }
-    
-    /**
-     * Memory-efficient spanning implementation
-     */
-    protected void insertWithMemoryEfficientSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Use conservative spanning to minimize memory usage
-        Point3f center = bounds.getCenter();
-        
-        // Start with center node
-        insertAtPosition(entityId, center, level);
-        
-        // Only span to immediately adjacent nodes if entity is very large
-        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(),
-                                            bounds.getMaxY() - bounds.getMinY()),
-                                   bounds.getMaxZ() - bounds.getMinZ());
-        int nodeSize = getCellSizeAtLevel(level);
-        
-        if (entitySize > nodeSize * 2.0f && maxSpanNodes > 1) {
-            // Delegate to subclass for specific spanning implementation
-            insertWithSpanning(entityId, bounds, level);
-        }
-    }
-    
-    /**
-     * Performance-optimized spanning implementation
-     */
-    protected void insertWithPerformanceOptimizedSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Use aggressive spanning for better query performance
-        insertWithSpanning(entityId, bounds, level);
-    }
-    
-    /**
-     * Adaptive spanning implementation
-     */
-    protected void insertWithAdaptiveSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Adapt spanning strategy based on current system state
-        int currentNodeCount = spatialIndex.size();
-        int entityCount = entityManager.getEntityCount();
-        
-        if (entityCount > 0) {
-            float avgNodesPerEntity = (float) currentNodeCount / entityCount;
-            
-            if (avgNodesPerEntity > 100) {
-                // High memory usage - use conservative spanning
-                insertWithMemoryEfficientSpanning(entityId, bounds, level, maxSpanNodes / 2);
-            } else if (avgNodesPerEntity < 10) {
-                // Low memory usage - use aggressive spanning
-                insertWithPerformanceOptimizedSpanning(entityId, bounds, level, maxSpanNodes);
-            } else {
-                // Balanced spanning
-                insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
-            }
-        } else {
-            // First entity - use balanced approach
-            insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
-        }
-    }
-    
-    /**
-     * Balanced spanning implementation
-     */
-    protected void insertWithBalancedSpanning(ID entityId, EntityBounds bounds, byte level, int maxSpanNodes) {
-        // Use standard spanning implementation
-        insertWithSpanning(entityId, bounds, level);
-    }
-
-    /**
-     * Check if a node's bounds are contained within a volume
-     */
-    protected abstract boolean isNodeContainedInVolume(long nodeIndex, Spatial volume);
-
-    /**
-     * Hook for subclasses when a node is removed
-     */
-    protected void onNodeRemoved(long spatialIndex) {
-        sortedSpatialIndices.remove(spatialIndex);
-    }
-    
-    /**
-     * Find all nodes that intersect with the given entity bounds.
-     * This is used for collision detection with bounded entities.
-     *
-     * @param bounds the entity bounds to check
-     * @return set of node indices that intersect with the bounds
-     */
-    protected Set<Long> findNodesIntersectingBounds(EntityBounds bounds) {
-        Set<Long> intersectingNodes = new HashSet<>();
-        
-        // Convert EntityBounds to VolumeBounds for spatial query
-        VolumeBounds volumeBounds = new VolumeBounds(
-            bounds.getMinX(), bounds.getMinY(), bounds.getMinZ(),
-            bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ()
-        );
-        
-        // Use spatial range query to find intersecting nodes
-        spatialRangeQuery(volumeBounds, true)
-            .forEach(entry -> intersectingNodes.add(entry.getKey()));
-        
-        return intersectingNodes;
     }
 
     /**
@@ -2346,44 +2323,42 @@ implements SpatialIndex<ID, Content> {
      */
     protected float raySphereIntersection(Ray3D ray, Point3f center, float radius) {
         // Use geometric algorithm for better numerical stability with distant entities
-        
+
         // First check if ray origin is inside the sphere
         float distFromOrigin = ray.origin().distance(center);
         if (distFromOrigin <= radius) {
             // Ray starts inside sphere, return 0
             return 0.0f;
         }
-        
+
         // Find the closest point on the ray to the sphere center
         Vector3f toCenter = new Vector3f();
         toCenter.sub(center, ray.origin());
-        
+
         float t = toCenter.dot(ray.direction());  // Parameter for closest point
         if (t < 0) {
             // Sphere is behind ray origin
             return -1;
         }
-        
+
         // Calculate closest point on ray
-        Point3f closestPoint = new Point3f(
-            ray.origin().x + t * ray.direction().x,
-            ray.origin().y + t * ray.direction().y,
-            ray.origin().z + t * ray.direction().z
-        );
-        
+        Point3f closestPoint = new Point3f(ray.origin().x + t * ray.direction().x,
+                                           ray.origin().y + t * ray.direction().y,
+                                           ray.origin().z + t * ray.direction().z);
+
         float distToCenter = closestPoint.distance(center);
-        
+
         if (distToCenter > radius) {
             // Ray misses sphere
             return -1;
         }
-        
+
         // Calculate intersection points
         float halfChordLength = (float) Math.sqrt(radius * radius - distToCenter * distToCenter);
-        
+
         float t1 = t - halfChordLength;
         float t2 = t + halfChordLength;
-        
+
         // Return the closest positive t value within max distance
         if (t1 >= 0 && t1 <= ray.maxDistance()) {
             return t1;
@@ -2391,19 +2366,9 @@ implements SpatialIndex<ID, Content> {
         if (t2 >= 0 && t2 <= ray.maxDistance()) {
             return t2;
         }
-        
+
         return -1;
     }
-
-    /**
-     * Estimate the distance from a query point to the center of a spatial node.
-     * This is used for k-NN search optimization to find the nearest starting nodes.
-     *
-     * @param nodeIndex  the spatial node index
-     * @param queryPoint the query point
-     * @return estimated distance from query point to node center
-     */
-    protected abstract float estimateNodeDistance(long nodeIndex, Point3f queryPoint);
 
     /**
      * Check if k-NN search should continue based on current candidates
@@ -2417,6 +2382,26 @@ implements SpatialIndex<ID, Content> {
                                                        PriorityQueue<EntityDistance<ID>> candidates);
 
     /**
+     * Check if an entity should span multiple nodes using advanced policies
+     */
+    protected boolean shouldSpanEntity(EntityBounds bounds, byte level) {
+        if (bounds == null || !spanningPolicy.isSpanningEnabled()) {
+            return false;
+        }
+
+        // Calculate entity size
+        float entitySize = Math.max(Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
+                                    bounds.getMaxZ() - bounds.getMinZ());
+
+        // Get node size at this level
+        int nodeSize = getCellSizeAtLevel(level);
+
+        // Use advanced spanning logic
+        return spanningPolicy.shouldSpanAdvanced(entitySize, nodeSize, spatialIndex.size(),
+                                                 entityManager.getEntityCount(), level);
+    }
+
+    /**
      * Perform spatial range query with optimization
      *
      * @param bounds              the volume bounds to query
@@ -2427,17 +2412,15 @@ implements SpatialIndex<ID, Content> {
         // Get range of spatial indices that could contain or intersect the bounds
         NavigableSet<Long> candidateIndices = getSpatialIndexRange(bounds);
 
-        return candidateIndices.stream()
-                .map(index -> Map.entry(index, getSpatialIndex().get(index)))
-                .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
-                .filter(entry -> {
-                    // Final precise filtering
-                    if (includeIntersecting) {
-                        return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
-                    } else {
-                        return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
-                    }
-                });
+        return candidateIndices.stream().map(index -> Map.entry(index, getSpatialIndex().get(index))).filter(
+        entry -> entry.getValue() != null && !entry.getValue().isEmpty()).filter(entry -> {
+            // Final precise filtering
+            if (includeIntersecting) {
+                return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
+            } else {
+                return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
+            }
+        });
     }
 
     /**
@@ -2674,37 +2657,36 @@ implements SpatialIndex<ID, Content> {
         } else if (bounds1 != null || bounds2 != null) {
             // Mixed collision: one entity has bounds, the other is a point
             EntityBounds bounds = bounds1 != null ? bounds1 : bounds2;
-            Point3f pointPos = bounds1 != null ? entityManager.getEntityPosition(id2) : entityManager.getEntityPosition(id1);
-            
+            Point3f pointPos = bounds1 != null ? entityManager.getEntityPosition(id2) : entityManager.getEntityPosition(
+            id1);
+
             if (pointPos != null) {
                 // Check if point is inside or within threshold of bounds
                 // For zero-size bounds, we need to check if the point is within collision threshold
                 float threshold = 0.1f;
-                boolean inBounds = pointPos.x >= bounds.getMinX() && pointPos.x <= bounds.getMaxX() &&
-                                   pointPos.y >= bounds.getMinY() && pointPos.y <= bounds.getMaxY() &&
-                                   pointPos.z >= bounds.getMinZ() && pointPos.z <= bounds.getMaxZ();
-                
+                boolean inBounds = pointPos.x >= bounds.getMinX() && pointPos.x <= bounds.getMaxX()
+                && pointPos.y >= bounds.getMinY() && pointPos.y <= bounds.getMaxY() && pointPos.z >= bounds.getMinZ()
+                && pointPos.z <= bounds.getMaxZ();
+
                 // For zero-size bounds, check distance to bounds center
-                if (!inBounds && bounds.getMinX() == bounds.getMaxX() && 
-                    bounds.getMinY() == bounds.getMaxY() && bounds.getMinZ() == bounds.getMaxZ()) {
+                if (!inBounds && bounds.getMinX() == bounds.getMaxX() && bounds.getMinY() == bounds.getMaxY()
+                && bounds.getMinZ() == bounds.getMaxZ()) {
                     // Zero-size bounds - check distance to the single point
                     Point3f boundsPoint = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
                     float distance = pointPos.distance(boundsPoint);
                     inBounds = distance <= threshold;
                 }
-                
+
                 if (inBounds) {
-                    
+
                     // Point is inside bounds - collision detected
                     Point3f contactPoint = new Point3f(pointPos);
-                    
+
                     // Calculate normal from bounds center to point
-                    Point3f boundsCenter = new Point3f(
-                        (bounds.getMinX() + bounds.getMaxX()) / 2,
-                        (bounds.getMinY() + bounds.getMaxY()) / 2,
-                        (bounds.getMinZ() + bounds.getMaxZ()) / 2
-                    );
-                    
+                    Point3f boundsCenter = new Point3f((bounds.getMinX() + bounds.getMaxX()) / 2,
+                                                       (bounds.getMinY() + bounds.getMaxY()) / 2,
+                                                       (bounds.getMinZ() + bounds.getMaxZ()) / 2);
+
                     Vector3f contactNormal = new Vector3f();
                     contactNormal.sub(pointPos, boundsCenter);
                     if (contactNormal.length() > 0) {
@@ -2712,11 +2694,11 @@ implements SpatialIndex<ID, Content> {
                     } else {
                         contactNormal.set(1, 0, 0); // Default normal
                     }
-                    
+
                     // Calculate penetration depth
                     float penetrationDepth;
-                    if (bounds.getMinX() == bounds.getMaxX() && bounds.getMinY() == bounds.getMaxY() && 
-                        bounds.getMinZ() == bounds.getMaxZ()) {
+                    if (bounds.getMinX() == bounds.getMaxX() && bounds.getMinY() == bounds.getMaxY()
+                    && bounds.getMinZ() == bounds.getMaxZ()) {
                         // Zero-size bounds - use distance
                         Point3f boundsPoint = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
                         float distance = pointPos.distance(boundsPoint);
@@ -2724,14 +2706,11 @@ implements SpatialIndex<ID, Content> {
                     } else {
                         // Regular bounds - distance from point to nearest surface
                         penetrationDepth = Math.min(
-                            Math.min(pointPos.x - bounds.getMinX(), bounds.getMaxX() - pointPos.x),
-                            Math.min(
-                                Math.min(pointPos.y - bounds.getMinY(), bounds.getMaxY() - pointPos.y),
-                                Math.min(pointPos.z - bounds.getMinZ(), bounds.getMaxZ() - pointPos.z)
-                            )
-                        );
+                        Math.min(pointPos.x - bounds.getMinX(), bounds.getMaxX() - pointPos.x),
+                        Math.min(Math.min(pointPos.y - bounds.getMinY(), bounds.getMaxY() - pointPos.y),
+                                 Math.min(pointPos.z - bounds.getMinZ(), bounds.getMaxZ() - pointPos.z)));
                     }
-                    
+
                     return Optional.of(
                     CollisionPair.create(id1, content1, bounds1, id2, content2, bounds2, contactPoint, contactNormal,
                                          penetrationDepth));

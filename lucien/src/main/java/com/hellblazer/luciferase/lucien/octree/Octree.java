@@ -18,8 +18,8 @@ package com.hellblazer.luciferase.lucien.octree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.*;
-import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
+import com.hellblazer.luciferase.lucien.entity.*;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
@@ -69,6 +69,27 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     // ===== Abstract Method Implementations =====
 
     @Override
+    public long calculateSpatialIndex(Point3f position, byte level) {
+        return calculateMortonCode(position, level);
+    }
+
+    @Override
+    public SpatialNode<ID> enclosing(Tuple3i point, byte level) {
+        Point3f position = new Point3f(point.x, point.y, point.z);
+
+        // Start at the specified level and search down to find entities
+        for (byte searchLevel = level; searchLevel <= maxDepth; searchLevel++) {
+            long mortonIndex = Constants.calculateMortonIndex(position, searchLevel);
+            var node = spatialIndex.get(mortonIndex);
+            if (node != null && !node.isEmpty()) {
+                return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+            }
+        }
+
+        return null;
+    }
+
+    @Override
     public SpatialNode<ID> enclosing(Spatial volume) {
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
@@ -89,23 +110,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
             }
         }
-        
-        return null;
-    }
 
-    @Override
-    public SpatialNode<ID> enclosing(Tuple3i point, byte level) {
-        Point3f position = new Point3f(point.x, point.y, point.z);
-        
-        // Start at the specified level and search down to find entities
-        for (byte searchLevel = level; searchLevel <= maxDepth; searchLevel++) {
-            long mortonIndex = Constants.calculateMortonIndex(position, searchLevel);
-            var node = spatialIndex.get(mortonIndex);
-            if (node != null && !node.isEmpty()) {
-                return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
-            }
-        }
-        
         return null;
     }
 
@@ -155,6 +160,13 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }).collect(Collectors.toList());
     }
 
+    // k-NN search is now provided by AbstractSpatialIndex
+
+    @Override
+    public byte getLevelFromIndex(long index) {
+        return Constants.toLevel(index);
+    }
+
     /**
      * Bulk insert multiple entities efficiently
      *
@@ -177,8 +189,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             }
         }
     }
-
-    // k-NN search is now provided by AbstractSpatialIndex
 
     /**
      * Lookup entities at a specific position
@@ -225,10 +235,11 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     int nz = coords[2] + dz * cellSize;
 
                     // Check bounds (must be within valid coordinate range)
-                    if (nx >= 0 && ny >= 0 && nz >= 0 && 
-                        nx <= Constants.MAX_COORD && ny <= Constants.MAX_COORD && nz <= Constants.MAX_COORD) {
+                    if (nx >= 0 && ny >= 0 && nz >= 0 && nx <= Constants.MAX_COORD && ny <= Constants.MAX_COORD
+                    && nz <= Constants.MAX_COORD) {
                         // Use level-aware encoding
-                        Point3f neighborPos = new Point3f(nx + cellSize/2.0f, ny + cellSize/2.0f, nz + cellSize/2.0f);
+                        Point3f neighborPos = new Point3f(nx + cellSize / 2.0f, ny + cellSize / 2.0f,
+                                                          nz + cellSize / 2.0f);
                         long neighborCode = Constants.calculateMortonIndex(neighborPos, level);
                         if (!visitedNodes.contains(neighborCode)) {
                             toVisit.add(neighborCode);
@@ -240,13 +251,22 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
     @Override
-    public long calculateSpatialIndex(Point3f position, byte level) {
-        return calculateMortonCode(position, level);
+    protected OctreeNode<ID> createNode() {
+        return new OctreeNode<>(maxEntitiesPerNode);
     }
 
     @Override
-    protected OctreeNode<ID> createNode() {
-        return new OctreeNode<>(maxEntitiesPerNode);
+    protected TreeBalancer<ID> createTreeBalancer() {
+        return new OctreeBalancer();
+    }
+
+    @Override
+    protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
+        // Get the node's cube bounds
+        Spatial.Cube nodeCube = getCubeFromIndex(nodeIndex);
+
+        // Use Frustum3D's intersectsCube method for efficient frustum-AABB intersection
+        return frustum.intersectsCube(nodeCube);
     }
 
     @Override
@@ -257,6 +277,14 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
         return false;
     }
+
+    @Override
+    protected boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane) {
+        Spatial.Cube cube = getCubeFromIndex(nodeIndex);
+        return plane.intersectsCube(cube);
+    }
+
+    // Helper methods for spatial range queries
 
     @Override
     protected boolean doesRayIntersectNode(long nodeIndex, Ray3D ray) {
@@ -270,14 +298,107 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                                  coords[2] + cellSize) >= 0;
     }
 
+    // ===== Plane Intersection Implementation =====
+
+    @Override
+    protected void ensureAncestorNodes(long spatialIndex, byte level) {
+        if (level == 0) {
+            return; // Root level has no ancestors
+        }
+
+        // Create all ancestor nodes from root to the current level
+        // For Morton codes, we can calculate ancestor indices directly
+        int[] coords = MortonCurve.decode(spatialIndex);
+
+        // Walk up the parent chain and ensure all ancestors exist
+        for (byte parentLevel = 0; parentLevel < level; parentLevel++) {
+            // Calculate ancestor coordinates at this level
+            int cellSize = Constants.lengthAtLevel(parentLevel);
+            int ancestorX = (coords[0] / cellSize) * cellSize;
+            int ancestorY = (coords[1] / cellSize) * cellSize;
+            int ancestorZ = (coords[2] / cellSize) * cellSize;
+
+            long ancestorIndex = MortonCurve.encode(ancestorX, ancestorY, ancestorZ);
+
+            // Ensure this ancestor node exists in the spatial index
+            // Use computeIfAbsent to atomically create node and update sorted indices
+            getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
+                getSortedSpatialIndices().add(ancestorIndex);
+                return createNode();
+            });
+        }
+    }
+
+    @Override
+    protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
+        // Get node bounds from Morton code
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Calculate node center
+        float centerX = coords[0] + cellSize / 2.0f;
+        float centerY = coords[1] + cellSize / 2.0f;
+        float centerZ = coords[2] + cellSize / 2.0f;
+
+        // Return distance from query point to node center
+        float dx = queryPoint.x - centerX;
+        float dy = queryPoint.y - centerY;
+        float dz = queryPoint.z - centerZ;
+
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    // ===== Frustum Intersection Implementation =====
+
     @Override
     protected int getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }
 
     @Override
-    public byte getLevelFromIndex(long index) {
-        return Constants.toLevel(index);
+    protected List<Long> getChildNodes(long nodeIndex) {
+        List<Long> children = new ArrayList<>();
+        byte level = Constants.toLevel(nodeIndex);
+
+        if (level >= maxDepth) {
+            return children; // No children possible at max depth
+        }
+
+        int[] parentCoords = MortonCurve.decode(nodeIndex);
+        int parentCellSize = Constants.lengthAtLevel(level);
+        int childCellSize = parentCellSize / 2;
+        byte childLevel = (byte) (level + 1);
+
+        // Check all 8 potential children
+        for (int i = 0; i < OCTREE_CHILDREN; i++) {
+            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
+            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
+            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
+
+            long childIndex = MortonCurve.encode(childX, childY, childZ);
+
+            // Only add if child exists in spatial index
+            if (spatialIndex.containsKey(childIndex)) {
+                children.add(childIndex);
+            }
+        }
+
+        return children;
+    }
+
+    @Override
+    protected Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
+        // For octree, use spatial ordering to traverse nodes that could intersect with the frustum
+        // Order by distance from camera to node center for optimal culling traversal
+        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+            OctreeNode<ID> node = spatialIndex.get(nodeIndex);
+            return node != null && !node.isEmpty();
+        }).sorted((n1, n2) -> {
+            float dist1 = getFrustumNodeDistance(n1, cameraPosition);
+            float dist2 = getFrustumNodeDistance(n2, cameraPosition);
+            return Float.compare(dist1, dist2);
+        });
     }
 
     @Override
@@ -288,7 +409,21 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
     }
 
-    // Helper methods for spatial range queries
+    // Private helper methods
+
+    @Override
+    protected Stream<Long> getPlaneTraversalOrder(Plane3D plane) {
+        // For octree, use spatial ordering to traverse nodes that could intersect with the plane
+        // Order by distance from plane to node center for better early termination
+        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+            OctreeNode<ID> node = spatialIndex.get(nodeIndex);
+            return node != null && !node.isEmpty();
+        }).sorted((n1, n2) -> {
+            float dist1 = getPlaneNodeDistance(n1, plane);
+            float dist2 = getPlaneNodeDistance(n2, plane);
+            return Float.compare(Math.abs(dist1), Math.abs(dist2));
+        });
+    }
 
     @Override
     protected float getRayNodeIntersectionDistance(long nodeIndex, Ray3D ray) {
@@ -304,63 +439,12 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return distance >= 0 ? distance : Float.MAX_VALUE;
     }
 
-    // ===== Plane Intersection Implementation =====
-
-    @Override
-    protected boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane) {
-        Spatial.Cube cube = getCubeFromIndex(nodeIndex);
-        return plane.intersectsCube(cube);
-    }
-
-    @Override
-    protected Stream<Long> getPlaneTraversalOrder(Plane3D plane) {
-        // For octree, use spatial ordering to traverse nodes that could intersect with the plane
-        // Order by distance from plane to node center for better early termination
-        return sortedSpatialIndices.stream()
-            .filter(nodeIndex -> {
-                OctreeNode<ID> node = spatialIndex.get(nodeIndex);
-                return node != null && !node.isEmpty();
-            })
-            .sorted((n1, n2) -> {
-                float dist1 = getPlaneNodeDistance(n1, plane);
-                float dist2 = getPlaneNodeDistance(n2, plane);
-                return Float.compare(Math.abs(dist1), Math.abs(dist2));
-            });
-    }
-
-    // ===== Frustum Intersection Implementation =====
-
-    @Override
-    protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
-        // Get the node's cube bounds
-        Spatial.Cube nodeCube = getCubeFromIndex(nodeIndex);
-        
-        // Use Frustum3D's intersectsCube method for efficient frustum-AABB intersection
-        return frustum.intersectsCube(nodeCube);
-    }
-
-    @Override
-    protected Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
-        // For octree, use spatial ordering to traverse nodes that could intersect with the frustum
-        // Order by distance from camera to node center for optimal culling traversal
-        return sortedSpatialIndices.stream()
-            .filter(nodeIndex -> {
-                OctreeNode<ID> node = spatialIndex.get(nodeIndex);
-                return node != null && !node.isEmpty();
-            })
-            .sorted((n1, n2) -> {
-                float dist1 = getFrustumNodeDistance(n1, cameraPosition);
-                float dist2 = getFrustumNodeDistance(n2, cameraPosition);
-                return Float.compare(dist1, dist2);
-            });
-    }
-
     @Override
     protected Stream<Long> getRayTraversalOrder(Ray3D ray) {
         // First approach: check all existing nodes in the spatial index
         // This ensures we don't miss any nodes that actually contain entities
         List<NodeDistance> nodeDistances = new ArrayList<>();
-        
+
         for (Long nodeIndex : spatialIndex.keySet()) {
             // Check if ray intersects this node
             if (doesRayIntersectNode(nodeIndex, ray)) {
@@ -370,20 +454,20 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 }
             }
         }
-        
+
         // Sort by distance to get traversal order
         Collections.sort(nodeDistances);
-        
+
         // Return stream of node indices in order
         return nodeDistances.stream().map(nd -> nd.nodeIndex);
     }
+
+    // ===== SpatialIndex Interface Implementation =====
 
     @Override
     protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
         return getMortonCodeRange(bounds);
     }
-
-    // Private helper methods
 
     @Override
     protected void handleNodeSubdivision(long parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
@@ -424,10 +508,10 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
         // Create child nodes and redistribute entities
         System.out.println("Proceeding with subdivision: " + childEntityMap.size() + " child nodes to create");
-        
+
         // Track which entities we need to remove from parent
         Set<ID> entitiesToRemoveFromParent = new HashSet<>();
-        
+
         // Add entities to child nodes
         for (Map.Entry<Long, List<ID>> entry : childEntityMap.entrySet()) {
             long childMorton = entry.getKey();
@@ -435,21 +519,23 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
             if (!childEntities.isEmpty()) {
                 OctreeNode<ID> childNode;
-                
+
                 if (childMorton == parentMorton) {
                     // Special case: child has same Morton code as parent
                     // The entities can stay in the parent node - don't redistribute them
-                    System.out.println("Entities " + childEntities + " stay in parent node (same morton " + childMorton + ")");
+                    System.out.println(
+                    "Entities " + childEntities + " stay in parent node (same morton " + childMorton + ")");
                     // Don't mark these entities for removal from parent
                     continue;
                 } else {
                     // Create or get child node
-                    System.out.println("Creating new child node for morton " + childMorton + " with entities " + childEntities);
+                    System.out.println(
+                    "Creating new child node for morton " + childMorton + " with entities " + childEntities);
                     childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
                         sortedSpatialIndices.add(childMorton);
                         return new OctreeNode<>(maxEntitiesPerNode);
                     });
-                    
+
                     // Add entities to child and mark for removal from parent
                     for (ID entityId : childEntities) {
                         childNode.addEntity(entityId);
@@ -466,7 +552,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             parentNode.removeEntity(entityId);
             entityManager.removeEntityLocation(entityId, parentMorton);
         }
-        
+
         // Mark that this node has been subdivided
         parentNode.setHasChildren(true);
     }
@@ -476,7 +562,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         OctreeNode<ID> node = this.spatialIndex.get(spatialIndex);
         return node != null && node.hasChildren();
     }
-    
 
     /**
      * Insert entity at a single position (no spanning) - override to add Morton code tracking
@@ -513,8 +598,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
     }
 
-    // ===== SpatialIndex Interface Implementation =====
-
     /**
      * Insert entity with spanning across multiple nodes
      */
@@ -545,26 +628,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return isCubeContainedInVolume(cube, volume);
         }
         return false;
-    }
-
-    @Override
-    protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
-        // Get node bounds from Morton code
-        int[] coords = MortonCurve.decode(nodeIndex);
-        byte level = Constants.toLevel(nodeIndex);
-        int cellSize = Constants.lengthAtLevel(level);
-        
-        // Calculate node center
-        float centerX = coords[0] + cellSize / 2.0f;
-        float centerY = coords[1] + cellSize / 2.0f;
-        float centerZ = coords[2] + cellSize / 2.0f;
-        
-        // Return distance from query point to node center
-        float dx = queryPoint.x - centerX;
-        float dy = queryPoint.y - centerY;
-        float dz = queryPoint.z - centerZ;
-        
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     @Override
@@ -608,6 +671,8 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     protected void validateSpatialConstraints(Point3f position) {
         // Octree doesn't have specific spatial constraints
     }
+
+    // ===== Ray Intersection Implementation =====
 
     @Override
     protected void validateSpatialConstraints(Spatial volume) {
@@ -668,8 +733,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         };
     }
 
-    // ===== Ray Intersection Implementation =====
-
     /**
      * Helper method to add intersecting child nodes to the traversal queue
      */
@@ -687,11 +750,10 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
 
             // Calculate child morton code at the child level
-            Point3f childCenter = new Point3f(childX + childCellSize/2.0f, 
-                                            childY + childCellSize/2.0f, 
-                                            childZ + childCellSize/2.0f);
+            Point3f childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
+                                              childZ + childCellSize / 2.0f);
             long childIndex = Constants.calculateMortonIndex(childCenter, childLevel);
-            
+
             if (!visitedNodes.contains(childIndex)) {
                 float distance = rayIntersectsAABB(ray, childX, childY, childZ, childX + childCellSize,
                                                    childY + childCellSize, childZ + childCellSize);
@@ -735,9 +797,8 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
                     if (bounds.intersectsCube(cellOriginX, cellOriginY, cellOriginZ, cellSize)) {
                         // Use level-aware morton encoding
-                        Point3f cellCenter = new Point3f(cellOriginX + cellSize/2.0f, 
-                                                        cellOriginY + cellSize/2.0f, 
-                                                        cellOriginZ + cellSize/2.0f);
+                        Point3f cellCenter = new Point3f(cellOriginX + cellSize / 2.0f, cellOriginY + cellSize / 2.0f,
+                                                         cellOriginZ + cellSize / 2.0f);
                         long mortonCode = Constants.calculateMortonIndex(cellCenter, level);
                         result.add(mortonCode);
                     }
@@ -746,6 +807,37 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
 
         return result;
+    }
+
+    /**
+     * Helper method to get cube from node index
+     */
+    private Spatial.Cube getCubeFromIndex(long nodeIndex) {
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+        return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
+    }
+
+    /**
+     * Calculate distance from camera position to node center for frustum culling traversal order
+     */
+    private float getFrustumNodeDistance(long nodeIndex, Point3f cameraPosition) {
+        int[] coords = MortonCurve.decode(nodeIndex);
+        byte level = Constants.toLevel(nodeIndex);
+        int cellSize = Constants.lengthAtLevel(level);
+
+        // Calculate node center
+        float centerX = coords[0] + cellSize / 2.0f;
+        float centerY = coords[1] + cellSize / 2.0f;
+        float centerZ = coords[2] + cellSize / 2.0f;
+
+        // Return distance from camera to node center
+        float dx = cameraPosition.x - centerX;
+        float dy = cameraPosition.y - centerY;
+        float dz = cameraPosition.z - centerZ;
+
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**
@@ -788,15 +880,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return extendedCodes;
     }
 
-    /**
-     * Helper method to get cube from node index
-     */
-    private Spatial.Cube getCubeFromIndex(long nodeIndex) {
-        int[] coords = MortonCurve.decode(nodeIndex);
-        byte level = Constants.toLevel(nodeIndex);
-        int cellSize = Constants.lengthAtLevel(level);
-        return new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
-    }
+    // ===== Tree Balancing Implementation =====
 
     /**
      * Calculate distance from plane to node center
@@ -805,35 +889,14 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         int[] coords = MortonCurve.decode(nodeIndex);
         byte level = Constants.toLevel(nodeIndex);
         int cellSize = Constants.lengthAtLevel(level);
-        
+
         // Calculate node center
         float centerX = coords[0] + cellSize / 2.0f;
         float centerY = coords[1] + cellSize / 2.0f;
         float centerZ = coords[2] + cellSize / 2.0f;
-        
+
         // Return signed distance from plane to node center
         return plane.distanceToPoint(new Point3f(centerX, centerY, centerZ));
-    }
-
-    /**
-     * Calculate distance from camera position to node center for frustum culling traversal order
-     */
-    private float getFrustumNodeDistance(long nodeIndex, Point3f cameraPosition) {
-        int[] coords = MortonCurve.decode(nodeIndex);
-        byte level = Constants.toLevel(nodeIndex);
-        int cellSize = Constants.lengthAtLevel(level);
-        
-        // Calculate node center
-        float centerX = coords[0] + cellSize / 2.0f;
-        float centerY = coords[1] + cellSize / 2.0f;
-        float centerZ = coords[2] + cellSize / 2.0f;
-        
-        // Return distance from camera to node center
-        float dx = cameraPosition.x - centerX;
-        float dy = cameraPosition.y - centerY;
-        float dz = cameraPosition.z - centerZ;
-        
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**
@@ -941,164 +1004,18 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return Float.compare(this.distance, other.distance);
         }
     }
-    
-    // ===== Tree Balancing Implementation =====
-    
-    @Override
-    protected TreeBalancer<ID> createTreeBalancer() {
-        return new OctreeBalancer();
-    }
-    
-    @Override
-    protected List<Long> getChildNodes(long nodeIndex) {
-        List<Long> children = new ArrayList<>();
-        byte level = Constants.toLevel(nodeIndex);
-        
-        if (level >= maxDepth) {
-            return children; // No children possible at max depth
-        }
-        
-        int[] parentCoords = MortonCurve.decode(nodeIndex);
-        int parentCellSize = Constants.lengthAtLevel(level);
-        int childCellSize = parentCellSize / 2;
-        byte childLevel = (byte) (level + 1);
-        
-        // Check all 8 potential children
-        for (int i = 0; i < OCTREE_CHILDREN; i++) {
-            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
-            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
-            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
-            
-            long childIndex = MortonCurve.encode(childX, childY, childZ);
-            
-            // Only add if child exists in spatial index
-            if (spatialIndex.containsKey(childIndex)) {
-                children.add(childIndex);
-            }
-        }
-        
-        return children;
-    }
 
-    @Override
-    protected void ensureAncestorNodes(long spatialIndex, byte level) {
-        if (level == 0) {
-            return; // Root level has no ancestors
-        }
-        
-        // Create all ancestor nodes from root to the current level
-        // For Morton codes, we can calculate ancestor indices directly
-        int[] coords = MortonCurve.decode(spatialIndex);
-        
-        // Walk up the parent chain and ensure all ancestors exist
-        for (byte parentLevel = 0; parentLevel < level; parentLevel++) {
-            // Calculate ancestor coordinates at this level
-            int cellSize = Constants.lengthAtLevel(parentLevel);
-            int ancestorX = (coords[0] / cellSize) * cellSize;
-            int ancestorY = (coords[1] / cellSize) * cellSize;
-            int ancestorZ = (coords[2] / cellSize) * cellSize;
-            
-            long ancestorIndex = MortonCurve.encode(ancestorX, ancestorY, ancestorZ);
-            
-            // Ensure this ancestor node exists in the spatial index
-            // Use computeIfAbsent to atomically create node and update sorted indices
-            getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
-                getSortedSpatialIndices().add(ancestorIndex);
-                return createNode();
-            });
-        }
-    }
-    
     /**
      * Octree-specific tree balancer implementation
      */
     protected class OctreeBalancer extends DefaultTreeBalancer {
-        
-        @Override
-        public List<Long> splitNode(long nodeIndex, byte nodeLevel) {
-            if (nodeLevel >= maxDepth) {
-                return Collections.emptyList();
-            }
-            
-            OctreeNode<ID> node = spatialIndex.get(nodeIndex);
-            if (node == null || node.isEmpty()) {
-                return Collections.emptyList();
-            }
-            
-            // Get entities to redistribute
-            Set<ID> entities = new HashSet<>(node.getEntityIds());
-            
-            // Calculate child coordinates
-            int[] parentCoords = MortonCurve.decode(nodeIndex);
-            int parentCellSize = Constants.lengthAtLevel(nodeLevel);
-            int childCellSize = parentCellSize / 2;
-            byte childLevel = (byte) (nodeLevel + 1);
-            
-            // Create child nodes
-            List<Long> createdChildren = new ArrayList<>();
-            Map<Long, Set<ID>> childEntityMap = new HashMap<>();
-            
-            // Distribute entities to children based on their positions
-            for (ID entityId : entities) {
-                Point3f pos = entityManager.getEntityPosition(entityId);
-                if (pos == null) continue;
-                
-                // Determine which child octant this entity belongs to
-                int octant = 0;
-                if (pos.x >= parentCoords[0] + childCellSize) octant |= 1;
-                if (pos.y >= parentCoords[1] + childCellSize) octant |= 2;
-                if (pos.z >= parentCoords[2] + childCellSize) octant |= 4;
-                
-                int childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
-                int childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
-                int childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
-                
-                long childIndex = MortonCurve.encode(childX, childY, childZ);
-                childEntityMap.computeIfAbsent(childIndex, k -> new HashSet<>()).add(entityId);
-            }
-            
-            // Check if all entities map to the same child - if so, don't split
-            if (childEntityMap.size() == 1 && childEntityMap.containsKey(nodeIndex)) {
-                // All entities map to the same cell as the parent - splitting won't help
-                return Collections.emptyList();
-            }
-            
-            // Create child nodes and add entities
-            for (Map.Entry<Long, Set<ID>> entry : childEntityMap.entrySet()) {
-                long childIndex = entry.getKey();
-                Set<ID> childEntities = entry.getValue();
-                
-                if (!childEntities.isEmpty()) {
-                    OctreeNode<ID> childNode = spatialIndex.computeIfAbsent(childIndex, k -> {
-                        sortedSpatialIndices.add(childIndex);
-                        return new OctreeNode<>(maxEntitiesPerNode);
-                    });
-                    
-                    for (ID entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        entityManager.addEntityLocation(entityId, childIndex);
-                    }
-                    
-                    createdChildren.add(childIndex);
-                }
-            }
-            
-            // Clear parent node and update entity locations
-            node.clearEntities();
-            node.setHasChildren(true);
-            for (ID entityId : entities) {
-                entityManager.removeEntityLocation(entityId, nodeIndex);
-            }
-            
-            return createdChildren;
-        }
-        
+
         @Override
         public boolean mergeNodes(Set<Long> nodeIndices, long parentIndex) {
             if (nodeIndices.isEmpty()) {
                 return false;
             }
-            
+
             // Collect all entities from nodes to be merged
             Set<ID> allEntities = new HashSet<>();
             for (Long nodeIndex : nodeIndices) {
@@ -1107,7 +1024,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     allEntities.addAll(node.getEntityIds());
                 }
             }
-            
+
             if (allEntities.isEmpty()) {
                 // Just remove empty nodes
                 for (Long nodeIndex : nodeIndices) {
@@ -1116,89 +1033,176 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 }
                 return true;
             }
-            
+
             // Get or create parent node
             OctreeNode<ID> parentNode = spatialIndex.computeIfAbsent(parentIndex, k -> {
                 sortedSpatialIndices.add(parentIndex);
                 return new OctreeNode<>(maxEntitiesPerNode);
             });
-            
+
             // Move all entities to parent
             for (ID entityId : allEntities) {
                 // Remove from child locations
                 for (Long nodeIndex : nodeIndices) {
                     entityManager.removeEntityLocation(entityId, nodeIndex);
                 }
-                
+
                 // Add to parent
                 parentNode.addEntity(entityId);
                 entityManager.addEntityLocation(entityId, parentIndex);
             }
-            
+
             // Remove child nodes
             for (Long nodeIndex : nodeIndices) {
                 spatialIndex.remove(nodeIndex);
                 sortedSpatialIndices.remove(nodeIndex);
             }
-            
+
             // Parent no longer has children after merge
             parentNode.setHasChildren(false);
-            
+
             return true;
         }
-        
+
+        @Override
+        public List<Long> splitNode(long nodeIndex, byte nodeLevel) {
+            if (nodeLevel >= maxDepth) {
+                return Collections.emptyList();
+            }
+
+            OctreeNode<ID> node = spatialIndex.get(nodeIndex);
+            if (node == null || node.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            // Get entities to redistribute
+            Set<ID> entities = new HashSet<>(node.getEntityIds());
+
+            // Calculate child coordinates
+            int[] parentCoords = MortonCurve.decode(nodeIndex);
+            int parentCellSize = Constants.lengthAtLevel(nodeLevel);
+            int childCellSize = parentCellSize / 2;
+            byte childLevel = (byte) (nodeLevel + 1);
+
+            // Create child nodes
+            List<Long> createdChildren = new ArrayList<>();
+            Map<Long, Set<ID>> childEntityMap = new HashMap<>();
+
+            // Distribute entities to children based on their positions
+            for (ID entityId : entities) {
+                Point3f pos = entityManager.getEntityPosition(entityId);
+                if (pos == null) {
+                    continue;
+                }
+
+                // Determine which child octant this entity belongs to
+                int octant = 0;
+                if (pos.x >= parentCoords[0] + childCellSize) {
+                    octant |= 1;
+                }
+                if (pos.y >= parentCoords[1] + childCellSize) {
+                    octant |= 2;
+                }
+                if (pos.z >= parentCoords[2] + childCellSize) {
+                    octant |= 4;
+                }
+
+                int childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
+                int childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
+                int childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
+
+                long childIndex = MortonCurve.encode(childX, childY, childZ);
+                childEntityMap.computeIfAbsent(childIndex, k -> new HashSet<>()).add(entityId);
+            }
+
+            // Check if all entities map to the same child - if so, don't split
+            if (childEntityMap.size() == 1 && childEntityMap.containsKey(nodeIndex)) {
+                // All entities map to the same cell as the parent - splitting won't help
+                return Collections.emptyList();
+            }
+
+            // Create child nodes and add entities
+            for (Map.Entry<Long, Set<ID>> entry : childEntityMap.entrySet()) {
+                long childIndex = entry.getKey();
+                Set<ID> childEntities = entry.getValue();
+
+                if (!childEntities.isEmpty()) {
+                    OctreeNode<ID> childNode = spatialIndex.computeIfAbsent(childIndex, k -> {
+                        sortedSpatialIndices.add(childIndex);
+                        return new OctreeNode<>(maxEntitiesPerNode);
+                    });
+
+                    for (ID entityId : childEntities) {
+                        childNode.addEntity(entityId);
+                        entityManager.addEntityLocation(entityId, childIndex);
+                    }
+
+                    createdChildren.add(childIndex);
+                }
+            }
+
+            // Clear parent node and update entity locations
+            node.clearEntities();
+            node.setHasChildren(true);
+            for (ID entityId : entities) {
+                entityManager.removeEntityLocation(entityId, nodeIndex);
+            }
+
+            return createdChildren;
+        }
+
         @Override
         protected Set<Long> findSiblings(long nodeIndex) {
             byte level = Constants.toLevel(nodeIndex);
             if (level == 0) {
                 return Collections.emptySet(); // Root has no siblings
             }
-            
+
             // Calculate parent coordinates
             int[] coords = MortonCurve.decode(nodeIndex);
             int cellSize = Constants.lengthAtLevel(level);
             int parentCellSize = cellSize * 2;
-            
+
             // Find parent cell coordinates
             int parentX = (coords[0] / parentCellSize) * parentCellSize;
             int parentY = (coords[1] / parentCellSize) * parentCellSize;
             int parentZ = (coords[2] / parentCellSize) * parentCellSize;
-            
+
             Set<Long> siblings = new HashSet<>();
-            
+
             // Check all 8 positions in parent cell
             for (int i = 0; i < OCTREE_CHILDREN; i++) {
                 int siblingX = parentX + ((i & 1) != 0 ? cellSize : 0);
                 int siblingY = parentY + ((i & 2) != 0 ? cellSize : 0);
                 int siblingZ = parentZ + ((i & 4) != 0 ? cellSize : 0);
-                
+
                 long siblingIndex = MortonCurve.encode(siblingX, siblingY, siblingZ);
-                
+
                 // Add if it's not the current node and exists
                 if (siblingIndex != nodeIndex && spatialIndex.containsKey(siblingIndex)) {
                     siblings.add(siblingIndex);
                 }
             }
-            
+
             return siblings;
         }
-        
+
         @Override
         protected long getParentIndex(long nodeIndex) {
             byte level = Constants.toLevel(nodeIndex);
             if (level == 0) {
                 return -1; // Root has no parent
             }
-            
+
             int[] coords = MortonCurve.decode(nodeIndex);
             int cellSize = Constants.lengthAtLevel(level);
             int parentCellSize = cellSize * 2;
-            
+
             // Calculate parent coordinates
             int parentX = (coords[0] / parentCellSize) * parentCellSize;
             int parentY = (coords[1] / parentCellSize) * parentCellSize;
             int parentZ = (coords[2] / parentCellSize) * parentCellSize;
-            
+
             return MortonCurve.encode(parentX, parentY, parentZ);
         }
     }

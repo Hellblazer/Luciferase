@@ -2,11 +2,17 @@
 
 ## Overview
 
-The lucien module provides spatial indexing capabilities through a unified architecture that supports both octree (cubic) and tetree (tetrahedral) decomposition strategies. Following a major consolidation in January 2025, the module now uses inheritance to maximize code reuse while maintaining the unique characteristics of each spatial indexing approach.
+The lucien module provides spatial indexing capabilities through a unified architecture that supports both octree (
+cubic) and tetree (tetrahedral) decomposition strategies. Following a major consolidation in January 2025, the module
+now uses inheritance to maximize code reuse while maintaining the unique characteristics of each spatial indexing
+approach.
 
-The Luciferase codebase underwent dramatic architectural simplification in 2025, focusing on core spatial indexing functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex abstractions while maintaining full spatial indexing capabilities.
+The Luciferase codebase underwent dramatic architectural simplification in 2025, focusing on core spatial indexing
+functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
+abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 34 Java classes organized in a clean package hierarchy, prioritizing simplicity and correctness over advanced features.
+The module consists of 34 Java classes organized in a clean package hierarchy, prioritizing simplicity and correctness
+over advanced features.
 
 ## Package Structure
 
@@ -63,6 +69,7 @@ SpatialNodeStorage<ID> (interface)
 The `AbstractSpatialIndex` class contains the majority of spatial indexing functionality:
 
 ### Common State
+
 - `spatialIndex: Map<Long, NodeType>` - Main spatial storage mapping indices to nodes
 - `sortedSpatialIndices: NavigableSet<Long>` - Sorted indices for efficient range queries
 - `entityManager: EntityManager<ID, Content>` - Centralized entity lifecycle management
@@ -71,6 +78,7 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 - `spanningPolicy: EntitySpanningPolicy` - Controls entity spanning behavior
 
 ### Common Operations
+
 - **Entity Management**: insert(), remove(), update(), lookup()
 - **Spatial Queries**: boundedBy(), bounding(), enclosing()
 - **k-NN Search**: Complete k-nearest neighbor implementation
@@ -78,6 +86,7 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 - **Node Lifecycle**: insertAtPosition(), onNodeRemoved(), handleNodeSubdivision()
 
 ### Abstract Methods (Implementation-Specific)
+
 - `calculateSpatialIndex(Point3f, byte level)` - Convert position to spatial index
 - `createNode()` - Create implementation-specific node type
 - `getLevelFromIndex(long)` - Extract level from spatial index
@@ -91,12 +100,14 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 The `Octree` class provides Morton curve-based cubic spatial decomposition:
 
 ### Unique Characteristics
+
 - Uses Morton encoding for spatial indices
 - No coordinate constraints (supports negative coordinates)
 - 8 children per node (cubic subdivision)
 - Efficient range queries using Morton curve properties
 
 ### Key Methods
+
 - `calculateSpatialIndex()` - Computes Morton code from position
 - `getMortonCodeRange()` - Optimized range calculation using Morton properties
 - `addNeighboringNodes()` - 26-neighbor cubic traversal
@@ -106,12 +117,14 @@ The `Octree` class provides Morton curve-based cubic spatial decomposition:
 The `Tetree` class provides tetrahedral spatial decomposition:
 
 ### Unique Characteristics
+
 - Uses tetrahedral space-filling curve
 - Requires positive coordinates only
 - 6 tetrahedra per grid cell
 - Complex neighbor relationships
 
 ### Key Methods
+
 - `calculateSpatialIndex()` - Uses Tet.locate() for tetrahedral index
 - `computeSFCRanges()` - Tetrahedral SFC range calculation
 - `addNeighboringNodes()` - Tetrahedral neighbor traversal
@@ -122,12 +135,14 @@ The `Tetree` class provides tetrahedral spatial decomposition:
 The `EntityManager` class provides centralized entity lifecycle:
 
 ### Core Functionality
+
 - Entity storage with O(1) access by ID
 - Position and bounds tracking
 - Multi-location support (entity spanning)
 - ID generation through pluggable generators
 
 ### Entity Types
+
 - `Entity<Content>` - Core entity with content, position, and bounds
 - `EntityID` - Abstract identifier (implementations: LongEntityID, UUIDEntityID)
 - `EntityBounds` - Bounding box for spatial entities
@@ -138,26 +153,31 @@ The `EntityManager` class provides centralized entity lifecycle:
 ### Root Package Classes (13)
 
 **Core Abstractions:**
+
 - **SpatialIndex** - Main interface defining spatial operations
 - **AbstractSpatialIndex** - Base implementation with common functionality
 - **SpatialNodeStorage** - Interface for node storage strategies
 - **AbstractSpatialNode** - Base node implementation
 
 **Spatial Types:**
+
 - **Spatial** - Sealed interface for spatial volumes (Cube, Sphere, etc.)
 - **VolumeBounds** - AABB representation for any spatial volume
 
 **Geometry Utilities:**
+
 - **Frustum3D** - View frustum representation
 - **Plane3D** - 3D plane with distance calculations
 - **Ray3D** - Ray casting support
 - **Simplex** - Simplex aggregation strategies
 
 **Core Utilities:**
+
 - **Constants** - System-wide constants and calculations
 - **VisibilitySearch** - Line-of-sight and occlusion queries
 
 ### Entity Package (12)
+
 - **EntityManager** - Centralized entity management
 - **Entity** - Core entity class with content and metadata
 - **EntityBounds** - Bounding volume for spanning entities
@@ -170,11 +190,13 @@ The `EntityManager` class provides centralized entity lifecycle:
 - **SequentialLongIDGenerator**, **UUIDGenerator** - ID generators
 
 ### Octree Package (3)
+
 - **Octree** - Morton curve-based spatial index
 - **OctreeNode** - List-based entity storage per node
 - **Octant** - Octant enumeration and utilities
 
 ### Tetree Package (6)
+
 - **Tetree** - Tetrahedral tree with positive coordinate constraints
 - **TetreeNodeImpl** - Set-based entity storage per node
 - **Tet** - Tetrahedron representation with SFC indexing
@@ -185,6 +207,7 @@ The `EntityManager` class provides centralized entity lifecycle:
 ## Performance Characteristics
 
 ### Time Complexity
+
 - Insert: O(1) average (HashMap access)
 - Remove: O(1) average
 - Lookup: O(1) average
@@ -192,6 +215,7 @@ The `EntityManager` class provides centralized entity lifecycle:
 - Range Query: O(nodes in range)
 
 ### Space Complexity
+
 - O(n) for n entities
 - Additional O(m) for m non-empty nodes
 - Sorted indices add O(m) space
@@ -199,12 +223,14 @@ The `EntityManager` class provides centralized entity lifecycle:
 ### Implementation-Specific Performance
 
 **Octree:**
+
 - O(1) average node access (HashMap-based)
 - Morton curve preserves spatial locality
 - Efficient range queries via sorted Morton codes
 - Supports dynamic node subdivision
 
 **Tetree:**
+
 - O(1) average node access (HashMap-based as of January 2025)
 - Tetrahedral SFC for positive coordinates only
 - More complex geometry calculations
@@ -213,7 +239,9 @@ The `EntityManager` class provides centralized entity lifecycle:
 ## Design Principles
 
 ### 1. Generic Type System
+
 All spatial classes use consistent generics:
+
 ```java
 public class SpatialClass<ID extends EntityID, Content> {
     // ID: Entity identifier type
@@ -222,18 +250,23 @@ public class SpatialClass<ID extends EntityID, Content> {
 ```
 
 ### 2. Template Method Pattern
+
 AbstractSpatialIndex defines the algorithm structure:
+
 - Common operations in base class
 - Spatial-specific logic in abstract methods
 - Concrete implementations provide specialization
 
 ### 3. Multi-Entity Support
+
 Built into the core architecture:
+
 - Multiple entities per spatial location
 - Entities can span multiple nodes
 - Efficient entity-to-node mapping
 
 ### 4. Separation of Concerns
+
 - Spatial indexing logic separate from entity management
 - Node storage abstracted from spatial operations
 - Geometry utilities independent of data structures
@@ -252,6 +285,7 @@ Built into the core architecture:
 The codebase underwent dramatic simplification in 2025, focusing on core spatial indexing:
 
 ### Key Removals
+
 - All specialized search implementations (previously planned 11+ for each structure)
 - All optimization layers and optimizer classes
 - Spatial engine abstraction layer
@@ -263,7 +297,7 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 Unlike earlier documentation that described 60+ classes, the actual implementation contains 34 classes:
 
 - **No specialized search classes** - Search algorithms integrated into core classes
-- **No optimizer classes** - Optimization is left to implementations  
+- **No optimizer classes** - Optimization is left to implementations
 - **No spatial engine layer** - Direct use of spatial indices
 - **No parallel processing classes** - Thread-safe through ReadWriteLock
 - **No adapter patterns** - Clean inheritance instead
@@ -281,32 +315,29 @@ The simplified architecture focuses on:
 
 ```java
 // Create an octree
-Octree<LongEntityID, String> octree = new Octree<>(
-    new SequentialLongIDGenerator(),
-    10,  // max entities per node
-    (byte) 20  // max depth
+Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator(), 10,  // max entities per node
+                                                   (byte) 20  // max depth
 );
 
 // Insert entities
 LongEntityID id = new LongEntityID(1);
-octree.insert(id, new Point3f(100, 200, 300), (byte) 10, "Entity data");
+octree.
+
+insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");
 
 // k-NN search
-List<LongEntityID> nearest = octree.kNearestNeighbors(
-    new Point3f(110, 210, 310),
-    5,  // find 5 nearest
-    1000.0f  // max distance
-);
+List<LongEntityID> nearest = octree.kNearestNeighbors(new Point3f(110, 210, 310), 5,  // find 5 nearest
+                                                      1000.0f  // max distance
+                                                     );
 
 // Range query
-Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(
-    new Spatial.Cube(0, 0, 0, 500)
-);
+Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0, 0, 500));
 ```
 
 ## Testing
 
 The module includes comprehensive test coverage:
+
 - 134 total tests (11 skipped for performance)
 - Unit tests for all major operations
 - Integration tests for spatial queries
@@ -316,9 +347,11 @@ The module includes comprehensive test coverage:
 ## Future Considerations
 
 The architecture is designed to be extensible:
+
 - New spatial decomposition strategies can extend AbstractSpatialIndex
 - Additional node storage strategies can implement SpatialNodeStorage
 - Search algorithms can be added without modifying core classes
 - The generic type system allows for custom entity ID types
 
-The current implementation prioritizes simplicity and correctness over advanced features, providing a solid foundation for 3D spatial indexing needs.
+The current implementation prioritizes simplicity and correctness over advanced features, providing a solid foundation
+for 3D spatial indexing needs.

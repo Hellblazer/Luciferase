@@ -2,13 +2,16 @@
 
 ## Overview
 
-The Ray Intersection API provides efficient ray tracing capabilities for spatial queries in both Octree and Tetree implementations. This API is designed for applications requiring line-of-sight queries, visibility checks, and ray-based spatial interactions.
+The Ray Intersection API provides efficient ray tracing capabilities for spatial queries in both Octree and Tetree
+implementations. This API is designed for applications requiring line-of-sight queries, visibility checks, and ray-based
+spatial interactions.
 
 ## Core Concepts
 
 ### Ray3D
 
 The `Ray3D` class represents a ray in 3D space with:
+
 - **Origin**: Starting point (must have positive coordinates)
 - **Direction**: Normalized direction vector
 - **Max Distance**: Optional maximum distance (default: unbounded)
@@ -27,6 +30,7 @@ Ray3D pointToPoint = Ray3D.fromPoints(start, end);
 ### RayIntersection
 
 The `RayIntersection` record contains detailed information about a ray-entity intersection:
+
 - **entityId**: The ID of the intersected entity
 - **content**: The entity's content
 - **distance**: Distance from ray origin to intersection
@@ -45,12 +49,18 @@ List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray)
 Finds all entities that intersect with the given ray, sorted by distance from the ray origin.
 
 **Example:**
+
 ```java
 Ray3D ray = Ray3D.fromPointsUnbounded(new Point3f(0, 0, 0), new Point3f(100, 100, 100));
 List<RayIntersection<LongEntityID, String>> intersections = spatialIndex.rayIntersectAll(ray);
 
-for (RayIntersection<LongEntityID, String> hit : intersections) {
-    System.out.println("Hit entity " + hit.entityId() + " at distance " + hit.distance());
+for(
+RayIntersection<LongEntityID, String> hit :intersections){
+System.out.
+
+println("Hit entity "+hit.entityId() +" at distance "+hit.
+
+distance());
 }
 ```
 
@@ -63,6 +73,7 @@ Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray)
 Finds the closest entity that intersects with the ray. This method is optimized for early termination.
 
 **Example:**
+
 ```java
 Optional<RayIntersection<LongEntityID, String>> firstHit = spatialIndex.rayIntersectFirst(ray);
 if (firstHit.isPresent()) {
@@ -80,6 +91,7 @@ List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistan
 Finds all entities that intersect with the ray within a specified maximum distance.
 
 **Example:**
+
 ```java
 // Find all intersections within 100 units
 List<RayIntersection<LongEntityID, String>> nearHits = 
@@ -91,12 +103,14 @@ List<RayIntersection<LongEntityID, String>> nearHits =
 ### Point Entity Intersection
 
 For entities without bounds, ray-sphere intersection is performed with a small radius (0.1f):
+
 - If ray starts inside the sphere: distance = 0.0
 - Otherwise: distance to sphere surface
 
-### Bounded Entity Intersection  
+### Bounded Entity Intersection
 
 For entities with bounds, ray-AABB (Axis-Aligned Bounding Box) intersection is performed:
+
 - Returns distance to the nearest face of the bounding box
 - Provides accurate intersection point and normal
 
@@ -104,7 +118,8 @@ For entities with bounds, ray-AABB (Axis-Aligned Bounding Box) intersection is p
 
 ### Algorithm Features
 
-1. **Numerical Stability**: Uses a geometrically stable ray-sphere intersection algorithm that handles distant entities correctly
+1. **Numerical Stability**: Uses a geometrically stable ray-sphere intersection algorithm that handles distant entities
+   correctly
 2. **Early Termination**: `rayIntersectFirst` stops traversal once the closest intersection is found
 3. **Sorted Results**: All intersection lists are sorted by distance for consistent behavior
 4. **Spatial Pruning**: Only traverses spatial nodes that intersect with the ray
@@ -122,7 +137,7 @@ For entities with bounds, ray-AABB (Axis-Aligned Bounding Box) intersection is p
 public boolean hasLineOfSight(Point3f from, Point3f to, ID excludeEntity) {
     Ray3D ray = Ray3D.fromPoints(from, to);
     Optional<RayIntersection<ID, Content>> hit = spatialIndex.rayIntersectFirst(ray);
-    
+
     return hit.isEmpty() || hit.get().entityId().equals(excludeEntity);
 }
 ```
@@ -165,7 +180,8 @@ public List<ID> scanCone(Point3f apex, Vector3f direction, float angle, float ra
 ## Best Practices
 
 1. **Ray Validation**: Ensure ray origin has positive coordinates (required by spatial indices)
-2. **Direction Normalization**: Ray directions are automatically normalized, but pre-normalized vectors improve performance
+2. **Direction Normalization**: Ray directions are automatically normalized, but pre-normalized vectors improve
+   performance
 3. **Bounded Rays**: Use bounded rays when possible to limit search space
 4. **Entity Bounds**: Provide entity bounds for more accurate intersection tests
 5. **Batch Queries**: When performing multiple ray queries, consider spatial locality for better cache performance
@@ -178,7 +194,8 @@ public List<ID> scanCone(Point3f apex, Vector3f direction, float angle, float ra
 
 ## Thread Safety
 
-Ray intersection queries are thread-safe for concurrent reads. The spatial index uses read-write locks to ensure consistency during concurrent operations.
+Ray intersection queries are thread-safe for concurrent reads. The spatial index uses read-write locks to ensure
+consistency during concurrent operations.
 
 ## Integration Example
 

@@ -23,73 +23,63 @@ import javax.vecmath.Vector3f;
  *
  * @author hal.hildebrand
  */
-public record CollisionResponse(
-    Vector3f impulse1,          // Impulse to apply to entity 1
-    Vector3f impulse2,          // Impulse to apply to entity 2
-    Vector3f correction1,       // Position correction for entity 1
-    Vector3f correction2,       // Position correction for entity 2
-    float restitution,          // Coefficient of restitution (bounciness)
-    float friction              // Coefficient of friction
+public record CollisionResponse(Vector3f impulse1,          // Impulse to apply to entity 1
+                                Vector3f impulse2,          // Impulse to apply to entity 2
+                                Vector3f correction1,       // Position correction for entity 1
+                                Vector3f correction2,       // Position correction for entity 2
+                                float restitution,          // Coefficient of restitution (bounciness)
+                                float friction              // Coefficient of friction
 ) {
-    
+
+    /**
+     * Create a basic elastic collision response
+     */
+    public static CollisionResponse elastic(Vector3f impulse1, Vector3f impulse2, Vector3f correction1,
+                                            Vector3f correction2) {
+        return new CollisionResponse(impulse1, impulse2, correction1, correction2, 1.0f, 0.0f);
+    }
+
+    /**
+     * Create a basic inelastic collision response
+     */
+    public static CollisionResponse inelastic(Vector3f impulse1, Vector3f impulse2, Vector3f correction1,
+                                              Vector3f correction2) {
+        return new CollisionResponse(impulse1, impulse2, correction1, correction2, 0.0f, 0.5f);
+    }
+
     /**
      * Create a response with no collision (entities pass through)
      */
     public static CollisionResponse noResponse() {
-        return new CollisionResponse(
-            new Vector3f(0, 0, 0),
-            new Vector3f(0, 0, 0),
-            new Vector3f(0, 0, 0),
-            new Vector3f(0, 0, 0),
-            0.0f,
-            0.0f
-        );
+        return new CollisionResponse(new Vector3f(0, 0, 0), new Vector3f(0, 0, 0), new Vector3f(0, 0, 0),
+                                     new Vector3f(0, 0, 0), 0.0f, 0.0f);
     }
-    
-    /**
-     * Create a basic elastic collision response
-     */
-    public static CollisionResponse elastic(Vector3f impulse1, Vector3f impulse2, 
-                                           Vector3f correction1, Vector3f correction2) {
-        return new CollisionResponse(impulse1, impulse2, correction1, correction2, 1.0f, 0.0f);
-    }
-    
-    /**
-     * Create a basic inelastic collision response
-     */
-    public static CollisionResponse inelastic(Vector3f impulse1, Vector3f impulse2,
-                                             Vector3f correction1, Vector3f correction2) {
-        return new CollisionResponse(impulse1, impulse2, correction1, correction2, 0.0f, 0.5f);
-    }
-    
+
     /**
      * Check if this represents an actual response (not a pass-through)
      */
     public boolean hasResponse() {
-        return impulse1.lengthSquared() > 0 || impulse2.lengthSquared() > 0 ||
-               correction1.lengthSquared() > 0 || correction2.lengthSquared() > 0;
+        return impulse1.lengthSquared() > 0 || impulse2.lengthSquared() > 0 || correction1.lengthSquared() > 0
+        || correction2.lengthSquared() > 0;
     }
-    
+
     /**
      * Scale the response by a factor (useful for time step integration)
      */
     public CollisionResponse scale(float factor) {
         Vector3f scaledImpulse1 = new Vector3f(impulse1);
         scaledImpulse1.scale(factor);
-        
+
         Vector3f scaledImpulse2 = new Vector3f(impulse2);
         scaledImpulse2.scale(factor);
-        
+
         Vector3f scaledCorrection1 = new Vector3f(correction1);
         scaledCorrection1.scale(factor);
-        
+
         Vector3f scaledCorrection2 = new Vector3f(correction2);
         scaledCorrection2.scale(factor);
-        
-        return new CollisionResponse(
-            scaledImpulse1, scaledImpulse2,
-            scaledCorrection1, scaledCorrection2,
-            restitution, friction
-        );
+
+        return new CollisionResponse(scaledImpulse1, scaledImpulse2, scaledCorrection1, scaledCorrection2, restitution,
+                                     friction);
     }
 }

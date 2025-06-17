@@ -19,15 +19,15 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Edge case tests for Octree ray intersection functionality.
- * Tests challenging scenarios that could break the ray intersection implementation.
+ * Edge case tests for Octree ray intersection functionality. Tests challenging scenarios that could break the ray
+ * intersection implementation.
  *
  * @author hal.hildebrand
  */
 public class OctreeRayEdgeCaseTest {
 
     private Octree<LongEntityID, String> octree;
-    private SequentialLongIDGenerator idGenerator;
+    private SequentialLongIDGenerator    idGenerator;
 
     @BeforeEach
     void setUp() {
@@ -36,14 +36,36 @@ public class OctreeRayEdgeCaseTest {
     }
 
     @Test
-    void testRayWithZeroLength() {
-        Point3f pos = new Point3f(100, 100, 100);
-        octree.insert(pos, (byte) 10, "Entity");
+    void testEmptyOctreeRayIntersection() {
+        Ray3D ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 1, 1), 1000.0f);
 
-        // Ray3D constructor should reject zero max distance
-        assertThrows(IllegalArgumentException.class, () -> {
-            new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 1, 1), 0.0f);
-        }, "Ray with zero max distance should throw IllegalArgumentException");
+        List<SpatialIndex.RayIntersection<LongEntityID, String>> intersections = octree.rayIntersectAll(ray);
+        Optional<SpatialIndex.RayIntersection<LongEntityID, String>> firstIntersection = octree.rayIntersectFirst(ray);
+
+        assertTrue(intersections.isEmpty(), "Empty octree should produce no intersections");
+        assertFalse(firstIntersection.isPresent(), "Empty octree should produce no first intersection");
+    }
+
+    @Test
+    void testOverlappingBoundedEntities() {
+        Point3f center = new Point3f(100, 100, 100);
+        EntityBounds largeBounds = new EntityBounds(new Point3f(90, 90, 90), new Point3f(110, 110, 110));
+        EntityBounds smallBounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
+
+        LongEntityID largeId = idGenerator.generateID();
+        LongEntityID smallId = idGenerator.generateID();
+
+        octree.insert(largeId, center, (byte) 10, "LargeEntity", largeBounds);
+        octree.insert(smallId, center, (byte) 10, "SmallEntity", smallBounds);
+
+        Ray3D ray = new Ray3D(new Point3f(50, 100, 100), new Vector3f(1, 0, 0), 200.0f);
+        List<SpatialIndex.RayIntersection<LongEntityID, String>> intersections = octree.rayIntersectAll(ray);
+
+        assertEquals(2, intersections.size(), "Should find both overlapping entities");
+
+        // Verify intersections are sorted by distance
+        assertTrue(intersections.get(0).distance() <= intersections.get(1).distance(),
+                   "Intersections should be sorted by distance");
     }
 
     @Test
@@ -68,61 +90,41 @@ public class OctreeRayEdgeCaseTest {
     }
 
     @Test
-    void testOverlappingBoundedEntities() {
-        Point3f center = new Point3f(100, 100, 100);
-        EntityBounds largeBounds = new EntityBounds(new Point3f(90, 90, 90), new Point3f(110, 110, 110));
-        EntityBounds smallBounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
-
-        LongEntityID largeId = idGenerator.generateID();
-        LongEntityID smallId = idGenerator.generateID();
-
-        octree.insert(largeId, center, (byte) 10, "LargeEntity", largeBounds);
-        octree.insert(smallId, center, (byte) 10, "SmallEntity", smallBounds);
-
-        Ray3D ray = new Ray3D(new Point3f(50, 100, 100), new Vector3f(1, 0, 0), 200.0f);
-        List<SpatialIndex.RayIntersection<LongEntityID, String>> intersections = octree.rayIntersectAll(ray);
-        
-        assertEquals(2, intersections.size(), "Should find both overlapping entities");
-        
-        // Verify intersections are sorted by distance
-        assertTrue(intersections.get(0).distance() <= intersections.get(1).distance(), 
-                  "Intersections should be sorted by distance");
-    }
-
-    @Test
     void testRayFirstIntersectionConsistency() {
         Point3f pos1 = new Point3f(100, 100, 100);
         Point3f pos2 = new Point3f(150, 150, 150);
         Point3f pos3 = new Point3f(200, 200, 200);
-        
+
         octree.insert(pos1, (byte) 10, "First");
         octree.insert(pos2, (byte) 10, "Second");
         octree.insert(pos3, (byte) 10, "Third");
 
         Ray3D ray = new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 1, 1), 500.0f);
-        
+
         List<SpatialIndex.RayIntersection<LongEntityID, String>> allIntersections = octree.rayIntersectAll(ray);
         Optional<SpatialIndex.RayIntersection<LongEntityID, String>> firstIntersection = octree.rayIntersectFirst(ray);
-        
+
         if (!allIntersections.isEmpty()) {
-            assertTrue(firstIntersection.isPresent(), "rayIntersectFirst should be present when rayIntersectAll finds intersections");
+            assertTrue(firstIntersection.isPresent(),
+                       "rayIntersectFirst should be present when rayIntersectAll finds intersections");
             assertEquals(allIntersections.get(0).entityId(), firstIntersection.get().entityId(),
-                        "rayIntersectFirst should match first element of rayIntersectAll");
+                         "rayIntersectFirst should match first element of rayIntersectAll");
             assertEquals(allIntersections.get(0).distance(), firstIntersection.get().distance(), 0.001f,
-                        "Distances should match between rayIntersectFirst and rayIntersectAll");
+                         "Distances should match between rayIntersectFirst and rayIntersectAll");
         } else {
-            assertFalse(firstIntersection.isPresent(), "rayIntersectFirst should be empty when rayIntersectAll finds no intersections");
+            assertFalse(firstIntersection.isPresent(),
+                        "rayIntersectFirst should be empty when rayIntersectAll finds no intersections");
         }
     }
 
     @Test
-    void testEmptyOctreeRayIntersection() {
-        Ray3D ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 1, 1), 1000.0f);
-        
-        List<SpatialIndex.RayIntersection<LongEntityID, String>> intersections = octree.rayIntersectAll(ray);
-        Optional<SpatialIndex.RayIntersection<LongEntityID, String>> firstIntersection = octree.rayIntersectFirst(ray);
-        
-        assertTrue(intersections.isEmpty(), "Empty octree should produce no intersections");
-        assertFalse(firstIntersection.isPresent(), "Empty octree should produce no first intersection");
+    void testRayWithZeroLength() {
+        Point3f pos = new Point3f(100, 100, 100);
+        octree.insert(pos, (byte) 10, "Entity");
+
+        // Ray3D constructor should reject zero max distance
+        assertThrows(IllegalArgumentException.class, () -> {
+            new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 1, 1), 0.0f);
+        }, "Ray with zero max distance should throw IllegalArgumentException");
     }
 }

@@ -77,13 +77,19 @@ public class Constants {
                                                                               { 0, 2, 2, 6, 3, 5, 5, 7 },
                                                                               { 0, 3, 3, 6, 3, 6, 6, 7 } };
 
-    /** Parent type and local index to cube id **/
+    /** Parent type and local index to cube id - from t8code t8_dtet_parenttype_Iloc_to_cid **/
     public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
+                                                                                     // Parent type 0
                                                                                      { 0, 1, 1, 1, 3, 3, 3, 7 },
+                                                                                     // Parent type 1
                                                                                      { 0, 2, 2, 2, 3, 3, 3, 7 },
+                                                                                     // Parent type 2
                                                                                      { 0, 2, 2, 2, 6, 6, 6, 7 },
+                                                                                     // Parent type 3
                                                                                      { 0, 4, 4, 4, 6, 6, 6, 7 },
-                                                                                     { 0, 4, 4, 4, 5, 5, 5, 7 } };
+                                                                                     // Parent type 4
+                                                                                     { 0, 4, 4, 4, 5, 5, 5,
+                                                                                       7 } }; // Parent type 5
 
     /** Parent type and local index to type **/
     public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },

@@ -113,7 +113,19 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
     public boolean hasChildren() {
         return childrenMask != 0;
     }
-    
+
+    /**
+     * Set a bit in the children mask to indicate a child exists
+     *
+     * @param octant the octant index (0-7)
+     */
+    public void setChildBit(int octant) {
+        if (octant < 0 || octant > 7) {
+            throw new IllegalArgumentException("Octant must be 0-7");
+        }
+        childrenMask |= (1 << octant);
+    }
+
     /**
      * Set whether this node has children (used during balancing operations)
      */
@@ -127,18 +139,6 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
             // Clear all bits
             childrenMask = 0;
         }
-    }
-
-    /**
-     * Set a bit in the children mask to indicate a child exists
-     *
-     * @param octant the octant index (0-7)
-     */
-    public void setChildBit(int octant) {
-        if (octant < 0 || octant > 7) {
-            throw new IllegalArgumentException("Octant must be 0-7");
-        }
-        childrenMask |= (1 << octant);
     }
 
     @Override

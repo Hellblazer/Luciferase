@@ -28,84 +28,40 @@ import javax.vecmath.Vector3f;
  * @author hal.hildebrand
  */
 public class CollisionShapeFactory {
-    
-    /**
-     * Create a collision shape from entity bounds.
-     * By default, creates a BoxShape from the AABB.
-     */
-    public static CollisionShape fromBounds(EntityBounds bounds) {
-        if (bounds == null) {
-            throw new IllegalArgumentException("Bounds cannot be null");
-        }
-        
-        // Calculate center and half extents
-        float centerX = (bounds.getMinX() + bounds.getMaxX()) / 2;
-        float centerY = (bounds.getMinY() + bounds.getMaxY()) / 2;
-        float centerZ = (bounds.getMinZ() + bounds.getMaxZ()) / 2;
-        Point3f center = new Point3f(centerX, centerY, centerZ);
-        
-        float halfWidth = (bounds.getMaxX() - bounds.getMinX()) / 2;
-        float halfHeight = (bounds.getMaxY() - bounds.getMinY()) / 2;
-        float halfDepth = (bounds.getMaxZ() - bounds.getMinZ()) / 2;
-        
-        return new BoxShape(center, halfWidth, halfHeight, halfDepth);
-    }
-    
-    /**
-     * Create a sphere shape from a center point and radius
-     */
-    public static SphereShape createSphere(Point3f center, float radius) {
-        return new SphereShape(center, radius);
-    }
-    
+
     /**
      * Create a box shape from a center point and half extents
      */
     public static BoxShape createBox(Point3f center, Vector3f halfExtents) {
         return new BoxShape(center, halfExtents);
     }
-    
-    /**
-     * Create an oriented box shape
-     */
-    public static OrientedBoxShape createOrientedBox(Point3f center, Vector3f halfExtents, Matrix3f orientation) {
-        return new OrientedBoxShape(center, halfExtents, orientation);
-    }
-    
+
     /**
      * Create a capsule shape from endpoints and radius
      */
     public static CapsuleShape createCapsule(Point3f endpoint1, Point3f endpoint2, float radius) {
         return new CapsuleShape(endpoint1, endpoint2, radius);
     }
-    
+
     /**
-     * Create a vertical capsule shape
-     */
-    public static CapsuleShape createVerticalCapsule(Point3f center, float height, float radius) {
-        return new CapsuleShape(center, height, radius);
-    }
-    
-    /**
-     * Try to create an optimal collision shape from bounds.
-     * Analyzes the bounds to determine if a sphere might be more appropriate.
+     * Try to create an optimal collision shape from bounds. Analyzes the bounds to determine if a sphere might be more
+     * appropriate.
      */
     public static CollisionShape createOptimalShape(EntityBounds bounds) {
         if (bounds == null) {
             throw new IllegalArgumentException("Bounds cannot be null");
         }
-        
+
         float width = bounds.getMaxX() - bounds.getMinX();
         float height = bounds.getMaxY() - bounds.getMinY();
         float depth = bounds.getMaxZ() - bounds.getMinZ();
-        
+
         // Check if bounds are roughly spherical
         float avg = (width + height + depth) / 3;
         float tolerance = 0.1f; // 10% tolerance
-        
-        if (Math.abs(width - avg) / avg < tolerance && 
-            Math.abs(height - avg) / avg < tolerance && 
-            Math.abs(depth - avg) / avg < tolerance) {
+
+        if (Math.abs(width - avg) / avg < tolerance && Math.abs(height - avg) / avg < tolerance && Math.abs(depth - avg)
+        / avg < tolerance) {
             // Create sphere
             float centerX = (bounds.getMinX() + bounds.getMaxX()) / 2;
             float centerY = (bounds.getMinY() + bounds.getMaxY()) / 2;
@@ -114,8 +70,50 @@ public class CollisionShapeFactory {
             float radius = avg / 2;
             return new SphereShape(center, radius);
         }
-        
+
         // Otherwise create box
         return fromBounds(bounds);
+    }
+
+    /**
+     * Create an oriented box shape
+     */
+    public static OrientedBoxShape createOrientedBox(Point3f center, Vector3f halfExtents, Matrix3f orientation) {
+        return new OrientedBoxShape(center, halfExtents, orientation);
+    }
+
+    /**
+     * Create a sphere shape from a center point and radius
+     */
+    public static SphereShape createSphere(Point3f center, float radius) {
+        return new SphereShape(center, radius);
+    }
+
+    /**
+     * Create a vertical capsule shape
+     */
+    public static CapsuleShape createVerticalCapsule(Point3f center, float height, float radius) {
+        return new CapsuleShape(center, height, radius);
+    }
+
+    /**
+     * Create a collision shape from entity bounds. By default, creates a BoxShape from the AABB.
+     */
+    public static CollisionShape fromBounds(EntityBounds bounds) {
+        if (bounds == null) {
+            throw new IllegalArgumentException("Bounds cannot be null");
+        }
+
+        // Calculate center and half extents
+        float centerX = (bounds.getMinX() + bounds.getMaxX()) / 2;
+        float centerY = (bounds.getMinY() + bounds.getMaxY()) / 2;
+        float centerZ = (bounds.getMinZ() + bounds.getMaxZ()) / 2;
+        Point3f center = new Point3f(centerX, centerY, centerZ);
+
+        float halfWidth = (bounds.getMaxX() - bounds.getMinX()) / 2;
+        float halfHeight = (bounds.getMaxY() - bounds.getMinY()) / 2;
+        float halfDepth = (bounds.getMaxZ() - bounds.getMinZ()) / 2;
+
+        return new BoxShape(center, halfWidth, halfHeight, halfDepth);
     }
 }

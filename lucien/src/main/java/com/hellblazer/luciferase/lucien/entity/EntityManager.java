@@ -183,14 +183,22 @@ public class EntityManager<ID extends EntityID, Content> {
     }
 
     /**
+     * Get collision shape for an entity
+     */
+    public CollisionShape getEntityCollisionShape(ID entityId) {
+        Entity<Content> entity = entities.get(entityId);
+        return entity != null ? entity.getCollisionShape() : null;
+    }
+
+    // ===== Entity Lifecycle =====
+
+    /**
      * Get entity content by ID
      */
     public Content getEntityContent(ID entityId) {
         Entity<Content> entity = entities.get(entityId);
         return entity != null ? entity.getContent() : null;
     }
-
-    // ===== Entity Lifecycle =====
 
     /**
      * Get the total number of entities
@@ -207,6 +215,8 @@ public class EntityManager<ID extends EntityID, Content> {
         return entity != null ? new HashSet<>(entity.getLocations()) : Collections.emptySet();
     }
 
+    // ===== Statistics and Queries =====
+
     /**
      * Get entity position by ID
      */
@@ -214,8 +224,6 @@ public class EntityManager<ID extends EntityID, Content> {
         Entity<Content> entity = entities.get(entityId);
         return entity != null ? entity.getPosition() : null;
     }
-
-    // ===== Statistics and Queries =====
 
     /**
      * Get the span count (number of nodes) for an entity
@@ -241,6 +249,8 @@ public class EntityManager<ID extends EntityID, Content> {
         return entities.remove(entityId);
     }
 
+    // ===== Spatial Region Queries =====
+
     /**
      * Remove a spatial location from an entity
      */
@@ -251,7 +261,25 @@ public class EntityManager<ID extends EntityID, Content> {
         }
     }
 
-    // ===== Spatial Region Queries =====
+    /**
+     * Set entity bounds
+     */
+    public void setEntityBounds(ID entityId, EntityBounds bounds) {
+        Entity<Content> entity = entities.get(entityId);
+        if (entity != null) {
+            entity.setBounds(bounds);
+        }
+    }
+
+    /**
+     * Set collision shape for an entity
+     */
+    public void setEntityCollisionShape(ID entityId, CollisionShape shape) {
+        Entity<Content> entity = entities.get(entityId);
+        if (entity != null) {
+            entity.setCollisionShape(shape);
+        }
+    }
 
     /**
      * Update an entity's position
@@ -262,33 +290,5 @@ public class EntityManager<ID extends EntityID, Content> {
             throw new IllegalArgumentException("Entity not found: " + entityId);
         }
         entity.setPosition(newPosition);
-    }
-    
-    /**
-     * Get collision shape for an entity
-     */
-    public CollisionShape getEntityCollisionShape(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
-        return entity != null ? entity.getCollisionShape() : null;
-    }
-    
-    /**
-     * Set collision shape for an entity
-     */
-    public void setEntityCollisionShape(ID entityId, CollisionShape shape) {
-        Entity<Content> entity = entities.get(entityId);
-        if (entity != null) {
-            entity.setCollisionShape(shape);
-        }
-    }
-    
-    /**
-     * Set entity bounds
-     */
-    public void setEntityBounds(ID entityId, EntityBounds bounds) {
-        Entity<Content> entity = entities.get(entityId);
-        if (entity != null) {
-            entity.setBounds(bounds);
-        }
     }
 }

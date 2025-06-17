@@ -38,7 +38,7 @@ import java.util.Set;
 public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID> {
 
     private final Set<ID> entityIds;
-    private boolean hasChildren;
+    private       boolean hasChildren;
 
     /**
      * Create a node with default max entities (10)
@@ -77,6 +77,24 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
         return Collections.unmodifiableSet(new HashSet<>(entityIds));
     }
 
+    /**
+     * Check if this node has children
+     *
+     * @return true if this node has been subdivided
+     */
+    public boolean hasChildren() {
+        return hasChildren;
+    }
+
+    /**
+     * Set whether this node has children
+     *
+     * @param hasChildren true if this node has been subdivided
+     */
+    public void setHasChildren(boolean hasChildren) {
+        this.hasChildren = hasChildren;
+    }
+
     @Override
     protected void doAddEntity(ID entityId) {
         entityIds.add(entityId);
@@ -90,23 +108,5 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
     @Override
     protected boolean doRemoveEntity(ID entityId) {
         return entityIds.remove(entityId);
-    }
-    
-    /**
-     * Check if this node has children
-     *
-     * @return true if this node has been subdivided
-     */
-    public boolean hasChildren() {
-        return hasChildren;
-    }
-    
-    /**
-     * Set whether this node has children
-     *
-     * @param hasChildren true if this node has been subdivided
-     */
-    public void setHasChildren(boolean hasChildren) {
-        this.hasChildren = hasChildren;
     }
 }

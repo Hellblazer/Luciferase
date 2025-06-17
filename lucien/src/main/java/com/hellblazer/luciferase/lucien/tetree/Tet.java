@@ -20,11 +20,35 @@ import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.toList;
 
 /**
- * A tetrahedron in the mesh from the paper:
- * <a href="https://arxiv.org/abs/1509.04627">A tetrahedral space-filling curve for non-conforming adaptive meshes</a>
- * <p>
- * <img src="reference-simplexes.png" alt="reference simplexes">
- * </p>
+ * A tetrahedron in the tetrahedral space-filling curve (Tet SFC) implementation.
+ *
+ * This class represents a single tetrahedron in the hierarchical tetrahedral decomposition of 3D space. The
+ * implementation is based on t8code and the paper "A tetrahedral space-filling curve for non-conforming adaptive
+ * meshes" (https://arxiv.org/abs/1509.04627).
+ *
+ * <p><b>Key Concepts:</b></p>
+ * <ul>
+ *   <li><b>Anchor Point</b>: The (x,y,z) coordinates represent the tetrahedron's anchor vertex</li>
+ *   <li><b>Level</b>: Refinement level (0 = root, max = 21)</li>
+ *   <li><b>Type</b>: One of 6 tetrahedral types (0-5) that tile a cubic cell</li>
+ *   <li><b>SFC Index</b>: Space-filling curve index encoding the path from root</li>
+ * </ul>
+ *
+ * <p><b>Critical Constraints:</b></p>
+ * <ul>
+ *   <li>All coordinates MUST be positive (tetrahedral SFC requirement)</li>
+ *   <li>The root tetrahedron is the S0 simplex covering the positive octant</li>
+ *   <li>Each cubic grid cell contains exactly 6 tetrahedra</li>
+ *   <li>Children are generated using Bey's vertex midpoint refinement</li>
+ * </ul>
+ *
+ * <p><b>Implementation Notes:</b></p>
+ * <ul>
+ *   <li>SFC indices use NO level offset (unlike Morton codes)</li>
+ *   <li>Level 0: index 0, Level 1: indices 1-7, Level 2: indices 8-63, etc.</li>
+ *   <li>Many-to-one mappings in connectivity tables are EXPECTED</li>
+ *   <li>Child positions use vertex midpoints, NOT cube-based offsets</li>
+ * </ul>
  *
  * @author hal.hildebrand
  **/
@@ -73,9 +97,58 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return orientation(point, vertices[1], vertices[0], vertices[2]) <= 0.0d;
     }
 
-    public static double orientation(Tuple3i query, Tuple3i a, Tuple3i b, Tuple3i c) {
-        var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
-        return Math.signum(result);
+    /**
+     * Check if a set of tetrahedra form a family (can be merged)
+     *
+     * @param tets array of tetrahedra to check
+     * @return true if they form a valid family
+     */
+    public static boolean isFamily(Tet[] tets) {
+        if (tets == null || tets.length != TetreeConnectivity.CHILDREN_PER_TET) {
+            return false;
+        }
+
+        // All must be at same level
+        byte level = tets[0].l;
+        for (Tet tet : tets) {
+            if (tet.l != level) {
+                return false;
+            }
+        }
+
+        // Check if they all have the same parent
+        Tet parent0 = tets[0].parent();
+        for (int i = 1; i < tets.length; i++) {
+            Tet parent = tets[i].parent();
+            if (!parent.equals(parent0)) {
+                return false;
+            }
+        }
+
+        // Verify they are all distinct children of the parent
+        boolean[] childFound = new boolean[TetreeConnectivity.CHILDREN_PER_TET];
+        for (Tet tet : tets) {
+            // Determine which child this is
+            for (int childIdx = 0; childIdx < TetreeConnectivity.CHILDREN_PER_TET; childIdx++) {
+                Tet expectedChild = parent0.child(childIdx);
+                if (tet.equals(expectedChild)) {
+                    if (childFound[childIdx]) {
+                        return false; // Duplicate child
+                    }
+                    childFound[childIdx] = true;
+                    break;
+                }
+            }
+        }
+
+        // All children must be present
+        for (boolean found : childFound) {
+            if (!found) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
@@ -83,38 +156,96 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return Math.signum(result);
     }
 
+    public static double orientation(Tuple3i query, Tuple3i a, Tuple3i b, Tuple3i c) {
+        var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
+        return Math.signum(result);
+    }
+
     /**
-     * Calculate the tetrahedral refinement level from a space-filling curve index
+     * Calculate the tetrahedral refinement level from a space-filling curve index.
      *
-     * @param index - the tetrahedral SFC index
-     * @return the refinement level
+     * <p><b>CRITICAL UNDERSTANDING:</b></p>
+     * The Tet SFC index directly encodes the level through the number of bits used:
+     * <ul>
+     *   <li>Level 0: index = 0 (no bits)</li>
+     *   <li>Level 1: indices 1-7 (3 bits)</li>
+     *   <li>Level 2: indices 8-63 (6 bits)</li>
+     *   <li>Level 3: indices 64-511 (9 bits)</li>
+     *   <li>Level n: indices use 3n bits</li>
+     * </ul>
+     *
+     * <p><b>IMPORTANT:</b> This is NOT like Morton codes with level offsets!</p>
+     * The level is implicit in the bit pattern itself.
+     *
+     * @param index the tetrahedral SFC index (must be non-negative)
+     * @return the refinement level (0 to maxRefinementLevel)
+     * @throws IllegalArgumentException if index is negative
      */
     public static byte tetLevelFromIndex(long index) {
         if (index < 0) {
             throw new IllegalArgumentException("Index must be non-negative: " + index);
         }
 
-        // With the raw SFC index (no level offset), we need to infer level from index bits
-        // The SFC index encodes the path from root to tetrahedron
-        // Each level adds 3 bits (8 children), so we can determine level from highest set bit
-        
         if (index == 0) {
             return 0; // Root tetrahedron
         }
-        
+
         // Find the highest set bit position
         int highBit = 63 - Long.numberOfLeadingZeros(index);
-        
+
         // Each level uses 3 bits, so divide by 3 and add 1
         // Add 1 because level 1 uses bits 0-2, level 2 uses bits 3-5, etc.
-        byte level = (byte)((highBit / 3) + 1);
-        
+        byte level = (byte) ((highBit / 3) + 1);
+
         // Ensure we don't exceed max level
         if (level > getMaxRefinementLevel()) {
             return getMaxRefinementLevel();
         }
-        
+
         return level;
+    }
+
+    /**
+     * Decode a tetrahedron from its space-filling curve index.
+     *
+     * <p><b>Algorithm (from t8code):</b></p>
+     * <ol>
+     *   <li>Start at root (type 0)</li>
+     *   <li>For each level, extract 3 bits encoding the local child index</li>
+     *   <li>Use connectivity tables to determine cube position and new type</li>
+     *   <li>Build coordinates by accumulating cube positions</li>
+     * </ol>
+     *
+     * <p><b>IMPORTANT:</b> The SFC index directly encodes the complete path from root.
+     * No level offset adjustment is needed (unlike Morton codes).</p>
+     *
+     * @param index the consecutive SFC index of the tetrahedron
+     * @param level the refinement level of the target tetrahedron
+     * @return the Tet corresponding to the given index and level
+     */
+    public static Tet tetrahedron(long index, byte level) {
+        byte type = 0;
+        int childrenM1 = 7;  // Mask for 3 bits (8 children - 1)
+        var coordinates = new int[3];
+
+        // Traverse from root to target level
+        for (int i = 1; i <= level; i++) {
+            var offsetCoords = getMaxRefinementLevel() - i;
+            var offsetIndex = level - i;
+
+            // Extract 3 bits for the local index at this level
+            var localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
+
+            // Look up cube position and child type from connectivity tables
+            var cid = PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[type][localIndex];
+            type = PARENT_TYPE_LOCAL_INDEX_TO_TYPE[type][localIndex];
+
+            // Accumulate coordinate bits based on cube position
+            coordinates[0] |= (cid & 1) > 0 ? 1 << offsetCoords : 0;
+            coordinates[1] |= (cid & 2) > 0 ? 1 << offsetCoords : 0;
+            coordinates[2] |= (cid & 4) > 0 ? 1 << offsetCoords : 0;
+        }
+        return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
 
     /**
@@ -123,33 +254,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public static Tet tetrahedron(long index) {
         return tetrahedron(index, tetLevelFromIndex(index));
-    }
-
-    /**
-     * @param index - the consecutive index of the tetrahedron
-     * @return the Tet corresponding to the consecutive index
-     */
-    public static Tet tetrahedron(long index, byte level) {
-        byte type = 0;
-        int childrenM1 = 7;
-        var coordinates = new int[3];
-
-        // With raw SFC index (no level offset), use the index directly
-        long adjustedIndex = index;
-
-        for (int i = 1; i <= level; i++) {
-            var offsetCoords = getMaxRefinementLevel() - i;
-            var offsetIndex = level - i;
-            // Get the local index of T's ancestor on level i
-            var localIndex = (int) ((adjustedIndex >> (3 * offsetIndex)) & childrenM1);
-            // get the type and cube-id of T's ancestor on level i
-            var cid = PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[type][localIndex];
-            type = PARENT_TYPE_LOCAL_INDEX_TO_TYPE[type][localIndex];
-            coordinates[0] |= (cid & 1) > 0 ? 1 << offsetCoords : 0;
-            coordinates[1] |= (cid & 2) > 0 ? 1 << offsetCoords : 0;
-            coordinates[2] |= (cid & 4) > 0 ? 1 << offsetCoords : 0;
-        }
-        return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
 
     /**
@@ -169,6 +273,11 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
+     * @param childIndex - the child id (0-7 in Bey's order)
+     * @return the i-th child of the receiver
+     */
+
+    /**
      * @param volume the volume to contain
      * @return the Stream of indexes in the SFC locating the Tets that minimally bound the volume
      */
@@ -185,8 +294,30 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * @param childIndex - the child id (0-7 in Bey's order)
-     * @return the i-th child of the receiver
+     * Generate the i-th child of this tetrahedron using Bey's refinement scheme.
+     *
+     * <p><b>CRITICAL ALGORITHM (from t8code):</b></p>
+     * This uses Bey's tetrahedral refinement which creates 8 children:
+     * <ul>
+     *   <li>Child 0: Interior tetrahedron at parent's anchor</li>
+     *   <li>Children 1-7: Corner tetrahedra at vertex midpoints</li>
+     * </ul>
+     *
+     * <p><b>Key Steps:</b></p>
+     * <ol>
+     *   <li>Convert Morton index (0-7) to Bey child ID</li>
+     *   <li>Look up child type from connectivity table</li>
+     *   <li>For child 0: use parent anchor directly</li>
+     *   <li>For children 1-7: anchor = midpoint(parent_anchor, parent_vertex)</li>
+     * </ol>
+     *
+     * <p><b>WARNING:</b> This is NOT cube-based subdivision!</p>
+     * The child positions are determined by vertex midpoints, not cube offsets.
+     *
+     * @param childIndex Morton ordering index (0-7)
+     * @return the child tetrahedron
+     * @throws IllegalArgumentException if childIndex not in [0,7]
+     * @throws IllegalStateException    if already at max refinement level
      */
     public Tet child(int childIndex) {
         if (childIndex < 0 || childIndex >= TetreeConnectivity.CHILDREN_PER_TET) {
@@ -195,24 +326,29 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (l >= getMaxRefinementLevel()) {
             throw new IllegalStateException("Cannot create children at max refinement level");
         }
-        
-        // Use existing Bey order child type calculation
-        byte childType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[type][childIndex];
+
+        // Get Bey child ID from Morton index using parent type
+        byte beyChildId = TetreeConnectivity.getBeyChildId(type, childIndex);
+
+        // Get child type from connectivity table  
+        byte childType = Constants.TYPE_TO_TYPE_OF_CHILD[type][beyChildId];
         byte childLevel = (byte) (l + 1);
-        int childCellSize = Constants.lengthAtLevel(childLevel);
-        
-        // Calculate child coordinates based on Bey refinement
-        // Children 0-3 are at corners, 4-7 are at midpoints
-        int childX = x;
-        int childY = y; 
-        int childZ = z;
-        
-        // Adjust coordinates based on child position in parent
-        // This follows t8code's child coordinate calculation
-        if ((childIndex & 1) != 0) childX += childCellSize;
-        if ((childIndex & 2) != 0) childY += childCellSize;
-        if ((childIndex & 4) != 0) childZ += childCellSize;
-        
+
+        // For Bey child 0, use parent anchor directly (interior child)
+        if (beyChildId == 0) {
+            return new Tet(x, y, z, childLevel, childType);
+        }
+
+        // For other children, compute position as midpoint between parent anchor and vertex
+        // This is the t8code algorithm: child anchor = (parent anchor + parent vertex) / 2
+        byte vertex = TetreeConnectivity.getBeyVertex(beyChildId);
+        Point3i vertexCoords = computeVertexCoordinates(vertex);
+
+        // Child anchor is midpoint between parent anchor and the defining vertex
+        int childX = (x + vertexCoords.x) >> 1;  // Bit shift for division by 2
+        int childY = (y + vertexCoords.y) >> 1;
+        int childZ = (z + vertexCoords.z) >> 1;
+
         return new Tet(childX, childY, childZ, childLevel, childType);
     }
 
@@ -227,115 +363,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
         return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
     }
-    
-    /**
-     * Get sibling tetrahedron by index
-     * @param siblingIndex - index of sibling (0-7)
-     * @return the sibling tetrahedron
-     */
-    public Tet sibling(int siblingIndex) {
-        if (siblingIndex < 0 || siblingIndex >= TetreeConnectivity.CHILDREN_PER_TET) {
-            throw new IllegalArgumentException("Sibling index must be 0-7: " + siblingIndex);
-        }
-        if (l == 0) {
-            throw new IllegalStateException("Root tetrahedron has no siblings");
-        }
-        
-        // Get parent and then get the requested child
-        Tet parentTet = parent();
-        return parentTet.child(siblingIndex);
-    }
-    
-    /**
-     * Check if this tetrahedron is valid according to t8code constraints
-     * @return true if the tetrahedron structure is valid
-     */
-    public boolean isValid() {
-        // Check level bounds
-        if (l < 0 || l > getMaxRefinementLevel()) {
-            return false;
-        }
-        
-        // Check type bounds
-        if (type < 0 || type >= TetreeConnectivity.TET_TYPES) {
-            return false;
-        }
-        
-        // Check coordinate bounds (must be non-negative and within grid)
-        if (x < 0 || y < 0 || z < 0) {
-            return false;
-        }
-        
-        // Check that coordinates are aligned to grid at this level
-        int cellSize = Constants.lengthAtLevel(l);
-        if (x % cellSize != 0 || y % cellSize != 0 || z % cellSize != 0) {
-            return false;
-        }
-        
-        // Check that coordinates don't exceed maximum grid size
-        int maxCoord = Constants.lengthAtLevel((byte) 0);
-        if (x >= maxCoord || y >= maxCoord || z >= maxCoord) {
-            return false;
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Check if a set of tetrahedra form a family (can be merged)
-     * @param tets array of tetrahedra to check
-     * @return true if they form a valid family
-     */
-    public static boolean isFamily(Tet[] tets) {
-        if (tets == null || tets.length != TetreeConnectivity.CHILDREN_PER_TET) {
-            return false;
-        }
-        
-        // All must be at same level
-        byte level = tets[0].l;
-        for (Tet tet : tets) {
-            if (tet.l != level) {
-                return false;
-            }
-        }
-        
-        // Check if they all have the same parent
-        Tet parent0 = tets[0].parent();
-        for (int i = 1; i < tets.length; i++) {
-            Tet parent = tets[i].parent();
-            if (!parent.equals(parent0)) {
-                return false;
-            }
-        }
-        
-        // Verify they are all distinct children of the parent
-        boolean[] childFound = new boolean[TetreeConnectivity.CHILDREN_PER_TET];
-        for (Tet tet : tets) {
-            // Determine which child this is
-            for (int childIdx = 0; childIdx < TetreeConnectivity.CHILDREN_PER_TET; childIdx++) {
-                Tet expectedChild = parent0.child(childIdx);
-                if (tet.equals(expectedChild)) {
-                    if (childFound[childIdx]) {
-                        return false; // Duplicate child
-                    }
-                    childFound[childIdx] = true;
-                    break;
-                }
-            }
-        }
-        
-        // All children must be present
-        for (boolean found : childFound) {
-            if (!found) {
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
+
     /**
      * Compare two tetrahedra for SFC ordering
+     *
      * @param other the tetrahedron to compare to
      * @return negative if this < other, 0 if equal, positive if this > other
      */
@@ -344,50 +375,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         long thisIndex = this.index();
         long otherIndex = other.index();
         return Long.compare(thisIndex, otherIndex);
-    }
-    
-    /**
-     * Get the first descendant at the given level
-     * @param level the target level (must be >= this.l)
-     * @return SFC index of first descendant
-     */
-    public long firstDescendant(byte level) {
-        if (level < this.l) {
-            throw new IllegalArgumentException("Target level must be >= current level");
-        }
-        if (level == this.l) {
-            return this.index();
-        }
-        
-        // The first descendant is found by repeatedly taking child 0
-        // This follows the SFC ordering where child 0 has the smallest index
-        Tet current = this;
-        while (current.l < level) {
-            current = current.child(0); // Always take the first child
-        }
-        return current.index();
-    }
-    
-    /**
-     * Get the last descendant at the given level
-     * @param level the target level (must be >= this.l)
-     * @return SFC index of last descendant
-     */
-    public long lastDescendant(byte level) {
-        if (level < this.l) {
-            throw new IllegalArgumentException("Target level must be >= current level");
-        }
-        if (level == this.l) {
-            return this.index();
-        }
-        
-        // The last descendant is found by repeatedly taking child 7
-        // This follows the SFC ordering where child 7 has the largest index
-        Tet current = this;
-        while (current.l < level) {
-            current = current.child(7); // Always take the last child
-        }
-        return current.index();
     }
 
     /* A routine to compute the type of t's ancestor of level "level",
@@ -528,7 +515,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         } else {
             if (face == 0) {
                 /* type: 0,1 --> x+1
-                 *       2,3 --> y+1  
+                 *       2,3 --> y+1
                  *       4,5 --> z+1 */
                 coords[typeOld / 2] += h;
                 typeNew += (typeNew % 2 == 0 ? 4 : 2);
@@ -547,7 +534,44 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * @return the consecutive index of the receiver on the space filling curve
+     * Get the first descendant at the given level
+     *
+     * @param level the target level (must be >= this.l)
+     * @return SFC index of first descendant
+     */
+    public long firstDescendant(byte level) {
+        if (level < this.l) {
+            throw new IllegalArgumentException("Target level must be >= current level");
+        }
+        if (level == this.l) {
+            return this.index();
+        }
+
+        // The first descendant is found by repeatedly taking child 0
+        // This follows the SFC ordering where child 0 has the smallest index
+        Tet current = this;
+        while (current.l < level) {
+            current = current.child(0); // Always take the first child
+        }
+        return current.index();
+    }
+
+    /**
+     * Compute the space-filling curve index of this tetrahedron.
+     *
+     * <p><b>Algorithm Overview:</b></p>
+     * Encodes the path from root to this tetrahedron by:
+     * <ol>
+     *   <li>Starting at this tetrahedron's level</li>
+     *   <li>Working backwards to root, extracting cube ID at each level</li>
+     *   <li>Converting cube ID to local index using connectivity table</li>
+     *   <li>Packing 3-bit local indices to form complete SFC index</li>
+     * </ol>
+     *
+     * <p><b>CRITICAL:</b> The index encodes the complete path with NO level offset.</p>
+     * Each level contributes exactly 3 bits to the final index.
+     *
+     * @return the consecutive SFC index (0 for root, 1-7 for level 1, etc.)
      */
     public long index() {
         long id = 0;
@@ -561,11 +585,16 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         exponent = 0;
         typeTemp = computeType(l);
 
-        // Match t8code algorithm exactly: for (i = level; i > 0; i--)
+        // Traverse from this level back to root
         for (i = l; i > 0; i--) {
+            // Get cube position at this level
             cid = cubeId((byte) i);
+
+            // Convert to local index using connectivity table
             id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeTemp][cid]) << exponent;
-            exponent += 3; // T8_DTRI_DIM = 3 (multiply by 8 in 3D)
+
+            // Each level adds 3 bits
+            exponent += 3;
             typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
         }
 
@@ -584,6 +613,65 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             var tet = Tet.tetrahedron(index);
             return tetrahedronIntersectsVolume(tet, volume);
         }).findFirst().orElse(0L);
+    }
+
+    /**
+     * Check if this tetrahedron is valid according to t8code constraints
+     *
+     * @return true if the tetrahedron structure is valid
+     */
+    public boolean isValid() {
+        // Check level bounds
+        if (l < 0 || l > getMaxRefinementLevel()) {
+            return false;
+        }
+
+        // Check type bounds
+        if (type < 0 || type >= TetreeConnectivity.TET_TYPES) {
+            return false;
+        }
+
+        // Check coordinate bounds (must be non-negative and within grid)
+        if (x < 0 || y < 0 || z < 0) {
+            return false;
+        }
+
+        // Check that coordinates are aligned to grid at this level
+        int cellSize = Constants.lengthAtLevel(l);
+        if (x % cellSize != 0 || y % cellSize != 0 || z % cellSize != 0) {
+            return false;
+        }
+
+        // Check that coordinates don't exceed maximum grid size
+        int maxCoord = Constants.lengthAtLevel((byte) 0);
+        if (x >= maxCoord || y >= maxCoord || z >= maxCoord) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the last descendant at the given level
+     *
+     * @param level the target level (must be >= this.l)
+     * @return SFC index of last descendant
+     */
+    public long lastDescendant(byte level) {
+        if (level < this.l) {
+            throw new IllegalArgumentException("Target level must be >= current level");
+        }
+        if (level == this.l) {
+            return this.index();
+        }
+
+        // The last descendant is found by repeatedly taking child 7
+        // This follows the SFC ordering where child 7 has the largest index
+        Tet current = this;
+        while (current.l < level) {
+            current = current.child(7); // Always take the last child
+        }
+        return current.index();
     }
 
     /**
@@ -620,30 +708,38 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (l == 0) {
             throw new IllegalStateException("Root tetrahedron has no parent");
         }
-        
-        // Calculate parent coordinates by removing the least significant bit
-        int h = length();
+
+        // Use t8code's parent coordinate calculation: parent->x = t->x & ~h;
+        int h = length(); // Cell size at current level
         int parentX = x & ~h;
         int parentY = y & ~h;
         int parentZ = z & ~h;
-        
-        // Determine which child index this tetrahedron is relative to its parent
-        int childIndex = 0;
-        if ((x & h) != 0) childIndex |= 1;
-        if ((y & h) != 0) childIndex |= 2;
-        if ((z & h) != 0) childIndex |= 4;
-        
-        // Find parent type by inverting the TetreeConnectivity tables
-        // We need to find which parent type produces this child type at this child index
-        byte parentType = 0;
-        for (byte pt = 0; pt < TetreeConnectivity.TET_TYPES; pt++) {
-            if (TetreeConnectivity.getChildType(pt, childIndex) == type) {
-                parentType = pt;
-                break;
-            }
+
+        byte parentLevel = (byte) (l - 1);
+
+        // Determine parent type using connectivity tables
+        byte parentType = computeParentType(parentX, parentY, parentZ, parentLevel);
+
+        return new Tet(parentX, parentY, parentZ, parentLevel, parentType);
+    }
+
+    /**
+     * Get sibling tetrahedron by index
+     *
+     * @param siblingIndex - index of sibling (0-7)
+     * @return the sibling tetrahedron
+     */
+    public Tet sibling(int siblingIndex) {
+        if (siblingIndex < 0 || siblingIndex >= TetreeConnectivity.CHILDREN_PER_TET) {
+            throw new IllegalArgumentException("Sibling index must be 0-7: " + siblingIndex);
         }
-        
-        return new Tet(parentX, parentY, parentZ, (byte) (l - 1), parentType);
+        if (l == 0) {
+            throw new IllegalStateException("Root tetrahedron has no siblings");
+        }
+
+        // Get parent and then get the requested child
+        Tet parentTet = parent();
+        return parentTet.child(siblingIndex);
     }
 
     public Point3i[] vertices() {
@@ -832,6 +928,31 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
     }
 
+    /**
+     * Compute parent type using reverse lookup from connectivity tables. Based on t8code's parent type computation
+     * algorithm.
+     */
+    private byte computeParentType(int parentX, int parentY, int parentZ, byte parentLevel) {
+        // Calculate the cube ID of this child within its parent
+        // This is which octant of the parent cube contains this child
+        int h = length(); // Cell size at current level
+        byte cubeId = 0;
+
+        // Each bit indicates if the child is in the upper half of that dimension
+        if ((x & h) != 0) {
+            cubeId |= 1;  // X bit
+        }
+        if ((y & h) != 0) {
+            cubeId |= 2;  // Y bit
+        }
+        if ((z & h) != 0) {
+            cubeId |= 4;  // Z bit
+        }
+
+        // Use reverse lookup table to find parent type
+        return CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId][type];
+    }
+
     // Optimized planar SFC range computation (2 dimensions vary)
     private Stream<SFCRange> computePlanarSFCRanges(VolumeBounds bounds, byte level, int minX, int maxX, int minY,
                                                     int maxY, int minZ, int maxZ, TouchedDimensions touchedDims,
@@ -879,6 +1000,43 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         return IntStream.rangeClosed(minLevel, maxLevel).boxed().flatMap(
         level -> computeOptimizedSFCRangesAtLevel(bounds, (byte) level.intValue(), includeIntersecting));
+    }
+
+    /**
+     * Compute the absolute coordinates of a specific vertex of this tetrahedron.
+     *
+     * <p><b>Vertex Numbering Convention:</b></p>
+     * The 4 vertices are numbered 0-3 according to the simplex type definition in Constants.SIMPLEX. Each tetrahedron
+     * type has a specific vertex arrangement.
+     *
+     * <p><b>Algorithm (from t8code's t8_dtet_compute_coords):</b></p>
+     * <ol>
+     *   <li>Get relative vertex positions from simplex type definition</li>
+     *   <li>Scale by cell size (edge length at this level)</li>
+     *   <li>Add to anchor point to get absolute coordinates</li>
+     * </ol>
+     *
+     * @param vertex vertex number (0-3)
+     * @return absolute coordinates of the vertex
+     * @throws IllegalArgumentException if vertex is not in range [0,3]
+     */
+    private Point3i computeVertexCoordinates(int vertex) {
+        if (vertex < 0 || vertex > 3) {
+            throw new IllegalArgumentException("Vertex must be 0-3: " + vertex);
+        }
+
+        int h = length(); // Cell size at this level
+
+        // Get vertex coordinates from simplex definition
+        Point3i[] simplexVertices = Constants.SIMPLEX[type];
+        Point3i relativeVertex = simplexVertices[vertex];
+
+        // Scale relative coordinates by cell size and add to anchor
+        int vertexX = x + relativeVertex.x * h;
+        int vertexY = y + relativeVertex.y * h;
+        int vertexZ = z + relativeVertex.z * h;
+
+        return new Point3i(vertexX, vertexY, vertexZ);
     }
 
     // Create a spatial volume from bounds for final filtering

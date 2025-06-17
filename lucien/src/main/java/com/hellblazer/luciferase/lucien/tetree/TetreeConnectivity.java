@@ -236,6 +236,35 @@ public final class TetreeConnectivity {
     // Type 5
     { 1, 0, 4, 3 } };
 
+    /**
+     * Index to Bey number mapping - from t8code t8_dtet_index_to_bey_number. Maps from child index (0-7) to Bey child
+     * ID used in Bey's tetrahedral refinement scheme.
+     *
+     * [parent_type][child_index] -> bey_number
+     */
+    public static final byte[][] INDEX_TO_BEY_NUMBER = {
+    // Parent type 0
+    { 0, 1, 4, 5, 2, 7, 6, 3 },
+    // Parent type 1
+    { 0, 1, 5, 4, 7, 2, 6, 3 },
+    // Parent type 2
+    { 0, 4, 5, 1, 2, 7, 6, 3 },
+    // Parent type 3
+    { 0, 1, 5, 4, 6, 7, 2, 3 },
+    // Parent type 4
+    { 0, 4, 5, 1, 6, 2, 7, 3 },
+    // Parent type 5
+    { 0, 5, 4, 1, 6, 7, 2, 3 } };
+
+    /**
+     * Bey ID to vertex mapping - from t8code t8_dtet_beyid_to_vertex. Maps from Bey child ID to the parent vertex that
+     * the child is anchored at.
+     *
+     * Child 0 is interior (no parent vertex), children 1-3 are at parent vertices 0-3, children 4-7 are at edge
+     * midpoints defined by this mapping.
+     */
+    public static final byte[] BEY_ID_TO_VERTEX = { 0, 1, 2, 3, 1, 1, 2, 2 };
+
     // Static initializer for computed tables
     static {
         // Initialize sibling relationships (all children of same parent are siblings)
@@ -260,6 +289,29 @@ public final class TetreeConnectivity {
      */
     public static boolean areSiblings(int child1, int child2) {
         return ARE_SIBLINGS[child1][child2];
+    }
+
+    /**
+     * Get Bey child ID for parent type and child index. The Bey child ID determines the position of the child within
+     * its parent according to Bey's tetrahedral refinement scheme.
+     *
+     * @param parentType Type of parent tetrahedron (0-5)
+     * @param childIndex Index of child (0-7)
+     * @return Bey child ID
+     */
+    public static byte getBeyChildId(byte parentType, int childIndex) {
+        return INDEX_TO_BEY_NUMBER[parentType][childIndex];
+    }
+
+    /**
+     * Get vertex number for Bey child ID. Returns which parent vertex the child is anchored at. Child 0 is interior,
+     * children 1-3 are at parent vertices 0-3, children 4-7 are at edge midpoints.
+     *
+     * @param beyId Bey child ID (0-7)
+     * @return Parent vertex number (0-3)
+     */
+    public static byte getBeyVertex(byte beyId) {
+        return BEY_ID_TO_VERTEX[beyId];
     }
 
     /**

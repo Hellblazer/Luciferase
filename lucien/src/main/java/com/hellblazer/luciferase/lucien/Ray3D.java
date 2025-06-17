@@ -26,7 +26,7 @@ public record Ray3D(Point3f origin, Vector3f direction, float maxDistance) {
     public Ray3D {
         // Note: Ray origins can be anywhere in 3D space, including negative coordinates.
         // Only entities in the spatial index must have positive coordinates.
-        
+
         if (maxDistance <= 0 && maxDistance != UNBOUNDED) {
             throw new IllegalArgumentException("Ray max distance must be positive or unbounded: " + maxDistance);
         }

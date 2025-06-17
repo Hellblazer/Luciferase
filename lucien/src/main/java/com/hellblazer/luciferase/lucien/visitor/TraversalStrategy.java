@@ -18,44 +18,38 @@ package com.hellblazer.luciferase.lucien.visitor;
 
 /**
  * Defines the strategy for traversing the spatial tree.
- * 
+ *
  * @author hal.hildebrand
  */
 public enum TraversalStrategy {
     /**
-     * Depth-first search traversal.
-     * Visits children before siblings.
+     * Depth-first search traversal. Visits children before siblings.
      */
     DEPTH_FIRST,
-    
+
     /**
-     * Breadth-first search traversal.
-     * Visits all nodes at current level before moving to next level.
+     * Breadth-first search traversal. Visits all nodes at current level before moving to next level.
      */
     BREADTH_FIRST,
-    
+
     /**
-     * Level-order traversal.
-     * Similar to breadth-first but processes levels explicitly.
+     * Level-order traversal. Similar to breadth-first but processes levels explicitly.
      */
     LEVEL_ORDER,
-    
+
     /**
-     * Pre-order traversal.
-     * Visit node, then children (default for depth-first).
+     * Pre-order traversal. Visit node, then children (default for depth-first).
      */
     PRE_ORDER,
-    
+
     /**
-     * Post-order traversal.
-     * Visit children, then node.
+     * Post-order traversal. Visit children, then node.
      */
     POST_ORDER,
-    
+
     /**
-     * In-order traversal (for binary trees).
-     * Visit left children, node, then right children.
-     * For octrees/tetrees, visits half children, node, then remaining children.
+     * In-order traversal (for binary trees). Visit left children, node, then right children. For octrees/tetrees,
+     * visits half children, node, then remaining children.
      */
     IN_ORDER
 }

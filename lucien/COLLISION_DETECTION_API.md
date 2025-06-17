@@ -2,13 +2,16 @@
 
 ## Overview
 
-The Collision Detection API provides efficient broad-phase and narrow-phase collision detection for entities in spatial indices. This API supports both point-based and bounded entities, with optimized algorithms for different entity configurations.
+The Collision Detection API provides efficient broad-phase and narrow-phase collision detection for entities in spatial
+indices. This API supports both point-based and bounded entities, with optimized algorithms for different entity
+configurations.
 
 ## Core Concepts
 
 ### CollisionPair
 
 The `CollisionPair` record represents a detected collision between two entities:
+
 - **entity1Id/entity2Id**: IDs of colliding entities
 - **entity1Content/entity2Content**: Content of colliding entities
 - **entity1Bounds/entity2Bounds**: Bounds of entities (may be null)
@@ -19,6 +22,7 @@ The `CollisionPair` record represents a detected collision between two entities:
 ### CollisionShape
 
 Custom collision shapes for narrow-phase detection:
+
 - Provides precise collision detection beyond AABB
 - Supports complex geometries
 - Automatically updates bounds when translated
@@ -34,6 +38,7 @@ List<CollisionPair<ID, Content>> findAllCollisions()
 Detects all collisions between entities in the spatial index. Results are sorted by penetration depth (deepest first).
 
 **Example:**
+
 ```java
 List<CollisionPair<LongEntityID, String>> collisions = spatialIndex.findAllCollisions();
 for (CollisionPair<LongEntityID, String> collision : collisions) {
@@ -52,6 +57,7 @@ List<CollisionPair<ID, Content>> findCollisions(ID entityId)
 Finds all entities colliding with a specific entity. More efficient than checking all pairs.
 
 **Example:**
+
 ```java
 LongEntityID playerId = new LongEntityID(42);
 List<CollisionPair<LongEntityID, String>> playerCollisions = 
@@ -67,6 +73,7 @@ Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2)
 Checks if two specific entities are colliding. Returns detailed collision information if they are.
 
 **Example:**
+
 ```java
 Optional<CollisionPair<LongEntityID, String>> collision = 
     spatialIndex.checkCollision(entity1, entity2);
@@ -84,6 +91,7 @@ List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region)
 Finds all collisions occurring within a specific spatial region.
 
 **Example:**
+
 ```java
 Spatial.Cube region = new Spatial.Cube(0, 0, 0, 100); // 100x100x100 cube at origin
 List<CollisionPair<LongEntityID, String>> regionalCollisions = 
@@ -100,6 +108,7 @@ CollisionShape getCollisionShape(ID entityId)
 Associates a custom collision shape with an entity for precise narrow-phase detection.
 
 **Example:**
+
 ```java
 // Create a sphere collision shape
 CollisionShape sphere = new SphereShape(center, radius);
@@ -111,6 +120,7 @@ spatialIndex.setCollisionShape(entityId, sphere);
 ### Broad Phase
 
 The spatial index provides efficient broad-phase detection by:
+
 1. Using spatial partitioning to reduce collision checks
 2. Only checking entities in the same or neighboring spatial nodes
 3. Supporting entity bounds for early rejection
@@ -118,6 +128,7 @@ The spatial index provides efficient broad-phase detection by:
 ### Narrow Phase
 
 For precise collision detection:
+
 1. **AABB vs AABB**: Fast axis-aligned bounding box checks
 2. **Custom Shapes**: Delegate to CollisionShape implementations
 3. **Point Collisions**: Use configurable threshold (default 0.1f)
@@ -271,7 +282,8 @@ public class TriggerSystem {
 
 ## Thread Safety
 
-Collision detection methods are thread-safe for concurrent reads. The spatial index uses read-write locks to ensure consistency.
+Collision detection methods are thread-safe for concurrent reads. The spatial index uses read-write locks to ensure
+consistency.
 
 ## Advanced Features
 

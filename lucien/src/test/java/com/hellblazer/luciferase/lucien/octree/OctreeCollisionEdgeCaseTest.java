@@ -17,20 +17,36 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Edge case tests for Octree collision detection.
- * Tests boundary conditions, floating point precision, and unusual scenarios.
+ * Edge case tests for Octree collision detection. Tests boundary conditions, floating point precision, and unusual
+ * scenarios.
  *
  * @author hal.hildebrand
  */
 public class OctreeCollisionEdgeCaseTest {
 
     private Octree<LongEntityID, String> octree;
-    private SequentialLongIDGenerator idGenerator;
+    private SequentialLongIDGenerator    idGenerator;
 
     @BeforeEach
     void setUp() {
         idGenerator = new SequentialLongIDGenerator();
         octree = new Octree<>(idGenerator);
+    }
+
+    @Test
+    void testBoundaryNodeCollisions() {
+        // Test collision detection across octree node boundaries
+        Point3f pos1 = new Point3f(127.9f, 127.9f, 127.9f); // Near boundary
+        Point3f pos2 = new Point3f(128.1f, 128.1f, 128.1f); // Across boundary
+
+        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
+
+        float distance = pos1.distance(pos2);
+        if (distance <= 0.1f) {
+            Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+            assertTrue(collision.isPresent(), "Close entities across node boundaries should collide");
+        }
     }
 
     @Test
@@ -67,179 +83,6 @@ public class OctreeCollisionEdgeCaseTest {
     }
 
     @Test
-    void testIdenticalPositions() {
-        // Test collision detection with entities at identical positions
-        Point3f pos = new Point3f(100, 100, 100);
-
-        LongEntityID id1 = octree.insert(pos, (byte) 10, "Entity1");
-        LongEntityID id2 = octree.insert(new Point3f(pos), (byte) 10, "Entity2"); // Identical position
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities at identical positions should collide");
-
-        var collisionPair = collision.get();
-        assertEquals(0.0f, collisionPair.penetrationDepth(), 0.001f, "Penetration depth should be minimal for identical positions");
-    }
-
-    @Test
-    void testZeroBoundsEntity() {
-        // Test collision with entity that has zero-size bounds
-        Point3f pos1 = new Point3f(100, 100, 100);
-        Point3f pos2 = new Point3f(100, 100, 100);
-
-        EntityBounds zeroBounds = new EntityBounds(pos2, pos2); // Zero-size bounds
-
-        LongEntityID id1 = octree.insert(pos1, (byte) 10, "PointEntity");
-        LongEntityID id2 = idGenerator.generateID();
-        octree.insert(id2, pos2, (byte) 10, "ZeroBoundsEntity", zeroBounds);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Point entity should collide with zero-bounds entity at same position");
-    }
-
-    @Test
-    void testTouchingBounds() {
-        // Test entities with bounds that exactly touch but don't overlap
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(120, 100, 100);
-
-        EntityBounds bounds1 = new EntityBounds(
-            new Point3f(95, 95, 95),
-            new Point3f(110, 105, 105)
-        );
-        EntityBounds bounds2 = new EntityBounds(
-            new Point3f(110, 95, 95), // Exactly touching bounds1's max X
-            new Point3f(125, 105, 105)
-        );
-
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
-
-        octree.insert(id1, center1, (byte) 10, "Entity1", bounds1);
-        octree.insert(id2, center2, (byte) 10, "Entity2", bounds2);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Exactly touching bounds should be considered colliding");
-    }
-
-    @Test
-    void testFloatingPointPrecisionEdges() {
-        // Test collision detection with floating point precision edge cases
-        Point3f pos1 = new Point3f(100.0f, 100.0f, 100.0f);
-        Point3f pos2 = new Point3f(100.0000001f, 100.0000001f, 100.0000001f); // Very small difference
-
-        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities with minimal floating point differences should collide");
-    }
-
-    @Test
-    void testBoundaryNodeCollisions() {
-        // Test collision detection across octree node boundaries
-        Point3f pos1 = new Point3f(127.9f, 127.9f, 127.9f); // Near boundary
-        Point3f pos2 = new Point3f(128.1f, 128.1f, 128.1f); // Across boundary
-
-        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
-
-        float distance = pos1.distance(pos2);
-        if (distance <= 0.1f) {
-            Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-            assertTrue(collision.isPresent(), "Close entities across node boundaries should collide");
-        }
-    }
-
-    @Test
-    void testLargeBoundsWithSmallEntity() {
-        // Test collision between very large bounds and small point entity
-        Point3f pointPos = new Point3f(500, 500, 500);
-        Point3f largeCenter = new Point3f(500, 500, 500);
-
-        EntityBounds largeBounds = new EntityBounds(
-            new Point3f(0, 0, 0),
-            new Point3f(1000, 1000, 1000)
-        );
-
-        LongEntityID pointId = octree.insert(pointPos, (byte) 10, "PointEntity");
-        // Use the insert method that generates ID automatically to ensure proper ID management
-        LongEntityID largeId = octree.insert(largeCenter, (byte) 5, "LargeEntity");
-        // Update the entity with bounds
-        octree.removeEntity(largeId);
-        octree.insert(largeId, largeCenter, (byte) 5, "LargeEntity", largeBounds);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(pointId, largeId);
-        assertTrue(collision.isPresent(), "Point entity inside large bounds should collide");
-    }
-
-    @Test
-    void testNegativeCoordinateCollisions() {
-        // Test collision detection with negative coordinates
-        Point3f pos1 = new Point3f(-100, -100, -100);
-        Point3f pos2 = new Point3f(-100.05f, -100.05f, -100.05f);
-
-        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Negative coordinate entities should collide when close");
-    }
-
-    @Test
-    void testExtremeCoordinateValues() {
-        // Test collision detection with very large coordinate values (within 21-bit Morton code range)
-        // Morton codes support coordinates up to 2^21 - 1 = 2097151
-        float maxCoord = 2097150f;
-        Point3f pos1 = new Point3f(maxCoord, maxCoord, maxCoord);
-        Point3f pos2 = new Point3f(maxCoord, maxCoord, maxCoord);
-
-        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities at extreme coordinates should collide when at same position");
-    }
-
-    @Test
-    void testCollisionWithEntityAtOrigin() {
-        // Test collision detection with entity at coordinate origin
-        Point3f origin = new Point3f(0, 0, 0);
-        Point3f nearOrigin = new Point3f(0.05f, 0.05f, 0.05f);
-
-        LongEntityID id1 = octree.insert(origin, (byte) 10, "OriginEntity");
-        LongEntityID id2 = octree.insert(nearOrigin, (byte) 10, "NearOriginEntity");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities near origin should collide");
-    }
-
-    @Test
-    void testDegenerateBounds() {
-        // Test collision with degenerate bounds (flat in one dimension)
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(105, 100, 100);
-
-        EntityBounds flatBounds1 = new EntityBounds(
-            new Point3f(95, 95, 100), // Flat in Z dimension
-            new Point3f(105, 105, 100)
-        );
-        EntityBounds flatBounds2 = new EntityBounds(
-            new Point3f(100, 95, 100), // Overlapping flat bounds
-            new Point3f(110, 105, 100)
-        );
-
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
-
-        octree.insert(id1, center1, (byte) 10, "FlatEntity1", flatBounds1);
-        octree.insert(id2, center2, (byte) 10, "FlatEntity2", flatBounds2);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Overlapping flat bounds should collide");
-    }
-
-    @Test
     void testCollisionPersistenceAfterRemoval() {
         // Test that collisions are properly cleaned up after entity removal
         Point3f pos1 = new Point3f(100, 100, 100);
@@ -268,6 +111,19 @@ public class OctreeCollisionEdgeCaseTest {
     }
 
     @Test
+    void testCollisionWithEntityAtOrigin() {
+        // Test collision detection with entity at coordinate origin
+        Point3f origin = new Point3f(0, 0, 0);
+        Point3f nearOrigin = new Point3f(0.05f, 0.05f, 0.05f);
+
+        LongEntityID id1 = octree.insert(origin, (byte) 10, "OriginEntity");
+        LongEntityID id2 = octree.insert(nearOrigin, (byte) 10, "NearOriginEntity");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities near origin should collide");
+    }
+
+    @Test
     void testConsistencyAfterEntityUpdate() {
         // Test collision consistency after entity position updates
         Point3f initialPos = new Point3f(100, 100, 100);
@@ -290,17 +146,98 @@ public class OctreeCollisionEdgeCaseTest {
     }
 
     @Test
+    void testDegenerateBounds() {
+        // Test collision with degenerate bounds (flat in one dimension)
+        Point3f center1 = new Point3f(100, 100, 100);
+        Point3f center2 = new Point3f(105, 100, 100);
+
+        EntityBounds flatBounds1 = new EntityBounds(new Point3f(95, 95, 100), // Flat in Z dimension
+                                                    new Point3f(105, 105, 100));
+        EntityBounds flatBounds2 = new EntityBounds(new Point3f(100, 95, 100), // Overlapping flat bounds
+                                                    new Point3f(110, 105, 100));
+
+        LongEntityID id1 = idGenerator.generateID();
+        LongEntityID id2 = idGenerator.generateID();
+
+        octree.insert(id1, center1, (byte) 10, "FlatEntity1", flatBounds1);
+        octree.insert(id2, center2, (byte) 10, "FlatEntity2", flatBounds2);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Overlapping flat bounds should collide");
+    }
+
+    @Test
+    void testExtremeCoordinateValues() {
+        // Test collision detection with very large coordinate values (within 21-bit Morton code range)
+        // Morton codes support coordinates up to 2^21 - 1 = 2097151
+        float maxCoord = 2097150f;
+        Point3f pos1 = new Point3f(maxCoord, maxCoord, maxCoord);
+        Point3f pos2 = new Point3f(maxCoord, maxCoord, maxCoord);
+
+        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities at extreme coordinates should collide when at same position");
+    }
+
+    @Test
+    void testFloatingPointPrecisionEdges() {
+        // Test collision detection with floating point precision edge cases
+        Point3f pos1 = new Point3f(100.0f, 100.0f, 100.0f);
+        Point3f pos2 = new Point3f(100.0000001f, 100.0000001f, 100.0000001f); // Very small difference
+
+        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities with minimal floating point differences should collide");
+    }
+
+    @Test
+    void testIdenticalPositions() {
+        // Test collision detection with entities at identical positions
+        Point3f pos = new Point3f(100, 100, 100);
+
+        LongEntityID id1 = octree.insert(pos, (byte) 10, "Entity1");
+        LongEntityID id2 = octree.insert(new Point3f(pos), (byte) 10, "Entity2"); // Identical position
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities at identical positions should collide");
+
+        var collisionPair = collision.get();
+        assertEquals(0.0f, collisionPair.penetrationDepth(), 0.001f,
+                     "Penetration depth should be minimal for identical positions");
+    }
+
+    @Test
+    void testLargeBoundsWithSmallEntity() {
+        // Test collision between very large bounds and small point entity
+        Point3f pointPos = new Point3f(500, 500, 500);
+        Point3f largeCenter = new Point3f(500, 500, 500);
+
+        EntityBounds largeBounds = new EntityBounds(new Point3f(0, 0, 0), new Point3f(1000, 1000, 1000));
+
+        LongEntityID pointId = octree.insert(pointPos, (byte) 10, "PointEntity");
+        // Use the insert method that generates ID automatically to ensure proper ID management
+        LongEntityID largeId = octree.insert(largeCenter, (byte) 5, "LargeEntity");
+        // Update the entity with bounds
+        octree.removeEntity(largeId);
+        octree.insert(largeId, largeCenter, (byte) 5, "LargeEntity", largeBounds);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(pointId, largeId);
+        assertTrue(collision.isPresent(), "Point entity inside large bounds should collide");
+    }
+
+    @Test
     void testMaximumEntityDensity() {
         // Test collision detection with maximum entity density in a small region
         Point3f basePos = new Point3f(100, 100, 100);
         LongEntityID[] entityIds = new LongEntityID[50]; // High density
 
         for (int i = 0; i < entityIds.length; i++) {
-            Point3f pos = new Point3f(
-                basePos.x + i * 0.001f, // Very close together
-                basePos.y + i * 0.001f,
-                basePos.z + i * 0.001f
-            );
+            Point3f pos = new Point3f(basePos.x + i * 0.001f, // Very close together
+                                      basePos.y + i * 0.001f, basePos.z + i * 0.001f);
             entityIds[i] = octree.insert(pos, (byte) 15, "DenseEntity" + i);
         }
 
@@ -309,7 +246,57 @@ public class OctreeCollisionEdgeCaseTest {
         assertTrue(allCollisions.size() > 100, "High density should produce many collision pairs");
 
         // Test specific collision
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(entityIds[0], entityIds[1]);
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(entityIds[0],
+                                                                                                     entityIds[1]);
         assertTrue(collision.isPresent(), "Adjacent dense entities should collide");
+    }
+
+    @Test
+    void testNegativeCoordinateCollisions() {
+        // Test collision detection with negative coordinates
+        Point3f pos1 = new Point3f(-100, -100, -100);
+        Point3f pos2 = new Point3f(-100.05f, -100.05f, -100.05f);
+
+        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Negative coordinate entities should collide when close");
+    }
+
+    @Test
+    void testTouchingBounds() {
+        // Test entities with bounds that exactly touch but don't overlap
+        Point3f center1 = new Point3f(100, 100, 100);
+        Point3f center2 = new Point3f(120, 100, 100);
+
+        EntityBounds bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(110, 105, 105));
+        EntityBounds bounds2 = new EntityBounds(new Point3f(110, 95, 95), // Exactly touching bounds1's max X
+                                                new Point3f(125, 105, 105));
+
+        LongEntityID id1 = idGenerator.generateID();
+        LongEntityID id2 = idGenerator.generateID();
+
+        octree.insert(id1, center1, (byte) 10, "Entity1", bounds1);
+        octree.insert(id2, center2, (byte) 10, "Entity2", bounds2);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Exactly touching bounds should be considered colliding");
+    }
+
+    @Test
+    void testZeroBoundsEntity() {
+        // Test collision with entity that has zero-size bounds
+        Point3f pos1 = new Point3f(100, 100, 100);
+        Point3f pos2 = new Point3f(100, 100, 100);
+
+        EntityBounds zeroBounds = new EntityBounds(pos2, pos2); // Zero-size bounds
+
+        LongEntityID id1 = octree.insert(pos1, (byte) 10, "PointEntity");
+        LongEntityID id2 = idGenerator.generateID();
+        octree.insert(id2, pos2, (byte) 10, "ZeroBoundsEntity", zeroBounds);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Point entity should collide with zero-bounds entity at same position");
     }
 }

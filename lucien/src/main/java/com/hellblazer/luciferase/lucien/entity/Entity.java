@@ -78,6 +78,13 @@ public class Entity<Content> {
     }
 
     /**
+     * Get the collision shape for this entity
+     */
+    public CollisionShape getCollisionShape() {
+        return collisionShape;
+    }
+
+    /**
      * Get the entity's content
      */
     public Content getContent() {
@@ -113,6 +120,13 @@ public class Entity<Content> {
     }
 
     /**
+     * Check if entity has a collision shape
+     */
+    public boolean hasCollisionShape() {
+        return collisionShape != null;
+    }
+
+    /**
      * Check if entity exists in any nodes
      */
     public boolean hasLocations() {
@@ -134,20 +148,6 @@ public class Entity<Content> {
     }
 
     /**
-     * Update the entity's position
-     */
-    public void setPosition(Point3f newPosition) {
-        this.position = new Point3f(newPosition);
-    }
-    
-    /**
-     * Get the collision shape for this entity
-     */
-    public CollisionShape getCollisionShape() {
-        return collisionShape;
-    }
-    
-    /**
      * Set the collision shape for this entity
      */
     public void setCollisionShape(CollisionShape shape) {
@@ -157,11 +157,11 @@ public class Entity<Content> {
             this.bounds = shape.getAABB();
         }
     }
-    
+
     /**
-     * Check if entity has a collision shape
+     * Update the entity's position
      */
-    public boolean hasCollisionShape() {
-        return collisionShape != null;
+    public void setPosition(Point3f newPosition) {
+        this.position = new Point3f(newPosition);
     }
 }

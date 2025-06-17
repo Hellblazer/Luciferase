@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Tree Balancing API provides automated and manual tree optimization capabilities to maintain efficient spatial index performance. This API helps prevent tree degradation due to entity movement, insertions, and deletions by redistributing entities across nodes.
+The Tree Balancing API provides automated and manual tree optimization capabilities to maintain efficient spatial index
+performance. This API helps prevent tree degradation due to entity movement, insertions, and deletions by redistributing
+entities across nodes.
 
 ## Core Concepts
 
@@ -33,7 +35,7 @@ public interface TreeBalancingStrategy<ID extends EntityID> {
         int maxDepth,
         double averageLoad,
         double loadVariance
-    );
+    )
 }
 ```
 
@@ -45,28 +47,27 @@ Performs the actual rebalancing operations:
 public interface TreeBalancer<ID extends EntityID> {
     // Node operations
     BalancingAction checkNodeBalance(long nodeIndex);
+
     List<Long> splitNode(long nodeIndex, byte nodeLevel);
+
     boolean mergeNodes(Set<Long> nodeIndices, long parentIndex);
-    
+
     // Tree operations
     RebalancingResult rebalanceTree();
+
     int rebalanceSubtree(long rootNodeIndex);
-    
+
     // Configuration
     void setBalancingStrategy(TreeBalancingStrategy<ID> strategy);
+
     void setAutoBalancingEnabled(boolean enabled);
+
     boolean isAutoBalancingEnabled();
-    
+
     // Results
-    record RebalancingResult(
-        int nodesCreated,
-        int nodesRemoved,
-        int nodesMerged,
-        int nodesSplit,
-        int entitiesRelocated,
-        long timeTaken,
-        boolean success
-    );
+    record RebalancingResult(int nodesCreated, int nodesRemoved, int nodesMerged, int nodesSplit, int entitiesRelocated,
+                             long timeTaken, boolean success)
+
 }
 ```
 
@@ -82,6 +83,7 @@ boolean isAutoBalancingEnabled()
 Enables automatic rebalancing after insert/remove operations.
 
 **Example:**
+
 ```java
 // Enable automatic balancing
 spatialIndex.setAutoBalancingEnabled(true);
@@ -100,6 +102,7 @@ TreeBalancer.RebalancingResult rebalanceTree()
 Manually triggers a full tree rebalancing operation.
 
 **Example:**
+
 ```java
 // Perform manual rebalancing
 TreeBalancer.RebalancingResult result = spatialIndex.rebalanceTree();
@@ -120,6 +123,7 @@ void setBalancingStrategy(TreeBalancingStrategy<ID> strategy)
 Configures the balancing strategy used by the tree.
 
 **Example:**
+
 ```java
 // Use aggressive balancing for better query performance
 spatialIndex.setBalancingStrategy(new AggressiveBalancingStrategy<>());
@@ -137,6 +141,7 @@ TreeBalancingStrategy.TreeBalancingStats getBalancingStats()
 Retrieves current tree balance statistics.
 
 **Example:**
+
 ```java
 TreeBalancingStrategy.TreeBalancingStats stats = spatialIndex.getBalancingStats();
 
@@ -251,17 +256,16 @@ public class LevelAwareStrategy<ID extends EntityID> implements TreeBalancingStr
             return (int) (maxEntitiesPerNode * 0.6);
         }
     }
-    
+
     @Override
     public boolean shouldMerge(int entityCount, int level, int[] siblingCounts) {
         // Consider sibling loads for merging decision
         int totalSiblingEntities = Arrays.stream(siblingCounts).sum();
-        int avgSiblingLoad = siblingCounts.length > 0 ? 
-            totalSiblingEntities / siblingCounts.length : 0;
-        
+        int avgSiblingLoad = siblingCounts.length > 0 ? totalSiblingEntities / siblingCounts.length : 0;
+
         // Merge if this node and siblings are all underpopulated
-        return entityCount < getMergeThreshold(level, maxEntitiesPerNode) &&
-               avgSiblingLoad < getMergeThreshold(level, maxEntitiesPerNode);
+        return entityCount < getMergeThreshold(level, maxEntitiesPerNode) && avgSiblingLoad < getMergeThreshold(level,
+                                                                                                                maxEntitiesPerNode);
     }
 }
 ```
@@ -395,9 +399,9 @@ public class BatchBalancing {
 ## Best Practices
 
 1. **Strategy Selection**: Choose strategy based on workload:
-   - Static scenes: Conservative strategy
-   - Dynamic scenes: Default or aggressive strategy
-   - Mixed workloads: Adaptive strategy
+    - Static scenes: Conservative strategy
+    - Dynamic scenes: Default or aggressive strategy
+    - Mixed workloads: Adaptive strategy
 
 2. **Monitoring**: Regularly check balance statistics to tune strategy
 

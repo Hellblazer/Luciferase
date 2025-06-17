@@ -17,15 +17,15 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Edge case tests for Tetree collision detection.
- * Tests boundary conditions, tetrahedral constraints, and unusual scenarios.
+ * Edge case tests for Tetree collision detection. Tests boundary conditions, tetrahedral constraints, and unusual
+ * scenarios.
  *
  * @author hal.hildebrand
  */
 public class TetreeCollisionEdgeCaseTest {
 
     private Tetree<LongEntityID, String> tetree;
-    private SequentialLongIDGenerator idGenerator;
+    private SequentialLongIDGenerator    idGenerator;
 
     @BeforeEach
     void setUp() {
@@ -67,141 +67,6 @@ public class TetreeCollisionEdgeCaseTest {
     }
 
     @Test
-    void testIdenticalPositions() {
-        // Test collision detection with entities at identical positions
-        Point3f pos = new Point3f(100, 100, 100);
-
-        LongEntityID id1 = tetree.insert(pos, (byte) 10, "Entity1");
-        LongEntityID id2 = tetree.insert(new Point3f(pos), (byte) 10, "Entity2"); // Identical position
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities at identical positions should collide");
-
-        var collisionPair = collision.get();
-        assertEquals(0.0f, collisionPair.penetrationDepth(), 0.001f, "Penetration depth should be minimal for identical positions");
-    }
-
-    @Test
-    void testZeroBoundsEntity() {
-        // Test collision with entity that has zero-size bounds
-        Point3f pos1 = new Point3f(100, 100, 100);
-        Point3f pos2 = new Point3f(100, 100, 100);
-
-        EntityBounds zeroBounds = new EntityBounds(pos2, pos2); // Zero-size bounds
-
-        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "PointEntity");
-        LongEntityID id2 = idGenerator.generateID();
-        tetree.insert(id2, pos2, (byte) 10, "ZeroBoundsEntity", zeroBounds);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Point entity should collide with zero-bounds entity at same position");
-    }
-
-    @Test
-    void testTouchingBounds() {
-        // Test entities with bounds that exactly touch but don't overlap
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(120, 100, 100);
-
-        EntityBounds bounds1 = new EntityBounds(
-            new Point3f(95, 95, 95),
-            new Point3f(110, 105, 105)
-        );
-        EntityBounds bounds2 = new EntityBounds(
-            new Point3f(110, 95, 95), // Exactly touching bounds1's max X
-            new Point3f(125, 105, 105)
-        );
-
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
-
-        tetree.insert(id1, center1, (byte) 10, "Entity1", bounds1);
-        tetree.insert(id2, center2, (byte) 10, "Entity2", bounds2);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Exactly touching bounds should be considered colliding");
-    }
-
-    @Test
-    void testFloatingPointPrecisionEdges() {
-        // Test collision detection with floating point precision edge cases
-        Point3f pos1 = new Point3f(100.0f, 100.0f, 100.0f);
-        Point3f pos2 = new Point3f(100.0000001f, 100.0000001f, 100.0000001f); // Very small difference
-
-        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities with minimal floating point differences should collide");
-    }
-
-    @Test
-    void testTetrahedralBoundaryCollisions() {
-        // Test collision detection across tetrahedral node boundaries
-        Point3f pos1 = new Point3f(63.9f, 63.9f, 63.9f); // Near tetrahedral boundary
-        Point3f pos2 = new Point3f(64.1f, 64.1f, 64.1f); // Across boundary
-
-        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");
-
-        float distance = pos1.distance(pos2);
-        if (distance <= 0.1f) {
-            Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-            assertTrue(collision.isPresent(), "Close entities across tetrahedral boundaries should collide");
-        }
-    }
-
-    @Test
-    void testLargeBoundsWithSmallEntity() {
-        // Test collision between very large bounds and small point entity
-        Point3f pointPos = new Point3f(500, 500, 500);
-        Point3f largeCenter = new Point3f(500, 500, 500);
-
-        EntityBounds largeBounds = new EntityBounds(
-            new Point3f(100, 100, 100), // Must stay positive for Tetree
-            new Point3f(900, 900, 900)
-        );
-
-        LongEntityID pointId = tetree.insert(pointPos, (byte) 10, "PointEntity");
-        LongEntityID largeId = idGenerator.generateID();
-        tetree.insert(largeId, largeCenter, (byte) 5, "LargeEntity", largeBounds);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(pointId, largeId);
-        assertTrue(collision.isPresent(), "Point entity inside large bounds should collide");
-    }
-
-    @Test
-    void testPositiveCoordinateConstraint() {
-        // Test that Tetree properly enforces positive coordinate constraints
-        try {
-            Point3f negativePos = new Point3f(-100, 100, 100);
-            assertThrows(IllegalArgumentException.class, () -> {
-                tetree.insert(negativePos, (byte) 10, "InvalidEntity");
-            }, "Tetree should reject negative coordinates");
-        } catch (Exception e) {
-            // Expected behavior - Tetree should validate coordinates
-        }
-
-        // Test with valid positive coordinates
-        Point3f validPos = new Point3f(100, 100, 100);
-        LongEntityID validId = tetree.insert(validPos, (byte) 10, "ValidEntity");
-        assertNotNull(validId, "Valid positive coordinates should be accepted");
-    }
-
-    @Test
-    void testExtremePositiveCoordinateValues() {
-        // Test collision detection with very large positive coordinate values
-        Point3f pos1 = new Point3f(Float.MAX_VALUE / 4, Float.MAX_VALUE / 4, Float.MAX_VALUE / 4);
-        Point3f pos2 = new Point3f(Float.MAX_VALUE / 4, Float.MAX_VALUE / 4, Float.MAX_VALUE / 4);
-
-        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities at extreme positive coordinates should collide when at same position");
-    }
-
-    @Test
     void testCollisionNearOrigin() {
         // Test collision detection near the coordinate origin (minimal positive values)
         Point3f nearOrigin1 = new Point3f(0.01f, 0.01f, 0.01f);
@@ -212,31 +77,6 @@ public class TetreeCollisionEdgeCaseTest {
 
         Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
         assertTrue(collision.isPresent(), "Entities near origin should collide when close enough");
-    }
-
-    @Test
-    void testDegenerateBounds() {
-        // Test collision with degenerate bounds (flat in one dimension)
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(105, 100, 100);
-
-        EntityBounds flatBounds1 = new EntityBounds(
-            new Point3f(95, 95, 100), // Flat in Z dimension
-            new Point3f(105, 105, 100)
-        );
-        EntityBounds flatBounds2 = new EntityBounds(
-            new Point3f(100, 95, 100), // Overlapping flat bounds
-            new Point3f(110, 105, 100)
-        );
-
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
-
-        tetree.insert(id1, center1, (byte) 10, "FlatEntity1", flatBounds1);
-        tetree.insert(id2, center2, (byte) 10, "FlatEntity2", flatBounds2);
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Overlapping flat bounds should collide");
     }
 
     @Test
@@ -290,29 +130,84 @@ public class TetreeCollisionEdgeCaseTest {
     }
 
     @Test
-    void testTetrahedralSpatialLocalityEdgeCases() {
-        // Test collision detection with entities positioned at tetrahedral reference points
-        Point3f[] tetraVertices = {
-            new Point3f(64, 64, 64),   // S0 tetrahedron vertex region
-            new Point3f(128, 64, 64),  // Different tetrahedron
-            new Point3f(64, 128, 64),  // Different tetrahedron
-            new Point3f(64, 64, 128)   // Different tetrahedron
-        };
+    void testDegenerateBounds() {
+        // Test collision with degenerate bounds (flat in one dimension)
+        Point3f center1 = new Point3f(100, 100, 100);
+        Point3f center2 = new Point3f(105, 100, 100);
 
-        LongEntityID[] vertexIds = new LongEntityID[tetraVertices.length];
-        for (int i = 0; i < tetraVertices.length; i++) {
-            vertexIds[i] = tetree.insert(tetraVertices[i], (byte) 8, "VertexEntity" + i);
-        }
+        EntityBounds flatBounds1 = new EntityBounds(new Point3f(95, 95, 100), // Flat in Z dimension
+                                                    new Point3f(105, 105, 100));
+        EntityBounds flatBounds2 = new EntityBounds(new Point3f(100, 95, 100), // Overlapping flat bounds
+                                                    new Point3f(110, 105, 100));
 
-        // Test that entities in different tetrahedra don't collide
-        for (int i = 0; i < vertexIds.length; i++) {
-            for (int j = i + 1; j < vertexIds.length; j++) {
-                Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = 
-                    tetree.checkCollision(vertexIds[i], vertexIds[j]);
-                assertFalse(collision.isPresent(), 
-                    "Entities in different tetrahedral regions should not collide unless very close");
-            }
-        }
+        LongEntityID id1 = idGenerator.generateID();
+        LongEntityID id2 = idGenerator.generateID();
+
+        tetree.insert(id1, center1, (byte) 10, "FlatEntity1", flatBounds1);
+        tetree.insert(id2, center2, (byte) 10, "FlatEntity2", flatBounds2);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Overlapping flat bounds should collide");
+    }
+
+    @Test
+    void testExtremePositiveCoordinateValues() {
+        // Test collision detection with very large positive coordinate values
+        Point3f pos1 = new Point3f(Float.MAX_VALUE / 4, Float.MAX_VALUE / 4, Float.MAX_VALUE / 4);
+        Point3f pos2 = new Point3f(Float.MAX_VALUE / 4, Float.MAX_VALUE / 4, Float.MAX_VALUE / 4);
+
+        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(),
+                   "Entities at extreme positive coordinates should collide when at same position");
+    }
+
+    @Test
+    void testFloatingPointPrecisionEdges() {
+        // Test collision detection with floating point precision edge cases
+        Point3f pos1 = new Point3f(100.0f, 100.0f, 100.0f);
+        Point3f pos2 = new Point3f(100.0000001f, 100.0000001f, 100.0000001f); // Very small difference
+
+        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities with minimal floating point differences should collide");
+    }
+
+    @Test
+    void testIdenticalPositions() {
+        // Test collision detection with entities at identical positions
+        Point3f pos = new Point3f(100, 100, 100);
+
+        LongEntityID id1 = tetree.insert(pos, (byte) 10, "Entity1");
+        LongEntityID id2 = tetree.insert(new Point3f(pos), (byte) 10, "Entity2"); // Identical position
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities at identical positions should collide");
+
+        var collisionPair = collision.get();
+        assertEquals(0.0f, collisionPair.penetrationDepth(), 0.001f,
+                     "Penetration depth should be minimal for identical positions");
+    }
+
+    @Test
+    void testLargeBoundsWithSmallEntity() {
+        // Test collision between very large bounds and small point entity
+        Point3f pointPos = new Point3f(500, 500, 500);
+        Point3f largeCenter = new Point3f(500, 500, 500);
+
+        EntityBounds largeBounds = new EntityBounds(new Point3f(100, 100, 100), // Must stay positive for Tetree
+                                                    new Point3f(900, 900, 900));
+
+        LongEntityID pointId = tetree.insert(pointPos, (byte) 10, "PointEntity");
+        LongEntityID largeId = idGenerator.generateID();
+        tetree.insert(largeId, largeCenter, (byte) 5, "LargeEntity", largeBounds);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(pointId, largeId);
+        assertTrue(collision.isPresent(), "Point entity inside large bounds should collide");
     }
 
     @Test
@@ -322,11 +217,8 @@ public class TetreeCollisionEdgeCaseTest {
         LongEntityID[] entityIds = new LongEntityID[50]; // High density
 
         for (int i = 0; i < entityIds.length; i++) {
-            Point3f pos = new Point3f(
-                basePos.x + i * 0.001f, // Very close together, staying positive
-                basePos.y + i * 0.001f,
-                basePos.z + i * 0.001f
-            );
+            Point3f pos = new Point3f(basePos.x + i * 0.001f, // Very close together, staying positive
+                                      basePos.y + i * 0.001f, basePos.z + i * 0.001f);
             entityIds[i] = tetree.insert(pos, (byte) 15, "DenseEntity" + i);
         }
 
@@ -335,8 +227,56 @@ public class TetreeCollisionEdgeCaseTest {
         assertTrue(allCollisions.size() > 50, "High density should produce many collision pairs");
 
         // Test specific collision
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(entityIds[0], entityIds[1]);
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(entityIds[0],
+                                                                                                     entityIds[1]);
         assertTrue(collision.isPresent(), "Adjacent dense entities should collide");
+    }
+
+    @Test
+    void testMinimalTetrahedralCellCollision() {
+        // Test collision in the smallest possible tetrahedral cell
+        Point3f pos1 = new Point3f(1.0f, 1.0f, 1.0f);   // Minimal positive coordinates
+        Point3f pos2 = new Point3f(1.001f, 1.001f, 1.001f); // Very close
+
+        LongEntityID id1 = tetree.insert(pos1, (byte) 20, "MinimalEntity1"); // Highest level for smallest cells
+        LongEntityID id2 = tetree.insert(pos2, (byte) 20, "MinimalEntity2");
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Entities in minimal tetrahedral cells should collide when very close");
+    }
+
+    @Test
+    void testPositiveCoordinateConstraint() {
+        // Test that Tetree properly enforces positive coordinate constraints
+        try {
+            Point3f negativePos = new Point3f(-100, 100, 100);
+            assertThrows(IllegalArgumentException.class, () -> {
+                tetree.insert(negativePos, (byte) 10, "InvalidEntity");
+            }, "Tetree should reject negative coordinates");
+        } catch (Exception e) {
+            // Expected behavior - Tetree should validate coordinates
+        }
+
+        // Test with valid positive coordinates
+        Point3f validPos = new Point3f(100, 100, 100);
+        LongEntityID validId = tetree.insert(validPos, (byte) 10, "ValidEntity");
+        assertNotNull(validId, "Valid positive coordinates should be accepted");
+    }
+
+    @Test
+    void testTetrahedralBoundaryCollisions() {
+        // Test collision detection across tetrahedral node boundaries
+        Point3f pos1 = new Point3f(63.9f, 63.9f, 63.9f); // Near tetrahedral boundary
+        Point3f pos2 = new Point3f(64.1f, 64.1f, 64.1f); // Across boundary
+
+        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
+        LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");
+
+        float distance = pos1.distance(pos2);
+        if (distance <= 0.1f) {
+            Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+            assertTrue(collision.isPresent(), "Close entities across tetrahedral boundaries should collide");
+        }
     }
 
     @Test
@@ -359,15 +299,63 @@ public class TetreeCollisionEdgeCaseTest {
     }
 
     @Test
-    void testMinimalTetrahedralCellCollision() {
-        // Test collision in the smallest possible tetrahedral cell
-        Point3f pos1 = new Point3f(1.0f, 1.0f, 1.0f);   // Minimal positive coordinates
-        Point3f pos2 = new Point3f(1.001f, 1.001f, 1.001f); // Very close
+    void testTetrahedralSpatialLocalityEdgeCases() {
+        // Test collision detection with entities positioned at tetrahedral reference points
+        Point3f[] tetraVertices = { new Point3f(64, 64, 64),   // S0 tetrahedron vertex region
+                                    new Point3f(128, 64, 64),  // Different tetrahedron
+                                    new Point3f(64, 128, 64),  // Different tetrahedron
+                                    new Point3f(64, 64, 128)   // Different tetrahedron
+        };
 
-        LongEntityID id1 = tetree.insert(pos1, (byte) 20, "MinimalEntity1"); // Highest level for smallest cells
-        LongEntityID id2 = tetree.insert(pos2, (byte) 20, "MinimalEntity2");
+        LongEntityID[] vertexIds = new LongEntityID[tetraVertices.length];
+        for (int i = 0; i < tetraVertices.length; i++) {
+            vertexIds[i] = tetree.insert(tetraVertices[i], (byte) 8, "VertexEntity" + i);
+        }
+
+        // Test that entities in different tetrahedra don't collide
+        for (int i = 0; i < vertexIds.length; i++) {
+            for (int j = i + 1; j < vertexIds.length; j++) {
+                Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(
+                vertexIds[i], vertexIds[j]);
+                assertFalse(collision.isPresent(),
+                            "Entities in different tetrahedral regions should not collide unless very close");
+            }
+        }
+    }
+
+    @Test
+    void testTouchingBounds() {
+        // Test entities with bounds that exactly touch but don't overlap
+        Point3f center1 = new Point3f(100, 100, 100);
+        Point3f center2 = new Point3f(120, 100, 100);
+
+        EntityBounds bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(110, 105, 105));
+        EntityBounds bounds2 = new EntityBounds(new Point3f(110, 95, 95), // Exactly touching bounds1's max X
+                                                new Point3f(125, 105, 105));
+
+        LongEntityID id1 = idGenerator.generateID();
+        LongEntityID id2 = idGenerator.generateID();
+
+        tetree.insert(id1, center1, (byte) 10, "Entity1", bounds1);
+        tetree.insert(id2, center2, (byte) 10, "Entity2", bounds2);
 
         Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Entities in minimal tetrahedral cells should collide when very close");
+        assertTrue(collision.isPresent(), "Exactly touching bounds should be considered colliding");
+    }
+
+    @Test
+    void testZeroBoundsEntity() {
+        // Test collision with entity that has zero-size bounds
+        Point3f pos1 = new Point3f(100, 100, 100);
+        Point3f pos2 = new Point3f(100, 100, 100);
+
+        EntityBounds zeroBounds = new EntityBounds(pos2, pos2); // Zero-size bounds
+
+        LongEntityID id1 = tetree.insert(pos1, (byte) 10, "PointEntity");
+        LongEntityID id2 = idGenerator.generateID();
+        tetree.insert(id2, pos2, (byte) 10, "ZeroBoundsEntity", zeroBounds);
+
+        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = tetree.checkCollision(id1, id2);
+        assertTrue(collision.isPresent(), "Point entity should collide with zero-bounds entity at same position");
     }
 }
