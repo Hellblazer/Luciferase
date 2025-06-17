@@ -522,27 +522,15 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return children; // No children possible at max depth
         }
 
-        // For tetrahedral decomposition, children are at the next finer level
-        // Each parent cell can contain multiple child cells
-        byte childLevel = (byte) (level + 1);
-        int parentCellSize = Constants.lengthAtLevel(level);
-        int childCellSize = Constants.lengthAtLevel(childLevel);
+        // Use the t8code-compliant Tet.child() method to generate the 8 children
+        // This ensures proper Bey refinement scheme and correct connectivity
+        for (int childIndex = 0; childIndex < TetreeConnectivity.CHILDREN_PER_TET; childIndex++) {
+            Tet childTet = parentTet.child(childIndex);
+            long childSFCIndex = childTet.index();
 
-        // Check all child cells that could be contained within parent cell
-        for (int x = parentTet.x(); x < parentTet.x() + parentCellSize; x += childCellSize) {
-            for (int y = parentTet.y(); y < parentTet.y() + parentCellSize; y += childCellSize) {
-                for (int z = parentTet.z(); z < parentTet.z() + parentCellSize; z += childCellSize) {
-                    // Check all 6 tetrahedron types in each child cell
-                    for (byte type = 0; type < 6; type++) {
-                        Tet childTet = new Tet(x, y, z, childLevel, type);
-                        long childIndex = childTet.index();
-
-                        // Only add if child exists in spatial index
-                        if (spatialIndex.containsKey(childIndex)) {
-                            children.add(childIndex);
-                        }
-                    }
-                }
+            // Only add if child exists in spatial index
+            if (spatialIndex.containsKey(childSFCIndex)) {
+                children.add(childSFCIndex);
             }
         }
 
@@ -1363,47 +1351,39 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     // ===== Tree Balancing Implementation =====
 
     /**
-     * Generate tetrahedra along the ray path at a specific level This ensures ray traversal finds all tetrahedra
-     * intersected by the ray, not just those containing entities.
+     * Generate tetrahedra along the ray path at a specific level using optimized SFC ray traversal.
+     * This ensures ray traversal finds all tetrahedra intersected by the ray efficiently.
      */
     private void generateRayPathTetrahedra(Ray3D ray, byte level, List<TetDistance> intersectedTets,
                                            Set<Long> visited) {
-        // Use a step-based approach to generate tetrahedra along the ray path
-        // This is more memory-efficient than the recursive neighbor approach
-
-        float stepSize = Constants.lengthAtLevel(level) / 4.0f; // Quarter of cell size for good coverage
-        float maxDistance = ray.isUnbounded() ? 2048.0f : ray.maxDistance(); // Reasonable limit for unbounded rays
-
-        int maxSteps = (int) Math.ceil(maxDistance / stepSize);
-        maxSteps = Math.min(maxSteps, 1000); // Limit to prevent excessive computation
-
-        for (int step = 0; step <= maxSteps; step++) {
-            float t = step * stepSize;
-            Point3f rayPoint = ray.pointAt(t);
-
-            // Skip points outside the domain
-            if (!isInsideDomain(rayPoint)) {
-                continue;
-            }
-
-            // Find the tetrahedron containing this point
-            try {
-                Tet tet = locate(rayPoint, level);
-                long tetIndex = tet.index();
-
-                if (!visited.contains(tetIndex)) {
-                    // Test ray intersection with this tetrahedron
-                    var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
-                    if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
-                        intersectedTets.add(new TetDistance(tetIndex, intersection.distance));
-                        visited.add(tetIndex);
+        // Use the optimized TetreeSFCRayTraversal for efficient ray-tetrahedron intersection
+        // This replaces the previous step-based approach with SFC-guided traversal
+        
+        TetreeSFCRayTraversal<ID, Content> sfcTraversal = getRayTraversal();
+        
+        // Get all tetrahedra intersected by the ray using SFC traversal
+        Stream<Long> rayIntersectedTets = sfcTraversal.traverseRay(ray);
+        
+        // Convert to the expected format for this method, filtering by level and visited status
+        rayIntersectedTets.forEach(tetIndex -> {
+            if (!visited.contains(tetIndex)) {
+                try {
+                    Tet tet = Tet.tetrahedron(tetIndex);
+                    
+                    // Only include tetrahedra at the requested level
+                    if (tet.l() == level) {
+                        // Test ray intersection with this tetrahedron
+                        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+                        if (intersection.intersects && intersection.distance <= ray.maxDistance()) {
+                            intersectedTets.add(new TetDistance(tetIndex, intersection.distance));
+                            visited.add(tetIndex);
+                        }
                     }
+                } catch (Exception e) {
+                    // Skip invalid tetrahedra
                 }
-            } catch (Exception e) {
-                // Skip invalid tetrahedra
-                continue;
             }
-        }
+        });
     }
 
     /**
@@ -2045,67 +2025,35 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         @Override
         protected Set<Long> findSiblings(long tetIndex) {
             Tet tet = Tet.tetrahedron(tetIndex);
-            byte level = tet.l();
-            if (level == 0) {
+            if (tet.l() == 0) {
                 return Collections.emptySet(); // Root has no siblings
             }
 
-            // For tetrahedral decomposition, siblings are other tetrahedra in the same parent cell
-            // Calculate parent cell coordinates
-            int cellSize = Constants.lengthAtLevel(level);
-            int parentCellSize = cellSize * 2;
-
-            // Find parent cell coordinates
-            int parentX = (tet.x() / parentCellSize) * parentCellSize;
-            int parentY = (tet.y() / parentCellSize) * parentCellSize;
-            int parentZ = (tet.z() / parentCellSize) * parentCellSize;
-
-            Set<Long> siblings = new HashSet<>();
-
-            // Check all child cells within parent cell for all tetrahedron types
-            for (int x = parentX; x < parentX + parentCellSize; x += cellSize) {
-                for (int y = parentY; y < parentY + parentCellSize; y += cellSize) {
-                    for (int z = parentZ; z < parentZ + parentCellSize; z += cellSize) {
-                        for (byte type = 0; type < 6; type++) {
-                            Tet siblingTet = new Tet(x, y, z, level, type);
-                            long siblingIndex = siblingTet.index();
-
-                            // Add if it's not the current node and exists
-                            if (siblingIndex != tetIndex && spatialIndex.containsKey(siblingIndex)) {
-                                siblings.add(siblingIndex);
-                            }
-                        }
-                    }
+            // Use the t8code-compliant TetreeFamily algorithm for finding siblings
+            Tet[] siblings = TetreeFamily.getSiblings(tet);
+            Set<Long> result = new HashSet<>();
+            
+            for (Tet sibling : siblings) {
+                long siblingIndex = sibling.index();
+                // Add if it's not the current node and exists in the spatial index
+                if (siblingIndex != tetIndex && spatialIndex.containsKey(siblingIndex)) {
+                    result.add(siblingIndex);
                 }
             }
 
-            return siblings;
+            return result;
         }
 
         @Override
         protected long getParentIndex(long tetIndex) {
             Tet tet = Tet.tetrahedron(tetIndex);
-            byte level = tet.l();
-            if (level == 0) {
+            if (tet.l() == 0) {
                 return -1; // Root has no parent
             }
 
-            int cellSize = Constants.lengthAtLevel(level);
-            int parentCellSize = cellSize * 2;
-            byte parentLevel = (byte) (level - 1);
-
-            // Calculate parent coordinates
-            int parentX = (tet.x() / parentCellSize) * parentCellSize;
-            int parentY = (tet.y() / parentCellSize) * parentCellSize;
-            int parentZ = (tet.z() / parentCellSize) * parentCellSize;
-
-            // For tetrahedral decomposition, find the parent tetrahedron that contains this position
-            // Use the tetrahedron centroid instead of cube center
-            var vertices = tet.coordinates();
-            Point3f position = new Point3f((vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f,
-                                           (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f,
-                                           (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f);
-            Tet parentTet = locate(position, parentLevel);
+            // Use the t8code-compliant parent() method from the Tet class
+            // This ensures correct parent calculation using the exact t8code algorithm
+            Tet parentTet = tet.parent();
             return parentTet.index();
         }
     }
