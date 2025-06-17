@@ -63,7 +63,8 @@ public final class TetreeLevelCache {
     }
 
     public static void cacheIndex(int x, int y, int z, byte level, byte type, long index) {
-        long key = ((long) x << 32) | ((long) y << 16) | ((long) z) | ((long) level << 8) | type;
+        // Use hash function for full 32-bit coordinate support
+        long key = generateCacheKey(x, y, z, level, type);
         int slot = (int) (key & (INDEX_CACHE_SIZE - 1));
         INDEX_CACHE_KEYS[slot] = key;
         INDEX_CACHE_VALUES[slot] = index;
@@ -110,8 +111,8 @@ public final class TetreeLevelCache {
     }
 
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {
-        // Pack coordinates and metadata into cache key
-        long key = ((long) x << 32) | ((long) y << 16) | ((long) z) | ((long) level << 8) | type;
+        // Use hash function for full 32-bit coordinate support
+        long key = generateCacheKey(x, y, z, level, type);
         int slot = (int) (key & (INDEX_CACHE_SIZE - 1));
 
         // Check cache hit
@@ -124,7 +125,14 @@ public final class TetreeLevelCache {
     }
 
     /**
-     * Get the level from an SFC index in O(1) time. Replaces the O(log n) numberOfLeadingZeros operation.
+     * Get the level from a Tet SFC index in O(1) time.
+     * 
+     * For Tet SFC, the level is encoded in the index itself:
+     * - Level 0: index = 0
+     * - Level 1: indices 1-7 (8^1 - 1)
+     * - Level 2: indices 8-63 (8^2 - 1)
+     * - Level 3: indices 64-511 (8^3 - 1)
+     * - Level n: indices 8^(n-1) to 8^n - 1
      */
     public static byte getLevelFromIndex(long index) {
         if (index < 0) {
@@ -136,11 +144,21 @@ public final class TetreeLevelCache {
             return SMALL_INDEX_TO_LEVEL[(int) index];
         }
 
-        // For larger indices, use De Bruijn multiplication for O(1) highest bit
-        // This is faster than numberOfLeadingZeros on most architectures
-        int highBit = fastHighestBit(index);
-        byte level = HIGH_BIT_TO_LEVEL[highBit];
-
+        // For Tet SFC: level = floor(log8(index + 1))
+        // Since log8(x) = log2(x) / 3, we can use:
+        // level = floor(log2(index + 1) / 3)
+        
+        // However, since indices are in ranges [8^(n-1), 8^n - 1],
+        // we need to find which power of 8 range the index falls into
+        
+        // Use numberOfLeadingZeros for correctness (we'll optimize later if needed)
+        if (index == 0) return 0;
+        
+        // For index > 0, find the level by checking which power of 8 range it falls into
+        // This is essentially finding floor(log8(index + 1))
+        int bits = 64 - Long.numberOfLeadingZeros(index);
+        byte level = (byte) ((bits + 2) / 3);  // +2 for proper rounding of log8
+        
         // Clamp to max level
         return level > Constants.getMaxRefinementLevel() ? Constants.getMaxRefinementLevel() : level;
     }
@@ -219,5 +237,28 @@ public final class TetreeLevelCache {
 
     private static int packTypeTransition(int startType, int startLevel, int endLevel) {
         return (startType << 16) | (startLevel << 8) | endLevel;
+    }
+    
+    /**
+     * Generate a high-quality hash key for cache lookups.
+     * This fixes the bit overlap issue in the original implementation.
+     * Uses prime multipliers to ensure good distribution.
+     */
+    private static long generateCacheKey(int x, int y, int z, byte level, byte type) {
+        // Use large primes to minimize collisions
+        long hash = x * 0x9E3779B97F4A7C15L;    // Golden ratio prime
+        hash ^= y * 0xBF58476D1CE4E5B9L;        // Another large prime
+        hash ^= z * 0x94D049BB133111EBL;        // Another large prime  
+        hash ^= level * 0x2127599BF4325C37L;    // Another large prime
+        hash ^= type * 0xFD5167A1D8E52FB7L;     // Another large prime
+        
+        // Mix the bits for better distribution
+        hash ^= (hash >>> 32);
+        hash *= 0xD6E8FEB86659FD93L;
+        hash ^= (hash >>> 32);
+        hash *= 0xD6E8FEB86659FD93L;
+        hash ^= (hash >>> 32);
+        
+        return hash;
     }
 }
