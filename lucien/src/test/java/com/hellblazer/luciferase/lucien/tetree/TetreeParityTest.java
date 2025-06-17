@@ -319,6 +319,7 @@ public class TetreeParityTest {
      * Phase 5: Performance comparison tests
      */
     @Test
+    @org.junit.jupiter.api.Disabled("Performance tests disabled in CI - enable manually for benchmarking")
     void testPerformanceImprovements() {
         System.out.println("=== Testing Performance Improvements ===");
 

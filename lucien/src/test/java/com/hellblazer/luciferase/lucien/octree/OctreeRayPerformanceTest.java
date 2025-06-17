@@ -9,6 +9,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  *
  * @author hal.hildebrand
  */
+@Disabled("Performance tests disabled in CI - enable manually for benchmarking")
 public class OctreeRayPerformanceTest {
 
     private final Random                       random = new Random(12345); // Fixed seed for reproducible tests

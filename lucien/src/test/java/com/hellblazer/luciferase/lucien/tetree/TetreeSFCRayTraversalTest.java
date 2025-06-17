@@ -48,6 +48,7 @@ public class TetreeSFCRayTraversalTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("Performance tests disabled in CI - enable manually for benchmarking")
     public void testPerformanceComparison() {
         // Build a larger tree
         for (int i = 0; i < 100; i++) {

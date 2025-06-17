@@ -290,6 +290,7 @@ public class TetreeBitsTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("Performance tests disabled in CI - enable manually for benchmarking")
     public void testPerformance() {
         // Measure performance of bitwise operations vs standard operations
         int iterations = 1000000;

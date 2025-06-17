@@ -8,6 +8,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  *
  * @author hal.hildebrand
  */
+@Disabled("Performance tests disabled in CI - enable manually for benchmarking")
 public class TetreeCollisionPerformanceTest {
 
     private Tetree<LongEntityID, String> tetree;
