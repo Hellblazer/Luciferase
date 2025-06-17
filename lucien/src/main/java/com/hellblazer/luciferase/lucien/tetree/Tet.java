@@ -274,11 +274,11 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalStateException("Cannot create children at max refinement level");
         }
 
-        // Get Bey child ID from Morton index using parent type
+        // Get Bey child ID from Morton index using parent type (t8code: t8_dtet_index_to_bey_number)
         byte beyChildId = TetreeConnectivity.getBeyChildId(type, childIndex);
-
-        // Get child type from connectivity table  
-        byte childType = Constants.TYPE_TO_TYPE_OF_CHILD[type][beyChildId];
+        
+        // Get child type from connectivity table using Bey ID (t8code: t8_dtet_type_of_child)
+        byte childType = TetreeConnectivity.getChildType(type, beyChildId);
         byte childLevel = (byte) (l + 1);
 
         // For Bey child 0, use parent anchor directly (interior child)
@@ -289,6 +289,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // For other children, compute position as midpoint between parent anchor and vertex
         // This is the t8code algorithm: child anchor = (parent anchor + parent vertex) / 2
         byte vertex = TetreeConnectivity.getBeyVertex(beyChildId);
+        
+        // Use the exact t8code algorithm to compute vertex coordinates
         Point3i vertexCoords = computeVertexCoordinates(vertex);
 
         // Child anchor is midpoint between parent anchor and the defining vertex
@@ -952,16 +954,17 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     /**
      * Compute the absolute coordinates of a specific vertex of this tetrahedron.
      *
-     * <p><b>Vertex Numbering Convention:</b></p>
-     * The 4 vertices are numbered 0-3 according to the simplex type definition in Constants.SIMPLEX. Each tetrahedron
-     * type has a specific vertex arrangement.
-     *
-     * <p><b>Algorithm (from t8code's t8_dtet_compute_coords):</b></p>
+     * <p><b>Algorithm (from t8code's t8_dtri_compute_coords):</b></p>
+     * This is the exact t8code algorithm for computing vertex coordinates:
      * <ol>
-     *   <li>Get relative vertex positions from simplex type definition</li>
-     *   <li>Scale by cell size (edge length at this level)</li>
-     *   <li>Add to anchor point to get absolute coordinates</li>
+     *   <li>Start with anchor coordinates (x, y, z)</li>
+     *   <li>If vertex == 0, return anchor coordinates</li>
+     *   <li>For vertex != 0, add h to the ei dimension</li>
+     *   <li>For vertex == 2, also add h to the ej dimension</li>
+     *   <li>For vertex == 3, add h to both (ei+1)%3 and (ei+2)%3 dimensions</li>
      * </ol>
+     *
+     * <p>Where ei = type / 2 and ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3</p>
      *
      * @param vertex vertex number (0-3)
      * @return absolute coordinates of the vertex
@@ -972,18 +975,31 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalArgumentException("Vertex must be 0-3: " + vertex);
         }
 
+        // t8code algorithm: ei = type / 2, ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3
+        int ei = type / 2;
+        int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
         int h = length(); // Cell size at this level
-
-        // Get vertex coordinates from simplex definition
-        Point3i[] simplexVertices = Constants.SIMPLEX[type];
-        Point3i relativeVertex = simplexVertices[vertex];
-
-        // Scale relative coordinates by cell size and add to anchor
-        int vertexX = x + relativeVertex.x * h;
-        int vertexY = y + relativeVertex.y * h;
-        int vertexZ = z + relativeVertex.z * h;
-
-        return new Point3i(vertexX, vertexY, vertexZ);
+        
+        // Start with anchor coordinates
+        int[] coords = { x, y, z };
+        
+        if (vertex == 0) {
+            return new Point3i(coords[0], coords[1], coords[2]);
+        }
+        
+        // Add h to the ei dimension for all non-zero vertices
+        coords[ei] += h;
+        
+        if (vertex == 2) {
+            // Also add h to the ej dimension
+            coords[ej] += h;
+        } else if (vertex == 3) {
+            // Add h to both (ei+1)%3 and (ei+2)%3 dimensions
+            coords[(ei + 1) % 3] += h;
+            coords[(ei + 2) % 3] += h;
+        }
+        
+        return new Point3i(coords[0], coords[1], coords[2]);
     }
 
     // Create a spatial volume from bounds for final filtering
