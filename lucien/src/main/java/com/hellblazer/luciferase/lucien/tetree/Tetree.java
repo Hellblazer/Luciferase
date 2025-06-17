@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.Geometry;
 import com.hellblazer.luciferase.lucien.*;
+import com.hellblazer.luciferase.lucien.Spatial.Sphere;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.entity.*;
 
@@ -391,6 +392,181 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 }
             }
         }
+    }
+
+    /**
+     * Find all neighbors that share a specific edge with the given tetrahedron.
+     *
+     * @param tetIndex  The SFC index of the tetrahedron
+     * @param edgeIndex The edge index (0-5)
+     * @return List of neighbor tetrahedron indices sharing the specified edge
+     */
+    public List<Long> findEdgeNeighbors(long tetIndex, int edgeIndex) {
+        return getNeighborFinder().findEdgeNeighbors(tetIndex, edgeIndex);
+    }
+
+    /**
+     * Find all neighbors that share a specific vertex with the given tetrahedron.
+     *
+     * @param tetIndex    The SFC index of the tetrahedron
+     * @param vertexIndex The vertex index (0-3)
+     * @return List of neighbor tetrahedron indices sharing the specified vertex
+     */
+    public List<Long> findVertexNeighbors(long tetIndex, int vertexIndex) {
+        return getNeighborFinder().findVertexNeighbors(tetIndex, vertexIndex);
+    }
+
+    /**
+     * Find neighbors within a specific Euclidean distance from a tetrahedron.
+     *
+     * @param tetIndex The SFC index of the tetrahedron
+     * @param distance The maximum Euclidean distance
+     * @return Set of neighbor node indices within the distance
+     */
+    public Set<TetreeNodeImpl<ID>> findNeighborsWithinDistance(long tetIndex, float distance) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        Point3i[] vertices = tet.coordinates();
+        
+        // Calculate centroid of tetrahedron
+        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
+        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
+        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
+        
+        Set<TetreeNodeImpl<ID>> neighbors = new HashSet<>();
+        
+        // Manually search through all nodes (since findIntersectingNodes doesn't exist)
+        lock.readLock().lock();
+        try {
+            for (Map.Entry<Long, TetreeNodeImpl<ID>> entry : spatialIndex.entrySet()) {
+                if (!entry.getValue().isEmpty()) {
+                    Tet candidateTet = Tet.tetrahedron(entry.getKey());
+                    Point3i[] candidateVertices = candidateTet.coordinates();
+                    
+                    // Calculate centroid of candidate
+                    float candX = (candidateVertices[0].x + candidateVertices[1].x + 
+                                  candidateVertices[2].x + candidateVertices[3].x) / 4.0f;
+                    float candY = (candidateVertices[0].y + candidateVertices[1].y + 
+                                  candidateVertices[2].y + candidateVertices[3].y) / 4.0f;
+                    float candZ = (candidateVertices[0].z + candidateVertices[1].z + 
+                                  candidateVertices[2].z + candidateVertices[3].z) / 4.0f;
+                    
+                    // Check distance
+                    float dx = centerX - candX;
+                    float dy = centerY - candY;
+                    float dz = centerZ - candZ;
+                    float distSq = dx * dx + dy * dy + dz * dz;
+                    
+                    if (distSq <= distance * distance) {
+                        neighbors.add(entry.getValue());
+                    }
+                }
+            }
+        } finally {
+            lock.readLock().unlock();
+        }
+        
+        return neighbors;
+    }
+
+    // ===== Stream API Integration =====
+
+    /**
+     * Get a stream of all non-empty nodes in the tetree.
+     *
+     * @return Stream of tetree nodes
+     */
+    public Stream<TetreeNodeImpl<ID>> nodeStream() {
+        return spatialIndex.values().stream()
+            .filter(node -> !node.isEmpty());
+    }
+
+    /**
+     * Get a stream of nodes at a specific level.
+     *
+     * @param level The tetrahedral level
+     * @return Stream of nodes at the specified level
+     */
+    public Stream<TetreeNodeImpl<ID>> levelStream(byte level) {
+        return sortedSpatialIndices.stream()
+            .filter(index -> Tet.tetLevelFromIndex(index) == level)
+            .map(spatialIndex::get)
+            .filter(node -> node != null && !node.isEmpty());
+    }
+
+    /**
+     * Get a stream of leaf nodes (nodes without children).
+     *
+     * @return Stream of leaf nodes
+     */
+    public Stream<TetreeNodeImpl<ID>> leafStream() {
+        return spatialIndex.entrySet().stream()
+            .filter(entry -> !entry.getValue().isEmpty() && !hasChildren(entry.getKey()))
+            .map(Map.Entry::getValue);
+    }
+
+    /**
+     * Visit all nodes at a specific level with a consumer.
+     *
+     * @param level   The level to visit
+     * @param visitor The consumer to apply to each node
+     */
+    public void visitLevel(byte level, java.util.function.Consumer<TetreeNodeImpl<ID>> visitor) {
+        levelStream(level).forEach(visitor);
+    }
+
+    /**
+     * Get all leaf nodes as a list.
+     *
+     * @return List of leaf nodes
+     */
+    public List<TetreeNodeImpl<ID>> getLeafNodes() {
+        return leafStream().collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * Count nodes at each level.
+     *
+     * @return Map of level to node count
+     */
+    public Map<Byte, Integer> getNodeCountByLevel() {
+        return sortedSpatialIndices.stream()
+            .collect(java.util.stream.Collectors.groupingBy(
+                index -> Tet.tetLevelFromIndex(index),
+                java.util.stream.Collectors.collectingAndThen(
+                    java.util.stream.Collectors.toList(),
+                    List::size
+                )
+            ));
+    }
+
+    /**
+     * Find the common ancestor of multiple tetrahedral nodes.
+     *
+     * @param tetIndices The indices to find common ancestor for
+     * @return The common ancestor index, or 0 if none
+     */
+    public long findCommonAncestor(long... tetIndices) {
+        if (tetIndices.length == 0) return 0;
+        if (tetIndices.length == 1) return tetIndices[0];
+        
+        // Convert indices to Tets for TetreeBits processing
+        Tet[] tets = new Tet[tetIndices.length];
+        for (int i = 0; i < tetIndices.length; i++) {
+            tets[i] = Tet.tetrahedron(tetIndices[i]);
+        }
+        
+        // Find common ancestor using pairwise comparisons
+        Tet ancestor = tets[0];
+        for (int i = 1; i < tets.length; i++) {
+            byte lcaLevel = TetreeBits.lowestCommonAncestorLevel(ancestor, tets[i]);
+            // Get the ancestor at that level from the first tet
+            ancestor = ancestor;
+            while (ancestor.l() > lcaLevel) {
+                ancestor = ancestor.parent();
+            }
+        }
+        
+        return ancestor.index();
     }
 
     @Override
