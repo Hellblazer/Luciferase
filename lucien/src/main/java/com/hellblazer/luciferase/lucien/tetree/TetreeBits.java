@@ -106,29 +106,8 @@ public final class TetreeBits {
      * @return the refinement level (0-21)
      */
     public static byte extractLevel(long sfcIndex) {
-        if (sfcIndex == 0) {
-            return 0;
-        }
-
-        // Find the highest set bit position
-        // This tells us which level range the index belongs to
-        int highBit = 63 - Long.numberOfLeadingZeros(sfcIndex);
-
-        // Level boundaries follow pattern: 2^(3*(level-1)) for level >= 1
-        // So highBit / 3 gives us an approximation of the level
-        byte level = (byte) ((highBit / 3) + 1);
-
-        // Verify and adjust if needed
-        long levelStart = level == 0 ? 0 : (1L << (3 * (level - 1)));
-        long nextLevelStart = 1L << (3 * level);
-
-        if (sfcIndex < levelStart) {
-            level--;
-        } else if (sfcIndex >= nextLevelStart && level < Constants.getMaxRefinementLevel()) {
-            level++;
-        }
-
-        return level;
+        // Use O(1) cached lookup instead of O(log n) numberOfLeadingZeros
+        return TetreeLevelCache.getLevelFromIndex(sfcIndex);
     }
 
     /**

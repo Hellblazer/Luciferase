@@ -129,27 +129,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @throws IllegalArgumentException if index is negative
      */
     public static byte tetLevelFromIndex(long index) {
-        if (index < 0) {
-            throw new IllegalArgumentException("Index must be non-negative: " + index);
-        }
-
-        if (index == 0) {
-            return 0; // Root tetrahedron
-        }
-
-        // Find the highest set bit position
-        int highBit = 63 - Long.numberOfLeadingZeros(index);
-
-        // Each level uses 3 bits, so divide by 3 and add 1
-        // Add 1 because level 1 uses bits 0-2, level 2 uses bits 3-5, etc.
-        byte level = (byte) ((highBit / 3) + 1);
-
-        // Ensure we don't exceed max level
-        if (level > getMaxRefinementLevel()) {
-            return getMaxRefinementLevel();
-        }
-
-        return level;
+        // Use O(1) cached lookup instead of O(log n) numberOfLeadingZeros
+        return TetreeLevelCache.getLevelFromIndex(index);
     }
 
     /**
@@ -339,6 +320,13 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             return 0;
         }
 
+        // Try cached lookup first for O(1) operation
+        byte cachedType = TetreeLevelCache.getTypeAtLevel(type, l, level);
+        if (cachedType != -1) {
+            return cachedType;
+        }
+        
+        // Fallback to computation if not cached
         byte type = this.type;
         for (byte i = l; i > level; i--) {
             /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
@@ -518,6 +506,13 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * @return the consecutive SFC index (0 for root, 1-7 for level 1, etc.)
      */
     public long index() {
+        // Try cache first for O(1) lookup
+        long cachedIndex = TetreeLevelCache.getCachedIndex(x, y, z, l, type);
+        if (cachedIndex != -1) {
+            return cachedIndex;
+        }
+        
+        // Cache miss - compute index
         long id = 0;
         byte typeTemp = 0;
         byte cid;
@@ -542,6 +537,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
         }
 
+        // Cache the result for future lookups
+        TetreeLevelCache.cacheIndex(x, y, z, l, type, id);
+        
         // Return the raw SFC index without level offset (matching t8code)
         return id;
     }

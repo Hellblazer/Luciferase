@@ -467,23 +467,46 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return; // Root level has no ancestors
         }
 
-        // Create the tetrahedron at the specified level
+        // Try to get cached parent chain first
+        long[] parentChain = TetreeLevelCache.getParentChain(spatialIndex, level);
+        
+        // If we have a valid cached chain, use it
+        if (parentChain != null && parentChain.length > 0 && parentChain[0] == spatialIndex) {
+            // Use cached parent indices directly
+            for (int i = 1; i <= level; i++) {
+                long ancestorIndex = parentChain[i];
+                if (ancestorIndex != 0) {  // Valid cached ancestor
+                    getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
+                        sortedSpatialIndices.add(ancestorIndex);
+                        return createNode();
+                    });
+                }
+            }
+            return;
+        }
+
+        // Fallback: compute parent chain if not cached
         Tet tet = Tet.tetrahedron(spatialIndex, level);
-
-        // Walk up the parent chain and ensure all ancestors exist
-        for (byte parentLevel = 0; parentLevel < level; parentLevel++) {
-            // Get the tetrahedron at this level that contains our target tet
-            Tet ancestor = findAncestorAtLevel(tet, parentLevel);
-            long ancestorIndex = ancestor.index();
-
-            // Ensure this ancestor node exists in the spatial index
-            // Use computeIfAbsent to atomically create node and update sorted indices
-            boolean isNew = !getSpatialIndex().containsKey(ancestorIndex);
+        
+        // Build parent chain and cache it
+        long[] computedChain = new long[level + 1];
+        computedChain[0] = spatialIndex;
+        
+        Tet current = tet;
+        for (byte parentLevel = (byte)(level - 1); parentLevel >= 0; parentLevel--) {
+            current = current.parent();
+            long ancestorIndex = current.index();
+            computedChain[level - parentLevel] = ancestorIndex;
+            
+            // Ensure this ancestor node exists
             getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
-                sortedSpatialIndices.add(ancestorIndex);  // Use the protected field directly
+                sortedSpatialIndices.add(ancestorIndex);
                 return createNode();
             });
         }
+        
+        // Update cache with computed chain
+        TetreeLevelCache.cacheParentChain(spatialIndex, level, computedChain);
     }
 
     @Override

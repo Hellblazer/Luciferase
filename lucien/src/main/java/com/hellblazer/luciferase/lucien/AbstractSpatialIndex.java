@@ -73,7 +73,7 @@ implements SpatialIndex<ID, Content> {
         this.maxDepth = maxDepth;
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
         this.spatialIndex = new HashMap<>();
-        this.sortedSpatialIndices = new TreeSet<>();
+        this.sortedSpatialIndices = new SpatialIndexSet();
         this.lock = new ReentrantReadWriteLock();
         this.balancingStrategy = new DefaultBalancingStrategy<>();
         this.treeBalancer = createTreeBalancer();
