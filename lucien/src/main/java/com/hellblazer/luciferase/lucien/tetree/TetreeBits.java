@@ -358,4 +358,39 @@ public final class TetreeBits {
 
         return new Tet(x, y, z, level, type);
     }
+
+    /**
+     * Compute the cube level that would contain the given tetrahedral coordinates.
+     * This is based on t8code's cube level computation where the tetrahedron
+     * is embedded within a cube at a specific refinement level.
+     *
+     * @param x the x coordinate
+     * @param y the y coordinate  
+     * @param z the z coordinate
+     * @return the cube level (0 = root level)
+     */
+    public static byte computeCubeLevel(int x, int y, int z) {
+        // Find the maximum coordinate to determine the required level
+        int maxCoord = Math.max(Math.max(x, y), z);
+        
+        if (maxCoord == 0) {
+            return 0; // Root level
+        }
+        
+        // Find the highest bit position in the maximum coordinate
+        // This tells us the minimum level needed to contain this coordinate
+        int highBit = 31 - Integer.numberOfLeadingZeros(maxCoord);
+        
+        // The cube level is determined by how many times we need to subdivide
+        // the root cube to get cells small enough to contain the coordinate
+        // At level L, the cell size is Constants.ROOT_CELL_SIZE >> L
+        // We need: cell_size > max_coordinate, so L >= log2(ROOT_CELL_SIZE / max_coordinate)
+        
+        // For our tetrahedral space, we use Constants.getMaxRefinementLevel() as reference
+        // The level is essentially: max_refinement_level - log2(max_coordinate)
+        byte level = (byte) Math.max(0, Constants.getMaxRefinementLevel() - highBit);
+        
+        // Clamp to valid range
+        return (byte) Math.min(level, Constants.getMaxRefinementLevel());
+    }
 }

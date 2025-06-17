@@ -257,6 +257,39 @@ public class TetreeBitsTest {
     }
 
     @Test
+    public void testComputeCubeLevel() {
+        // Test cube level computation for various coordinates
+        
+        // Root level coordinates
+        assertEquals(0, TetreeBits.computeCubeLevel(0, 0, 0));
+        
+        // Test various coordinate values
+        assertEquals(Constants.getMaxRefinementLevel(), TetreeBits.computeCubeLevel(1, 0, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(2, 0, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 2, TetreeBits.computeCubeLevel(4, 0, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 3, TetreeBits.computeCubeLevel(8, 0, 0));
+        
+        // Test with maximum coordinate in different dimensions
+        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(0, 2, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(0, 0, 2));
+        assertEquals(Constants.getMaxRefinementLevel() - 2, TetreeBits.computeCubeLevel(3, 4, 2));
+        
+        // Test level boundaries
+        int cellSize5 = Constants.lengthAtLevel((byte) 5);
+        byte level5 = TetreeBits.computeCubeLevel(cellSize5, 0, 0);
+        assertTrue(level5 <= 5, "Level should be appropriate for coordinate size");
+        
+        // Test with large coordinates
+        int largeCoord = 1 << 10; // 1024
+        byte levelLarge = TetreeBits.computeCubeLevel(largeCoord, 0, 0);
+        assertTrue(levelLarge >= 0 && levelLarge <= Constants.getMaxRefinementLevel());
+        
+        // Test symmetry - same result regardless of which coordinate is maximum
+        assertEquals(TetreeBits.computeCubeLevel(16, 8, 4), TetreeBits.computeCubeLevel(8, 16, 4));
+        assertEquals(TetreeBits.computeCubeLevel(16, 8, 4), TetreeBits.computeCubeLevel(4, 8, 16));
+    }
+
+    @Test
     public void testPerformance() {
         // Measure performance of bitwise operations vs standard operations
         int iterations = 1000000;
