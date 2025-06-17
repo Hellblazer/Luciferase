@@ -1650,11 +1650,7 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract boolean doesRayIntersectNode(long nodeIndex, Ray3D ray);
 
-    /**
-     * Ensure all ancestor nodes exist in the tree structure. This method creates any missing parent nodes up to the
-     * root level.
-     */
-    protected abstract void ensureAncestorNodes(long spatialIndex, byte level);
+    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
 
     /**
      * Estimate the distance from a query point to the center of a spatial node. This is used for k-NN search
@@ -1992,10 +1988,7 @@ implements SpatialIndex<ID, Content> {
     protected void insertAtPosition(ID entityId, Point3f position, byte level) {
         long spatialIndex = calculateSpatialIndex(position, level);
 
-        // Ensure all ancestor nodes exist in the tree structure
-        ensureAncestorNodes(spatialIndex, level);
-
-        // Get or create node
+        // Get or create node directly - no need for ancestor nodes in SFC-based implementation
         NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
             sortedSpatialIndices.add(spatialIndex);
             return createNode();

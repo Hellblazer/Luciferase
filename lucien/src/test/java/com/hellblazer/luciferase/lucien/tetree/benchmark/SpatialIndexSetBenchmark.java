@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.SpatialIndexSet;
+import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -379,6 +380,12 @@ public class SpatialIndexSetBenchmark {
     // ====== Main method to run benchmark ======
     
     public static void main(String[] args) throws RunnerException {
+        // Skip if running in any CI environment
+        if (CIEnvironmentCheck.isRunningInCI()) {
+            System.out.println(CIEnvironmentCheck.getSkipMessage());
+            return;
+        }
+        
         Options opt = new OptionsBuilder()
                 .include(SpatialIndexSetBenchmark.class.getSimpleName())
                 .forks(1)

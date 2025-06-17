@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.TetreeLevelCache;
+import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 import org.openjdk.jmh.runner.Runner;
@@ -253,6 +254,12 @@ public class TetreeLevelCacheBenchmark {
     // ====== Main method to run benchmark ======
     
     public static void main(String[] args) throws RunnerException {
+        // Skip if running in any CI environment
+        if (CIEnvironmentCheck.isRunningInCI()) {
+            System.out.println(CIEnvironmentCheck.getSkipMessage());
+            return;
+        }
+        
         Options opt = new OptionsBuilder()
                 .include(TetreeLevelCacheBenchmark.class.getSimpleName())
                 .forks(1)

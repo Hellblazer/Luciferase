@@ -461,53 +461,7 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         return intersection.intersects;
     }
 
-    @Override
-    protected void ensureAncestorNodes(long spatialIndex, byte level) {
-        if (level == 0) {
-            return; // Root level has no ancestors
-        }
-
-        // Try to get cached parent chain first
-        long[] parentChain = TetreeLevelCache.getParentChain(spatialIndex, level);
-        
-        // If we have a valid cached chain, use it
-        if (parentChain != null && parentChain.length > 0 && parentChain[0] == spatialIndex) {
-            // Use cached parent indices directly
-            for (int i = 1; i <= level; i++) {
-                long ancestorIndex = parentChain[i];
-                if (ancestorIndex != 0) {  // Valid cached ancestor
-                    getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
-                        sortedSpatialIndices.add(ancestorIndex);
-                        return createNode();
-                    });
-                }
-            }
-            return;
-        }
-
-        // Fallback: compute parent chain if not cached
-        Tet tet = Tet.tetrahedron(spatialIndex, level);
-        
-        // Build parent chain and cache it
-        long[] computedChain = new long[level + 1];
-        computedChain[0] = spatialIndex;
-        
-        Tet current = tet;
-        for (byte parentLevel = (byte)(level - 1); parentLevel >= 0; parentLevel--) {
-            current = current.parent();
-            long ancestorIndex = current.index();
-            computedChain[level - parentLevel] = ancestorIndex;
-            
-            // Ensure this ancestor node exists
-            getSpatialIndex().computeIfAbsent(ancestorIndex, k -> {
-                sortedSpatialIndices.add(ancestorIndex);
-                return createNode();
-            });
-        }
-        
-        // Update cache with computed chain
-        TetreeLevelCache.cacheParentChain(spatialIndex, level, computedChain);
-    }
+    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
 
     @Override
     protected float estimateNodeDistance(long nodeIndex, Point3f queryPoint) {
