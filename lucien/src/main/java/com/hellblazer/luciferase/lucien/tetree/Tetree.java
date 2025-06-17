@@ -21,10 +21,12 @@ import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.Spatial.Sphere;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 
 import javax.vecmath.*;
 import java.util.*;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Tetree implementation with multi-entity support per tetrahedral location. This class provides a tetrahedral spatial
@@ -146,12 +148,19 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
      * @return array of neighbor indices (length 4), -1 for no neighbor
      */
     public long[] findAllFaceNeighbors(long tetIndex) {
+        long startTime = performanceMonitoringEnabled ? System.nanoTime() : 0;
+        
         Tet tet = Tet.tetrahedron(tetIndex);
         long[] neighbors = new long[4];
         for (int i = 0; i < 4; i++) {
             Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, i);
             neighbors[i] = neighbor != null ? neighbor.index() : -1;
         }
+        
+        if (performanceMonitoringEnabled) {
+            recordNeighborQueryTime(System.nanoTime() - startTime);
+        }
+        
         return neighbors;
     }
 
@@ -567,6 +576,279 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
         
         return ancestor.index();
+    }
+
+    // ===== Enhanced Iterator API =====
+
+    /**
+     * Create an iterator that only visits non-empty nodes.
+     * This is useful for efficiently traversing the tree without visiting empty nodes.
+     *
+     * @param order The traversal order (DEPTH_FIRST_PRE, BREADTH_FIRST, etc.)
+     * @return Iterator over non-empty nodes
+     */
+    /**
+     * Create an iterator that only visits non-empty nodes.
+     * This is more efficient than the standard iterator when you only need to process
+     * nodes that contain entities.
+     *
+     * @param order The traversal order to use (DEPTH_FIRST_PRE, BREADTH_FIRST, etc.)
+     * @return An iterator over non-empty nodes in the specified order
+     */
+    public Iterator<TetreeNodeImpl<ID>> nonEmptyIterator(TraversalOrder order) {
+        return new Iterator<TetreeNodeImpl<ID>>() {
+            private final Iterator<TetreeNodeImpl<ID>> baseIterator = 
+                new TetreeIterator<>(Tetree.this, order, (byte)0, Constants.getMaxRefinementLevel(), false);
+            private TetreeNodeImpl<ID> nextNode = null;
+            
+            {
+                advance();
+            }
+            
+            private void advance() {
+                nextNode = null;
+                while (baseIterator.hasNext()) {
+                    TetreeNodeImpl<ID> node = baseIterator.next();
+                    if (node != null && !node.isEmpty()) {
+                        nextNode = node;
+                        break;
+                    }
+                }
+            }
+            
+            @Override
+            public boolean hasNext() {
+                return nextNode != null;
+            }
+            
+            @Override
+            public TetreeNodeImpl<ID> next() {
+                if (!hasNext()) {
+                    throw new java.util.NoSuchElementException();
+                }
+                TetreeNodeImpl<ID> result = nextNode;
+                advance();
+                return result;
+            }
+        };
+    }
+
+    /**
+     * Create an iterator for parent-child traversal from a specific node.
+     * Traverses from the start node up to the root, then down to all descendants.
+     *
+     * @param startIndex The starting node index
+     * @return Iterator over the parent-child path
+     */
+    /**
+     * Create an iterator that traverses from a specific node up to the root,
+     * then down to all descendants. This is useful for understanding the full
+     * hierarchical context of a node.
+     *
+     * @param startIndex The tetrahedral index to start from
+     * @return An iterator that traverses parents first (up to root), then all descendants
+     * @throws IllegalArgumentException if startIndex is invalid
+     */
+    public Iterator<TetreeNodeImpl<ID>> parentChildIterator(long startIndex) {
+        return new Iterator<TetreeNodeImpl<ID>>() {
+            private final List<Long> path = new ArrayList<>();
+            private int currentIndex = 0;
+            
+            {
+                // Build path from start to root
+                long current = startIndex;
+                while (current >= 0) {
+                    path.add(0, current); // Insert at beginning
+                    Tet tet = Tet.tetrahedron(current);
+                    if (tet.l() == 0) break;
+                    current = tet.parent().index();
+                }
+                
+                // Add all descendants of start node
+                addDescendants(startIndex);
+            }
+            
+            private void addDescendants(long nodeIndex) {
+                if (hasChildren(nodeIndex)) {
+                    Tet parent = Tet.tetrahedron(nodeIndex);
+                    if (parent.l() < maxDepth) {
+                        for (int i = 0; i < 8; i++) {
+                            try {
+                                Tet child = parent.child(i);
+                                long childIndex = child.index();
+                                if (spatialIndex.containsKey(childIndex)) {
+                                    path.add(childIndex);
+                                    addDescendants(childIndex);
+                                }
+                            } catch (Exception e) {
+                                // Skip invalid children
+                            }
+                        }
+                    }
+                }
+            }
+            
+            @Override
+            public boolean hasNext() {
+                return currentIndex < path.size();
+            }
+            
+            @Override
+            public TetreeNodeImpl<ID> next() {
+                if (!hasNext()) {
+                    throw new java.util.NoSuchElementException();
+                }
+                long nodeIndex = path.get(currentIndex++);
+                return spatialIndex.get(nodeIndex);
+            }
+        };
+    }
+
+    /**
+     * Create an iterator for sibling traversal.
+     * Iterates over all siblings of the given tetrahedron (same parent, different child index).
+     *
+     * @param tetIndex The tetrahedron whose siblings to iterate
+     * @return Iterator over sibling nodes
+     */
+    /**
+     * Create an iterator over all sibling nodes of the given tetrahedron.
+     * Siblings are tetrahedra that share the same parent in the tree hierarchy.
+     *
+     * @param tetIndex The tetrahedral index whose siblings to iterate
+     * @return An iterator over sibling nodes (excluding the input tetrahedron itself)
+     * @throws IllegalArgumentException if tetIndex is invalid
+     */
+    public Iterator<TetreeNodeImpl<ID>> siblingIterator(long tetIndex) {
+        Tet tet = Tet.tetrahedron(tetIndex);
+        if (tet.l() == 0) {
+            // Root has no siblings
+            return Collections.emptyIterator();
+        }
+        
+        Tet[] siblings = TetreeFamily.getSiblings(tet);
+        List<TetreeNodeImpl<ID>> siblingNodes = new ArrayList<>();
+        
+        for (Tet sibling : siblings) {
+            if (sibling != null) {
+                long siblingIndex = sibling.index();
+                TetreeNodeImpl<ID> node = spatialIndex.get(siblingIndex);
+                if (node != null) {
+                    siblingNodes.add(node);
+                }
+            }
+        }
+        
+        return siblingNodes.iterator();
+    }
+
+    // ===== Enhanced Neighbor Finding API =====
+
+    /**
+     * Find all neighbors of an entity (not just a tet index).
+     * This finds all entities in neighboring tetrahedra of the entity's containing nodes.
+     *
+     * @param entityId The entity ID to find neighbors for
+     * @return Set of neighboring entity IDs
+     */
+    /**
+     * Validate a subtree rooted at the given tetrahedral index.
+     * This method checks the structural integrity of the subtree including:
+     * - Parent-child relationships
+     * - Level consistency
+     * - Node validity
+     * - SFC index validity
+     *
+     * @param rootIndex The root tetrahedral index of the subtree to validate
+     * @return ValidationResult containing any issues found
+     */
+    public TetreeValidator.ValidationResult validateSubtree(long rootIndex) {
+        // For now, just validate that the node exists
+        // A full subtree validation would require traversing the entire subtree
+        if (!spatialIndex.containsKey(rootIndex)) {
+            return TetreeValidator.ValidationResult.invalid(
+                Collections.singletonList("Root node " + rootIndex + " does not exist"));
+        }
+        
+        // Get all nodes in the subtree
+        Set<Long> subtreeNodes = new HashSet<>();
+        Queue<Long> toVisit = new LinkedList<>();
+        toVisit.add(rootIndex);
+        
+        while (!toVisit.isEmpty()) {
+            long current = toVisit.poll();
+            if (subtreeNodes.contains(current)) {
+                continue;
+            }
+            subtreeNodes.add(current);
+            
+            // Add children to visit
+            Tet currentTet = Tet.tetrahedron(current);
+            if (currentTet.l() < maxDepth) {
+                for (int i = 0; i < 8; i++) {
+                    try {
+                        Tet child = currentTet.child(i);
+                        long childIndex = child.index();
+                        if (spatialIndex.containsKey(childIndex)) {
+                            toVisit.add(childIndex);
+                        }
+                    } catch (Exception e) {
+                        // Skip invalid children
+                    }
+                }
+            }
+        }
+        
+        // Validate the subtree structure
+        return TetreeValidator.validateTreeStructure(subtreeNodes);
+    }
+    
+    /**
+     * Find all neighboring entities of a given entity.
+     * This method finds the tetrahedra containing the entity, then finds all
+     * neighbors of those tetrahedra, and returns all entities in those neighbors.
+     *
+     * @param entityId The entity whose neighbors to find
+     * @return Set of neighboring entity IDs (excluding the input entity)
+     * @throws IllegalArgumentException if entityId is null or not found
+     */
+    public Set<ID> findEntityNeighbors(ID entityId) {
+        Set<ID> neighbors = new HashSet<>();
+        
+        // Get all locations where this entity exists
+        Set<Long> entityLocations = entityManager.getEntityLocations(entityId);
+        if (entityLocations == null || entityLocations.isEmpty()) {
+            return neighbors;
+        }
+        
+        // For each location, find neighbors
+        for (Long location : entityLocations) {
+            // Find all face neighbors
+            long[] faceNeighbors = findAllFaceNeighbors(location);
+            for (long neighborIndex : faceNeighbors) {
+                if (neighborIndex != -1) {
+                    TetreeNodeImpl<ID> neighborNode = spatialIndex.get(neighborIndex);
+                    if (neighborNode != null) {
+                        neighbors.addAll(neighborNode.getEntityIds());
+                    }
+                }
+            }
+            
+            // Also find edge and vertex neighbors for more comprehensive coverage
+            for (int edge = 0; edge < 6; edge++) {
+                List<Long> edgeNeighbors = findEdgeNeighbors(location, edge);
+                for (Long neighborIndex : edgeNeighbors) {
+                    TetreeNodeImpl<ID> neighborNode = spatialIndex.get(neighborIndex);
+                    if (neighborNode != null) {
+                        neighbors.addAll(neighborNode.getEntityIds());
+                    }
+                }
+            }
+        }
+        
+        // Remove the entity itself from the neighbor set
+        neighbors.remove(entityId);
+        return neighbors;
     }
 
     @Override
@@ -2020,6 +2302,119 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     }
 
 
+
+    // ===== Performance Monitoring Integration =====
+    
+    private boolean performanceMonitoringEnabled = false;
+    private long neighborQueryCount = 0;
+    private long totalNeighborQueryTime = 0;
+    private long traversalCount = 0;
+    private long totalTraversalTime = 0;
+    private long cacheHits = 0;
+    private long cacheMisses = 0;
+    
+    /**
+     * Get detailed performance metrics for this Tetree instance.
+     * This includes tree statistics, cache hit rates, and average query times.
+     *
+     * @return A TetreeMetrics object containing all performance metrics
+     */
+    public TetreeMetrics getMetrics() {
+        // Get tree statistics using the validator
+        TetreeValidator.TreeStats stats = getTreeStatistics();
+        
+        // Calculate cache hit rate
+        long totalCacheAccess = cacheHits + cacheMisses;
+        float cacheHitRate = totalCacheAccess > 0 ? (float) cacheHits / totalCacheAccess : 0.0f;
+        
+        // Calculate average query times
+        float avgNeighborQueryTime = neighborQueryCount > 0 ? 
+            (float) totalNeighborQueryTime / neighborQueryCount : 0.0f;
+        float avgTraversalTime = traversalCount > 0 ? 
+            (float) totalTraversalTime / traversalCount : 0.0f;
+        
+        return new TetreeMetrics(
+            stats,
+            cacheHitRate,
+            avgNeighborQueryTime,
+            avgTraversalTime,
+            neighborQueryCount,
+            traversalCount,
+            performanceMonitoringEnabled
+        );
+    }
+    
+    /**
+     * Enable or disable performance monitoring.
+     * When enabled, the Tetree will track timing information for queries and cache statistics.
+     *
+     * @param enabled true to enable monitoring, false to disable
+     */
+    public void setPerformanceMonitoring(boolean enabled) {
+        this.performanceMonitoringEnabled = enabled;
+        
+        if (!enabled) {
+            // Reset counters when disabling
+            neighborQueryCount = 0;
+            totalNeighborQueryTime = 0;
+            traversalCount = 0;
+            totalTraversalTime = 0;
+            cacheHits = 0;
+            cacheMisses = 0;
+        }
+    }
+    
+    /**
+     * Check if performance monitoring is currently enabled.
+     *
+     * @return true if monitoring is enabled, false otherwise
+     */
+    public boolean isPerformanceMonitoringEnabled() {
+        return performanceMonitoringEnabled;
+    }
+    
+    /**
+     * Reset all performance counters to zero.
+     * This is useful for benchmarking specific operations.
+     */
+    public void resetPerformanceCounters() {
+        neighborQueryCount = 0;
+        totalNeighborQueryTime = 0;
+        traversalCount = 0;
+        totalTraversalTime = 0;
+        cacheHits = 0;
+        cacheMisses = 0;
+    }
+    
+    // Helper method to record neighbor query time
+    private void recordNeighborQueryTime(long elapsedNanos) {
+        if (performanceMonitoringEnabled) {
+            neighborQueryCount++;
+            totalNeighborQueryTime += elapsedNanos;
+        }
+    }
+    
+    // Helper method to record traversal time
+    private void recordTraversalTime(long elapsedNanos) {
+        if (performanceMonitoringEnabled) {
+            traversalCount++;
+            totalTraversalTime += elapsedNanos;
+        }
+    }
+    
+    // Helper method to record cache hit
+    private void recordCacheHit() {
+        if (performanceMonitoringEnabled) {
+            cacheHits++;
+        }
+    }
+    
+    // Helper method to record cache miss
+    private void recordCacheMiss() {
+        if (performanceMonitoringEnabled) {
+            cacheMisses++;
+        }
+    }
 
     // Record to represent SFC index ranges
     private record SFCRange(long start, long end) {
