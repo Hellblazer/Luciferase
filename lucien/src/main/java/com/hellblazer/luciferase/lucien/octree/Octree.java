@@ -1179,40 +1179,4 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             return MortonCurve.encode(parentX, parentY, parentZ);
         }
     }
-    
-    @Override
-    protected List<Long> createChildNodes(long parentIndex, byte parentLevel) {
-        List<Long> childIndices = new ArrayList<>(8);
-        
-        // For octree decomposition, each parent has 8 children
-        byte childLevel = (byte)(parentLevel + 1);
-        
-        if (childLevel > maxDepth) {
-            return childIndices; // Can't create children beyond max depth
-        }
-        
-        // Decode parent coordinates
-        int[] parentCoords = MortonCurve.decode(parentIndex);
-        int parentCellSize = Constants.lengthAtLevel(parentLevel);
-        int childCellSize = Constants.lengthAtLevel(childLevel);
-        
-        // Create all 8 children
-        for (int i = 0; i < OCTREE_CHILDREN; i++) {
-            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
-            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
-            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
-            
-            long childIndex = MortonCurve.encode(childX, childY, childZ);
-            
-            // Create the child node if it doesn't exist
-            spatialIndex.computeIfAbsent(childIndex, k -> {
-                sortedSpatialIndices.add(childIndex);
-                return new OctreeNode<>();
-            });
-            
-            childIndices.add(childIndex);
-        }
-        
-        return childIndices;
-    }
 }

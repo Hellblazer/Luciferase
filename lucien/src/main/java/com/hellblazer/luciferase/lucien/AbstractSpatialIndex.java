@@ -21,10 +21,6 @@ import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
-import com.hellblazer.luciferase.lucien.refinement.RefinementCriteria;
-import com.hellblazer.luciferase.lucien.refinement.RefinementContext;
-import com.hellblazer.luciferase.lucien.refinement.RefinementStatistics;
-import com.hellblazer.luciferase.lucien.refinement.UniformRefinementCriteria;
 import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
@@ -66,9 +62,6 @@ implements SpatialIndex<ID, Content> {
     private         TreeBalancingStrategy<ID>  balancingStrategy;
     private         boolean                    autoBalancingEnabled = false;
     private         long                       lastBalancingTime    = 0;
-    // Deferred insertion support
-    private         DeferredInsertionManager<ID, Content> deferredInsertionManager;
-    private         boolean                               deferredInsertionEnabled = false;
 
     /**
      * Constructor with common parameters
@@ -84,8 +77,6 @@ implements SpatialIndex<ID, Content> {
         this.lock = new ReentrantReadWriteLock();
         this.balancingStrategy = new DefaultBalancingStrategy<>();
         this.treeBalancer = createTreeBalancer();
-        // Initialize deferred insertion manager with default config
-        this.deferredInsertionManager = new DeferredInsertionManager<>(this::processDeferredInsertions);
     }
 
     // ===== Abstract Methods for Subclasses =====
@@ -196,8 +187,6 @@ implements SpatialIndex<ID, Content> {
 
     @Override
     public List<CollisionPair<ID, Content>> findAllCollisions() {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         lock.readLock().lock();
         try {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
@@ -299,8 +288,6 @@ implements SpatialIndex<ID, Content> {
 
     @Override
     public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         lock.readLock().lock();
         try {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
@@ -383,8 +370,6 @@ implements SpatialIndex<ID, Content> {
 
     @Override
     public List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         lock.readLock().lock();
         try {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
@@ -997,8 +982,6 @@ implements SpatialIndex<ID, Content> {
      * @return list of plane intersections sorted by distance from plane
      */
     public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane, float tolerance) {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         lock.readLock().lock();
         try {
             List<PlaneIntersection<ID, Content>> intersections = new ArrayList<>();
@@ -1093,8 +1076,6 @@ implements SpatialIndex<ID, Content> {
 
     @Override
     public List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray) {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         validateSpatialConstraints(ray.origin());
 
         lock.readLock().lock();
@@ -1157,8 +1138,6 @@ implements SpatialIndex<ID, Content> {
 
     @Override
     public Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray) {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         validateSpatialConstraints(ray.origin());
 
         lock.readLock().lock();
@@ -1223,8 +1202,6 @@ implements SpatialIndex<ID, Content> {
 
     @Override
     public List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance) {
-        // Auto-flush deferred insertions if enabled
-        deferredInsertionManager.flushIfNeeded();
         validateSpatialConstraints(ray.origin());
 
         if (maxDistance <= 0) {
@@ -1515,179 +1492,6 @@ implements SpatialIndex<ID, Content> {
 
             // Re-insert at new position
             insertAtPosition(entityId, newPosition, level);
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    // ===== Deferred Insertion Methods =====
-
-    /**
-     * Enable or disable deferred insertion
-     *
-     * @param enabled whether to enable deferred insertion
-     */
-    public void setDeferredInsertionEnabled(boolean enabled) {
-        lock.writeLock().lock();
-        try {
-            this.deferredInsertionEnabled = enabled;
-            if (!enabled && deferredInsertionManager.hasPendingInsertions()) {
-                // Flush any pending insertions when disabling
-                deferredInsertionManager.flush();
-            }
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Check if deferred insertion is enabled
-     *
-     * @return true if deferred insertion is enabled
-     */
-    public boolean isDeferredInsertionEnabled() {
-        lock.readLock().lock();
-        try {
-            return deferredInsertionEnabled;
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
-    /**
-     * Get the deferred insertion configuration
-     *
-     * @return the deferred insertion configuration
-     */
-    public DeferredInsertionManager.DeferredInsertionConfig getDeferredInsertionConfig() {
-        return deferredInsertionManager.getConfig();
-    }
-
-    /**
-     * Deferred insert with auto-generated ID
-     *
-     * @param position position in space
-     * @param level    level in the spatial hierarchy
-     * @param content  content to store
-     * @return the generated entity ID
-     */
-    public ID deferredInsert(Point3f position, byte level, Content content) {
-        lock.writeLock().lock();
-        try {
-            ID entityId = entityManager.generateEntityId();
-            deferredInsert(entityId, position, level, content);
-            return entityId;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Deferred insert with specific ID
-     *
-     * @param entityId entity ID
-     * @param position position in space
-     * @param level    level in the spatial hierarchy
-     * @param content  content to store
-     */
-    public void deferredInsert(ID entityId, Point3f position, byte level, Content content) {
-        deferredInsert(entityId, position, level, content, null);
-    }
-
-    /**
-     * Deferred insert with specific ID and bounds
-     *
-     * @param entityId entity ID
-     * @param position position in space
-     * @param level    level in the spatial hierarchy
-     * @param content  content to store
-     * @param bounds   optional entity bounds
-     */
-    public void deferredInsert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds) {
-        validateSpatialConstraints(position);
-
-        if (deferredInsertionEnabled) {
-            // Add to deferred buffer
-            deferredInsertionManager.deferInsert(entityId, position, level, content, bounds);
-        } else {
-            // Perform immediate insertion
-            insert(entityId, position, level, content, bounds);
-        }
-    }
-
-    /**
-     * Flush all pending deferred insertions
-     *
-     * @return number of insertions flushed
-     */
-    public int flushDeferredInsertions() {
-        return deferredInsertionManager.flush();
-    }
-
-    /**
-     * Get the number of pending deferred insertions
-     *
-     * @return count of pending insertions
-     */
-    public int getPendingInsertionCount() {
-        return deferredInsertionManager.getPendingCount();
-    }
-
-    /**
-     * Get deferred insertion statistics
-     *
-     * @return map of statistics
-     */
-    public Map<String, Integer> getDeferredInsertionStats() {
-        return deferredInsertionManager.getStatistics();
-    }
-
-    /**
-     * Process a batch of deferred insertions
-     *
-     * @param insertions the batch of insertions to process
-     */
-    private void processDeferredInsertions(List<DeferredInsertionManager.DeferredInsertion<ID, Content>> insertions) {
-        if (insertions.isEmpty()) {
-            return;
-        }
-
-        lock.writeLock().lock();
-        try {
-            // Sort insertions by spatial index to improve cache locality
-            insertions.sort((a, b) -> {
-                long indexA = calculateSpatialIndex(a.position, a.level);
-                long indexB = calculateSpatialIndex(b.position, b.level);
-                return Long.compare(indexA, indexB);
-            });
-
-            // Process insertions in batches for better performance
-            for (var insertion : insertions) {
-                // Create or update entity (this is fast)
-                entityManager.createOrUpdateEntity(insertion.entityId, insertion.content, 
-                                                 insertion.position, insertion.bounds);
-
-                // Defer the spatial index update
-                if (spanningPolicy.isSpanningEnabled() && insertion.bounds != null) {
-                    if (shouldSpanEntity(insertion.bounds, insertion.level)) {
-                        insertWithAdvancedSpanning(insertion.entityId, insertion.bounds, insertion.level);
-                    } else {
-                        insertAtPosition(insertion.entityId, insertion.position, insertion.level);
-                    }
-                } else {
-                    insertAtPosition(insertion.entityId, insertion.position, insertion.level);
-                }
-            }
-
-            // Trigger auto-balancing if enabled
-            if (autoBalancingEnabled) {
-                long currentTime = System.currentTimeMillis();
-                // Balance if enough time has passed since last balancing
-                if (currentTime - lastBalancingTime > 60000) { // 1 minute threshold
-                    treeBalancer.rebalanceTree();
-                    lastBalancingTime = currentTime;
-                }
-            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -3247,253 +3051,5 @@ implements SpatialIndex<ID, Content> {
 
             return modifications;
         }
-    }
-
-    // ===== Refinement Methods =====
-
-    /**
-     * Refine all nodes uniformly to a target level.
-     *
-     * @param targetLevel The target refinement level
-     * @return Statistics about the refinement operation
-     */
-    public RefinementStatistics refineUniform(int targetLevel) {
-        var criteria = new UniformRefinementCriteria<ID>(targetLevel);
-        return refineAdaptive(criteria);
-    }
-
-    /**
-     * Refine nodes adaptively based on the provided criteria.
-     *
-     * @param criteria The refinement criteria to use
-     * @return Statistics about the refinement operation
-     */
-    public RefinementStatistics refineAdaptive(RefinementCriteria<ID> criteria) {
-        var statistics = new RefinementStatistics();
-        statistics.startOperation();
-
-        lock.writeLock().lock();
-        try {
-            criteria.onRefinementStart();
-            
-            // First pass: identify nodes to refine/coarsen
-            Set<Long> nodesToRefine = new HashSet<>();
-            Set<Long> nodesToCoarsen = new HashSet<>();
-            
-            identifyRefinementCandidates(criteria, nodesToRefine, nodesToCoarsen, statistics);
-            
-            // Second pass: perform refinement
-            for (Long nodeIndex : nodesToRefine) {
-                refineNode(nodeIndex, criteria, statistics);
-            }
-            
-            // Third pass: perform coarsening
-            for (Long nodeIndex : nodesToCoarsen) {
-                coarsenNode(nodeIndex, criteria, statistics);
-            }
-            
-            statistics.endOperation();
-            criteria.onRefinementComplete(statistics);
-            
-            return statistics;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Identify nodes that need refinement or coarsening.
-     */
-    private void identifyRefinementCandidates(RefinementCriteria<ID> criteria,
-                                            Set<Long> nodesToRefine,
-                                            Set<Long> nodesToCoarsen,
-                                            RefinementStatistics statistics) {
-        // Use level-order traversal to process nodes
-        Queue<Long> queue = new LinkedList<>();
-        queue.addAll(getRootNodes());
-        
-        while (!queue.isEmpty()) {
-            Long nodeIndex = queue.poll();
-            NodeType node = spatialIndex.get(nodeIndex);
-            if (node == null) {
-                continue;
-            }
-            
-            statistics.recordVisit();
-            
-            byte level = getLevelFromIndex(nodeIndex);
-            var context = createRefinementContext(nodeIndex, node, level);
-            
-            // Check refinement criteria
-            if (level < criteria.getMaxLevel() && criteria.shouldRefine(context)) {
-                nodesToRefine.add(nodeIndex);
-            } else if (level > criteria.getMinLevel() && criteria.shouldCoarsen(context)) {
-                nodesToCoarsen.add(nodeIndex);
-            }
-            
-            // Add children to queue if not refining this node
-            if (!nodesToRefine.contains(nodeIndex)) {
-                queue.addAll(getChildNodes(nodeIndex));
-            }
-        }
-    }
-
-    /**
-     * Create EntityData from an entity ID.
-     * Helper method for refinement operations.
-     */
-    private EntityData<ID, ?> createEntityData(ID entityId) {
-        Point3f position = entityManager.getEntityPosition(entityId);
-        if (position == null) {
-            return null;
-        }
-        
-        Content content = entityManager.getEntityContent(entityId);
-        EntityBounds bounds = entityManager.getEntityBounds(entityId);
-        
-        // We don't have the level information readily available, so use a default
-        // This is fine since refinement operations will re-calculate the appropriate level
-        byte level = 0;
-        
-        return new EntityData<ID, Object>(entityId, position, level, content, bounds);
-    }
-
-    /**
-     * Create a refinement context for a node.
-     */
-    private RefinementContext<ID> createRefinementContext(long nodeIndex, NodeType node, byte level) {
-        var spatial = getNodeBounds(nodeIndex);
-        var bounds = getVolumeBounds(spatial);
-        
-        if (hasChildren(nodeIndex)) {
-            // Internal node
-            int totalEntities = countEntitiesInSubtree(nodeIndex);
-            return RefinementContext.internal(nodeIndex, level, bounds, totalEntities, getNodeSpecificData(nodeIndex));
-        } else {
-            // Leaf node
-            List<EntityData<ID, ?>> entities = new ArrayList<>();
-            for (ID entityId : node.getEntityIds()) {
-                EntityData<ID, ?> data = createEntityData(entityId);
-                if (data != null) {
-                    entities.add(data);
-                }
-            }
-            return RefinementContext.leaf(nodeIndex, level, bounds, entities, getNodeSpecificData(nodeIndex));
-        }
-    }
-
-    /**
-     * Refine a single node by creating children.
-     */
-    private void refineNode(long nodeIndex, RefinementCriteria<ID> criteria, RefinementStatistics statistics) {
-        NodeType node = spatialIndex.get(nodeIndex);
-        if (node == null || hasChildren(nodeIndex)) {
-            return; // Already refined or doesn't exist
-        }
-        
-        byte level = getLevelFromIndex(nodeIndex);
-        if (level >= maxDepth) {
-            return; // Can't refine beyond max depth
-        }
-        
-        // Create children nodes
-        List<Long> childIndices = createChildNodes(nodeIndex, level);
-        
-        // Redistribute entities to children
-        Set<ID> entities = new HashSet<>(node.getEntityIds());
-        for (ID entityId : entities) {
-            Point3f position = entityManager.getEntityPosition(entityId);
-            if (position != null) {
-                // Remove from parent
-                node.removeEntity(entityId);
-                entityManager.removeEntityLocation(entityId, nodeIndex);
-                
-                // Re-insert at appropriate child level
-                insertAtPosition(entityId, position, (byte)(level + 1));
-                statistics.recordEntityRelocation(1);
-            }
-        }
-        
-        statistics.recordRefinement(level);
-    }
-
-    /**
-     * Coarsen a node by merging its children back.
-     */
-    private void coarsenNode(long nodeIndex, RefinementCriteria<ID> criteria, RefinementStatistics statistics) {
-        if (!hasChildren(nodeIndex)) {
-            return; // Can't coarsen a leaf node
-        }
-        
-        byte level = getLevelFromIndex(nodeIndex);
-        List<Long> childIndices = getChildNodes(nodeIndex);
-        
-        // Collect all entities from children
-        Set<ID> allEntities = new HashSet<>();
-        for (Long childIndex : childIndices) {
-            NodeType childNode = spatialIndex.get(childIndex);
-            if (childNode != null) {
-                allEntities.addAll(childNode.getEntityIds());
-            }
-        }
-        
-        // Remove children
-        for (Long childIndex : childIndices) {
-            removeNode(childIndex);
-        }
-        
-        // Add entities back to parent
-        NodeType parentNode = spatialIndex.get(nodeIndex);
-        if (parentNode != null) {
-            for (ID entityId : allEntities) {
-                parentNode.addEntity(entityId);
-                entityManager.addEntityLocation(entityId, nodeIndex);
-                statistics.recordEntityRelocation(1);
-            }
-        }
-        
-        statistics.recordCoarsening(level);
-    }
-
-    /**
-     * Count total entities in a subtree.
-     */
-    private int countEntitiesInSubtree(long rootIndex) {
-        int count = 0;
-        Queue<Long> queue = new LinkedList<>();
-        queue.add(rootIndex);
-        
-        while (!queue.isEmpty()) {
-            Long nodeIndex = queue.poll();
-            NodeType node = spatialIndex.get(nodeIndex);
-            if (node != null) {
-                count += node.getEntityCount();
-                queue.addAll(getChildNodes(nodeIndex));
-            }
-        }
-        
-        return count;
-    }
-
-    /**
-     * Get node-specific data for refinement context.
-     * Subclasses can override to provide implementation-specific data.
-     */
-    protected Object getNodeSpecificData(long nodeIndex) {
-        return null;
-    }
-
-    /**
-     * Create child nodes for refinement.
-     * Must be implemented by subclasses.
-     */
-    protected abstract List<Long> createChildNodes(long parentIndex, byte parentLevel);
-
-    /**
-     * Remove a node from the spatial index.
-     */
-    protected void removeNode(long nodeIndex) {
-        spatialIndex.remove(nodeIndex);
-        sortedSpatialIndices.remove(nodeIndex);
     }
 }
