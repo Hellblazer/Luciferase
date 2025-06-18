@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.entity.EntityInsertRequest;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 
@@ -245,6 +246,46 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param bounds   the entity bounds for spanning calculations
      */
     void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds);
+
+    /**
+     * Insert multiple entities in a single batch operation.
+     * This method is optimized for bulk loading scenarios.
+     *
+     * @param entities list of entity insert requests
+     * @return number of entities successfully inserted
+     */
+    default int insertBatch(List<EntityInsertRequest<ID, Content>> entities) {
+        // Default implementation: iterate through requests
+        int inserted = 0;
+        for (EntityInsertRequest<ID, Content> request : entities) {
+            try {
+                request.validate();
+                if (request.hasBounds()) {
+                    insert(request.entityId(), request.position(), request.level(), 
+                           request.content(), request.bounds());
+                } else {
+                    insert(request.entityId(), request.position(), request.level(), 
+                           request.content());
+                }
+                inserted++;
+            } catch (Exception e) {
+                // Skip failed insertions in batch
+            }
+        }
+        return inserted;
+    }
+
+    /**
+     * Insert multiple entities with spanning in a single batch operation.
+     * This method is optimized for bulk loading of entities with bounds.
+     *
+     * @param entities list of entity insert requests with bounds
+     * @return number of entities successfully inserted
+     */
+    default int insertBatchWithSpanning(List<EntityInsertRequest<ID, Content>> entities) {
+        // Default implementation delegates to insertBatch
+        return insertBatch(entities);
+    }
 
     // ===== k-Nearest Neighbor Operations =====
 

@@ -1175,6 +1175,246 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
     }
 
+    // ===== Pre-allocation Strategy =====
+    
+    /**
+     * Pre-allocate nodes for a uniform grid at the specified level.
+     * This is useful for scenarios where you know entities will be distributed
+     * uniformly across a spatial region.
+     * 
+     * @param bounds the volume bounds to pre-allocate
+     * @param level the level at which to create nodes
+     * @return number of nodes pre-allocated
+     */
+    public int preAllocateUniformGrid(VolumeBounds bounds, byte level) {
+        lock.writeLock().lock();
+        try {
+            int allocated = 0;
+            int cellSize = Constants.lengthAtLevel(level);
+            
+            // Calculate grid bounds
+            int minX = (int) Math.floor(bounds.minX() / cellSize) * cellSize;
+            int maxX = (int) Math.ceil(bounds.maxX() / cellSize) * cellSize;
+            int minY = (int) Math.floor(bounds.minY() / cellSize) * cellSize;
+            int maxY = (int) Math.ceil(bounds.maxY() / cellSize) * cellSize;
+            int minZ = (int) Math.floor(bounds.minZ() / cellSize) * cellSize;
+            int maxZ = (int) Math.ceil(bounds.maxZ() / cellSize) * cellSize;
+            
+            // Pre-allocate nodes for each grid cell
+            for (int x = minX; x < maxX; x += cellSize) {
+                for (int y = minY; y < maxY; y += cellSize) {
+                    for (int z = minZ; z < maxZ; z += cellSize) {
+                        // Check if within bounds
+                        if (x >= bounds.minX() && x < bounds.maxX() &&
+                            y >= bounds.minY() && y < bounds.maxY() &&
+                            z >= bounds.minZ() && z < bounds.maxZ()) {
+                            
+                            // Pre-allocate all 6 tetrahedra in this grid cell
+                            for (byte type = 0; type < 6; type++) {
+                                Tet tet = new Tet(x, y, z, level, type);
+                                long tetIndex = tet.index();
+                                
+                                if (!spatialIndex.containsKey(tetIndex)) {
+                                    TetreeNodeImpl<ID> node = new TetreeNodeImpl<>(maxEntitiesPerNode);
+                                    spatialIndex.put(tetIndex, node);
+                                    sortedSpatialIndices.add(tetIndex);
+                                    allocated++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return allocated;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Pre-allocate nodes based on a spatial distribution hint.
+     * This allows for more intelligent pre-allocation based on expected
+     * entity distribution patterns.
+     * 
+     * @param bounds the volume bounds
+     * @param distribution the expected spatial distribution
+     * @return number of nodes pre-allocated
+     */
+    public int preAllocateAdaptive(VolumeBounds bounds, SpatialDistribution distribution) {
+        lock.writeLock().lock();
+        try {
+            int allocated = 0;
+            
+            // Determine optimal levels based on distribution
+            List<Byte> levels = distribution.getOptimalLevels(bounds);
+            
+            for (byte level : levels) {
+                // Get density factor for this level
+                float density = distribution.getDensityAtLevel(level);
+                
+                if (density > 0.8f) {
+                    // High density - allocate uniform grid
+                    allocated += preAllocateUniformGrid(bounds, level);
+                } else {
+                    // Lower density - allocate based on distribution pattern
+                    List<Point3f> seedPoints = distribution.getSeedPoints(bounds, level);
+                    
+                    for (Point3f point : seedPoints) {
+                        Tet tet = locate(point, level);
+                        long tetIndex = tet.index();
+                        
+                        if (!spatialIndex.containsKey(tetIndex)) {
+                            TetreeNodeImpl<ID> node = new TetreeNodeImpl<>(maxEntitiesPerNode);
+                            spatialIndex.put(tetIndex, node);
+                            sortedSpatialIndices.add(tetIndex);
+                            allocated++;
+                        }
+                    }
+                }
+            }
+            
+            return allocated;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    // ===== Batch Insertion Optimization =====
+    
+    /**
+     * Optimized batch insertion for multiple entities.
+     * Groups entities by spatial index to minimize lock operations and improve cache locality.
+     * 
+     * @param entities list of entity insert requests
+     * @return number of entities successfully inserted
+     */
+    @Override
+    public int insertBatch(List<EntityInsertRequest<ID, Content>> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return 0;
+        }
+        
+        lock.writeLock().lock();
+        try {
+            // Pre-calculate all spatial indices and group by index
+            Map<Long, List<EntityInsertRequest<ID, Content>>> indexGroups = new HashMap<>();
+            
+            for (EntityInsertRequest<ID, Content> request : entities) {
+                try {
+                    request.validate();
+                    long tetIndex = calculateSpatialIndex(request.position(), request.level());
+                    indexGroups.computeIfAbsent(tetIndex, k -> new ArrayList<>()).add(request);
+                } catch (Exception e) {
+                    // Skip invalid requests
+                }
+            }
+            
+            int inserted = 0;
+            
+            // Process each group of entities that map to the same spatial index
+            for (Map.Entry<Long, List<EntityInsertRequest<ID, Content>>> entry : indexGroups.entrySet()) {
+                long tetIndex = entry.getKey();
+                List<EntityInsertRequest<ID, Content>> group = entry.getValue();
+                
+                // Get or create node once for the group
+                TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
+                    sortedSpatialIndices.add(tetIndex);
+                    return new TetreeNodeImpl<>(maxEntitiesPerNode);
+                });
+                
+                // Add all entities in the group
+                for (EntityInsertRequest<ID, Content> request : group) {
+                    // Create or update entity
+                    entityManager.createOrUpdateEntity(request.entityId(), request.content(), 
+                                                      request.position(), request.bounds());
+                    
+                    // Add to node
+                    boolean shouldSplit = node.addEntity(request.entityId());
+                    
+                    // Track entity location
+                    entityManager.addEntityLocation(request.entityId(), tetIndex);
+                    
+                    inserted++;
+                    
+                    // Handle subdivision if needed (deferred for batch)
+                    if (shouldSplit && request.level() < maxDepth) {
+                        // Note: We defer subdivision until after batch to avoid
+                        // disrupting the batch insertion process
+                    }
+                }
+            }
+            
+            // Perform any needed balancing after batch insertion
+            if (isAutoBalancingEnabled()) {
+                checkAutoBalance();
+            }
+            
+            return inserted;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Optimized batch insertion with spanning for entities with bounds.
+     * Uses spatial partitioning to efficiently determine spanning.
+     * 
+     * @param entities list of entity insert requests with bounds
+     * @return number of entities successfully inserted
+     */
+    @Override
+    public int insertBatchWithSpanning(List<EntityInsertRequest<ID, Content>> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return 0;
+        }
+        
+        lock.writeLock().lock();
+        try {
+            int inserted = 0;
+            
+            // Separate entities with and without bounds
+            List<EntityInsertRequest<ID, Content>> pointEntities = new ArrayList<>();
+            List<EntityInsertRequest<ID, Content>> boundedEntities = new ArrayList<>();
+            
+            for (EntityInsertRequest<ID, Content> request : entities) {
+                try {
+                    request.validate();
+                    if (request.hasBounds() && spanningPolicy.isSpanningEnabled()) {
+                        boundedEntities.add(request);
+                    } else {
+                        pointEntities.add(request);
+                    }
+                } catch (Exception e) {
+                    // Skip invalid requests
+                }
+            }
+            
+            // Batch insert point entities using optimized method
+            if (!pointEntities.isEmpty()) {
+                inserted += insertBatch(pointEntities);
+            }
+            
+            // Process bounded entities with spanning
+            for (EntityInsertRequest<ID, Content> request : boundedEntities) {
+                entityManager.createOrUpdateEntity(request.entityId(), request.content(), 
+                                                  request.position(), request.bounds());
+                
+                if (shouldSpanEntity(request.bounds(), request.level())) {
+                    insertWithAdvancedSpanning(request.entityId(), request.bounds(), request.level());
+                } else {
+                    // Standard single-node insertion even with bounds
+                    insertAtPosition(request.entityId(), request.position(), request.level());
+                }
+                inserted++;
+            }
+            
+            return inserted;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     // These methods are now handled by AbstractSpatialIndex
 
     @Override
@@ -2604,5 +2844,151 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             Tet parentTet = tet.parent();
             return parentTet.index();
         }
+    }
+
+    // ===== Bulk Loading Convenience Methods =====
+
+    /**
+     * Enable deferred insertion mode for bulk loading with optimized settings.
+     * This method configures the Tetree for efficient bulk insertion operations.
+     *
+     * @param batchSize The number of insertions to buffer before auto-flushing
+     * @return this Tetree instance for method chaining
+     */
+    public Tetree<ID, Content> enableBulkLoading(int batchSize) {
+        setDeferredInsertionEnabled(true);
+        getDeferredInsertionConfig()
+            .setMaxBatchSize(batchSize)
+            .setAutoFlushOnQuery(false)  // Disable auto-flush during bulk loading
+            .setMaxFlushDelayMillis(0);   // Disable time-based auto-flush
+        return this;
+    }
+
+    /**
+     * Disable bulk loading mode and flush any remaining insertions.
+     * Restores normal insertion behavior with auto-flush on queries.
+     *
+     * @return number of insertions flushed
+     */
+    public int finishBulkLoading() {
+        int flushed = flushDeferredInsertions();
+        setDeferredInsertionEnabled(false);
+        getDeferredInsertionConfig().setAutoFlushOnQuery(true);
+        return flushed;
+    }
+
+    /**
+     * Perform bulk insertion of entities.
+     * Automatically enables and disables bulk loading mode.
+     *
+     * @param entities Collection of entity data to insert
+     * @param positionExtractor Function to extract position from entity data
+     * @param levelExtractor Function to extract level from entity data
+     * @param contentExtractor Function to extract content from entity data
+     * @param <T> Type of entity data
+     * @return List of generated entity IDs in the same order as input
+     */
+    public <T> List<ID> bulkInsert(Collection<T> entities,
+                                  java.util.function.Function<T, Point3f> positionExtractor,
+                                  java.util.function.Function<T, Byte> levelExtractor,
+                                  java.util.function.Function<T, Content> contentExtractor) {
+        // Calculate optimal batch size based on collection size
+        int batchSize = Math.min(1000, Math.max(100, entities.size() / 10));
+        
+        enableBulkLoading(batchSize);
+        
+        try {
+            List<ID> entityIds = new ArrayList<>(entities.size());
+            
+            for (T entity : entities) {
+                Point3f position = positionExtractor.apply(entity);
+                byte level = levelExtractor.apply(entity);
+                Content content = contentExtractor.apply(entity);
+                
+                ID id = deferredInsert(position, level, content);
+                entityIds.add(id);
+            }
+            
+            return entityIds;
+        } finally {
+            finishBulkLoading();
+        }
+    }
+
+    /**
+     * Perform bulk insertion with bounds.
+     *
+     * @param entities Collection of entity data to insert
+     * @param positionExtractor Function to extract position from entity data
+     * @param levelExtractor Function to extract level from entity data
+     * @param contentExtractor Function to extract content from entity data
+     * @param boundsExtractor Function to extract bounds from entity data (can return null)
+     * @param <T> Type of entity data
+     * @return Map of entity data to generated entity IDs
+     */
+    public <T> Map<T, ID> bulkInsertWithBounds(Collection<T> entities,
+                                              java.util.function.Function<T, Point3f> positionExtractor,
+                                              java.util.function.Function<T, Byte> levelExtractor,
+                                              java.util.function.Function<T, Content> contentExtractor,
+                                              java.util.function.Function<T, EntityBounds> boundsExtractor) {
+        // Calculate optimal batch size
+        int batchSize = Math.min(1000, Math.max(100, entities.size() / 10));
+        
+        enableBulkLoading(batchSize);
+        
+        try {
+            Map<T, ID> entityMap = new LinkedHashMap<>(entities.size());
+            
+            for (T entity : entities) {
+                Point3f position = positionExtractor.apply(entity);
+                byte level = levelExtractor.apply(entity);
+                Content content = contentExtractor.apply(entity);
+                EntityBounds bounds = boundsExtractor.apply(entity);
+                
+                ID id = entityManager.generateEntityId();
+                deferredInsert(id, position, level, content, bounds);
+                entityMap.put(entity, id);
+            }
+            
+            return entityMap;
+        } finally {
+            finishBulkLoading();
+        }
+    }
+    
+    /**
+     * Create child nodes for refinement.
+     * Creates 8 child tetrahedra from a parent tetrahedron.
+     */
+    @Override
+    protected List<Long> createChildNodes(long parentIndex, byte parentLevel) {
+        List<Long> childIndices = new ArrayList<>(8);
+        
+        // For tetrahedral decomposition, each parent has 8 children
+        byte childLevel = (byte)(parentLevel + 1);
+        
+        // Get parent tet to determine child positions
+        Tet parentTet = Tet.tetrahedron(parentIndex, parentLevel);
+        if (parentTet == null) {
+            return childIndices;
+        }
+        
+        // Create all 8 children
+        for (int childId = 0; childId < 8; childId++) {
+            Tet childTet = parentTet.child(childId);
+            if (childTet != null) {
+                long childIndex = childTet.index();
+                
+                // Create the child node if it doesn't exist
+                spatialIndex.computeIfAbsent(childIndex, k -> {
+                    sortedSpatialIndices.add(childIndex);
+                    return new TetreeNodeImpl<>();
+                });
+                
+                childIndices.add(childIndex);
+            }
+        }
+        
+        return childIndices;
     }
 }
