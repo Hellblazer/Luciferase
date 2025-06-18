@@ -19,14 +19,13 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.lucien.AbstractSpatialNode;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Tetree node implementation that stores entity IDs using a Set. Extends AbstractSpatialNode to share common
- * functionality with OctreeNode.
+ * Tetree node implementation. Now simplified as most functionality has been hoisted to AbstractSpatialNode. Uses the
+ * same List-based storage and children mask approach as OctreeNode for consistency.
  *
  * Thread Safety: This class is NOT thread-safe on its own. It relies on external synchronization provided by
  * AbstractSpatialIndex's read-write lock. All access to node instances must be performed within the appropriate lock
@@ -37,15 +36,11 @@ import java.util.Set;
  */
 public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID> {
 
-    private final Set<ID> entityIds;
-    private       boolean hasChildren;
-
     /**
      * Create a node with default max entities (10)
      */
     public TetreeNodeImpl() {
         super();
-        this.entityIds = new HashSet<>();
     }
 
     /**
@@ -55,17 +50,6 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
      */
     public TetreeNodeImpl(int maxEntitiesBeforeSplit) {
         super(maxEntitiesBeforeSplit);
-        this.entityIds = new HashSet<>();
-    }
-
-    @Override
-    public int getEntityCount() {
-        return entityIds.size();
-    }
-
-    @Override
-    public Collection<ID> getEntityIds() {
-        return Collections.unmodifiableSet(new HashSet<>(entityIds));
     }
 
     /**
@@ -75,38 +59,5 @@ public class TetreeNodeImpl<ID extends EntityID> extends AbstractSpatialNode<ID>
      */
     public Set<ID> getEntityIdsAsSet() {
         return Collections.unmodifiableSet(new HashSet<>(entityIds));
-    }
-
-    /**
-     * Check if this node has children
-     *
-     * @return true if this node has been subdivided
-     */
-    public boolean hasChildren() {
-        return hasChildren;
-    }
-
-    /**
-     * Set whether this node has children
-     *
-     * @param hasChildren true if this node has been subdivided
-     */
-    public void setHasChildren(boolean hasChildren) {
-        this.hasChildren = hasChildren;
-    }
-
-    @Override
-    protected void doAddEntity(ID entityId) {
-        entityIds.add(entityId);
-    }
-
-    @Override
-    protected void doClearEntities() {
-        entityIds.clear();
-    }
-
-    @Override
-    protected boolean doRemoveEntity(ID entityId) {
-        return entityIds.remove(entityId);
     }
 }

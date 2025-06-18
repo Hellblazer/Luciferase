@@ -19,14 +19,11 @@ package com.hellblazer.luciferase.lucien.octree;
 import com.hellblazer.luciferase.lucien.AbstractSpatialNode;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * Enhanced octree node that stores multiple entity IDs instead of content. Mimics C++ EntityContainer approach for
- * multiple entities per node. Extends AbstractSpatialNode to share common functionality with TetreeNode.
+ * Octree node implementation. Now simplified as most functionality has been hoisted to AbstractSpatialNode.
  *
  * Thread Safety: This class is NOT thread-safe on its own. It relies on external synchronization provided by
  * AbstractSpatialIndex's read-write lock. All access to node instances must be performed within the appropriate lock
@@ -36,15 +33,12 @@ import java.util.List;
  * @author hal.hildebrand
  */
 public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
-    private final List<ID> entityIds;
-    private       byte     childrenMask = 0;
 
     /**
      * Create a node with default max entities (10)
      */
     public OctreeNode() {
         super();
-        this.entityIds = new ArrayList<>();
     }
 
     /**
@@ -54,36 +48,15 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
      */
     public OctreeNode(int maxEntitiesBeforeSplit) {
         super(maxEntitiesBeforeSplit);
-        this.entityIds = new ArrayList<>();
     }
 
     /**
-     * Clear a bit in the children mask when a child is removed
+     * Clear a bit in the children mask when a child is removed (octant-specific naming for backward compatibility)
      *
      * @param octant the octant index (0-7)
      */
     public void clearChildBit(int octant) {
-        if (octant < 0 || octant > 7) {
-            throw new IllegalArgumentException("Octant must be 0-7");
-        }
-        childrenMask &= ~(1 << octant);
-    }
-
-    /**
-     * Get the children mask indicating which octants have child nodes
-     */
-    public byte getChildrenMask() {
-        return childrenMask;
-    }
-
-    @Override
-    public int getEntityCount() {
-        return entityIds.size();
-    }
-
-    @Override
-    public Collection<ID> getEntityIds() {
-        return Collections.unmodifiableList(entityIds);
+        super.clearChildBit(octant);
     }
 
     /**
@@ -96,70 +69,20 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
     }
 
     /**
-     * Check if a specific octant has a child
+     * Check if a specific octant has a child (octant-specific naming for backward compatibility)
      *
      * @param octant the octant index (0-7)
      */
     public boolean hasChild(int octant) {
-        if (octant < 0 || octant > 7) {
-            throw new IllegalArgumentException("Octant must be 0-7");
-        }
-        return (childrenMask & (1 << octant)) != 0;
+        return super.hasChild(octant);
     }
 
     /**
-     * Check if this node has any children
-     */
-    public boolean hasChildren() {
-        return childrenMask != 0;
-    }
-
-    /**
-     * Set a bit in the children mask to indicate a child exists
+     * Set a bit in the children mask to indicate a child exists (octant-specific naming for backward compatibility)
      *
      * @param octant the octant index (0-7)
      */
     public void setChildBit(int octant) {
-        if (octant < 0 || octant > 7) {
-            throw new IllegalArgumentException("Octant must be 0-7");
-        }
-        childrenMask |= (1 << octant);
-    }
-
-    /**
-     * Set whether this node has children (used during balancing operations)
-     */
-    public void setHasChildren(boolean hasChildren) {
-        if (hasChildren) {
-            // Set at least one bit to indicate children exist
-            if (childrenMask == 0) {
-                childrenMask = 1; // Set first bit as a flag
-            }
-        } else {
-            // Clear all bits
-            childrenMask = 0;
-        }
-    }
-
-    @Override
-    protected void doAddEntity(ID entityId) {
-        entityIds.add(entityId);
-    }
-
-    @Override
-    protected void doClearEntities() {
-        entityIds.clear();
-    }
-
-    @Override
-    protected boolean doRemoveEntity(ID entityId) {
-        return entityIds.remove(entityId);
-    }
-
-    /**
-     * Get mutable entity list for redistribution during splits. Package-private for octree internal use only
-     */
-    List<ID> getMutableEntityIds() {
-        return entityIds;
+        super.setChildBit(octant);
     }
 }

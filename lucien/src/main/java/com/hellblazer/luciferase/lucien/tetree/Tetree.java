@@ -1143,6 +1143,14 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
         // Mark that this node has been subdivided
         parentNode.setHasChildren(true);
+        
+        // Also set the specific child bits for the children that were created
+        for (int i = 0; i < children.length; i++) {
+            long childTetIndex = children[i].index();
+            if (spatialIndex.containsKey(childTetIndex)) {
+                parentNode.setChildBit(i);
+            }
+        }
     }
 
     @Override
@@ -2563,6 +2571,25 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
             // Clear parent node and update entity locations
             node.clearEntities();
             node.setHasChildren(true);
+            
+            // Set the specific child bits for the children that were created
+            // We need to determine which child indices these represent
+            for (Long childTetIndex : createdChildren) {
+                Tet childTet = Tet.tetrahedron(childTetIndex);
+                // Find which child index this represents (0-7)
+                for (int i = 0; i < 8; i++) {
+                    try {
+                        Tet expectedChild = parentTet.child(i);
+                        if (expectedChild.index() == childTetIndex) {
+                            node.setChildBit(i);
+                            break;
+                        }
+                    } catch (Exception e) {
+                        // Skip invalid children
+                    }
+                }
+            }
+            
             for (ID entityId : entities) {
                 entityManager.removeEntityLocation(entityId, tetIndex);
             }
