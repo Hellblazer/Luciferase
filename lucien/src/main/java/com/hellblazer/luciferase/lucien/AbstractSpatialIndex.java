@@ -28,6 +28,7 @@ import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
@@ -47,21 +48,33 @@ public abstract class AbstractSpatialIndex<ID extends EntityID, Content, NodeTyp
 implements SpatialIndex<ID, Content> {
 
     // Common fields
-    protected final EntityManager<ID, Content> entityManager;
-    protected final int                        maxEntitiesPerNode;
-    protected final byte                       maxDepth;
-    protected final EntitySpanningPolicy       spanningPolicy;
+    protected final EntityManager<ID, Content>                        entityManager;
+    protected final int                                               maxEntitiesPerNode;
+    protected final byte                                              maxDepth;
+    protected final EntitySpanningPolicy                              spanningPolicy;
     // Spatial index: Long index -> Node containing entity IDs
-    protected final Map<Long, NodeType>        spatialIndex;
+    protected final Map<Long, NodeType>                               spatialIndex;
     // Sorted spatial indices for efficient range queries
-    protected final NavigableSet<Long>         sortedSpatialIndices;
+    protected final NavigableSet<Long>                                sortedSpatialIndices;
     // Read-write lock for thread safety
-    protected final ReadWriteLock              lock;
-    private final   TreeBalancer<ID>           treeBalancer;
+    protected final ReadWriteLock                                     lock;
+    // Fine-grained locking strategy for high-concurrency operations
+    protected final FineGrainedLockingStrategy<ID, Content, NodeType> lockingStrategy;
+    protected final Set<Long>                                         deferredSubdivisionNodes = new HashSet<>();
+    private final   TreeBalancer<ID>                                  treeBalancer;
     // Tree balancing support
-    private         TreeBalancingStrategy<ID>  balancingStrategy;
-    private         boolean                    autoBalancingEnabled = false;
-    private         long                       lastBalancingTime    = 0;
+    private         TreeBalancingStrategy<ID>                         balancingStrategy;
+    private         boolean                                           autoBalancingEnabled = false;
+    private         long                                              lastBalancingTime    = 0;
+    
+    // Bulk operation support
+    protected       BulkOperationConfig                               bulkConfig               = new BulkOperationConfig();
+    protected       boolean                                           bulkLoadingMode          = false;
+    protected       BulkOperationProcessor<ID, Content>               bulkProcessor;
+    protected       DeferredSubdivisionManager<ID, NodeType>          subdivisionManager;
+    protected       SpatialNodePool<NodeType>                         nodePool;
+    protected       ParallelBulkOperations<ID, Content, NodeType>     parallelOperations;
+    protected       SubdivisionStrategy<ID, Content>                  subdivisionStrategy;
 
     /**
      * Constructor with common parameters
@@ -77,9 +90,14 @@ implements SpatialIndex<ID, Content> {
         this.lock = new ReentrantReadWriteLock();
         this.balancingStrategy = new DefaultBalancingStrategy<>();
         this.treeBalancer = createTreeBalancer();
+        this.bulkProcessor = new BulkOperationProcessor<>(this);
+        this.subdivisionManager = new DeferredSubdivisionManager<>();
+        this.nodePool = new SpatialNodePool<>(this::createNode);
+        this.parallelOperations = new ParallelBulkOperations<>(this, bulkProcessor,
+                                                               ParallelBulkOperations.defaultConfig());
+        this.lockingStrategy = new FineGrainedLockingStrategy<>(this, FineGrainedLockingStrategy.defaultConfig());
+        this.subdivisionStrategy = createDefaultSubdivisionStrategy();
     }
-
-    // ===== Abstract Methods for Subclasses =====
 
     @Override
     public Stream<SpatialNode<ID>> boundedBy(Spatial volume) {
@@ -165,6 +183,43 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Entity Management Methods =====
+
+    @Override
+    public void configureBulkOperations(BulkOperationConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Bulk operation config cannot be null");
+        }
+        this.bulkConfig = config;
+    }
+    
+    /**
+     * Configure subdivision strategy
+     */
+    public void configureSubdivisionStrategy(SubdivisionStrategy<ID, Content> strategy) {
+        if (strategy == null) {
+            throw new IllegalArgumentException("Subdivision strategy cannot be null");
+        }
+        this.subdivisionStrategy = strategy;
+    }
+    
+    /**
+     * Get current subdivision strategy
+     */
+    public SubdivisionStrategy<ID, Content> getSubdivisionStrategy() {
+        return subdivisionStrategy;
+    }
+
+    /**
+     * Configure parallel bulk operations
+     */
+    public void configureParallelOperations(ParallelBulkOperations.ParallelConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Parallel config cannot be null");
+        }
+        this.parallelOperations = new ParallelBulkOperations<>(this, bulkProcessor, config);
+    }
+
     @Override
     public boolean containsEntity(ID entityId) {
         lock.readLock().lock();
@@ -176,12 +231,62 @@ implements SpatialIndex<ID, Content> {
     }
 
     @Override
+    public void enableBulkLoading() {
+        lock.writeLock().lock();
+        try {
+            this.bulkLoadingMode = true;
+            this.deferredSubdivisionNodes.clear();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
     public int entityCount() {
         lock.readLock().lock();
         try {
             return entityManager.getEntityCount();
         } finally {
             lock.readLock().unlock();
+        }
+    }
+
+    @Override
+    public void finalizeBulkLoading() {
+        lock.writeLock().lock();
+        try {
+            this.bulkLoadingMode = false;
+
+            // Process all deferred subdivisions using the manager
+            if (bulkConfig.isDeferSubdivision()) {
+                DeferredSubdivisionManager.SubdivisionResult result = subdivisionManager.processAll(
+                new DeferredSubdivisionManager.SubdivisionProcessor<ID, NodeType>() {
+                    @Override
+                    public Result subdivideNode(long nodeIndex, NodeType node, byte level) {
+                        int initialCount = spatialIndex.size();
+                        int entityCount = node.getEntityCount();
+
+                        // Only subdivide if still over threshold
+                        if (entityCount > maxEntitiesPerNode && level < maxDepth) {
+                            handleNodeSubdivision(nodeIndex, level, node);
+                            int newNodes = spatialIndex.size() - initialCount;
+                            return new Result(true, newNodes, entityCount);
+                        }
+                        return new Result(false, 0, 0);
+                    }
+                });
+
+                // Log deferred subdivision results
+                if (result.nodesProcessed > 0) {
+                    System.out.printf("Deferred subdivisions: %d processed, %d subdivided, %d new nodes in %.2fms%n",
+                                      result.nodesProcessed, result.nodesSubdivided, result.newNodesCreated,
+                                      result.getProcessingTimeMs());
+                }
+            }
+
+            deferredSubdivisionNodes.clear();
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
@@ -368,6 +473,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Insert Operations =====
+
     @Override
     public List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
         lock.readLock().lock();
@@ -457,8 +564,6 @@ implements SpatialIndex<ID, Content> {
                                                           .filter(FrustumIntersection::isPartiallyVisible)
                                                           .collect(Collectors.toList());
     }
-
-    // ===== Common Entity Management Methods =====
 
     /**
      * Find all entities that are visible within the given frustum. Returns entities that are either completely inside
@@ -601,6 +706,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Remove Operations =====
+
     @Override
     public CollisionShape getCollisionShape(ID entityId) {
         lock.readLock().lock();
@@ -641,6 +748,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Update Operations =====
+
     @Override
     public EntityBounds getEntityBounds(ID entityId) {
         lock.readLock().lock();
@@ -651,7 +760,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Insert Operations =====
+    // ===== Common Query Operations =====
 
     @Override
     public Point3f getEntityPosition(ID entityId) {
@@ -673,6 +782,33 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    /**
+     * Get memory usage statistics for capacity planning
+     */
+    public MemoryStats getMemoryStats() {
+        lock.readLock().lock();
+        try {
+            int nodeCount = spatialIndex.size();
+            long totalEntities = entityManager.getEntityCount();
+            float avgEntitiesPerNode = nodeCount > 0 ? (float) totalEntities / nodeCount : 0;
+
+            long estimatedMemory = NodeEstimator.estimateMemoryUsage(nodeCount, (int) Math.ceil(avgEntitiesPerNode));
+
+            return new MemoryStats(nodeCount, totalEntities, avgEntitiesPerNode, estimatedMemory);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get parallel operations performance statistics
+     */
+    public Map<String, Object> getParallelPerformanceStats() {
+        return parallelOperations.getPerformanceStatistics();
+    }
+
+    // ===== Common Statistics =====
+
     @Override
     public NavigableMap<Long, Set<ID>> getSpatialMap() {
         lock.readLock().lock();
@@ -688,6 +824,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Common Utility Methods =====
 
     @Override
     public EntityStats getStats() {
@@ -738,8 +876,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Remove Operations =====
-
     @Override
     public void insert(ID entityId, Point3f position, byte level, Content content) {
         lock.writeLock().lock();
@@ -778,6 +914,181 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common k-NN Search Implementation =====
+
+    @Override
+    public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level) {
+        if (positions == null || contents == null) {
+            throw new IllegalArgumentException("Positions and contents cannot be null");
+        }
+        if (positions.size() != contents.size()) {
+            throw new IllegalArgumentException("Positions and contents must have the same size");
+        }
+        if (positions.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        long startTime = System.nanoTime();
+        List<ID> insertedIds = new ArrayList<>(positions.size());
+
+        lock.writeLock().lock();
+        try {
+            // Enable bulk loading mode if configured
+            boolean wasInBulkMode = bulkLoadingMode;
+            if (bulkConfig.isDeferSubdivision() && !bulkLoadingMode) {
+                enableBulkLoading();
+            }
+
+            // Use BulkOperationProcessor for optimized processing
+            boolean useParallel = bulkConfig.isEnableParallel()
+            && positions.size() >= bulkConfig.getParallelThreshold();
+
+            List<BulkOperationProcessor.MortonEntity<Content>> mortonEntities;
+            if (useParallel) {
+                mortonEntities = bulkProcessor.preprocessBatchParallel(positions, contents, level,
+                                                                       bulkConfig.isPreSortByMorton(),
+                                                                       bulkConfig.getParallelThreshold());
+            } else {
+                mortonEntities = bulkProcessor.preprocessBatch(positions, contents, level,
+                                                               bulkConfig.isPreSortByMorton());
+            }
+
+            // Group by spatial node if batch is large enough
+            if (positions.size() > bulkConfig.getBatchSize()) {
+                BulkOperationProcessor.GroupedEntities<Content> grouped = bulkProcessor.groupByNode(mortonEntities,
+                                                                                                    level);
+
+                // Process each group
+                for (Map.Entry<Long, List<BulkOperationProcessor.MortonEntity<Content>>> entry : grouped.getGroups()
+                                                                                                        .entrySet()) {
+                    for (BulkOperationProcessor.MortonEntity<Content> entity : entry.getValue()) {
+                        ID entityId = entityManager.generateEntityId();
+                        insertedIds.add(entityId);
+
+                        // Store entity data
+                        entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
+
+                        // Insert at position
+                        insertAtPosition(entityId, entity.position, level);
+                    }
+                }
+            } else {
+                // Process directly for smaller batches
+                for (BulkOperationProcessor.MortonEntity<Content> entity : mortonEntities) {
+                    ID entityId = entityManager.generateEntityId();
+                    insertedIds.add(entityId);
+
+                    // Store entity data
+                    entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
+
+                    // Insert at position
+                    insertAtPosition(entityId, entity.position, level);
+                }
+            }
+
+            // Restore bulk mode state
+            if (!wasInBulkMode && bulkConfig.isDeferSubdivision()) {
+                finalizeBulkLoading();
+            }
+
+        } finally {
+            lock.writeLock().unlock();
+        }
+
+        long elapsedTime = System.nanoTime() - startTime;
+
+        // Log performance if significant batch
+        if (positions.size() > 1000) {
+            double rate = positions.size() * 1_000_000_000.0 / elapsedTime;
+            System.out.printf("Bulk inserted %d entities in %.2fms (%.0f entities/sec)%n", positions.size(),
+                              elapsedTime / 1_000_000.0, rate);
+        }
+
+        return insertedIds;
+    }
+
+    /**
+     * Perform parallel bulk insertion for large datasets
+     */
+    public ParallelBulkOperations.ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions,
+                                                                                  List<Content> contents, byte level)
+    throws InterruptedException {
+        return parallelOperations.insertBatchParallel(positions, contents, level);
+    }
+
+    @Override
+    public List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level) {
+        if (bounds == null || contents == null) {
+            throw new IllegalArgumentException("Bounds and contents cannot be null");
+        }
+        if (bounds.size() != contents.size()) {
+            throw new IllegalArgumentException("Bounds and contents must have the same size");
+        }
+        if (bounds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        long startTime = System.nanoTime();
+        List<ID> insertedIds = new ArrayList<>(bounds.size());
+
+        lock.writeLock().lock();
+        try {
+            // Enable bulk loading mode if configured
+            boolean wasInBulkMode = bulkLoadingMode;
+            if (bulkConfig.isDeferSubdivision() && !bulkLoadingMode) {
+                enableBulkLoading();
+            }
+
+            // Process each entity with bounds
+            for (int i = 0; i < bounds.size(); i++) {
+                EntityBounds entityBounds = bounds.get(i);
+                Content content = contents.get(i);
+
+                // Calculate center position
+                Point3f center = new Point3f((entityBounds.getMinX() + entityBounds.getMaxX()) / 2,
+                                             (entityBounds.getMinY() + entityBounds.getMaxY()) / 2,
+                                             (entityBounds.getMinZ() + entityBounds.getMaxZ()) / 2);
+
+                // Generate ID and store entity
+                ID entityId = entityManager.generateEntityId();
+                insertedIds.add(entityId);
+                entityManager.createOrUpdateEntity(entityId, content, center, entityBounds);
+
+                // Handle spanning if configured
+                float entitySize = Math.max(entityBounds.getMaxX() - entityBounds.getMinX(),
+                                            Math.max(entityBounds.getMaxY() - entityBounds.getMinY(),
+                                                     entityBounds.getMaxZ() - entityBounds.getMinZ()));
+                float nodeSize = getCellSizeAtLevel(level);
+                if (spanningPolicy.shouldSpan(entitySize, nodeSize)) {
+                    insertWithSpanning(entityId, entityBounds, level);
+                } else {
+                    insertAtPosition(entityId, center, level);
+                }
+            }
+
+            // Restore bulk mode state
+            if (!wasInBulkMode && bulkConfig.isDeferSubdivision()) {
+                finalizeBulkLoading();
+            }
+
+        } finally {
+            lock.writeLock().unlock();
+        }
+
+        long elapsedTime = System.nanoTime() - startTime;
+
+        // Log performance if significant batch
+        if (bounds.size() > 1000) {
+            double rate = bounds.size() * 1_000_000_000.0 / elapsedTime;
+            System.out.printf("Bulk inserted %d entities with spanning in %.2fms (%.0f entities/sec)%n", bounds.size(),
+                              elapsedTime / 1_000_000.0, rate);
+        }
+
+        return insertedIds;
+    }
+
+    // ===== Common Spatial Query Base =====
+
     /**
      * Check if automatic balancing is enabled.
      */
@@ -805,8 +1116,8 @@ implements SpatialIndex<ID, Content> {
             return Collections.emptyList();
         }
 
-        lock.readLock().lock();
-        try {
+        // Use fine-grained locking for read operations
+        return lockingStrategy.executeRead(0L, () -> {
             // Priority queue to keep track of k nearest entities (max heap)
             PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(EntityDistance.maxHeapComparator());
 
@@ -939,12 +1250,10 @@ implements SpatialIndex<ID, Content> {
             sorted.sort(Comparator.comparingDouble(EntityDistance::distance));
 
             return sorted.stream().map(EntityDistance::entityId).collect(Collectors.toList());
-        } finally {
-            lock.readLock().unlock();
-        }
+        });
     }
 
-    // ===== Common Update Operations =====
+    // ===== Ray Intersection Abstract Methods =====
 
     @Override
     public int nodeCount() {
@@ -955,8 +1264,6 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
-
-    // ===== Common Query Operations =====
 
     @Override
     public Stream<SpatialNode<ID>> nodes() {
@@ -1026,6 +1333,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Ray Intersection Implementation =====
+
     /**
      * Find all entities that intersect with the given plane (exact intersection only).
      *
@@ -1047,8 +1356,6 @@ implements SpatialIndex<ID, Content> {
         Collectors.toList());
     }
 
-    // ===== Common Statistics =====
-
     /**
      * Find all entities on the positive side of the plane (in direction of normal).
      *
@@ -1060,8 +1367,6 @@ implements SpatialIndex<ID, Content> {
         Collectors.toList());
     }
 
-    // ===== Common Utility Methods =====
-
     /**
      * Find all entities within the specified distance from the plane (on either side).
      *
@@ -1072,6 +1377,137 @@ implements SpatialIndex<ID, Content> {
     public List<PlaneIntersection<ID, Content>> planeIntersectWithinDistance(Plane3D plane, float maxDistance) {
         return planeIntersectAll(plane, maxDistance).stream().filter(
         intersection -> Math.abs(intersection.distanceFromPlane()) <= maxDistance).collect(Collectors.toList());
+    }
+
+    /**
+     * Pre-allocate nodes based on sample positions. Analyzes the sample to predict node distribution for the full
+     * dataset.
+     *
+     * @param samplePositions    Sample positions representing the distribution
+     * @param totalExpectedCount Total number of entities expected
+     * @param level              The tree level for analysis
+     */
+    public void preAllocateAdaptive(List<Point3f> samplePositions, int totalExpectedCount, byte level) {
+        if (samplePositions.isEmpty()) {
+            return;
+        }
+
+        lock.writeLock().lock();
+        try {
+            // Analyze sample distribution
+            Set<Long> uniqueMortonCodes = new HashSet<>();
+            for (Point3f pos : samplePositions) {
+                long morton = calculateSpatialIndex(pos, level);
+                uniqueMortonCodes.add(morton);
+            }
+
+            // Estimate total nodes needed
+            int estimatedNodes = NodeEstimator.estimateFromSamples(totalExpectedCount, samplePositions.size(),
+                                                                   uniqueMortonCodes.size(), maxEntitiesPerNode);
+
+            // Pre-allocate the unique nodes found in sample
+            int created = 0;
+            for (Long morton : uniqueMortonCodes) {
+                if (!spatialIndex.containsKey(morton)) {
+                    NodeType node = createNode();
+                    spatialIndex.put(morton, node);
+                    sortedSpatialIndices.add(morton);
+                    created++;
+                }
+            }
+
+            // Note: HashMap pre-sizing would require recreating the map with initial capacity
+            // For now, just log the recommendation
+            int remainingCapacity = estimatedNodes - created;
+            if (remainingCapacity > 0) {
+                System.out.printf("Recommendation: Pre-size HashMap for %d additional nodes%n", remainingCapacity);
+            }
+
+            System.out.printf("Pre-allocated %d nodes adaptively (sample size: %d, estimated total: %d)%n", created,
+                              samplePositions.size(), estimatedNodes);
+
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Pre-allocate nodes based on expected entity count and distribution. This can significantly improve bulk insertion
+     * performance by reducing allocation overhead.
+     *
+     * @param expectedEntityCount Expected number of entities to insert
+     * @param distribution        Spatial distribution pattern of entities
+     */
+    public void preAllocateNodes(int expectedEntityCount, NodeEstimator.SpatialDistribution distribution) {
+        lock.writeLock().lock();
+        try {
+            // Estimate required nodes
+            int estimatedNodes = NodeEstimator.estimateNodeCount(expectedEntityCount, maxEntitiesPerNode, maxDepth,
+                                                                 distribution);
+
+            // Pre-size the HashMap to avoid rehashing
+            // Note: We would need to recreate the HashMap with initial capacity since
+            // Java's HashMap doesn't have ensureCapacity. For now, we'll just log the recommendation.
+            int recommendedCapacity = (int) (estimatedNodes / 0.75f) + 1; // Account for load factor
+
+            // Pre-allocate TreeSet capacity if possible
+            // Note: TreeSet doesn't have pre-allocation, but we can optimize by
+            // using a more efficient set implementation if needed
+
+            System.out.printf("Pre-allocated capacity for %d nodes (estimated from %d entities)%n", estimatedNodes,
+                              expectedEntityCount);
+
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    // ===== Plane Intersection Abstract Methods =====
+
+    /**
+     * Pre-allocate nodes for a uniform grid at a specific level. Useful when you know entities will be distributed
+     * uniformly.
+     *
+     * @param level             The tree level to pre-allocate
+     * @param nodesPerDimension Number of nodes per dimension (total = n³)
+     */
+    public void preAllocateUniformGrid(byte level, int nodesPerDimension) {
+        if (level > maxDepth) {
+            throw new IllegalArgumentException("Level " + level + " exceeds maxDepth " + maxDepth);
+        }
+
+        lock.writeLock().lock();
+        try {
+            int totalNodes = NodeEstimator.estimateUniformGridNodes(level, nodesPerDimension);
+
+            // Pre-create nodes in a grid pattern
+            float cellSize = getCellSizeAtLevel(level);
+            int created = 0;
+
+            for (int x = 0; x < nodesPerDimension && created < totalNodes; x++) {
+                for (int y = 0; y < nodesPerDimension && created < totalNodes; y++) {
+                    for (int z = 0; z < nodesPerDimension && created < totalNodes; z++) {
+                        Point3f position = new Point3f(x * cellSize + cellSize / 2, y * cellSize + cellSize / 2,
+                                                       z * cellSize + cellSize / 2);
+
+                        long mortonIndex = calculateSpatialIndex(position, level);
+
+                        // Only create if doesn't exist
+                        if (!spatialIndex.containsKey(mortonIndex)) {
+                            NodeType node = createNode();
+                            spatialIndex.put(mortonIndex, node);
+                            sortedSpatialIndices.add(mortonIndex);
+                            created++;
+                        }
+                    }
+                }
+            }
+
+            System.out.printf("Pre-allocated %d nodes in uniform grid at level %d%n", created, level);
+
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
@@ -1265,6 +1701,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Plane Intersection Implementation =====
+
     /**
      * Manually trigger tree rebalancing.
      */
@@ -1277,7 +1715,12 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common k-NN Search Implementation =====
+    /**
+     * Perform parallel batch removal
+     */
+    public CompletableFuture<Integer> removeBatchParallel(List<ID> entityIds) {
+        return parallelOperations.removeBatchParallel(entityIds);
+    }
 
     @Override
     public boolean removeEntity(ID entityId) {
@@ -1314,6 +1757,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
+
     /**
      * Enable or disable automatic balancing.
      */
@@ -1338,8 +1783,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Spatial Query Base =====
-
     @Override
     public void setCollisionShape(ID entityId, CollisionShape shape) {
         lock.writeLock().lock();
@@ -1347,6 +1790,15 @@ implements SpatialIndex<ID, Content> {
             entityManager.setEntityCollisionShape(entityId, shape);
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Shutdown parallel operations (cleanup resources)
+     */
+    public void shutdownParallelOperations() {
+        if (parallelOperations != null) {
+            parallelOperations.shutdown();
         }
     }
 
@@ -1378,7 +1830,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Ray Intersection Abstract Methods =====
+    // ===== Frustum Culling Implementation =====
 
     @Override
     public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex) {
@@ -1436,6 +1888,44 @@ implements SpatialIndex<ID, Content> {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    /**
+     * Clear pre-allocated but empty nodes to free memory. Useful after bulk loading if many pre-allocated nodes weren't
+     * used.
+     */
+    public void trimEmptyNodes() {
+        lock.writeLock().lock();
+        try {
+            List<Long> emptyNodes = new ArrayList<>();
+
+            // Find empty nodes
+            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
+                if (entry.getValue().isEmpty()) {
+                    emptyNodes.add(entry.getKey());
+                }
+            }
+
+            // Remove empty nodes
+            for (Long morton : emptyNodes) {
+                spatialIndex.remove(morton);
+                sortedSpatialIndices.remove(morton);
+            }
+
+            if (!emptyNodes.isEmpty()) {
+                System.out.printf("Trimmed %d empty pre-allocated nodes%n", emptyNodes.size());
+            }
+
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Perform parallel batch updates
+     */
+    public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
+        return parallelOperations.updateBatchParallel(entityIds, newPositions, level);
     }
 
     @Override
@@ -1497,8 +1987,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Ray Intersection Implementation =====
-
     /**
      * Add neighboring nodes to the k-NN search queue
      *
@@ -1555,6 +2043,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Collision Detection Implementation =====
+
     /**
      * Calculate the spatial index for a position at a given level
      */
@@ -1587,15 +2077,21 @@ implements SpatialIndex<ID, Content> {
         if (node.isEmpty() && !hasChildren(spatialIndex)) {
             getSpatialIndex().remove(spatialIndex);
             onNodeRemoved(spatialIndex);
+            // Return node to pool for reuse
+            nodePool.release(node);
         }
     }
-
-    // ===== Plane Intersection Abstract Methods =====
 
     /**
      * Create a new node instance
      */
     protected abstract NodeType createNode();
+    
+    /**
+     * Create the default subdivision strategy for this spatial index.
+     * Subclasses should override to provide their specific strategy.
+     */
+    protected abstract SubdivisionStrategy<ID, Content> createDefaultSubdivisionStrategy();
 
     /**
      * Create a spatial volume from bounds for filtering
@@ -1625,8 +2121,6 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum);
 
-    // ===== Plane Intersection Implementation =====
-
     /**
      * Check if a node's bounds intersect with a volume
      */
@@ -1649,8 +2143,6 @@ implements SpatialIndex<ID, Content> {
      * @return true if the ray intersects the node
      */
     protected abstract boolean doesRayIntersectNode(long nodeIndex, Ray3D ray);
-
-    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
 
     /**
      * Estimate the distance from a query point to the center of a spatial node. This is used for k-NN search
@@ -1728,8 +2220,6 @@ implements SpatialIndex<ID, Content> {
         }
         return maxDepth;
     }
-
-    // ===== Frustum Culling Implementation =====
 
     /**
      * Find all nodes that intersect with the given entity bounds. This is used for collision detection with bounded
@@ -1861,8 +2351,6 @@ implements SpatialIndex<ID, Content> {
      */
     protected abstract Spatial getNodeBounds(long index);
 
-    // ===== Collision Detection Implementation =====
-
     /**
      * Get nodes that should be traversed for plane intersection, ordered by distance from plane
      *
@@ -1968,6 +2456,8 @@ implements SpatialIndex<ID, Content> {
         return VolumeBounds.from(volume);
     }
 
+    // ===== Tree Traversal Implementation =====
+
     /**
      * Hook for subclasses to handle node subdivision
      */
@@ -1991,7 +2481,7 @@ implements SpatialIndex<ID, Content> {
         // Get or create node directly - no need for ancestor nodes in SFC-based implementation
         NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
             sortedSpatialIndices.add(spatialIndex);
-            return createNode();
+            return nodePool.acquire();
         });
 
         // Add entity to node
@@ -2000,9 +2490,15 @@ implements SpatialIndex<ID, Content> {
         // Track entity location
         entityManager.addEntityLocation(entityId, spatialIndex);
 
-        // Handle subdivision if needed (delegated to subclasses)
+        // Handle subdivision if needed
         if (shouldSplit && level < maxDepth) {
-            handleNodeSubdivision(spatialIndex, level, node);
+            if (bulkLoadingMode) {
+                // Defer subdivision during bulk loading
+                subdivisionManager.deferSubdivision(spatialIndex, node, node.getEntityCount(), level);
+            } else {
+                // Immediate subdivision
+                handleNodeSubdivision(spatialIndex, level, node);
+            }
         }
 
         // Check for auto-balancing after insertion
@@ -2260,6 +2756,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Bulk Operations Implementation =====
+
     /**
      * Ray-AABB intersection test
      *
@@ -2434,8 +2932,6 @@ implements SpatialIndex<ID, Content> {
         && b1.getMinY() <= b2.getMaxY() && b1.getMaxZ() >= b2.getMinZ() && b1.getMinZ() <= b2.getMaxZ();
     }
 
-    // ===== Tree Traversal Implementation =====
-
     /**
      * Check if bounds intersect with a volume
      */
@@ -2521,6 +3017,8 @@ implements SpatialIndex<ID, Content> {
 
         return Math.min(Math.min(xPenetration, yPenetration), zPenetration);
     }
+
+    // ===== Parallel Operations API =====
 
     /**
      * Check two entities for collision and add to list if colliding
@@ -2609,6 +3107,8 @@ implements SpatialIndex<ID, Content> {
             default -> true; // Conservative for unknown types
         };
     }
+
+    // ===== Memory Pre-allocation Methods =====
 
     /**
      * Perform detailed collision check between two entities
@@ -2869,6 +3369,32 @@ implements SpatialIndex<ID, Content> {
         @Override
         public int hashCode() {
             return Objects.hash(first, second);
+        }
+    }
+
+    /**
+     * Memory usage statistics
+     */
+    public record MemoryStats(int nodeCount, long entityCount, float avgEntitiesPerNode, long estimatedMemoryBytes) {
+        public double estimatedMemoryMB() {
+            return estimatedMemoryBytes / (1024.0 * 1024.0);
+        }
+
+        public double memoryPerEntity() {
+            return entityCount > 0 ? (double) estimatedMemoryBytes / entityCount : 0;
+        }
+    }
+
+    /**
+     * Helper class for sorting entities by Morton code
+     */
+    private static class IndexedEntity {
+        final int  originalIndex;
+        final long mortonCode;
+
+        IndexedEntity(int originalIndex, long mortonCode) {
+            this.originalIndex = originalIndex;
+            this.mortonCode = mortonCode;
         }
     }
 

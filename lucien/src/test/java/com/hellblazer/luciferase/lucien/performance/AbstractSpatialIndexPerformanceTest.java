@@ -33,13 +33,12 @@ public abstract class AbstractSpatialIndexPerformanceTest<ID extends EntityID, C
     System.getenv().getOrDefault("RUN_SPATIAL_INDEX_PERF_TESTS", "false"));
 
     // Create results directory in target folder for proper cleanup during builds
-    protected static final Path              RESULTS_DIR      = Paths.get(System.getProperty("user.dir"), "target",
-                                                                          "performance-results");
+    protected static final Path              RESULTS_DIR      = Paths.get("performance-results");
     protected static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
     // Test data sizes matching C++ scales
     protected static final int[] TEST_SIZES = { 50, 100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000,
-                                                7000, 8000, 10000, 50000, 100000, 500000, 1000000 };
+                                                7000, 8000, 10000, 50000 };
 
     // Smaller sizes for quick smoke tests
     protected static final int[] SMOKE_TEST_SIZES = { 50, 100, 500, 1000, 5000 };

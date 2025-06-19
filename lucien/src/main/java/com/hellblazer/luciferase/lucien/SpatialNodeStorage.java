@@ -85,4 +85,11 @@ public interface SpatialNodeStorage<ID extends EntityID> {
      * @return true if the node exceeds the split threshold
      */
     boolean shouldSplit();
+
+    /**
+     * Clear this node for reuse (called by object pool)
+     */
+    default void clear() {
+        clearEntities();
+    }
 }

@@ -939,6 +939,11 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     protected TreeBalancer<ID> createTreeBalancer() {
         return new TetreeBalancer();
     }
+    
+    @Override
+    protected SubdivisionStrategy<ID, Content> createDefaultSubdivisionStrategy() {
+        return TetreeSubdivisionStrategy.balanced();
+    }
 
     @Override
     protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {

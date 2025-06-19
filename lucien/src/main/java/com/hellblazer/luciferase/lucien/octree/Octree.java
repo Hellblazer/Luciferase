@@ -259,6 +259,11 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     protected TreeBalancer<ID> createTreeBalancer() {
         return new OctreeBalancer();
     }
+    
+    @Override
+    protected SubdivisionStrategy<ID, Content> createDefaultSubdivisionStrategy() {
+        return OctreeSubdivisionStrategy.balanced();
+    }
 
     @Override
     protected boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum) {
@@ -506,7 +511,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                     "Creating new child node for morton " + childMorton + " with entities " + childEntities);
                     childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
                         sortedSpatialIndices.add(childMorton);
-                        return new OctreeNode<>(maxEntitiesPerNode);
+                        return nodePool.acquire();
                     });
 
                     // Add entities to child and mark for removal from parent
@@ -547,7 +552,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         // Get or create node
         OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> {
             sortedSpatialIndices.add(mortonCode);
-            return new OctreeNode<>(maxEntitiesPerNode);
+            return nodePool.acquire();
         });
 
         // If the node has been subdivided, insert into the appropriate child node
@@ -583,7 +588,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         for (Long mortonCode : intersectingNodes) {
             OctreeNode<ID> node = spatialIndex.computeIfAbsent(mortonCode, k -> {
                 sortedSpatialIndices.add(mortonCode);
-                return new OctreeNode<>(maxEntitiesPerNode);
+                return nodePool.acquire();
             });
 
             node.addEntity(entityId);

@@ -363,6 +363,48 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     void updateEntity(ID entityId, Point3f newPosition, byte level);
 
+    // ===== Bulk Operations =====
+
+    /**
+     * Insert multiple entities in a single batch operation.
+     * This is significantly more efficient than individual insertions.
+     *
+     * @param positions the positions of entities to insert
+     * @param contents  the contents to store (must be same length as positions)
+     * @param level     the refinement level for all insertions
+     * @return list of generated entity IDs in the same order as inputs
+     */
+    List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level);
+
+    /**
+     * Insert multiple entities with bounds in a single batch operation.
+     * Supports entity spanning across multiple nodes.
+     *
+     * @param bounds   the bounds of entities to insert
+     * @param contents the contents to store (must be same length as bounds)
+     * @param level    the refinement level for all insertions
+     * @return list of generated entity IDs in the same order as inputs
+     */
+    List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level);
+
+    /**
+     * Configure bulk operation behavior.
+     *
+     * @param config the configuration to apply
+     */
+    void configureBulkOperations(BulkOperationConfig config);
+
+    /**
+     * Enable bulk loading mode. In this mode, node subdivisions are deferred
+     * until finalizeBulkLoading() is called.
+     */
+    void enableBulkLoading();
+
+    /**
+     * Finalize bulk loading mode and process any deferred subdivisions.
+     */
+    void finalizeBulkLoading();
+
     /**
      * Node wrapper that provides uniform access to spatial data with multiple entities
      */
