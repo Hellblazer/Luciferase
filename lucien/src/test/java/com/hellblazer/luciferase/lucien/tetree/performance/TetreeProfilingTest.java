@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.Frustum3D;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.lucien.util.CIEnvironmentCheck;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -30,6 +31,8 @@ import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Long-running performance test for Tetree profiling.
@@ -60,6 +63,10 @@ public class TetreeProfilingTest {
     
     @BeforeEach
     void setup() {
+        // Skip this test in CI environments
+        assumeFalse(CIEnvironmentCheck.isRunningInCI(), 
+            "Profiling test is disabled in CI environments");
+        
         idGenerator = new SequentialLongIDGenerator();
         EntitySpanningPolicy spanningPolicy = new EntitySpanningPolicy(EntitySpanningPolicy.SpanningStrategy.SPAN_TO_OVERLAPPING, true, 0.1f);
         tetree = new Tetree<>(idGenerator, 50, (byte) 12, spanningPolicy);

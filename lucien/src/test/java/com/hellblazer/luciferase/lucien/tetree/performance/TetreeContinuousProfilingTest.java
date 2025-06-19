@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.Frustum3D;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.lucien.util.CIEnvironmentCheck;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,8 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Continuous profiling test for Tetree that runs indefinitely.
@@ -55,6 +58,10 @@ public class TetreeContinuousProfilingTest {
     
     @BeforeEach
     void setup() {
+        // Skip this test in CI environments
+        assumeFalse(CIEnvironmentCheck.isRunningInCI(), 
+            "Continuous profiling test is disabled in CI environments");
+        
         idGenerator = new SequentialLongIDGenerator();
         EntitySpanningPolicy spanningPolicy = new EntitySpanningPolicy(EntitySpanningPolicy.SpanningStrategy.SPAN_TO_OVERLAPPING, true, 0.1f);
         tetree = new Tetree<>(idGenerator, 30, (byte) 10, spanningPolicy);
