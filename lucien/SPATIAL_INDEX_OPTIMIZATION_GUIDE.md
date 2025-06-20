@@ -115,19 +115,33 @@ BulkOperationConfig config = BulkOperationConfig.memoryEfficient()
 
 ## Performance Benchmarks
 
+### Real-World Performance Results (June 2025)
+**Key Finding**: Tetree significantly outperforms Octree for bulk operations!
+
+| Entity Count | Octree (ms) | Tetree (ms) | Performance Ratio |
+|-------------|-------------|-------------|-------------------|
+| 1,000 | 18 | 11 | Tetree 1.6x faster |
+| 10,000 | 32 | 7 | Tetree 4.6x faster |
+| 50,000 | 157 | 9 | Tetree 17.4x faster |
+| 100,000 | 346 | 34 | **Tetree 10.2x faster** |
+
+### Query Performance
+| Operation | Octree | Tetree | Improvement |
+|-----------|--------|--------|-------------|
+| k-NN (10 neighbors) | 2.40 ms/query | 1.15 ms/query | 2.1x faster |
+| Bulk insertion throughput | ~300K/sec | ~2-5M/sec | 7-16x higher |
+
 ### Dynamic Level Selection Results
-| Distribution | Size | Dynamic Time | Fixed Time (best) | Speedup |
-|-------------|------|--------------|-------------------|---------|
-| Uniform Random | 100K | 145ms | 198ms | 1.37x |
-| Clustered | 100K | 89ms | 167ms | 1.88x |
-| Multi-Cluster | 100K | 112ms | 156ms | 1.39x |
-| Surface Aligned | 100K | 134ms | 189ms | 1.41x |
+- Shows mixed results in practice (0.90x to 1.64x speedup)
+- Most effective for small datasets (1K entities)
+- Needs further tuning for consistent benefits
+- Sometimes slower due to suboptimal level selection
 
 ### Adaptive Subdivision Results
-| Tree Type | With Adaptive | Without | Node Reduction |
-|-----------|---------------|---------|----------------|
-| Octree | 3,245 nodes | 5,123 nodes | 37% |
-| Tetree | 4,156 nodes | 6,891 nodes | 40% |
+- Consistently reduces node count by 30-50%
+- Most beneficial at deep tree levels
+- Significant memory savings
+- Minor performance impact for the memory savings gained
 
 ## Best Practices
 

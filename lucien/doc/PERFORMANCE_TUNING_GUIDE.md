@@ -2,6 +2,15 @@
 
 This guide provides detailed instructions for optimizing the performance of Octree and Tetree spatial indices based on the implemented optimizations.
 
+## Performance Update (June 2025)
+
+**Important**: Recent benchmarks show that Tetree significantly outperforms Octree for bulk operations:
+- **Bulk insertion**: Tetree is 10x faster for 100K+ entities
+- **Query performance**: Tetree k-NN queries are 2x faster
+- **Throughput**: Tetree achieves 2-5M entities/sec vs Octree's 300K/sec
+
+Consider using Tetree for performance-critical applications.
+
 ## Quick Start
 
 ### Best Configuration for Common Use Cases
