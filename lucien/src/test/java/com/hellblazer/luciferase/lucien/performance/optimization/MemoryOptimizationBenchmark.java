@@ -371,11 +371,12 @@ public class MemoryOptimizationBenchmark {
 
             case CLUSTERED:
                 int numClusters = Math.max(10, count / 1000);
-                // Use a smaller spread that still avoids subdivision issues
-                float spread = 100.0f; // Reasonable spread for clustering
+                // At level 10, cell size is 2048. We need spread larger than this
+                // to ensure entities distribute across multiple cells
+                float spread = 3000.0f; // Larger than cell size at level 10
                 
-                // Keep clusters within a reasonable spatial range
-                float clusterSpacing = 200.0f;
+                // Keep clusters well separated
+                float clusterSpacing = 5000.0f;
                 
                 for (int i = 0; i < count; i++) {
                     int cluster = i % numClusters;

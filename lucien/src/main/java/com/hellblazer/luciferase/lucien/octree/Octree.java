@@ -476,17 +476,14 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         }
 
         // Check if subdivision would actually distribute entities
-        if (childEntityMap.size() == 1 && childEntityMap.containsKey(parentMorton)) {
-            // All entities map to the same cell even at the child level
-            // This happens when all entities are at the same position
+        if (childEntityMap.size() == 1) {
+            // All entities map to the same cell at the child level
+            // This happens when entities are very close together
             // Don't subdivide - it won't help distribute the load
-            System.out.println("Subdivision stopped: all entities map to same cell at child level");
             return;
         }
 
         // Create child nodes and redistribute entities
-        System.out.println("Proceeding with subdivision: " + childEntityMap.size() + " child nodes to create");
-
         // Track which entities we need to remove from parent
         Set<ID> entitiesToRemoveFromParent = new HashSet<>();
 
@@ -501,14 +498,10 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
                 if (childMorton == parentMorton) {
                     // Special case: child has same Morton code as parent
                     // The entities can stay in the parent node - don't redistribute them
-                    System.out.println(
-                    "Entities " + childEntities + " stay in parent node (same morton " + childMorton + ")");
                     // Don't mark these entities for removal from parent
                     continue;
                 } else {
                     // Create or get child node
-                    System.out.println(
-                    "Creating new child node for morton " + childMorton + " with entities " + childEntities);
                     childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
                         sortedSpatialIndices.add(childMorton);
                         return nodePool.acquire();
