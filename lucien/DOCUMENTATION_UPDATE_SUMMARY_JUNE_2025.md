@@ -49,12 +49,42 @@ The following completed documentation files were moved to `/lucien/archived/`:
 - Updated TODO section to "Remaining Items for Future Enhancement"
 - Added context about current ~90% t8code parity
 - Noted that remaining items are low priority
+- Moved to `/lucien/doc/` directory
 
 ### 5. **CLAUDE.md**
 - Consolidated duplicate status sections
 - Simplified current status to single section
 - Removed redundant Phase 4.2 details
+- Updated all documentation file paths to reflect new `/lucien/doc/` structure
 - Maintained all critical memories and architecture notes
+
+## Directory Reorganization
+
+### New `/lucien/doc/` Directory Created
+All API documentation and guides moved to `/lucien/doc/` for better organization:
+
+**API Documentation (4 files):**
+- `RAY_INTERSECTION_API.md` - 212 lines of comprehensive API documentation
+- `COLLISION_DETECTION_API.md` - 350 lines of detailed collision detection API docs
+- `TREE_TRAVERSAL_API.md` - 420 lines of tree traversal patterns and strategies
+- `TREE_BALANCING_API.md` - 464 lines of balancing strategies and performance monitoring
+
+**Implementation Guides (3 files):**
+- `TETREE_IMPLEMENTATION_GUIDE.md` - Complete tetree implementation guide
+- `PERFORMANCE_TUNING_GUIDE.md` - Performance optimization guide
+- `SPATIAL_INDEX_PERFORMANCE_TESTING_PLAN.md` - Performance testing framework
+
+**Architecture Documentation (4 files):**
+- `LUCIEN_ARCHITECTURE_2025.md` - Complete architecture overview (January 2025)
+- `ARCHITECTURE_SUMMARY_2025.md` - Complete class inventory
+- `TETREE_T8CODE_GAP_ANALYSIS.md` - t8code parity analysis
+- `UNIFIED_SPATIAL_NODE_ARCHITECTURE.md` - Spatial node architecture design
+
+### Consolidated Directory Structure
+- **Active documentation**: `/lucien/doc/` (11 files)
+- **Archived documentation**: `/lucien/archived/` (26+ files)
+- **Status summaries**: `/lucien/` root (3 files)
+- **Removed**: Empty `/lucien/docs/` directory
 
 ## Current Project Status
 
