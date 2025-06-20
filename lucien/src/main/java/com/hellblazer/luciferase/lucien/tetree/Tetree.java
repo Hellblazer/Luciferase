@@ -579,13 +579,6 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
 
     // ===== Enhanced Neighbor Finding API =====
 
-    /**
-     * Find all neighbors of an entity (not just a tet index).
-     * This finds all entities in neighboring tetrahedra of the entity's containing nodes.
-     *
-     * @param entityId The entity ID to find neighbors for
-     * @return Set of neighboring entity IDs
-     */
 
     /**
      * Public access to locate method for finding containing tetrahedron
