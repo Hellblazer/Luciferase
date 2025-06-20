@@ -80,16 +80,24 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
     }
     
     @Test
-    @DisplayName("Test bulk insertion vs incremental insertion")
-    void testBulkInsertionVsIncremental() {
+    @DisplayName("Test optimization effectiveness: bulk vs incremental insertion")
+    void testOptimizationEffectiveness() {
         int[] testSizes = {1000, 10000, 50000};
         
         for (int size : testSizes) {
             List<TestEntity> entities = generateTestEntities(size, SpatialDistribution.UNIFORM_RANDOM);
             
-            // Test incremental insertion
+            // Prepare data for bulk operations
+            List<Point3f> positions = new ArrayList<>();
+            List<Content> contents = new ArrayList<>();
+            for (TestEntity entity : entities) {
+                positions.add(entity.position);
+                contents.add((Content) entity.content);
+            }
+            
+            // Test 1: Incremental insertion (baseline)
             PerformanceMetrics incrementalMetrics = measure(
-                "incremental_insertion",
+                "incremental_insertion_baseline",
                 size,
                 () -> {
                     SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
@@ -99,40 +107,90 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
                 }
             );
             
-            // Test bulk insertion (if supported)
+            // Test 2: Basic bulk insertion
             PerformanceMetrics bulkMetrics = measure(
-                "bulk_insertion",
+                "bulk_insertion_basic",
                 size,
                 () -> {
                     SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
-                    // Insert all at once using batch operation if available
-                    List<ID> ids = new ArrayList<>();
-                    List<Point3f> positions = new ArrayList<>();
-                    List<Content> contents = new ArrayList<>();
-                    
-                    for (TestEntity entity : entities) {
-                        ids.add((ID) entity.id);
-                        positions.add(entity.position);
-                        contents.add((Content) entity.content);
-                    }
-                    
-                    // If bulk insert is available, use it; otherwise fall back to loop
-                    if (index instanceof BulkInsertable) {
-                        ((BulkInsertable<ID, Content>) index).insertBatch(ids, positions, contents);
-                    } else {
-                        // Fallback to regular insertion
-                        for (int i = 0; i < ids.size(); i++) {
-                            index.insert(ids.get(i), positions.get(i), DEFAULT_LEVEL, contents.get(i));
-                        }
-                    }
+                    index.insertBatch(positions, contents, DEFAULT_LEVEL);
                 }
             );
             
+            // Test 3: Optimized bulk insertion with pre-allocation
+            PerformanceMetrics optimizedBulkMetrics = measure(
+                "bulk_insertion_optimized",
+                size,
+                () -> {
+                    SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                    // Enable optimizations if supported by AbstractSpatialIndex
+                    if (index instanceof com.hellblazer.luciferase.lucien.AbstractSpatialIndex) {
+                        var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<ID, Content, ?>) index;
+                        // Pre-allocate nodes for better performance
+                        abstractIndex.preAllocateAdaptive(positions.subList(0, Math.min(1000, size)), size, DEFAULT_LEVEL);
+                    }
+                    index.insertBatch(positions, contents, DEFAULT_LEVEL);
+                }
+            );
+            
+            // Test 4: Parallel bulk insertion for large datasets
+            PerformanceMetrics parallelMetrics = null;
+            if (size >= 10000) {
+                parallelMetrics = measure(
+                    "bulk_insertion_parallel",
+                    size,
+                    () -> {
+                        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                        try {
+                            if (index instanceof com.hellblazer.luciferase.lucien.AbstractSpatialIndex) {
+                                var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<ID, Content, ?>) index;
+                                abstractIndex.insertBatchParallel(positions, contents, DEFAULT_LEVEL);
+                            } else {
+                                // Fallback to regular bulk insertion
+                                index.insertBatch(positions, contents, DEFAULT_LEVEL);
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException("Parallel insertion interrupted", e);
+                        }
+                    }
+                );
+            }
+            
+            // Store all metrics
             performanceResults.add(incrementalMetrics);
             performanceResults.add(bulkMetrics);
+            performanceResults.add(optimizedBulkMetrics);
+            if (parallelMetrics != null) {
+                performanceResults.add(parallelMetrics);
+            }
             
-            double speedup = bulkMetrics.getSpeedup(incrementalMetrics);
-            System.out.printf("Bulk vs Incremental for %d entities: %.2fx speedup%n", size, speedup);
+            // Calculate and display optimization effectiveness
+            double bulkSpeedup = incrementalMetrics.getOperationsPerSecond() / bulkMetrics.getOperationsPerSecond();
+            double optimizedSpeedup = incrementalMetrics.getOperationsPerSecond() / optimizedBulkMetrics.getOperationsPerSecond();
+            
+            System.out.printf("%s Performance Results (%d entities):%n", getImplementationName(), size);
+            System.out.printf("  Incremental: %.2f ops/sec (baseline)%n", incrementalMetrics.getOperationsPerSecond());
+            System.out.printf("  Bulk:        %.2f ops/sec (%.2fx improvement)%n", 
+                bulkMetrics.getOperationsPerSecond(), bulkSpeedup);
+            System.out.printf("  Optimized:   %.2f ops/sec (%.2fx improvement)%n", 
+                optimizedBulkMetrics.getOperationsPerSecond(), optimizedSpeedup);
+            
+            if (parallelMetrics != null) {
+                double parallelSpeedup = incrementalMetrics.getOperationsPerSecond() / parallelMetrics.getOperationsPerSecond();
+                System.out.printf("  Parallel:    %.2f ops/sec (%.2fx improvement)%n", 
+                    parallelMetrics.getOperationsPerSecond(), parallelSpeedup);
+                
+                // Assert parallel provides best performance for large datasets
+                assertTrue(parallelSpeedup > 2.0, 
+                    String.format("Parallel insertion should provide 2x+ speedup. Actual: %.2fx", parallelSpeedup));
+            }
+            
+            // Assert optimizations provide meaningful improvements
+            assertTrue(bulkSpeedup > 1.5, 
+                String.format("Bulk insertion should provide 1.5x+ speedup. Actual: %.2fx", bulkSpeedup));
+            assertTrue(optimizedSpeedup > 2.0, 
+                String.format("Optimized bulk insertion should provide 2x+ speedup. Actual: %.2fx", optimizedSpeedup));
         }
     }
     

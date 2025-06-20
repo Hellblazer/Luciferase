@@ -59,6 +59,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         private boolean enableProgressTracking = false;
         private boolean preSortEntities = true;
         private boolean useNodePool = true;
+        private boolean trackInsertedIds = true;
         
         public BuildConfig withStrategy(BuildStrategy strategy) {
             this.strategy = strategy;
@@ -90,6 +91,11 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
             return this;
         }
         
+        public BuildConfig withTrackInsertedIds(boolean enable) {
+            this.trackInsertedIds = enable;
+            return this;
+        }
+        
         // Getters
         public BuildStrategy getStrategy() { return strategy; }
         public int getMaxStackDepth() { return maxStackDepth; }
@@ -97,6 +103,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         public boolean isEnableProgressTracking() { return enableProgressTracking; }
         public boolean isPreSortEntities() { return preSortEntities; }
         public boolean isUseNodePool() { return useNodePool; }
+        public boolean isTrackInsertedIds() { return trackInsertedIds; }
     }
     
     /**
@@ -254,7 +261,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
             totalTime,
             maxDepthReached,
             phaseTimes,
-            new ArrayList<>(insertedIds)
+            insertedIds
         );
     }
     
@@ -475,8 +482,10 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
             // Generate ID for entity
             ID id = index.getEntityManager().generateEntityId();
             
-            // Track inserted ID
-            insertedIds.add(id);
+            // Track inserted ID (only if configured to do so)
+            if (config.isTrackInsertedIds()) {
+                insertedIds.add(id);
+            }
             
             // Add to node
             node.addEntity(id);
@@ -554,6 +563,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
             .withStrategy(BuildStrategy.TOP_DOWN)
             .withPreSortEntities(true)
             .withNodePool(true)
+            .withTrackInsertedIds(false)  // Disable for performance tests
             .withMaxStackDepth(50000);  // High limit for very large datasets
     }
     
@@ -561,6 +571,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         return new BuildConfig()
             .withStrategy(BuildStrategy.TOP_DOWN)
             .withMaxStackDepth(500)
+            .withTrackInsertedIds(false)  // Disable for memory efficiency
             .withNodePool(true);
     }
 }

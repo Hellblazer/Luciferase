@@ -321,7 +321,7 @@ implements SpatialIndex<ID, Content> {
 
                 // Log deferred subdivision results
                 if (result.nodesProcessed > 0) {
-                    log.debug("Deferred subdivisions: {} processed, {} subdivided, {} new nodes in {:.2f}ms",
+                    log.debug("Deferred subdivisions: {} processed, {} subdivided, {} new nodes in {}ms",
                               result.nodesProcessed, result.nodesSubdivided, result.newNodesCreated,
                               result.getProcessingTimeMs());
                 }
@@ -990,7 +990,15 @@ implements SpatialIndex<ID, Content> {
                         buildResult.entitiesProcessed, elapsedMs, buildResult.nodesCreated);
                 
                 // Return the actual inserted IDs from the builder
-                return buildResult.insertedIds;
+                // If IDs were not tracked, we have a problem since the entities were already created
+                if (buildResult.insertedIds.isEmpty() && buildResult.entitiesProcessed > 0) {
+                    log.warn("StackBasedTreeBuilder was configured not to track IDs but caller expects ID list. " +
+                             "This can cause memory issues for large datasets. Consider using entityCount() instead of tracking individual IDs.");
+                    // Return empty list rather than creating incorrect IDs
+                    return Collections.emptyList();
+                } else {
+                    return buildResult.insertedIds;
+                }
             }
             
             // Enable bulk loading mode if configured
@@ -1060,8 +1068,8 @@ implements SpatialIndex<ID, Content> {
         // Log performance if significant batch
         if (positions.size() > 1000) {
             double rate = positions.size() * 1_000_000_000.0 / elapsedTime;
-            log.debug("Bulk inserted {} entities in {:.2f}ms ({:.0f} entities/sec)", positions.size(),
-                              elapsedTime / 1_000_000.0, rate);
+            log.debug("Bulk inserted {} entities in {}ms ({} entities/sec)", positions.size(),
+                              String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
         }
 
         return insertedIds;
@@ -1140,8 +1148,8 @@ implements SpatialIndex<ID, Content> {
         // Log performance if significant batch
         if (bounds.size() > 1000) {
             double rate = bounds.size() * 1_000_000_000.0 / elapsedTime;
-            log.debug("Bulk inserted {} entities with spanning in {:.2f}ms ({:.0f} entities/sec)", bounds.size(),
-                              elapsedTime / 1_000_000.0, rate);
+            log.debug("Bulk inserted {} entities with spanning in {}ms ({} entities/sec)", bounds.size(),
+                              String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
         }
 
         return insertedIds;

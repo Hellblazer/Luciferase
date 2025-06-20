@@ -327,7 +327,6 @@ public class TetreeCollisionIntegrationTest {
     @Test
     void testMultiLevelCollisionIntegration() {
         // Test collision system with entities at different tetree levels
-        CollisionDiagnostic diagnostic = new CollisionDiagnostic();
 
         // Create entities at different levels
         float[] scales = { 1f, 10f, 100f };
