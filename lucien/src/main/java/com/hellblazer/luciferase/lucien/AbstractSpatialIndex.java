@@ -75,6 +75,7 @@ implements SpatialIndex<ID, Content> {
     protected       SpatialNodePool<NodeType>                         nodePool;
     protected       ParallelBulkOperations<ID, Content, NodeType>     parallelOperations;
     protected       SubdivisionStrategy<ID, Content>                  subdivisionStrategy;
+    protected       StackBasedTreeBuilder<ID, Content, NodeType>      treeBuilder;
 
     /**
      * Constructor with common parameters
@@ -97,6 +98,7 @@ implements SpatialIndex<ID, Content> {
                                                                ParallelBulkOperations.defaultConfig());
         this.lockingStrategy = new FineGrainedLockingStrategy<>(this, FineGrainedLockingStrategy.defaultConfig());
         this.subdivisionStrategy = createDefaultSubdivisionStrategy();
+        this.treeBuilder = new StackBasedTreeBuilder<>(StackBasedTreeBuilder.defaultConfig(), this::getLevelFromIndex);
     }
 
     @Override
@@ -208,6 +210,42 @@ implements SpatialIndex<ID, Content> {
      */
     public SubdivisionStrategy<ID, Content> getSubdivisionStrategy() {
         return subdivisionStrategy;
+    }
+    
+    /**
+     * Configure stack-based tree builder
+     */
+    public void configureTreeBuilder(StackBasedTreeBuilder.BuildConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Tree builder config cannot be null");
+        }
+        this.treeBuilder = new StackBasedTreeBuilder<>(config, this::getLevelFromIndex);
+    }
+    
+    /**
+     * Build tree using stack-based approach for better cache locality
+     */
+    public StackBasedTreeBuilder.BuildResult buildTreeStackBased(List<Point3f> positions, 
+                                                                 List<Content> contents, 
+                                                                 byte startLevel) {
+        if (positions.size() != contents.size()) {
+            throw new IllegalArgumentException("Positions and contents must have the same size");
+        }
+        
+        lock.writeLock().lock();
+        try {
+            // Clear existing tree if needed
+            if (!spatialIndex.isEmpty()) {
+                spatialIndex.clear();
+                sortedSpatialIndices.clear();
+                entityManager.clear();
+            }
+            
+            // Build tree
+            return treeBuilder.buildTree(this, positions, contents, startLevel);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     /**
@@ -933,6 +971,23 @@ implements SpatialIndex<ID, Content> {
 
         lock.writeLock().lock();
         try {
+            // Check if we should use stack-based builder for this bulk operation
+            if (bulkConfig.isUseStackBasedBuilder() && positions.size() >= bulkConfig.getStackBuilderThreshold()) {
+                // Configure tree builder with the provided config
+                configureTreeBuilder(bulkConfig.getStackBuilderConfig());
+                
+                // Use stack-based builder for efficient bulk construction
+                StackBasedTreeBuilder.BuildResult<ID> buildResult = treeBuilder.buildTree(this, positions, contents, level);
+                
+                // Log performance metrics
+                long elapsedMs = buildResult.timeTaken;
+                System.out.printf("Stack-based bulk insertion completed: %d entities in %dms, %d nodes created%n",
+                        buildResult.entitiesProcessed, elapsedMs, buildResult.nodesCreated);
+                
+                // Return the actual inserted IDs from the builder
+                return buildResult.insertedIds;
+            }
+            
             // Enable bulk loading mode if configured
             boolean wasInBulkMode = bulkLoadingMode;
             if (bulkConfig.isDeferSubdivision() && !bulkLoadingMode) {
@@ -1100,6 +1155,24 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+    
+    // Package-private accessors for StackBasedTreeBuilder
+    EntityManager<ID, Content> getEntityManager() {
+        return entityManager;
+    }
+    
+    ID generateId() {
+        return entityManager.generateEntityId();
+    }
+    
+    int getMaxEntitiesPerNode() {
+        return maxEntitiesPerNode;
+    }
+    
+    byte getMaxDepth() {
+        return maxDepth;
+    }
+    
 
     /**
      * Find k nearest neighbors to a query point using spatial locality optimization

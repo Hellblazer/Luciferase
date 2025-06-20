@@ -30,6 +30,9 @@ public class BulkOperationConfig {
     private int batchSize = 1000;
     private int parallelThreshold = 10000;
     private int maxThreads = Runtime.getRuntime().availableProcessors();
+    private boolean useStackBasedBuilder = false;
+    private int stackBuilderThreshold = 10000;
+    private StackBasedTreeBuilder.BuildConfig stackBuilderConfig = StackBasedTreeBuilder.defaultConfig();
     
     /**
      * Whether to defer node subdivision until after all bulk insertions are complete.
@@ -77,6 +80,29 @@ public class BulkOperationConfig {
         return maxThreads;
     }
     
+    /**
+     * Whether to use stack-based tree building for large bulk operations.
+     * This can significantly improve cache locality and reduce memory allocation overhead.
+     */
+    public boolean isUseStackBasedBuilder() {
+        return useStackBasedBuilder;
+    }
+    
+    /**
+     * Minimum number of entities required to trigger stack-based tree building.
+     * Only applies when useStackBasedBuilder is true.
+     */
+    public int getStackBuilderThreshold() {
+        return stackBuilderThreshold;
+    }
+    
+    /**
+     * Configuration for the stack-based tree builder.
+     */
+    public StackBasedTreeBuilder.BuildConfig getStackBuilderConfig() {
+        return stackBuilderConfig;
+    }
+    
     // Fluent API for configuration
     
     public BulkOperationConfig withDeferredSubdivision(boolean defer) {
@@ -118,6 +144,27 @@ public class BulkOperationConfig {
         return this;
     }
     
+    public BulkOperationConfig withStackBasedBuilder(boolean useStackBuilder) {
+        this.useStackBasedBuilder = useStackBuilder;
+        return this;
+    }
+    
+    public BulkOperationConfig withStackBuilderThreshold(int threshold) {
+        if (threshold <= 0) {
+            throw new IllegalArgumentException("Stack builder threshold must be positive");
+        }
+        this.stackBuilderThreshold = threshold;
+        return this;
+    }
+    
+    public BulkOperationConfig withStackBuilderConfig(StackBasedTreeBuilder.BuildConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Stack builder config cannot be null");
+        }
+        this.stackBuilderConfig = config;
+        return this;
+    }
+    
     /**
      * Create a default configuration optimized for performance.
      */
@@ -126,7 +173,10 @@ public class BulkOperationConfig {
             .withDeferredSubdivision(true)
             .withPreSortByMorton(true)
             .withParallelProcessing(true)
-            .withBatchSize(5000);
+            .withBatchSize(5000)
+            .withStackBasedBuilder(true)
+            .withStackBuilderThreshold(10000)
+            .withStackBuilderConfig(StackBasedTreeBuilder.highPerformanceConfig());
     }
     
     /**
