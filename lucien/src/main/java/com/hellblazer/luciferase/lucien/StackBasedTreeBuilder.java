@@ -60,6 +60,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         private boolean preSortEntities = true;
         private boolean useNodePool = true;
         private boolean trackInsertedIds = true;
+        private boolean useAdaptiveSubdivision = false;
         
         public BuildConfig withStrategy(BuildStrategy strategy) {
             this.strategy = strategy;
@@ -96,6 +97,11 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
             return this;
         }
         
+        public BuildConfig withAdaptiveSubdivision(boolean enable) {
+            this.useAdaptiveSubdivision = enable;
+            return this;
+        }
+        
         // Getters
         public BuildStrategy getStrategy() { return strategy; }
         public int getMaxStackDepth() { return maxStackDepth; }
@@ -104,6 +110,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         public boolean isPreSortEntities() { return preSortEntities; }
         public boolean isUseNodePool() { return useNodePool; }
         public boolean isTrackInsertedIds() { return trackInsertedIds; }
+        public boolean isUseAdaptiveSubdivision() { return useAdaptiveSubdivision; }
     }
     
     /**
@@ -384,16 +391,24 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         // Update max depth
         maxDepthReached = Math.max(maxDepthReached, frame.level);
         
+        // Get adaptive subdivision threshold if enabled
+        int subdivisionThreshold = config.getMinEntitiesForSubdivision();
+        if (config.isUseAdaptiveSubdivision()) {
+            subdivisionThreshold = LevelSelector.getAdaptiveSubdivisionThreshold(
+                frame.level, config.getMinEntitiesForSubdivision()
+            );
+        }
+        
         // Check if we should subdivide
         boolean shouldSubdivide = entityCount > index.getMaxEntitiesPerNode() &&
                                  frame.level < index.getMaxDepth() &&
-                                 entityCount >= config.getMinEntitiesForSubdivision();
+                                 entityCount >= subdivisionThreshold;
         
         // Debug output for large builds
         if (entityCount > 1000) {
-            log.debug("StackBasedTreeBuilder.processNode: entityCount={}, maxEntitiesPerNode={}, level={}, maxDepth={}, minEntitiesForSubdivision={}, shouldSubdivide={}",
+            log.debug("StackBasedTreeBuilder.processNode: entityCount={}, maxEntitiesPerNode={}, level={}, maxDepth={}, subdivisionThreshold={}, shouldSubdivide={}",
                     entityCount, index.getMaxEntitiesPerNode(), frame.level, index.getMaxDepth(), 
-                    config.getMinEntitiesForSubdivision(), shouldSubdivide);
+                    subdivisionThreshold, shouldSubdivide);
         }
         
         if (shouldSubdivide) {
@@ -564,7 +579,8 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
             .withPreSortEntities(true)
             .withNodePool(true)
             .withTrackInsertedIds(false)  // Disable for performance tests
-            .withMaxStackDepth(50000);  // High limit for very large datasets
+            .withMaxStackDepth(50000)  // High limit for very large datasets
+            .withAdaptiveSubdivision(true);  // Enable adaptive subdivision for better performance
     }
     
     public static BuildConfig memoryEfficientConfig() {

@@ -971,6 +971,17 @@ implements SpatialIndex<ID, Content> {
             return Collections.emptyList();
         }
 
+        // Apply dynamic level selection if enabled
+        byte effectiveLevel = level;
+        if (bulkConfig.isUseDynamicLevelSelection()) {
+            byte optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNode);
+            if (optimalLevel != level) {
+                log.debug("Dynamic level selection: changing from level {} to {} for {} entities",
+                         level, optimalLevel, positions.size());
+                effectiveLevel = optimalLevel;
+            }
+        }
+
         long startTime = System.nanoTime();
         List<ID> insertedIds = new ArrayList<>(positions.size());
 
@@ -982,7 +993,7 @@ implements SpatialIndex<ID, Content> {
                 configureTreeBuilder(bulkConfig.getStackBuilderConfig());
                 
                 // Use stack-based builder for efficient bulk construction
-                StackBasedTreeBuilder.BuildResult<ID> buildResult = treeBuilder.buildTree(this, positions, contents, level);
+                StackBasedTreeBuilder.BuildResult<ID> buildResult = treeBuilder.buildTree(this, positions, contents, effectiveLevel);
                 
                 // Log performance metrics
                 long elapsedMs = buildResult.timeTaken;
@@ -1011,20 +1022,26 @@ implements SpatialIndex<ID, Content> {
             boolean useParallel = bulkConfig.isEnableParallel()
             && positions.size() >= bulkConfig.getParallelThreshold();
 
+            // Check if Morton sorting makes sense at this level
+            boolean shouldUseMortonSort = bulkConfig.isPreSortByMorton();
+            if (bulkConfig.isUseDynamicLevelSelection()) {
+                shouldUseMortonSort = shouldUseMortonSort && LevelSelector.shouldUseMortonSort(positions, effectiveLevel);
+            }
+
             List<BulkOperationProcessor.MortonEntity<Content>> mortonEntities;
             if (useParallel) {
-                mortonEntities = bulkProcessor.preprocessBatchParallel(positions, contents, level,
-                                                                       bulkConfig.isPreSortByMorton(),
+                mortonEntities = bulkProcessor.preprocessBatchParallel(positions, contents, effectiveLevel,
+                                                                       shouldUseMortonSort,
                                                                        bulkConfig.getParallelThreshold());
             } else {
-                mortonEntities = bulkProcessor.preprocessBatch(positions, contents, level,
-                                                               bulkConfig.isPreSortByMorton());
+                mortonEntities = bulkProcessor.preprocessBatch(positions, contents, effectiveLevel,
+                                                               shouldUseMortonSort);
             }
 
             // Group by spatial node if batch is large enough
             if (positions.size() > bulkConfig.getBatchSize()) {
                 BulkOperationProcessor.GroupedEntities<Content> grouped = bulkProcessor.groupByNode(mortonEntities,
-                                                                                                    level);
+                                                                                                    effectiveLevel);
 
                 // Process each group
                 for (Map.Entry<Long, List<BulkOperationProcessor.MortonEntity<Content>>> entry : grouped.getGroups()
@@ -1037,7 +1054,7 @@ implements SpatialIndex<ID, Content> {
                         entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
 
                         // Insert at position
-                        insertAtPosition(entityId, entity.position, level);
+                        insertAtPosition(entityId, entity.position, effectiveLevel);
                     }
                 }
             } else {

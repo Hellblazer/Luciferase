@@ -33,6 +33,8 @@ public class BulkOperationConfig {
     private boolean useStackBasedBuilder = false;
     private int stackBuilderThreshold = 10000;
     private StackBasedTreeBuilder.BuildConfig stackBuilderConfig = StackBasedTreeBuilder.defaultConfig();
+    private boolean useDynamicLevelSelection = false;
+    private boolean useAdaptiveSubdivision = false;
     
     /**
      * Whether to defer node subdivision until after all bulk insertions are complete.
@@ -103,6 +105,22 @@ public class BulkOperationConfig {
         return stackBuilderConfig;
     }
     
+    /**
+     * Whether to use dynamic level selection based on data distribution.
+     * This can significantly improve performance for randomly distributed data.
+     */
+    public boolean isUseDynamicLevelSelection() {
+        return useDynamicLevelSelection;
+    }
+    
+    /**
+     * Whether to use adaptive subdivision thresholds based on tree depth.
+     * Prevents excessive subdivision at deep levels.
+     */
+    public boolean isUseAdaptiveSubdivision() {
+        return useAdaptiveSubdivision;
+    }
+    
     // Fluent API for configuration
     
     public BulkOperationConfig withDeferredSubdivision(boolean defer) {
@@ -165,6 +183,16 @@ public class BulkOperationConfig {
         return this;
     }
     
+    public BulkOperationConfig withDynamicLevelSelection(boolean useDynamic) {
+        this.useDynamicLevelSelection = useDynamic;
+        return this;
+    }
+    
+    public BulkOperationConfig withAdaptiveSubdivision(boolean useAdaptive) {
+        this.useAdaptiveSubdivision = useAdaptive;
+        return this;
+    }
+    
     /**
      * Create a default configuration optimized for performance.
      */
@@ -176,7 +204,9 @@ public class BulkOperationConfig {
             .withBatchSize(5000)
             .withStackBasedBuilder(true)
             .withStackBuilderThreshold(10000)
-            .withStackBuilderConfig(StackBasedTreeBuilder.highPerformanceConfig());
+            .withStackBuilderConfig(StackBasedTreeBuilder.highPerformanceConfig())
+            .withDynamicLevelSelection(true)
+            .withAdaptiveSubdivision(true);
     }
     
     /**
