@@ -25,6 +25,9 @@ import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
@@ -46,6 +49,8 @@ import java.util.stream.Stream;
  */
 public abstract class AbstractSpatialIndex<ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>>
 implements SpatialIndex<ID, Content> {
+
+    private static final Logger log = LoggerFactory.getLogger(AbstractSpatialIndex.class);
 
     // Common fields
     protected final EntityManager<ID, Content>                        entityManager;
@@ -316,9 +321,9 @@ implements SpatialIndex<ID, Content> {
 
                 // Log deferred subdivision results
                 if (result.nodesProcessed > 0) {
-                    System.out.printf("Deferred subdivisions: %d processed, %d subdivided, %d new nodes in %.2fms%n",
-                                      result.nodesProcessed, result.nodesSubdivided, result.newNodesCreated,
-                                      result.getProcessingTimeMs());
+                    log.debug("Deferred subdivisions: {} processed, {} subdivided, {} new nodes in {:.2f}ms",
+                              result.nodesProcessed, result.nodesSubdivided, result.newNodesCreated,
+                              result.getProcessingTimeMs());
                 }
             }
 
@@ -981,7 +986,7 @@ implements SpatialIndex<ID, Content> {
                 
                 // Log performance metrics
                 long elapsedMs = buildResult.timeTaken;
-                System.out.printf("Stack-based bulk insertion completed: %d entities in %dms, %d nodes created%n",
+                log.debug("Stack-based bulk insertion completed: {} entities in {}ms, {} nodes created",
                         buildResult.entitiesProcessed, elapsedMs, buildResult.nodesCreated);
                 
                 // Return the actual inserted IDs from the builder
@@ -1055,7 +1060,7 @@ implements SpatialIndex<ID, Content> {
         // Log performance if significant batch
         if (positions.size() > 1000) {
             double rate = positions.size() * 1_000_000_000.0 / elapsedTime;
-            System.out.printf("Bulk inserted %d entities in %.2fms (%.0f entities/sec)%n", positions.size(),
+            log.debug("Bulk inserted {} entities in {:.2f}ms ({:.0f} entities/sec)", positions.size(),
                               elapsedTime / 1_000_000.0, rate);
         }
 
@@ -1135,7 +1140,7 @@ implements SpatialIndex<ID, Content> {
         // Log performance if significant batch
         if (bounds.size() > 1000) {
             double rate = bounds.size() * 1_000_000_000.0 / elapsedTime;
-            System.out.printf("Bulk inserted %d entities with spanning in %.2fms (%.0f entities/sec)%n", bounds.size(),
+            log.debug("Bulk inserted {} entities with spanning in {:.2f}ms ({:.0f} entities/sec)", bounds.size(),
                               elapsedTime / 1_000_000.0, rate);
         }
 
@@ -1493,10 +1498,10 @@ implements SpatialIndex<ID, Content> {
             // For now, just log the recommendation
             int remainingCapacity = estimatedNodes - created;
             if (remainingCapacity > 0) {
-                System.out.printf("Recommendation: Pre-size HashMap for %d additional nodes%n", remainingCapacity);
+                log.debug("Recommendation: Pre-size HashMap for {} additional nodes", remainingCapacity);
             }
 
-            System.out.printf("Pre-allocated %d nodes adaptively (sample size: %d, estimated total: %d)%n", created,
+            log.debug("Pre-allocated {} nodes adaptively (sample size: {}, estimated total: {})", created,
                               samplePositions.size(), estimatedNodes);
 
         } finally {
@@ -1527,7 +1532,7 @@ implements SpatialIndex<ID, Content> {
             // Note: TreeSet doesn't have pre-allocation, but we can optimize by
             // using a more efficient set implementation if needed
 
-            System.out.printf("Pre-allocated capacity for %d nodes (estimated from %d entities)%n", estimatedNodes,
+            log.debug("Pre-allocated capacity for {} nodes (estimated from {} entities)", estimatedNodes,
                               expectedEntityCount);
 
         } finally {
@@ -1576,7 +1581,7 @@ implements SpatialIndex<ID, Content> {
                 }
             }
 
-            System.out.printf("Pre-allocated %d nodes in uniform grid at level %d%n", created, level);
+            log.debug("Pre-allocated {} nodes in uniform grid at level {}", created, level);
 
         } finally {
             lock.writeLock().unlock();
@@ -1986,7 +1991,7 @@ implements SpatialIndex<ID, Content> {
             }
 
             if (!emptyNodes.isEmpty()) {
-                System.out.printf("Trimmed %d empty pre-allocated nodes%n", emptyNodes.size());
+                log.debug("Trimmed {} empty pre-allocated nodes", emptyNodes.size());
             }
 
         } finally {

@@ -19,6 +19,9 @@ package com.hellblazer.luciferase.lucien;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.BulkOperationProcessor;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.vecmath.Point3f;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +46,8 @@ import java.util.function.Function;
  * @author hal.hildebrand
  */
 public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>> {
+    
+    private static final Logger log = LoggerFactory.getLogger(StackBasedTreeBuilder.class);
     
     /**
      * Build configuration
@@ -222,7 +227,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         
         // Debug output for large builds
         if (positions.size() > 1000) {
-            System.out.printf("StackBasedTreeBuilder: prepared %d morton entities from %d positions%n", 
+            log.debug("StackBasedTreeBuilder: prepared {} morton entities from {} positions", 
                     mortonEntities.size(), positions.size());
         }
         
@@ -303,7 +308,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         while (!stack.isEmpty()) {
             // Check stack depth to prevent stack overflow
             if (stack.size() > config.getMaxStackDepth()) {
-                System.out.printf("StackBasedTreeBuilder: Stack depth exceeded %d, processing remaining %d frames in batches%n", 
+                log.debug("StackBasedTreeBuilder: Stack depth exceeded {}, processing remaining {} frames in batches", 
                         config.getMaxStackDepth(), stack.size());
                 // Process frames in smaller batches to avoid stack overflow
                 int batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
@@ -379,7 +384,7 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         
         // Debug output for large builds
         if (entityCount > 1000) {
-            System.out.printf("StackBasedTreeBuilder.processNode: entityCount=%d, maxEntitiesPerNode=%d, level=%d, maxDepth=%d, minEntitiesForSubdivision=%d, shouldSubdivide=%b%n",
+            log.debug("StackBasedTreeBuilder.processNode: entityCount={}, maxEntitiesPerNode={}, level={}, maxDepth={}, minEntitiesForSubdivision={}, shouldSubdivide={}",
                     entityCount, index.getMaxEntitiesPerNode(), frame.level, index.getMaxDepth(), 
                     config.getMinEntitiesForSubdivision(), shouldSubdivide);
         }
@@ -410,10 +415,10 @@ public class StackBasedTreeBuilder<ID extends EntityID, Content, NodeType extend
         
         // Debug output for large builds
         if (frame.getEntityCount() > 1000) {
-            System.out.printf("StackBasedTreeBuilder.createChildren: frame has %d entities, created %d child groups%n",
+            log.debug("StackBasedTreeBuilder.createChildren: frame has {} entities, created {} child groups",
                     frame.getEntityCount(), childGroups.size());
             for (Map.Entry<Long, List<BulkOperationProcessor.MortonEntity<Content>>> entry : childGroups.entrySet()) {
-                System.out.printf("  Child %d: %d entities%n", entry.getKey(), entry.getValue().size());
+                log.debug("  Child {}: {} entities", entry.getKey(), entry.getValue().size());
             }
         }
         
