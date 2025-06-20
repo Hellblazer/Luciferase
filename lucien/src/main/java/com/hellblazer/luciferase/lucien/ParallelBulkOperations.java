@@ -207,7 +207,7 @@ public class ParallelBulkOperations<ID extends EntityID, Content, NodeType exten
     }
     
     /**
-     * Perform parallel bulk insertion
+     * Perform parallel bulk insertion with optimized batch operations
      */
     public ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions, 
                                                            List<Content> contents, 
@@ -224,20 +224,39 @@ public class ParallelBulkOperations<ID extends EntityID, Content, NodeType exten
         List<Exception> errors = Collections.synchronizedList(new ArrayList<>());
         List<ID> allInsertedIds = Collections.synchronizedList(new ArrayList<>());
         
+        // For small datasets, use single-threaded batch insertion
+        if (positions.size() < config.getThreadCount() * config.getTaskThreshold()) {
+            try {
+                long singleThreadStart = System.currentTimeMillis();
+                List<ID> ids = spatialIndex.insertBatch(positions, contents, level);
+                allInsertedIds.addAll(ids);
+                timings.put("singleThreadedBatch", System.currentTimeMillis() - singleThreadStart);
+                statistics.put("totalEntities", positions.size());
+                statistics.put("partitionCount", 1);
+                statistics.put("threadsUsed", 1);
+                statistics.put("successfulInsertions", ids.size());
+                statistics.put("errors", 0);
+            } catch (Exception e) {
+                errors.add(e);
+            }
+            timings.put("total", System.currentTimeMillis() - startTime);
+            return new ParallelOperationResult<>(allInsertedIds, timings, statistics, errors);
+        }
+        
         try {
-            // Phase 1: Parallel Morton code preprocessing
+            // Phase 1: Parallel Morton code preprocessing (keep this parallel)
             long preprocessStart = System.currentTimeMillis();
             List<BulkOperationProcessor.MortonEntity<Content>> mortonEntities = 
                 preprocessParallel(positions, contents, level);
             timings.put("preprocessing", System.currentTimeMillis() - preprocessStart);
             
-            // Phase 2: Spatial partitioning for reduced lock contention
+            // Phase 2: Adaptive spatial partitioning
             long partitionStart = System.currentTimeMillis();
             Map<Long, List<BulkOperationProcessor.MortonEntity<Content>>> partitionedEntities = 
-                partitionBySpatialRegion(mortonEntities, level);
+                adaptivePartitioning(mortonEntities, level);
             timings.put("partitioning", System.currentTimeMillis() - partitionStart);
             
-            // Phase 3: Parallel insertion with region-based locking
+            // Phase 3: Parallel batch insertion with coarse-grained locking
             long insertionStart = System.currentTimeMillis();
             insertPartitionsParallel(partitionedEntities, level, allInsertedIds, errors);
             timings.put("insertion", System.currentTimeMillis() - insertionStart);
@@ -259,53 +278,46 @@ public class ParallelBulkOperations<ID extends EntityID, Content, NodeType exten
     }
     
     /**
-     * Parallel Morton code preprocessing
+     * Parallel Morton code preprocessing with optimized batching
      */
     private List<BulkOperationProcessor.MortonEntity<Content>> preprocessParallel(
             List<Point3f> positions, List<Content> contents, byte level) throws InterruptedException {
         
-        int entityCount = positions.size();
-        int batchSize = Math.max(config.getTaskThreshold(), entityCount / config.getThreadCount());
-        
-        List<Future<List<BulkOperationProcessor.MortonEntity<Content>>>> futures = new ArrayList<>();
-        ExecutorService executor = getExecutor();
-        
-        // Create batches for parallel processing
-        for (int i = 0; i < entityCount; i += batchSize) {
-            int endIndex = Math.min(i + batchSize, entityCount);
-            EntityBatch<Content> batch = new EntityBatch<>(positions, contents, level, i, endIndex);
-            
-            Future<List<BulkOperationProcessor.MortonEntity<Content>>> future = 
-                executor.submit(() -> bulkProcessor.preprocessBatch(
-                    batch.getPositions(), batch.getContents(), level, true));
-            futures.add(future);
-        }
-        
-        // Collect results
-        List<BulkOperationProcessor.MortonEntity<Content>> allEntities = new ArrayList<>(entityCount);
-        for (Future<List<BulkOperationProcessor.MortonEntity<Content>>> future : futures) {
-            try {
-                allEntities.addAll(future.get(config.getLockTimeoutMs(), TimeUnit.MILLISECONDS));
-            } catch (ExecutionException | TimeoutException e) {
-                throw new RuntimeException("Parallel preprocessing failed", e);
-            }
-        }
-        
-        return allEntities;
+        // Use the bulk processor's parallel preprocessing which already handles this efficiently
+        return bulkProcessor.preprocessBatchParallel(positions, contents, level, true, config.getTaskThreshold());
     }
     
     /**
-     * Partition entities by spatial region to reduce lock contention
+     * Adaptive partitioning based on entity count and distribution
      */
-    private Map<Long, List<BulkOperationProcessor.MortonEntity<Content>>> partitionBySpatialRegion(
+    private Map<Long, List<BulkOperationProcessor.MortonEntity<Content>>> adaptivePartitioning(
             List<BulkOperationProcessor.MortonEntity<Content>> entities, byte level) {
         
-        return entities.parallelStream()
-            .collect(Collectors.groupingBy(
-                entity -> calculateSpatialRegion(entity.position, level),
-                ConcurrentHashMap::new,
-                Collectors.toList()
-            ));
+        // Calculate optimal partition count based on entity count and thread count
+        int optimalPartitions = Math.min(
+            config.getThreadCount() * 2,  // Some oversubscription for load balancing
+            Math.max(1, entities.size() / config.getBatchSize())  // Ensure reasonable batch sizes
+        );
+        
+        // For sorted Morton entities, partition by ranges for better spatial locality
+        Map<Long, List<BulkOperationProcessor.MortonEntity<Content>>> partitions = new LinkedHashMap<>();
+        int entitiesPerPartition = Math.max(1, entities.size() / optimalPartitions);
+        
+        for (int i = 0; i < optimalPartitions; i++) {
+            int startIdx = i * entitiesPerPartition;
+            int endIdx = (i == optimalPartitions - 1) ? entities.size() : Math.min((i + 1) * entitiesPerPartition, entities.size());
+            
+            if (startIdx < entities.size()) {
+                List<BulkOperationProcessor.MortonEntity<Content>> partition = 
+                    entities.subList(startIdx, endIdx);
+                if (!partition.isEmpty()) {
+                    // Use the first entity's Morton code as partition key
+                    partitions.put(partition.get(0).mortonCode, partition);
+                }
+            }
+        }
+        
+        return partitions;
     }
     
     /**
@@ -340,33 +352,39 @@ public class ParallelBulkOperations<ID extends EntityID, Content, NodeType exten
     }
     
     /**
-     * Insert entities for a specific spatial region
+     * Insert entities for a specific spatial region using true batch operations
      */
     private List<ID> insertRegionEntities(long regionId, 
                                          List<BulkOperationProcessor.MortonEntity<Content>> entities,
                                          byte level) {
-        SpatialRegion region = spatialRegions.computeIfAbsent(regionId, SpatialRegion::new);
-        List<ID> insertedIds = new ArrayList<>(entities.size());
+        // Extract positions and contents for batch insertion
+        List<Point3f> positions = new ArrayList<>(entities.size());
+        List<Content> contents = new ArrayList<>(entities.size());
         
-        // Lock only this spatial region
-        synchronized (region.lock) {
-            for (BulkOperationProcessor.MortonEntity<Content> entity : entities) {
-                try {
-                    // Use the spatial index's direct insertion method
-                    ID id = spatialIndex.insert(entity.position, level, entity.content);
-                    insertedIds.add(id);
-                    
-                    // Track which nodes this region affects
-                    region.nodeIndices.add(entity.mortonCode);
-                    
-                } catch (Exception e) {
-                    // Log error but continue with other entities in this region
-                    System.err.println("Failed to insert entity in region " + regionId + ": " + e.getMessage());
-                }
-            }
+        for (BulkOperationProcessor.MortonEntity<Content> entity : entities) {
+            positions.add(entity.position);
+            contents.add(entity.content);
         }
         
-        return insertedIds;
+        // Use coarse-grained locking for the entire batch operation
+        // This is much more efficient than fine-grained per-entity locking
+        try {
+            // Use the spatial index's batch insertion method
+            // This allows the index to optimize the insertion process
+            List<ID> insertedIds = spatialIndex.insertBatch(positions, contents, level);
+            
+            // Track the spatial region for statistics
+            SpatialRegion region = spatialRegions.computeIfAbsent(regionId, SpatialRegion::new);
+            for (BulkOperationProcessor.MortonEntity<Content> entity : entities) {
+                region.nodeIndices.add(entity.mortonCode);
+            }
+            
+            return insertedIds;
+        } catch (Exception e) {
+            // Log error and return empty list
+            System.err.println("Failed to insert batch in region " + regionId + ": " + e.getMessage());
+            return new ArrayList<>();
+        }
     }
     
     /**

@@ -152,7 +152,7 @@ public class PerformanceRegressionTest {
     void testBulkInsertionPerformance() throws Exception {
         System.out.println("\n=== Bulk Insertion Performance Regression Test ===\n");
         
-        int[] testSizes = {10_000, 100_000, 1_000_000};
+        int[] testSizes = {10_000, 100_000, 500_000, 1_000_000};
         
         for (int size : testSizes) {
             // Test Octree
@@ -182,7 +182,7 @@ public class PerformanceRegressionTest {
     void testMemoryEfficiency() throws Exception {
         System.out.println("\n=== Memory Efficiency Regression Test ===\n");
         
-        int[] testSizes = {50_000, 100_000, 500_000};
+        int[] testSizes = {50_000, 100_000, 500_000, 1_000_000};
         
         for (int size : testSizes) {
             testMemoryUsage("Octree", size, () -> new Octree<>(new SequentialLongIDGenerator()));

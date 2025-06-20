@@ -90,7 +90,7 @@ public class MemoryOptimizationBenchmark {
     void benchmarkNodePreAllocation() {
         System.out.println("\n=== Node Pre-allocation Benchmarks ===\n");
         
-        int[] testSizes = {10_000, 50_000, 100_000, 500_000};
+        int[] testSizes = {10_000, 50_000, 100_000, 500_000, 1_000_000};
         NodeEstimator.SpatialDistribution[] distributions = {
             NodeEstimator.SpatialDistribution.UNIFORM,
             NodeEstimator.SpatialDistribution.CLUSTERED_HIGH,

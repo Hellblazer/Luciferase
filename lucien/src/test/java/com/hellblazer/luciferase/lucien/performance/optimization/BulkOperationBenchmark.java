@@ -96,7 +96,7 @@ public class BulkOperationBenchmark {
     void benchmarkBulkOperationsOctree() {
         System.out.println("\n=== Octree Bulk Operation Benchmarks ===\n");
         
-        int[] testSizes = {1000, 10_000, 100_000, 1_000_000};
+        int[] testSizes = {1000, 10_000, 100_000, 500_000, 1_000_000};
         
         for (int size : testSizes) {
             System.out.printf("\n--- Testing with %,d entities ---\n", size);
@@ -128,7 +128,7 @@ public class BulkOperationBenchmark {
     void benchmarkBulkOperationsTetree() {
         System.out.println("\n=== Tetree Bulk Operation Benchmarks ===\n");
         
-        int[] testSizes = {1000, 10_000, 100_000, 1_000_000};
+        int[] testSizes = {1000, 10_000, 100_000, 500_000, 1_000_000};
         
         for (int size : testSizes) {
             System.out.printf("\n--- Testing with %,d entities ---\n", size);
