@@ -1,7 +1,9 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 
+import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 
 /**
@@ -65,37 +67,73 @@ public class Constants {
     { CORNER.c0.coords(), CORNER.c4.coords(), CORNER.c6.coords(), CORNER.c7.coords() },
     { CORNER.c0.coords(), CORNER.c7.coords(), CORNER.c5.coords(), CORNER.c4.coords() } };
 
-    public static int MAX_EXTENT = 1 << getMaxRefinementLevel();
+    public static final int MAX_EXTENT = 1 << getMaxRefinementLevel();
 
     /** Tetrahedron type and Cube ID to local index **/
-    public static byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
-                                                                        { 0, 1, 2, 5, 2, 5, 4, 7 },
-                                                                        { 0, 2, 3, 4, 1, 6, 5, 7 },
-                                                                        { 0, 3, 1, 5, 2, 4, 6, 7 },
-                                                                        { 0, 2, 2, 6, 3, 5, 5, 7 },
-                                                                        { 0, 3, 3, 6, 3, 6, 6, 7 } };
+    public static final byte[][] TYPE_CUBE_ID_TO_LOCAL_INDEX = new byte[][] { { 0, 1, 1, 4, 1, 4, 4, 7 },
+                                                                              { 0, 1, 2, 5, 2, 5, 4, 7 },
+                                                                              { 0, 2, 3, 4, 1, 6, 5, 7 },
+                                                                              { 0, 3, 1, 5, 2, 4, 6, 7 },
+                                                                              { 0, 2, 2, 6, 3, 5, 5, 7 },
+                                                                              { 0, 3, 3, 6, 3, 6, 6, 7 } };
 
-    /** Parent type and local index to cube id **/
-    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
-                                                                               { 0, 1, 1, 1, 3, 3, 3, 7 },
-                                                                               { 0, 2, 2, 2, 3, 3, 3, 7 },
-                                                                               { 0, 2, 2, 2, 6, 6, 6, 7 },
-                                                                               { 0, 4, 4, 4, 6, 6, 6, 7 },
-                                                                               { 0, 4, 4, 4, 5, 5, 5, 7 } };
+    /** Parent type and local index to cube id - from t8code t8_dtet_parenttype_Iloc_to_cid **/
+    public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID = new byte[][] { { 0, 1, 1, 1, 5, 5, 5, 7 },
+                                                                                     // Parent type 0
+                                                                                     { 0, 1, 1, 1, 3, 3, 3, 7 },
+                                                                                     // Parent type 1
+                                                                                     { 0, 2, 2, 2, 3, 3, 3, 7 },
+                                                                                     // Parent type 2
+                                                                                     { 0, 2, 2, 2, 6, 6, 6, 7 },
+                                                                                     // Parent type 3
+                                                                                     { 0, 4, 4, 4, 6, 6, 6, 7 },
+                                                                                     // Parent type 4
+                                                                                     { 0, 4, 4, 4, 5, 5, 5,
+                                                                                       7 } }; // Parent type 5
 
     /** Parent type and local index to type **/
-    public static byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
-                                                                            { 1, 1, 2, 3, 0, 1, 5, 1 },
-                                                                            { 2, 0, 1, 2, 2, 3, 4, 2 },
-                                                                            { 3, 3, 4, 5, 1, 2, 3, 3 },
-                                                                            { 4, 2, 3, 4, 0, 4, 5, 4 },
-                                                                            { 5, 0, 1, 5, 3, 4, 5, 5 } };
+    public static final byte[][] PARENT_TYPE_LOCAL_INDEX_TO_TYPE = new byte[][] { { 0, 0, 4, 5, 0, 1, 2, 0 },
+                                                                                  { 1, 1, 2, 3, 0, 1, 5, 1 },
+                                                                                  { 2, 0, 1, 2, 2, 3, 4, 2 },
+                                                                                  { 3, 3, 4, 5, 1, 2, 3, 3 },
+                                                                                  { 4, 2, 3, 4, 0, 4, 5, 4 },
+                                                                                  { 5, 0, 1, 5, 3, 4, 5, 5 } };
 
     /** Tet ID of the Root Simplex **/
-    public static Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+    public static final Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
-    public static Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+    public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+    public static final int MAX_COORD    = (1 << 21) - 1;
+
+    /**
+     * Calculate the Morton index for a given point and level
+     *
+     * @param point the 3D point
+     * @param level the refinement level
+     * @return the Morton index
+     *
+     * Note: Morton encoding uses 21-bit coordinates. The maximum coordinate value that can be encoded is 2^21 - 1 =
+     * 2,097,151. Coordinates beyond this range will wrap around due to bit masking in the MortonCurve.encode method. At
+     * level 0, the cell length is 2^21 = 2,097,152, which exceeds the maximum encodable coordinate.
+     */
+    public static long calculateMortonIndex(Point3f point, byte level) {
+        var length = lengthAtLevel(level);
+        int quantizedX = (int) (Math.floor(point.x / length) * length);
+        int quantizedY = (int) (Math.floor(point.y / length) * length);
+        int quantizedZ = (int) (Math.floor(point.z / length) * length);
+
+        // Warn if coordinates will overflow (only in debug/development)
+        // Note: Negative coordinates will be wrapped by the cast to int and then by Morton encoding
+        assert (quantizedX & MAX_COORD) == quantizedX || quantizedX < 0 : String.format(
+        "X coordinate %d exceeds 21-bit range, will wrap to %d", quantizedX, quantizedX & MAX_COORD);
+        assert (quantizedY & MAX_COORD) == quantizedY || quantizedY < 0 : String.format(
+        "Y coordinate %d exceeds 21-bit range, will wrap to %d", quantizedY, quantizedY & MAX_COORD);
+        assert (quantizedZ & MAX_COORD) == quantizedZ || quantizedZ < 0 : String.format(
+        "Z coordinate %d exceeds 21-bit range, will wrap to %d", quantizedZ, quantizedZ & MAX_COORD);
+
+        return MortonCurve.encode(quantizedX, quantizedY, quantizedZ);
+    }
 
     /** maximum level we can accommodate without overflow **/
     public static byte getMaxRefinementLevel() {
@@ -106,6 +144,7 @@ public class Constants {
      * @return the length of an edge at the given level, in integer coordinates
      */
     public static int lengthAtLevel(byte level) {
+        assert level <= getMaxRefinementLevel();
         return 1 << (getMaxRefinementLevel() - level);
     }
 

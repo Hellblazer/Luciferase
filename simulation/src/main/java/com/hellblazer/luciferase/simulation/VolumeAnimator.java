@@ -17,7 +17,7 @@
 
 package com.hellblazer.luciferase.simulation;
 
-import com.hellblazer.luciferase.lucien.Tet;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;

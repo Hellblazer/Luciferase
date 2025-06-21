@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.portal.tree;
 
 import com.hellblazer.luciferase.lucien.Constants;
-import com.hellblazer.luciferase.lucien.Octant;
+import com.hellblazer.luciferase.lucien.octree.Octant;
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
