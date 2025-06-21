@@ -3,6 +3,15 @@ package com.hellblazer.luciferase.geometry;
 /**
  * Encode/decode 64-bit 3D coordinates to Morton codes (Z-order curve)
  * Based on libmorton library implementation
+ * 
+ * This implementation uses 21-bit coordinates for 3D Morton encoding, which
+ * allows encoding coordinates in the range [0, 2^21-1] = [0, 2,097,151].
+ * Coordinates outside this range will be masked to 21 bits, causing wraparound.
+ * 
+ * The bit interleaving pattern for 3D Morton codes is:
+ * - X bits occupy positions: 0, 3, 6, 9, 12, 15, 18, 21, ...
+ * - Y bits occupy positions: 1, 4, 7, 10, 13, 16, 19, 22, ...
+ * - Z bits occupy positions: 2, 5, 8, 11, 14, 17, 20, 23, ...
  */
 public class MortonCurve {
 

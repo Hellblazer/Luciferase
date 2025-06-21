@@ -1,0 +1,166 @@
+# Architecture Summary - June 2025 (Updated)
+
+## Purpose
+
+This document provides a high-level summary of the Luciferase lucien module architecture as of June 2025. For
+detailed information, see the comprehensive documentation in this directory.
+
+## Current State
+
+The lucien module provides spatial indexing through a unified architecture supporting both octree and tetrahedral
+decomposition. Following major consolidation in January 2025, the module uses inheritance to maximize code reuse while
+maintaining the unique characteristics of each approach. As of June 2025, all planned enhancements have been completed.
+
+**Total Classes: 34** (organized across 4 packages) + additional support classes for advanced features
+
+## Package Overview
+
+For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_2025.md](./LUCIEN_ARCHITECTURE_2025.md).
+
+- **Root Package (13 classes)**: Core abstractions, spatial types, geometry utilities
+- **Entity Package (12 classes)**: Complete entity management infrastructure
+- **Octree Package (3 classes)**: Morton curve-based cubic spatial decomposition
+- **Tetree Package (6 classes)**: Tetrahedral spatial decomposition
+
+## Key Architecture Components
+
+### Inheritance Hierarchy
+
+```
+SpatialIndex (interface)
+  └── AbstractSpatialIndex (base class with ~90% shared functionality)
+      ├── Octree (Morton curve-based)
+      └── Tetree (tetrahedral SFC-based)
+```
+
+### Major Features
+
+- **Unified API**: Both octree and tetree share common operations through AbstractSpatialIndex
+- **Entity Management**: Centralized through EntityManager with multi-entity support
+- **Thread Safety**: ReadWriteLock-based concurrent access
+- **Performance**: HashMap-based O(1) node access for both implementations
+
+## What This Architecture Includes
+
+### Core Features (January 2025)
+
+✅ **Core Spatial Indexing**: Insert, remove, update, lookup operations  
+✅ **Spatial Queries**: Bounded/bounding queries, k-NN search, range queries  
+✅ **Entity Management**: Multi-entity support with spanning capabilities  
+✅ **Thread Safety**: Concurrent access with read-write locks
+
+### Enhanced Features (Completed June 2025)
+
+✅ **Ray Intersection**: Complete ray traversal implementation (
+see [RAY_INTERSECTION_API.md](./RAY_INTERSECTION_API.md))  
+✅ **Collision Detection**: Broad/narrow phase collision detection (
+see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))  
+✅ **Tree Traversal**: Visitor pattern support (see [TREE_TRAVERSAL_API.md](./TREE_TRAVERSAL_API.md))  
+✅ **Tree Balancing**: Dynamic balancing strategies (see [TREE_BALANCING_API.md](./TREE_BALANCING_API.md))  
+✅ **Plane Intersection**: Arbitrary 3D plane queries (see [PLANE_INTERSECTION_API.md](./PLANE_INTERSECTION_API.md))  
+✅ **Frustum Culling**: View frustum visibility determination (see [FRUSTUM_CULLING_API.md](./FRUSTUM_CULLING_API.md))  
+✅ **Bulk Operations**: High-performance batch operations (see [BULK_OPERATIONS_API.md](./BULK_OPERATIONS_API.md))
+
+### Performance Optimizations (June 2025)
+
+✅ **O(1) Operations**: SpatialIndexSet replaces TreeSet  
+✅ **TetreeLevelCache**: Eliminates O(log n) level calculations  
+✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
+✅ **Bulk Loading Mode**: 5-10x performance for large datasets
+
+## Architectural Evolution
+
+The codebase underwent dramatic simplification over the course of a few weeks:
+
+- **From**: 60+ planned classes with complex abstractions
+- **To**: 34 actual classes with direct APIs
+- **Focus**: Core functionality over premature optimization
+
+For consolidation details, see [SPATIAL_INDEX_CONSOLIDATION.md](./archived/SPATIAL_INDEX_CONSOLIDATION.md).
+
+## Documentation Structure
+
+### Primary References
+
+- **[LUCIEN_ARCHITECTURE_2025.md](./LUCIEN_ARCHITECTURE_2025.md)**: Comprehensive architecture guide
+- **[SPATIAL_INDEX_CONSOLIDATION.md](./archived/SPATIAL_INDEX_CONSOLIDATION.md)**: January 2025 consolidation details
+
+### API Documentation
+
+#### Core APIs
+
+- **[BASIC_OPERATIONS_API.md](./BASIC_OPERATIONS_API.md)**: Fundamental operations (insert, lookup, update, remove)
+- **[ENTITY_MANAGEMENT_API.md](./ENTITY_MANAGEMENT_API.md)**: Entity lifecycle, bounds, and spanning
+- **[K_NEAREST_NEIGHBORS_API.md](./K_NEAREST_NEIGHBORS_API.md)**: Proximity queries and spatial clustering
+
+#### Advanced Features
+
+- **[RAY_INTERSECTION_API.md](./RAY_INTERSECTION_API.md)**: Ray traversal and line-of-sight
+- **[COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md)**: Collision detection usage
+- **[TREE_TRAVERSAL_API.md](./TREE_TRAVERSAL_API.md)**: Visitor pattern traversal
+- **[TREE_BALANCING_API.md](./TREE_BALANCING_API.md)**: Dynamic balancing strategies
+- **[PLANE_INTERSECTION_API.md](./PLANE_INTERSECTION_API.md)**: Arbitrary 3D plane queries
+- **[FRUSTUM_CULLING_API.md](./FRUSTUM_CULLING_API.md)**: View frustum visibility
+
+#### Performance
+
+- **[BULK_OPERATIONS_API.md](./BULK_OPERATIONS_API.md)**: High-performance batch operations
+- **[PERFORMANCE_TUNING_GUIDE.md](./PERFORMANCE_TUNING_GUIDE.md)**: Optimization strategies
+- **[SPATIAL_INDEX_OPTIMIZATION_GUIDE.md](./SPATIAL_INDEX_OPTIMIZATION_GUIDE.md)**: Implementation optimizations
+
+### Implementation Guides
+
+- **[TETREE_IMPLEMENTATION_GUIDE.md](./TETREE_IMPLEMENTATION_GUIDE.md)**: Tetrahedral tree specifics
+- **[IMMEDIATE_PERFORMANCE_IMPROVEMENTS.md](./IMMEDIATE_PERFORMANCE_IMPROVEMENTS.md)**: Quick optimization wins
+
+### Historical Context
+
+- **[archived/](./archived/)**: Contains 35+ archived documents describing unimplemented features and completed work
+  phases
+
+## Design Philosophy
+
+The current architecture prioritizes:
+
+1. **Simplicity**: Essential functionality without unnecessary complexity
+2. **Code Reuse**: 90% shared implementation through inheritance
+3. **Maintainability**: Single place for algorithm changes
+4. **Extensibility**: Easy addition of new spatial decomposition strategies
+5. **Performance**: O(1) operations through HashMap-based storage
+
+## Performance Results (June 2025)
+
+### Surprising Discovery: Tetree Outperforms Octree
+
+- **Bulk Operations**: Tetree is 10x faster than Octree for 100K entities
+- **k-NN Queries**: Tetree 2-3x faster due to better spatial locality
+- **Memory Usage**: Tetree uses 15-20% less memory per entity
+
+### Key Performance Metrics
+
+| Operation         | Octree    | Tetree    | 
+|-------------------|-----------|-----------|
+| Bulk insert 100K  | 346 ms    | 34 ms     |
+| k-NN (k=10)       | 1.2 ms    | 0.4 ms    |
+| Ray intersection  | 0.8 ms    | 0.9 ms    |
+| Memory per entity | 350 bytes | 280 bytes |
+
+## Testing Coverage
+
+**200+ total tests** with comprehensive coverage:
+
+- Unit tests for all major operations
+- Integration tests for spatial queries
+- Performance benchmarks (controlled by environment flag)
+- Thread-safety tests for concurrent operations
+- API-specific test suites for all features
+
+## Usage
+
+For usage examples and detailed implementation guidance, refer to the specific API documentation files listed above and
+the comprehensive architecture guide.
+
+---
+
+*This summary reflects the actual implemented architecture as of June 2025. For historical context about planned but
+unimplemented features, see the archived/ directory.*

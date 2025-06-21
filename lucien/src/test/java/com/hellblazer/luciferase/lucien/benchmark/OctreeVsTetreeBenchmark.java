@@ -1,0 +1,335 @@
+package com.hellblazer.luciferase.lucien.benchmark;
+
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+
+import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+
+/**
+ * Head-to-head performance comparison of Octree vs Tetree
+ */
+public class OctreeVsTetreeBenchmark {
+    
+    @BeforeEach
+    void checkEnvironment() {
+        // Skip if running in any CI environment
+        assumeFalse(CIEnvironmentCheck.isRunningInCI(), CIEnvironmentCheck.getSkipMessage());
+    }
+
+    private static final int   WARMUP_ITERATIONS    = 100;
+    private static final int   BENCHMARK_ITERATIONS = 1000;
+    private static final int[] ENTITY_COUNTS        = { 100, 1000, 10000, 50000 };
+    private static final int   K_NEIGHBORS          = 10;
+    private static final float SEARCH_RADIUS        = 50.0f;
+    private static final byte  TEST_LEVEL           = 10;
+
+    @Test
+    public void comparePerformance() {
+        System.out.println("=== OCTREE vs TETREE PERFORMANCE COMPARISON ===");
+        System.out.println("Platform: " + System.getProperty("os.name") + " " + System.getProperty("os.arch"));
+        System.out.println("JVM: " + System.getProperty("java.vm.name") + " " + System.getProperty("java.version"));
+        System.out.println("Processors: " + Runtime.getRuntime().availableProcessors());
+        System.out.println("Memory: " + (Runtime.getRuntime().maxMemory() / 1024 / 1024) + " MB");
+        System.out.println();
+
+        for (int entityCount : ENTITY_COUNTS) {
+            System.out.println("\n=== Testing with " + entityCount + " entities ===");
+            runComparison(entityCount);
+        }
+    }
+
+    private long benchmarkInsertion(Octree<LongEntityID, String> index, List<TestEntity> entities) {
+        // Warmup
+        for (int i = 0; i < Math.min(WARMUP_ITERATIONS, entities.size()); i++) {
+            TestEntity e = entities.get(i);
+            index.insert(e.id, e.position, TEST_LEVEL, e.data);
+        }
+        // Clear all entities
+        for (TestEntity e : entities.subList(0, Math.min(WARMUP_ITERATIONS, entities.size()))) {
+            index.removeEntity(e.id);
+        }
+
+        // Benchmark
+        long start = System.nanoTime();
+        for (TestEntity e : entities) {
+            index.insert(e.id, e.position, TEST_LEVEL, e.data);
+        }
+        return System.nanoTime() - start;
+    }
+
+    private long benchmarkInsertion(Tetree<LongEntityID, String> index, List<TestEntity> entities) {
+        // Warmup
+        for (int i = 0; i < Math.min(WARMUP_ITERATIONS, entities.size()); i++) {
+            TestEntity e = entities.get(i);
+            index.insert(e.id, e.position, TEST_LEVEL, e.data);
+        }
+        // Clear all entities
+        for (TestEntity e : entities.subList(0, Math.min(WARMUP_ITERATIONS, entities.size()))) {
+            index.removeEntity(e.id);
+        }
+
+        // Benchmark
+        long start = System.nanoTime();
+        for (TestEntity e : entities) {
+            index.insert(e.id, e.position, TEST_LEVEL, e.data);
+        }
+        return System.nanoTime() - start;
+    }
+
+    private long benchmarkKNN(Octree<LongEntityID, String> index, List<Point3f> queryPoints) {
+        long totalTime = 0;
+        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+            Point3f query = queryPoints.get(i % queryPoints.size());
+            long start = System.nanoTime();
+            index.kNearestNeighbors(query, K_NEIGHBORS, Float.MAX_VALUE);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / BENCHMARK_ITERATIONS;
+    }
+
+    private long benchmarkKNN(Tetree<LongEntityID, String> index, List<Point3f> queryPoints) {
+        long totalTime = 0;
+        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+            Point3f query = queryPoints.get(i % queryPoints.size());
+            long start = System.nanoTime();
+            index.kNearestNeighbors(query, K_NEIGHBORS, Float.MAX_VALUE);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / BENCHMARK_ITERATIONS;
+    }
+
+    private long benchmarkRangeQuery(Octree<LongEntityID, String> index, List<Point3f> queryPoints) {
+        long totalTime = 0;
+        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+            Point3f center = queryPoints.get(i % queryPoints.size());
+            long start = System.nanoTime();
+            // Use k-NN with limited radius for range query
+            index.kNearestNeighbors(center, Integer.MAX_VALUE, SEARCH_RADIUS);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / BENCHMARK_ITERATIONS;
+    }
+
+    private long benchmarkRangeQuery(Tetree<LongEntityID, String> index, List<Point3f> queryPoints) {
+        long totalTime = 0;
+        for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+            Point3f center = queryPoints.get(i % queryPoints.size());
+            long start = System.nanoTime();
+            // Use k-NN with limited radius for range query
+            index.kNearestNeighbors(center, Integer.MAX_VALUE, SEARCH_RADIUS);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / BENCHMARK_ITERATIONS;
+    }
+
+    private long benchmarkRemoval(Octree<LongEntityID, String> index, List<TestEntity> entities) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int removals = Math.min(1000, entities.size());
+        long totalTime = 0;
+
+        for (int i = 0; i < removals; i++) {
+            TestEntity e = entities.get(random.nextInt(entities.size()));
+            long start = System.nanoTime();
+            index.removeEntity(e.id);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / removals;
+    }
+
+    private long benchmarkRemoval(Tetree<LongEntityID, String> index, List<TestEntity> entities) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int removals = Math.min(1000, entities.size());
+        long totalTime = 0;
+
+        for (int i = 0; i < removals; i++) {
+            TestEntity e = entities.get(random.nextInt(entities.size()));
+            long start = System.nanoTime();
+            index.removeEntity(e.id);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / removals;
+    }
+
+    private long benchmarkUpdate(Octree<LongEntityID, String> index, List<TestEntity> entities) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int updates = Math.min(1000, entities.size());
+        long totalTime = 0;
+
+        for (int i = 0; i < updates; i++) {
+            TestEntity e = entities.get(random.nextInt(entities.size()));
+            // Move within 5% of current position to stay within valid bounds
+            float moveRange = 50.0f; // 5% of 1000 max coordinate
+            Point3f newPos = new Point3f(e.position.x + random.nextFloat(-moveRange, moveRange),
+                                         e.position.y + random.nextFloat(-moveRange, moveRange),
+                                         e.position.z + random.nextFloat(-moveRange, moveRange));
+            // Clamp to valid coordinate range [0.1, 999.9]
+            newPos.x = Math.max(0.1f, Math.min(999.9f, newPos.x));
+            newPos.y = Math.max(0.1f, Math.min(999.9f, newPos.y));
+            newPos.z = Math.max(0.1f, Math.min(999.9f, newPos.z));
+
+            long start = System.nanoTime();
+            index.updateEntity(e.id, newPos, TEST_LEVEL);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / updates;
+    }
+
+    private long benchmarkUpdate(Tetree<LongEntityID, String> index, List<TestEntity> entities) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        int updates = Math.min(1000, entities.size());
+        long totalTime = 0;
+
+        for (int i = 0; i < updates; i++) {
+            TestEntity e = entities.get(random.nextInt(entities.size()));
+            Point3f newPos = new Point3f(Math.max(0.1f, e.position.x + random.nextFloat(-10, 10)),
+                                         Math.max(0.1f, e.position.y + random.nextFloat(-10, 10)),
+                                         Math.max(0.1f, e.position.z + random.nextFloat(-10, 10)));
+
+            long start = System.nanoTime();
+            index.updateEntity(e.id, newPos, TEST_LEVEL);
+            totalTime += System.nanoTime() - start;
+        }
+        return totalTime / updates;
+    }
+
+    private List<TestEntity> generateEntities(int count) {
+        List<TestEntity> entities = new ArrayList<>(count);
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+
+        for (int i = 0; i < count; i++) {
+            entities.add(new TestEntity(new LongEntityID(i),
+                                        new Point3f(random.nextFloat(0, 1000), random.nextFloat(0, 1000),
+                                                    random.nextFloat(0, 1000)), "Entity" + i));
+        }
+        return entities;
+    }
+
+    private List<Point3f> generateQueryPoints(int count) {
+        List<Point3f> points = new ArrayList<>(count);
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+
+        for (int i = 0; i < count; i++) {
+            points.add(new Point3f(random.nextFloat(0, 1000), random.nextFloat(0, 1000), random.nextFloat(0, 1000)));
+        }
+        return points;
+    }
+
+    private long getUsedMemory() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+
+    private void measureMemoryUsage(int entityCount) {
+        System.gc();
+        long baseMemory = getUsedMemory();
+
+        // Measure Octree memory
+        SequentialLongIDGenerator idGen1 = new SequentialLongIDGenerator();
+        Octree<LongEntityID, String> octree = new Octree<>(idGen1);
+        List<TestEntity> entities = generateEntities(entityCount);
+        for (TestEntity e : entities) {
+            octree.insert(e.id, e.position, TEST_LEVEL, e.data);
+        }
+        System.gc();
+        long octreeMemory = getUsedMemory() - baseMemory;
+
+        // Clear and measure Tetree memory
+        octree = null;
+        System.gc();
+        baseMemory = getUsedMemory();
+
+        SequentialLongIDGenerator idGen2 = new SequentialLongIDGenerator();
+        Tetree<LongEntityID, String> tetree = new Tetree<>(idGen2);
+        for (TestEntity e : entities) {
+            tetree.insert(e.id, e.position, TEST_LEVEL, e.data);
+        }
+        System.gc();
+        long tetreeMemory = getUsedMemory() - baseMemory;
+
+        System.out.printf("Octree Memory: %.2f MB%n", octreeMemory / 1024.0 / 1024.0);
+        System.out.printf("Tetree Memory: %.2f MB (%.1f%% of Octree)%n", tetreeMemory / 1024.0 / 1024.0,
+                          (tetreeMemory * 100.0) / octreeMemory);
+    }
+
+    private void printComparison(String operation, long octreeTime, long tetreeTime, int operations) {
+        double octreeMs = octreeTime / 1_000_000.0;
+        double tetreeMs = tetreeTime / 1_000_000.0;
+        double ratio = tetreeMs / octreeMs;
+        String winner = octreeTime < tetreeTime ? "Octree" : "Tetree";
+        double speedup = Math.max(octreeMs, tetreeMs) / Math.min(octreeMs, tetreeMs);
+
+        System.out.printf("Octree: %.3f ms%n", octreeMs);
+        System.out.printf("Tetree: %.3f ms (%.2fx)%n", tetreeMs, ratio);
+        System.out.printf("Winner: %s (%.1fx faster)%n", winner, speedup);
+
+        if (operations > 1) {
+            System.out.printf("Per-operation: Octree=%.3f μs, Tetree=%.3f μs%n", (octreeTime / 1000.0) / operations,
+                              (tetreeTime / 1000.0) / operations);
+        }
+    }
+
+    private void runComparison(int entityCount) {
+        // Generate test data
+        List<TestEntity> entities = generateEntities(entityCount);
+        List<Point3f> queryPoints = generateQueryPoints(100);
+
+        // Create indices
+        SequentialLongIDGenerator idGen = new SequentialLongIDGenerator();
+        Octree<LongEntityID, String> octree = new Octree<>(idGen);
+        Tetree<LongEntityID, String> tetree = new Tetree<>(idGen);
+
+        // 1. Insertion Performance
+        System.out.println("\n1. INSERTION PERFORMANCE:");
+        long octreeInsertTime = benchmarkInsertion(octree, entities);
+        long tetreeInsertTime = benchmarkInsertion(tetree, entities);
+        printComparison("Insertion", octreeInsertTime, tetreeInsertTime, entityCount);
+
+        // 2. K-NN Search Performance
+        System.out.println("\n2. K-NEAREST NEIGHBOR SEARCH:");
+        long octreeKnnTime = benchmarkKNN(octree, queryPoints);
+        long tetreeKnnTime = benchmarkKNN(tetree, queryPoints);
+        printComparison("K-NN Search", octreeKnnTime, tetreeKnnTime, queryPoints.size());
+
+        // 3. Range Query Performance
+        System.out.println("\n3. RANGE QUERY PERFORMANCE:");
+        long octreeRangeTime = benchmarkRangeQuery(octree, queryPoints);
+        long tetreeRangeTime = benchmarkRangeQuery(tetree, queryPoints);
+        printComparison("Range Query", octreeRangeTime, tetreeRangeTime, queryPoints.size());
+
+        // 4. Update Performance
+        System.out.println("\n4. UPDATE PERFORMANCE:");
+        long octreeUpdateTime = benchmarkUpdate(octree, entities);
+        long tetreeUpdateTime = benchmarkUpdate(tetree, entities);
+        printComparison("Update", octreeUpdateTime, tetreeUpdateTime, Math.min(1000, entityCount));
+
+        // 5. Removal Performance
+        System.out.println("\n5. REMOVAL PERFORMANCE:");
+        long octreeRemoveTime = benchmarkRemoval(octree, entities);
+        long tetreeRemoveTime = benchmarkRemoval(tetree, entities);
+        printComparison("Removal", octreeRemoveTime, tetreeRemoveTime, Math.min(1000, entityCount));
+
+        // 6. Memory Usage
+        System.out.println("\n6. MEMORY USAGE:");
+        measureMemoryUsage(entityCount);
+    }
+
+    private static class TestEntity {
+        final LongEntityID id;
+        final Point3f      position;
+        final String       data;
+
+        TestEntity(LongEntityID id, Point3f position, String data) {
+            this.id = id;
+            this.position = position;
+            this.data = data;
+        }
+    }
+}
