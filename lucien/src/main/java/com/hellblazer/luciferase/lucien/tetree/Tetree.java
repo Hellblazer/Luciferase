@@ -32,6 +32,54 @@ import java.util.stream.Stream;
  * Key constraints: - All coordinates must be positive (tetrahedral SFC requirement) - Points must be within the S0
  * tetrahedron domain - Each grid cell contains 6 tetrahedra (types 0-5)
  *
+ * <h2>Performance Monitoring</h2>
+ * <p>The Tetree includes optional performance monitoring capabilities to help analyze and optimize spatial operations.
+ * Performance monitoring is disabled by default to avoid overhead in production use.</p>
+ *
+ * <h3>Enabling Performance Monitoring</h3>
+ * <pre>{@code
+ * Tetree<LongEntityID, String> tetree = new Tetree<>(new SequentialLongIDGenerator());
+ * tetree.setPerformanceMonitoring(true);
+ * 
+ * // Perform operations...
+ * 
+ * // Retrieve metrics
+ * TetreeMetrics metrics = tetree.getMetrics();
+ * System.out.println(metrics.getSummary());
+ * }</pre>
+ *
+ * <h3>Monitored Operations</h3>
+ * <ul>
+ *   <li><b>Neighbor Queries</b> - Tracks time spent finding face, edge, and vertex neighbors</li>
+ *   <li><b>Tree Traversals</b> - Monitors traversal performance (not currently tracked)</li>
+ *   <li><b>Cache Performance</b> - Reports hit rate for TetreeLevelCache operations</li>
+ * </ul>
+ *
+ * <h3>Performance Metrics</h3>
+ * <p>The {@link TetreeMetrics} record provides:</p>
+ * <ul>
+ *   <li>Tree structure statistics (node count, depth, balance)</li>
+ *   <li>Cache hit rate percentage</li>
+ *   <li>Average neighbor query time in nanoseconds</li>
+ *   <li>Total operation counts</li>
+ * </ul>
+ *
+ * <h3>Use Cases</h3>
+ * <ol>
+ *   <li><b>Development/Testing</b> - Identify performance bottlenecks during development</li>
+ *   <li><b>Benchmarking</b> - Compare performance across different data distributions</li>
+ *   <li><b>Optimization</b> - Measure impact of code changes on performance</li>
+ *   <li><b>Debugging</b> - Understand tree structure and operation patterns</li>
+ * </ol>
+ *
+ * <h3>Performance Impact</h3>
+ * <p>When disabled (default), monitoring has zero overhead. When enabled, the impact is minimal:</p>
+ * <ul>
+ *   <li>~10-20 nanoseconds per monitored operation for timing</li>
+ *   <li>Simple counter increments for operation counts</li>
+ *   <li>No memory allocation during operations</li>
+ * </ul>
+ *
  * @param <ID>      The type of EntityID used
  * @param <Content> The type of content stored
  * @author hal.hildebrand
