@@ -42,6 +42,30 @@ import java.util.stream.Stream;
  * configuration, and basic spatial operations while allowing concrete implementations to specialize the spatial
  * decomposition strategy.
  *
+ * <h2>Thread Safety and Locking Strategy</h2>
+ * <p>This class uses a {@link ReadWriteLock} to ensure thread-safe access to the spatial index and entity data.
+ * The locking strategy follows these principles:</p>
+ * <ul>
+ *   <li><b>Read locks</b> for query operations (entity lookups, spatial queries, statistics)</li>
+ *   <li><b>Write locks</b> for modification operations (insert, remove, update, tree restructuring)</li>
+ *   <li><b>Lock ordering</b> to prevent deadlocks when acquiring multiple locks</li>
+ *   <li><b>Minimal lock scope</b> to maximize concurrency</li>
+ * </ul>
+ *
+ * <h3>Why Entity Delegation Methods Need Locking</h3>
+ * <p>Although methods like {@code containsEntity()}, {@code getEntity()}, and {@code entityCount()} simply
+ * delegate to the EntityManager, they must acquire read locks because:</p>
+ * <ol>
+ *   <li><b>Consistency:</b> Prevents entity state from changing during the operation</li>
+ *   <li><b>Atomicity:</b> Ensures batch operations see a consistent snapshot</li>
+ *   <li><b>Memory visibility:</b> Guarantees changes made by other threads are visible</li>
+ *   <li><b>Race condition prevention:</b> Avoids issues like an entity being removed between
+ *       existence check and content retrieval</li>
+ * </ol>
+ *
+ * <p>The overhead of read locks is minimal as they allow multiple concurrent readers, only blocking
+ * writers during the operation.</p>
+ *
  * @param <ID>       The type of EntityID used
  * @param <Content>  The type of content stored
  * @param <NodeType> The type of spatial node used by the implementation
@@ -263,6 +287,20 @@ implements SpatialIndex<ID, Content> {
         this.parallelOperations = new ParallelBulkOperations<>(this, bulkProcessor, config);
     }
 
+    /**
+     * Check if an entity exists in the spatial index.
+     * 
+     * <p>This method delegates to the EntityManager but adds thread-safe locking to ensure
+     * consistency in concurrent environments. The read lock allows multiple threads to check
+     * entity existence simultaneously while preventing modifications during the check.</p>
+     * 
+     * <p><b>Why locking is necessary:</b> Even though this is a simple delegation, the EntityManager's
+     * internal state could be modified by other threads during the check. The read lock ensures
+     * a consistent view of the entity state.</p>
+     *
+     * @param entityId the ID of the entity to check
+     * @return true if the entity exists in the spatial index
+     */
     @Override
     public boolean containsEntity(ID entityId) {
         lock.readLock().lock();
@@ -284,6 +322,19 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    /**
+     * Get the total number of entities in the spatial index.
+     * 
+     * <p>This method provides thread-safe access to the entity count by acquiring a read lock.
+     * Multiple threads can read the count simultaneously, but modifications are blocked during
+     * the read to ensure accuracy.</p>
+     * 
+     * <p><b>Thread safety rationale:</b> Without locking, the count could change between the
+     * method call and return, potentially causing issues in code that relies on accurate counts
+     * for resource allocation or iteration bounds.</p>
+     *
+     * @return the number of entities currently stored in the spatial index
+     */
     @Override
     public int entityCount() {
         lock.readLock().lock();
@@ -761,6 +812,19 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    /**
+     * Get content for multiple entities in a single operation.
+     * 
+     * <p>Batch retrieval with thread-safe locking. The read lock ensures consistency across
+     * all entity retrievals, preventing partial updates where some entities might be modified
+     * during the batch operation.</p>
+     * 
+     * <p><b>Atomicity guarantee:</b> All entities are retrieved under the same lock, ensuring
+     * a consistent snapshot of the entity state at a single point in time.</p>
+     *
+     * @param entityIds list of entity IDs to retrieve
+     * @return list of content objects corresponding to the entity IDs
+     */
     @Override
     public List<Content> getEntities(List<ID> entityIds) {
         lock.readLock().lock();
@@ -771,6 +835,19 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    /**
+     * Get all entities with their current positions.
+     * 
+     * <p>Returns a consistent snapshot of all entity positions. The read lock prevents
+     * entities from being added, removed, or moved during the operation, ensuring the
+     * returned map accurately represents the spatial state at a single moment.</p>
+     * 
+     * <p><b>Use case:</b> This method is particularly useful for visualization, debugging,
+     * or algorithms that need a complete spatial snapshot without interference from
+     * concurrent modifications.</p>
+     *
+     * @return map of entity IDs to their current positions
+     */
     @Override
     public Map<ID, Point3f> getEntitiesWithPositions() {
         lock.readLock().lock();
@@ -781,6 +858,20 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    /**
+     * Get the content associated with an entity.
+     * 
+     * <p>Provides thread-safe access to entity content. The read lock ensures that the entity
+     * won't be removed or modified while retrieving its content, preventing null pointer
+     * exceptions or returning stale data.</p>
+     * 
+     * <p><b>Concurrency consideration:</b> In a multi-threaded environment, an entity could be
+     * removed between checking its existence and retrieving its content. The read lock prevents
+     * this race condition.</p>
+     *
+     * @param entityId the ID of the entity
+     * @return the content associated with the entity, or null if not found
+     */
     @Override
     public Content getEntity(ID entityId) {
         lock.readLock().lock();
