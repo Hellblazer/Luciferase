@@ -139,6 +139,7 @@ Historical documents (describe unimplemented features):
     - **Tetree.ensureAncestorNodes()**: Uses cached parent chains for O(1) ancestor creation
     - **Memory overhead**: ~120KB for all caches combined (negligible for practical use)
     - **Result**: Tetree now matches Octree performance for all common operations
+- read TETREE_CUBE_ID_GAP_ANALYSIS_CORRECTED.md as this establishes that the Tet.cubeId method is correct beyond doubt
 
 ## 🎯 CURRENT STATUS (June 2025)
 

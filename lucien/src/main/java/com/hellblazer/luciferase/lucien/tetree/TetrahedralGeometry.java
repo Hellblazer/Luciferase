@@ -159,6 +159,33 @@ public class TetrahedralGeometry {
             rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
         }
 
+        // If ray starts inside, return distance 0 immediately
+        if (rayStartsInside) {
+            // Find the exit point if needed
+            float closestDistance = Float.MAX_VALUE;
+            Point3f closestIntersection = null;
+            Vector3f closestNormal = null;
+            int closestFace = -1;
+
+            // Test intersection with each tetrahedral face to find exit point
+            for (int face = 0; face < 4; face++) {
+                Point3i[] faceVertices = getFaceVertices(vertices, face);
+
+                // Test ray-triangle intersection
+                var intersection = rayTriangleIntersection(ray, faceVertices);
+                if (intersection.intersects && intersection.distance > EPSILON && intersection.distance < closestDistance) {
+                    closestDistance = intersection.distance;
+                    closestIntersection = intersection.intersectionPoint;
+                    closestNormal = intersection.normal;
+                    closestFace = face;
+                }
+            }
+
+            // Return with distance 0 since ray starts inside
+            return new RayTetrahedronIntersection(true, 0.0f, ray.origin(), closestNormal, closestFace);
+        }
+
+        // Ray starts outside - find entry point
         float closestDistance = Float.MAX_VALUE;
         Point3f closestIntersection = null;
         Vector3f closestNormal = null;
@@ -175,18 +202,6 @@ public class TetrahedralGeometry {
                 closestIntersection = intersection.intersectionPoint;
                 closestNormal = intersection.normal;
                 closestFace = face;
-            }
-        }
-
-        // If ray starts inside the tetrahedron, we have an intersection
-        if (rayStartsInside) {
-            if (closestIntersection != null) {
-                // Ray exits the tetrahedron
-                return new RayTetrahedronIntersection(true, closestDistance, closestIntersection, closestNormal,
-                                                      closestFace);
-            } else {
-                // Ray doesn't exit within maxDistance, but still intersects
-                return new RayTetrahedronIntersection(true, 0.0f, ray.origin(), null, -1);
             }
         }
 

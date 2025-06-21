@@ -636,9 +636,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
         int h = 1 << (getMaxRefinementLevel() - level);
         byte id = 0;
-        id |= ((x & h) > 0 ? (byte) 1 : 0);
-        id |= ((y & h) > 0 ? (byte) 2 : 0);
-        id |= ((z & h) > 0 ? (byte) 4 : 0);
+        id |= ((x & h) != 0 ? (byte) 1 : 0);
+        id |= ((y & h) != 0 ? (byte) 2 : 0);
+        id |= ((z & h) != 0 ? (byte) 4 : 0);
         return id;
     }
 
