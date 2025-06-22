@@ -206,7 +206,9 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
     public long[] findAllFaceNeighbors(long tetIndex) {
         long startTime = performanceMonitoringEnabled ? System.nanoTime() : 0;
 
-        Tet tet = Tet.tetrahedron(tetIndex);
+        // Get level from the SFC index
+        byte level = Tet.tetLevelFromIndex(tetIndex);
+        Tet tet = Tet.tetrahedron(tetIndex, level);
         long[] neighbors = new long[4];
         for (int i = 0; i < 4; i++) {
             Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, i);

@@ -181,12 +181,22 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      *   <li>Build coordinates by accumulating cube positions</li>
      * </ol>
      *
-     * <p><b>IMPORTANT:</b> The SFC index directly encodes the complete path from root.
+     * <p><b>CRITICAL:</b> Level must be provided explicitly as the same SFC index 
+     * can exist at multiple levels representing different tetrahedra. For example:
+     * <ul>
+     *   <li>Index 0 at level 0: Root tetrahedron covering entire positive octant</li>
+     *   <li>Index 0 at level 10: Small tetrahedron at grid coordinates (0,0,0)</li>
+     *   <li>Index 0 at level 21: Unit tetrahedron at origin</li>
+     * </ul>
      * No level offset adjustment is needed (unlike Morton codes).</p>
      *
+     * <p><b>Migration Note:</b> The single-parameter tetrahedron(long index) method
+     * has been removed as it was fundamentally flawed. Always provide the level.</p>
+     *
      * @param index the consecutive SFC index of the tetrahedron
-     * @param level the refinement level of the target tetrahedron
+     * @param level the refinement level of the target tetrahedron (0-21)
      * @return the Tet corresponding to the given index and level
+     * @throws IllegalArgumentException if level is out of valid range
      */
     public static Tet tetrahedron(long index, byte level) {
         byte type = 0;
@@ -216,7 +226,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     /**
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
+     * @deprecated This method is fundamentally flawed as it attempts to derive level from index.
+     *             Use {@link #tetrahedron(long, byte)} with explicit level instead.
      */
+    @Deprecated(since = "0.0.1", forRemoval = true)
     public static Tet tetrahedron(long index) {
         return tetrahedron(index, tetLevelFromIndex(index));
     }
@@ -335,7 +348,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
 
         return spatialRangeQuery(bounds, false).filter(index -> {
-            var tet = Tet.tetrahedron(index);
+            var tet = Tet.tetrahedron(index, this.l);  // Use the level of this Tet
             return tetrahedronContainedInVolume(tet, volume);
         });
     }

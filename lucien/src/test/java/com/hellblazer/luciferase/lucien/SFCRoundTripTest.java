@@ -30,14 +30,9 @@ public class SFCRoundTripTest {
 
         for (long index : testIndices) {
             if (index < (1L << (3 * Constants.getMaxRefinementLevel()))) {
-                try {
-                    var tet = Tet.tetrahedron(index);
-                    long reconstructedIndex = tet.index();
-
-                    assertEquals(index, reconstructedIndex, "Index " + index + " should round-trip correctly");
-                } catch (Exception e) {
-                    // Some high indices may not be valid, which is acceptable
-                }
+                var tet = Tet.tetrahedron(index);
+                long reconstructedIndex = tet.index();
+                assertEquals(index, reconstructedIndex, "Index " + index + " should round-trip correctly");
             }
         }
     }
@@ -76,12 +71,12 @@ public class SFCRoundTripTest {
         // The key insight: we should test index -> tet -> index round-trip
         // Not arbitrary coordinate -> index -> level
 
-        for (byte level = 0; level <= 10; level++) {
+        for (byte level = 0; level <= 21; level++) {
             // For Tet SFC, all indices at a level are in range [0, 8^level - 1]
             long numTetsAtLevel = 1L << (3 * level);
 
             // Test a few indices at this level
-            for (int i = 0; i < Math.min(8, numTetsAtLevel); i++) {
+            for (int i = 0; i < Math.min(1024, numTetsAtLevel); i++) {
                 long testIndex = i;
 
                 // Skip index 0 for levels > 0 (it always has level 0)
@@ -125,7 +120,7 @@ public class SFCRoundTripTest {
 
         // Test SFC index round-trip: index -> tetrahedron -> index
         // This is the correct approach for SFC testing
-        for (byte level = 0; level <= 4; level++) {
+        for (byte level = 0; level <= 21; level++) {
             // Correct index range for Tet SFC: 0 to (8^level - 1)
             // The Tet SFC uses raw indices without level offsets
             long maxIndex = 1L << (3 * level); // 8^level
@@ -185,6 +180,16 @@ public class SFCRoundTripTest {
         long sfcIndex2 = sfcTet2.index();
         var sfcRoundTrip2 = Tet.tetrahedron(sfcIndex2);
         assertEquals(sfcTet2, sfcRoundTrip2, "SFC canonical form should round-trip perfectly");
+
+        // Test another case
+        var coordTet3 = new Tet(100, 100, 100, (byte) 15, (byte) 2);
+        long index3 = coordTet3.index();
+        var sfcTet3 = Tet.tetrahedron(index3);
+
+        // Verify the SFC canonical form round-trips
+        long sfcIndex3 = sfcTet3.index();
+        var sfcRoundTrip3 = Tet.tetrahedron(sfcIndex3);
+        assertEquals(sfcTet3, sfcRoundTrip3, "SFC canonical form should round-trip perfectly");
     }
 
     @Test
@@ -216,10 +221,7 @@ public class SFCRoundTripTest {
             long index = original.index();
             var reconstructed = Tet.tetrahedron(index);
 
-            if (!original.equals(reconstructed)) {
-                return false;
-            }
-            return true;
+            return original.equals(reconstructed);
         } catch (Exception e) {
             return false;
         }

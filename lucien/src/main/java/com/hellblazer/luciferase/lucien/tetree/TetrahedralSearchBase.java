@@ -29,6 +29,24 @@ public abstract class TetrahedralSearchBase {
      */
     protected static final float GEOMETRIC_TOLERANCE = 1e-6f;
 
+    // ===== Tetrahedral Distance Metrics =====
+
+    /**
+     * Distance metric for tetrahedral search operations
+     */
+    public enum TetrahedralDistanceMetric {
+        /** 3D Euclidean distance */
+        EUCLIDEAN,
+        /** Manhattan (L1) distance */
+        MANHATTAN,
+        /** Chebyshev (L∞) distance */
+        CHEBYSHEV,
+        /** Tetrahedral centroid distance (distance between tetrahedron centers) */
+        TETRAHEDRAL_CENTROID,
+        /** Minimum distance to tetrahedron surface */
+        TETRAHEDRAL_SURFACE
+    }
+
     /**
      * Aggregate simplicies based on the specified strategy
      *
@@ -247,13 +265,29 @@ public abstract class TetrahedralSearchBase {
      * @param point    the point to test (must have positive coordinates)
      * @param tetIndex the tetrahedral SFC index
      * @return true if point is inside the tetrahedron
+     * @deprecated This method loses level information. Use {@link #pointInTetrahedron(Point3f, Tet)} instead.
      */
+    @Deprecated(since = "0.0.1", forRemoval = true)
     protected static boolean pointInTetrahedron(Point3f point, long tetIndex) {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException("Point coordinates must be positive");
         }
 
         var tet = Tet.tetrahedron(tetIndex);
+        return pointInTetrahedron(point, tet);
+    }
+
+    /**
+     * Test if a point is inside a tetrahedron using the existing Tet.contains method
+     *
+     * @param point the point to test (must have positive coordinates)
+     * @param tet   the tetrahedron
+     * @return true if point is inside the tetrahedron
+     */
+    protected static boolean pointInTetrahedron(Point3f point, Tet tet) {
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException("Point coordinates must be positive");
+        }
 
         // Use the existing Tet.contains method which uses proper orientation tests
         return tet.contains(point);
@@ -287,7 +321,9 @@ public abstract class TetrahedralSearchBase {
      *
      * @param tetIndex the tetrahedral SFC index
      * @return center point of the tetrahedron
+     * @deprecated This method loses level information. Use {@link #tetrahedronCenter(Tet)} instead.
      */
+    @Deprecated(since = "0.0.1", forRemoval = true)
     protected static Point3f tetrahedronCenter(long tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         return tetrahedronCenter(tet);
@@ -316,9 +352,21 @@ public abstract class TetrahedralSearchBase {
      *
      * @param tetIndex the tetrahedral SFC index
      * @return volume of the tetrahedron
+     * @deprecated This method loses level information. Use {@link #tetrahedronVolume(Tet)} instead.
      */
+    @Deprecated(since = "0.0.1", forRemoval = true)
     protected static double tetrahedronVolume(long tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
+        return tetrahedronVolume(tet);
+    }
+
+    /**
+     * Compute the volume of a tetrahedron
+     *
+     * @param tet the tetrahedron
+     * @return volume of the tetrahedron
+     */
+    protected static double tetrahedronVolume(Tet tet) {
         var vertices = tet.coordinates();
 
         Point3i v0 = vertices[0], v1 = vertices[1], v2 = vertices[2], v3 = vertices[3];
@@ -332,6 +380,306 @@ public abstract class TetrahedralSearchBase {
         return Math.abs(det) / 6.0;
     }
 
+    // ===== Distance Calculation Methods =====
+
+    /**
+     * Calculate distance between two points using the specified metric
+     *
+     * @param p1     first point (must have positive coordinates)
+     * @param p2     second point (must have positive coordinates)
+     * @param metric distance metric to use
+     * @return distance according to the specified metric
+     */
+    protected static float calculateDistance(Point3f p1, Point3f p2, TetrahedralDistanceMetric metric) {
+        if (p1.x < 0 || p1.y < 0 || p1.z < 0 || p2.x < 0 || p2.y < 0 || p2.z < 0) {
+            throw new IllegalArgumentException("Point coordinates must be positive");
+        }
+
+        float dx = p2.x - p1.x;
+        float dy = p2.y - p1.y;
+        float dz = p2.z - p1.z;
+
+        return switch (metric) {
+            case EUCLIDEAN -> (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+            case MANHATTAN -> Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+            case CHEBYSHEV -> Math.max(Math.max(Math.abs(dx), Math.abs(dy)), Math.abs(dz));
+            default -> throw new IllegalArgumentException("Use calculateTetrahedralDistance for tetrahedral metrics");
+        };
+    }
+
+    /**
+     * Calculate distance from a point to a tetrahedral region using the specified metric
+     *
+     * @param point    query point (must have positive coordinates)
+     * @param tetIndex tetrahedral SFC index
+     * @param metric   distance metric to use
+     * @return distance according to the specified metric
+     */
+    protected static float calculateTetrahedralDistance(Point3f point, long tetIndex, TetrahedralDistanceMetric metric) {
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException("Point coordinates must be positive");
+        }
+
+        return switch (metric) {
+            case EUCLIDEAN, MANHATTAN, CHEBYSHEV -> {
+                Point3f center = tetrahedronCenter(tetIndex);
+                yield calculateDistance(point, center, metric);
+            }
+            case TETRAHEDRAL_CENTROID -> {
+                Point3f center = tetrahedronCenter(tetIndex);
+                yield calculateDistance(point, center, TetrahedralDistanceMetric.EUCLIDEAN);
+            }
+            case TETRAHEDRAL_SURFACE -> distanceToTetrahedron(point, tetIndex);
+        };
+    }
+
+    /**
+     * Calculate distance between two tetrahedral regions using the specified metric
+     *
+     * @param tetIndex1 first tetrahedral SFC index
+     * @param tetIndex2 second tetrahedral SFC index
+     * @param metric    distance metric to use
+     * @return distance between tetrahedra according to the specified metric
+     */
+    protected static float calculateTetrahedralDistance(long tetIndex1, long tetIndex2, TetrahedralDistanceMetric metric) {
+        if (tetIndex1 == tetIndex2) {
+            return 0.0f;
+        }
+
+        return switch (metric) {
+            case EUCLIDEAN, MANHATTAN, CHEBYSHEV, TETRAHEDRAL_CENTROID -> {
+                Point3f center1 = tetrahedronCenter(tetIndex1);
+                Point3f center2 = tetrahedronCenter(tetIndex2);
+                yield calculateDistance(center1, center2,
+                        metric == TetrahedralDistanceMetric.TETRAHEDRAL_CENTROID ?
+                                TetrahedralDistanceMetric.EUCLIDEAN : metric);
+            }
+            case TETRAHEDRAL_SURFACE -> {
+                // For tetrahedral surface distance, we need to compute closest approach between tetrahedra
+                // This is complex, so we'll approximate using closest vertices for now
+                var tet1 = Tet.tetrahedron(tetIndex1);
+                var tet2 = Tet.tetrahedron(tetIndex2);
+                var vertices1 = tet1.coordinates();
+                var vertices2 = tet2.coordinates();
+
+                float minDistance = Float.MAX_VALUE;
+                for (Point3i v1 : vertices1) {
+                    for (Point3i v2 : vertices2) {
+                        float dist = calculateDistance(
+                                new Point3f(v1.x, v1.y, v1.z),
+                                new Point3f(v2.x, v2.y, v2.z),
+                                TetrahedralDistanceMetric.EUCLIDEAN
+                        );
+                        minDistance = Math.min(minDistance, dist);
+                    }
+                }
+                yield minDistance;
+            }
+        };
+    }
+
+    // ===== Tetrahedral Priority Queue Classes =====
+
+    /**
+     * Priority queue entry for tetrahedral search operations combining entity ID with distance
+     */
+    public static class TetrahedralPriorityEntry<ID> {
+        public final ID entityId;
+        public final float distance;
+        public final long tetIndex;
+        public final TetrahedralDistanceMetric metric;
+
+        public TetrahedralPriorityEntry(ID entityId, float distance, long tetIndex, TetrahedralDistanceMetric metric) {
+            this.entityId = entityId;
+            this.distance = distance;
+            this.tetIndex = tetIndex;
+            this.metric = metric;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("Entry{id=%s, dist=%.3f, tet=%d, metric=%s}", 
+                               entityId, distance, tetIndex, metric);
+        }
+    }
+
+    /**
+     * Specialized priority queue for tetrahedral k-NN search with configurable distance metrics
+     */
+    public static class TetrahedralPriorityQueue<ID> {
+        private final java.util.PriorityQueue<TetrahedralPriorityEntry<ID>> queue;
+        private final int maxSize;
+        private final TetrahedralDistanceMetric metric;
+
+        /**
+         * Create a max-heap priority queue for k-NN search
+         * @param k maximum number of entries to keep
+         * @param metric distance metric to use for comparisons
+         */
+        public TetrahedralPriorityQueue(int k, TetrahedralDistanceMetric metric) {
+            this.maxSize = k;
+            this.metric = metric;
+            // Max heap: largest distance first (for k-NN search we want to keep k smallest)
+            this.queue = new java.util.PriorityQueue<>(k, (a, b) -> Float.compare(b.distance, a.distance));
+        }
+
+        /**
+         * Add an entry to the priority queue, maintaining max size
+         * @param entityId entity identifier
+         * @param distance distance from query point
+         * @param tetIndex tetrahedral SFC index where entity is located
+         */
+        public void offer(ID entityId, float distance, long tetIndex) {
+            TetrahedralPriorityEntry<ID> entry = new TetrahedralPriorityEntry<>(entityId, distance, tetIndex, metric);
+            
+            if (queue.size() < maxSize) {
+                queue.offer(entry);
+            } else if (distance < queue.peek().distance) {
+                // Replace the farthest entry with this closer one
+                queue.poll();
+                queue.offer(entry);
+            }
+        }
+
+        /**
+         * Get the current maximum distance in the queue (useful for pruning)
+         * @return maximum distance, or Float.MAX_VALUE if queue is not full
+         */
+        public float getMaxDistance() {
+            return queue.isEmpty() ? Float.MAX_VALUE : queue.peek().distance;
+        }
+
+        /**
+         * Check if queue is full
+         * @return true if queue has reached maximum capacity
+         */
+        public boolean isFull() {
+            return queue.size() >= maxSize;
+        }
+
+        /**
+         * Get current size of the queue
+         * @return number of entries in queue
+         */
+        public int size() {
+            return queue.size();
+        }
+
+        /**
+         * Check if queue is empty
+         * @return true if queue has no entries
+         */
+        public boolean isEmpty() {
+            return queue.isEmpty();
+        }
+
+        /**
+         * Get all entries sorted by distance (closest first)
+         * @return list of entries ordered by increasing distance
+         */
+        public List<TetrahedralPriorityEntry<ID>> getResults() {
+            List<TetrahedralPriorityEntry<ID>> results = new ArrayList<>(queue);
+            // Sort by distance (ascending) since we use max-heap internally
+            results.sort((a, b) -> Float.compare(a.distance, b.distance));
+            return results;
+        }
+
+        /**
+         * Get only the entity IDs sorted by distance (closest first)
+         * @return list of entity IDs ordered by increasing distance
+         */
+        public List<ID> getEntityIds() {
+            return getResults().stream()
+                    .map(entry -> entry.entityId)
+                    .collect(Collectors.toList());
+        }
+
+        /**
+         * Clear all entries from the queue
+         */
+        public void clear() {
+            queue.clear();
+        }
+
+        /**
+         * Get summary statistics for the current queue contents
+         * @return summary string with queue state
+         */
+        public String getSummary() {
+            if (isEmpty()) {
+                return "Empty queue";
+            }
+            
+            var results = getResults();
+            float minDist = results.get(0).distance;
+            float maxDist = results.get(results.size() - 1).distance;
+            
+            return String.format("Queue: %d/%d entries, distance range [%.3f, %.3f], metric: %s",
+                               size(), maxSize, minDist, maxDist, metric);
+        }
+    }
+
+    /**
+     * Search configuration for tetrahedral queries
+     */
+    public static class TetrahedralSearchConfig {
+        public final TetrahedralDistanceMetric distanceMetric;
+        public final SimplexAggregationStrategy aggregationStrategy;
+        public final float searchRadius;
+        public final boolean useAdaptiveRadius;
+        public final int maxExpansions;
+
+        public TetrahedralSearchConfig(TetrahedralDistanceMetric distanceMetric,
+                                     SimplexAggregationStrategy aggregationStrategy,
+                                     float searchRadius,
+                                     boolean useAdaptiveRadius,
+                                     int maxExpansions) {
+            this.distanceMetric = distanceMetric;
+            this.aggregationStrategy = aggregationStrategy;
+            this.searchRadius = searchRadius;
+            this.useAdaptiveRadius = useAdaptiveRadius;
+            this.maxExpansions = maxExpansions;
+        }
+
+        /**
+         * Create default configuration for tetrahedral search
+         */
+        public static TetrahedralSearchConfig defaultConfig() {
+            return new TetrahedralSearchConfig(
+                TetrahedralDistanceMetric.EUCLIDEAN,
+                SimplexAggregationStrategy.REPRESENTATIVE_ONLY,
+                1000.0f,    // Default search radius
+                true,       // Use adaptive radius expansion
+                5           // Maximum search expansions
+            );
+        }
+
+        /**
+         * Create configuration optimized for surface-based distance
+         */
+        public static TetrahedralSearchConfig surfaceOptimized() {
+            return new TetrahedralSearchConfig(
+                TetrahedralDistanceMetric.TETRAHEDRAL_SURFACE,
+                SimplexAggregationStrategy.BEST_FIT,
+                500.0f,     // Smaller initial radius for surface queries
+                true,
+                3           // Fewer expansions for surface queries
+            );
+        }
+
+        /**
+         * Create configuration for fast approximate search
+         */
+        public static TetrahedralSearchConfig fastApproximate() {
+            return new TetrahedralSearchConfig(
+                TetrahedralDistanceMetric.TETRAHEDRAL_CENTROID,
+                SimplexAggregationStrategy.REPRESENTATIVE_ONLY,
+                2000.0f,    // Larger radius for fast search
+                false,      // No adaptive expansion
+                1           // Single expansion only
+            );
+        }
+    }
 
     /**
      * Strategy for aggregating multiple simplicies in the same spatial region
@@ -389,5 +737,114 @@ public abstract class TetrahedralSearchBase {
                 return Float.compare(dist1, dist2);
             }).map(simplex -> simplex.index()).orElse(simplicies.get(0).index());
         }
+    }
+
+    // ===== Abstract Search Methods =====
+
+    /**
+     * Perform tetrahedral-specific k-nearest neighbor search using tetrahedral space-filling curve properties.
+     * This method leverages the unique properties of tetrahedral decomposition for enhanced performance
+     * compared to generic spatial index k-NN search.
+     *
+     * @param queryPoint query point (must have positive coordinates)
+     * @param k          number of nearest neighbors to find
+     * @param config     search configuration with distance metric and other parameters
+     * @return list of k nearest neighbor IDs sorted by distance (closest first)
+     */
+    public abstract <ID> List<ID> kNearestNeighborsTetrahedral(Point3f queryPoint, int k, TetrahedralSearchConfig config);
+
+    /**
+     * Perform tetrahedral-specific range query leveraging tetrahedral geometry for optimal performance.
+     * This method uses tetrahedral space-filling curve properties to efficiently find all entities
+     * within the specified range.
+     *
+     * @param queryPoint query point (must have positive coordinates)
+     * @param radius     search radius
+     * @param config     search configuration with distance metric and other parameters
+     * @return list of entity IDs within the specified range
+     */
+    public abstract <ID> List<ID> rangeQueryTetrahedral(Point3f queryPoint, float radius, TetrahedralSearchConfig config);
+
+    /**
+     * Get all simplicies within range using tetrahedral-specific optimization.
+     * This method provides the underlying simplex-level access for advanced use cases.
+     *
+     * @param queryPoint query point (must have positive coordinates)
+     * @param radius     search radius
+     * @param config     search configuration with distance metric and other parameters
+     * @return stream of simplicies within range
+     */
+    public abstract <Content> Stream<Simplex<Content>> getSimpliciesInRange(Point3f queryPoint, float radius, TetrahedralSearchConfig config);
+
+    // ===== Helper Methods for Concrete Implementations =====
+
+    /**
+     * Helper method to expand search radius adaptively based on results found.
+     * Concrete implementations can use this for adaptive search strategies.
+     *
+     * @param currentRadius current search radius
+     * @param resultsFound number of results found so far
+     * @param targetResults target number of results desired
+     * @param maxRadius maximum allowed radius
+     * @return suggested new radius
+     */
+    protected static float calculateAdaptiveRadius(float currentRadius, int resultsFound, int targetResults, float maxRadius) {
+        if (resultsFound >= targetResults) {
+            return currentRadius; // Found enough results
+        }
+
+        // Expand radius based on density estimation
+        float expansionFactor = resultsFound == 0 ? 2.0f : (float) Math.sqrt((double) targetResults / resultsFound);
+        expansionFactor = Math.min(expansionFactor, 3.0f); // Limit expansion to 3x
+        
+        float newRadius = currentRadius * expansionFactor;
+        return Math.min(newRadius, maxRadius);
+    }
+
+    /**
+     * Helper method to determine search bounds around a query point for tetrahedral operations.
+     * This uses tetrahedral-specific geometry for optimal bound calculation.
+     *
+     * @param queryPoint center point for search bounds (must have positive coordinates)
+     * @param radius search radius
+     * @return volume bounds for the search region
+     */
+    protected static com.hellblazer.luciferase.lucien.VolumeBounds calculateTetrahedralSearchBounds(Point3f queryPoint, float radius) {
+        if (queryPoint.x < 0 || queryPoint.y < 0 || queryPoint.z < 0) {
+            throw new IllegalArgumentException("Query point coordinates must be positive");
+        }
+
+        // Ensure bounds don't extend into negative coordinates (tetrahedral constraint)
+        float minX = Math.max(0, queryPoint.x - radius);
+        float minY = Math.max(0, queryPoint.y - radius);
+        float minZ = Math.max(0, queryPoint.z - radius);
+        
+        float maxX = queryPoint.x + radius;
+        float maxY = queryPoint.y + radius;
+        float maxZ = queryPoint.z + radius;
+
+        return new com.hellblazer.luciferase.lucien.VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    /**
+     * Helper method to estimate the expected number of tetrahedra within a search radius.
+     * This helps with performance tuning and adaptive strategies.
+     *
+     * @param radius search radius
+     * @param level tetrahedral refinement level
+     * @return estimated number of tetrahedra in the search region
+     */
+    protected static int estimateTetrahedraInRadius(float radius, byte level) {
+        // Approximate volume of sphere: (4/3) * π * r³
+        double sphereVolume = (4.0 / 3.0) * Math.PI * Math.pow(radius, 3);
+        
+        // Estimate tetrahedron size at given level
+        // Each tetrahedron at level L has edge length approximately 2^(maxLevel - L)
+        int maxLevel = Constants.getMaxRefinementLevel();
+        double tetSize = Math.pow(2, maxLevel - level);
+        double tetVolume = Math.pow(tetSize, 3) / 6.0; // Approximate tetrahedron volume
+        
+        // Estimate number of tetrahedra (with some padding for irregular shapes)
+        return (int) Math.ceil(sphereVolume / tetVolume * 1.5);
     }
 }
