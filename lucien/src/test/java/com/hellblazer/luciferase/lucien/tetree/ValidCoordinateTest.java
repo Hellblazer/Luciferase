@@ -25,7 +25,7 @@ public class ValidCoordinateTest {
             // Test (0, 0, 0) at this level
             var tet1 = new Tet(0, 0, 0, level, (byte) 0);
             long index1 = tet1.index();
-            var reconstructed1 = Tet.tetrahedron(index1);
+            var reconstructed1 = Tet.tetrahedron(index1, (byte) 0);
             System.out.println(
             "    (0, 0, 0) -> index " + index1 + " -> " + reconstructed1 + " (round-trip: " + tet1.equals(
             reconstructed1) + ")");
@@ -34,7 +34,7 @@ public class ValidCoordinateTest {
             if (stepSize < Constants.MAX_EXTENT) {
                 var tet2 = new Tet(stepSize, 0, 0, level, (byte) 0);
                 long index2 = tet2.index();
-                var reconstructed2 = Tet.tetrahedron(index2);
+                var reconstructed2 = Tet.tetrahedron(index2, (byte) 0);
                 System.out.println(
                 "    (" + stepSize + ", 0, 0) -> index " + index2 + " -> " + reconstructed2 + " (round-trip: "
                 + tet2.equals(reconstructed2) + ")");
@@ -44,7 +44,7 @@ public class ValidCoordinateTest {
             if (stepSize < Constants.MAX_EXTENT) {
                 var tet3 = new Tet(0, 0, stepSize, level, (byte) 0);
                 long index3 = tet3.index();
-                var reconstructed3 = Tet.tetrahedron(index3);
+                var reconstructed3 = Tet.tetrahedron(index3, (byte) 0);
                 System.out.println(
                 "    (0, 0, " + stepSize + ") -> index " + index3 + " -> " + reconstructed3 + " (round-trip: "
                 + tet3.equals(reconstructed3) + ")");
@@ -72,7 +72,7 @@ public class ValidCoordinateTest {
         var validTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         System.out.println("Valid level 0 tet: " + validTet);
         System.out.println("Index: " + validTet.index());
-        var reconstructedValid = Tet.tetrahedron(validTet.index());
+        var reconstructedValid = Tet.tetrahedron(validTet.index(), (byte) 0);
         System.out.println("Reconstructed: " + reconstructedValid);
         System.out.println("Round-trip: " + validTet.equals(reconstructedValid));
     }

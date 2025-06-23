@@ -9,6 +9,7 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -53,6 +54,16 @@ import static java.util.stream.Collectors.toList;
  * @author hal.hildebrand
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
+
+    // Table 2: Local indices - Iloc(parent_type, bey_child_index)
+    // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
+    private static final byte[][] LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
+                                                    { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
+                                                    { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
+                                                    { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
+                                                    { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
+                                                    { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
+    };
 
     // Compact constructor for validation
     public Tet {
@@ -181,7 +192,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      *   <li>Build coordinates by accumulating cube positions</li>
      * </ol>
      *
-     * <p><b>CRITICAL:</b> Level must be provided explicitly as the same SFC index 
+     * <p><b>CRITICAL:</b> Level must be provided explicitly as the same SFC index
      * can exist at multiple levels representing different tetrahedra. For example:
      * <ul>
      *   <li>Index 0 at level 0: Root tetrahedron covering entire positive octant</li>
@@ -226,8 +237,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     /**
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
-     * @deprecated This method is fundamentally flawed as it attempts to derive level from index.
-     *             Use {@link #tetrahedron(long, byte)} with explicit level instead.
+     * @deprecated This method is fundamentally flawed as it attempts to derive level from index. Use
+     * {@link #tetrahedron(long, byte)} with explicit level instead.
      */
     @Deprecated(since = "0.0.1", forRemoval = true)
     public static Tet tetrahedron(long index) {
@@ -637,6 +648,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return coords;
     }
 
+    public byte cubeId() {
+        return cubeId(l);
+    }
+
     /**
      * @return the cube id of t's ancestor of level "level"
      */
@@ -753,7 +768,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * Compute the space-filling curve index of this tetrahedron.
+     * Compute the consecutive index of this tetrahedron at this level.
      *
      * <p><b>Algorithm Overview:</b></p>
      * Encodes the path from root to this tetrahedron by:
@@ -927,6 +942,99 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Get parent and then get the requested child
         Tet parentTet = parent();
         return parentTet.child(siblingIndex);
+    }
+
+    /**
+     * Convert TM-index back to tetrahedron Inverse operation of tetToTMIndex
+     */
+    public Tet tetrahedron(BigInteger tmIndex, byte level) {
+        if (level == 0) {
+            return new Tet(0, 0, 0, (byte) 0, (byte) 0); // Root tetrahedron
+        }
+
+        // Extract interleaved bits
+        int[] coordX = new int[Constants.getMaxRefinementLevel()];
+        int[] coordY = new int[Constants.getMaxRefinementLevel()];
+        int[] coordZ = new int[Constants.getMaxRefinementLevel()];
+        int[] types = new int[Constants.getMaxRefinementLevel()];
+
+        BigInteger index = tmIndex;
+        BigInteger sixtyFour = BigInteger.valueOf(64);
+
+        // Extract from least significant to most significant
+        for (int i = Constants.getMaxRefinementLevel() - 1; i >= 0; i--) {
+            BigInteger[] divRem = index.divideAndRemainder(sixtyFour);
+            index = divRem[0];
+            int value = divRem[1].intValue();
+
+            // Extract type (lower 3 bits)
+            types[i] = value % 8;
+
+            // Extract coordinate bits (upper 3 bits)
+            int coordBits = value / 8;
+            coordX[i] = coordBits & 1;
+            coordY[i] = (coordBits >> 1) & 1;
+            coordZ[i] = (coordBits >> 2) & 1;
+        }
+
+        // Reconstruct coordinates from binary
+        int x = 0, y = 0, z = 0;
+        for (int i = 0; i < Constants.getMaxRefinementLevel(); i++) {
+            x = (x << 1) | coordX[i];
+            y = (y << 1) | coordY[i];
+            z = (z << 1) | coordZ[i];
+        }
+
+        // Current type is at position corresponding to level
+        int type = level > 0 ? types[Constants.getMaxRefinementLevel() - level] : 0;
+
+        return new Tet(x, y, z, level, (byte) type);
+    }
+
+    /**
+     * Algorithm 4.7: Compute consecutive index
+     */
+    public BigInteger tmIndex() {
+        BigInteger index = BigInteger.ZERO;
+        BigInteger eight = BigInteger.valueOf(8);
+
+        if (l == 0) {
+            return index;
+        }
+
+        // Build path from root to current tetrahedron
+        List<Integer> localIndices = new ArrayList<>();
+        Tet current = this;
+
+        while (current.l() > 0) {
+            Tet p = current.parent();
+            if (p != null) {
+                // Find which child of parent we are
+                int localIdx = -1;
+
+                // Find local index by checking all children
+                for (int i = 0; i < 8; i++) {
+                    Tet testChild = p.child(i);
+                    if (testChild.x() == current.x() && testChild.y() == current.y() && testChild.z() == current.z()
+                    && testChild.type() == current.type()) {
+                        localIdx = LOCAL_INDICES[p.type()][i];
+                        break;
+                    }
+                }
+
+                localIndices.addFirst(localIdx);
+                current = p;
+            } else {
+                break;
+            }
+        }
+
+        // Build consecutive index from local indices
+        for (int localIdx : localIndices) {
+            index = index.multiply(eight).add(BigInteger.valueOf(localIdx));
+        }
+
+        return index;
     }
 
     public Point3i[] vertices() {
@@ -1278,6 +1386,14 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return findMinimumContainingLevel(bounds);
     }
 
+    /**
+     * Helper: Get cube-id from local index and parent type Using Table 6 from the paper
+     */
+    private int getCubeIdFromLocal(int parentType, int localIndex) {
+        // Use the system's PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID table
+        return Constants.PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[parentType][localIndex];
+    }
+
     // Get spatial range metadata for optimized queries
     private SpatialRangeMetaData getSpatialRangeMetaData(VolumeBounds bounds, byte level) {
         var touched = calculateTouchedDimensions(bounds, level);
@@ -1311,6 +1427,14 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
 
         return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    /**
+     * Helper: Get type from local index and parent type Using Table 8 from the paper
+     */
+    private int getTypeFromLocal(int parentType, int localIndex) {
+        // Use the system's PARENT_TYPE_LOCAL_INDEX_TO_TYPE table which is identical
+        return Constants.PARENT_TYPE_LOCAL_INDEX_TO_TYPE[parentType][localIndex];
     }
 
     // Extract bounding box from various spatial volume types

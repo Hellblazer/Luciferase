@@ -16,52 +16,69 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
-import com.hellblazer.luciferase.lucien.tetree.TetreeValidator.TreeStats;
-
 /**
- * Performance metrics for Tetree operations.
- * This class captures comprehensive performance data including tree statistics,
- * cache performance, and operation timing.
+ * Performance metrics for Tetree operations. This class captures comprehensive performance data including tree
+ * statistics, cache performance, and operation timing.
  *
  * @author hal.hildebrand
  */
 public record TetreeMetrics(
+/**
+ * Structural statistics about the tree (node counts, depth, etc.)
+ */
+TetreeValidator.TreeStats treeStatistics,
+
+/**
+ * Cache hit rate (0.0 to 1.0) for cached operations
+ */
+float cacheHitRate,
+
+/**
+ * Average time in nanoseconds for neighbor queries
+ */
+float averageNeighborQueryTime,
+
+/**
+ * Average time in nanoseconds for tree traversal operations
+ */
+float averageTraversalTime,
+
+/**
+ * Total number of neighbor queries performed
+ */
+long neighborQueryCount,
+
+/**
+ * Total number of traversal operations performed
+ */
+long traversalCount,
+
+/**
+ * Whether performance monitoring is currently enabled
+ */
+boolean monitoringEnabled) {
+
     /**
-     * Structural statistics about the tree (node counts, depth, etc.)
+     * Get average neighbor query time in microseconds
      */
-    TreeStats treeStatistics,
-    
+    public float getAverageNeighborQueryTimeMicros() {
+        return averageNeighborQueryTime / 1000;
+    }
+
     /**
-     * Cache hit rate (0.0 to 1.0) for cached operations
+     * Get average traversal time in microseconds
      */
-    float cacheHitRate,
-    
+    public float getAverageTraversalTimeMicros() {
+        return averageTraversalTime / 1000;
+    }
+
     /**
-     * Average time in nanoseconds for neighbor queries
+     * Get cache hit percentage (0-100)
      */
-    float averageNeighborQueryTime,
-    
-    /**
-     * Average time in nanoseconds for tree traversal operations
-     */
-    float averageTraversalTime,
-    
-    /**
-     * Total number of neighbor queries performed
-     */
-    long neighborQueryCount,
-    
-    /**
-     * Total number of traversal operations performed
-     */
-    long traversalCount,
-    
-    /**
-     * Whether performance monitoring is currently enabled
-     */
-    boolean monitoringEnabled
-) {
-    
+    public float getCacheHitPercentage() {
+        return cacheHitRate * 100;
+    }
+
     /**
      * Get a human-readable summary of the metrics
      */
@@ -69,51 +86,33 @@ public record TetreeMetrics(
         StringBuilder sb = new StringBuilder();
         sb.append("Tetree Performance Metrics:\n");
         sb.append("===========================\n");
-        
+
         // Tree structure
         sb.append("Tree Structure:\n");
         sb.append("  Total nodes: ").append(treeStatistics.getTotalNodes()).append("\n");
         sb.append("  Max depth: ").append(treeStatistics.getMaxDepth()).append("\n");
         sb.append("  Balance factor: ").append(String.format("%.2f", treeStatistics.getBalanceFactor())).append("\n");
-        
+
         // Cache performance
         sb.append("\nCache Performance:\n");
         sb.append("  Hit rate: ").append(String.format("%.2f%%", cacheHitRate * 100)).append("\n");
-        
+
         // Query performance
         sb.append("\nQuery Performance:\n");
         if (neighborQueryCount > 0) {
             sb.append("  Neighbor queries: ").append(neighborQueryCount).append("\n");
-            sb.append("  Avg neighbor query time: ").append(String.format("%.2f µs", averageNeighborQueryTime / 1000)).append("\n");
+            sb.append("  Avg neighbor query time: ")
+              .append(String.format("%.2f µs", averageNeighborQueryTime / 1000))
+              .append("\n");
         }
         if (traversalCount > 0) {
             sb.append("  Traversals: ").append(traversalCount).append("\n");
-            sb.append("  Avg traversal time: ").append(String.format("%.2f µs", averageTraversalTime / 1000)).append("\n");
+            sb.append("  Avg traversal time: ").append(String.format("%.2f µs", averageTraversalTime / 1000)).append(
+            "\n");
         }
-        
+
         sb.append("\nMonitoring: ").append(monitoringEnabled ? "ENABLED" : "DISABLED").append("\n");
-        
+
         return sb.toString();
-    }
-    
-    /**
-     * Get cache hit percentage (0-100)
-     */
-    public float getCacheHitPercentage() {
-        return cacheHitRate * 100;
-    }
-    
-    /**
-     * Get average neighbor query time in microseconds
-     */
-    public float getAverageNeighborQueryTimeMicros() {
-        return averageNeighborQueryTime / 1000;
-    }
-    
-    /**
-     * Get average traversal time in microseconds
-     */
-    public float getAverageTraversalTimeMicros() {
-        return averageTraversalTime / 1000;
     }
 }
