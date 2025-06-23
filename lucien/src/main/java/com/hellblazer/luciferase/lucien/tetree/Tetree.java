@@ -1417,6 +1417,12 @@ public class Tetree<ID extends EntityID, Content> extends AbstractSpatialIndex<I
         for (int face = 0; face < 4; face++) {
             try {
                 Tet.FaceNeighbor neighbor = currentTet.faceNeighbor(face);
+                
+                // Check if neighbor exists (null at boundary)
+                if (neighbor == null) {
+                    continue;
+                }
+                
                 Tet neighborTet = neighbor.tet();
                 long neighborIndex = neighborTet.index();
 

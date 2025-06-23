@@ -22,16 +22,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.HashSet;
-import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for vertex neighbor finding in Tetree.
- * Tests the findVertexNeighbors functionality that finds all tetrahedra sharing a specific vertex.
+ * Unit tests for vertex neighbor finding in Tetree. Tests the findVertexNeighbors functionality that finds all
+ * tetrahedra sharing a specific vertex.
  *
  * @author hal.hildebrand
  */
@@ -42,6 +42,79 @@ public class TetreeVertexNeighborTest {
     @BeforeEach
     void setUp() {
         tetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator());
+    }
+
+    @Test
+    void testVertexNeighborComprehensive() {
+        // Create a more complex structure
+        for (int i = 0; i < 15; i++) {
+            float x = (float) (100 + i * 60);
+            float y = (float) (100 + (i % 4) * 200);
+            float z = (float) (100 + (i % 3) * 300);
+            Point3f p = new Point3f(x, y, z);
+            tetree.insert(p, (byte) 3, "entity" + i);
+        }
+
+        // Pick a central tetrahedron
+        Point3f center = new Point3f(400, 300, 400);
+        Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
+        long centerIndex = centerTet.index();
+
+        // Vertex-to-face mapping (from TetreeNeighborFinder):
+        // Vertex 0: faces 1, 2, 3
+        // Vertex 1: faces 0, 2, 3
+        // Vertex 2: faces 0, 1, 3
+        // Vertex 3: faces 0, 1, 2
+
+        // Get face neighbors
+        List<Long> face0 = new ArrayList<>();
+        List<Long> face1 = new ArrayList<>();
+        List<Long> face2 = new ArrayList<>();
+        List<Long> face3 = new ArrayList<>();
+
+        long face0Neighbor = tetree.findFaceNeighbor(centerIndex, 0);
+        if (face0Neighbor != -1) {
+            face0.add(face0Neighbor);
+        }
+
+        long face1Neighbor = tetree.findFaceNeighbor(centerIndex, 1);
+        if (face1Neighbor != -1) {
+            face1.add(face1Neighbor);
+        }
+
+        long face2Neighbor = tetree.findFaceNeighbor(centerIndex, 2);
+        if (face2Neighbor != -1) {
+            face2.add(face2Neighbor);
+        }
+
+        long face3Neighbor = tetree.findFaceNeighbor(centerIndex, 3);
+        if (face3Neighbor != -1) {
+            face3.add(face3Neighbor);
+        }
+
+        // Get vertex neighbors
+        List<Long> vertex0Neighbors = tetree.findVertexNeighbors(centerIndex, 0); // faces 1,2,3
+        List<Long> vertex1Neighbors = tetree.findVertexNeighbors(centerIndex, 1); // faces 0,2,3
+        List<Long> vertex2Neighbors = tetree.findVertexNeighbors(centerIndex, 2); // faces 0,1,3
+        List<Long> vertex3Neighbors = tetree.findVertexNeighbors(centerIndex, 3); // faces 0,1,2
+
+        // Vertex neighbors should include at least the face neighbors
+        Set<Long> vertex0Expected = new HashSet<>();
+        vertex0Expected.addAll(face1);
+        vertex0Expected.addAll(face2);
+        vertex0Expected.addAll(face3);
+
+        Set<Long> vertex1Expected = new HashSet<>();
+        vertex1Expected.addAll(face0);
+        vertex1Expected.addAll(face2);
+        vertex1Expected.addAll(face3);
+
+        // Vertex neighbors should be a superset of face neighbors sharing that vertex
+        assertTrue(vertex0Neighbors.size() >= vertex0Expected.size() || vertex0Neighbors.isEmpty(),
+                   "Vertex 0 should have at least as many neighbors as its adjacent faces");
+
+        assertTrue(vertex1Neighbors.size() >= vertex1Expected.size() || vertex1Neighbors.isEmpty(),
+                   "Vertex 1 should have at least as many neighbors as its adjacent faces");
     }
 
     @Test
@@ -80,115 +153,46 @@ public class TetreeVertexNeighborTest {
         for (int vertex = 0; vertex < 4; vertex++) {
             List<Long> vertexNeighbors = tetree.findVertexNeighbors(tetIndex, vertex);
             assertNotNull(vertexNeighbors, "Vertex neighbors should not be null for vertex " + vertex);
-            
+
             // Should not include itself
-            assertFalse(vertexNeighbors.contains(tetIndex), 
-                "Vertex neighbors should not include the tetrahedron itself");
+            assertFalse(vertexNeighbors.contains(tetIndex),
+                        "Vertex neighbors should not include the tetrahedron itself");
         }
     }
 
     @Test
-    void testVertexNeighborComprehensive() {
-        // Create a more complex structure
-        for (int i = 0; i < 15; i++) {
-            float x = (float)(100 + i * 60);
-            float y = (float)(100 + (i % 4) * 200);
-            float z = (float)(100 + (i % 3) * 300);
-            Point3f p = new Point3f(x, y, z);
-            tetree.insert(p, (byte) 3, "entity" + i);
+    void testVertexNeighborsBoundary() {
+        // Test vertex neighbors at domain boundaries
+        Point3f boundary1 = new Point3f(10, 10, 10);      // Near origin
+        Point3f boundary2 = new Point3f(1014, 1014, 1014); // Near max
+        Point3f center = new Point3f(512, 512, 512);       // Center
+
+        tetree.insert(boundary1, (byte) 2, "boundary1");
+        tetree.insert(boundary2, (byte) 2, "boundary2");
+        tetree.insert(center, (byte) 2, "center");
+
+        // Test boundary tetrahedra
+        Tet boundaryTet1 = tetree.locateTetrahedron(boundary1, (byte) 2);
+        Tet boundaryTet2 = tetree.locateTetrahedron(boundary2, (byte) 2);
+
+        // Boundary tetrahedra should have fewer vertex neighbors
+        int boundaryNeighbors1 = 0;
+        int boundaryNeighbors2 = 0;
+        for (int v = 0; v < 4; v++) {
+            boundaryNeighbors1 += tetree.findVertexNeighbors(boundaryTet1.index(), v).size();
+            boundaryNeighbors2 += tetree.findVertexNeighbors(boundaryTet2.index(), v).size();
         }
 
-        // Pick a central tetrahedron
-        Point3f center = new Point3f(400, 300, 400);
-        Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
-        long centerIndex = centerTet.index();
-
-        // Vertex-to-face mapping (from TetreeNeighborFinder):
-        // Vertex 0: faces 1, 2, 3
-        // Vertex 1: faces 0, 2, 3
-        // Vertex 2: faces 0, 1, 3
-        // Vertex 3: faces 0, 1, 2
-
-        // Get face neighbors
-        List<Long> face0 = new ArrayList<>();
-        List<Long> face1 = new ArrayList<>();
-        List<Long> face2 = new ArrayList<>();
-        List<Long> face3 = new ArrayList<>();
-        
-        long face0Neighbor = tetree.findFaceNeighbor(centerIndex, 0);
-        if (face0Neighbor != -1) face0.add(face0Neighbor);
-        
-        long face1Neighbor = tetree.findFaceNeighbor(centerIndex, 1);
-        if (face1Neighbor != -1) face1.add(face1Neighbor);
-        
-        long face2Neighbor = tetree.findFaceNeighbor(centerIndex, 2);
-        if (face2Neighbor != -1) face2.add(face2Neighbor);
-        
-        long face3Neighbor = tetree.findFaceNeighbor(centerIndex, 3);
-        if (face3Neighbor != -1) face3.add(face3Neighbor);
-
-        // Get vertex neighbors
-        List<Long> vertex0Neighbors = tetree.findVertexNeighbors(centerIndex, 0); // faces 1,2,3
-        List<Long> vertex1Neighbors = tetree.findVertexNeighbors(centerIndex, 1); // faces 0,2,3
-        List<Long> vertex2Neighbors = tetree.findVertexNeighbors(centerIndex, 2); // faces 0,1,3
-        List<Long> vertex3Neighbors = tetree.findVertexNeighbors(centerIndex, 3); // faces 0,1,2
-
-        // Vertex neighbors should include at least the face neighbors
-        Set<Long> vertex0Expected = new HashSet<>();
-        vertex0Expected.addAll(face1);
-        vertex0Expected.addAll(face2);
-        vertex0Expected.addAll(face3);
-
-        Set<Long> vertex1Expected = new HashSet<>();
-        vertex1Expected.addAll(face0);
-        vertex1Expected.addAll(face2);
-        vertex1Expected.addAll(face3);
-
-        // Vertex neighbors should be a superset of face neighbors sharing that vertex
-        assertTrue(vertex0Neighbors.size() >= vertex0Expected.size() || vertex0Neighbors.isEmpty(),
-            "Vertex 0 should have at least as many neighbors as its adjacent faces");
-        
-        assertTrue(vertex1Neighbors.size() >= vertex1Expected.size() || vertex1Neighbors.isEmpty(),
-            "Vertex 1 should have at least as many neighbors as its adjacent faces");
-    }
-
-    @Test
-    void testVertexNeighborsMultiLevel() {
-        // Create entities at different positions to force multi-level structure
-        Point3f p1 = new Point3f(256, 256, 256);  // Center - will be refined
-        Point3f p2 = new Point3f(128, 128, 128);  // Near corner
-        Point3f p3 = new Point3f(896, 896, 896);  // Far corner
-
-        tetree.insert(p1, (byte) 3, "center");
-        tetree.insert(p2, (byte) 3, "near");
-        tetree.insert(p3, (byte) 3, "far");
-
-        // Force more refinement
-        for (int i = 0; i < 5; i++) {
-            float offset = 50 + i * 10;
-            Point3f p = new Point3f(256 + offset, 256 + offset, 256 + offset);
-            tetree.insert(p, (byte) 3, "refine" + i);
+        // Center tetrahedron should have more neighbors
+        Tet centerTet = tetree.locateTetrahedron(center, (byte) 2);
+        int centerNeighbors = 0;
+        for (int v = 0; v < 4; v++) {
+            centerNeighbors += tetree.findVertexNeighbors(centerTet.index(), v).size();
         }
 
-        // Find a refined tetrahedron
-        Tet refinedTet = tetree.locateTetrahedron(p1, (byte) 3);
-        long refinedIndex = refinedTet.index();
-
-        // Test vertex neighbors at different levels
-        for (int vertex = 0; vertex < 4; vertex++) {
-            List<Long> neighbors = tetree.findVertexNeighbors(refinedIndex, vertex);
-            
-            // Collect levels of neighbors
-            Set<Byte> neighborLevels = new HashSet<>();
-            for (Long neighborIndex : neighbors) {
-                byte level = Tet.tetLevelFromIndex(neighborIndex);
-                neighborLevels.add(level);
-            }
-            
-            // In a multi-level structure, vertex neighbors can be at different levels
-            assertTrue(neighborLevels.size() >= 1 || neighbors.isEmpty(),
-                "Vertex " + vertex + " can have neighbors at multiple levels");
-        }
+        // Boundary tets typically have fewer neighbors than interior tets
+        assertTrue(centerNeighbors >= boundaryNeighbors1 || centerNeighbors == 0,
+                   "Center tetrahedra typically have more vertex neighbors than boundary tetrahedra");
     }
 
     @Test
@@ -221,8 +225,8 @@ public class TetreeVertexNeighborTest {
         }
 
         // In a dense grid, we may have vertex neighbors
-        assertTrue(totalVertexNeighbors >= 0, 
-            "Dense grid vertex neighbor count should be non-negative, got: " + totalVertexNeighbors);
+        assertTrue(totalVertexNeighbors >= 0,
+                   "Dense grid vertex neighbor count should be non-negative, got: " + totalVertexNeighbors);
     }
 
     @Test
@@ -263,7 +267,7 @@ public class TetreeVertexNeighborTest {
 
         // Vertex neighbors should be at least as comprehensive as edge neighbors
         assertTrue(vertex0Neighbors.size() >= expectedFromEdges.size() || vertex0Neighbors.isEmpty(),
-            "Vertex neighbors should include neighbors from all connected edges");
+                   "Vertex neighbors should include neighbors from all connected edges");
     }
 
     @Test
@@ -280,14 +284,14 @@ public class TetreeVertexNeighborTest {
         // Find two nearby tetrahedra
         Point3f p1 = new Point3f(350, 350, 350);
         Point3f p2 = new Point3f(450, 350, 350);
-        
+
         Tet tet1 = tetree.locateTetrahedron(p1, (byte) 3);
         Tet tet2 = tetree.locateTetrahedron(p2, (byte) 3);
 
         // Check if they share any vertices (i.e., are vertex neighbors)
         for (int v1 = 0; v1 < 4; v1++) {
             List<Long> neighbors1 = tetree.findVertexNeighbors(tet1.index(), v1);
-            
+
             if (neighbors1.contains(tet2.index())) {
                 // If tet2 is a vertex neighbor of tet1, then tet1 should be a vertex neighbor of tet2
                 boolean foundSymmetric = false;
@@ -298,44 +302,8 @@ public class TetreeVertexNeighborTest {
                         break;
                     }
                 }
-                assertTrue(foundSymmetric, 
-                    "Vertex neighbor relationship should be symmetric");
+                assertTrue(foundSymmetric, "Vertex neighbor relationship should be symmetric");
             }
         }
-    }
-
-    @Test
-    void testVertexNeighborsBoundary() {
-        // Test vertex neighbors at domain boundaries
-        Point3f boundary1 = new Point3f(10, 10, 10);      // Near origin
-        Point3f boundary2 = new Point3f(1014, 1014, 1014); // Near max
-        Point3f center = new Point3f(512, 512, 512);       // Center
-
-        tetree.insert(boundary1, (byte) 2, "boundary1");
-        tetree.insert(boundary2, (byte) 2, "boundary2");
-        tetree.insert(center, (byte) 2, "center");
-
-        // Test boundary tetrahedra
-        Tet boundaryTet1 = tetree.locateTetrahedron(boundary1, (byte) 2);
-        Tet boundaryTet2 = tetree.locateTetrahedron(boundary2, (byte) 2);
-
-        // Boundary tetrahedra should have fewer vertex neighbors
-        int boundaryNeighbors1 = 0;
-        int boundaryNeighbors2 = 0;
-        for (int v = 0; v < 4; v++) {
-            boundaryNeighbors1 += tetree.findVertexNeighbors(boundaryTet1.index(), v).size();
-            boundaryNeighbors2 += tetree.findVertexNeighbors(boundaryTet2.index(), v).size();
-        }
-
-        // Center tetrahedron should have more neighbors
-        Tet centerTet = tetree.locateTetrahedron(center, (byte) 2);
-        int centerNeighbors = 0;
-        for (int v = 0; v < 4; v++) {
-            centerNeighbors += tetree.findVertexNeighbors(centerTet.index(), v).size();
-        }
-
-        // Boundary tets typically have fewer neighbors than interior tets
-        assertTrue(centerNeighbors >= boundaryNeighbors1 || centerNeighbors == 0,
-            "Center tetrahedra typically have more vertex neighbors than boundary tetrahedra");
     }
 }

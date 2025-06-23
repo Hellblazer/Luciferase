@@ -119,6 +119,12 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
         // Check all 4 faces
         for (int face = 0; face < 4; face++) {
             Tet.FaceNeighbor neighbor = current.faceNeighbor(face);
+            
+            // Check if neighbor exists (null at boundary)
+            if (neighbor == null) {
+                continue;
+            }
+            
             Tet neighborTet = neighbor.tet();
 
             // Check if neighbor is valid and not visited

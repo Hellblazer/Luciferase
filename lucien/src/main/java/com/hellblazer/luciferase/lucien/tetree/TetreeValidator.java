@@ -211,8 +211,12 @@ public final class TetreeValidator {
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             try {
                 Tet.FaceNeighbor neighbor = tet.faceNeighbor(face);
-                sb.append(
-                String.format("  Face %d: %s (face %d)\n", face, describeTet(neighbor.tet()), neighbor.face()));
+                if (neighbor == null) {
+                    sb.append(String.format("  Face %d: BOUNDARY (outside positive octant)\n", face));
+                } else {
+                    sb.append(
+                    String.format("  Face %d: %s (face %d)\n", face, describeTet(neighbor.tet()), neighbor.face()));
+                }
             } catch (Exception e) {
                 sb.append(String.format("  Face %d: ERROR - %s\n", face, e.getMessage()));
             }
@@ -281,7 +285,7 @@ public final class TetreeValidator {
         // Check if tet2 is a face neighbor of tet1
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             Tet.FaceNeighbor neighbor = tet1.faceNeighbor(face);
-            if (neighbor.tet().equals(tet2)) {
+            if (neighbor != null && neighbor.tet().equals(tet2)) {
                 return true;
             }
         }
@@ -289,7 +293,7 @@ public final class TetreeValidator {
         // Check reverse direction
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             Tet.FaceNeighbor neighbor = tet2.faceNeighbor(face);
-            if (neighbor.tet().equals(tet1)) {
+            if (neighbor != null && neighbor.tet().equals(tet1)) {
                 return true;
             }
         }

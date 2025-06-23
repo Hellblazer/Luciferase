@@ -45,8 +45,8 @@ class TetreeValidatorTest {
         Tet validTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         assertDoesNotThrow(() -> TetreeValidator.assertValidTet(validTet));
 
-        Tet invalidTet = new Tet(-1, 0, 0, (byte) 0, (byte) 0);
-        assertThrows(AssertionError.class, () -> TetreeValidator.assertValidTet(invalidTet));
+        // Cannot create invalid tet with negative coordinates anymore
+        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
 
         // Parent-child assertion
         Tet parent = new Tet(0, 0, 0, (byte) 1, (byte) 0);
@@ -170,16 +170,10 @@ class TetreeValidatorTest {
 
     @Test
     void testInvalidCoordinates() {
-        // The Tet constructor doesn't validate coordinates, so we can test the validator
-        // Negative coordinates
-        Tet negX = new Tet(-1, 0, 0, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(negX));
-
-        Tet negY = new Tet(0, -10, 0, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(negY));
-
-        Tet negZ = new Tet(0, 0, -5, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(negZ));
+        // The Tet constructor now validates coordinates, so negative coordinates throw exceptions
+        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
+        assertThrows(IllegalArgumentException.class, () -> new Tet(0, -10, 0, (byte) 0, (byte) 0));
+        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, -100, (byte) 0, (byte) 0));
     }
 
     @Test
@@ -234,7 +228,10 @@ class TetreeValidatorTest {
         // Valid face neighbors
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             Tet.FaceNeighbor neighbor = tet1.faceNeighbor(face);
-            assertTrue(TetreeValidator.isValidNeighbor(tet1, neighbor.tet()));
+            // Skip if neighbor is at boundary (null)
+            if (neighbor != null) {
+                assertTrue(TetreeValidator.isValidNeighbor(tet1, neighbor.tet()));
+            }
         }
 
         // Invalid - too far apart in levels

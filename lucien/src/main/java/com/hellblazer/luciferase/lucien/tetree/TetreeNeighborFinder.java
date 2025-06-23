@@ -92,6 +92,11 @@ public class TetreeNeighborFinder {
 
         // Use t8code's face neighbor algorithm
         Tet.FaceNeighbor neighbor = tet.faceNeighbor(faceIndex);
+        
+        // Check if neighbor exists (null when at boundary of positive octant)
+        if (neighbor == null) {
+            return null; // At boundary
+        }
 
         // Check if neighbor is within domain bounds
         if (isWithinDomain(neighbor.tet())) {

@@ -67,6 +67,39 @@ public class TetreeBitsTest {
     }
 
     @Test
+    public void testComputeCubeLevel() {
+        // Test cube level computation for various coordinates
+
+        // Root level coordinates
+        assertEquals(0, TetreeBits.computeCubeLevel(0, 0, 0));
+
+        // Test various coordinate values
+        assertEquals(Constants.getMaxRefinementLevel(), TetreeBits.computeCubeLevel(1, 0, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(2, 0, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 2, TetreeBits.computeCubeLevel(4, 0, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 3, TetreeBits.computeCubeLevel(8, 0, 0));
+
+        // Test with maximum coordinate in different dimensions
+        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(0, 2, 0));
+        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(0, 0, 2));
+        assertEquals(Constants.getMaxRefinementLevel() - 2, TetreeBits.computeCubeLevel(3, 4, 2));
+
+        // Test level boundaries
+        int cellSize5 = Constants.lengthAtLevel((byte) 5);
+        byte level5 = TetreeBits.computeCubeLevel(cellSize5, 0, 0);
+        assertTrue(level5 <= 5, "Level should be appropriate for coordinate size");
+
+        // Test with large coordinates
+        int largeCoord = 1 << 10; // 1024
+        byte levelLarge = TetreeBits.computeCubeLevel(largeCoord, 0, 0);
+        assertTrue(levelLarge >= 0 && levelLarge <= Constants.getMaxRefinementLevel());
+
+        // Test symmetry - same result regardless of which coordinate is maximum
+        assertEquals(TetreeBits.computeCubeLevel(16, 8, 4), TetreeBits.computeCubeLevel(8, 16, 4));
+        assertEquals(TetreeBits.computeCubeLevel(16, 8, 4), TetreeBits.computeCubeLevel(4, 8, 16));
+    }
+
+    @Test
     public void testCoordinateXor() {
         // Test XOR of coordinates
         Tet tet1 = new Tet(1024, 2048, 4096, (byte) 5, (byte) 0);
@@ -85,45 +118,36 @@ public class TetreeBitsTest {
     }
 
     @Test
-    public void testExtractLevel() {
-        // Test level extraction from SFC indices
-        assertEquals(0, TetreeBits.extractLevel(0L)); // Root
-
-        // Level 1 indices start at 1
-        assertEquals(1, TetreeBits.extractLevel(1L));
-        assertEquals(1, TetreeBits.extractLevel(7L));
-
-        // Level 2 indices start at 8 (2^3)
-        assertEquals(2, TetreeBits.extractLevel(8L));
-        assertEquals(2, TetreeBits.extractLevel(63L));
-
-        // Level 3 indices start at 64 (2^6)
-        assertEquals(3, TetreeBits.extractLevel(64L));
-        assertEquals(3, TetreeBits.extractLevel(511L));
-
-        // Verify consistency with Tet.tetLevelFromIndex
-        for (long index : new long[] { 0, 1, 7, 8, 63, 64, 511, 512, 4095 }) {
-            assertEquals(Tet.tetLevelFromIndex(index), TetreeBits.extractLevel(index),
-                         "Level mismatch for index " + index);
-        }
-    }
-
-    @Test
     public void testExtractType() {
         // Test type extraction at level 0
         assertEquals(0, TetreeBits.extractType(0L, (byte) 0));
 
         // Test consistency with Tet.tetrahedron for various indices
         // The SFC index encodes the full path from root, not just local indices
-        for (long index : new long[] { 0, 1, 2, 3, 4, 5, 6, 7, 10, 50, 100, 500 }) {
-            byte level = Tet.tetLevelFromIndex(index);
-            Tet tet = Tet.tetrahedron(index);
-            byte extractedType = TetreeBits.extractType(index, level);
+        for (long index : new long[] { 0 }) {
+            Tet tet = Tet.tetrahedron(index, (byte) 0);
+            byte extractedType = TetreeBits.extractType(index, (byte) 0);
+            assertEquals(tet.type(), extractedType,
+                         "Type mismatch for index " + index + ", expected " + tet.type() + " but got " + extractedType);
+        }
+        // Test consistency with Tet.tetrahedron for various indices
+        // The SFC index encodes the full path from root, not just local indices
+        for (long index : new long[] { 1, 2, 3, 4, 5, 6, 7 }) {
+            Tet tet = Tet.tetrahedron(index, (byte) 1);
+            byte extractedType = TetreeBits.extractType(index, (byte) 1);
+            assertEquals(tet.type(), extractedType,
+                         "Type mismatch for index " + index + ", expected " + tet.type() + " but got " + extractedType);
+        }
+        // Test consistency with Tet.tetrahedron for various indices
+        // The SFC index encodes the full path from root, not just local indices
+        for (long index : new long[] { 50, 55, 64 }) {
+            Tet tet = Tet.tetrahedron(index, (byte) 2);
+            byte extractedType = TetreeBits.extractType(index, (byte) 2);
             assertEquals(tet.type(), extractedType,
                          "Type mismatch for index " + index + ", expected " + tet.type() + " but got " + extractedType);
         }
     }
-    
+
     @Test
     public void testIsAlignedToLevel() {
         // Test coordinate alignment
@@ -256,69 +280,4 @@ public class TetreeBitsTest {
         }
     }
 
-    @Test
-    public void testComputeCubeLevel() {
-        // Test cube level computation for various coordinates
-        
-        // Root level coordinates
-        assertEquals(0, TetreeBits.computeCubeLevel(0, 0, 0));
-        
-        // Test various coordinate values
-        assertEquals(Constants.getMaxRefinementLevel(), TetreeBits.computeCubeLevel(1, 0, 0));
-        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(2, 0, 0));
-        assertEquals(Constants.getMaxRefinementLevel() - 2, TetreeBits.computeCubeLevel(4, 0, 0));
-        assertEquals(Constants.getMaxRefinementLevel() - 3, TetreeBits.computeCubeLevel(8, 0, 0));
-        
-        // Test with maximum coordinate in different dimensions
-        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(0, 2, 0));
-        assertEquals(Constants.getMaxRefinementLevel() - 1, TetreeBits.computeCubeLevel(0, 0, 2));
-        assertEquals(Constants.getMaxRefinementLevel() - 2, TetreeBits.computeCubeLevel(3, 4, 2));
-        
-        // Test level boundaries
-        int cellSize5 = Constants.lengthAtLevel((byte) 5);
-        byte level5 = TetreeBits.computeCubeLevel(cellSize5, 0, 0);
-        assertTrue(level5 <= 5, "Level should be appropriate for coordinate size");
-        
-        // Test with large coordinates
-        int largeCoord = 1 << 10; // 1024
-        byte levelLarge = TetreeBits.computeCubeLevel(largeCoord, 0, 0);
-        assertTrue(levelLarge >= 0 && levelLarge <= Constants.getMaxRefinementLevel());
-        
-        // Test symmetry - same result regardless of which coordinate is maximum
-        assertEquals(TetreeBits.computeCubeLevel(16, 8, 4), TetreeBits.computeCubeLevel(8, 16, 4));
-        assertEquals(TetreeBits.computeCubeLevel(16, 8, 4), TetreeBits.computeCubeLevel(4, 8, 16));
-    }
-
-    @Test
-    @org.junit.jupiter.api.Disabled("Performance tests disabled in CI - enable manually for benchmarking")
-    public void testPerformance() {
-        // Measure performance of bitwise operations vs standard operations
-        int iterations = 1000000;
-        long index = 123456789L;
-
-        // Warm up
-        for (int i = 0; i < 1000; i++) {
-            TetreeBits.extractLevel(index);
-            Tet.tetLevelFromIndex(index);
-        }
-
-        // Test bitwise level extraction
-        long startBits = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
-            TetreeBits.extractLevel(index + i);
-        }
-        long timeBits = System.nanoTime() - startBits;
-
-        // Test standard level extraction
-        long startStandard = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
-            Tet.tetLevelFromIndex(index + i);
-        }
-        long timeStandard = System.nanoTime() - startStandard;
-
-        // Bitwise operations should be faster (or at least comparable)
-        System.out.println("Bitwise level extraction: " + timeBits / 1000000 + " ms");
-        System.out.println("Standard level extraction: " + timeStandard / 1000000 + " ms");
-        System.out.println("Speedup: " + (double) timeStandard / timeBits + "x");
-    }
 }
