@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.visitor;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.HashMap;
@@ -25,11 +26,12 @@ import java.util.Map;
 /**
  * Visitor that counts nodes and entities at each level of the tree.
  *
+ * @param <Key>     The type of spatial key used in the index
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public class NodeCountVisitor<ID extends EntityID, Content> extends AbstractTreeVisitor<ID, Content> {
+public class NodeCountVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> extends AbstractTreeVisitor<Key, ID, Content> {
 
     private final Map<Integer, Integer> nodesPerLevel    = new HashMap<>();
     private final Map<Integer, Integer> entitiesPerLevel = new HashMap<>();
@@ -127,7 +129,7 @@ public class NodeCountVisitor<ID extends EntityID, Content> extends AbstractTree
     }
 
     @Override
-    public boolean visitNode(SpatialNode<ID> node, int level, long parentIndex) {
+    public boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex) {
         totalNodes++;
         nodesPerLevel.merge(level, 1, Integer::sum);
         entitiesPerLevel.merge(level, node.entityIds().size(), Integer::sum);

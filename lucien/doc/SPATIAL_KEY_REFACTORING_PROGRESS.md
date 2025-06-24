@@ -76,6 +76,37 @@
 3. **Null Instead of -1**
    - Key types can't be primitive, use null for "no value"
 
-## Next: Phase 2 - Visitor Pattern Updates
+## Phase 2: Visitor Pattern Updates ✅ COMPLETED
 
-The visitor pattern classes need Key type parameter added throughout.
+### TreeVisitor Interface Updates
+1. **Type Parameter Added**: `TreeVisitor<Key extends SpatialKey<Key>, ID, Content>`
+2. **Method Signatures Updated**:
+   - `visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex)`
+   - `visitEntity(ID entityId, Content content, Key nodeIndex, int level)`
+   - `leaveNode(SpatialNode<Key, ID> node, int level, int childCount)`
+3. **Documentation Updated**: Changed "(-1 for root)" to "(null for root)"
+
+### AbstractTreeVisitor Updates
+1. **Class Declaration**: Now extends `TreeVisitor<Key, ID, Content>`
+2. **All Override Methods Updated**: Using Key instead of long for node indices
+3. **Generic Parameters Propagated**: Maintains type safety throughout
+
+### NodeCountVisitor Updates
+1. **Class Declaration**: `NodeCountVisitor<Key, ID, Content>`
+2. **visitNode Method**: Updated to accept `SpatialNode<Key, ID>` and `Key parentIndex`
+3. **Functionality Preserved**: Still counts nodes and entities per level
+
+### EntityCollectorVisitor Updates
+1. **Class Declaration**: `EntityCollectorVisitor<Key, ID, Content>`
+2. **EntityMatch Record**: Updated to `EntityMatch<Key, ID, Content>` with Key nodeIndex
+3. **Collection Type**: Changed to `List<EntityMatch<Key, ID, Content>>`
+4. **All Methods Updated**: Using Key type throughout
+
+### TraversalContext Already Complete
+- Already had proper `TraversalContext<Key extends SpatialKey<Key>, ID extends EntityID>`
+- All methods already use Key type for node indices
+- No changes needed
+
+## Next: Phase 3 - Octree-Specific Issues
+
+Focus on MortonKey conversions and OctreeSubdivisionStrategy.
