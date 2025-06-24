@@ -51,6 +51,13 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     }
 
     /**
+     * Answer the root cell of the decomposition
+     *
+     * @return K - the root cell of the decomposition
+     */
+    K root();
+
+    /**
      * Get a human-readable string representation of this key. This should include all relevant components (level,
      * index, etc.) for debugging purposes.
      *

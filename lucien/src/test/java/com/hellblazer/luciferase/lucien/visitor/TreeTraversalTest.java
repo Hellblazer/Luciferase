@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.visitor;
 
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
@@ -62,8 +63,7 @@ public class TreeTraversalTest {
         final int maxNodesToVisit = 3;
         TreeVisitor<LongEntityID, String> cancellingVisitor = new AbstractTreeVisitor<>() {
             @Override
-            public boolean visitNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<LongEntityID> node,
-                                     int level, long parentIndex) {
+            public boolean visitNode(SpatialIndex.SpatialNode node, int level, long parentIndex) {
                 nodesVisited[0]++;
                 // Cancel after maxNodesToVisit nodes
                 return nodesVisited[0] < maxNodesToVisit;
@@ -140,7 +140,7 @@ public class TreeTraversalTest {
         var nodes = octree.nodes().toList();
         assertFalse(nodes.isEmpty(), "Should have some nodes");
 
-        long startNode = nodes.get(0).mortonIndex();
+        var startNode = nodes.get(0).sfcIndex();
 
         // Traverse from specific node
         NodeCountVisitor<LongEntityID, String> visitor = new NodeCountVisitor<>();
@@ -189,9 +189,9 @@ public class TreeTraversalTest {
             }
 
             @Override
-            public void leaveNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<LongEntityID> node,
+            public void leaveNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<?, LongEntityID> node,
                                   int level, int childCount) {
-                callOrder.add("leaveNode:" + node.mortonIndex());
+                callOrder.add("leaveNode:" + node.sfcIndex());
             }
 
             @Override
@@ -200,9 +200,8 @@ public class TreeTraversalTest {
             }
 
             @Override
-            public boolean visitNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<LongEntityID> node,
-                                     int level, long parentIndex) {
-                callOrder.add("visitNode:" + node.mortonIndex());
+            public boolean visitNode(SpatialIndex.SpatialNode<?, LongEntityID> node, int level, long parentIndex) {
+                callOrder.add("visitNode:" + node.sfcIndex());
                 return true;
             }
         };

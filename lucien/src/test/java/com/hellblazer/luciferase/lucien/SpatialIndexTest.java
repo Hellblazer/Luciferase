@@ -148,23 +148,6 @@ public class SpatialIndexTest {
     }
 
     @Test
-    void testSpatialMap() {
-        // Insert some entities
-        spatialIndex.insert(new Point3f(100, 100, 100), (byte) 15, "E1");
-        spatialIndex.insert(new Point3f(200, 200, 200), (byte) 15, "E2");
-
-        var spatialMap = spatialIndex.getSpatialMap();
-        assertNotNull(spatialMap);
-        assertEquals(2, spatialMap.size());
-
-        // Each entry should have entity IDs
-        spatialMap.forEach((mortonIndex, entityIds) -> {
-            assertNotNull(entityIds);
-            assertFalse(entityIds.isEmpty());
-        });
-    }
-
-    @Test
     void testSpatialQueries() {
         // Insert entities at various positions
         spatialIndex.insert(new Point3f(100, 100, 100), (byte) 15, "E1");

@@ -43,8 +43,12 @@ public final class MortonKey implements SpatialKey<MortonKey> {
      * @param mortonCode the Morton-encoded spatial index
      */
     public MortonKey(long mortonCode) {
+        this(mortonCode, Constants.toLevel(mortonCode));
+    }
+
+    public MortonKey(long mortonCode, byte level) {
         this.mortonCode = mortonCode;
-        this.level = Constants.toLevel(mortonCode);
+        this.level = level;
     }
 
     /**
@@ -62,6 +66,10 @@ public final class MortonKey implements SpatialKey<MortonKey> {
         javax.vecmath.Point3f point = new javax.vecmath.Point3f(x, y, z);
         long mortonCode = Constants.calculateMortonIndex(point, level);
         return new MortonKey(mortonCode);
+    }
+
+    public static MortonKey getRoot() {
+        return new MortonKey(0, (byte) 0);
     }
 
     @Override
@@ -105,6 +113,11 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     public boolean isValid() {
         // Morton codes with level > max refinement level are invalid
         return level >= 0 && level <= Constants.getMaxRefinementLevel();
+    }
+
+    @Override
+    public MortonKey root() {
+        return new MortonKey(0);
     }
 
     @Override

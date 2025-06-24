@@ -24,7 +24,6 @@ import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,40 +70,39 @@ import java.util.stream.Stream;
  * @param <NodeType> The type of spatial node used by the implementation
  * @author hal.hildebrand
  */
-public abstract class AbstractSpatialIndex<ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>>
-implements SpatialIndex<ID, Content> {
+public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>>
+implements SpatialIndex<Key, ID, Content> {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractSpatialIndex.class);
 
     // Common fields
-    protected final EntityManager<ID, Content>                        entityManager;
-    protected final int                                               maxEntitiesPerNode;
-    protected final byte                                              maxDepth;
-    protected final EntitySpanningPolicy                              spanningPolicy;
+    protected final EntityManager<Key, ID, Content>                    entityManager;
+    protected final int                                                maxEntitiesPerNode;
+    protected final byte                                               maxDepth;
+    protected final EntitySpanningPolicy                               spanningPolicy;
     // Spatial index: Long index -> Node containing entity IDs
-    protected final Map<Long, NodeType>                               spatialIndex;
+    protected final Map<Key, NodeType>                                 spatialIndex;
     // Sorted spatial indices for efficient range queries
-    protected final NavigableSet<Long>                                sortedSpatialIndices;
+    protected final NavigableSet<Key>                                  sortedSpatialIndices;
     // Read-write lock for thread safety
-    protected final ReadWriteLock                                     lock;
+    protected final ReadWriteLock                                      lock;
     // Fine-grained locking strategy for high-concurrency operations
-    protected final FineGrainedLockingStrategy<ID, Content, NodeType> lockingStrategy;
-    protected final Set<Long>                                         deferredSubdivisionNodes = new HashSet<>();
-    private final   TreeBalancer<ID>                                  treeBalancer;
-    // Tree balancing support
-    private         TreeBalancingStrategy<ID>                         balancingStrategy;
-    private         boolean                                           autoBalancingEnabled = false;
-    private         long                                              lastBalancingTime    = 0;
-    
+    protected final FineGrainedLockingStrategy<ID, Content, NodeType>  lockingStrategy;
+    protected final Set<Long>                                          deferredSubdivisionNodes = new HashSet<>();
+    private final   TreeBalancer<Key, ID>                              treeBalancer;
     // Bulk operation support
-    protected       BulkOperationConfig                               bulkConfig               = new BulkOperationConfig();
-    protected       boolean                                           bulkLoadingMode          = false;
-    protected       BulkOperationProcessor<ID, Content>               bulkProcessor;
-    protected       DeferredSubdivisionManager<ID, NodeType>          subdivisionManager;
-    protected       SpatialNodePool<NodeType>                         nodePool;
-    protected       ParallelBulkOperations<ID, Content, NodeType>     parallelOperations;
-    protected       SubdivisionStrategy<ID, Content>                  subdivisionStrategy;
-    protected       StackBasedTreeBuilder<ID, Content, NodeType>      treeBuilder;
+    protected       BulkOperationConfig                                bulkConfig               = new BulkOperationConfig();
+    protected       boolean                                            bulkLoadingMode          = false;
+    protected       BulkOperationProcessor<Key, ID, Content>           bulkProcessor;
+    protected       DeferredSubdivisionManager<Key, ID, NodeType>      subdivisionManager;
+    protected       SpatialNodePool<NodeType>                          nodePool;
+    protected       ParallelBulkOperations<Key, ID, Content, NodeType> parallelOperations;
+    protected       SubdivisionStrategy<Key, ID, Content>              subdivisionStrategy;
+    protected       StackBasedTreeBuilder<Key, ID, Content, NodeType>  treeBuilder;
+    // Tree balancing support
+    private         TreeBalancingStrategy<ID>                          balancingStrategy;
+    private         boolean                                            autoBalancingEnabled     = false;
+    private         long                                               lastBalancingTime        = 0;
 
     /**
      * Constructor with common parameters
@@ -127,11 +125,11 @@ implements SpatialIndex<ID, Content> {
                                                                ParallelBulkOperations.defaultConfig());
         this.lockingStrategy = new FineGrainedLockingStrategy<>(this, FineGrainedLockingStrategy.defaultConfig());
         this.subdivisionStrategy = createDefaultSubdivisionStrategy();
-        this.treeBuilder = new StackBasedTreeBuilder<>(StackBasedTreeBuilder.defaultConfig(), this::getLevelFromIndex);
+        this.treeBuilder = new StackBasedTreeBuilder<>(StackBasedTreeBuilder.defaultConfig());
     }
 
     @Override
-    public Stream<SpatialNode<ID>> boundedBy(Spatial volume) {
+    public Stream<SpatialNode<Key, ID>> boundedBy(Spatial volume) {
         validateSpatialConstraints(volume);
 
         var bounds = getVolumeBounds(volume);
@@ -142,7 +140,7 @@ implements SpatialIndex<ID, Content> {
         lock.readLock().lock();
         try {
             // Must collect results inside lock to avoid concurrent modification
-            List<SpatialNode<ID>> results = spatialRangeQuery(bounds, false).filter(
+            var results = spatialRangeQuery(bounds, false).filter(
             entry -> isNodeContainedInVolume(entry.getKey(), volume)).map(
             entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
             Collectors.toList());
@@ -153,7 +151,7 @@ implements SpatialIndex<ID, Content> {
     }
 
     @Override
-    public Stream<SpatialNode<ID>> bounding(Spatial volume) {
+    public Stream<SpatialNode<Key, ID>> bounding(Spatial volume) {
         validateSpatialConstraints(volume);
 
         var bounds = getVolumeBounds(volume);
@@ -164,7 +162,7 @@ implements SpatialIndex<ID, Content> {
         lock.readLock().lock();
         try {
             // Must collect results inside lock to avoid concurrent modification
-            List<SpatialNode<ID>> results = spatialRangeQuery(bounds, true).filter(
+            var results = spatialRangeQuery(bounds, true).filter(
             entry -> doesNodeIntersectVolume(entry.getKey(), volume)).map(
             entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
             Collectors.toList());
@@ -173,6 +171,33 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    /**
+     * Build tree using stack-based approach for better cache locality
+     */
+    public StackBasedTreeBuilder.BuildResult buildTreeStackBased(List<Point3f> positions, List<Content> contents,
+                                                                 byte startLevel) {
+        if (positions.size() != contents.size()) {
+            throw new IllegalArgumentException("Positions and contents must have the same size");
+        }
+
+        lock.writeLock().lock();
+        try {
+            // Clear existing tree if needed
+            if (!spatialIndex.isEmpty()) {
+                spatialIndex.clear();
+                sortedSpatialIndices.clear();
+                entityManager.clear();
+            }
+
+            // Build tree
+            return treeBuilder.buildTree(this, positions, contents, startLevel);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    // ===== Common Entity Management Methods =====
 
     @Override
     public Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2) {
@@ -214,67 +239,12 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Entity Management Methods =====
-
     @Override
     public void configureBulkOperations(BulkOperationConfig config) {
         if (config == null) {
             throw new IllegalArgumentException("Bulk operation config cannot be null");
         }
         this.bulkConfig = config;
-    }
-    
-    /**
-     * Configure subdivision strategy
-     */
-    public void configureSubdivisionStrategy(SubdivisionStrategy<ID, Content> strategy) {
-        if (strategy == null) {
-            throw new IllegalArgumentException("Subdivision strategy cannot be null");
-        }
-        this.subdivisionStrategy = strategy;
-    }
-    
-    /**
-     * Get current subdivision strategy
-     */
-    public SubdivisionStrategy<ID, Content> getSubdivisionStrategy() {
-        return subdivisionStrategy;
-    }
-    
-    /**
-     * Configure stack-based tree builder
-     */
-    public void configureTreeBuilder(StackBasedTreeBuilder.BuildConfig config) {
-        if (config == null) {
-            throw new IllegalArgumentException("Tree builder config cannot be null");
-        }
-        this.treeBuilder = new StackBasedTreeBuilder<>(config, this::getLevelFromIndex);
-    }
-    
-    /**
-     * Build tree using stack-based approach for better cache locality
-     */
-    public StackBasedTreeBuilder.BuildResult buildTreeStackBased(List<Point3f> positions, 
-                                                                 List<Content> contents, 
-                                                                 byte startLevel) {
-        if (positions.size() != contents.size()) {
-            throw new IllegalArgumentException("Positions and contents must have the same size");
-        }
-        
-        lock.writeLock().lock();
-        try {
-            // Clear existing tree if needed
-            if (!spatialIndex.isEmpty()) {
-                spatialIndex.clear();
-                sortedSpatialIndices.clear();
-                entityManager.clear();
-            }
-            
-            // Build tree
-            return treeBuilder.buildTree(this, positions, contents, startLevel);
-        } finally {
-            lock.writeLock().unlock();
-        }
     }
 
     /**
@@ -288,15 +258,35 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Configure subdivision strategy
+     */
+    public void configureSubdivisionStrategy(SubdivisionStrategy<Key, ID, Content> strategy) {
+        if (strategy == null) {
+            throw new IllegalArgumentException("Subdivision strategy cannot be null");
+        }
+        this.subdivisionStrategy = strategy;
+    }
+
+    /**
+     * Configure stack-based tree builder
+     */
+    public void configureTreeBuilder(StackBasedTreeBuilder.BuildConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("Tree builder config cannot be null");
+        }
+        this.treeBuilder = new StackBasedTreeBuilder<>(config);
+    }
+
+    /**
      * Check if an entity exists in the spatial index.
-     * 
+     *
      * <p>This method delegates to the EntityManager but adds thread-safe locking to ensure
-     * consistency in concurrent environments. The read lock allows multiple threads to check
-     * entity existence simultaneously while preventing modifications during the check.</p>
-     * 
+     * consistency in concurrent environments. The read lock allows multiple threads to check entity existence
+     * simultaneously while preventing modifications during the check.</p>
+     *
      * <p><b>Why locking is necessary:</b> Even though this is a simple delegation, the EntityManager's
-     * internal state could be modified by other threads during the check. The read lock ensures
-     * a consistent view of the entity state.</p>
+     * internal state could be modified by other threads during the check. The read lock ensures a consistent view of
+     * the entity state.</p>
      *
      * @param entityId the ID of the entity to check
      * @return true if the entity exists in the spatial index
@@ -324,14 +314,14 @@ implements SpatialIndex<ID, Content> {
 
     /**
      * Get the total number of entities in the spatial index.
-     * 
+     *
      * <p>This method provides thread-safe access to the entity count by acquiring a read lock.
-     * Multiple threads can read the count simultaneously, but modifications are blocked during
-     * the read to ensure accuracy.</p>
-     * 
+     * Multiple threads can read the count simultaneously, but modifications are blocked during the read to ensure
+     * accuracy.</p>
+     *
      * <p><b>Thread safety rationale:</b> Without locking, the count could change between the
-     * method call and return, potentially causing issues in code that relies on accurate counts
-     * for resource allocation or iteration bounds.</p>
+     * method call and return, potentially causing issues in code that relies on accurate counts for resource allocation
+     * or iteration bounds.</p>
      *
      * @return the number of entities currently stored in the spatial index
      */
@@ -354,9 +344,9 @@ implements SpatialIndex<ID, Content> {
             // Process all deferred subdivisions using the manager
             if (bulkConfig.isDeferSubdivision()) {
                 DeferredSubdivisionManager.SubdivisionResult result = subdivisionManager.processAll(
-                new DeferredSubdivisionManager.SubdivisionProcessor<ID, NodeType>() {
+                new DeferredSubdivisionManager.SubdivisionProcessor<Key, ID, NodeType>() {
                     @Override
-                    public Result subdivideNode(long nodeIndex, NodeType node, byte level) {
+                    public Result subdivideNode(Key nodeIndex, NodeType node, byte level) {
                         int initialCount = spatialIndex.size();
                         int entityCount = node.getEntityCount();
 
@@ -394,7 +384,7 @@ implements SpatialIndex<ID, Content> {
             // Locality-constrained collision detection: Only check spatially adjacent entities
             // This avoids the O(n²) problem of checking every entity against every other entity
 
-            for (Long nodeIndex : sortedSpatialIndices) {
+            for (var nodeIndex : sortedSpatialIndices) {
                 NodeType node = spatialIndex.get(nodeIndex);
                 if (node == null || node.isEmpty()) {
                     continue;
@@ -419,9 +409,9 @@ implements SpatialIndex<ID, Content> {
                     EntityBounds bounds = entityManager.getEntityBounds(id1);
                     if (bounds != null) {
                         // Only search nodes that could intersect with this entity's bounds
-                        Set<Long> intersectingNodes = findNodesIntersectingBounds(bounds);
+                        var intersectingNodes = findNodesIntersectingBounds(bounds);
 
-                        for (Long intersectingNodeIndex : intersectingNodes) {
+                        for (var intersectingNodeIndex : intersectingNodes) {
                             // Skip self (we already checked entities within the same node above)
                             if (intersectingNodeIndex.equals(nodeIndex)) {
                                 continue;
@@ -443,15 +433,15 @@ implements SpatialIndex<ID, Content> {
                 }
 
                 // 3. Check against immediate neighboring nodes (for point entities and close proximity)
-                Queue<Long> neighbors = new LinkedList<>();
-                Set<Long> visitedNeighbors = new HashSet<>();
+                var neighbors = new LinkedList<Key>();
+                var visitedNeighbors = new HashSet<Key>();
                 addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
 
                 while (!neighbors.isEmpty()) {
-                    Long neighborIndex = neighbors.poll();
+                    var neighborIndex = neighbors.poll();
 
                     // Skip already processed nodes (SFC ordering optimization)
-                    if (neighborIndex < nodeIndex) {
+                    if (neighborIndex.compareTo(nodeIndex) < 0) {
                         continue;
                     }
 
@@ -492,7 +482,7 @@ implements SpatialIndex<ID, Content> {
             List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
 
             // Get entity's locations
-            Set<Long> locations = entityManager.getEntityLocations(entityId);
+            var locations = entityManager.getEntityLocations(entityId);
             if (locations.isEmpty()) {
                 return collisions;
             }
@@ -505,10 +495,10 @@ implements SpatialIndex<ID, Content> {
 
             if (entityBounds != null) {
                 // For bounded entities, find all nodes that intersect with the bounds
-                Set<Long> nodesToCheck = findNodesIntersectingBounds(entityBounds);
+                var nodesToCheck = findNodesIntersectingBounds(entityBounds);
 
                 // Check all nodes that intersect with the entity's bounds
-                for (Long nodeIndex : nodesToCheck) {
+                for (var nodeIndex : nodesToCheck) {
                     NodeType node = spatialIndex.get(nodeIndex);
                     if (node == null || node.isEmpty()) {
                         continue;
@@ -524,7 +514,7 @@ implements SpatialIndex<ID, Content> {
                 }
             } else {
                 // For point entities, use the original neighbor-based approach
-                for (Long nodeIndex : locations) {
+                for (var nodeIndex : locations) {
                     NodeType node = spatialIndex.get(nodeIndex);
                     if (node == null) {
                         continue;
@@ -539,18 +529,18 @@ implements SpatialIndex<ID, Content> {
                     }
 
                     // Check neighboring nodes
-                    Queue<Long> neighbors = new LinkedList<>();
-                    Set<Long> visitedNeighbors = new HashSet<>();
+                    var neighbors = new LinkedList<Key>();
+                    var visitedNeighbors = new HashSet<Key>();
                     addNeighboringNodes(nodeIndex, neighbors, visitedNeighbors);
 
                     while (!neighbors.isEmpty()) {
-                        Long neighborIndex = neighbors.poll();
-                        NodeType neighborNode = spatialIndex.get(neighborIndex);
+                        var neighborIndex = neighbors.poll();
+                        var neighborNode = spatialIndex.get(neighborIndex);
                         if (neighborNode == null || neighborNode.isEmpty()) {
                             continue;
                         }
 
-                        for (ID otherId : neighborNode.getEntityIds()) {
+                        for (var otherId : neighborNode.getEntityIds()) {
                             if (!checkedEntities.add(otherId)) {
                                 continue;
                             }
@@ -567,8 +557,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Insert Operations =====
-
     @Override
     public List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region) {
         lock.readLock().lock();
@@ -582,8 +570,8 @@ implements SpatialIndex<ID, Content> {
                 return collisions;
             }
 
-            Stream<Map.Entry<Long, NodeType>> nodesInRegion = spatialRangeQuery(bounds, true);
-            List<Map.Entry<Long, NodeType>> nodeList = nodesInRegion.collect(Collectors.toList());
+            var nodesInRegion = spatialRangeQuery(bounds, true);
+            var nodeList = nodesInRegion.collect(Collectors.toList());
 
             // Check entities within and between nodes
             for (int i = 0; i < nodeList.size(); i++) {
@@ -632,6 +620,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Common Insert Operations =====
 
     /**
      * Find all entities that are completely inside the frustum (not partially visible).
@@ -750,13 +740,13 @@ implements SpatialIndex<ID, Content> {
 
             // SFC-optimized balancing stats: Process nodes in spatial order for better cache locality
             // This improves memory access patterns during statistics calculation
-            for (Long nodeIndex : sortedSpatialIndices) {
-                NodeType node = spatialIndex.get(nodeIndex);
+            for (var nodeIndex : sortedSpatialIndices) {
+                var node = spatialIndex.get(nodeIndex);
                 if (node == null) {
                     continue;
                 }
 
-                byte level = getLevelFromIndex(nodeIndex);
+                byte level = nodeIndex.getLevel();
                 maxDepth = Math.max(maxDepth, level);
 
                 if (node.isEmpty()) {
@@ -783,7 +773,7 @@ implements SpatialIndex<ID, Content> {
             // Calculate variance using SFC ordering for improved cache performance
             double variance = 0;
             if (totalNodes > 0) {
-                for (Long nodeIndex : sortedSpatialIndices) {
+                for (var nodeIndex : sortedSpatialIndices) {
                     NodeType node = spatialIndex.get(nodeIndex);
                     if (node != null) {
                         double diff = node.getEntityCount() - averageLoad;
@@ -800,8 +790,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Remove Operations =====
-
     @Override
     public CollisionShape getCollisionShape(ID entityId) {
         lock.readLock().lock();
@@ -812,13 +800,15 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // ===== Common Remove Operations =====
+
     /**
      * Get content for multiple entities in a single operation.
-     * 
+     *
      * <p>Batch retrieval with thread-safe locking. The read lock ensures consistency across
-     * all entity retrievals, preventing partial updates where some entities might be modified
-     * during the batch operation.</p>
-     * 
+     * all entity retrievals, preventing partial updates where some entities might be modified during the batch
+     * operation.</p>
+     *
      * <p><b>Atomicity guarantee:</b> All entities are retrieved under the same lock, ensuring
      * a consistent snapshot of the entity state at a single point in time.</p>
      *
@@ -837,14 +827,13 @@ implements SpatialIndex<ID, Content> {
 
     /**
      * Get all entities with their current positions.
-     * 
+     *
      * <p>Returns a consistent snapshot of all entity positions. The read lock prevents
-     * entities from being added, removed, or moved during the operation, ensuring the
-     * returned map accurately represents the spatial state at a single moment.</p>
-     * 
+     * entities from being added, removed, or moved during the operation, ensuring the returned map accurately
+     * represents the spatial state at a single moment.</p>
+     *
      * <p><b>Use case:</b> This method is particularly useful for visualization, debugging,
-     * or algorithms that need a complete spatial snapshot without interference from
-     * concurrent modifications.</p>
+     * or algorithms that need a complete spatial snapshot without interference from concurrent modifications.</p>
      *
      * @return map of entity IDs to their current positions
      */
@@ -860,14 +849,14 @@ implements SpatialIndex<ID, Content> {
 
     /**
      * Get the content associated with an entity.
-     * 
+     *
      * <p>Provides thread-safe access to entity content. The read lock ensures that the entity
-     * won't be removed or modified while retrieving its content, preventing null pointer
-     * exceptions or returning stale data.</p>
-     * 
+     * won't be removed or modified while retrieving its content, preventing null pointer exceptions or returning stale
+     * data.</p>
+     *
      * <p><b>Concurrency consideration:</b> In a multi-threaded environment, an entity could be
-     * removed between checking its existence and retrieving its content. The read lock prevents
-     * this race condition.</p>
+     * removed between checking its existence and retrieving its content. The read lock prevents this race
+     * condition.</p>
      *
      * @param entityId the ID of the entity
      * @return the content associated with the entity, or null if not found
@@ -882,8 +871,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Update Operations =====
-
     @Override
     public EntityBounds getEntityBounds(ID entityId) {
         lock.readLock().lock();
@@ -894,7 +881,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Common Query Operations =====
+    // ===== Common Update Operations =====
 
     @Override
     public Point3f getEntityPosition(ID entityId) {
@@ -905,6 +892,8 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
+
+    // ===== Common Query Operations =====
 
     @Override
     public int getEntitySpanCount(ID entityId) {
@@ -941,26 +930,6 @@ implements SpatialIndex<ID, Content> {
         return parallelOperations.getPerformanceStatistics();
     }
 
-    // ===== Common Statistics =====
-
-    @Override
-    public NavigableMap<Long, Set<ID>> getSpatialMap() {
-        lock.readLock().lock();
-        try {
-            NavigableMap<Long, Set<ID>> map = new TreeMap<>();
-            for (var entry : getSpatialIndex().entrySet()) {
-                if (!entry.getValue().isEmpty()) {
-                    map.put(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()));
-                }
-            }
-            return map;
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
-    // ===== Common Utility Methods =====
-
     @Override
     public EntityStats getStats() {
         lock.readLock().lock();
@@ -970,15 +939,14 @@ implements SpatialIndex<ID, Content> {
             int totalEntityReferences = 0;
             int maxDepth = 0;
 
-            for (Map.Entry<Long, NodeType> entry : getSpatialIndex().entrySet()) {
+            for (var entry : getSpatialIndex().entrySet()) {
                 if (!entry.getValue().isEmpty()) {
                     nodeCount++;
                 }
                 totalEntityReferences += entry.getValue().getEntityCount();
 
                 // Calculate depth from spatial index
-                byte depth = getLevelFromIndex(entry.getKey());
-                maxDepth = Math.max(maxDepth, depth);
+                maxDepth = Math.max(maxDepth, entry.getKey().getLevel());
             }
 
             return new EntityStats(nodeCount, entityCount, totalEntityReferences, maxDepth);
@@ -987,8 +955,15 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    /**
+     * Get current subdivision strategy
+     */
+    public SubdivisionStrategy<Key, ID, Content> getSubdivisionStrategy() {
+        return subdivisionStrategy;
+    }
+
     @Override
-    public boolean hasNode(long spatialIndex) {
+    public boolean hasNode(Key spatialIndex) {
         lock.readLock().lock();
         try {
             NodeType node = getSpatialIndex().get(spatialIndex);
@@ -1067,8 +1042,8 @@ implements SpatialIndex<ID, Content> {
         if (bulkConfig.isUseDynamicLevelSelection()) {
             byte optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNode);
             if (optimalLevel != level) {
-                log.debug("Dynamic level selection: changing from level {} to {} for {} entities",
-                         level, optimalLevel, positions.size());
+                log.debug("Dynamic level selection: changing from level {} to {} for {} entities", level, optimalLevel,
+                          positions.size());
                 effectiveLevel = optimalLevel;
             }
         }
@@ -1082,27 +1057,28 @@ implements SpatialIndex<ID, Content> {
             if (bulkConfig.isUseStackBasedBuilder() && positions.size() >= bulkConfig.getStackBuilderThreshold()) {
                 // Configure tree builder with the provided config
                 configureTreeBuilder(bulkConfig.getStackBuilderConfig());
-                
+
                 // Use stack-based builder for efficient bulk construction
-                StackBasedTreeBuilder.BuildResult<ID> buildResult = treeBuilder.buildTree(this, positions, contents, effectiveLevel);
-                
+                StackBasedTreeBuilder.BuildResult<ID> buildResult = treeBuilder.buildTree(this, positions, contents,
+                                                                                          effectiveLevel);
+
                 // Log performance metrics
                 long elapsedMs = buildResult.timeTaken;
                 log.debug("Stack-based bulk insertion completed: {} entities in {}ms, {} nodes created",
-                        buildResult.entitiesProcessed, elapsedMs, buildResult.nodesCreated);
-                
+                          buildResult.entitiesProcessed, elapsedMs, buildResult.nodesCreated);
+
                 // Return the actual inserted IDs from the builder
                 // If IDs were not tracked, we have a problem since the entities were already created
                 if (buildResult.insertedIds.isEmpty() && buildResult.entitiesProcessed > 0) {
-                    log.warn("StackBasedTreeBuilder was configured not to track IDs but caller expects ID list. " +
-                             "This can cause memory issues for large datasets. Consider using entityCount() instead of tracking individual IDs.");
+                    log.warn("StackBasedTreeBuilder was configured not to track IDs but caller expects ID list. "
+                             + "This can cause memory issues for large datasets. Consider using entityCount() instead of tracking individual IDs.");
                     // Return empty list rather than creating incorrect IDs
                     return Collections.emptyList();
                 } else {
                     return buildResult.insertedIds;
                 }
             }
-            
+
             // Enable bulk loading mode if configured
             boolean wasInBulkMode = bulkLoadingMode;
             if (bulkConfig.isDeferSubdivision() && !bulkLoadingMode) {
@@ -1116,10 +1092,11 @@ implements SpatialIndex<ID, Content> {
             // Check if Morton sorting makes sense at this level
             boolean shouldUseMortonSort = bulkConfig.isPreSortByMorton();
             if (bulkConfig.isUseDynamicLevelSelection()) {
-                shouldUseMortonSort = shouldUseMortonSort && LevelSelector.shouldUseMortonSort(positions, effectiveLevel);
+                shouldUseMortonSort = shouldUseMortonSort && LevelSelector.shouldUseMortonSort(positions,
+                                                                                               effectiveLevel);
             }
 
-            List<BulkOperationProcessor.MortonEntity<Content>> mortonEntities;
+            List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities;
             if (useParallel) {
                 mortonEntities = bulkProcessor.preprocessBatchParallel(positions, contents, effectiveLevel,
                                                                        shouldUseMortonSort,
@@ -1131,13 +1108,11 @@ implements SpatialIndex<ID, Content> {
 
             // Group by spatial node if batch is large enough
             if (positions.size() > bulkConfig.getBatchSize()) {
-                BulkOperationProcessor.GroupedEntities<Content> grouped = bulkProcessor.groupByNode(mortonEntities,
-                                                                                                    effectiveLevel);
+                var grouped = bulkProcessor.groupByNode(mortonEntities, effectiveLevel);
 
                 // Process each group
-                for (Map.Entry<Long, List<BulkOperationProcessor.MortonEntity<Content>>> entry : grouped.getGroups()
-                                                                                                        .entrySet()) {
-                    for (BulkOperationProcessor.MortonEntity<Content> entity : entry.getValue()) {
+                for (var entry : grouped.getGroups().entrySet()) {
+                    for (var entity : entry.getValue()) {
                         ID entityId = entityManager.generateEntityId();
                         insertedIds.add(entityId);
 
@@ -1150,7 +1125,7 @@ implements SpatialIndex<ID, Content> {
                 }
             } else {
                 // Process directly for smaller batches
-                for (BulkOperationProcessor.MortonEntity<Content> entity : mortonEntities) {
+                for (BulkOperationProcessor.SfcEntity<Key, Content> entity : mortonEntities) {
                     ID entityId = entityManager.generateEntityId();
                     insertedIds.add(entityId);
 
@@ -1177,7 +1152,7 @@ implements SpatialIndex<ID, Content> {
         if (positions.size() > 1000) {
             double rate = positions.size() * 1_000_000_000.0 / elapsedTime;
             log.debug("Bulk inserted {} entities in {}ms ({} entities/sec)", positions.size(),
-                              String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
+                      String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
         }
 
         return insertedIds;
@@ -1257,7 +1232,7 @@ implements SpatialIndex<ID, Content> {
         if (bounds.size() > 1000) {
             double rate = bounds.size() * 1_000_000_000.0 / elapsedTime;
             log.debug("Bulk inserted {} entities with spanning in {}ms ({} entities/sec)", bounds.size(),
-                              String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
+                      String.format("%.2f", elapsedTime / 1_000_000.0), String.format("%.0f", rate));
         }
 
         return insertedIds;
@@ -1276,24 +1251,6 @@ implements SpatialIndex<ID, Content> {
             lock.readLock().unlock();
         }
     }
-    
-    // Package-private accessors for StackBasedTreeBuilder
-    EntityManager<ID, Content> getEntityManager() {
-        return entityManager;
-    }
-    
-    ID generateId() {
-        return entityManager.generateEntityId();
-    }
-    
-    int getMaxEntitiesPerNode() {
-        return maxEntitiesPerNode;
-    }
-    
-    byte getMaxDepth() {
-        return maxDepth;
-    }
-    
 
     /**
      * Find k nearest neighbors to a query point using spatial locality optimization
@@ -1335,7 +1292,6 @@ implements SpatialIndex<ID, Content> {
                 // Find nodes that intersect with search bounds (spatial locality constraint)
                 boolean foundNewEntities = false;
                 spatialRangeQuery(searchBounds, true).forEach(entry -> {
-                    Long nodeIndex = entry.getKey();
                     NodeType node = entry.getValue();
 
                     if (node == null || node.isEmpty()) {
@@ -1375,10 +1331,10 @@ implements SpatialIndex<ID, Content> {
             if (candidates.isEmpty() && !sortedSpatialIndices.isEmpty()) {
                 // Find the nearest nodes to query point using SFC ordering
                 float bestDistance = Float.MAX_VALUE;
-                Long nearestNodeIndex = null;
+                Key nearestNodeIndex = null;
 
                 // Use SFC ordering to find the nearest node efficiently
-                for (Long nodeIndex : sortedSpatialIndices) {
+                for (var nodeIndex : sortedSpatialIndices) {
                     NodeType node = spatialIndex.get(nodeIndex);
                     if (node == null || node.isEmpty()) {
                         continue;
@@ -1399,28 +1355,28 @@ implements SpatialIndex<ID, Content> {
 
                 // If we found a starting node, search from there
                 if (nearestNodeIndex != null) {
-                    Queue<Long> toVisit = new LinkedList<>();
-                    Set<Long> visitedNodes = new HashSet<>();
+                    Queue<Key> toVisit = new LinkedList<>();
+                    Set<Key> visitedNodes = new HashSet<>();
                     toVisit.add(nearestNodeIndex);
 
                     // Breadth-first search from nearest node with distance-based pruning
                     while (!toVisit.isEmpty() && candidates.size() < k) {
-                        Long current = toVisit.poll();
+                        var current = toVisit.poll();
                         if (!visitedNodes.add(current)) {
                             continue;
                         }
 
-                        NodeType node = spatialIndex.get(current);
+                        var node = spatialIndex.get(current);
                         if (node == null) {
                             continue;
                         }
 
                         // Check entities in current node
-                        for (ID entityId : node.getEntityIds()) {
+                        for (var entityId : node.getEntityIds()) {
                             if (visited.add(entityId)) {
-                                Point3f entityPos = entityManager.getEntityPosition(entityId);
+                                var entityPos = entityManager.getEntityPosition(entityId);
                                 if (entityPos != null) {
-                                    float distance = queryPoint.distance(entityPos);
+                                    var distance = queryPoint.distance(entityPos);
                                     if (distance <= maxDistance) {
                                         candidates.add(new EntityDistance<>(entityId, distance));
                                         if (candidates.size() > k) {
@@ -1440,14 +1396,12 @@ implements SpatialIndex<ID, Content> {
             }
 
             // Convert to sorted list (closest first)
-            List<EntityDistance<ID>> sorted = new ArrayList<>(candidates);
+            var sorted = new ArrayList<>(candidates);
             sorted.sort(Comparator.comparingDouble(EntityDistance::distance));
 
             return sorted.stream().map(EntityDistance::entityId).collect(Collectors.toList());
         });
     }
-
-    // ===== Ray Intersection Abstract Methods =====
 
     @Override
     public int nodeCount() {
@@ -1460,12 +1414,11 @@ implements SpatialIndex<ID, Content> {
     }
 
     @Override
-    public Stream<SpatialNode<ID>> nodes() {
+    public Stream<SpatialNode<Key, ID>> nodes() {
         lock.readLock().lock();
         try {
             // Must collect results inside lock to avoid concurrent modification
-            List<SpatialNode<ID>> results = getSpatialIndex().entrySet().stream().filter(
-            entry -> !entry.getValue().isEmpty()).map(
+            var results = getSpatialIndex().entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
             entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
             Collectors.toList());
             return results.stream();
@@ -1527,8 +1480,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Ray Intersection Implementation =====
-
     /**
      * Find all entities that intersect with the given plane (exact intersection only).
      *
@@ -1538,6 +1489,8 @@ implements SpatialIndex<ID, Content> {
     public List<PlaneIntersection<ID, Content>> planeIntersectAll(Plane3D plane) {
         return planeIntersectAll(plane, 0.0f);
     }
+
+    // ===== Ray Intersection Abstract Methods =====
 
     /**
      * Find all entities on the negative side of the plane (opposite to normal).
@@ -1573,6 +1526,8 @@ implements SpatialIndex<ID, Content> {
         intersection -> Math.abs(intersection.distanceFromPlane()) <= maxDistance).collect(Collectors.toList());
     }
 
+    // ===== Ray Intersection Implementation =====
+
     /**
      * Pre-allocate nodes based on sample positions. Analyzes the sample to predict node distribution for the full
      * dataset.
@@ -1589,9 +1544,9 @@ implements SpatialIndex<ID, Content> {
         lock.writeLock().lock();
         try {
             // Analyze sample distribution
-            Set<Long> uniqueMortonCodes = new HashSet<>();
+            Set<Key> uniqueMortonCodes = new HashSet<>();
             for (Point3f pos : samplePositions) {
-                long morton = calculateSpatialIndex(pos, level);
+                var morton = calculateSpatialIndex(pos, level);
                 uniqueMortonCodes.add(morton);
             }
 
@@ -1601,7 +1556,7 @@ implements SpatialIndex<ID, Content> {
 
             // Pre-allocate the unique nodes found in sample
             int created = 0;
-            for (Long morton : uniqueMortonCodes) {
+            for (var morton : uniqueMortonCodes) {
                 if (!spatialIndex.containsKey(morton)) {
                     NodeType node = createNode();
                     spatialIndex.put(morton, node);
@@ -1618,7 +1573,7 @@ implements SpatialIndex<ID, Content> {
             }
 
             log.debug("Pre-allocated {} nodes adaptively (sample size: {}, estimated total: {})", created,
-                              samplePositions.size(), estimatedNodes);
+                      samplePositions.size(), estimatedNodes);
 
         } finally {
             lock.writeLock().unlock();
@@ -1649,14 +1604,12 @@ implements SpatialIndex<ID, Content> {
             // using a more efficient set implementation if needed
 
             log.debug("Pre-allocated capacity for {} nodes (estimated from {} entities)", estimatedNodes,
-                              expectedEntityCount);
+                      expectedEntityCount);
 
         } finally {
             lock.writeLock().unlock();
         }
     }
-
-    // ===== Plane Intersection Abstract Methods =====
 
     /**
      * Pre-allocate nodes for a uniform grid at a specific level. Useful when you know entities will be distributed
@@ -1684,7 +1637,7 @@ implements SpatialIndex<ID, Content> {
                         Point3f position = new Point3f(x * cellSize + cellSize / 2, y * cellSize + cellSize / 2,
                                                        z * cellSize + cellSize / 2);
 
-                        long mortonIndex = calculateSpatialIndex(position, level);
+                        var mortonIndex = calculateSpatialIndex(position, level);
 
                         // Only create if doesn't exist
                         if (!spatialIndex.containsKey(mortonIndex)) {
@@ -1779,7 +1732,7 @@ implements SpatialIndex<ID, Content> {
             // Traverse nodes in order until we find an intersection
             var nodeIterator = getRayTraversalOrder(ray).iterator();
             while (nodeIterator.hasNext()) {
-                long nodeIndex = nodeIterator.next();
+                var nodeIndex = nodeIterator.next();
 
                 // Early termination if node is beyond closest found
                 float nodeDistance = getRayNodeIntersectionDistance(nodeIndex, ray);
@@ -1895,7 +1848,7 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Plane Intersection Implementation =====
+    // ===== Plane Intersection Abstract Methods =====
 
     /**
      * Manually trigger tree rebalancing.
@@ -1921,17 +1874,17 @@ implements SpatialIndex<ID, Content> {
         lock.writeLock().lock();
         try {
             // Get all locations where this entity appears
-            Set<Long> locations = entityManager.getEntityLocations(entityId);
+            var locations = entityManager.getEntityLocations(entityId);
 
             // Remove from entity storage
-            Entity<Content> removed = entityManager.removeEntity(entityId);
+            var removed = entityManager.removeEntity(entityId);
             if (removed == null) {
                 return false;
             }
 
             if (!locations.isEmpty()) {
                 // Remove from each node
-                for (Long spatialIndex : locations) {
+                for (var spatialIndex : locations) {
                     NodeType node = getSpatialIndex().get(spatialIndex);
                     if (node != null) {
                         node.removeEntity(entityId);
@@ -1951,8 +1904,6 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
-
     /**
      * Enable or disable automatic balancing.
      */
@@ -1964,6 +1915,8 @@ implements SpatialIndex<ID, Content> {
             lock.writeLock().unlock();
         }
     }
+
+    // ===== Plane Intersection Implementation =====
 
     /**
      * Set the balancing strategy.
@@ -1996,6 +1949,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
+    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
+
     @Override
     public void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy) {
         lock.readLock().lock();
@@ -2006,16 +1961,16 @@ implements SpatialIndex<ID, Content> {
 
             visitor.beginTraversal(totalNodes, totalEntities);
 
-            TraversalContext<ID> context = new TraversalContext<>();
+            TraversalContext<Key, ID> context = new TraversalContext<>();
 
             // Get root nodes based on implementation
-            Set<Long> rootNodes = getRootNodes();
+            var rootNodes = getRootNodes();
 
-            for (Long rootIndex : rootNodes) {
+            for (var rootIndex : rootNodes) {
                 if (context.isCancelled()) {
                     break;
                 }
-                traverseNode(rootIndex, visitor, strategy, context, -1, 0);
+                traverseNode(rootIndex, visitor, strategy, context, null, 0);
             }
 
             visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
@@ -2024,10 +1979,8 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Frustum Culling Implementation =====
-
     @Override
-    public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex) {
+    public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, Key startNodeIndex) {
         lock.readLock().lock();
         try {
             if (!hasNode(startNodeIndex)) {
@@ -2038,8 +1991,8 @@ implements SpatialIndex<ID, Content> {
 
             visitor.beginTraversal(-1, -1); // Unknown totals
 
-            TraversalContext<ID> context = new TraversalContext<>();
-            traverseNode(startNodeIndex, visitor, strategy, context, -1, 0);
+            TraversalContext<Key, ID> context = new TraversalContext<>();
+            traverseNode(startNodeIndex, visitor, strategy, context, null, 0);
 
             visitor.endTraversal(context.getNodesVisited(), context.getEntitiesVisited());
         } finally {
@@ -2061,20 +2014,19 @@ implements SpatialIndex<ID, Content> {
             }
 
             // Find nodes in region
-            List<Long> nodesInRegion = spatialRangeQuery(bounds, true).map(Map.Entry::getKey).collect(
-            Collectors.toList());
+            var nodesInRegion = spatialRangeQuery(bounds, true).map(Map.Entry::getKey).collect(Collectors.toList());
 
             visitor.beginTraversal(nodesInRegion.size(), -1);
 
-            TraversalContext<ID> context = new TraversalContext<>();
+            TraversalContext<Key, ID> context = new TraversalContext<>();
 
-            for (Long nodeIndex : nodesInRegion) {
+            for (var nodeIndex : nodesInRegion) {
                 if (context.isCancelled()) {
                     break;
                 }
 
                 if (!context.isVisited(nodeIndex)) {
-                    traverseNode(nodeIndex, visitor, strategy, context, -1, 0);
+                    traverseNode(nodeIndex, visitor, strategy, context, null, 0);
                 }
             }
 
@@ -2091,19 +2043,19 @@ implements SpatialIndex<ID, Content> {
     public void trimEmptyNodes() {
         lock.writeLock().lock();
         try {
-            List<Long> emptyNodes = new ArrayList<>();
+            List<Key> emptyNodes = new ArrayList<>();
 
             // Find empty nodes
-            for (Map.Entry<Long, NodeType> entry : spatialIndex.entrySet()) {
+            for (Map.Entry<Key, NodeType> entry : spatialIndex.entrySet()) {
                 if (entry.getValue().isEmpty()) {
                     emptyNodes.add(entry.getKey());
                 }
             }
 
             // Remove empty nodes
-            for (Long morton : emptyNodes) {
-                spatialIndex.remove(morton);
-                sortedSpatialIndices.remove(morton);
+            for (Key key : emptyNodes) {
+                spatialIndex.remove(key);
+                sortedSpatialIndices.remove(key);
             }
 
             if (!emptyNodes.isEmpty()) {
@@ -2121,6 +2073,8 @@ implements SpatialIndex<ID, Content> {
     public CompletableFuture<List<ID>> updateBatchParallel(List<ID> entityIds, List<Point3f> newPositions, byte level) {
         return parallelOperations.updateBatchParallel(entityIds, newPositions, level);
     }
+
+    // ===== Frustum Culling Implementation =====
 
     @Override
     public void updateEntity(ID entityId, Point3f newPosition, byte level) {
@@ -2162,8 +2116,8 @@ implements SpatialIndex<ID, Content> {
             }
 
             // Remove from all current locations
-            Set<Long> oldLocations = entityManager.getEntityLocations(entityId);
-            for (Long spatialIndex : oldLocations) {
+            Set<Key> oldLocations = entityManager.getEntityLocations(entityId);
+            for (Key spatialIndex : oldLocations) {
                 NodeType node = getSpatialIndex().get(spatialIndex);
                 if (node != null) {
                     node.removeEntity(entityId);
@@ -2188,7 +2142,7 @@ implements SpatialIndex<ID, Content> {
      * @param toVisit      queue of nodes to visit
      * @param visitedNodes set of already visited nodes
      */
-    protected abstract void addNeighboringNodes(long nodeIndex, Queue<Long> toVisit, Set<Long> visitedNodes);
+    protected abstract void addNeighboringNodes(Key nodeIndex, Queue<Key> toVisit, Set<Key> visitedNodes);
 
     /**
      * Calculate the intersection between a frustum and an entity.
@@ -2237,12 +2191,10 @@ implements SpatialIndex<ID, Content> {
         }
     }
 
-    // ===== Collision Detection Implementation =====
-
     /**
      * Calculate the spatial index for a position at a given level
      */
-    protected abstract long calculateSpatialIndex(Point3f position, byte level);
+    protected abstract Key calculateSpatialIndex(Point3f position, byte level);
 
     /**
      * Check and perform automatic balancing if needed.
@@ -2267,7 +2219,7 @@ implements SpatialIndex<ID, Content> {
     /**
      * Clean up empty nodes from the spatial index
      */
-    protected void cleanupEmptyNode(long spatialIndex, NodeType node) {
+    protected void cleanupEmptyNode(Key spatialIndex, NodeType node) {
         if (node.isEmpty() && !hasChildren(spatialIndex)) {
             getSpatialIndex().remove(spatialIndex);
             onNodeRemoved(spatialIndex);
@@ -2277,15 +2229,17 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
+     * Create the default subdivision strategy for this spatial index. Subclasses should override to provide their
+     * specific strategy.
+     */
+    protected abstract SubdivisionStrategy<Key, ID, Content> createDefaultSubdivisionStrategy();
+
+    // ===== Collision Detection Implementation =====
+
+    /**
      * Create a new node instance
      */
     protected abstract NodeType createNode();
-    
-    /**
-     * Create the default subdivision strategy for this spatial index.
-     * Subclasses should override to provide their specific strategy.
-     */
-    protected abstract SubdivisionStrategy<ID, Content> createDefaultSubdivisionStrategy();
 
     /**
      * Create a spatial volume from bounds for filtering
@@ -2302,7 +2256,7 @@ implements SpatialIndex<ID, Content> {
      * Create a tree balancer instance. Default implementation provides basic balancing. Subclasses can override to
      * provide specialized balancing.
      */
-    protected TreeBalancer<ID> createTreeBalancer() {
+    protected TreeBalancer<Key, ID> createTreeBalancer() {
         return new DefaultTreeBalancer();
     }
 
@@ -2313,12 +2267,12 @@ implements SpatialIndex<ID, Content> {
      * @param frustum   the frustum to test
      * @return true if the frustum intersects the node
      */
-    protected abstract boolean doesFrustumIntersectNode(long nodeIndex, Frustum3D frustum);
+    protected abstract boolean doesFrustumIntersectNode(Key nodeIndex, Frustum3D frustum);
 
     /**
      * Check if a node's bounds intersect with a volume
      */
-    protected abstract boolean doesNodeIntersectVolume(long nodeIndex, Spatial volume);
+    protected abstract boolean doesNodeIntersectVolume(Key nodeIndex, Spatial volume);
 
     /**
      * Test if a plane intersects with a node
@@ -2327,7 +2281,7 @@ implements SpatialIndex<ID, Content> {
      * @param plane     the plane to test
      * @return true if the plane intersects the node
      */
-    protected abstract boolean doesPlaneIntersectNode(long nodeIndex, Plane3D plane);
+    protected abstract boolean doesPlaneIntersectNode(Key nodeIndex, Plane3D plane);
 
     /**
      * Test if a ray intersects with a node
@@ -2336,7 +2290,7 @@ implements SpatialIndex<ID, Content> {
      * @param ray       the ray to test
      * @return true if the ray intersects the node
      */
-    protected abstract boolean doesRayIntersectNode(long nodeIndex, Ray3D ray);
+    protected abstract boolean doesRayIntersectNode(Key nodeIndex, Ray3D ray);
 
     /**
      * Estimate the distance from a query point to the center of a spatial node. This is used for k-NN search
@@ -2346,7 +2300,7 @@ implements SpatialIndex<ID, Content> {
      * @param queryPoint the query point
      * @return estimated distance from query point to node center
      */
-    protected abstract float estimateNodeDistance(long nodeIndex, Point3f queryPoint);
+    protected abstract float estimateNodeDistance(Key nodeIndex, Point3f queryPoint);
 
     /**
      * Filter nodes in SFC order using the given predicate and collect them into a list. This utility method combines
@@ -2355,9 +2309,9 @@ implements SpatialIndex<ID, Content> {
      * @param nodePredicate predicate to test each node
      * @return list of node indices that match the predicate, in SFC order
      */
-    protected List<Long> filterNodesInSFCOrder(java.util.function.BiPredicate<Long, NodeType> nodePredicate) {
-        List<Long> filteredNodes = new ArrayList<>();
-        for (Long nodeIndex : sortedSpatialIndices) {
+    protected List<Key> filterNodesInSFCOrder(java.util.function.BiPredicate<Key, NodeType> nodePredicate) {
+        List<Key> filteredNodes = new ArrayList<>();
+        for (Key nodeIndex : sortedSpatialIndices) {
             NodeType node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty() && nodePredicate.test(nodeIndex, node)) {
                 filteredNodes.add(nodeIndex);
@@ -2422,8 +2376,8 @@ implements SpatialIndex<ID, Content> {
      * @param bounds the entity bounds to check
      * @return set of node indices that intersect with the bounds
      */
-    protected Set<Long> findNodesIntersectingBounds(EntityBounds bounds) {
-        Set<Long> intersectingNodes = new HashSet<>();
+    protected Set<Key> findNodesIntersectingBounds(EntityBounds bounds) {
+        Set<Key> intersectingNodes = new HashSet<>();
 
         // Convert EntityBounds to VolumeBounds for spatial query
         VolumeBounds volumeBounds = new VolumeBounds(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ(),
@@ -2522,7 +2476,7 @@ implements SpatialIndex<ID, Content> {
      * Get child nodes of a given node. Default implementation returns empty list. Subclasses should override to provide
      * actual parent-child relationships.
      */
-    protected List<Long> getChildNodes(long nodeIndex) {
+    protected List<Key> getChildNodes(Key nodeIndex) {
         return Collections.emptyList();
     }
 
@@ -2533,17 +2487,12 @@ implements SpatialIndex<ID, Content> {
      * @param cameraPosition the camera position for distance sorting
      * @return stream of node indices ordered by distance from camera
      */
-    protected abstract Stream<Long> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
-
-    /**
-     * Extract the level from a spatial index
-     */
-    protected abstract byte getLevelFromIndex(long index);
+    protected abstract Stream<Key> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition);
 
     /**
      * Get the spatial bounds of a node
      */
-    protected abstract Spatial getNodeBounds(long index);
+    protected abstract Spatial getNodeBounds(Key index);
 
     /**
      * Get nodes that should be traversed for plane intersection, ordered by distance from plane
@@ -2551,7 +2500,7 @@ implements SpatialIndex<ID, Content> {
      * @param plane the plane to test
      * @return stream of node indices ordered by distance from plane
      */
-    protected abstract Stream<Long> getPlaneTraversalOrder(Plane3D plane);
+    protected abstract Stream<Key> getPlaneTraversalOrder(Plane3D plane);
 
     /**
      * Calculate the distance from ray origin to entity
@@ -2580,7 +2529,7 @@ implements SpatialIndex<ID, Content> {
      * @param ray       the ray to test
      * @return distance to node entry point, or Float.MAX_VALUE if no intersection
      */
-    protected abstract float getRayNodeIntersectionDistance(long nodeIndex, Ray3D ray);
+    protected abstract float getRayNodeIntersectionDistance(Key nodeIndex, Ray3D ray);
 
     /**
      * Get nodes that should be traversed for ray intersection, ordered by distance
@@ -2588,19 +2537,19 @@ implements SpatialIndex<ID, Content> {
      * @param ray the ray to test
      * @return stream of node indices ordered by ray intersection distance
      */
-    protected abstract Stream<Long> getRayTraversalOrder(Ray3D ray);
+    protected abstract Stream<Key> getRayTraversalOrder(Ray3D ray);
 
     /**
      * Get root nodes for traversal. Default implementation returns all nodes at the minimum level. Subclasses can
      * override for specific root node logic.
      */
-    protected Set<Long> getRootNodes() {
-        Set<Long> roots = new HashSet<>();
+    protected Set<Key> getRootNodes() {
+        Set<Key> roots = new HashSet<>();
         byte minLevel = Byte.MAX_VALUE;
 
         // Find minimum level
-        for (Long index : spatialIndex.keySet()) {
-            byte level = getLevelFromIndex(index);
+        for (Key index : spatialIndex.keySet()) {
+            byte level = index.getLevel();
             if (level < minLevel) {
                 minLevel = level;
                 roots.clear();
@@ -2619,14 +2568,14 @@ implements SpatialIndex<ID, Content> {
      *
      * @return NavigableSet containing spatial indices in SFC order
      */
-    protected NavigableSet<Long> getSortedSpatialIndices() {
+    protected NavigableSet<Key> getSortedSpatialIndices() {
         return sortedSpatialIndices;
     }
 
     /**
      * Get the spatial index storage map
      */
-    protected Map<Long, NodeType> getSpatialIndex() {
+    protected Map<Key, NodeType> getSpatialIndex() {
         return spatialIndex;
     }
 
@@ -2637,7 +2586,7 @@ implements SpatialIndex<ID, Content> {
      * @param bounds the volume bounds
      * @return navigable set of spatial indices
      */
-    protected NavigableSet<Long> getSpatialIndexRange(VolumeBounds bounds) {
+    protected NavigableSet<Key> getSpatialIndexRange(VolumeBounds bounds) {
         // Default implementation: return all indices
         // Subclasses should override for better performance
         return new TreeSet<>(sortedSpatialIndices);
@@ -2650,19 +2599,17 @@ implements SpatialIndex<ID, Content> {
         return VolumeBounds.from(volume);
     }
 
-    // ===== Tree Traversal Implementation =====
-
     /**
      * Hook for subclasses to handle node subdivision
      */
-    protected void handleNodeSubdivision(long spatialIndex, byte level, NodeType node) {
+    protected void handleNodeSubdivision(Key spatialIndex, byte level, NodeType node) {
         // Default: no subdivision. Subclasses can override
     }
 
     /**
      * Check if a node has children (to be implemented by subclasses if needed)
      */
-    protected boolean hasChildren(long spatialIndex) {
+    protected boolean hasChildren(Key spatialIndex) {
         return false; // Default: no children tracking
     }
 
@@ -2670,7 +2617,7 @@ implements SpatialIndex<ID, Content> {
      * Insert entity at a single position (no spanning)
      */
     protected void insertAtPosition(ID entityId, Point3f position, byte level) {
-        long spatialIndex = calculateSpatialIndex(position, level);
+        Key spatialIndex = calculateSpatialIndex(position, level);
 
         // Get or create node directly - no need for ancestor nodes in SFC-based implementation
         NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
@@ -2725,6 +2672,8 @@ implements SpatialIndex<ID, Content> {
             insertWithBalancedSpanning(entityId, bounds, level, maxSpanNodes);
         }
     }
+
+    // ===== Tree Traversal Implementation =====
 
     /**
      * Insert entity with advanced spanning strategies
@@ -2799,12 +2748,12 @@ implements SpatialIndex<ID, Content> {
     /**
      * Check if a node's bounds are contained within a volume
      */
-    protected abstract boolean isNodeContainedInVolume(long nodeIndex, Spatial volume);
+    protected abstract boolean isNodeContainedInVolume(Key nodeIndex, Spatial volume);
 
     /**
      * Hook for subclasses when a node is removed
      */
-    protected void onNodeRemoved(long spatialIndex) {
+    protected void onNodeRemoved(Key spatialIndex) {
         sortedSpatialIndices.remove(spatialIndex);
     }
 
@@ -2924,8 +2873,8 @@ implements SpatialIndex<ID, Content> {
      *
      * @param entityProcessor function to process each entity ID with its containing node index
      */
-    protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Long, ID> entityProcessor) {
-        for (Long nodeIndex : sortedSpatialIndices) {
+    protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Key, ID> entityProcessor) {
+        for (Key nodeIndex : sortedSpatialIndices) {
             NodeType node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty()) {
                 for (ID entityId : node.getEntityIds()) {
@@ -2941,16 +2890,14 @@ implements SpatialIndex<ID, Content> {
      *
      * @param nodeProcessor function to process each non-empty node
      */
-    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Long, NodeType> nodeProcessor) {
-        for (Long nodeIndex : sortedSpatialIndices) {
+    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Key, NodeType> nodeProcessor) {
+        for (Key nodeIndex : sortedSpatialIndices) {
             NodeType node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty()) {
                 nodeProcessor.accept(nodeIndex, node);
             }
         }
     }
-
-    // ===== Bulk Operations Implementation =====
 
     /**
      * Ray-AABB intersection test
@@ -3063,7 +3010,7 @@ implements SpatialIndex<ID, Content> {
      * @param candidates current candidate entities
      * @return true if search should continue
      */
-    protected abstract boolean shouldContinueKNNSearch(long nodeIndex, Point3f queryPoint,
+    protected abstract boolean shouldContinueKNNSearch(Key nodeIndex, Point3f queryPoint,
                                                        PriorityQueue<EntityDistance<ID>> candidates);
 
     /**
@@ -3086,6 +3033,8 @@ implements SpatialIndex<ID, Content> {
                                                  entityManager.getEntityCount(), level);
     }
 
+    // ===== Bulk Operations Implementation =====
+
     /**
      * Perform spatial range query with optimization
      *
@@ -3093,9 +3042,9 @@ implements SpatialIndex<ID, Content> {
      * @param includeIntersecting whether to include intersecting nodes
      * @return stream of node entries that match the query
      */
-    protected Stream<Map.Entry<Long, NodeType>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
+    protected Stream<Map.Entry<Key, NodeType>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
         // Get range of spatial indices that could contain or intersect the bounds
-        NavigableSet<Long> candidateIndices = getSpatialIndexRange(bounds);
+        var candidateIndices = getSpatialIndexRange(bounds);
 
         return candidateIndices.stream().map(index -> Map.entry(index, getSpatialIndex().get(index))).filter(
         entry -> entry.getValue() != null && !entry.getValue().isEmpty()).filter(entry -> {
@@ -3117,6 +3066,23 @@ implements SpatialIndex<ID, Content> {
      * Validate spatial constraints for volumes
      */
     protected abstract void validateSpatialConstraints(Spatial volume);
+
+    ID generateId() {
+        return entityManager.generateEntityId();
+    }
+
+    // Package-private accessors for StackBasedTreeBuilder
+    EntityManager<Key, ID, Content> getEntityManager() {
+        return entityManager;
+    }
+
+    byte getMaxDepth() {
+        return maxDepth;
+    }
+
+    int getMaxEntitiesPerNode() {
+        return maxEntitiesPerNode;
+    }
 
     /**
      * Check if two bounds intersect
@@ -3441,20 +3407,20 @@ implements SpatialIndex<ID, Content> {
     /**
      * Process nodes in breadth-first order
      */
-    private void processBreadthFirstQueue(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy,
-                                          TraversalContext<ID> context) {
-        Long nodeIndex;
+    private void processBreadthFirstQueue(TreeVisitor<Key, ID, Content> visitor, TraversalStrategy strategy,
+                                          TraversalContext<Key, ID> context) {
+        Key nodeIndex;
         while ((nodeIndex = context.popNode()) != null) {
             int level = context.getNodeLevel(nodeIndex);
-            traverseNode(nodeIndex, visitor, strategy, context, -1, level);
+            traverseNode(nodeIndex, visitor, strategy, context, null, level);
         }
     }
 
     /**
      * Traverse a single node and its children recursively
      */
-    private void traverseNode(long nodeIndex, TreeVisitor<ID, Content> visitor, TraversalStrategy strategy,
-                              TraversalContext<ID> context, long parentIndex, int level) {
+    private void traverseNode(Key nodeIndex, TreeVisitor<Key, ID, Content> visitor, TraversalStrategy strategy,
+                              TraversalContext<Key, ID> context, Key parentIndex, int level) {
 
         if (context.isCancelled() || context.isVisited(nodeIndex)) {
             return;
@@ -3472,7 +3438,7 @@ implements SpatialIndex<ID, Content> {
         }
 
         // Create SpatialNode wrapper
-        SpatialNode<ID> spatialNode = new SpatialNode<>(nodeIndex, new HashSet<>(node.getEntityIds()));
+        SpatialNode<Key, ID> spatialNode = new SpatialNode<>(nodeIndex, new HashSet<>(node.getEntityIds()));
 
         // Mark as visited
         context.markVisited(nodeIndex);
@@ -3491,10 +3457,10 @@ implements SpatialIndex<ID, Content> {
 
         // Visit children if requested
         if (shouldContinue) {
-            List<Long> children = getChildNodes(nodeIndex);
+            List<Key> children = getChildNodes(nodeIndex);
             int childCount = 0;
 
-            for (Long childIndex : children) {
+            for (Key childIndex : children) {
                 if (context.isCancelled()) {
                     break;
                 }
@@ -3580,31 +3546,31 @@ implements SpatialIndex<ID, Content> {
     }
 
     /**
-     * Helper class for sorting entities by Morton code
+     * Helper class for sorting entities by spatial key
      */
-    private static class IndexedEntity {
-        final int  originalIndex;
-        final long mortonCode;
+    private static class IndexedEntity<K extends SpatialKey<K>> {
+        final int originalIndex;
+        final K spatialKey;
 
-        IndexedEntity(int originalIndex, long mortonCode) {
+        IndexedEntity(int originalIndex, K spatialKey) {
             this.originalIndex = originalIndex;
-            this.mortonCode = mortonCode;
+            this.spatialKey = spatialKey;
         }
     }
 
     /**
      * Default tree balancer implementation.
      */
-    protected class DefaultTreeBalancer implements TreeBalancer<ID> {
+    protected class DefaultTreeBalancer implements TreeBalancer<Key, ID> {
 
         @Override
-        public BalancingAction checkNodeBalance(long nodeIndex) {
+        public BalancingAction checkNodeBalance(Key nodeIndex) {
             NodeType node = spatialIndex.get(nodeIndex);
             if (node == null) {
                 return BalancingAction.NONE;
             }
 
-            byte level = getLevelFromIndex(nodeIndex);
+            byte level = nodeIndex.getLevel();
             int entityCount = node.getEntityCount();
 
             // Check split condition
@@ -3632,20 +3598,20 @@ implements SpatialIndex<ID, Content> {
         }
 
         @Override
-        public boolean mergeNodes(Set<Long> nodeIndices, long parentIndex) {
+        public boolean mergeNodes(Set<Key> nodeIndices, Key parentIndex) {
             // Default implementation does not support merging
             // Subclasses should override for actual merging logic
             return false;
         }
 
         @Override
-        public int rebalanceSubtree(long rootNodeIndex) {
+        public int rebalanceSubtree(Key rootNodeIndex) {
             return rebalanceSubtreeImpl(rootNodeIndex, new HashSet<>());
         }
 
         @Override
         public RebalancingResult rebalanceTree() {
-            long startTime = System.currentTimeMillis();
+            var startTime = System.currentTimeMillis();
             int nodesCreated = 0;
             int nodesRemoved = 0;
             int nodesMerged = 0;
@@ -3654,8 +3620,8 @@ implements SpatialIndex<ID, Content> {
 
             try {
                 // Get root nodes and rebalance each subtree
-                Set<Long> roots = getRootNodes();
-                for (Long root : roots) {
+                Set<Key> roots = getRootNodes();
+                for (Key root : roots) {
                     int modifications = rebalanceSubtree(root);
                     // Track modifications (simplified)
                     nodesSplit += modifications;
@@ -3681,7 +3647,7 @@ implements SpatialIndex<ID, Content> {
         }
 
         @Override
-        public List<Long> splitNode(long nodeIndex, byte nodeLevel) {
+        public List<Key> splitNode(Key nodeIndex, byte nodeLevel) {
             // Default implementation does not support splitting
             // Subclasses should override for actual splitting logic
             return Collections.emptyList();
@@ -3690,7 +3656,7 @@ implements SpatialIndex<ID, Content> {
         /**
          * Find sibling nodes for the given node.
          */
-        protected Set<Long> findSiblings(long nodeIndex) {
+        protected Set<Key> findSiblings(Key nodeIndex) {
             // Default implementation: no siblings
             // Subclasses should override based on their structure
             return Collections.emptySet();
@@ -3699,27 +3665,27 @@ implements SpatialIndex<ID, Content> {
         /**
          * Get parent node index.
          */
-        protected long getParentIndex(long nodeIndex) {
+        protected Key getParentIndex(Key nodeIndex) {
             // Default implementation: no parent tracking
             // Subclasses should override based on their structure
-            return -1;
+            return null;
         }
 
         /**
          * Get entity counts of sibling nodes.
          */
-        protected int[] getSiblingEntityCounts(long nodeIndex) {
-            Set<Long> siblings = findSiblings(nodeIndex);
+        protected int[] getSiblingEntityCounts(Key nodeIndex) {
+            Set<Key> siblings = findSiblings(nodeIndex);
             int[] counts = new int[siblings.size()];
             int i = 0;
-            for (Long sibling : siblings) {
+            for (Key sibling : siblings) {
                 NodeType node = spatialIndex.get(sibling);
                 counts[i++] = node != null ? node.getEntityCount() : 0;
             }
             return counts;
         }
 
-        private int rebalanceSubtreeImpl(long rootNodeIndex, Set<Long> visited) {
+        private int rebalanceSubtreeImpl(Key rootNodeIndex, Set<Key> visited) {
             // Prevent infinite recursion
             if (!visited.add(rootNodeIndex)) {
                 return 0; // Already processed this node
@@ -3732,7 +3698,7 @@ implements SpatialIndex<ID, Content> {
                 return 0;
             }
 
-            byte level = getLevelFromIndex(rootNodeIndex);
+            byte level = rootNodeIndex.getLevel();
             int entityCount = node.getEntityCount();
 
             // Check if node needs balancing
@@ -3741,15 +3707,15 @@ implements SpatialIndex<ID, Content> {
             switch (action) {
                 case SPLIT -> {
                     if (level < maxDepth) {
-                        List<Long> children = splitNode(rootNodeIndex, level);
+                        List<Key> children = splitNode(rootNodeIndex, level);
                         modifications += children.size();
                     }
                 }
                 case MERGE -> {
                     // Find siblings for merging
-                    Set<Long> siblings = findSiblings(rootNodeIndex);
+                    Set<Key> siblings = findSiblings(rootNodeIndex);
                     if (!siblings.isEmpty()) {
-                        long parent = getParentIndex(rootNodeIndex);
+                        var parent = getParentIndex(rootNodeIndex);
                         if (mergeNodes(siblings, parent)) {
                             modifications++;
                         }
@@ -3764,8 +3730,8 @@ implements SpatialIndex<ID, Content> {
             }
 
             // Recursively balance children
-            List<Long> children = getChildNodes(rootNodeIndex);
-            for (Long child : children) {
+            List<Key> children = getChildNodes(rootNodeIndex);
+            for (Key child : children) {
                 modifications += rebalanceSubtreeImpl(child, visited);
             }
 

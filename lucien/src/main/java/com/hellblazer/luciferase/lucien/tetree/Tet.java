@@ -55,46 +55,15 @@ import static java.util.stream.Collectors.toList;
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
 
-    public static final TetreeKey ROOT_TET = new TetreeKey((byte) 0, BigInteger.ZERO);
-    
-    /**
-     * Create a validated Tet instance.
-     * This factory method ensures that only valid tetrahedra can be created.
-     * 
-     * @param x     X coordinate (must be non-negative)
-     * @param y     Y coordinate (must be non-negative)
-     * @param z     Z coordinate (must be non-negative)
-     * @param level Refinement level (0-21)
-     * @param type  Tetrahedron type (0-5)
-     * @return a validated Tet instance
-     * @throws IllegalArgumentException if the parameters don't form a valid tetrahedron
-     */
-    public static Tet createValidated(int x, int y, int z, byte level, byte type) {
-        // First validate coordinates are non-negative
-        if (x < 0 || y < 0 || z < 0) {
-            throw new IllegalArgumentException("Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")");
-        }
-        
-        // Create the Tet
-        Tet tet = new Tet(x, y, z, level, type);
-        
-        // Validate it
-        if (!isValidTetrahedronStatic(x, y, z, level, type)) {
-            throw new IllegalArgumentException("Invalid tetrahedron: coordinates (" + x + ", " + y + ", " + z + 
-                                             ") with type " + type + " at level " + level + " does not form a valid tetrahedron");
-        }
-        
-        return tet;
-    }
-
+    public static final  TetreeKey ROOT_TET      = new TetreeKey((byte) 0, BigInteger.ZERO);
     // Table 2: Local indices - Iloc(parent_type, bey_child_index)
     // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
-    private static final byte[][] LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
-                                                    { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
-                                                    { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
-                                                    { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
-                                                    { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
-                                                    { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
+    private static final byte[][]  LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
+                                                     { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
+                                                     { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
+                                                     { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
+                                                     { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
+                                                     { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
     };
 
     // Compact constructor for validation
@@ -105,7 +74,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (type < 0 || type > 5) {
             throw new IllegalArgumentException("Type must be in range [0, 5]: " + type);
         }
-        
+
         // Validate coordinates are non-negative (required for tetrahedral SFC)
         if (x < 0 || y < 0 || z < 0) {
             throw new IllegalArgumentException("Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")");
@@ -126,6 +95,64 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public Tet(Point3i cubeId, byte level, byte type) {
         this(cubeId.x, cubeId.y, cubeId.z, level, type);
+    }
+
+    /**
+     * Create a validated Tet instance. This factory method ensures that only valid tetrahedra can be created.
+     *
+     * @param x     X coordinate (must be non-negative)
+     * @param y     Y coordinate (must be non-negative)
+     * @param z     Z coordinate (must be non-negative)
+     * @param level Refinement level (0-21)
+     * @param type  Tetrahedron type (0-5)
+     * @return a validated Tet instance
+     * @throws IllegalArgumentException if the parameters don't form a valid tetrahedron
+     */
+    public static Tet createValidated(int x, int y, int z, byte level, byte type) {
+        // First validate coordinates are non-negative
+        if (x < 0 || y < 0 || z < 0) {
+            throw new IllegalArgumentException("Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")");
+        }
+
+        // Create the Tet
+        Tet tet = new Tet(x, y, z, level, type);
+
+        // Validate it
+        if (!isValidTetrahedronStatic(x, y, z, level, type)) {
+            throw new IllegalArgumentException(
+            "Invalid tetrahedron: coordinates (" + x + ", " + y + ", " + z + ") with type " + type + " at level "
+            + level + " does not form a valid tetrahedron");
+        }
+
+        return tet;
+    }
+
+    /**
+     * Static validation method to check if the given parameters form a valid tetrahedron. This avoids recursion issues
+     * during construction.
+     */
+    private static boolean isValidTetrahedronStatic(int x, int y, int z, byte level, byte type) {
+        // Special case: root tetrahedron
+        if (level == 0) {
+            // Root must be at origin with type 0
+            return x == 0 && y == 0 && z == 0 && type == 0;
+        }
+
+        // Check coordinates are aligned to the grid at this level
+        int cellSize = Constants.lengthAtLevel(level);
+        if (x % cellSize != 0 || y % cellSize != 0 || z % cellSize != 0) {
+            return false;
+        }
+
+        // For now, we'll accept any valid type (0-5) at valid grid positions
+        // A more thorough validation would require:
+        // 1. Building the path from root to this tetrahedron
+        // 2. Verifying each parent-child relationship is valid
+        // 3. Checking that the final type matches what's expected
+        // This is complex and would require essentially reconstructing the tetrahedron
+        // from its SFC index, which is what the tmIndex() method does
+
+        return type >= 0 && type <= 5;
     }
 
     /**
@@ -271,6 +298,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
 
+    public static Tet tetrahedron(TetreeKey key) {
+        return tetrahedron(key.getTmIndex(), key.getLevel());
+    }
+
     /**
      * @param index - the consecutive index of the tetrahedron
      * @return the Tet corresponding to the consecutive index
@@ -280,6 +311,53 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     @Deprecated(since = "0.0.1", forRemoval = true)
     public static Tet tetrahedron(long index) {
         return tetrahedron(index, tetLevelFromIndex(index));
+    }
+
+    /**
+     * Convert TM-index back to tetrahedron Inverse operation of tetToTMIndex
+     */
+    public static Tet tetrahedron(BigInteger tmIndex, byte level) {
+        if (level == 0) {
+            return new Tet(0, 0, 0, (byte) 0, (byte) 0); // Root tetrahedron
+        }
+
+        // Extract interleaved bits
+        int[] coordX = new int[Constants.getMaxRefinementLevel()];
+        int[] coordY = new int[Constants.getMaxRefinementLevel()];
+        int[] coordZ = new int[Constants.getMaxRefinementLevel()];
+        int[] types = new int[Constants.getMaxRefinementLevel()];
+
+        BigInteger index = tmIndex;
+        BigInteger sixtyFour = BigInteger.valueOf(64);
+
+        // Extract from least significant to most significant
+        for (int i = Constants.getMaxRefinementLevel() - 1; i >= 0; i--) {
+            BigInteger[] divRem = index.divideAndRemainder(sixtyFour);
+            index = divRem[0];
+            int value = divRem[1].intValue();
+
+            // Extract type (lower 3 bits)
+            types[i] = value % 8;
+
+            // Extract coordinate bits (upper 3 bits)
+            int coordBits = value / 8;
+            coordX[i] = coordBits & 1;
+            coordY[i] = (coordBits >> 1) & 1;
+            coordZ[i] = (coordBits >> 2) & 1;
+        }
+
+        // Reconstruct coordinates from binary
+        int x = 0, y = 0, z = 0;
+        for (int i = 0; i < Constants.getMaxRefinementLevel(); i++) {
+            x = (x << 1) | coordX[i];
+            y = (y << 1) | coordY[i];
+            z = (z << 1) | coordZ[i];
+        }
+
+        // Current type is at position corresponding to level
+        int type = level > 0 ? types[Constants.getMaxRefinementLevel() - level] : 0;
+
+        return new Tet(x, y, z, level, (byte) type);
     }
 
     // Check if a tetrahedron is completely contained within a volume
@@ -783,7 +861,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             // Return null to indicate no neighbor exists (boundary of positive octant)
             return null;
         }
-        
+
         return new FaceNeighbor((byte) ret, new Tet(coords[0], coords[1], coords[2], l, (byte) typeNew));
     }
 
@@ -985,53 +1063,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Get parent and then get the requested child
         Tet parentTet = parent();
         return parentTet.child(siblingIndex);
-    }
-
-    /**
-     * Convert TM-index back to tetrahedron Inverse operation of tetToTMIndex
-     */
-    public Tet tetrahedron(BigInteger tmIndex, byte level) {
-        if (level == 0) {
-            return new Tet(0, 0, 0, (byte) 0, (byte) 0); // Root tetrahedron
-        }
-
-        // Extract interleaved bits
-        int[] coordX = new int[Constants.getMaxRefinementLevel()];
-        int[] coordY = new int[Constants.getMaxRefinementLevel()];
-        int[] coordZ = new int[Constants.getMaxRefinementLevel()];
-        int[] types = new int[Constants.getMaxRefinementLevel()];
-
-        BigInteger index = tmIndex;
-        BigInteger sixtyFour = BigInteger.valueOf(64);
-
-        // Extract from least significant to most significant
-        for (int i = Constants.getMaxRefinementLevel() - 1; i >= 0; i--) {
-            BigInteger[] divRem = index.divideAndRemainder(sixtyFour);
-            index = divRem[0];
-            int value = divRem[1].intValue();
-
-            // Extract type (lower 3 bits)
-            types[i] = value % 8;
-
-            // Extract coordinate bits (upper 3 bits)
-            int coordBits = value / 8;
-            coordX[i] = coordBits & 1;
-            coordY[i] = (coordBits >> 1) & 1;
-            coordZ[i] = (coordBits >> 2) & 1;
-        }
-
-        // Reconstruct coordinates from binary
-        int x = 0, y = 0, z = 0;
-        for (int i = 0; i < Constants.getMaxRefinementLevel(); i++) {
-            x = (x << 1) | coordX[i];
-            y = (y << 1) | coordY[i];
-            z = (z << 1) | coordZ[i];
-        }
-
-        // Current type is at position corresponding to level
-        int type = level > 0 ? types[Constants.getMaxRefinementLevel() - level] : 0;
-
-        return new Tet(x, y, z, level, (byte) type);
     }
 
     /**
@@ -1518,6 +1549,66 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return false;
     }
 
+    /**
+     * Validates that this tetrahedron is properly formed based on its coordinates, level, and type.
+     *
+     * A valid tetrahedron must: 1. Have coordinates aligned to the grid at its level 2. Have a valid type for its
+     * position within the cubic cell 3. Be within the bounds of the positive octant
+     *
+     * @return true if this is a valid tetrahedron, false otherwise
+     */
+    private boolean isValidTetrahedron() {
+        // Special case: root tetrahedron
+        if (l == 0) {
+            // Root must be at origin with type 0
+            return x == 0 && y == 0 && z == 0 && type == 0;
+        }
+
+        // Check coordinates are aligned to the grid at this level
+        int cellSize = Constants.lengthAtLevel(l);
+        if (x % cellSize != 0 || y % cellSize != 0 || z % cellSize != 0) {
+            return false;
+        }
+
+        // For non-root tetrahedra, we need to validate the type matches the expected type
+        // for this position within its cubic cell
+
+        // First, find which type this tetrahedron should have based on its position
+        // within the cubic cell using the locateFreudenthal algorithm
+        Tet expected = locateFreudenthal(x + cellSize / 2.0f, y + cellSize / 2.0f, z + cellSize / 2.0f, l);
+
+        // The type must match what's expected for this position
+        if (expected.type() != type) {
+            return false;
+        }
+
+        // Validate we can reach the parent (basic parent-child relationship check)
+        if (l > 1) {
+            try {
+                // Ensure we can compute a valid parent
+                Tet parent = parent();
+                if (parent == null) {
+                    return false;
+                }
+
+                // Verify this tetrahedron could be a child of its parent
+                for (int i = 0; i < 8; i++) {
+                    Tet possibleChild = parent.child(i);
+                    if (possibleChild.x() == x && possibleChild.y() == y && possibleChild.z() == z
+                    && possibleChild.type() == type) {
+                        return true;
+                    }
+                }
+                return false;
+            } catch (Exception e) {
+                // If parent computation fails, the tetrahedron is invalid
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // Merge overlapping SFC ranges for efficiency
     private List<SFCRange> mergeRanges(List<SFCRange> ranges) {
         if (ranges.isEmpty()) {
@@ -1707,95 +1798,5 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     // Record to represent SFC index ranges
     private record SFCRange(long start, long end) {
-    }
-    
-    /**
-     * Validates that this tetrahedron is properly formed based on its coordinates, level, and type.
-     * 
-     * A valid tetrahedron must:
-     * 1. Have coordinates aligned to the grid at its level
-     * 2. Have a valid type for its position within the cubic cell
-     * 3. Be within the bounds of the positive octant
-     * 
-     * @return true if this is a valid tetrahedron, false otherwise
-     */
-    private boolean isValidTetrahedron() {
-        // Special case: root tetrahedron
-        if (l == 0) {
-            // Root must be at origin with type 0
-            return x == 0 && y == 0 && z == 0 && type == 0;
-        }
-        
-        // Check coordinates are aligned to the grid at this level
-        int cellSize = Constants.lengthAtLevel(l);
-        if (x % cellSize != 0 || y % cellSize != 0 || z % cellSize != 0) {
-            return false;
-        }
-        
-        // For non-root tetrahedra, we need to validate the type matches the expected type
-        // for this position within its cubic cell
-        
-        // First, find which type this tetrahedron should have based on its position
-        // within the cubic cell using the locateFreudenthal algorithm
-        Tet expected = locateFreudenthal(x + cellSize / 2.0f, y + cellSize / 2.0f, z + cellSize / 2.0f, l);
-        
-        // The type must match what's expected for this position
-        if (expected.type() != type) {
-            return false;
-        }
-        
-        // Validate we can reach the parent (basic parent-child relationship check)
-        if (l > 1) {
-            try {
-                // Ensure we can compute a valid parent
-                Tet parent = parent();
-                if (parent == null) {
-                    return false;
-                }
-                
-                // Verify this tetrahedron could be a child of its parent
-                for (int i = 0; i < 8; i++) {
-                    Tet possibleChild = parent.child(i);
-                    if (possibleChild.x() == x && possibleChild.y() == y && possibleChild.z() == z && 
-                        possibleChild.type() == type) {
-                        return true;
-                    }
-                }
-                return false;
-            } catch (Exception e) {
-                // If parent computation fails, the tetrahedron is invalid
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Static validation method to check if the given parameters form a valid tetrahedron.
-     * This avoids recursion issues during construction.
-     */
-    private static boolean isValidTetrahedronStatic(int x, int y, int z, byte level, byte type) {
-        // Special case: root tetrahedron
-        if (level == 0) {
-            // Root must be at origin with type 0
-            return x == 0 && y == 0 && z == 0 && type == 0;
-        }
-        
-        // Check coordinates are aligned to the grid at this level
-        int cellSize = Constants.lengthAtLevel(level);
-        if (x % cellSize != 0 || y % cellSize != 0 || z % cellSize != 0) {
-            return false;
-        }
-        
-        // For now, we'll accept any valid type (0-5) at valid grid positions
-        // A more thorough validation would require:
-        // 1. Building the path from root to this tetrahedron
-        // 2. Verifying each parent-child relationship is valid
-        // 3. Checking that the final type matches what's expected
-        // This is complex and would require essentially reconstructing the tetrahedron
-        // from its SFC index, which is what the tmIndex() method does
-        
-        return type >= 0 && type <= 5;
     }
 }

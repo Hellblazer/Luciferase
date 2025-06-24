@@ -64,7 +64,7 @@ public interface TreeVisitor<ID extends EntityID, Content> {
      * @param level      The depth level of this node
      * @param childCount Number of child nodes that were visited
      */
-    default void leaveNode(SpatialNode<ID> node, int level, int childCount) {
+    default void leaveNode(SpatialNode<?, ID> node, int level, int childCount) {
         // Default: do nothing
     }
 
@@ -97,5 +97,5 @@ public interface TreeVisitor<ID extends EntityID, Content> {
      * @param parentIndex The parent node's spatial index (-1 for root)
      * @return true to continue traversing children, false to skip children
      */
-    boolean visitNode(SpatialNode<ID> node, int level, long parentIndex);
+    boolean visitNode(SpatialNode<?, ID> node, int level, long parentIndex);
 }

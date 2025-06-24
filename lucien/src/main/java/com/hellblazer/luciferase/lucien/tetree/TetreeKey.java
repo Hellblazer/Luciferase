@@ -69,7 +69,7 @@ public final class TetreeKey implements SpatialKey<TetreeKey> {
      *
      * @return the key for the root tetrahedron
      */
-    public static TetreeKey root() {
+    public static TetreeKey getRoot() {
         return new TetreeKey((byte) 0, BigInteger.ZERO);
     }
 
@@ -132,6 +132,15 @@ public final class TetreeKey implements SpatialKey<TetreeKey> {
         return true;
     }
 
+    /**
+     * Create a root-level TetreeKey.
+     *
+     * @return the key for the root tetrahedron
+     */
+    public TetreeKey root() {
+        return getRoot();
+    }
+
     @Override
     public String toString() {
         return String.format("TetreeKey[level=%d, tm-index=%d]", level, tmIndex);
@@ -175,12 +184,12 @@ public final class TetreeKey implements SpatialKey<TetreeKey> {
         // Validate parent-child type relationships
         // Start with root type 0
         int currentType = 0;
-        
+
         // Walk from root to the target level
         for (int i = 1; i <= level; i++) {
             int childType = types[maxLevel - i];
             int cubeId = cubeIds[maxLevel - i];
-            
+
             // Verify this is a valid child type for the current parent type
             boolean validChild = false;
             for (int j = 0; j < 6; j++) {
@@ -189,11 +198,11 @@ public final class TetreeKey implements SpatialKey<TetreeKey> {
                     break;
                 }
             }
-            
+
             if (!validChild) {
                 return false;
             }
-            
+
             // Move to next level - child becomes parent
             currentType = childType;
         }

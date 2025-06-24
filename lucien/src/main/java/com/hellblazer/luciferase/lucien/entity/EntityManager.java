@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 
 import javax.vecmath.Point3f;
@@ -31,10 +32,10 @@ import java.util.stream.Collectors;
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public class EntityManager<ID extends EntityID, Content> {
+public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     // Entity storage: Entity ID → Entity (content, locations, position, bounds)
-    private final Map<ID, Entity<Content>> entities;
+    private final Map<ID, Entity<Key, Content>> entities;
 
     // ID generation strategy
     private final EntityIDGenerator<ID> idGenerator;
@@ -50,7 +51,7 @@ public class EntityManager<ID extends EntityID, Content> {
     /**
      * Create an entity manager with custom storage implementation
      */
-    public EntityManager(EntityIDGenerator<ID> idGenerator, Map<ID, Entity<Content>> storageMap) {
+    public EntityManager(EntityIDGenerator<ID> idGenerator, Map<ID, Entity<Key, Content>> storageMap) {
         this.entities = Objects.requireNonNull(storageMap, "Storage map cannot be null");
         this.idGenerator = Objects.requireNonNull(idGenerator, "ID generator cannot be null");
     }
@@ -60,8 +61,8 @@ public class EntityManager<ID extends EntityID, Content> {
     /**
      * Add a spatial location to an entity
      */
-    public void addEntityLocation(ID entityId, long spatialIndex) {
-        Entity<Content> entity = entities.get(entityId);
+    public void addEntityLocation(ID entityId, Key spatialIndex) {
+        var entity = entities.get(entityId);
         if (entity != null) {
             entity.addLocation(spatialIndex);
         }
@@ -80,7 +81,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Clear all locations for an entity
      */
     public void clearEntityLocations(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         if (entity != null) {
             entity.clearLocations();
         }
@@ -102,8 +103,9 @@ public class EntityManager<ID extends EntityID, Content> {
      * @param bounds   optional entity bounds
      * @return the created or updated entity
      */
-    public Entity<Content> createOrUpdateEntity(ID entityId, Content content, Point3f position, EntityBounds bounds) {
-        Entity<Content> entity = entities.get(entityId);
+    public Entity<Key, Content> createOrUpdateEntity(ID entityId, Content content, Point3f position,
+                                                     EntityBounds bounds) {
+        var entity = entities.get(entityId);
         if (entity == null) {
             entity = bounds != null ? new Entity<>(content, position, bounds) : new Entity<>(content, position);
             entities.put(entityId, entity);
@@ -123,7 +125,7 @@ public class EntityManager<ID extends EntityID, Content> {
      */
     public List<ID> findEntitiesInRegion(float minX, float maxX, float minY, float maxY, float minZ, float maxZ) {
         List<ID> result = new ArrayList<>();
-        for (Map.Entry<ID, Entity<Content>> entry : entities.entrySet()) {
+        for (var entry : entities.entrySet()) {
             Point3f pos = entry.getValue().getPosition();
             if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY && pos.z >= minZ && pos.z <= maxZ) {
                 result.add(entry.getKey());
@@ -161,7 +163,7 @@ public class EntityManager<ID extends EntityID, Content> {
      */
     public Map<ID, Point3f> getEntitiesWithPositions() {
         Map<ID, Point3f> result = new HashMap<>();
-        for (Map.Entry<ID, Entity<Content>> entry : entities.entrySet()) {
+        for (var entry : entities.entrySet()) {
             result.put(entry.getKey(), entry.getValue().getPosition());
         }
         return Collections.unmodifiableMap(result);
@@ -170,7 +172,7 @@ public class EntityManager<ID extends EntityID, Content> {
     /**
      * Get an entity by ID
      */
-    public Entity<Content> getEntity(ID entityId) {
+    public Entity<Key, Content> getEntity(ID entityId) {
         return entities.get(entityId);
     }
 
@@ -178,7 +180,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Get entity bounds by ID
      */
     public EntityBounds getEntityBounds(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         return entity != null ? entity.getBounds() : null;
     }
 
@@ -186,7 +188,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Get collision shape for an entity
      */
     public CollisionShape getEntityCollisionShape(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         return entity != null ? entity.getCollisionShape() : null;
     }
 
@@ -196,7 +198,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Get entity content by ID
      */
     public Content getEntityContent(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         return entity != null ? entity.getContent() : null;
     }
 
@@ -210,8 +212,8 @@ public class EntityManager<ID extends EntityID, Content> {
     /**
      * Get all spatial locations for an entity
      */
-    public Set<Long> getEntityLocations(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+    public Set<Key> getEntityLocations(ID entityId) {
+        var entity = entities.get(entityId);
         return entity != null ? new HashSet<>(entity.getLocations()) : Collections.emptySet();
     }
 
@@ -221,7 +223,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Get entity position by ID
      */
     public Point3f getEntityPosition(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         return entity != null ? entity.getPosition() : null;
     }
 
@@ -229,7 +231,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Get the span count (number of nodes) for an entity
      */
     public int getEntitySpanCount(ID entityId) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         return entity != null ? entity.getSpanCount() : 0;
     }
 
@@ -245,7 +247,7 @@ public class EntityManager<ID extends EntityID, Content> {
      *
      * @return the removed entity, or null if not found
      */
-    public Entity<Content> removeEntity(ID entityId) {
+    public Entity<Key, Content> removeEntity(ID entityId) {
         return entities.remove(entityId);
     }
 
@@ -254,8 +256,8 @@ public class EntityManager<ID extends EntityID, Content> {
     /**
      * Remove a spatial location from an entity
      */
-    public void removeEntityLocation(ID entityId, long spatialIndex) {
-        Entity<Content> entity = entities.get(entityId);
+    public void removeEntityLocation(ID entityId, Key spatialIndex) {
+        var entity = entities.get(entityId);
         if (entity != null) {
             entity.removeLocation(spatialIndex);
         }
@@ -265,7 +267,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Set entity bounds
      */
     public void setEntityBounds(ID entityId, EntityBounds bounds) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         if (entity != null) {
             entity.setBounds(bounds);
         }
@@ -275,7 +277,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Set collision shape for an entity
      */
     public void setEntityCollisionShape(ID entityId, CollisionShape shape) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         if (entity != null) {
             entity.setCollisionShape(shape);
         }
@@ -285,7 +287,7 @@ public class EntityManager<ID extends EntityID, Content> {
      * Update an entity's position
      */
     public void updateEntityPosition(ID entityId, Point3f newPosition) {
-        Entity<Content> entity = entities.get(entityId);
+        var entity = entities.get(entityId);
         if (entity == null) {
             throw new IllegalArgumentException("Entity not found: " + entityId);
         }

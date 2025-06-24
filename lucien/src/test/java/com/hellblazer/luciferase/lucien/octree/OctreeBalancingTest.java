@@ -322,18 +322,6 @@ public class OctreeBalancingTest {
             }
         }
 
-        // Check spatial map to see exactly where entity 0 is
-        var spatialMap = octree.getSpatialMap();
-        System.out.println("\nSpatial map entries containing entity 0:");
-        for (var entry : spatialMap.entrySet()) {
-            if (entry.getValue().contains(entity0)) {
-                long morton = entry.getKey();
-                byte level = octree.getLevelFromIndex(morton);
-                System.out.println(
-                "Found entity 0 at morton=" + morton + ", level=" + level + ", entities=" + entry.getValue());
-            }
-        }
-
         // Verify we can find entities at their positions
         for (LongEntityID id : entityIds) {
             Point3f pos = octree.getEntityPosition(id);

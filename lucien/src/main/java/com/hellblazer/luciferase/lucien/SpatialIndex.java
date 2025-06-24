@@ -25,7 +25,10 @@ import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -36,7 +39,7 @@ import java.util.stream.Stream;
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public interface SpatialIndex<ID extends EntityID, Content> {
+public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     /**
      * Get all nodes completely contained within a bounding volume
@@ -44,7 +47,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param volume the bounding volume
      * @return stream of nodes contained within the volume
      */
-    Stream<SpatialNode<ID>> boundedBy(Spatial volume);
+    Stream<SpatialNode<Key, ID>> boundedBy(Spatial volume);
 
     // ===== Insert Operations =====
 
@@ -54,7 +57,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param volume the bounding volume
      * @return stream of nodes that intersect the volume
      */
-    Stream<SpatialNode<ID>> bounding(Spatial volume);
+    Stream<SpatialNode<Key, ID>> bounding(Spatial volume);
 
     /**
      * Check if two specific entities are colliding
@@ -66,6 +69,15 @@ public interface SpatialIndex<ID extends EntityID, Content> {
     Optional<CollisionPair<ID, Content>> checkCollision(ID entityId1, ID entityId2);
 
     /**
+     * Configure bulk operation behavior.
+     *
+     * @param config the configuration to apply
+     */
+    void configureBulkOperations(BulkOperationConfig config);
+
+    // ===== Lookup Operations =====
+
+    /**
      * Check if an entity exists
      *
      * @param entityId the entity ID to check
@@ -73,7 +85,12 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     boolean containsEntity(ID entityId);
 
-    // ===== Lookup Operations =====
+    /**
+     * Enable bulk loading mode. In this mode, node subdivisions are deferred until finalizeBulkLoading() is called.
+     */
+    void enableBulkLoading();
+
+    // ===== Entity Management =====
 
     /**
      * Find the minimum enclosing node for a volume
@@ -81,7 +98,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param volume the volume to enclose
      * @return the minimum enclosing node, or null if not found
      */
-    SpatialNode<ID> enclosing(Spatial volume);
+    SpatialNode<Key, ID> enclosing(Spatial volume);
 
     /**
      * Find the enclosing node at a specific level
@@ -90,9 +107,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param level the refinement level
      * @return the enclosing node at that level
      */
-    SpatialNode<ID> enclosing(Tuple3i point, byte level);
-
-    // ===== Entity Management =====
+    SpatialNode<Key, ID> enclosing(Tuple3i point, byte level);
 
     /**
      * Find all entities within a bounding region
@@ -108,6 +123,13 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the number of unique entities
      */
     int entityCount();
+
+    /**
+     * Finalize bulk loading mode and process any deferred subdivisions.
+     */
+    void finalizeBulkLoading();
+
+    // ===== Entity Position/Bounds Queries =====
 
     /**
      * Find all collision pairs within the spatial index
@@ -132,8 +154,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region);
 
-    // ===== Entity Position/Bounds Queries =====
-
     /**
      * Get collision shape for an entity
      *
@@ -141,6 +161,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the collision shape, or null if using default AABB
      */
     CollisionShape getCollisionShape(ID entityId);
+
+    // ===== Spatial Queries =====
 
     /**
      * Get content for multiple entity IDs
@@ -165,8 +187,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     Content getEntity(ID entityId);
 
-    // ===== Spatial Queries =====
-
     /**
      * Get the bounds of a specific entity
      *
@@ -174,6 +194,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the entity's bounds, or null if not found or not set
      */
     EntityBounds getEntityBounds(ID entityId);
+
+    // ===== Map Operations =====
 
     /**
      * Get the position of a specific entity
@@ -192,28 +214,21 @@ public interface SpatialIndex<ID extends EntityID, Content> {
     int getEntitySpanCount(ID entityId);
 
     /**
-     * Get a navigable map view of Morton indices to nodes This allows for range queries and ordered traversal
-     *
-     * @return navigable map with Morton indices as keys and entity ID sets as values
-     */
-    NavigableMap<Long, Set<ID>> getSpatialMap();
-
-    /**
      * Get comprehensive statistics about the spatial index
      *
      * @return statistics object
      */
     EntityStats getStats();
 
-    // ===== Map Operations =====
-
     /**
      * Check if a node exists at the given Morton index
      *
-     * @param mortonIndex the Morton index to check
+     * @param sfcIndex the sfc index to check
      * @return true if a node exists at that index
      */
-    boolean hasNode(long mortonIndex);
+    boolean hasNode(Key sfcIndex);
+
+    // ===== k-Nearest Neighbor Operations =====
 
     /**
      * Insert content with auto-generated entity ID
@@ -224,6 +239,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return the generated entity ID
      */
     ID insert(Point3f position, byte level, Content content);
+
+    // ===== Ray Intersection Operations =====
 
     /**
      * Insert content with explicit entity ID
@@ -246,7 +263,29 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     void insert(ID entityId, Point3f position, byte level, Content content, EntityBounds bounds);
 
-    // ===== k-Nearest Neighbor Operations =====
+    /**
+     * Insert multiple entities in a single batch operation. This is significantly more efficient than individual
+     * insertions.
+     *
+     * @param positions the positions of entities to insert
+     * @param contents  the contents to store (must be same length as positions)
+     * @param level     the refinement level for all insertions
+     * @return list of generated entity IDs in the same order as inputs
+     */
+    List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level);
+
+    // ===== Collision Detection Operations =====
+
+    /**
+     * Insert multiple entities with bounds in a single batch operation. Supports entity spanning across multiple
+     * nodes.
+     *
+     * @param bounds   the bounds of entities to insert
+     * @param contents the contents to store (must be same length as bounds)
+     * @param level    the refinement level for all insertions
+     * @return list of generated entity IDs in the same order as inputs
+     */
+    List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level);
 
     /**
      * Find the k nearest neighbors to a query point
@@ -257,8 +296,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return list of entity IDs sorted by distance
      */
     List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance);
-
-    // ===== Ray Intersection Operations =====
 
     /**
      * Look up all entities at a specific position
@@ -281,9 +318,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      *
      * @return stream of spatial nodes with their entity IDs
      */
-    Stream<SpatialNode<ID>> nodes();
-
-    // ===== Collision Detection Operations =====
+    Stream<SpatialNode<Key, ID>> nodes();
 
     /**
      * Find all entities intersected by a ray, sorted by distance
@@ -292,6 +327,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @return list of ray intersections sorted by distance along the ray
      */
     List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray);
+
+    // ===== Statistics =====
 
     /**
      * Find the first entity intersected by a ray
@@ -318,6 +355,8 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     boolean removeEntity(ID entityId);
 
+    // ===== Bulk Operations =====
+
     /**
      * Set collision shape for an entity. If not set, AABB will be used for collision detection.
      *
@@ -334,8 +373,6 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy);
 
-    // ===== Statistics =====
-
     /**
      * Traverse the spatial tree starting from a specific node.
      *
@@ -343,7 +380,7 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      * @param strategy       The traversal strategy to use
      * @param startNodeIndex The spatial index of the starting node
      */
-    void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex);
+    void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, Key startNodeIndex);
 
     /**
      * Traverse only nodes that intersect with the given region.
@@ -363,58 +400,10 @@ public interface SpatialIndex<ID extends EntityID, Content> {
      */
     void updateEntity(ID entityId, Point3f newPosition, byte level);
 
-    // ===== Bulk Operations =====
-
-    /**
-     * Insert multiple entities in a single batch operation.
-     * This is significantly more efficient than individual insertions.
-     *
-     * @param positions the positions of entities to insert
-     * @param contents  the contents to store (must be same length as positions)
-     * @param level     the refinement level for all insertions
-     * @return list of generated entity IDs in the same order as inputs
-     */
-    List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level);
-
-    /**
-     * Insert multiple entities with bounds in a single batch operation.
-     * Supports entity spanning across multiple nodes.
-     *
-     * @param bounds   the bounds of entities to insert
-     * @param contents the contents to store (must be same length as bounds)
-     * @param level    the refinement level for all insertions
-     * @return list of generated entity IDs in the same order as inputs
-     */
-    List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level);
-
-    /**
-     * Configure bulk operation behavior.
-     *
-     * @param config the configuration to apply
-     */
-    void configureBulkOperations(BulkOperationConfig config);
-
-    /**
-     * Enable bulk loading mode. In this mode, node subdivisions are deferred
-     * until finalizeBulkLoading() is called.
-     */
-    void enableBulkLoading();
-
-    /**
-     * Finalize bulk loading mode and process any deferred subdivisions.
-     */
-    void finalizeBulkLoading();
-
     /**
      * Node wrapper that provides uniform access to spatial data with multiple entities
      */
-    record SpatialNode<ID extends EntityID>(long mortonIndex, Set<ID> entityIds) {
-        /**
-         * Convert the node's Morton index to a spatial cube
-         */
-        public Spatial.Cube toCube() {
-            return new Spatial.Cube(mortonIndex);
-        }
+    record SpatialNode<Key extends SpatialKey<Key>, ID extends EntityID>(Key sfcIndex, Set<ID> entityIds) {
     }
 
     // ===== Tree Traversal =====

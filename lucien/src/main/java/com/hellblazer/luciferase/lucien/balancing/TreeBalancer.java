@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.balancing;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.List;
@@ -27,7 +28,7 @@ import java.util.Set;
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
  */
-public interface TreeBalancer<ID extends EntityID> {
+public interface TreeBalancer<Key extends SpatialKey<Key>, ID extends EntityID> {
 
     /**
      * Check if a specific node needs balancing.
@@ -35,7 +36,7 @@ public interface TreeBalancer<ID extends EntityID> {
      * @param nodeIndex the spatial index of the node
      * @return balancing action needed, or NONE
      */
-    BalancingAction checkNodeBalance(long nodeIndex);
+    BalancingAction checkNodeBalance(Key nodeIndex);
 
     /**
      * Get current tree balancing statistics.
@@ -58,7 +59,7 @@ public interface TreeBalancer<ID extends EntityID> {
      * @param parentIndex the parent node index
      * @return true if merge was successful
      */
-    boolean mergeNodes(Set<Long> nodeIndices, long parentIndex);
+    boolean mergeNodes(Set<Key> nodeIndices, Key parentIndex);
 
     /**
      * Rebalance a subtree starting from the given node.
@@ -66,7 +67,7 @@ public interface TreeBalancer<ID extends EntityID> {
      * @param rootNodeIndex the root of the subtree to rebalance
      * @return number of nodes modified
      */
-    int rebalanceSubtree(long rootNodeIndex);
+    int rebalanceSubtree(Key rootNodeIndex);
 
     /**
      * Perform a full tree rebalancing operation.
@@ -96,7 +97,7 @@ public interface TreeBalancer<ID extends EntityID> {
      * @param nodeLevel the level of the node
      * @return list of created child node indices
      */
-    List<Long> splitNode(long nodeIndex, byte nodeLevel);
+    List<Key> splitNode(Key nodeIndex, byte nodeLevel);
 
     /**
      * Types of balancing actions
