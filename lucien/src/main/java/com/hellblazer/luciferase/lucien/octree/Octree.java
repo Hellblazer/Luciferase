@@ -233,7 +233,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
                         // Use level-aware encoding
                         Point3f neighborPos = new Point3f(nx + cellSize / 2.0f, ny + cellSize / 2.0f,
                                                           nz + cellSize / 2.0f);
-                        var neighborCode = new MortonKey(Constants.calculateMortonIndex(neighborPos, level));
+                        var neighborCode = new MortonKey(Constants.calculateMortonIndex(neighborPos, level), level);
                         if (!visitedNodes.contains(neighborCode)) {
                             toVisit.add(neighborCode);
                         }
@@ -244,7 +244,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    protected SubdivisionStrategy createDefaultSubdivisionStrategy() {
+    protected SubdivisionStrategy<MortonKey, ID, Content> createDefaultSubdivisionStrategy() {
         return OctreeSubdivisionStrategy.balanced();
     }
 
@@ -254,7 +254,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    protected TreeBalancer createTreeBalancer() {
+    protected TreeBalancer<MortonKey, ID> createTreeBalancer() {
         return new OctreeBalancer();
     }
 

@@ -231,7 +231,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
             Point3f childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
                                               childZ + childCellSize / 2.0f);
             byte childLevel = (byte) (context.nodeLevel + 1);
-            return Constants.calculateMortonIndex(childCenter, childLevel);
+            return new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
         }
 
         return null; // Entity spans multiple octants
