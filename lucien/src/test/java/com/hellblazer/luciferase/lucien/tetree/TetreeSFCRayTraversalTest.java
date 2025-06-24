@@ -63,12 +63,12 @@ public class TetreeSFCRayTraversalTest {
         Ray3D ray = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
 
         long startTime = System.nanoTime();
-        List<Long> sfcResult = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> sfcResult = rayTraversal.traverseRay(ray).collect(Collectors.toList());
         long sfcTime = System.nanoTime() - startTime;
 
         // Compare with brute force (using getRayTraversalOrder)
         startTime = System.nanoTime();
-        List<Long> bruteResult = tetree.getRayTraversalOrder(ray).collect(Collectors.toList());
+        List<TetreeKey> bruteResult = tetree.getRayTraversalOrder(ray).collect(Collectors.toList());
         long bruteTime = System.nanoTime() - startTime;
 
         System.out.println("SFC traversal time: " + sfcTime + " ns, found " + sfcResult.size() + " intersections");
@@ -86,7 +86,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray starting outside domain
         Ray3D ray = new Ray3D(new Point3f(-50, 50, 50), new Vector3f(1, 0, 0));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray from outside should still find intersections");
     }
@@ -98,7 +98,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray that misses the domain entirely
         Ray3D ray = new Ray3D(new Point3f(-50, -50, -50), new Vector3f(-1, -1, -1));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertTrue(result.isEmpty(), "Ray missing domain should return no intersections");
     }
@@ -110,7 +110,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray starting inside a tetrahedron
         Ray3D ray = new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 0, 0));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray starting inside should find intersections");
 
@@ -147,7 +147,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Diagonal ray from corner to corner
         Ray3D ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 1, 1));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertFalse(result.isEmpty(), "Diagonal ray should intersect tetrahedra");
 
@@ -160,7 +160,7 @@ public class TetreeSFCRayTraversalTest {
         // Ray through empty tree returns tetrahedra along the ray path
         // Even without entities, the ray traversal generates tetrahedra it passes through
         Ray3D ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 0, 0));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         // The ray traversal generates tetrahedra along the ray path at a fixed level
         // So even an empty tree will return results
@@ -180,7 +180,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Horizontal ray should intersect multiple nodes
         Ray3D ray = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         // Debug: Print what we found
         System.out.println("Ray traversal found " + result.size() + " tetrahedra:");
@@ -191,7 +191,7 @@ public class TetreeSFCRayTraversalTest {
         }
         
         // For comparison, use the regular ray traversal from tree
-        List<Long> regularResult = tetree.getRayTraversalOrder(ray).collect(Collectors.toList());
+        List<TetreeKey> regularResult = tetree.getRayTraversalOrder(ray).collect(Collectors.toList());
         System.out.println("Regular ray traversal found " + regularResult.size() + " tetrahedra");
 
         assertTrue(result.size() >= 2, "Ray should intersect at least 2 tetrahedra");
@@ -229,7 +229,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray through center should hit the node
         Ray3D ray = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray should intersect at least one tetrahedron");
 
@@ -243,8 +243,8 @@ public class TetreeSFCRayTraversalTest {
         assertTrue(result.size() > 1, "Ray traversal should find multiple tetrahedra");
 
         // Verify the tetrahedra are valid
-        for (Long tetIndex : result) {
-            Tet tet = Tet.tetrahedron(tetIndex);
+        for (TetreeKey tetKey : result) {
+            Tet tet = Tet.tetrahedron(tetKey.getTmIndex().longValue());
             Point3i[] vertices = tet.coordinates();
 
             // Check if all vertices are valid (some might be negative due to tetrahedral structure)
@@ -271,7 +271,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray through cluster
         Ray3D ray = new Ray3D(new Point3f(45, 50, 50), new Vector3f(1, 0, 0));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray should intersect subdivided region");
 
@@ -291,7 +291,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Vertical ray
         Ray3D ray = new Ray3D(new Point3f(50, 50, 0), new Vector3f(0, 0, 1));
-        List<Long> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
 
         assertTrue(result.size() >= 1, "Vertical ray should hit at least 1 region");
 

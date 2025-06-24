@@ -13,6 +13,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Vector3f;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -210,7 +211,7 @@ public class TetreeRayIntersectionBaselineTest {
 
         for (Ray3D ray : testRays) {
             long startTime = System.nanoTime();
-            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, testTet.index());
+            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(testTet.index())));
             boolean intersects = result.intersects;
             long endTime = System.nanoTime();
 

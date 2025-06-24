@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.math.BigInteger;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -114,7 +115,7 @@ public class TetreeTest {
         long tetIndex = tet.index();
 
         // Get all entities at this index
-        List<String> contents = tetree.get(tetIndex);
+        List<String> contents = tetree.get(new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
 
         // Verify we get all three entities
         assertEquals(3, contents.size());
@@ -123,7 +124,7 @@ public class TetreeTest {
         assertTrue(contents.contains("Entity3"));
 
         // Test empty index returns empty list
-        List<String> emptyContents = tetree.get(tetIndex + 1000); // Different index
+        List<String> emptyContents = tetree.get(new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex + 1000))); // Different index
         assertTrue(emptyContents.isEmpty());
     }
 

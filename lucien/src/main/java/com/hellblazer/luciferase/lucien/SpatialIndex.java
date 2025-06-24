@@ -371,7 +371,7 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @param visitor  The visitor to apply to each node
      * @param strategy The traversal strategy to use
      */
-    void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy);
+    void traverse(TreeVisitor<Key, ID, Content> visitor, TraversalStrategy strategy);
 
     /**
      * Traverse the spatial tree starting from a specific node.
@@ -380,7 +380,7 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @param strategy       The traversal strategy to use
      * @param startNodeIndex The spatial index of the starting node
      */
-    void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, Key startNodeIndex);
+    void traverseFrom(TreeVisitor<Key, ID, Content> visitor, TraversalStrategy strategy, Key startNodeIndex);
 
     /**
      * Traverse only nodes that intersect with the given region.
@@ -389,7 +389,7 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @param region   The spatial region to constrain traversal
      * @param strategy The traversal strategy to use
      */
-    void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy);
+    void traverseRegion(TreeVisitor<Key, ID, Content> visitor, Spatial region, TraversalStrategy strategy);
 
     /**
      * Update an entity's position

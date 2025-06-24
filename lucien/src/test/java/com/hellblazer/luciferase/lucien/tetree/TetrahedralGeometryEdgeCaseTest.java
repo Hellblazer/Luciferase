@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Vector3f;
+import java.math.BigInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -34,7 +35,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         // Ray starting from inside
         Ray3D ray = new Ray3D(centroid, new Vector3f(1, 0, 0));
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         assertTrue(result.intersects, "Ray from inside should intersect");
         assertEquals(0.0f, result.distance, EPSILON, "Distance should be 0 for ray inside");
     }
@@ -51,7 +52,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         Vector3f direction = new Vector3f(1, 0, 0); // Towards vertex
         Ray3D ray = new Ray3D(origin, direction);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         assertTrue(result.intersects, "Ray through vertex should intersect");
     }
 
@@ -76,7 +77,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         
         Ray3D ray = new Ray3D(origin, edge);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         assertTrue(result.intersects, "Ray along edge should intersect");
     }
 
@@ -107,7 +108,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         // Start from face centroid
         Ray3D ray = new Ray3D(faceCentroid, direction);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         assertTrue(result.intersects, "Ray in face plane should intersect");
     }
 
@@ -142,7 +143,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         
         Ray3D ray = new Ray3D(origin, direction);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         // This test may intersect due to spatial index mapping all positions to root tetrahedron
         // TODO: This is a limitation of the current spatial decomposition, not a geometry bug
         // assertFalse(result.intersects, "Parallel ray outside should not intersect");
@@ -177,7 +178,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         Vector3f direction = new Vector3f(1, 0, 0);
         Ray3D ray = new Ray3D(origin, direction);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         // This may or may not intersect depending on exact tetrahedron shape
         // The test is that it doesn't crash or give incorrect results
         assertNotNull(result);
@@ -198,7 +199,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         tinyDirection.normalize();
         Ray3D tinyRay = new Ray3D(new Point3f(0, 0, 0), tinyDirection);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(tinyRay, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(tinyRay, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         assertNotNull(result);
     }
 
@@ -215,7 +216,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         
         Ray3D farRay = new Ray3D(farOrigin, towardsTet);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(farRay, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(farRay, new TetreeKey((byte) 15, BigInteger.valueOf(tetIndex)));
         // Should handle large distances without numerical issues
         assertNotNull(result);
     }
@@ -242,7 +243,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         
         Ray3D ray = new Ray3D(outside, throughCenter);
         
-        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+        var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
         assertTrue(result.intersects, "Ray through center should intersect");
         // Due to the Tet index issue, this ray might be detected as starting inside
         // the root tetrahedron, so we can't assert distance > 0
@@ -285,7 +286,7 @@ public class TetrahedralGeometryEdgeCaseTest {
             origin.scaleAdd(offset - 10, normal, origin); // Start outside
             
             Ray3D ray = new Ray3D(origin, normal);
-            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
             
             // All should intersect as they point directly at the face
             assertTrue(result.intersects, 
@@ -319,11 +320,11 @@ public class TetrahedralGeometryEdgeCaseTest {
             Ray3D ray = new Ray3D(origins[i], directions[i]);
             
             // Test standard implementation
-            var standardResult = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            var standardResult = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
             
             // Test enhanced implementations
             var cachedResult = EnhancedTetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
-            var fastResult = EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex);
+            var fastResult = EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
             
             // Verify consistency
             assertEquals(standardResult.intersects, cachedResult.intersects,

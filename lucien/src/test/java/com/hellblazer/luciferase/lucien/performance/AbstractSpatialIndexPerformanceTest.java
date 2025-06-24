@@ -7,6 +7,7 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.junit.jupiter.api.*;
 
 import javax.vecmath.Point3f;
@@ -27,7 +28,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * @author hal.hildebrand
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public abstract class AbstractSpatialIndexPerformanceTest<ID extends EntityID, Content> {
+public abstract class AbstractSpatialIndexPerformanceTest<Key extends com.hellblazer.luciferase.lucien.SpatialKey<Key>, ID extends EntityID, Content> {
 
     protected static final boolean RUN_PERF_TESTS = Boolean.parseBoolean(
     System.getenv().getOrDefault("RUN_SPATIAL_INDEX_PERF_TESTS", "false"));
@@ -76,7 +77,7 @@ public abstract class AbstractSpatialIndexPerformanceTest<ID extends EntityID, C
     /**
      * Create a spatial index instance for testing
      */
-    protected abstract SpatialIndex<ID, Content> createSpatialIndex(VolumeBounds bounds, int maxDepth);
+    protected abstract SpatialIndex<Key, ID, Content> createSpatialIndex(VolumeBounds bounds, int maxDepth);
 
     /**
      * Create test content for an entity

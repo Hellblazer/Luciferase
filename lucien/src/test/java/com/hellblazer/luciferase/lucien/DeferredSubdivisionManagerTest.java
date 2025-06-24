@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class DeferredSubdivisionManagerTest {
 
-    private DeferredSubdivisionManager<?, LongEntityID, OctreeNode<LongEntityID>> manager;
+    private DeferredSubdivisionManager<MortonKey, LongEntityID, OctreeNode<LongEntityID>> manager;
 
     @BeforeEach
     void setUp() {
@@ -36,19 +36,19 @@ public class DeferredSubdivisionManagerTest {
             for (int j = 0; j < i + 5; j++) {
                 node.addEntity(new LongEntityID(i * 100 + j));
             }
-            manager.deferSubdivision(i, node, i + 5, (byte) 5);
+            manager.deferSubdivision(new MortonKey(i), node, i + 5, (byte) 5);
         }
 
         // Process in batches
         List<DeferredSubdivisionManager.SubdivisionResult> results = manager.processBatches(
-        new DeferredSubdivisionManager.SubdivisionProcessor<LongEntityID, OctreeNode<LongEntityID>>() {
+        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
             @Override
-            public Result subdivideNode(long nodeIndex, OctreeNode<LongEntityID> node, byte level) {
+            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex, OctreeNode<LongEntityID> node, byte level) {
                 // Subdivide nodes with >8 entities
                 if (node.getEntityCount() > 8) {
-                    return new Result(true, 8, node.getEntityCount());
+                    return new DeferredSubdivisionManager.SubdivisionProcessor.Result(true, 8, node.getEntityCount());
                 }
-                return new Result(false, 0, 0);
+                return new DeferredSubdivisionManager.SubdivisionProcessor.Result(false, 0, 0);
             }
         }, 3 // Batch size of 3
                                                                                            );
@@ -69,8 +69,8 @@ public class DeferredSubdivisionManagerTest {
     void testClearWithoutProcessing() {
         // Add some deferred subdivisions
         OctreeNode<LongEntityID> node = new OctreeNode<>();
-        manager.deferSubdivision(1L, node, 10, (byte) 5);
-        manager.deferSubdivision(2L, node, 20, (byte) 6);
+        manager.deferSubdivision(new MortonKey(1L), node, 10, (byte) 5);
+        manager.deferSubdivision(new MortonKey(2L), node, 20, (byte) 6);
 
         assertEquals(2, manager.getStats().currentDeferred);
 
@@ -101,9 +101,9 @@ public class DeferredSubdivisionManagerTest {
         }
 
         // Defer subdivisions
-        manager.deferSubdivision(100L, node1, 10, (byte) 5);
-        manager.deferSubdivision(200L, node2, 15, (byte) 6);
-        manager.deferSubdivision(300L, node3, 5, (byte) 4);
+        manager.deferSubdivision(new MortonKey(100L), node1, 10, (byte) 5);
+        manager.deferSubdivision(new MortonKey(200L), node2, 15, (byte) 6);
+        manager.deferSubdivision(new MortonKey(300L), node3, 5, (byte) 4);
 
         // Check deferred status
         assertTrue(manager.isDeferred(100L));
@@ -121,21 +121,15 @@ public class DeferredSubdivisionManagerTest {
         // Process all deferred subdivisions
         AtomicInteger subdivisionCount = new AtomicInteger(0);
         DeferredSubdivisionManager.SubdivisionResult<MortonKey> result = manager.processAll(
-        new DeferredSubdivisionManager.SubdivisionProcessor() {
-
+        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
             @Override
-            public Result subdivideNode(SpatialKey nodeIndex, Object node, byte level) {
-                return null;
-            }
-
-            @Override
-            public Result subdivideNode(MortonKey nodeIndex, OctreeNode<?> node, byte level) {
+            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex, OctreeNode<LongEntityID> node, byte level) {
                 subdivisionCount.incrementAndGet();
                 // Simulate subdivision - only subdivide nodes with >10 entities
                 if (node.getEntityCount() > 10) {
-                    return new Result(true, 8, node.getEntityCount());
+                    return new DeferredSubdivisionManager.SubdivisionProcessor.Result(true, 8, node.getEntityCount());
                 }
-                return new Result(false, 0, 0);
+                return new DeferredSubdivisionManager.SubdivisionProcessor.Result(false, 0, 0);
             }
         });
 
@@ -161,8 +155,13 @@ public class DeferredSubdivisionManagerTest {
     @Test
     void testEmptyProcessing() {
         // Process with no deferred subdivisions
-        DeferredSubdivisionManager.SubdivisionResult result = manager.processAll(
-        (nodeIndex, node, level) -> new DeferredSubdivisionManager.SubdivisionProcessor.Result(false, 0, 0));
+        DeferredSubdivisionManager.SubdivisionResult<MortonKey> result = manager.processAll(
+        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
+            @Override
+            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex, OctreeNode<LongEntityID> node, byte level) {
+                return new DeferredSubdivisionManager.SubdivisionProcessor.Result(false, 0, 0);
+            }
+        });
 
         assertEquals(0, result.nodesProcessed);
         assertEquals(0, result.nodesSubdivided);
@@ -191,11 +190,11 @@ public class DeferredSubdivisionManagerTest {
         }
 
         // Defer subdivisions - should hit limit after 2
-        manager.deferSubdivision(1L, smallNode, 5, (byte) 5);
-        manager.deferSubdivision(2L, mediumNode, 20, (byte) 5);
+        manager.deferSubdivision(new MortonKey(1L), smallNode, 5, (byte) 5);
+        manager.deferSubdivision(new MortonKey(2L), mediumNode, 20, (byte) 5);
 
         // This should cause the smallest node to be evicted
-        manager.deferSubdivision(3L, largeNode, 50, (byte) 5);
+        manager.deferSubdivision(new MortonKey(3L), largeNode, 50, (byte) 5);
 
         // Small node should have been evicted
         assertFalse(manager.isDeferred(1L));

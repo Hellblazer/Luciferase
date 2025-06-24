@@ -407,9 +407,9 @@ public class ParallelProcessingBenchmark {
             ParallelBulkOperations.ParallelConfig config) {
         
         Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
-        BulkOperationProcessor<LongEntityID, String> processor = new BulkOperationProcessor<>(octree);
+        BulkOperationProcessor<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> processor = new BulkOperationProcessor<>(octree);
         
-        ParallelBulkOperations<LongEntityID, String, OctreeNode<LongEntityID>> parallelOps = 
+        ParallelBulkOperations<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String, OctreeNode<LongEntityID>> parallelOps = 
             new ParallelBulkOperations<>(octree, processor, config);
         
         try {

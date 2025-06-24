@@ -1952,7 +1952,7 @@ implements SpatialIndex<Key, ID, Content> {
     // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
 
     @Override
-    public void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy) {
+    public void traverse(TreeVisitor<Key, ID, Content> visitor, TraversalStrategy strategy) {
         lock.readLock().lock();
         try {
             // Count total nodes and entities
@@ -1980,7 +1980,7 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     @Override
-    public void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, Key startNodeIndex) {
+    public void traverseFrom(TreeVisitor<Key, ID, Content> visitor, TraversalStrategy strategy, Key startNodeIndex) {
         lock.readLock().lock();
         try {
             if (!hasNode(startNodeIndex)) {
@@ -2001,7 +2001,7 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     @Override
-    public void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy) {
+    public void traverseRegion(TreeVisitor<Key, ID, Content> visitor, Spatial region, TraversalStrategy strategy) {
         lock.readLock().lock();
         try {
             validateSpatialConstraints(region);

@@ -1097,7 +1097,6 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         });
     }
 
-    @Override
     protected byte getLevelFromIndex(TetreeKey index) {
         // TetreeKey already has the level
         return index.getLevel();
@@ -1171,7 +1170,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
 
         // Get parent tetrahedron from the SFC index directly
         // This is the actual tetrahedron being subdivided
-        Tet parentTet = Tet.tetrahedron(parentTetIndex, parentLevel);
+        Tet parentTet = Tet.tetrahedron(parentTetIndex.getTmIndex(), parentLevel);
 
         // Generate all 8 children using Bey refinement
         Tet[] children = new Tet[8];
@@ -1584,7 +1583,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         // then get the last child recursively
         int cellSize = Constants.lengthAtLevel(parentTet.l());
         Tet lastTet = new Tet(parentTet.x() + cellSize - 1, parentTet.y() + cellSize - 1, 
-                              parentTet.z() + cellSize - 1, targetLevel, 5); // type 5 is typically last
+                              parentTet.z() + cellSize - 1, targetLevel, (byte)5); // type 5 is typically last
         return lastTet.tmIndex();
     }
 
@@ -1701,7 +1700,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         // Look at what levels are actually present in the spatial index
         Set<Byte> actualLevels = new HashSet<>();
         for (TetreeKey index : sortedSpatialIndices) {
-            byte level = Tet.tetLevelFromIndex(index);
+            byte level = index.getLevel();
             actualLevels.add(level);
         }
 
@@ -2632,7 +2631,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         protected TetreeKey getParentIndex(TetreeKey tetIndex) {
             Tet tet = Tet.tetrahedron(tetIndex);
             if (tet.l() == 0) {
-                return -1; // Root has no parent
+                return null; // Root has no parent
             }
 
             // Use the t8code-compliant parent() method from the Tet class

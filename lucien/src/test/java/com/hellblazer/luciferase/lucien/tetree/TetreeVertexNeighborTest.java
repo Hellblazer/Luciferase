@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -67,44 +68,44 @@ public class TetreeVertexNeighborTest {
         // Vertex 3: faces 0, 1, 2
 
         // Get face neighbors
-        List<Long> face0 = new ArrayList<>();
-        List<Long> face1 = new ArrayList<>();
-        List<Long> face2 = new ArrayList<>();
-        List<Long> face3 = new ArrayList<>();
+        List<TetreeKey> face0 = new ArrayList<>();
+        List<TetreeKey> face1 = new ArrayList<>();
+        List<TetreeKey> face2 = new ArrayList<>();
+        List<TetreeKey> face3 = new ArrayList<>();
 
-        long face0Neighbor = tetree.findFaceNeighbor(centerIndex, 0);
-        if (face0Neighbor != -1) {
+        TetreeKey face0Neighbor = tetree.findFaceNeighbor(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 0);
+        if (face0Neighbor != null) {
             face0.add(face0Neighbor);
         }
 
-        long face1Neighbor = tetree.findFaceNeighbor(centerIndex, 1);
-        if (face1Neighbor != -1) {
+        TetreeKey face1Neighbor = tetree.findFaceNeighbor(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 1);
+        if (face1Neighbor != null) {
             face1.add(face1Neighbor);
         }
 
-        long face2Neighbor = tetree.findFaceNeighbor(centerIndex, 2);
-        if (face2Neighbor != -1) {
+        TetreeKey face2Neighbor = tetree.findFaceNeighbor(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 2);
+        if (face2Neighbor != null) {
             face2.add(face2Neighbor);
         }
 
-        long face3Neighbor = tetree.findFaceNeighbor(centerIndex, 3);
-        if (face3Neighbor != -1) {
+        TetreeKey face3Neighbor = tetree.findFaceNeighbor(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 3);
+        if (face3Neighbor != null) {
             face3.add(face3Neighbor);
         }
 
         // Get vertex neighbors
-        List<Long> vertex0Neighbors = tetree.findVertexNeighbors(centerIndex, 0); // faces 1,2,3
-        List<Long> vertex1Neighbors = tetree.findVertexNeighbors(centerIndex, 1); // faces 0,2,3
-        List<Long> vertex2Neighbors = tetree.findVertexNeighbors(centerIndex, 2); // faces 0,1,3
-        List<Long> vertex3Neighbors = tetree.findVertexNeighbors(centerIndex, 3); // faces 0,1,2
+        List<TetreeKey> vertex0Neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 0); // faces 1,2,3
+        List<TetreeKey> vertex1Neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 1); // faces 0,2,3
+        List<TetreeKey> vertex2Neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 2); // faces 0,1,3
+        List<TetreeKey> vertex3Neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 3); // faces 0,1,2
 
         // Vertex neighbors should include at least the face neighbors
-        Set<Long> vertex0Expected = new HashSet<>();
+        Set<TetreeKey> vertex0Expected = new HashSet<>();
         vertex0Expected.addAll(face1);
         vertex0Expected.addAll(face2);
         vertex0Expected.addAll(face3);
 
-        Set<Long> vertex1Expected = new HashSet<>();
+        Set<TetreeKey> vertex1Expected = new HashSet<>();
         vertex1Expected.addAll(face0);
         vertex1Expected.addAll(face2);
         vertex1Expected.addAll(face3);
@@ -127,9 +128,9 @@ public class TetreeVertexNeighborTest {
         long rootIndex = rootTet.index();
 
         // Test invalid vertex indices
-        assertThrows(IllegalArgumentException.class, () -> tetree.findVertexNeighbors(rootIndex, -1));
-        assertThrows(IllegalArgumentException.class, () -> tetree.findVertexNeighbors(rootIndex, 4));
-        assertThrows(IllegalArgumentException.class, () -> tetree.findVertexNeighbors(rootIndex, 10));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findVertexNeighbors(new TetreeKey((byte)0, BigInteger.valueOf(rootIndex)), -1));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findVertexNeighbors(new TetreeKey((byte)0, BigInteger.valueOf(rootIndex)), 4));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findVertexNeighbors(new TetreeKey((byte)0, BigInteger.valueOf(rootIndex)), 10));
     }
 
     @Test
@@ -151,11 +152,11 @@ public class TetreeVertexNeighborTest {
 
         // Test all 4 vertices (0-3)
         for (int vertex = 0; vertex < 4; vertex++) {
-            List<Long> vertexNeighbors = tetree.findVertexNeighbors(tetIndex, vertex);
+            List<TetreeKey> vertexNeighbors = tetree.findVertexNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), vertex);
             assertNotNull(vertexNeighbors, "Vertex neighbors should not be null for vertex " + vertex);
 
             // Should not include itself
-            assertFalse(vertexNeighbors.contains(tetIndex),
+            assertFalse(vertexNeighbors.contains(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex))),
                         "Vertex neighbors should not include the tetrahedron itself");
         }
     }
@@ -179,15 +180,15 @@ public class TetreeVertexNeighborTest {
         int boundaryNeighbors1 = 0;
         int boundaryNeighbors2 = 0;
         for (int v = 0; v < 4; v++) {
-            boundaryNeighbors1 += tetree.findVertexNeighbors(boundaryTet1.index(), v).size();
-            boundaryNeighbors2 += tetree.findVertexNeighbors(boundaryTet2.index(), v).size();
+            boundaryNeighbors1 += tetree.findVertexNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(boundaryTet1.index())), v).size();
+            boundaryNeighbors2 += tetree.findVertexNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(boundaryTet2.index())), v).size();
         }
 
         // Center tetrahedron should have more neighbors
         Tet centerTet = tetree.locateTetrahedron(center, (byte) 2);
         int centerNeighbors = 0;
         for (int v = 0; v < 4; v++) {
-            centerNeighbors += tetree.findVertexNeighbors(centerTet.index(), v).size();
+            centerNeighbors += tetree.findVertexNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(centerTet.index())), v).size();
         }
 
         // Boundary tets typically have fewer neighbors than interior tets
@@ -220,7 +221,7 @@ public class TetreeVertexNeighborTest {
         // Count total vertex neighbors
         int totalVertexNeighbors = 0;
         for (int vertex = 0; vertex < 4; vertex++) {
-            List<Long> neighbors = tetree.findVertexNeighbors(centerIndex, vertex);
+            List<TetreeKey> neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), vertex);
             totalVertexNeighbors += neighbors.size();
         }
 
@@ -252,15 +253,15 @@ public class TetreeVertexNeighborTest {
         // Vertex 3: edges 2, 4, 5
 
         // Get edge neighbors for edges connected to vertex 0
-        List<Long> edge0Neighbors = tetree.findEdgeNeighbors(tetIndex, 0);
-        List<Long> edge1Neighbors = tetree.findEdgeNeighbors(tetIndex, 1);
-        List<Long> edge2Neighbors = tetree.findEdgeNeighbors(tetIndex, 2);
+        List<TetreeKey> edge0Neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 0);
+        List<TetreeKey> edge1Neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 1);
+        List<TetreeKey> edge2Neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 2);
 
         // Get vertex 0 neighbors
-        List<Long> vertex0Neighbors = tetree.findVertexNeighbors(tetIndex, 0);
+        List<TetreeKey> vertex0Neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 0);
 
         // Vertex neighbors should include all edge neighbors for edges connected to that vertex
-        Set<Long> expectedFromEdges = new HashSet<>();
+        Set<TetreeKey> expectedFromEdges = new HashSet<>();
         expectedFromEdges.addAll(edge0Neighbors);
         expectedFromEdges.addAll(edge1Neighbors);
         expectedFromEdges.addAll(edge2Neighbors);
@@ -290,14 +291,14 @@ public class TetreeVertexNeighborTest {
 
         // Check if they share any vertices (i.e., are vertex neighbors)
         for (int v1 = 0; v1 < 4; v1++) {
-            List<Long> neighbors1 = tetree.findVertexNeighbors(tet1.index(), v1);
+            List<TetreeKey> neighbors1 = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(tet1.index())), v1);
 
-            if (neighbors1.contains(tet2.index())) {
+            if (neighbors1.contains(new TetreeKey((byte)3, BigInteger.valueOf(tet2.index())))) {
                 // If tet2 is a vertex neighbor of tet1, then tet1 should be a vertex neighbor of tet2
                 boolean foundSymmetric = false;
                 for (int v2 = 0; v2 < 4; v2++) {
-                    List<Long> neighbors2 = tetree.findVertexNeighbors(tet2.index(), v2);
-                    if (neighbors2.contains(tet1.index())) {
+                    List<TetreeKey> neighbors2 = tetree.findVertexNeighbors(new TetreeKey((byte)3, BigInteger.valueOf(tet2.index())), v2);
+                    if (neighbors2.contains(new TetreeKey((byte)3, BigInteger.valueOf(tet1.index())))) {
                         foundSymmetric = true;
                         break;
                     }

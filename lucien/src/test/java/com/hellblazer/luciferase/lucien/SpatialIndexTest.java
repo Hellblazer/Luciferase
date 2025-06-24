@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -19,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class SpatialIndexTest {
 
-    private SpatialIndex<LongEntityID, String> spatialIndex;
+    private SpatialIndex<MortonKey, LongEntityID, String> spatialIndex;
 
     @BeforeEach
     void setUp() {

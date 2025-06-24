@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.math.BigInteger;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -93,7 +94,7 @@ public class TetreeEnhancedIteratorTest {
 
         // Test parent-child iterator
         List<TetreeNodeImpl<LongEntityID>> path = new ArrayList<>();
-        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.parentChildIterator(leafIndex);
+        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.parentChildIterator(new TetreeKey((byte)3, BigInteger.valueOf(leafIndex)));
         while (iter.hasNext()) {
             path.add(iter.next());
         }
@@ -124,7 +125,7 @@ public class TetreeEnhancedIteratorTest {
 
         // Get siblings
         List<TetreeNodeImpl<LongEntityID>> siblings = new ArrayList<>();
-        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.siblingIterator(testIndex);
+        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.siblingIterator(new TetreeKey((byte)2, BigInteger.valueOf(testIndex)));
         while (iter.hasNext()) {
             siblings.add(iter.next());
         }
@@ -194,7 +195,7 @@ public class TetreeEnhancedIteratorTest {
         long rootIndex = rootTet.index();
 
         // Validate the subtree
-        TetreeValidator.ValidationResult result = tetree.validateSubtree(rootIndex);
+        TetreeValidator.ValidationResult result = tetree.validateSubtree(new TetreeKey((byte)2, BigInteger.valueOf(rootIndex)));
         
         assertNotNull(result);
         // The validation should pass for a correctly constructed tree
@@ -215,7 +216,7 @@ public class TetreeEnhancedIteratorTest {
         tetree.insert(p1, (byte) 2, "test");
         
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        tetree.findAllFaceNeighbors(tet.index());
+        tetree.findAllFaceNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tet.index())));
         
         // Get metrics
         TetreeMetrics metrics = tetree.getMetrics();

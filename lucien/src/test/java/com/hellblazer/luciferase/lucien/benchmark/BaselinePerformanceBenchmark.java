@@ -160,7 +160,7 @@ public class BaselinePerformanceBenchmark {
         return tetree;
     }
     
-    private long benchmarkQueries(com.hellblazer.luciferase.lucien.SpatialIndex<LongEntityID, String> index, List<Point3f> positions) {
+    private long benchmarkQueries(com.hellblazer.luciferase.lucien.SpatialIndex<?, LongEntityID, String> index, List<Point3f> positions) {
         Random random = new Random(42);
         int queryCount = 100;
         

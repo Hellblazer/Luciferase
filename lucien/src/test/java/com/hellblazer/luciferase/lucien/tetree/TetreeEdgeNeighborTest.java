@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -55,9 +56,10 @@ public class TetreeEdgeNeighborTest {
         long rootIndex = rootTet.index();
 
         // Test invalid edge indices
-        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootIndex, -1));
-        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootIndex, 6));
-        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootIndex, 10));
+        TetreeKey rootKey = new TetreeKey((byte) 0, BigInteger.valueOf(rootIndex));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, -1));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, 6));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, 10));
     }
 
     @Test
@@ -80,14 +82,16 @@ public class TetreeEdgeNeighborTest {
 
         // Check if they share any edges
         for (int edge1 = 0; edge1 < 6; edge1++) {
-            List<Long> neighbors1 = tetree.findEdgeNeighbors(tet1.index(), edge1);
-
-            if (neighbors1.contains(tet2.index())) {
+            List<TetreeKey> neighbors1 = tetree.findEdgeNeighbors(new TetreeKey((byte) 2, BigInteger.valueOf(tet1.index())), edge1);
+            
+            TetreeKey tet2Key = new TetreeKey((byte) 2, BigInteger.valueOf(tet2.index()));
+            if (neighbors1.contains(tet2Key)) {
                 // If tet2 is an edge neighbor of tet1, then tet1 should be an edge neighbor of tet2
                 boolean foundSymmetric = false;
                 for (int edge2 = 0; edge2 < 6; edge2++) {
-                    List<Long> neighbors2 = tetree.findEdgeNeighbors(tet2.index(), edge2);
-                    if (neighbors2.contains(tet1.index())) {
+                    List<TetreeKey> neighbors2 = tetree.findEdgeNeighbors(tet2Key, edge2);
+                    TetreeKey tet1Key = new TetreeKey((byte) 2, BigInteger.valueOf(tet1.index()));
+                    if (neighbors2.contains(tet1Key)) {
                         foundSymmetric = true;
                         break;
                     }
@@ -116,7 +120,7 @@ public class TetreeEdgeNeighborTest {
 
         // Test all 6 edges (0-5)
         for (int edge = 0; edge < 6; edge++) {
-            List<Long> edgeNeighbors = tetree.findEdgeNeighbors(tetIndex, edge);
+            List<TetreeKey> edgeNeighbors = tetree.findEdgeNeighbors(new TetreeKey((byte) 1, BigInteger.valueOf(tetIndex)), edge);
             assertNotNull(edgeNeighbors, "Edge neighbors should not be null for edge " + edge);
 
             // At minimum, neighbors should include face neighbors that share the edge
@@ -150,51 +154,53 @@ public class TetreeEdgeNeighborTest {
         // Edge 5 (v2-v3): faces 2, 3
 
         // Get face neighbors
-        List<Long> face0Neighbors = new ArrayList<>();
-        List<Long> face1Neighbors = new ArrayList<>();
-        List<Long> face2Neighbors = new ArrayList<>();
-        List<Long> face3Neighbors = new ArrayList<>();
+        List<TetreeKey> face0Neighbors = new ArrayList<>();
+        List<TetreeKey> face1Neighbors = new ArrayList<>();
+        List<TetreeKey> face2Neighbors = new ArrayList<>();
+        List<TetreeKey> face3Neighbors = new ArrayList<>();
 
-        long face0 = tetree.findFaceNeighbor(tetIndex, 0);
-        if (face0 != -1) {
+        TetreeKey tetKey = new TetreeKey((byte) 2, BigInteger.valueOf(tetIndex));
+        
+        TetreeKey face0 = tetree.findFaceNeighbor(tetKey, 0);
+        if (face0 != null) {
             face0Neighbors.add(face0);
         }
 
-        long face1 = tetree.findFaceNeighbor(tetIndex, 1);
-        if (face1 != -1) {
+        TetreeKey face1 = tetree.findFaceNeighbor(tetKey, 1);
+        if (face1 != null) {
             face1Neighbors.add(face1);
         }
 
-        long face2 = tetree.findFaceNeighbor(tetIndex, 2);
-        if (face2 != -1) {
+        TetreeKey face2 = tetree.findFaceNeighbor(tetKey, 2);
+        if (face2 != null) {
             face2Neighbors.add(face2);
         }
 
-        long face3 = tetree.findFaceNeighbor(tetIndex, 3);
-        if (face3 != -1) {
+        TetreeKey face3 = tetree.findFaceNeighbor(tetKey, 3);
+        if (face3 != null) {
             face3Neighbors.add(face3);
         }
 
         // Get edge neighbors
-        List<Long> edge0Neighbors = tetree.findEdgeNeighbors(tetIndex, 0); // shares faces 0,2
-        List<Long> edge3Neighbors = tetree.findEdgeNeighbors(tetIndex, 3); // shares faces 0,1
+        List<TetreeKey> edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0); // shares faces 0,2
+        List<TetreeKey> edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,1
 
         // Edge neighbors should include at least the face neighbors of the faces that share the edge
-        Set<Long> edge0Expected = new HashSet<>();
+        Set<TetreeKey> edge0Expected = new HashSet<>();
         edge0Expected.addAll(face0Neighbors);
         edge0Expected.addAll(face2Neighbors);
 
-        Set<Long> edge3Expected = new HashSet<>();
+        Set<TetreeKey> edge3Expected = new HashSet<>();
         edge3Expected.addAll(face0Neighbors);
         edge3Expected.addAll(face1Neighbors);
 
         // Edge neighbors should include at least the face neighbors
-        for (Long neighbor : edge0Expected) {
+        for (TetreeKey neighbor : edge0Expected) {
             assertTrue(edge0Neighbors.contains(neighbor) || edge0Neighbors.isEmpty(),
                        "Edge 0 neighbors should include face neighbors from faces 0 and 2");
         }
 
-        for (Long neighbor : edge3Expected) {
+        for (TetreeKey neighbor : edge3Expected) {
             assertTrue(edge3Neighbors.contains(neighbor) || edge3Neighbors.isEmpty(),
                        "Edge 3 neighbors should include face neighbors from faces 0 and 1");
         }
@@ -225,7 +231,7 @@ public class TetreeEdgeNeighborTest {
         // In a dense configuration, we expect more edge neighbors
         int totalEdgeNeighbors = 0;
         for (int edge = 0; edge < 6; edge++) {
-            List<Long> neighbors = tetree.findEdgeNeighbors(centerIndex, edge);
+            List<TetreeKey> neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte) 3, BigInteger.valueOf(centerIndex)), edge);
             totalEdgeNeighbors += neighbors.size();
         }
 

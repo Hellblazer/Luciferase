@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -61,9 +62,9 @@ public class TreeTraversalTest {
         // Create cancelling visitor
         final int[] nodesVisited = { 0 };
         final int maxNodesToVisit = 3;
-        TreeVisitor<LongEntityID, String> cancellingVisitor = new AbstractTreeVisitor<>() {
+        TreeVisitor<MortonKey, LongEntityID, String> cancellingVisitor = new AbstractTreeVisitor<>() {
             @Override
-            public boolean visitNode(SpatialIndex.SpatialNode node, int level, long parentIndex) {
+            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level, MortonKey parentIndex) {
                 nodesVisited[0]++;
                 // Cancel after maxNodesToVisit nodes
                 return nodesVisited[0] < maxNodesToVisit;
@@ -87,7 +88,7 @@ public class TreeTraversalTest {
         }
 
         // Collect only even entities
-        EntityCollectorVisitor<LongEntityID, String> visitor = new EntityCollectorVisitor<>(
+        EntityCollectorVisitor<MortonKey, LongEntityID, String> visitor = new EntityCollectorVisitor<>(
         content -> content.startsWith("EVEN"));
 
         octree.traverse(visitor, TraversalStrategy.BREADTH_FIRST);
@@ -104,7 +105,7 @@ public class TreeTraversalTest {
         insertTestEntities(100);
 
         // Create visitor with depth limit
-        NodeCountVisitor<LongEntityID, String> visitor = new NodeCountVisitor<>();
+        NodeCountVisitor<MortonKey, LongEntityID, String> visitor = new NodeCountVisitor<>();
         visitor.setMaxDepth(3);
 
         octree.traverse(visitor, TraversalStrategy.DEPTH_FIRST);
@@ -119,7 +120,7 @@ public class TreeTraversalTest {
         insertTestEntities(50);
 
         // Create visitor
-        NodeCountVisitor<LongEntityID, String> visitor = new NodeCountVisitor<>();
+        NodeCountVisitor<MortonKey, LongEntityID, String> visitor = new NodeCountVisitor<>();
 
         // Traverse tree
         octree.traverse(visitor, TraversalStrategy.DEPTH_FIRST);
@@ -143,7 +144,7 @@ public class TreeTraversalTest {
         var startNode = nodes.get(0).sfcIndex();
 
         // Traverse from specific node
-        NodeCountVisitor<LongEntityID, String> visitor = new NodeCountVisitor<>();
+        NodeCountVisitor<MortonKey, LongEntityID, String> visitor = new NodeCountVisitor<>();
         octree.traverseFrom(visitor, TraversalStrategy.DEPTH_FIRST, startNode);
 
         // Should visit at least the start node
@@ -162,7 +163,7 @@ public class TreeTraversalTest {
         Spatial.Cube region = new Spatial.Cube(90, 90, 90, 30);
 
         // Traverse only region
-        EntityCollectorVisitor<LongEntityID, String> visitor = new EntityCollectorVisitor<>();
+        EntityCollectorVisitor<MortonKey, LongEntityID, String> visitor = new EntityCollectorVisitor<>();
         octree.traverseRegion(visitor, region, TraversalStrategy.LEVEL_ORDER);
 
         // Should find some entities
@@ -177,7 +178,7 @@ public class TreeTraversalTest {
         // Track callback order
         List<String> callOrder = new ArrayList<>();
 
-        TreeVisitor<LongEntityID, String> trackingVisitor = new TreeVisitor<>() {
+        TreeVisitor<MortonKey, LongEntityID, String> trackingVisitor = new TreeVisitor<>() {
             @Override
             public void beginTraversal(int totalNodes, int totalEntities) {
                 callOrder.add("beginTraversal");
@@ -189,18 +190,18 @@ public class TreeTraversalTest {
             }
 
             @Override
-            public void leaveNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<?, LongEntityID> node,
+            public void leaveNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<MortonKey, LongEntityID> node,
                                   int level, int childCount) {
                 callOrder.add("leaveNode:" + node.sfcIndex());
             }
 
             @Override
-            public void visitEntity(LongEntityID entityId, String content, long nodeIndex, int level) {
+            public void visitEntity(LongEntityID entityId, String content, MortonKey nodeIndex, int level) {
                 callOrder.add("visitEntity:" + entityId);
             }
 
             @Override
-            public boolean visitNode(SpatialIndex.SpatialNode<?, LongEntityID> node, int level, long parentIndex) {
+            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level, MortonKey parentIndex) {
                 callOrder.add("visitNode:" + node.sfcIndex());
                 return true;
             }

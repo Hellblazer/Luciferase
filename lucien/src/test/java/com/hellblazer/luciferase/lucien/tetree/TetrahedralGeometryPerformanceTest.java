@@ -1,6 +1,8 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Ray3D;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import java.math.BigInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -66,7 +68,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             Ray3D ray = testRays.get(i % testRays.size());
             long tetIndex = testTetIndices.get(i % testTetIndices.size());
-            TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte)10, java.math.BigInteger.valueOf(tetIndex)));
         }
 
         // Actual test
@@ -76,7 +78,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < TEST_ITERATIONS; i++) {
             Ray3D ray = testRays.get(i % testRays.size());
             long tetIndex = testTetIndices.get(i % testTetIndices.size());
-            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte)10, java.math.BigInteger.valueOf(tetIndex)));
             if (result.intersects) {
                 intersectionCount++;
             }
@@ -128,7 +130,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             Ray3D ray = testRays.get(i % testRays.size());
             long tetIndex = testTetIndices.get(i % testTetIndices.size());
-            EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex);
+            EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, new TetreeKey((byte)10, BigInteger.valueOf(tetIndex)));
         }
 
         // Actual test
@@ -138,7 +140,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < TEST_ITERATIONS; i++) {
             Ray3D ray = testRays.get(i % testRays.size());
             long tetIndex = testTetIndices.get(i % testTetIndices.size());
-            if (EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex)) {
+            if (EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, new TetreeKey((byte)10, BigInteger.valueOf(tetIndex)))) {
                 intersectionCount++;
             }
         }
@@ -162,7 +164,7 @@ public class TetrahedralGeometryPerformanceTest {
         long startTime = System.nanoTime();
         int intersectionCount = 0;
         for (Ray3D ray : rayBatch) {
-            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte)10, java.math.BigInteger.valueOf(tetIndex)));
             if (result.intersects) {
                 intersectionCount++;
             }
@@ -276,7 +278,7 @@ public class TetrahedralGeometryPerformanceTest {
         long startTime = System.nanoTime();
         int intersections = 0;
         for (Ray3D ray : missRays) {
-            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte)10, java.math.BigInteger.valueOf(tetIndex)));
             if (result.intersects) {
                 intersections++;
             }
@@ -292,7 +294,7 @@ public class TetrahedralGeometryPerformanceTest {
                 earlyRejections++;
                 continue;
             }
-            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetIndex);
+            var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte)10, java.math.BigInteger.valueOf(tetIndex)));
             if (result.intersects) {
                 intersections++;
             }

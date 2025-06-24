@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -69,11 +70,11 @@ public class TetreeIteratorTest {
         // Traverse depth-first pre-order
         TetreeIterator<LongEntityID, String> iter = TetreeIterator.depthFirstPre(tetree);
 
-        List<Long> indices = new ArrayList<>();
+        List<TetreeKey> indices = new ArrayList<>();
 
         while (iter.hasNext()) {
             iter.next();
-            Long index = iter.getCurrentIndex();
+            TetreeKey index = iter.getCurrentIndex();
             indices.add(index);
         }
 
@@ -120,17 +121,17 @@ public class TetreeIteratorTest {
         // Traverse in SFC order
         TetreeIterator<LongEntityID, String> iter = TetreeIterator.sfcOrder(tetree);
 
-        List<Long> indices = new ArrayList<>();
+        List<TetreeKey> indices = new ArrayList<>();
 
         while (iter.hasNext()) {
             iter.next();
-            Long index = iter.getCurrentIndex();
+            TetreeKey index = iter.getCurrentIndex();
             indices.add(index);
         }
 
         // Verify SFC property: indices should be in ascending order
         for (int i = 1; i < indices.size(); i++) {
-            assertTrue(indices.get(i) > indices.get(i - 1), "Indices should be in ascending order for SFC traversal");
+            assertTrue(indices.get(i).compareTo(indices.get(i - 1)) > 0, "Indices should be in ascending order for SFC traversal");
         }
 
         // Verify we got all nodes

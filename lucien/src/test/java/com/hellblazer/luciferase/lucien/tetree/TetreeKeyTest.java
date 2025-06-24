@@ -191,7 +191,7 @@ class TetreeKeyTest {
 
     @Test
     void testRootFactory() {
-        TetreeKey root = TetreeKey.root();
+        TetreeKey root = TetreeKey.getRoot();
 
         assertEquals(0, root.getLevel());
         assertEquals(BigInteger.ZERO, root.getTmIndex());

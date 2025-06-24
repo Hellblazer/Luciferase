@@ -30,28 +30,24 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public class CacheEffectivenessTest extends AbstractSpatialIndexPerformanceTest<LongEntityID, String> {
+public class CacheEffectivenessTest extends AbstractSpatialIndexPerformanceTest<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> {
 
     private static final byte DEFAULT_LEVEL = 10;
     private static final int CACHE_TEST_SIZE = 5000;
 
-    @Override
     protected SequentialLongIDGenerator createIDGenerator() {
         return new SequentialLongIDGenerator();
     }
 
-    @Override
-    protected SpatialIndex<LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
+    protected SpatialIndex<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
         // Default to Octree, but specific tests will create what they need
         return new Octree<>(createIDGenerator(), 32, (byte) maxDepth);
     }
 
-    @Override
     protected String createTestContent(int entityIndex) {
         return "Entity_" + entityIndex;
     }
 
-    @Override
     protected String getImplementationName() {
         return "CacheEffectiveness";
     }

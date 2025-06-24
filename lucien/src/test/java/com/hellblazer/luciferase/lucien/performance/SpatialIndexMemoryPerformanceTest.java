@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, Content> extends AbstractSpatialIndexPerformanceTest<ID, Content> {
+public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblazer.luciferase.lucien.SpatialKey<Key>, ID extends com.hellblazer.luciferase.lucien.entity.EntityID, Content> extends AbstractSpatialIndexPerformanceTest<Key, ID, Content> {
     
     private static final byte DEFAULT_LEVEL = 10;
     private final MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
@@ -40,7 +40,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblaze
             long baselineMemory = getHeapUsage();
             
             // Create index and populate
-            SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+            SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
             List<TestEntity> entities = generateTestEntities(size, SpatialDistribution.UNIFORM_RANDOM);
             
             for (TestEntity entity : entities) {
@@ -89,7 +89,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblaze
         int operations = 5000;
         
         // Create initial index
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> entities = generateTestEntities(baseSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {
@@ -151,7 +151,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblaze
             long baselineMemory = getHeapUsage();
             
             // Create index and populate
-            SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+            SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
             List<TestEntity> entities = generateTestEntities(size, distribution);
             
             for (TestEntity entity : entities) {
@@ -179,7 +179,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblaze
     @DisplayName("Test memory overhead of empty nodes")
     void testEmptyNodeOverhead() {
         // Create sparse index with entities only at corners
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         
         forceGarbageCollection();
         long baselineMemory = getHeapUsage();
@@ -230,7 +230,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblaze
         forceGarbageCollection();
         long denseBaseline = getHeapUsage();
         
-        SpatialIndex<ID, Content> denseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> denseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> denseEntities = generateTestEntities(totalEntities, SpatialDistribution.WORST_CASE);
         
         for (TestEntity entity : denseEntities) {
@@ -244,7 +244,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<ID extends com.hellblaze
         forceGarbageCollection();
         long sparseBaseline = getHeapUsage();
         
-        SpatialIndex<ID, Content> sparseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> sparseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> sparseEntities = generateTestEntities(totalEntities, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : sparseEntities) {
