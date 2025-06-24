@@ -49,49 +49,26 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
      * @return Stream of tetrahedral indices in traversal order
      */
     public Stream<TetreeKey> traverseRay(Ray3D ray) {
-        List<TetreeKey> intersectedIndices = new ArrayList<>();
-
-        // Check if ray intersects domain at all
-        float domainSize = Constants.lengthAtLevel((byte) 0);
-        if (!rayIntersectsAABB(ray, 0, 0, 0, domainSize, domainSize, domainSize)) {
-            return Stream.empty(); // Ray doesn't intersect domain
-        }
-
-        // Generate tetrahedra along the ray path at a fixed level
-        byte targetLevel = 10; // Use level 10 for good resolution
-
-        // Sample points along the ray
-        Point3f origin = ray.origin();
-        Vector3f direction = ray.direction();
-
-        // Determine ray length based on domain size
-        float maxT = domainSize * 2.0f; // Go beyond domain bounds
-        float stepSize = Constants.lengthAtLevel(targetLevel); // Step by tetrahedron size at target level
-
-        Set<TetreeKey> visitedIndices = new HashSet<>();
-
-        for (float t = 0; t <= maxT; t += stepSize) {
-            // Calculate point along ray
-            Point3f rayPoint = new Point3f();
-            rayPoint.scaleAdd(t, direction, origin);
-
-            // Only consider points within or near the domain
-            if (isPointReasonableForDomain(rayPoint, domainSize)) {
-                try {
-                    // Find the tetrahedron that would contain this point at the target level
-                    Tet tet = findTetrahedronAtLevel(rayPoint, targetLevel);
-                    if (tet != null && !visitedIndices.contains(tet.index())) {
-                        visitedIndices.add(tet.tmIndex());
-                        intersectedIndices.add(tet.tmIndex());
-                    }
-                } catch (Exception e) {
-                    // Skip invalid points
-                }
+        // For sparse trees, we need to check actual nodes in the tree
+        // Since nodes can exist at different levels, we need to check all existing nodes
+        
+        // Get all non-empty nodes from the tree
+        var allNodes = tree.getSortedSpatialIndices();
+        
+        // Filter to only nodes that the ray intersects
+        List<TetreeKey> intersectedNodes = new ArrayList<>();
+        
+        for (TetreeKey nodeIndex : allNodes) {
+            // The TetreeKey already contains the level information
+            // Check if ray intersects this tetrahedron at its specific level
+            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
+            if (intersection.intersects) {
+                intersectedNodes.add(nodeIndex);
             }
         }
-
-        // Sort by distance along ray and return as stream
-        return sortByRayDistance(intersectedIndices, ray).stream();
+        
+        // Sort by distance along ray
+        return sortByRayDistance(intersectedNodes, ray).stream();
     }
 
     /**

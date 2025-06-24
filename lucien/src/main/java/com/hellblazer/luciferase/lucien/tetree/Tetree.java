@@ -278,7 +278,18 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      * @return List of neighbor tetrahedron indices sharing the specified edge
      */
     public List<TetreeKey> findEdgeNeighbors(TetreeKey tetIndex, int edgeIndex) {
-        return getNeighborFinder().findEdgeNeighbors(tetIndex, edgeIndex);
+        // Get theoretical neighbors from the neighbor finder
+        List<TetreeKey> theoreticalNeighbors = getNeighborFinder().findEdgeNeighbors(tetIndex, edgeIndex);
+        
+        // Filter to only include neighbors that actually exist in the sparse tree
+        List<TetreeKey> existingNeighbors = new ArrayList<>();
+        for (TetreeKey neighbor : theoreticalNeighbors) {
+            if (hasNode(neighbor)) {
+                existingNeighbors.add(neighbor);
+            }
+        }
+        
+        return existingNeighbors;
     }
 
     /**
@@ -338,7 +349,12 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     public TetreeKey findFaceNeighbor(TetreeKey tetIndex, int faceIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, faceIndex);
-        return neighbor != null ? neighbor.tmIndex() : null;
+        if (neighbor != null) {
+            TetreeKey neighborKey = neighbor.tmIndex();
+            // Only return the neighbor if it actually exists in the sparse tree
+            return hasNode(neighborKey) ? neighborKey : null;
+        }
+        return null;
     }
 
     /**
@@ -404,7 +420,18 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      * @return List of neighbor tetrahedron indices sharing the specified vertex
      */
     public List<TetreeKey> findVertexNeighbors(TetreeKey tetIndex, int vertexIndex) {
-        return getNeighborFinder().findVertexNeighbors(tetIndex, vertexIndex);
+        // Get theoretical neighbors from the neighbor finder
+        List<TetreeKey> theoreticalNeighbors = getNeighborFinder().findVertexNeighbors(tetIndex, vertexIndex);
+        
+        // Filter to only include neighbors that actually exist in the sparse tree
+        List<TetreeKey> existingNeighbors = new ArrayList<>();
+        for (TetreeKey neighbor : theoreticalNeighbors) {
+            if (hasNode(neighbor)) {
+                existingNeighbors.add(neighbor);
+            }
+        }
+        
+        return existingNeighbors;
     }
 
     /**
@@ -717,10 +744,17 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             private       int             currentIndex = 0;
 
             {
-                // Build path from start to root
+                // Build path from start to root, but only include nodes that exist
                 TetreeKey current = startIndex;
-                while (current.getTmIndex().compareTo(BigInteger.ZERO) > 0) {
-                    path.add(0, current); // Insert at beginning
+                while (current != null && current.getTmIndex().compareTo(BigInteger.ZERO) >= 0) {
+                    if (spatialIndex.containsKey(current)) {
+                        path.add(0, current); // Insert at beginning (to maintain root->leaf order)
+                    }
+                    
+                    if (current.getLevel() == 0) {
+                        break;
+                    }
+                    
                     Tet tet = Tet.tetrahedron(current);
                     if (tet.l() == 0) {
                         break;
@@ -729,7 +763,9 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
                 }
 
                 // Add all descendants of start node
-                addDescendants(startIndex);
+                if (spatialIndex.containsKey(startIndex)) {
+                    addDescendants(startIndex);
+                }
             }
 
             @Override

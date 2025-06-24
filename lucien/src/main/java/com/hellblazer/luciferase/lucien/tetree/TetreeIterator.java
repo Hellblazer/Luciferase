@@ -134,14 +134,23 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
             throw new NoSuchElementException();
         }
 
-        TetreeNodeImpl<ID> result = currentNode;
-
-        // Advance to next node based on traversal order
-        switch (order) {
-            case DEPTH_FIRST_PRE -> advanceDepthFirstPre();
-            case DEPTH_FIRST_POST -> advanceDepthFirstPost();
-            case BREADTH_FIRST -> advanceBreadthFirst();
-            case SFC_ORDER -> advanceSFCOrder();
+        TetreeNodeImpl<ID> result;
+        
+        if (order == TraversalOrder.SFC_ORDER) {
+            // For SFC order, we need to get the node before advancing
+            currentIndex = nextSFCIndex;
+            currentNode = tree.getSpatialIndex().get(currentIndex);
+            result = currentNode;
+            advanceSFCOrder(); // This updates nextSFCIndex and hasNext
+        } else {
+            result = currentNode;
+            // Advance to next node based on traversal order
+            switch (order) {
+                case DEPTH_FIRST_PRE -> advanceDepthFirstPre();
+                case DEPTH_FIRST_POST -> advanceDepthFirstPost();
+                case BREADTH_FIRST -> advanceBreadthFirst();
+                default -> throw new IllegalStateException("Unexpected order: " + order);
+            }
         }
 
         return result;
@@ -216,26 +225,13 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
         NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
         Map<TetreeKey, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
 
-        if (sortedIndices.isEmpty()) {
-            hasNext = false;
-            return;
+        // Get next in sequence for the next iteration
+        if (nextSFCIndex != null) {
+            nextSFCIndex = sortedIndices.higher(nextSFCIndex);
         }
-
-        // Find next valid index in SFC order using the pre-sorted indices
-        TetreeKey nextIndex = sortedIndices.ceiling(nextSFCIndex);
-
-        if (nextIndex != null) {
-            currentIndex = nextIndex;
-            currentNode = spatialIndex.get(nextIndex);
-            hasNext = true;
-            nextSFCIndex = sortedIndices.higher(nextIndex); // Get next in sequence
-            if (nextSFCIndex == null) {
-                nextSFCIndex = nextIndex; // No more indices
-            }
-            return;
-        }
-
-        hasNext = false;
+        
+        // Check if we have more elements
+        hasNext = (nextSFCIndex != null);
     }
 
     // Check for concurrent modification
@@ -339,7 +335,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
         NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
         if (!sortedIndices.isEmpty()) {
             nextSFCIndex = sortedIndices.first();
-            advanceSFCOrder();
+            hasNext = true; // We have at least one element
         } else {
             hasNext = false;
         }

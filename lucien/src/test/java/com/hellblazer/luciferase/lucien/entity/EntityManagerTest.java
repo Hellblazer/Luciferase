@@ -292,7 +292,7 @@ public class EntityManagerTest {
         entityManager.removeEntityLocation(id, new com.hellblazer.luciferase.lucien.octree.MortonKey(12345L));
         locations = entityManager.getEntityLocations(id);
         assertEquals(1, locations.size());
-        assertTrue(locations.contains(67890L));
+        assertTrue(locations.contains(new com.hellblazer.luciferase.lucien.octree.MortonKey(67890L)));
         assertFalse(locations.contains(new com.hellblazer.luciferase.lucien.octree.MortonKey(12345L)));
 
         // Clear all locations
