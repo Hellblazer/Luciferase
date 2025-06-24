@@ -10,6 +10,7 @@ import com.hellblazer.luciferase.lucien.Ray3D;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
 import javax.vecmath.Vector3f;
+import java.math.BigInteger;
 
 /**
  * Enhanced tetrahedral geometry utilities with optimizations for ray-tetrahedron intersection. This class provides
@@ -218,7 +219,7 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
         Point3f[] vertices = getCachedVertices(tetIndex);
         if (vertices == null) {
             // Fall back to regular method if not in cache
-            return rayIntersectsTetrahedron(ray, tetIndex);
+            return rayIntersectsTetrahedron(ray, new TetreeKey((byte)0, BigInteger.valueOf(tetIndex)));
         }
 
         // Create a custom implementation for cached vertices

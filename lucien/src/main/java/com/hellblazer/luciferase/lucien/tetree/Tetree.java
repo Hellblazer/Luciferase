@@ -1099,8 +1099,8 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
 
     @Override
     protected byte getLevelFromIndex(TetreeKey index) {
-        // Use optimized bit extraction from TetreeBits
-        return TetreeBits.extractLevel(index);
+        // TetreeKey already has the level
+        return index.getLevel();
     }
 
     @Override
@@ -1548,13 +1548,10 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      * Add range indices in chunks to avoid memory spikes
      */
     private void addRangeInChunks(NavigableSet<TetreeKey> result, SFCRange range, int chunkSize) {
-        TetreeKey current = range.start;
-        while (current <= range.end) {
-            TetreeKey chunkEnd = Math.min(current + chunkSize - 1, range.end);
-            var subset = sortedSpatialIndices.subSet(current, true, chunkEnd, true);
-            result.addAll(subset);
-            current = chunkEnd + 1;
-        }
+        // Since we can't do arithmetic on TetreeKey, we need to use the NavigableSet operations
+        // Get all indices in the range
+        var subset = sortedSpatialIndices.subSet(range.start, true, range.end, true);
+        result.addAll(subset);
     }
 
     /**
@@ -1582,9 +1579,13 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         int levelDiff = targetLevel - parentTet.l();
         TetreeKey firstDescendant = calculateFirstDescendant(parentTet, targetLevel);
 
-        // The last descendant is offset by 8^levelDiff - 1 (since each tet splits into 8 children)
-        TetreeKey offset = (1L << (3 * levelDiff)) - 1; // 8^levelDiff - 1 = 2^(3*levelDiff) - 1
-        return firstDescendant + offset;
+        // Calculate last descendant using Tet's own logic
+        // Create a tetrahedron at the parent position but at target level,
+        // then get the last child recursively
+        int cellSize = Constants.lengthAtLevel(parentTet.l());
+        Tet lastTet = new Tet(parentTet.x() + cellSize - 1, parentTet.y() + cellSize - 1, 
+                              parentTet.z() + cellSize - 1, targetLevel, 5); // type 5 is typically last
+        return lastTet.tmIndex();
     }
 
     /**
@@ -1655,7 +1656,10 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
                             for (byte type = 0; type < 6; type++) {
                                 var tet = new Tet(x * length, y * length, z * length, level, type);
                                 TetreeKey startIndex = tet.tmIndex();
-                                TetreeKey endIndex = startIndex + (step * step * step * 6) - 1; // Approximate range
+                                // For a range, calculate the tetrahedron at the end of the step
+                                var endTet = new Tet((x + step - 1) * length, (y + step - 1) * length, 
+                                                     (z + step - 1) * length, level, (byte)5);
+                                TetreeKey endIndex = endTet.tmIndex();
                                 ranges.add(new SFCRange(startIndex, endIndex));
                             }
                         }
@@ -2141,9 +2145,9 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      * Get SFC successor index for tetrahedral traversal
      */
     private TetreeKey getSuccessor(TetreeKey tetIndex) {
-        // For tetrahedral SFC, successor is simply the next index
-        // The Tet class's index() method implements the proper SFC ordering
-        return tetIndex + 1;
+        // Use the NavigableSet to find the next key
+        TetreeKey higher = sortedSpatialIndices.higher(tetIndex);
+        return higher != null ? higher : tetIndex; // Return same if no successor
     }
 
     // Check if a grid cell intersects with the query bounds
@@ -2237,15 +2241,19 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             return ranges;
         }
 
-        ranges.sort(Comparator.comparingLong(a -> a.start));
+        ranges.sort(Comparator.comparing(a -> a.start));
         List<SFCRange> merged = new ArrayList<>();
         SFCRange current = ranges.getFirst();
 
         for (int i = 1; i < ranges.size(); i++) {
             SFCRange next = ranges.get(i);
-            if (current.end + 1 >= next.start) {
+            // Check if ranges are adjacent or overlapping
+            // We can't do arithmetic on TetreeKey, so check if next.start is the immediate successor
+            TetreeKey successor = sortedSpatialIndices.higher(current.end);
+            if (successor != null && successor.compareTo(next.start) >= 0) {
                 // Merge overlapping ranges
-                current = new SFCRange(current.start, Math.max(current.end, next.end));
+                TetreeKey maxEnd = current.end.compareTo(next.end) > 0 ? current.end : next.end;
+                current = new SFCRange(current.start, maxEnd);
             } else {
                 merged.add(current);
                 current = next;
@@ -2265,7 +2273,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         }
 
         // Sort ranges by start index
-        ranges.sort(Comparator.comparingLong(a -> a.start));
+        ranges.sort(Comparator.comparing(a -> a.start));
 
         // Use more aggressive merging for memory efficiency
         List<SFCRange> merged = new ArrayList<>();

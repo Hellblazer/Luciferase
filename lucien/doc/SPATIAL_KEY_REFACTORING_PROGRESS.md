@@ -133,6 +133,62 @@
 - Use `mortonKey.getMortonCode()` when underlying long value is needed
 - Use `mortonKey.getLevel()` to access level information
 
-## Next: Phase 4 - Tetree-Specific Issues
+## Phase 4: Tetree-Specific Issues ✅ COMPLETED
 
-Focus on TetreeKey conversions, arithmetic operations, and TetreeIterator.
+### Tetree Arithmetic Operations Fixed
+1. **addRangeInChunks Method**:
+   - Removed arithmetic operations on TetreeKey
+   - Now uses NavigableSet.subSet() directly
+
+2. **calculateLastDescendant Method**:
+   - Replaced arithmetic offset calculation
+   - Now creates Tet at target level and gets its tmIndex()
+
+3. **Range Calculations**:
+   - Fixed lines creating SFCRange with arithmetic
+   - Now calculates end positions using Tet construction
+
+4. **getSuccessor Method**:
+   - Changed from `tetIndex + 1` to `sortedSpatialIndices.higher(tetIndex)`
+
+5. **mergeRanges Method**:
+   - Fixed comparator from `comparingLong` to `comparing`
+   - Fixed range merging logic to use compareTo instead of arithmetic
+
+### TetreeIterator Updates
+1. **Field Type Changes**:
+   - `currentIndex`: Long → TetreeKey
+   - `nextSFCIndex`: long → TetreeKey
+
+2. **Initialization**:
+   - Changed `nextSFCIndex = 0` to `TetreeKey.getRoot()`
+
+3. **NavigableSet Operations**:
+   - Updated all NavigableSet<Long> to NavigableSet<TetreeKey>
+   - Updated all Map<Long, TetreeNodeImpl> to Map<TetreeKey, TetreeNodeImpl>
+
+4. **advanceSFCOrder Method**:
+   - Fixed to use `sortedIndices.higher()` instead of arithmetic
+
+### TetreeNeighborFinder Updates
+1. **Changed `neighbor.index()` to `neighbor.tmIndex()`**:
+   - Line 118: For face neighbors
+   - Line 298: For vertex neighbors
+
+### Other Fixes
+1. **Tetree.getLevelFromIndex**:
+   - Now uses `index.getLevel()` directly from TetreeKey
+
+2. **EnhancedTetrahedralGeometry**:
+   - Added BigInteger import
+   - Fixed fallback call to use TetreeKey constructor
+
+### Key Patterns for Tetree
+- Use `tet.tmIndex()` to get TetreeKey from Tet
+- Use NavigableSet operations instead of arithmetic
+- Create new Tet instances when calculating ranges
+- Use compareTo() for key comparisons
+
+## Next: Phase 5 - Update Test Classes
+
+Update test classes to use MortonKey and TetreeKey instead of long indices.

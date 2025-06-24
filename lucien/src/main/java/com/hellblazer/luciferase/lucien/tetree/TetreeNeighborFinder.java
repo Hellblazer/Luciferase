@@ -115,7 +115,7 @@ public class TetreeNeighborFinder {
         for (int faceIndex : edgeToFaces[edgeIndex]) {
             Tet neighbor = findFaceNeighbor(tet, faceIndex);
             if (neighbor != null) {
-                uniqueNeighbors.add(neighbor.index());
+                uniqueNeighbors.add(neighbor.tmIndex());
             }
         }
 
@@ -295,7 +295,7 @@ public class TetreeNeighborFinder {
         for (int faceIndex : vertexToFaces[vertexIndex]) {
             Tet neighbor = findFaceNeighbor(tet, faceIndex);
             if (neighbor != null) {
-                vertexNeighbors.add(neighbor.index());
+                vertexNeighbors.add(neighbor.tmIndex());
             }
         }
 
