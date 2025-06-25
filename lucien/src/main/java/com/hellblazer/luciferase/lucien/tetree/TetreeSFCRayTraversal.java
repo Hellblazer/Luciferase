@@ -48,62 +48,39 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
      * @param ray The ray to traverse
      * @return Stream of tetrahedral indices in traversal order
      */
-    public Stream<Long> traverseRay(Ray3D ray) {
-        List<Long> intersectedIndices = new ArrayList<>();
+    public Stream<TetreeKey> traverseRay(Ray3D ray) {
+        // For sparse trees, we need to check actual nodes in the tree
+        // Since nodes can exist at different levels, we need to check all existing nodes
         
-        // Check if ray intersects domain at all
-        float domainSize = Constants.lengthAtLevel((byte) 0);
-        if (!rayIntersectsAABB(ray, 0, 0, 0, domainSize, domainSize, domainSize)) {
-            return Stream.empty(); // Ray doesn't intersect domain
-        }
+        // Get all non-empty nodes from the tree
+        var allNodes = tree.getSortedSpatialIndices();
         
-        // Generate tetrahedra along the ray path at a fixed level
-        byte targetLevel = 10; // Use level 10 for good resolution
+        // Filter to only nodes that the ray intersects
+        List<TetreeKey> intersectedNodes = new ArrayList<>();
         
-        // Sample points along the ray
-        Point3f origin = ray.origin();
-        Vector3f direction = ray.direction();
-        
-        // Determine ray length based on domain size
-        float maxT = domainSize * 2.0f; // Go beyond domain bounds
-        float stepSize = Constants.lengthAtLevel(targetLevel); // Step by tetrahedron size at target level
-        
-        Set<Long> visitedIndices = new HashSet<>();
-        
-        for (float t = 0; t <= maxT; t += stepSize) {
-            // Calculate point along ray
-            Point3f rayPoint = new Point3f();
-            rayPoint.scaleAdd(t, direction, origin);
-            
-            // Only consider points within or near the domain
-            if (isPointReasonableForDomain(rayPoint, domainSize)) {
-                try {
-                    // Find the tetrahedron that would contain this point at the target level
-                    Tet tet = findTetrahedronAtLevel(rayPoint, targetLevel);
-                    if (tet != null && !visitedIndices.contains(tet.index())) {
-                        visitedIndices.add(tet.index());
-                        intersectedIndices.add(tet.index());
-                    }
-                } catch (Exception e) {
-                    // Skip invalid points
-                }
+        for (TetreeKey nodeIndex : allNodes) {
+            // The TetreeKey already contains the level information
+            // Check if ray intersects this tetrahedron at its specific level
+            var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
+            if (intersection.intersects) {
+                intersectedNodes.add(nodeIndex);
             }
         }
         
-        // Sort by distance along ray and return as stream
-        return sortByRayDistance(intersectedIndices, ray).stream();
+        // Sort by distance along ray
+        return sortByRayDistance(intersectedNodes, ray).stream();
     }
 
     /**
      * Add child tetrahedra that could be intersected by the ray.
      */
-    private void addIntersectedChildren(Tet current, Ray3D ray, Queue<Tet> toProcess, Set<Long> visited) {
+    private void addIntersectedChildren(Tet current, Ray3D ray, Queue<Tet> toProcess, Set<TetreeKey> visited) {
         for (int i = 0; i < 8; i++) {
             try {
                 Tet child = current.child(i);
                 if (!visited.contains(child.index()) && couldRayIntersect(ray, child)) {
                     toProcess.offer(child);
-                    visited.add(child.index());
+                    visited.add(child.tmIndex());
                 }
             } catch (IllegalStateException e) {
                 // Max level reached
@@ -115,10 +92,16 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
     /**
      * Add neighboring tetrahedra that could be intersected by the ray.
      */
-    private void addIntersectedNeighbors(Tet current, Ray3D ray, Queue<Tet> toProcess, Set<Long> visited) {
+    private void addIntersectedNeighbors(Tet current, Ray3D ray, Queue<Tet> toProcess, Set<TetreeKey> visited) {
         // Check all 4 faces
         for (int face = 0; face < 4; face++) {
             Tet.FaceNeighbor neighbor = current.faceNeighbor(face);
+
+            // Check if neighbor exists (null at boundary)
+            if (neighbor == null) {
+                continue;
+            }
+
             Tet neighborTet = neighbor.tet();
 
             // Check if neighbor is valid and not visited
@@ -126,7 +109,7 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
                 // Quick check if ray could possibly intersect this neighbor
                 if (couldRayIntersect(ray, neighborTet)) {
                     toProcess.offer(neighborTet);
-                    visited.add(neighborTet.index());
+                    visited.add(neighborTet.tmIndex());
                 }
             }
         }
@@ -233,12 +216,36 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
     }
 
     /**
+     * Find the tetrahedron that would contain a point at a specific level, generating the tetrahedron even if it
+     * doesn't exist in the tree.
+     */
+    private Tet findTetrahedronAtLevel(Point3f point, byte level) {
+        // Convert point to positive coordinates if needed
+        float x = Math.max(0, point.x);
+        float y = Math.max(0, point.y);
+        float z = Math.max(0, point.z);
+
+        // Use the tree's locateTetrahedron method to find the containing tetrahedron
+        // This will generate the tetrahedron based on the SFC encoding
+        return tree.locateTetrahedron(new Point3f(x, y, z), level);
+    }
+
+    /**
      * Check if a point is inside the domain.
      */
     private boolean isInsideDomain(Point3f point) {
         float maxCoord = Constants.lengthAtLevel((byte) 0);
         return point.x >= 0 && point.x <= maxCoord && point.y >= 0 && point.y <= maxCoord && point.z >= 0
         && point.z <= maxCoord;
+    }
+
+    /**
+     * Check if a point is reasonable for domain calculations (not too far outside bounds).
+     */
+    private boolean isPointReasonableForDomain(Point3f point, float domainSize) {
+        float margin = domainSize * 0.1f; // Allow 10% margin outside domain
+        return point.x >= -margin && point.x <= domainSize + margin && point.y >= -margin
+        && point.y <= domainSize + margin && point.z >= -margin && point.z <= domainSize + margin;
     }
 
     /**
@@ -360,16 +367,16 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
     private boolean shouldCheckChildren(Tet tet, Ray3D ray) {
         // Always check children if they might contain intersections
         // Could be optimized based on ray direction and tet position
-        return tree.hasNode(tet.index());
+        return tree.hasNode(tet.tmIndex());
     }
 
     /**
      * Sort tetrahedra by distance along ray for correct traversal order.
      */
-    private List<Long> sortByRayDistance(List<Long> indices, Ray3D ray) {
-        Map<Long, Float> distances = new HashMap<>();
+    private List<TetreeKey> sortByRayDistance(List<TetreeKey> indices, Ray3D ray) {
+        Map<TetreeKey, Float> distances = new HashMap<>();
 
-        for (Long index : indices) {
+        for (TetreeKey index : indices) {
             Tet tet = Tet.tetrahedron(index);
             Point3i[] vertices = tet.coordinates();
 
@@ -392,30 +399,5 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
         indices.sort(Comparator.comparing(distances::get));
 
         return indices;
-    }
-
-    /**
-     * Check if a point is reasonable for domain calculations (not too far outside bounds).
-     */
-    private boolean isPointReasonableForDomain(Point3f point, float domainSize) {
-        float margin = domainSize * 0.1f; // Allow 10% margin outside domain
-        return point.x >= -margin && point.x <= domainSize + margin &&
-               point.y >= -margin && point.y <= domainSize + margin &&
-               point.z >= -margin && point.z <= domainSize + margin;
-    }
-
-    /**
-     * Find the tetrahedron that would contain a point at a specific level,
-     * generating the tetrahedron even if it doesn't exist in the tree.
-     */
-    private Tet findTetrahedronAtLevel(Point3f point, byte level) {
-        // Convert point to positive coordinates if needed
-        float x = Math.max(0, point.x);
-        float y = Math.max(0, point.y);
-        float z = Math.max(0, point.z);
-        
-        // Use the tree's locateTetrahedron method to find the containing tetrahedron
-        // This will generate the tetrahedron based on the SFC encoding
-        return tree.locateTetrahedron(new Point3f(x, y, z), level);
     }
 }

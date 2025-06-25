@@ -8,6 +8,7 @@ import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.performance.SpatialIndexQueryPerformanceTest;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.junit.jupiter.api.DisplayName;
 
 /**
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.DisplayName;
  * @author hal.hildebrand
  */
 @DisplayName("Tetree Query Performance Tests")
-public class TetreeQueryPerformanceTest extends SpatialIndexQueryPerformanceTest<LongEntityID, String> {
+public class TetreeQueryPerformanceTest extends SpatialIndexQueryPerformanceTest<TetreeKey, LongEntityID, String> {
     
     @Override
     protected String createTestContent(int entityIndex) {
@@ -24,7 +25,7 @@ public class TetreeQueryPerformanceTest extends SpatialIndexQueryPerformanceTest
     }
     
     @Override
-    protected SpatialIndex<LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
+    protected SpatialIndex<TetreeKey, LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
         return new Tetree<>(createIDGenerator());
     }
     

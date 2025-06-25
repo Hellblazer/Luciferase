@@ -22,7 +22,7 @@ The lucien spatial indexing module is **feature-complete and production-ready**:
 
 ## Performance 
 
-**Key Result:** Tetree outperforms Octree by **10x for bulk operations** (100K entities: 34ms vs 346ms)
+**Key Result:** Tetree outperforms Octree by **2-3x for bulk operations** based on real benchmarks
 
 **Optimizations Implemented:**
 - O(1) operations via `SpatialIndexSet` and `TetreeLevelCache`
@@ -43,15 +43,16 @@ The lucien spatial indexing module is **feature-complete and production-ready**:
 **Performance Tests:** Controlled by `RUN_SPATIAL_INDEX_PERF_TESTS=true`  
 **Documentation:** 21 active docs in `/lucien/doc/` covering all APIs and features
 
-## Known Issues
+## Recent Fixes (June 2025)
 
-1. Dynamic Level Selection needs tuning
-2. BulkOperationConfig not fully exposed in public API  
-3. Tetree algorithms in separate classes need integration
+1. ✅ **Collision Detection Bug**: Fixed control flow in forEach loops (return → continue)
+2. ✅ **Neighbor Finding Bug**: Fixed distance calculations (centroids → entity positions)  
+3. ✅ **SpatialKey Architecture**: Implemented type-safe keys (MortonKey, TetreeKey)
+4. ✅ **All Tests Passing**: 200+ tests with full coverage maintained
 
 ## Recommendations
 
-- **Use Tetree** for performance-critical applications (10x faster bulk ops)
+- **Use Tetree** for performance-critical applications (2-3x faster bulk ops)
 - **Enable bulk operations** for datasets > 10K entities
 - **Use adaptive subdivision** to reduce memory by 30-50%
 

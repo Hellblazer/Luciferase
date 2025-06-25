@@ -101,8 +101,9 @@ public class CollisionResolver {
         // Calculate relative velocity along collision normal
         float velocityAlongNormal = relativeVelocity.dot(collision.contactNormal());
 
-        // Objects moving apart, no collision response needed
-        if (velocityAlongNormal > 0) {
+        // Objects moving apart - but only skip if they're not interpenetrating
+        // If there's penetration, we need to resolve it even if velocities suggest separation
+        if (velocityAlongNormal > 0 && collision.penetrationDepth() <= config.positionCorrectionSlop) {
             return CollisionResponse.noResponse();
         }
 

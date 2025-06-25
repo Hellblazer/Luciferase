@@ -26,7 +26,7 @@ public class TetrahedralGeometry {
      * @param tetIndex the tetrahedral SFC index
      * @return minimum distance to tetrahedron
      */
-    public static float distancePointToTetrahedron(Point3f point, long tetIndex) {
+    public static float distancePointToTetrahedron(Point3f point, TetreeKey tetIndex) {
         return TetrahedralSearchBase.distanceToTetrahedron(point, tetIndex);
     }
 
@@ -37,7 +37,7 @@ public class TetrahedralGeometry {
      * @param tetIndex2 second tetrahedral SFC index
      * @return minimum distance between the tetrahedra
      */
-    public static float distanceTetrahedronToTetrahedron(long tetIndex1, long tetIndex2) {
+    public static float distanceTetrahedronToTetrahedron(TetreeKey tetIndex1, TetreeKey tetIndex2) {
         if (tetIndex1 == tetIndex2) {
             return 0.0f;
         }
@@ -73,7 +73,7 @@ public class TetrahedralGeometry {
      * @param tetIndex the tetrahedral SFC index
      * @return true if frustum intersects tetrahedron
      */
-    public static boolean frustumIntersectsTetrahedron(Frustum3D frustum, long tetIndex) {
+    public static boolean frustumIntersectsTetrahedron(Frustum3D frustum, TetreeKey tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -114,7 +114,7 @@ public class TetrahedralGeometry {
      * @param tetIndex the tetrahedral SFC index
      * @return true if plane intersects tetrahedron
      */
-    public static boolean planeIntersectsTetrahedron(Plane3D plane, long tetIndex) {
+    public static boolean planeIntersectsTetrahedron(Plane3D plane, TetreeKey tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -148,7 +148,7 @@ public class TetrahedralGeometry {
      * @param tetIndex the tetrahedral SFC index
      * @return intersection result with detailed information
      */
-    public static RayTetrahedronIntersection rayIntersectsTetrahedron(Ray3D ray, long tetIndex) {
+    public static RayTetrahedronIntersection rayIntersectsTetrahedron(Ray3D ray, TetreeKey tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -159,6 +159,34 @@ public class TetrahedralGeometry {
             rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
         }
 
+        // If ray starts inside, return distance 0 immediately
+        if (rayStartsInside) {
+            // Find the exit point if needed
+            float closestDistance = Float.MAX_VALUE;
+            Point3f closestIntersection = null;
+            Vector3f closestNormal = null;
+            int closestFace = -1;
+
+            // Test intersection with each tetrahedral face to find exit point
+            for (int face = 0; face < 4; face++) {
+                Point3i[] faceVertices = getFaceVertices(vertices, face);
+
+                // Test ray-triangle intersection
+                var intersection = rayTriangleIntersection(ray, faceVertices);
+                if (intersection.intersects && intersection.distance > EPSILON
+                && intersection.distance < closestDistance) {
+                    closestDistance = intersection.distance;
+                    closestIntersection = intersection.intersectionPoint;
+                    closestNormal = intersection.normal;
+                    closestFace = face;
+                }
+            }
+
+            // Return with distance 0 since ray starts inside
+            return new RayTetrahedronIntersection(true, 0.0f, ray.origin(), closestNormal, closestFace);
+        }
+
+        // Ray starts outside - find entry point
         float closestDistance = Float.MAX_VALUE;
         Point3f closestIntersection = null;
         Vector3f closestNormal = null;
@@ -175,18 +203,6 @@ public class TetrahedralGeometry {
                 closestIntersection = intersection.intersectionPoint;
                 closestNormal = intersection.normal;
                 closestFace = face;
-            }
-        }
-
-        // If ray starts inside the tetrahedron, we have an intersection
-        if (rayStartsInside) {
-            if (closestIntersection != null) {
-                // Ray exits the tetrahedron
-                return new RayTetrahedronIntersection(true, closestDistance, closestIntersection, closestNormal,
-                                                      closestFace);
-            } else {
-                // Ray doesn't exit within maxDistance, but still intersects
-                return new RayTetrahedronIntersection(true, 0.0f, ray.origin(), null, -1);
             }
         }
 
@@ -287,7 +303,7 @@ public class TetrahedralGeometry {
      * @param tetIndex2 second tetrahedral SFC index
      * @return type of intersection between the tetrahedra
      */
-    public static IntersectionResult tetrahedronIntersection(long tetIndex1, long tetIndex2) {
+    public static IntersectionResult tetrahedronIntersection(TetreeKey tetIndex1, TetreeKey tetIndex2) {
         if (tetIndex1 == tetIndex2) {
             return IntersectionResult.IDENTICAL;
         }

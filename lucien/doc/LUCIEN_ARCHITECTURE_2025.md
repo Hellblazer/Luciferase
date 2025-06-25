@@ -238,16 +238,23 @@ The `EntityManager` class provides centralized entity lifecycle:
 
 ## Design Principles
 
-### 1. Generic Type System
+### 1. Generic Type System with SpatialKey
 
-All spatial classes use consistent generics:
+All spatial classes use consistent generics with type-safe keys:
 
 ```java
-public class SpatialClass<ID extends EntityID, Content> {
+public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+    // Key: Type-safe spatial key (MortonKey or TetreeKey)
     // ID: Entity identifier type
     // Content: User-defined content type
 }
 ```
+
+**SpatialKey Architecture**:
+- `MortonKey`: Wraps long Morton code for Octree
+- `TetreeKey`: Encodes (level, sfcIndex) tuple for Tetree
+- Type safety prevents mixing incompatible keys
+- Maintains spatial locality and comparable semantics
 
 ### 2. Template Method Pattern
 
@@ -292,6 +299,13 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 - Parallel processing infrastructure
 - Complex adapter pattern implementations
 
+### Key Addition (June 2025)
+
+- **SpatialKey Architecture**: Type-safe spatial keys to prevent index collisions
+  - Resolves Tetree's non-unique SFC index issue
+  - Provides type safety between Octree and Tetree operations
+  - Maintains performance with minimal object allocation overhead
+
 ### What This Architecture Does NOT Include
 
 Unlike earlier documentation that described 60+ classes, the actual implementation contains 34 classes:
@@ -321,9 +335,7 @@ Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator
 
 // Insert entities
 LongEntityID id = new LongEntityID(1);
-octree.
-
-insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");
+octree.insert(id, new Point3f(100, 200, 300), (byte)10, "Entity data");
 
 // k-NN search
 List<LongEntityID> nearest = octree.kNearestNeighbors(new Point3f(110, 210, 310), 5,  // find 5 nearest

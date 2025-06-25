@@ -37,18 +37,18 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class CollisionSystem<ID extends EntityID, Content> {
 
-    protected final SpatialIndex<ID, Content>            spatialIndex;
+    protected final SpatialIndex<?, ID, Content>         spatialIndex;
     protected final CollisionResolver                    resolver;
     protected final Map<ID, PhysicsProperties>           physicsProperties;
     protected final List<CollisionListener<ID, Content>> listeners;
     protected final CollisionFilter<ID, Content>         globalFilter;
-    private CollisionStats lastStats = new CollisionStats(0, 0, 0, 0, 0);
+    private         CollisionStats                       lastStats = new CollisionStats(0, 0, 0, 0, 0);
 
-    public CollisionSystem(SpatialIndex<ID, Content> spatialIndex) {
+    public CollisionSystem(SpatialIndex<?, ID, Content> spatialIndex) {
         this(spatialIndex, new CollisionResolver(), CollisionFilter.all());
     }
 
-    public CollisionSystem(SpatialIndex<ID, Content> spatialIndex, CollisionResolver resolver,
+    public CollisionSystem(SpatialIndex<?, ID, Content> spatialIndex, CollisionResolver resolver,
                            CollisionFilter<ID, Content> globalFilter) {
         this.spatialIndex = spatialIndex;
         this.resolver = resolver;

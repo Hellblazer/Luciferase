@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.SpatialIndexSet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
@@ -24,6 +25,7 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
+import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -50,12 +52,12 @@ public class SpatialIndexSetBenchmark {
     @State(Scope.Benchmark)
     public static class BenchmarkState {
         // Test data
-        List<Long> indices = new ArrayList<>();
-        Set<Long> lookupSet = new HashSet<>();
+        List<TetreeKey> indices = new ArrayList<>();
+        Set<TetreeKey> lookupSet = new HashSet<>();
         
         // Collections to benchmark
-        NavigableSet<Long> treeSet;
-        SpatialIndexSet spatialSet;
+        NavigableSet<TetreeKey> treeSet;
+        SpatialIndexSet<TetreeKey> spatialSet;
         
         // Data sizes
         static final int SMALL_SIZE = 1_000;
@@ -80,18 +82,18 @@ public class SpatialIndexSetBenchmark {
             
             // Initialize collections
             treeSet = new TreeSet<>();
-            spatialSet = new SpatialIndexSet();
+            spatialSet = new SpatialIndexSet<>();
         }
         
-        private long generateRandomIndex(Random random) {
-            int level = random.nextInt(22); // 0-21
-            if (level == 0) return 0;
+        private TetreeKey generateRandomIndex(Random random) {
+            byte level = (byte) random.nextInt(22); // 0-21
+            if (level == 0) return TetreeKey.getRoot();
             
             // Generate index that would be at the specified level
             long minBit = 3 * (level - 1);
             long maxBit = 3 * level - 1;
             long index = 1L << (minBit + random.nextInt((int)(maxBit - minBit + 1)));
-            return index + random.nextInt(1000); // Add some variation
+            return new TetreeKey(level, BigInteger.valueOf(index + random.nextInt(1000))); // Add some variation
         }
     }
     
@@ -156,7 +158,7 @@ public class SpatialIndexSetBenchmark {
         }
         
         int found = 0;
-        for (Long index : state.lookupSet) {
+        for (TetreeKey index : state.lookupSet) {
             if (state.treeSet.contains(index)) {
                 found++;
             }
@@ -173,7 +175,7 @@ public class SpatialIndexSetBenchmark {
         }
         
         int found = 0;
-        for (Long index : state.lookupSet) {
+        for (TetreeKey index : state.lookupSet) {
             if (state.spatialSet.contains(index)) {
                 found++;
             }
@@ -217,9 +219,9 @@ public class SpatialIndexSetBenchmark {
         }
         
         // Range query
-        Long min = state.indices.get(100);
-        Long max = state.indices.get(200);
-        NavigableSet<Long> subset = state.treeSet.subSet(min, true, max, true);
+        TetreeKey min = state.indices.get(100);
+        TetreeKey max = state.indices.get(200);
+        NavigableSet<TetreeKey> subset = state.treeSet.subSet(min, true, max, true);
         return subset.size();
     }
     
@@ -231,9 +233,9 @@ public class SpatialIndexSetBenchmark {
         }
         
         // Range query
-        Long min = state.indices.get(100);
-        Long max = state.indices.get(200);
-        NavigableSet<Long> subset = state.spatialSet.subSet(min, true, max, true);
+        TetreeKey min = state.indices.get(100);
+        TetreeKey max = state.indices.get(200);
+        NavigableSet<TetreeKey> subset = state.spatialSet.subSet(min, true, max, true);
         return subset.size();
     }
     
@@ -249,8 +251,8 @@ public class SpatialIndexSetBenchmark {
         // Simulate level query on TreeSet (O(n) operation)
         int count = 0;
         byte targetLevel = 10;
-        for (Long index : state.treeSet) {
-            if (getLevelFromIndex(index) == targetLevel) {
+        for (TetreeKey index : state.treeSet) {
+            if (index.getLevel() == targetLevel) {
                 count++;
             }
         }
@@ -280,8 +282,8 @@ public class SpatialIndexSetBenchmark {
         int count = 0;
         byte minLevel = 5;
         byte maxLevel = 15;
-        for (Long index : state.treeSet) {
-            byte level = getLevelFromIndex(index);
+        for (TetreeKey index : state.treeSet) {
+            byte level = index.getLevel();
             if (level >= minLevel && level <= maxLevel) {
                 count++;
             }
@@ -312,7 +314,7 @@ public class SpatialIndexSetBenchmark {
         
         // Mix of operations
         for (int i = 0; i < 1000; i++) {
-            Long index = state.indices.get(i);
+            TetreeKey index = state.indices.get(i);
             
             // Add
             state.treeSet.add(index);
@@ -329,8 +331,8 @@ public class SpatialIndexSetBenchmark {
             
             // Occasional range query
             if (i % 100 == 0 && state.treeSet.size() > 10) {
-                sum += state.treeSet.first();
-                sum += state.treeSet.last();
+                sum += state.treeSet.first().hashCode();
+                sum += state.treeSet.last().hashCode();
             }
         }
         
@@ -345,7 +347,7 @@ public class SpatialIndexSetBenchmark {
         
         // Mix of operations
         for (int i = 0; i < 1000; i++) {
-            Long index = state.indices.get(i);
+            TetreeKey index = state.indices.get(i);
             
             // Add
             state.spatialSet.add(index);
@@ -362,8 +364,8 @@ public class SpatialIndexSetBenchmark {
             
             // Occasional range query
             if (i % 100 == 0 && state.spatialSet.size() > 10) {
-                sum += state.spatialSet.first();
-                sum += state.spatialSet.last();
+                sum += state.spatialSet.first().hashCode();
+                sum += state.spatialSet.last().hashCode();
             }
         }
         

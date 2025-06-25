@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 
 import javax.vecmath.Point3f;
@@ -29,9 +30,9 @@ import java.util.Set;
  * @param <Content> The type of content stored
  * @author hal.hildebrand
  */
-public class Entity<Content> {
+public class Entity<Key extends SpatialKey<Key>, Content> {
     private final Content        content;
-    private final Set<Long>      locations;
+    private final Set<Key>       locations;
     private       Point3f        position;
     private       EntityBounds   bounds;
     private       CollisionShape collisionShape;
@@ -59,8 +60,8 @@ public class Entity<Content> {
     /**
      * Add a location (Morton code) where this entity exists
      */
-    public void addLocation(long mortonCode) {
-        locations.add(mortonCode);
+    public void addLocation(Key sfcIndex) {
+        locations.add(sfcIndex);
     }
 
     /**
@@ -94,7 +95,7 @@ public class Entity<Content> {
     /**
      * Get the set of Morton codes where this entity is located
      */
-    public Set<Long> getLocations() {
+    public Set<Key> getLocations() {
         return locations;
     }
 
@@ -136,8 +137,8 @@ public class Entity<Content> {
     /**
      * Remove a location where this entity exists
      */
-    public void removeLocation(long mortonCode) {
-        locations.remove(mortonCode);
+    public void removeLocation(Key sfcIndex) {
+        locations.remove(sfcIndex);
     }
 
     /**

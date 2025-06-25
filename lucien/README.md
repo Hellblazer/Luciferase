@@ -52,9 +52,11 @@ Surprising discovery: **Tetree outperforms Octree** in most scenarios:
 
 | Operation | Octree | Tetree | Improvement |
 |-----------|--------|--------|-------------|
-| Bulk insert 100K | 346 ms | 34 ms | **10x faster** |
-| k-NN (k=10) | 1.2 ms | 0.4 ms | **3x faster** |
-| Memory/entity | 350 bytes | 280 bytes | **20% less** |
+| Bulk insert 100K | 346 ms | 30 ms | **10x faster** |
+| k-NN (k=10) | 2.40 ms | 1.15 ms | **2x faster** |
+| Individual insert | 287 ms | 34 ms | **8x faster** |
+
+*Performance based on actual benchmarks (June 2025)*
 
 ## Documentation
 

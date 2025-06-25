@@ -41,10 +41,10 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
     // Tree modification count for invalidation detection
     private final long initialModificationCount;
     // Current position in traversal
-    private Long               currentIndex;
+    private TetreeKey          currentIndex;
     private TetreeNodeImpl<ID> currentNode;
     private boolean            hasNext;
-    private       long                      nextSFCIndex; // For SFC order
+    private TetreeKey          nextSFCIndex; // For SFC order
 
     // Skip subtree flag
     private boolean skipSubtree;
@@ -70,7 +70,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
         this.stack = (order == TraversalOrder.DEPTH_FIRST_PRE || order == TraversalOrder.DEPTH_FIRST_POST)
                      ? new ArrayDeque<>() : null;
         this.queue = (order == TraversalOrder.BREADTH_FIRST) ? new ArrayDeque<>() : null;
-        this.nextSFCIndex = 0;
+        this.nextSFCIndex = TetreeKey.getRoot();
         this.initialModificationCount = getTreeModificationCount();
 
         // Initialize traversal
@@ -108,7 +108,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
     /**
      * Get the current tetrahedron index being visited
      */
-    public Long getCurrentIndex() {
+    public TetreeKey getCurrentIndex() {
         return currentIndex;
     }
 
@@ -118,7 +118,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
     public byte getCurrentLevel() {
         // For sparse trees, we can't reliably determine level from index alone
         // This is a limitation of the Tet SFC encoding
-        return currentIndex != null ? Tet.tetLevelFromIndex(currentIndex) : 0;
+        return currentIndex != null ? currentIndex.getLevel() : 0;
     }
 
     @Override
@@ -134,14 +134,23 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
             throw new NoSuchElementException();
         }
 
-        TetreeNodeImpl<ID> result = currentNode;
-
-        // Advance to next node based on traversal order
-        switch (order) {
-            case DEPTH_FIRST_PRE -> advanceDepthFirstPre();
-            case DEPTH_FIRST_POST -> advanceDepthFirstPost();
-            case BREADTH_FIRST -> advanceBreadthFirst();
-            case SFC_ORDER -> advanceSFCOrder();
+        TetreeNodeImpl<ID> result;
+        
+        if (order == TraversalOrder.SFC_ORDER) {
+            // For SFC order, we need to get the node before advancing
+            currentIndex = nextSFCIndex;
+            currentNode = tree.getSpatialIndex().get(currentIndex);
+            result = currentNode;
+            advanceSFCOrder(); // This updates nextSFCIndex and hasNext
+        } else {
+            result = currentNode;
+            // Advance to next node based on traversal order
+            switch (order) {
+                case DEPTH_FIRST_PRE -> advanceDepthFirstPre();
+                case DEPTH_FIRST_POST -> advanceDepthFirstPost();
+                case BREADTH_FIRST -> advanceBreadthFirst();
+                default -> throw new IllegalStateException("Unexpected order: " + order);
+            }
         }
 
         return result;
@@ -213,26 +222,16 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
 
     // Advance SFC order
     private void advanceSFCOrder() {
-        NavigableSet<Long> sortedIndices = tree.getSortedSpatialIndices();
-        Map<Long, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
+        NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
+        Map<TetreeKey, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
 
-        if (sortedIndices.isEmpty()) {
-            hasNext = false;
-            return;
+        // Get next in sequence for the next iteration
+        if (nextSFCIndex != null) {
+            nextSFCIndex = sortedIndices.higher(nextSFCIndex);
         }
-
-        // Find next valid index in SFC order using the pre-sorted indices
-        Long nextIndex = sortedIndices.ceiling(nextSFCIndex);
-
-        if (nextIndex != null) {
-            currentIndex = nextIndex;
-            currentNode = spatialIndex.get(nextIndex);
-            hasNext = true;
-            nextSFCIndex = nextIndex + 1;
-            return;
-        }
-
-        hasNext = false;
+        
+        // Check if we have more elements
+        hasNext = (nextSFCIndex != null);
     }
 
     // Check for concurrent modification
@@ -244,10 +243,10 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
 
     // Find first non-empty node in tree
     private void findFirstNonEmpty() {
-        NavigableSet<Long> sortedIndices = tree.getSortedSpatialIndices();
-        Map<Long, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
+        NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
+        Map<TetreeKey, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
 
-        for (Long index : sortedIndices) {
+        for (TetreeKey index : sortedIndices) {
             currentIndex = index;
             currentNode = spatialIndex.get(index);
             hasNext = true;
@@ -275,8 +274,8 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
     // Initialize breadth-first traversal
     private void initializeBreadthFirst() {
         // For a sparse tree, we need to start from actual nodes, not the theoretical root
-        NavigableSet<Long> sortedIndices = tree.getSortedSpatialIndices();
-        Map<Long, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
+        NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
+        Map<TetreeKey, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
 
         if (sortedIndices.isEmpty() && !includeEmpty) {
             hasNext = false;
@@ -285,12 +284,12 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
 
         if (includeEmpty && sortedIndices.isEmpty()) {
             // Start with root tetrahedron if we're including empty nodes
-            queue.offer(new TraversalState<>(0L, null));
+            queue.offer(new TraversalState<>(TetreeKey.getRoot(), null));
             advance();
         } else {
             // For a sparse tree, just add all existing nodes to the traversal
             // We can't reliably determine parent-child relationships without level info
-            for (Long index : sortedIndices) {
+            for (TetreeKey index : sortedIndices) {
                 TetreeNodeImpl<ID> node = spatialIndex.get(index);
                 if (node != null) {
                     queue.offer(new TraversalState<>(index, node));
@@ -304,8 +303,8 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
     // Initialize depth-first traversal
     private void initializeDepthFirst() {
         // For a sparse tree, we need to start from actual nodes, not the theoretical root
-        NavigableSet<Long> sortedIndices = tree.getSortedSpatialIndices();
-        Map<Long, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
+        NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
+        Map<TetreeKey, TetreeNodeImpl<ID>> spatialIndex = tree.getSpatialIndex();
 
         if (sortedIndices.isEmpty() && !includeEmpty) {
             hasNext = false;
@@ -314,12 +313,12 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
 
         if (includeEmpty && sortedIndices.isEmpty()) {
             // Start with root tetrahedron if we're including empty nodes
-            stack.push(new TraversalState<>(0L, null));
+            stack.push(new TraversalState<>(TetreeKey.getRoot(), null));
             advance();
         } else {
             // For a sparse tree, just add all existing nodes to the traversal
             // We can't reliably determine parent-child relationships without level info
-            for (Long index : sortedIndices) {
+            for (TetreeKey index : sortedIndices) {
                 TetreeNodeImpl<ID> node = spatialIndex.get(index);
                 if (node != null) {
                     stack.push(new TraversalState<>(index, node));
@@ -333,10 +332,10 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
     // Initialize SFC order traversal
     private void initializeSFCOrder() {
         // Use the pre-sorted indices from the tree
-        NavigableSet<Long> sortedIndices = tree.getSortedSpatialIndices();
+        NavigableSet<TetreeKey> sortedIndices = tree.getSortedSpatialIndices();
         if (!sortedIndices.isEmpty()) {
             nextSFCIndex = sortedIndices.first();
-            advanceSFCOrder();
+            hasNext = true; // We have at least one element
         } else {
             hasNext = false;
         }
@@ -380,10 +379,10 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
      * Helper class to store traversal state
      */
     private static class TraversalState<ID extends EntityID> {
-        final Long               index;
+        final TetreeKey          index;
         final TetreeNodeImpl<ID> node;
 
-        TraversalState(Long index, TetreeNodeImpl<ID> node) {
+        TraversalState(TetreeKey index, TetreeNodeImpl<ID> node) {
             this.index = index;
             this.node = node;
         }

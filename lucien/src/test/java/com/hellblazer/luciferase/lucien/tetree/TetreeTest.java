@@ -4,13 +4,19 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -114,7 +120,7 @@ public class TetreeTest {
         long tetIndex = tet.index();
 
         // Get all entities at this index
-        List<String> contents = tetree.get(tetIndex);
+        List<String> contents = tetree.get(new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex)));
 
         // Verify we get all three entities
         assertEquals(3, contents.size());
@@ -123,7 +129,7 @@ public class TetreeTest {
         assertTrue(contents.contains("Entity3"));
 
         // Test empty index returns empty list
-        List<String> emptyContents = tetree.get(tetIndex + 1000); // Different index
+        List<String> emptyContents = tetree.get(new TetreeKey((byte) 10, BigInteger.valueOf(tetIndex + 1000))); // Different index
         assertTrue(emptyContents.isEmpty());
     }
 
@@ -141,15 +147,24 @@ public class TetreeTest {
         // Find 2 nearest to (105, 105, 105)
         Point3f queryPoint = new Point3f(105, 105, 105);
         List<LongEntityID> nearest = tetree.kNearestNeighbors(queryPoint, 2, Float.MAX_VALUE);
-
-        assertEquals(2, nearest.size());
-        // The two nearest should be id1 and id2
-        assertTrue(nearest.contains(id1));
-        assertTrue(nearest.contains(id2));
-
-        // Verify that far entities are not included
-        assertFalse(nearest.contains(id3));
-        assertFalse(nearest.contains(id4));
+        
+        // Calculate distances for verification
+        Map<LongEntityID, Float> distances = new HashMap<>();
+        distances.put(id1, queryPoint.distance(new Point3f(100, 100, 100)));
+        distances.put(id2, queryPoint.distance(new Point3f(110, 110, 110)));
+        distances.put(id3, queryPoint.distance(new Point3f(200, 200, 200)));
+        distances.put(id4, queryPoint.distance(new Point3f(500, 500, 500)));
+        
+        // Check that we found exactly k neighbors
+        assertEquals(2, nearest.size(), "Should find exactly k neighbors");
+        
+        // Verify we found the actual nearest neighbors
+        assertTrue(nearest.contains(id1), "Should find id1 (distance " + distances.get(id1) + ")");
+        assertTrue(nearest.contains(id2), "Should find id2 (distance " + distances.get(id2) + ")");
+        
+        // Verify we didn't find the farther entities
+        assertFalse(nearest.contains(id3), "Should not find id3 (distance " + distances.get(id3) + ")");
+        assertFalse(nearest.contains(id4), "Should not find id4 (distance " + distances.get(id4) + ")");
     }
 
     @Test

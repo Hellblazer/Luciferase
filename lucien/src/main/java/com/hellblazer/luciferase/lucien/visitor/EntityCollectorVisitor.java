@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.visitor;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.ArrayList;
@@ -25,13 +26,14 @@ import java.util.function.Predicate;
 /**
  * Visitor that collects entities matching a given predicate.
  *
+ * @param <Key>     The type of spatial key used in the index
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public class EntityCollectorVisitor<ID extends EntityID, Content> extends AbstractTreeVisitor<ID, Content> {
+public class EntityCollectorVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> extends AbstractTreeVisitor<Key, ID, Content> {
 
-    private final List<EntityMatch<ID, Content>> collectedEntities = new ArrayList<>();
+    private final List<EntityMatch<Key, ID, Content>> collectedEntities = new ArrayList<>();
     private final Predicate<Content>             contentFilter;
     private final int                            maxResults;
 
@@ -68,7 +70,7 @@ public class EntityCollectorVisitor<ID extends EntityID, Content> extends Abstra
      *
      * @return list of entity matches
      */
-    public List<EntityMatch<ID, Content>> getCollectedEntities() {
+    public List<EntityMatch<Key, ID, Content>> getCollectedEntities() {
         return new ArrayList<>(collectedEntities);
     }
 
@@ -107,7 +109,7 @@ public class EntityCollectorVisitor<ID extends EntityID, Content> extends Abstra
     }
 
     @Override
-    public void visitEntity(ID entityId, Content content, long nodeIndex, int level) {
+    public void visitEntity(ID entityId, Content content, Key nodeIndex, int level) {
         if (collectedEntities.size() >= maxResults) {
             return;
         }
@@ -118,8 +120,8 @@ public class EntityCollectorVisitor<ID extends EntityID, Content> extends Abstra
     }
 
     @Override
-    public boolean visitNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<ID> node, int level,
-                             long parentIndex) {
+    public boolean visitNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<Key, ID> node, int level,
+                             Key parentIndex) {
         // Stop traversal if we've collected enough results
         return collectedEntities.size() < maxResults;
     }
@@ -127,6 +129,6 @@ public class EntityCollectorVisitor<ID extends EntityID, Content> extends Abstra
     /**
      * Entity match record.
      */
-    public record EntityMatch<ID extends EntityID, Content>(ID entityId, Content content, long nodeIndex, int level) {
+    public record EntityMatch<Key extends SpatialKey<Key>, ID extends EntityID, Content>(ID entityId, Content content, Key nodeIndex, int level) {
     }
 }

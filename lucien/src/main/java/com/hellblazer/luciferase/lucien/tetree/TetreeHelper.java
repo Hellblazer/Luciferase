@@ -48,7 +48,7 @@ public class TetreeHelper {
                     // We use a default level here - adjust as needed
                     byte level = 10;
                     Tet tet = locate(position, level);
-                    simplices.add(new Simplex<>(tet.index(), content));
+                    simplices.add(new Simplex<>(tet.tmIndex(), content));
                 }
             }
         }
@@ -63,8 +63,8 @@ public class TetreeHelper {
      * @param bounds the bounding box to search within
      * @return stream of spatial nodes within the bounds
      */
-    public static <ID extends EntityID, Content> Stream<SpatialNode<ID>> directScanNodes(Tetree<ID, Content> tetree,
-                                                                                         Spatial.aabb bounds) {
+    public static <ID extends EntityID, Content> Stream<SpatialNode<TetreeKey, ID>> directScanNodes(
+    Tetree<ID, Content> tetree, Spatial.aabb bounds) {
 
         // Convert AABB bounds to a Spatial volume that Tetree can use
         Spatial volume = new Spatial.aabb(bounds.originX(), bounds.originY(), bounds.originZ(), bounds.extentX(),

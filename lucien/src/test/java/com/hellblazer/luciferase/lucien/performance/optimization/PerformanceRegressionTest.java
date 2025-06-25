@@ -275,7 +275,7 @@ public class PerformanceRegressionTest {
         testRangeQuery(index, indexType, size);
     }
     
-    private void testKnnQuery(com.hellblazer.luciferase.lucien.SpatialIndex<LongEntityID, String> index,
+    private void testKnnQuery(com.hellblazer.luciferase.lucien.SpatialIndex<?, LongEntityID, String> index,
                              String indexType, int dataSize) {
         String testName = "KnnQuery";
         Point3f queryPoint = new Point3f(500, 500, 500);
@@ -306,7 +306,7 @@ public class PerformanceRegressionTest {
             testName, indexType, k, avgDuration);
     }
     
-    private void testRangeQuery(com.hellblazer.luciferase.lucien.SpatialIndex<LongEntityID, String> index,
+    private <Key extends com.hellblazer.luciferase.lucien.SpatialKey<Key>> void testRangeQuery(com.hellblazer.luciferase.lucien.SpatialIndex<Key, LongEntityID, String> index,
                                String indexType, int dataSize) {
         String testName = "RangeQuery";
         Point3f min = new Point3f(400, 400, 400);
@@ -500,6 +500,6 @@ public class PerformanceRegressionTest {
     
     @FunctionalInterface
     interface IndexFactory {
-        com.hellblazer.luciferase.lucien.SpatialIndex<LongEntityID, String> create();
+        com.hellblazer.luciferase.lucien.SpatialIndex<? extends com.hellblazer.luciferase.lucien.SpatialKey<?>, LongEntityID, String> create();
     }
 }

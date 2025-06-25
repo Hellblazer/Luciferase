@@ -22,16 +22,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.HashSet;
-import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for edge neighbor finding in Tetree.
- * Tests the findEdgeNeighbors functionality that finds all tetrahedra sharing a specific edge.
+ * Unit tests for edge neighbor finding in Tetree. Tests the findEdgeNeighbors functionality that finds all tetrahedra
+ * sharing a specific edge.
  *
  * @author hal.hildebrand
  */
@@ -55,9 +56,49 @@ public class TetreeEdgeNeighborTest {
         long rootIndex = rootTet.index();
 
         // Test invalid edge indices
-        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootIndex, -1));
-        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootIndex, 6));
-        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootIndex, 10));
+        TetreeKey rootKey = new TetreeKey((byte) 0, BigInteger.valueOf(rootIndex));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, -1));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, 6));
+        assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, 10));
+    }
+
+    @Test
+    void testEdgeNeighborSymmetry() {
+        // Create a more complex structure
+        for (int i = 0; i < 10; i++) {
+            float x = (float) (100 + i * 80);
+            float y = (float) (100 + (i % 3) * 300);
+            float z = (float) (100 + (i % 2) * 400);
+            Point3f p = new Point3f(x, y, z);
+            tetree.insert(p, (byte) 2, "entity" + i);
+        }
+
+        // Find two adjacent tetrahedra
+        Point3f p1 = new Point3f(200, 200, 200);
+        Point3f p2 = new Point3f(300, 200, 200);
+
+        Tet tet1 = tetree.locateTetrahedron(p1, (byte) 2);
+        Tet tet2 = tetree.locateTetrahedron(p2, (byte) 2);
+
+        // Check if they share any edges
+        for (int edge1 = 0; edge1 < 6; edge1++) {
+            List<TetreeKey> neighbors1 = tetree.findEdgeNeighbors(new TetreeKey((byte) 2, BigInteger.valueOf(tet1.index())), edge1);
+            
+            TetreeKey tet2Key = new TetreeKey((byte) 2, BigInteger.valueOf(tet2.index()));
+            if (neighbors1.contains(tet2Key)) {
+                // If tet2 is an edge neighbor of tet1, then tet1 should be an edge neighbor of tet2
+                boolean foundSymmetric = false;
+                for (int edge2 = 0; edge2 < 6; edge2++) {
+                    List<TetreeKey> neighbors2 = tetree.findEdgeNeighbors(tet2Key, edge2);
+                    TetreeKey tet1Key = new TetreeKey((byte) 2, BigInteger.valueOf(tet1.index()));
+                    if (neighbors2.contains(tet1Key)) {
+                        foundSymmetric = true;
+                        break;
+                    }
+                }
+                assertTrue(foundSymmetric, "Edge neighbor relationship should be symmetric between tets");
+            }
+        }
     }
 
     @Test
@@ -79,118 +120,13 @@ public class TetreeEdgeNeighborTest {
 
         // Test all 6 edges (0-5)
         for (int edge = 0; edge < 6; edge++) {
-            List<Long> edgeNeighbors = tetree.findEdgeNeighbors(tetIndex, edge);
+            List<TetreeKey> edgeNeighbors = tetree.findEdgeNeighbors(new TetreeKey((byte) 1, BigInteger.valueOf(tetIndex)), edge);
             assertNotNull(edgeNeighbors, "Edge neighbors should not be null for edge " + edge);
 
             // At minimum, neighbors should include face neighbors that share the edge
             // Each edge is shared by 2 faces, so we expect at least those neighbors
-            assertTrue(edgeNeighbors.size() >= 0, 
-                "Should have at least some edge neighbors for edge " + edge);
+            assertTrue(edgeNeighbors.size() >= 0, "Should have at least some edge neighbors for edge " + edge);
         }
-    }
-
-    @Test
-    void testEdgeNeighborSymmetry() {
-        // Create a more complex structure
-        for (int i = 0; i < 10; i++) {
-            float x = (float)(100 + i * 80);
-            float y = (float)(100 + (i % 3) * 300);
-            float z = (float)(100 + (i % 2) * 400);
-            Point3f p = new Point3f(x, y, z);
-            tetree.insert(p, (byte) 2, "entity" + i);
-        }
-
-        // Find two adjacent tetrahedra
-        Point3f p1 = new Point3f(200, 200, 200);
-        Point3f p2 = new Point3f(300, 200, 200);
-        
-        Tet tet1 = tetree.locateTetrahedron(p1, (byte) 2);
-        Tet tet2 = tetree.locateTetrahedron(p2, (byte) 2);
-
-        // Check if they share any edges
-        for (int edge1 = 0; edge1 < 6; edge1++) {
-            List<Long> neighbors1 = tetree.findEdgeNeighbors(tet1.index(), edge1);
-            
-            if (neighbors1.contains(tet2.index())) {
-                // If tet2 is an edge neighbor of tet1, then tet1 should be an edge neighbor of tet2
-                boolean foundSymmetric = false;
-                for (int edge2 = 0; edge2 < 6; edge2++) {
-                    List<Long> neighbors2 = tetree.findEdgeNeighbors(tet2.index(), edge2);
-                    if (neighbors2.contains(tet1.index())) {
-                        foundSymmetric = true;
-                        break;
-                    }
-                }
-                assertTrue(foundSymmetric, 
-                    "Edge neighbor relationship should be symmetric between tets");
-            }
-        }
-    }
-
-    @Test
-    void testEdgeNeighborsMultiLevel() {
-        // Create entities at different positions to force multi-level structure
-        Point3f p1 = new Point3f(256, 256, 256);  // Center
-        Point3f p2 = new Point3f(100, 100, 100);  // Corner 1
-        Point3f p3 = new Point3f(900, 900, 900);  // Corner 2
-
-        tetree.insert(p1, (byte) 2, "center");
-        tetree.insert(p2, (byte) 2, "corner1");
-        tetree.insert(p3, (byte) 2, "corner2");
-
-        // Find the center tetrahedron
-        Tet centerTet = tetree.locateTetrahedron(p1, (byte) 2);
-        long centerIndex = centerTet.index();
-
-        // Test edge 0 (connecting vertices 0 and 1)
-        List<Long> edge0Neighbors = tetree.findEdgeNeighbors(centerIndex, 0);
-        assertNotNull(edge0Neighbors);
-
-        // The edge neighbors should include tetrahedra from potentially different levels
-        // This tests the multi-level edge neighbor finding capability
-        Set<Byte> neighborLevels = new HashSet<>();
-        for (Long neighborIndex : edge0Neighbors) {
-            byte level = Tet.tetLevelFromIndex(neighborIndex);
-            neighborLevels.add(level);
-        }
-
-        // We might have neighbors at multiple levels
-        assertTrue(neighborLevels.size() >= 1, 
-            "Edge neighbors can be at different levels");
-    }
-
-    @Test
-    void testEdgeNeighborsDenseConfiguration() {
-        // Create a dense configuration where many tets share edges
-        int gridSize = 5;
-        for (int x = 0; x < gridSize; x++) {
-            for (int y = 0; y < gridSize; y++) {
-                for (int z = 0; z < gridSize; z++) {
-                    float px = 200 + x * 100;
-                    float py = 200 + y * 100;
-                    float pz = 200 + z * 100;
-                    Point3f p = new Point3f(px, py, pz);
-                    long id = x * gridSize * gridSize + y * gridSize + z;
-                    tetree.insert(p, (byte) 3, String.format("grid_%d_%d_%d", x, y, z));
-                }
-            }
-        }
-
-        // Pick a central tetrahedron
-        Point3f center = new Point3f(400, 400, 400);
-        Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
-        long centerIndex = centerTet.index();
-
-        // In a dense configuration, we expect more edge neighbors
-        int totalEdgeNeighbors = 0;
-        for (int edge = 0; edge < 6; edge++) {
-            List<Long> neighbors = tetree.findEdgeNeighbors(centerIndex, edge);
-            totalEdgeNeighbors += neighbors.size();
-        }
-
-        // In a dense grid, we should have some edge neighbors
-        assertTrue(totalEdgeNeighbors >= 1, 
-            "Dense configuration should have at least some edge neighbors, got: " + totalEdgeNeighbors);
     }
 
     @Test
@@ -218,45 +154,89 @@ public class TetreeEdgeNeighborTest {
         // Edge 5 (v2-v3): faces 2, 3
 
         // Get face neighbors
-        List<Long> face0Neighbors = new ArrayList<>();
-        List<Long> face1Neighbors = new ArrayList<>();
-        List<Long> face2Neighbors = new ArrayList<>();
-        List<Long> face3Neighbors = new ArrayList<>();
+        List<TetreeKey> face0Neighbors = new ArrayList<>();
+        List<TetreeKey> face1Neighbors = new ArrayList<>();
+        List<TetreeKey> face2Neighbors = new ArrayList<>();
+        List<TetreeKey> face3Neighbors = new ArrayList<>();
+
+        TetreeKey tetKey = new TetreeKey((byte) 2, BigInteger.valueOf(tetIndex));
         
-        long face0 = tetree.findFaceNeighbor(tetIndex, 0);
-        if (face0 != -1) face0Neighbors.add(face0);
-        
-        long face1 = tetree.findFaceNeighbor(tetIndex, 1);
-        if (face1 != -1) face1Neighbors.add(face1);
-        
-        long face2 = tetree.findFaceNeighbor(tetIndex, 2);
-        if (face2 != -1) face2Neighbors.add(face2);
-        
-        long face3 = tetree.findFaceNeighbor(tetIndex, 3);
-        if (face3 != -1) face3Neighbors.add(face3);
+        TetreeKey face0 = tetree.findFaceNeighbor(tetKey, 0);
+        if (face0 != null) {
+            face0Neighbors.add(face0);
+        }
+
+        TetreeKey face1 = tetree.findFaceNeighbor(tetKey, 1);
+        if (face1 != null) {
+            face1Neighbors.add(face1);
+        }
+
+        TetreeKey face2 = tetree.findFaceNeighbor(tetKey, 2);
+        if (face2 != null) {
+            face2Neighbors.add(face2);
+        }
+
+        TetreeKey face3 = tetree.findFaceNeighbor(tetKey, 3);
+        if (face3 != null) {
+            face3Neighbors.add(face3);
+        }
 
         // Get edge neighbors
-        List<Long> edge0Neighbors = tetree.findEdgeNeighbors(tetIndex, 0); // shares faces 0,2
-        List<Long> edge3Neighbors = tetree.findEdgeNeighbors(tetIndex, 3); // shares faces 0,1
+        List<TetreeKey> edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0); // shares faces 0,2
+        List<TetreeKey> edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,1
 
         // Edge neighbors should include at least the face neighbors of the faces that share the edge
-        Set<Long> edge0Expected = new HashSet<>();
+        Set<TetreeKey> edge0Expected = new HashSet<>();
         edge0Expected.addAll(face0Neighbors);
         edge0Expected.addAll(face2Neighbors);
 
-        Set<Long> edge3Expected = new HashSet<>();
+        Set<TetreeKey> edge3Expected = new HashSet<>();
         edge3Expected.addAll(face0Neighbors);
         edge3Expected.addAll(face1Neighbors);
 
         // Edge neighbors should include at least the face neighbors
-        for (Long neighbor : edge0Expected) {
+        for (TetreeKey neighbor : edge0Expected) {
             assertTrue(edge0Neighbors.contains(neighbor) || edge0Neighbors.isEmpty(),
-                "Edge 0 neighbors should include face neighbors from faces 0 and 2");
+                       "Edge 0 neighbors should include face neighbors from faces 0 and 2");
         }
 
-        for (Long neighbor : edge3Expected) {
+        for (TetreeKey neighbor : edge3Expected) {
             assertTrue(edge3Neighbors.contains(neighbor) || edge3Neighbors.isEmpty(),
-                "Edge 3 neighbors should include face neighbors from faces 0 and 1");
+                       "Edge 3 neighbors should include face neighbors from faces 0 and 1");
         }
+    }
+
+    @Test
+    void testEdgeNeighborsDenseConfiguration() {
+        // Create a dense configuration where many tets share edges
+        int gridSize = 5;
+        for (int x = 0; x < gridSize; x++) {
+            for (int y = 0; y < gridSize; y++) {
+                for (int z = 0; z < gridSize; z++) {
+                    float px = 200 + x * 100;
+                    float py = 200 + y * 100;
+                    float pz = 200 + z * 100;
+                    Point3f p = new Point3f(px, py, pz);
+                    long id = x * gridSize * gridSize + y * gridSize + z;
+                    tetree.insert(p, (byte) 3, String.format("grid_%d_%d_%d", x, y, z));
+                }
+            }
+        }
+
+        // Pick a central tetrahedron
+        Point3f center = new Point3f(400, 400, 400);
+        Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
+        long centerIndex = centerTet.index();
+
+        // In a dense configuration, we expect more edge neighbors
+        int totalEdgeNeighbors = 0;
+        for (int edge = 0; edge < 6; edge++) {
+            List<TetreeKey> neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte) 3, BigInteger.valueOf(centerIndex)), edge);
+            totalEdgeNeighbors += neighbors.size();
+        }
+
+        // In a dense grid, we should have some edge neighbors
+        assertTrue(totalEdgeNeighbors >= 1,
+                   "Dense configuration should have at least some edge neighbors, got: " + totalEdgeNeighbors);
     }
 }

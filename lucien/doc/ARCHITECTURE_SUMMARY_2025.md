@@ -1,4 +1,4 @@
-# Architecture Summary - June 2025 (Updated)
+# Architecture Summary - June 24, 2025 (Updated)
 
 ## Purpose
 
@@ -27,10 +27,10 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_
 ### Inheritance Hierarchy
 
 ```
-SpatialIndex (interface)
-  └── AbstractSpatialIndex (base class with ~90% shared functionality)
-      ├── Octree (Morton curve-based)
-      └── Tetree (tetrahedral SFC-based)
+SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
+  └── AbstractSpatialIndex<Key, ID, Content, NodeType> (base class with ~90% shared functionality)
+      ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content, OctreeNode<ID>>
+      └── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>>
 ```
 
 ### Major Features
@@ -39,6 +39,7 @@ SpatialIndex (interface)
 - **Entity Management**: Centralized through EntityManager with multi-entity support
 - **Thread Safety**: ReadWriteLock-based concurrent access
 - **Performance**: HashMap-based O(1) node access for both implementations
+- **Type-Safe Keys**: SpatialKey architecture prevents mixing incompatible indices (June 2025)
 
 ## What This Architecture Includes
 
@@ -67,6 +68,7 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ✅ **TetreeLevelCache**: Eliminates O(log n) level calculations  
 ✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
 ✅ **Bulk Loading Mode**: 5-10x performance for large datasets
+✅ **SpatialKey Architecture**: Type-safe keys with MortonKey and TetreeKey
 
 ## Architectural Evolution
 
@@ -130,20 +132,20 @@ The current architecture prioritizes:
 
 ## Performance Results (June 2025)
 
-### Surprising Discovery: Tetree Outperforms Octree
+### Real Benchmarks: Tetree Outperforms Octree
 
-- **Bulk Operations**: Tetree is 10x faster than Octree for 100K entities
-- **k-NN Queries**: Tetree 2-3x faster due to better spatial locality
-- **Memory Usage**: Tetree uses 15-20% less memory per entity
+- **Bulk Operations**: Tetree is 11.5x faster than Octree for 100K entities (30ms vs 346ms)
+- **k-NN Queries**: Tetree 2.1x faster due to better spatial locality
+- **Individual Insert**: Tetree 8.4x faster for sequential insertions
 
-### Key Performance Metrics
+### Actual Performance Metrics (June 24, 2025)
 
-| Operation         | Octree    | Tetree    | 
-|-------------------|-----------|-----------|
-| Bulk insert 100K  | 346 ms    | 34 ms     |
-| k-NN (k=10)       | 1.2 ms    | 0.4 ms    |
-| Ray intersection  | 0.8 ms    | 0.9 ms    |
-| Memory per entity | 350 bytes | 280 bytes |
+| Operation         | Octree    | Tetree    | Improvement |
+|-------------------|-----------|-----------|-------------|
+| Bulk insert 100K  | 346 ms    | 30 ms     | 11.5x       |
+| Individual 100K   | 287 ms    | 34 ms     | 8.4x        |
+| k-NN (k=10)       | 2.40 ms   | 1.15 ms   | 2.1x        |
+| Throughput        | 348K/sec  | 3.3M/sec  | 9.5x        |
 
 ## Testing Coverage
 
@@ -160,7 +162,13 @@ The current architecture prioritizes:
 For usage examples and detailed implementation guidance, refer to the specific API documentation files listed above and
 the comprehensive architecture guide.
 
+## Recent Bug Fixes (June 24, 2025)
+
+1. **Collision Detection**: Fixed control flow in forEach loops (return → continue)
+2. **Neighbor Finding**: Fixed distance calculations (centroids → entity positions)
+3. **SpatialKey Implementation**: Resolved Tetree's non-unique SFC index issue
+
 ---
 
-*This summary reflects the actual implemented architecture as of June 2025. For historical context about planned but
+*This summary reflects the actual implemented architecture as of June 24, 2025. For historical context about planned but
 unimplemented features, see the archived/ directory.*

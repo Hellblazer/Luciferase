@@ -208,7 +208,7 @@ public class TetreeCollisionDetectionTest {
 
         var collisionPair = collision.get();
         // One entity should have bounds, the other should not
-        boolean hasOneBounded = (collisionPair.bounds1() != null) != (collisionPair.bounds2() != null);
+        boolean hasOneBounded = (collisionPair.bounds1() == null) == (collisionPair.bounds2() != null);
         assertTrue(hasOneBounded, "Should have one bounded and one point entity");
     }
 
@@ -333,8 +333,7 @@ public class TetreeCollisionDetectionTest {
         }
 
         // Verify that tetree maintains tetrahedral spatial locality
-        assertNotNull(tetree.getSpatialMap(), "Tetree should provide spatial map access");
-        assertTrue(tetree.entityCount() == tetraPositions.length, "All entities should be inserted");
+        assertEquals(tetree.entityCount(), tetraPositions.length, "All entities should be inserted");
     }
 
     @Test
