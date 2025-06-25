@@ -1,6 +1,6 @@
 # Lucien - 3D Spatial Indexing Module
 
-Lucien provides high-performance spatial indexing for 3D applications through a unified architecture supporting both octree (cubic) and tetree (tetrahedral) decomposition strategies.
+Spatial indexing for 3D applications with octree and tetree implementations.
 
 ## Quick Start
 
@@ -48,22 +48,19 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit =
 
 ## Performance
 
-Surprising discovery: **Tetree outperforms Octree** in most scenarios:
+Benchmark results (100K entities):
 
-| Operation | Octree | Tetree | Improvement |
-|-----------|--------|--------|-------------|
-| Bulk insert 100K | 346 ms | 30 ms | **10x faster** |
-| k-NN (k=10) | 2.40 ms | 1.15 ms | **2x faster** |
-| Individual insert | 287 ms | 34 ms | **8x faster** |
-
-*Performance based on actual benchmarks (June 2025)*
+| Operation | Octree | Tetree |
+|-----------|--------|--------|
+| Bulk insert | 346 ms | 30 ms |
+| k-NN (k=10) | 2.40 ms | 1.15 ms |
+| Individual insert | 287 ms | 34 ms |
 
 ## Documentation
 
 ### Getting Started
-- [Architecture Summary](doc/ARCHITECTURE_SUMMARY_2025.md) - High-level overview
-- [Basic Operations API](doc/BASIC_OPERATIONS_API.md) - Insert, lookup, update, remove
-- [Quick Start Examples](doc/IMMEDIATE_PERFORMANCE_IMPROVEMENTS.md) - Common usage patterns
+- [Architecture Summary](doc/ARCHITECTURE_SUMMARY_2025.md) - Overview of the system
+- [Basic Operations API](doc/BASIC_OPERATIONS_API.md) - Core operations guide
 
 ### Core APIs
 - [Entity Management API](doc/ENTITY_MANAGEMENT_API.md) - Entity lifecycle and properties
@@ -173,11 +170,4 @@ AGPL v3.0 - See LICENSE file for details
 
 ## Status
 
-As of June 2025, all planned enhancements have been completed:
-- ✅ All spatial index features implemented
-- ✅ Comprehensive API documentation
-- ✅ 200+ tests with full coverage
-- ✅ Performance optimizations complete
-- ✅ Architecture documentation current
-
-The lucien module is production-ready for 3D spatial indexing applications.
+The spatial indexing implementation is complete with comprehensive test coverage and documentation.
