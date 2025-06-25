@@ -37,6 +37,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -118,6 +119,12 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     
     // Thread-local caching configuration (Phase 3)
     private boolean useThreadLocalCache = false;
+    
+    // Lazy evaluation configuration
+    private boolean useLazyEvaluation = false;
+    
+    // Intelligent lazy evaluation - only for bulk operations
+    private boolean autoLazyForBulk = true;
 
     /**
      * Create a Tetree with default configuration
@@ -882,6 +889,76 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     public String getThreadLocalCacheStatistics() {
         return useThreadLocalCache ? ThreadLocalTetreeCache.getGlobalStatistics() : "";
     }
+    
+    /**
+     * Enable or disable lazy evaluation for TetreeKey computation.
+     * When enabled, tmIndex() computation is deferred until the key is actually needed
+     * for comparison or ordering operations.
+     *
+     * @param enabled true to enable lazy evaluation, false to compute immediately
+     */
+    public void setLazyEvaluation(boolean enabled) {
+        this.useLazyEvaluation = enabled;
+    }
+    
+    /**
+     * Check if lazy evaluation is enabled.
+     *
+     * @return true if lazy evaluation is enabled
+     */
+    public boolean isLazyEvaluationEnabled() {
+        return useLazyEvaluation;
+    }
+    
+    /**
+     * Enable or disable automatic lazy evaluation for bulk operations.
+     * When enabled, bulk operations will automatically use lazy evaluation
+     * even if general lazy evaluation is disabled.
+     *
+     * @param enabled true to enable auto-lazy for bulk operations
+     */
+    public void setAutoLazyForBulk(boolean enabled) {
+        this.autoLazyForBulk = enabled;
+    }
+    
+    /**
+     * Check if automatic lazy evaluation for bulk operations is enabled.
+     *
+     * @return true if auto-lazy for bulk is enabled
+     */
+    public boolean isAutoLazyForBulkEnabled() {
+        return autoLazyForBulk;
+    }
+    
+    /**
+     * Force resolution of all lazy keys in the spatial index.
+     * This is useful before operations that require ordering or comparison.
+     *
+     * @return the number of lazy keys that were resolved
+     */
+    public int resolveLazyKeys() {
+        if (!useLazyEvaluation) {
+            return 0;
+        }
+        
+        lock.writeLock().lock();
+        try {
+            var lazyKeys = spatialIndex.keySet().stream()
+                .filter(k -> k instanceof LazyTetreeKey)
+                .map(k -> (LazyTetreeKey) k)
+                .filter(k -> !k.isResolved())
+                .toList();
+            
+            if (!lazyKeys.isEmpty()) {
+                // Resolve in parallel for better performance
+                lazyKeys.parallelStream().forEach(LazyTetreeKey::resolve);
+            }
+            
+            return lazyKeys.size();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
 
     /**
      * Create an iterator over all sibling nodes of the given tetrahedron. Siblings are tetrahedra that share the same
@@ -1122,6 +1199,11 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     @Override
     protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
         var tet = locate(position, level);
+        
+        // Use lazy evaluation if enabled
+        if (useLazyEvaluation) {
+            return new LazyTetreeKey(tet);
+        }
         
         // Use thread-local cache if enabled
         if (useThreadLocalCache) {
@@ -2904,6 +2986,13 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      */
     @Override
     public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level) {
+        // Enable lazy evaluation for bulk operations if configured
+        boolean wasLazy = useLazyEvaluation;
+        if (autoLazyForBulk && !useLazyEvaluation) {
+            useLazyEvaluation = true;
+        }
+        
+        try {
         if (positions.isEmpty()) {
             return Collections.emptyList();
         }
@@ -2941,5 +3030,11 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         regionCache.clear();
         
         return result;
+        } finally {
+            // Restore lazy evaluation setting
+            if (autoLazyForBulk && wasLazy != useLazyEvaluation) {
+                useLazyEvaluation = wasLazy;
+            }
+        }
     }
 }

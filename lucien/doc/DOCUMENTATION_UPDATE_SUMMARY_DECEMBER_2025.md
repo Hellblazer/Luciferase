@@ -9,8 +9,8 @@ This document summarizes the comprehensive documentation updates made to reflect
 ### 1. Root Cause Identified
 
 The performance degradation in Tetree was traced to the fundamental difference between:
-- **`consecutiveIndex()`** (formerly `index()`): O(1) operation, but not globally unique
-- **`tmIndex()`**: O(level) operation due to parent chain traversal, globally unique
+- **`consecutiveIndex()`** (formerly `index()`): O(1) operation, unique only within a level
+- **`tmIndex()`**: O(level) operation due to parent chain traversal, globally unique across all levels
 - Tetree must use `tmIndex()` for correctness, causing 140x slowdown at level 20
 
 ### 2. Updated Performance Claims

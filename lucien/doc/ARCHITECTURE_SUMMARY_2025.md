@@ -134,7 +134,7 @@ The current architecture prioritizes:
 
 ### Important Performance Update
 
-Previous performance claims were based on using the non-unique `consecutiveIndex()` method. After refactoring to use the globally unique `tmIndex()` for correctness, the performance characteristics have changed dramatically.
+Previous performance claims were based on using the `consecutiveIndex()` method which is unique only within a level. After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance characteristics have changed dramatically.
 
 ### Current Performance Metrics
 

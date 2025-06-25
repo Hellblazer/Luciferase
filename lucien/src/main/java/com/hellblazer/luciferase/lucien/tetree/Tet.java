@@ -1978,4 +1978,25 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     // Record to represent SFC index ranges
     private record SFCRange(long start, long end) {
     }
+    
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Tet other)) {
+            return false;
+        }
+        return x == other.x && y == other.y && z == other.z && l == other.l && type == other.type;
+    }
+    
+    @Override
+    public int hashCode() {
+        int result = x;
+        result = 31 * result + y;
+        result = 31 * result + z;
+        result = 31 * result + l;
+        result = 31 * result + type;
+        return result;
+    }
 }

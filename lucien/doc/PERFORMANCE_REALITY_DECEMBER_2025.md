@@ -12,9 +12,9 @@ The performance difference stems from a fundamental algorithmic distinction:
 
 | Method | Returns | Time Complexity | Globally Unique | Used By |
 |--------|---------|----------------|-----------------|---------|
-| **Octree Morton** | `long` | O(1) | Yes | Octree |
-| **Tet.consecutiveIndex()** | `long` | O(1) with cache | No | Nothing (internal only) |
-| **Tet.tmIndex()** | `TetreeKey` | O(level) | Yes | Tetree |
+| **Octree Morton** | `long` | O(1) | Yes (across all levels) | Octree |
+| **Tet.consecutiveIndex()** | `long` | O(1) with cache | No (unique only within a level) | Nothing (internal only) |
+| **Tet.tmIndex()** | `TetreeKey` | O(level) | Yes (across all levels) | Tetree |
 
 ### Why tmIndex() is Slow
 
@@ -23,7 +23,7 @@ The `tmIndex()` method must walk up the parent chain to build the globally uniqu
 - Level 10: 35x slower
 - Level 20: 140x slower
 
-This is **not a bug** - it's required for correctness. The TM-index includes ancestor type information for global uniqueness.
+This is **not a bug** - it's required for correctness. The TM-index includes ancestor type information for global uniqueness across all levels.
 
 ## Actual Performance Measurements
 

@@ -34,7 +34,7 @@ import java.util.Objects;
  *
  * @author hal.hildebrand
  */
-public final class TetreeKey implements SpatialKey<TetreeKey> {
+public class TetreeKey implements SpatialKey<TetreeKey> {
 
     // Parent type table from the paper
     private static final int[][]    PARENT_TYPES = { { 0, 1, 2, 3, 4, 5 }, // cube_id 0
