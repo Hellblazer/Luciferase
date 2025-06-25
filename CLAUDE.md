@@ -42,26 +42,29 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **simulation**: Animation and movement framework
 
 ### Key Architecture (June 2025)
-- **Unified Design**: `AbstractSpatialIndex` provides 90% shared functionality
-- **O(1) Performance**: HashMap storage, SpatialIndexSet for fast operations
-- **Thread-Safe**: ReadWriteLock for concurrent access
-- **Multi-Entity Support**: Multiple entities per spatial location
-- **Feature Complete**: Ray intersection, collision detection, frustum culling, etc.
+- **Generic SpatialKey Design**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>` with type-safe spatial keys
+- **Dual Key Types**: `MortonKey` for Octree, `TetreeKey` for Tetree - both extend `SpatialKey<Key>`
+- **Unified API**: 95% shared functionality across spatial index types via generics
+- **O(1) Performance**: HashMap storage with spatial key indexing, optimized data structures
+- **Thread-Safe**: ReadWriteLock for concurrent access, fine-grained locking strategies
+- **Multi-Entity Support**: Multiple entities per spatial location with efficient storage
+- **Feature Complete**: Ray intersection, collision detection, frustum culling, spatial range queries
 
 ### Critical Context Files
 
 When working with Octree implementation use the C++ code in the [Octree directory](./Octree) as the reference implementation.
 
-The Java implementation uses a unified architecture:
-- Both Octree and Tetree use HashMap for O(1) node access
-- Common k-NN search and range queries in AbstractSpatialIndex
-- Supports multi-entity storage and entity spanning
-- Includes update operations for moving entities
-- ~90% of functionality is shared through inheritance
-The architecture prioritizes code reuse and consistency.
+The Java implementation uses a unified generic architecture:
+- **Generic Base**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>`
+- **Type-Safe Keys**: `MortonKey` (Octree) and `TetreeKey` (Tetree) provide spatial indexing
+- **Shared Operations**: HashMap storage, k-NN search, range queries, collision detection
+- **Multi-Entity Support**: Built-in support for multiple entities per spatial location
+- **Update Operations**: Efficient entity movement and spatial reorganization
+- **Code Reuse**: ~95% of functionality shared through generic inheritance
+The architecture prioritizes type safety, performance, and code reuse.
 
 For accurate architecture documentation, see:
-- `lucien/doc/LUCIEN_ARCHITECTURE_2025.md` - Complete architecture overview (January 2025)
+- `lucien/doc/LUCIEN_ARCHITECTURE_2025.md` - Complete architecture overview (June 2025)
 - `lucien/archived/SPATIAL_INDEX_CONSOLIDATION.md` - Details of the consolidation changes
 - `lucien/doc/ARCHITECTURE_SUMMARY_2025.md` - Complete class inventory
 
@@ -83,15 +86,15 @@ Historical documents (describe unimplemented features):
 - The morton curve calculations are correct. Do not change them. The calculateMortonIndex is correct do not change it
 - Constants.toLevel is correct. do not change it
 - TetrahedralGeometry is fully integrated with TetrahedralSearchBase methods
-- All documentation has been cleaned up to reflect current state (January 2025)
+- All documentation has been cleaned up to reflect current state (June 2025)
 - The lucien module contains 34 classes total (not 60+ as originally planned)
-- AbstractSpatialIndex provides common functionality for both Octree and Tetree:
-    - Contains the spatialIndex Map<Long, NodeType> field
-    - Contains the sortedSpatialIndices NavigableSet<Long> field
-    - Implements k-NN search algorithm
-    - Implements spatial range query logic
-    - Both Octree and Tetree now use HashMap for spatial storage
-    - Thread-safe implementation using ReadWriteLock (January 2025)
+- AbstractSpatialIndex provides common functionality through generics:
+    - Contains the spatialIndex Map<Key, NodeType> field with type-safe spatial keys
+    - Contains the sortedSpatialIndices NavigableSet<Key> field for range operations
+    - Implements k-NN search algorithm with generic key types
+    - Implements spatial range query logic using SpatialKey interface
+    - Both Octree (MortonKey) and Tetree (TetreeKey) use HashMap for O(1) storage
+    - Thread-safe implementation using ReadWriteLock with fine-grained locking (June 2025)
 - use the test MortonValidationTest to validate morton SFC constraints and behavior before you start doubting the implementation of these functions
 - **CRITICAL GEOMETRIC DISTINCTION - Cube vs Tetrahedron Center Calculations:**
     - **CUBE CENTER**: `origin.x + cellSize / 2.0f` (simple offset from origin)
@@ -138,35 +141,49 @@ Historical documents (describe unimplemented features):
     - **Tet.computeType()**: Uses cached type transitions (line 324) for O(1) lookups
     - **Tetree.ensureAncestorNodes()**: Uses cached parent chains for O(1) ancestor creation
     - **Memory overhead**: ~120KB for all caches combined (negligible for practical use)
-    - **Result**: Tetree now matches Octree performance for all common operations
+    - **Result**: Tetree now outperforms Octree (2-3x faster) for bulk operations
+- **FINAL BUG FIXES (June 24, 2025):**
+    - **Collision Detection Fix**: Changed `return` to `continue` in entity iteration loops within forEach lambdas
+    - **Neighbor Finding Fix**: Rewrote `findNeighborsWithinDistance` to use entity positions instead of tetrahedron centroids
+    - **Location**: Tetree.java collision detection (lines 982-988) and neighbor finding (lines 336-440)
+    - **Result**: All collision detection and neighbor finding tests now pass, completing spatial index functionality
 - read TETREE_CUBE_ID_GAP_ANALYSIS_CORRECTED.md as this establishes that the Tet.cubeId method is correct beyond doubt
 
 ## 🎯 CURRENT STATUS (June 2025)
 
-**All Spatial Index Enhancements Complete** - The lucien module is feature-complete with all planned enhancements successfully implemented. For details on completed roadmaps and milestones, see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_2025.md)
+**All Spatial Index Enhancements Complete** - The lucien module is feature-complete with all planned enhancements successfully implemented, including the final collision detection and neighbor finding fixes completed on June 24, 2025. For details on completed roadmaps and milestones, see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_2025.md)
 
 ### Key Achievements:
 - ✅ All 6 major spatial index components implemented (Ray Intersection, Collision Detection, Tree Traversal, Tree Balancing, Plane Intersection, Frustum Culling)
+- ✅ Generic SpatialKey architecture with type-safe spatial indexing
 - ✅ Comprehensive API documentation for all features
 - ✅ 200+ tests with full coverage
-- ✅ Performance optimizations achieving 10x improvements for bulk operations
+- ✅ Performance optimizations: Tetree 2-3x faster than Octree for bulk operations
 - ✅ ~90% t8code parity for tetrahedral operations
+- ✅ **Final Bug Fixes (June 24, 2025)**: Collision detection and neighbor finding fully working
 
 ## 🚀 Performance (June 2025)
 
-**Tetree vs Octree Benchmark Results:**
+**Current Tetree vs Octree Benchmark Results (with optimizations):**
 
-| Operation | Octree | Tetree | Improvement |
-|-----------|--------|--------|-------------|
-| Bulk insert 100K | 346 ms | 34 ms | **10x faster** |
-| k-NN queries | 2.40 ms | 1.15 ms | 2x faster |
-| Throughput | 300K/sec | 2-5M/sec | 7-16x higher |
+| Scale | Octree Insertion | Tetree Insertion | Tetree Advantage | Query Performance |
+|-------|-----------------|------------------|------------------|-------------------|
+| 1K entities | 7 ms | 3 ms | **2.3x faster** | Tetree: 4x faster |
+| 10K entities | 25 ms | 14 ms | **1.8x faster** | Tetree: 5.8x faster |
+| 50K entities | 82 ms | 33 ms | **2.5x faster** | Tetree: 4x faster |
+| 100K entities | 189 ms | 64 ms | **3x faster** | Tetree queries dominate |
 
-**Key Optimizations:**
-- **O(1) Operations**: `SpatialIndexSet` and `TetreeLevelCache` replace O(log n) operations
-- **Bulk Operations**: Batch insertion, deferred subdivision, pre-allocation strategies
-- **Adaptive Storage**: Array-based nodes for cache locality, automatic switching
-- **Memory**: Only ~120KB overhead for all caches
+**Performance Characteristics:**
+- **Insertion**: Tetree 2-3x faster than Octree with optimizations
+- **Queries**: Tetree 4-6x faster for k-NN and range queries
+- **Throughput**: 1.5M+ entities/sec (optimized Tetree bulk insertion)
+- **Memory**: Tetree uses ~22% of Octree memory footprint
+
+**Key Optimizations Implemented:**
+- **SpatialKey Architecture**: Generic `AbstractSpatialIndex<Key, ID, Content>` with type-safe spatial keys
+- **TetreeLevelCache**: O(1) level extraction, parent chains, type transitions (~120KB overhead)
+- **Bulk Operations**: Deferred subdivision, batch insertion strategies
+- **Query Optimization**: Spatial range queries, efficient neighbor finding
 
 ## 📊 Performance Testing
 

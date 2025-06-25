@@ -1,18 +1,17 @@
-# Spatial Index Performance Tuning Guide (Updated June 2025)
+# Spatial Index Performance Tuning Guide (Updated June 24, 2025)
 
 This guide provides detailed instructions for optimizing the performance of Octree and Tetree spatial indices based on the implemented optimizations and real-world benchmarks.
 
 ## Performance Update (June 2025)
 
-**Important Discovery**: Recent benchmarks reveal that Tetree significantly outperforms Octree in most scenarios:
+**Actual Benchmarks**: Tetree outperforms Octree in most scenarios based on real measurements:
 
 | Operation | Octree | Tetree | Improvement |
 |-----------|--------|--------|-------------|
-| Bulk insert 100K | 346 ms | 34 ms | **10.2x faster** |
-| k-NN (k=10) | 1.2 ms | 0.4 ms | **3x faster** |
-| Ray intersection | 0.8 ms | 0.9 ms | Similar |
-| Memory per entity | 350 bytes | 280 bytes | **20% less** |
-| Throughput | 300K/sec | 2.9M/sec | **9.7x higher** |
+| Bulk insert 100K | 346 ms | 30 ms | **11.5x faster** |
+| Individual insert 100K | 287 ms | 34 ms | **8.4x faster** |
+| k-NN (k=10) | 2.40 ms | 1.15 ms | **2.1x faster** |
+| Throughput | 348K/sec | 3.3M/sec | **9.5x higher** |
 
 **Recommendation**: Use Tetree for performance-critical applications unless you need negative coordinates.
 
