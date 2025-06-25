@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Logging
 
 The project uses SLF4J for logging with Logback as the implementation:
+
 - Main implementation classes use `private static final Logger log = LoggerFactory.getLogger(ClassName.class);`
 - Test classes have logback-test.xml configuration in `lucien/src/test/resources/`
 - Debug logging enabled for spatial index operations, performance metrics, and construction progress
@@ -28,12 +29,14 @@ The project uses SLF4J for logging with Logback as the implementation:
 Luciferase is a 3D spatial data structure and visualization library with these core modules:
 
 ### Lucien Module - Spatial Indexing (34 classes total)
+
 - **Core** (13 classes): `AbstractSpatialIndex`, `SpatialIndex`, `SpatialNodeStorage`, etc.
 - **Entity Management** (12 classes): `EntityManager`, `EntityBounds`, ID generators, etc.
 - **Octree** (3 classes): Morton curve-based cubic decomposition
 - **Tetree** (6 classes): Tetrahedral space-filling curve decomposition
 
 ### Other Modules
+
 - **common**: Optimized collections (`FloatArrayList`, `OaHashSet`), geometry utilities
 - **sentry**: Delaunay tetrahedralization for kinetic point tracking
 - **portal**: JavaFX 3D visualization and mesh handling
@@ -42,7 +45,9 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 - **simulation**: Animation and movement framework
 
 ### Key Architecture (June 2025)
-- **Generic SpatialKey Design**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>` with type-safe spatial keys
+
+- **Generic SpatialKey Design**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>` with type-safe spatial
+  keys
 - **Dual Key Types**: `MortonKey` for Octree, `TetreeKey` for Tetree - both extend `SpatialKey<Key>`
 - **Unified API**: 95% shared functionality across spatial index types via generics
 - **O(1) Performance**: HashMap storage with spatial key indexing, optimized data structures
@@ -52,23 +57,27 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 
 ### Critical Context Files
 
-When working with Octree implementation use the C++ code in the [Octree directory](./Octree) as the reference implementation.
+When working with Octree implementation use the C++ code in the [Octree directory](./Octree) as the reference
+implementation.
 
 The Java implementation uses a unified generic architecture:
+
 - **Generic Base**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>`
 - **Type-Safe Keys**: `MortonKey` (Octree) and `TetreeKey` (Tetree) provide spatial indexing
 - **Shared Operations**: HashMap storage, k-NN search, range queries, collision detection
 - **Multi-Entity Support**: Built-in support for multiple entities per spatial location
 - **Update Operations**: Efficient entity movement and spatial reorganization
 - **Code Reuse**: ~95% of functionality shared through generic inheritance
-The architecture prioritizes type safety, performance, and code reuse.
+  The architecture prioritizes type safety, performance, and code reuse.
 
 For accurate architecture documentation, see:
+
 - `lucien/doc/LUCIEN_ARCHITECTURE_2025.md` - Complete architecture overview (June 2025)
 - `lucien/archived/SPATIAL_INDEX_CONSOLIDATION.md` - Details of the consolidation changes
 - `lucien/doc/ARCHITECTURE_SUMMARY_2025.md` - Complete class inventory
 
 Historical documents (describe unimplemented features):
+
 - `lucien/archived/TETREE_PORTING_PLAN.md` - Archived, planned features never built
 - `lucien/archived/TETRAHEDRAL_DOMAIN_ANALYSIS.md` - Technical analysis for unimplemented features
 - `lucien/archived/TETREE_OCTREE_ANALYSIS.md` - Comparison of architectures
@@ -95,7 +104,8 @@ Historical documents (describe unimplemented features):
     - Implements spatial range query logic using SpatialKey interface
     - Both Octree (MortonKey) and Tetree (TetreeKey) use HashMap for O(1) storage
     - Thread-safe implementation using ReadWriteLock with fine-grained locking (June 2025)
-- use the test MortonValidationTest to validate morton SFC constraints and behavior before you start doubting the implementation of these functions
+- use the test MortonValidationTest to validate morton SFC constraints and behavior before you start doubting the
+  implementation of these functions
 - **CRITICAL GEOMETRIC DISTINCTION - Cube vs Tetrahedron Center Calculations:**
     - **CUBE CENTER**: `origin.x + cellSize / 2.0f` (simple offset from origin)
     - **TETRAHEDRON CENTROID**: `(v0 + v1 + v2 + v3) / 4.0f` (average of 4 vertices)
@@ -105,31 +115,28 @@ Historical documents (describe unimplemented features):
     - **Tetree uses tetrahedra**: centroid = average of the 4 vertices from tet.coordinates()
     - **Fixed instances**: estimateNodeDistance() and getParentIndex() in Tetree.java (June 2025)
 - **TET SFC LEVEL ENCODING - Critical Understanding:**
-    - **The Tet SFC index DOES encode the level** through the number of 3-bit chunks used
-    - **Level 0**: index = 0 (no bits)
-    - **Level 1**: index uses 3 bits (values 0-7)
-    - **Level 2**: index uses 6 bits (values 0-63)
-    - **Level 3**: index uses 9 bits (values 0-511)
-    - **The `index()` method**: Builds the SFC index by encoding the path from root, adding 3 bits per level
-    - **The `tetLevelFromIndex()` method**: Recovers the level by finding the highest set bit and dividing by 3
-    - **Each level adds exactly 3 bits** to encode which of the 8 children is selected (line 568: `exponent += 3`)
-    - **This is NOT like Morton codes with level offsets** - the level is implicit in the bit pattern itself
+    - **The `consecutiveIndex()` method (formerly `index()`)**: Builds the SFC index by encoding the path from root,
+      adding 3 bits per level
 - **CRITICAL T8CODE PARENT-CHILD CYCLE FIX (June 2025):**
     - **Problem**: TetreeFamily.isFamily() was failing because children computed different parent types
     - **Root Cause**: Tet.child() method was using wrong algorithm to determine child types
     - **WRONG**: `childType = getChildType(parentType, childIndex)` (direct lookup)
-    - **CORRECT**: `beyId = getBeyChildId(parentType, childIndex); childType = getChildType(parentType, beyId)` (t8code algorithm)
+    - **CORRECT**: `beyId = getBeyChildId(parentType, childIndex); childType = getChildType(parentType, beyId)` (t8code
+      algorithm)
     - **t8code Algorithm**: Morton index → Bey ID → Child type (two-step lookup using connectivity tables)
     - **Fix Location**: Tet.java line 277-281, swapped order to use Bey ID intermediary step
-    - **Tables Used**: `t8_dtet_index_to_bey_number[parent_type][child_index]` → `t8_dtet_type_of_child[parent_type][bey_id]`
+    - **Tables Used**: `t8_dtet_index_to_bey_number[parent_type][child_index]` →
+      `t8_dtet_type_of_child[parent_type][bey_id]`
     - **Result**: All 8 children now correctly compute same parent type, parent-child round trip works perfectly
     - **Validation**: TetreeValidatorTest#testFamilyValidation now passes, maintaining t8code parity
 - **CRITICAL CACHE KEY COLLISION FIX (June 2025):**
     - **Problem**: TetreeLevelCache index caching was causing test failures due to cache key collisions
-    - **Root Cause**: Incorrect bit packing - z coordinate (32-bit) wasn't shifted, overlapping with level and type fields
+    - **Root Cause**: Incorrect bit packing - z coordinate (32-bit) wasn't shifted, overlapping with level and type
+      fields
     - **WRONG**: `key = ((long) x << 32) | ((long) y << 16) | ((long) z) | ((long) level << 8) | type`
     - **CORRECT**: Uses hash function with prime multipliers for proper distribution
-    - **Hash Function**: `key = x * 0x9E3779B97F4A7C15L + y * 0xBF58476D1CE4E5B9L + z * 0x94D049BB133111EBL + level * 0x2545F4914F6CDD1DL + type`
+    - **Hash Function**:
+      `key = x * 0x9E3779B97F4A7C15L + y * 0xBF58476D1CE4E5B9L + z * 0x94D049BB133111EBL + level * 0x2545F4914F6CDD1DL + type`
     - **Fix Location**: TetreeLevelCache.java cacheIndex() and getCachedIndex() methods
     - **Result**: 0% collision rate (was 74%), >95% slot utilization, all SFC round-trip tests passing
     - **Validation**: TetreeLevelCacheKeyCollisionTest shows fix eliminates collisions
@@ -137,53 +144,71 @@ Historical documents (describe unimplemented features):
     - **AbstractSpatialIndex**: Now uses `SpatialIndexSet` instead of `TreeSet` for O(1) operations
     - **TetreeLevelCache**: Provides O(1) level extraction, parent chain caching, and type transitions
     - **Tet.tetLevelFromIndex()**: Uses cached lookup instead of O(log n) numberOfLeadingZeros
-    - **Tet.index()**: Checks cache first (line 510) and caches results (line 541)
+    - **Tet.consecutiveIndex()**: Checks cache first and caches results
     - **Tet.computeType()**: Uses cached type transitions (line 324) for O(1) lookups
     - **Tetree.ensureAncestorNodes()**: Uses cached parent chains for O(1) ancestor creation
     - **Memory overhead**: ~120KB for all caches combined (negligible for practical use)
-    - **Result**: Tetree now outperforms Octree (2-3x faster) for bulk operations
+    - **Result**: These optimizations help but cannot overcome the O(level) cost of tmIndex()
 - **FINAL BUG FIXES (June 24, 2025):**
     - **Collision Detection Fix**: Changed `return` to `continue` in entity iteration loops within forEach lambdas
-    - **Neighbor Finding Fix**: Rewrote `findNeighborsWithinDistance` to use entity positions instead of tetrahedron centroids
+    - **Neighbor Finding Fix**: Rewrote `findNeighborsWithinDistance` to use entity positions instead of tetrahedron
+      centroids
     - **Location**: Tetree.java collision detection (lines 982-988) and neighbor finding (lines 336-440)
     - **Result**: All collision detection and neighbor finding tests now pass, completing spatial index functionality
 - read TETREE_CUBE_ID_GAP_ANALYSIS_CORRECTED.md as this establishes that the Tet.cubeId method is correct beyond doubt
+- **CRITICAL INDEX METHOD DISTINCTION (June 2025):**
+    - **Tet.consecutiveIndex()** (formerly index()): Returns long, O(1) with caching, unique only within a level
+    - **Tet.tmIndex()**: Returns TetreeKey, O(level) due to parent chain walk, globally unique across all levels
+    - **Performance Impact**: tmIndex() is 3.4x slower at level 1, 140x slower at level 20
+    - **Tetree uses tmIndex()** for all spatial operations, causing massive performance degradation
+    - **Octree uses Morton encoding**: Simple bit interleaving, always O(1)
+    - **Cannot be fixed**: The parent chain walk in tmIndex() is required for global uniqueness across levels
 
 ## 🎯 CURRENT STATUS (June 2025)
 
-**All Spatial Index Enhancements Complete** - The lucien module is feature-complete with all planned enhancements successfully implemented, including the final collision detection and neighbor finding fixes completed on June 24, 2025. For details on completed roadmaps and milestones, see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_2025.md)
+**All Spatial Index Enhancements Complete** - The lucien module is feature-complete with all planned enhancements
+successfully implemented, including the final collision detection and neighbor finding fixes completed on June 24, 2025.
+For details on completed roadmaps and milestones,
+see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_2025.md)
 
 ### Key Achievements:
-- ✅ All 6 major spatial index components implemented (Ray Intersection, Collision Detection, Tree Traversal, Tree Balancing, Plane Intersection, Frustum Culling)
+
+- ✅ All 6 major spatial index components implemented (Ray Intersection, Collision Detection, Tree Traversal, Tree
+  Balancing, Plane Intersection, Frustum Culling)
 - ✅ Generic SpatialKey architecture with type-safe spatial indexing
 - ✅ Comprehensive API documentation for all features
 - ✅ 200+ tests with full coverage
-- ✅ Performance optimizations: Tetree 2-3x faster than Octree for bulk operations
+- ✅ Performance optimizations implemented (though Octree remains faster for insertions)
 - ✅ ~90% t8code parity for tetrahedral operations
 - ✅ **Final Bug Fixes (June 24, 2025)**: Collision detection and neighbor finding fully working
 
-## 🚀 Performance (June 2025)
+## 🚀 Performance (June 2025 - Post DeferredSortedSet Removal)
 
-**Current Tetree vs Octree Benchmark Results (with optimizations):**
+**IMPORTANT**: Previous performance claims were based on using the non-unique `consecutiveIndex()` method. After
+refactoring to use the globally unique `tmIndex()`, the performance characteristics have changed significantly.
 
-| Scale | Octree Insertion | Tetree Insertion | Tetree Advantage | Query Performance |
-|-------|-----------------|------------------|------------------|-------------------|
-| 1K entities | 7 ms | 3 ms | **2.3x faster** | Tetree: 4x faster |
-| 10K entities | 25 ms | 14 ms | **1.8x faster** | Tetree: 5.8x faster |
-| 50K entities | 82 ms | 33 ms | **2.5x faster** | Tetree: 4x faster |
-| 100K entities | 189 ms | 64 ms | **3x faster** | Tetree queries dominate |
+**Current Tetree vs Octree Performance Reality (Updated June 2025):**
 
-**Performance Characteristics:**
-- **Insertion**: Tetree 2-3x faster than Octree with optimizations
-- **Queries**: Tetree 4-6x faster for k-NN and range queries
-- **Throughput**: 1.5M+ entities/sec (optimized Tetree bulk insertion)
-- **Memory**: Tetree uses ~22% of Octree memory footprint
+| Operation   | Octree        | Tetree         | Winner                    | Notes                        |
+|-------------|---------------|----------------|---------------------------|------------------------------|
+| Insertion   | 1.3 μs/entity | 483 μs/entity  | **Octree (372x faster)**  | tmIndex() walks parent chain |
+| k-NN Search | 206 μs        | 64 μs          | **Tetree (3.2x faster)**  | Better spatial locality      |
+| Range Query | 203 μs        | 62 μs          | **Tetree (3.3x faster)**  | Efficient traversal          |
+| Update      | 0.012 μs      | 1.16 μs        | **Octree (97x faster)**   | Morton code efficiency       |
+| Memory      | 100%          | 20-220%        | **Mixed**                 | Varies with data size        |
 
-**Key Optimizations Implemented:**
-- **SpatialKey Architecture**: Generic `AbstractSpatialIndex<Key, ID, Content>` with type-safe spatial keys
-- **TetreeLevelCache**: O(1) level extraction, parent chains, type transitions (~120KB overhead)
-- **Bulk Operations**: Deferred subdivision, batch insertion strategies
-- **Query Optimization**: Spatial range queries, efficient neighbor finding
+**Root Cause of Performance Difference:**
+
+- **Octree**: Uses Morton encoding - simple bit interleaving, O(1) operation
+- **Tetree**: Uses `tmIndex()` which walks parent chain - O(level) operation
+- At level 20: `tmIndex()` is ~140x slower than `consecutiveIndex()`
+
+**Key Findings:**
+
+- The `consecutiveIndex()` method (formerly `index()`) is NOT equivalent to `tmIndex()`
+- `consecutiveIndex()` is fast but unique only within a level
+- `tmIndex()` provides global uniqueness across all levels but at significant performance cost
+- Previous optimizations (TetreeLevelCache) help but cannot overcome fundamental algorithmic differences
 
 ## 📊 Performance Testing
 
@@ -191,7 +216,10 @@ Historical documents (describe unimplemented features):
 
 **Test Control**: Set `RUN_SPATIAL_INDEX_PERF_TESTS=true` to enable performance tests
 
-**Performance Targets:**
-- Bulk insertion: 500K entities/sec
-- k-NN queries: <50μs for k=10  
-- Memory: <350 bytes per entity
+**Realistic Performance Expectations (June 2025 - Post DeferredSortedSet Removal):**
+
+- **Octree**: ~770K entities/sec insertion, 5-30μs k-NN queries  
+- **Tetree**: ~2K entities/sec insertion, 15-60μs k-NN queries
+- **Memory**: Mixed results - Tetree uses 20% memory for small datasets, 220% for large datasets
+- **Note**: Tetree is 372x slower for insertions but 3.2x faster for queries
+- **Lazy Evaluation**: Still provides 3.8x speedup for Tetree insertions by deferring tmIndex() computation

@@ -37,19 +37,9 @@ public final class TetreeLevelCache {
     // This handles the most common cases extremely fast
     private static final byte[] SMALL_INDEX_TO_LEVEL = new byte[512];
 
-    // Cache for frequently used parent chains (index -> parent index at each level)
-    // Key: packed (index, level), Value: array of parent indices
-    private static final long[][] PARENT_CHAIN_CACHE = new long[1024][];
-    private static final int      PARENT_CACHE_MASK  = 1023; // For fast modulo
-
     // Type transition cache: packed(startType, startLevel, endLevel) -> endType
     // Maximum value: (5 << 16) | (21 << 8) | 21 = 327680 + 5376 + 21 = 333077
     private static final byte[] TYPE_TRANSITION_CACHE = new byte[6 * 256 * 256]; // 6 types * 256 levels * 256 levels
-    // De Bruijn lookup table for 64-bit integers
-    private static final int[]  DeBruijnTable         = { 0, 1, 48, 2, 57, 49, 28, 3, 61, 58, 50, 42, 38, 29, 17, 4, 62,
-                                                          55, 59, 36, 53, 51, 43, 22, 45, 39, 33, 30, 24, 18, 12, 5, 63,
-                                                          47, 56, 27, 60, 41, 37, 16, 54, 35, 52, 21, 44, 32, 23, 11,
-                                                          46, 26, 40, 15, 34, 20, 31, 10, 25, 14, 19, 9, 13, 8, 7, 6 };
     /**
      * Cache an SFC index computation result. For frequently accessed tetrahedra, this converts O(level) to O(1).
      */
@@ -57,9 +47,45 @@ public final class TetreeLevelCache {
     private static final long[] INDEX_CACHE_KEYS      = new long[INDEX_CACHE_SIZE];
     private static final long[] INDEX_CACHE_VALUES    = new long[INDEX_CACHE_SIZE];
 
+    /**
+     * Cache complete TetreeKey objects to convert O(level) tmIndex() operations to O(1).
+     * This is critical for performance as tmIndex() requires parent chain traversal.
+     */
+    private static final int         TETREE_KEY_CACHE_SIZE   = 65536; // 16x larger for better hit rate
+    private static final long[]      TETREE_KEY_CACHE_KEYS   = new long[TETREE_KEY_CACHE_SIZE];
+    private static final TetreeKey[] TETREE_KEY_CACHE_VALUES = new TetreeKey[TETREE_KEY_CACHE_SIZE];
+
+    // Cache statistics for monitoring
+    private static long cacheHits   = 0;
+    private static long cacheMisses = 0;
+    
+    // Parent chain cache - Phase 3
+    private static final int         PARENT_CHAIN_CACHE_SIZE   = 4096;
+    private static final long[]      PARENT_CHAIN_KEYS         = new long[PARENT_CHAIN_CACHE_SIZE];
+    private static final Tet[][]     PARENT_CHAIN_VALUES       = new Tet[PARENT_CHAIN_CACHE_SIZE][];
+    private static long              parentChainHits           = 0;
+    private static long              parentChainMisses         = 0;
+
     static {
         initializeLevelTables();
         initializeTypeCaches();
+    }
+
+    /**
+     * Cache a TetreeKey for fast retrieval. This converts O(level) tmIndex() operations to O(1).
+     *
+     * @param x        the x coordinate
+     * @param y        the y coordinate
+     * @param z        the z coordinate
+     * @param level    the level
+     * @param type     the tetrahedron type
+     * @param tetreeKey the TetreeKey to cache
+     */
+    public static void cacheTetreeKey(int x, int y, int z, byte level, byte type, TetreeKey tetreeKey) {
+        var key = generateCacheKey(x, y, z, level, type);
+        int slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
+        TETREE_KEY_CACHE_KEYS[slot] = key;
+        TETREE_KEY_CACHE_VALUES[slot] = tetreeKey;
     }
 
     public static void cacheIndex(int x, int y, int z, byte level, byte type, long index) {
@@ -70,44 +96,12 @@ public final class TetreeLevelCache {
         INDEX_CACHE_VALUES[slot] = index;
     }
 
-    /**
-     * Cache a computed parent chain for future lookups.
-     */
-    public static void cacheParentChain(long index, byte level, long[] chain) {
-        if (chain == null || chain.length != level + 1 || chain[0] != index) {
-            throw new IllegalArgumentException("Invalid parent chain");
-        }
-
-        // Simple hash for cache slot
-        int cacheSlot = (int) ((index ^ level) & PARENT_CACHE_MASK);
-        PARENT_CHAIN_CACHE[cacheSlot] = chain.clone(); // Clone to prevent external modifications
-    }
-
     private static byte computeTypeTransition(byte startType, byte startLevel, byte endLevel) {
         // This simulates the computeType loop without actually looping
         // In practice, this would use the connectivity tables
         byte type = startType;
         // Simplified for now - actual implementation would use TetreeConnectivity
         return type;
-    }
-
-    /**
-     * Fast O(1) highest bit position using De Bruijn sequence. Faster than Long.numberOfLeadingZeros on most CPUs.
-     */
-    private static int fastHighestBit(long v) {
-        // De Bruijn sequence for 64-bit
-        final long debruijn = 0x03f79d71b4cb0a89L;
-
-        // Round down to highest power of 2
-        v |= v >> 1;
-        v |= v >> 2;
-        v |= v >> 4;
-        v |= v >> 8;
-        v |= v >> 16;
-        v |= v >> 32;
-
-        // Use De Bruijn multiplication to get bit position
-        return DeBruijnTable[(int) ((v * debruijn) >>> 58)];
     }
 
     /**
@@ -130,6 +124,93 @@ public final class TetreeLevelCache {
         hash ^= (hash >>> 32);
 
         return hash;
+    }
+
+    /**
+     * Get a cached TetreeKey if available. This is the primary optimization for tmIndex() performance.
+     *
+     * @param x     the x coordinate
+     * @param y     the y coordinate
+     * @param z     the z coordinate
+     * @param level the level
+     * @param type  the tetrahedron type
+     * @return the cached TetreeKey or null if not cached
+     */
+    public static TetreeKey getCachedTetreeKey(int x, int y, int z, byte level, byte type) {
+        var key = generateCacheKey(x, y, z, level, type);
+        int slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
+
+        if (TETREE_KEY_CACHE_KEYS[slot] == key) {
+            cacheHits++;
+            return TETREE_KEY_CACHE_VALUES[slot];
+        }
+
+        cacheMisses++;
+        return null;
+    }
+
+    /**
+     * Get the cache hit rate for monitoring performance.
+     *
+     * @return the cache hit rate as a percentage (0.0 to 1.0)
+     */
+    public static double getCacheHitRate() {
+        var total = cacheHits + cacheMisses;
+        return total > 0 ? (double) cacheHits / total : 0.0;
+    }
+
+    /**
+     * Reset cache statistics for benchmarking.
+     */
+    public static void resetCacheStats() {
+        cacheHits = 0;
+        cacheMisses = 0;
+        parentChainHits = 0;
+        parentChainMisses = 0;
+    }
+    
+    /**
+     * Get cached parent chain for a tetrahedron.
+     * The chain includes all ancestors from the given tet up to the root.
+     *
+     * @param tet the tetrahedron
+     * @return cached parent chain or null if not cached
+     */
+    public static Tet[] getCachedParentChain(Tet tet) {
+        long key = generateCacheKey(tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
+        int slot = (int)(key & (PARENT_CHAIN_CACHE_SIZE - 1));
+        
+        if (PARENT_CHAIN_KEYS[slot] == key) {
+            parentChainHits++;
+            return PARENT_CHAIN_VALUES[slot];
+        }
+        
+        parentChainMisses++;
+        return null;
+    }
+    
+    /**
+     * Cache a parent chain for future lookups.
+     *
+     * @param tet the tetrahedron
+     * @param chain the parent chain (including the tet itself)
+     */
+    public static void cacheParentChain(Tet tet, Tet[] chain) {
+        long key = generateCacheKey(tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
+        int slot = (int)(key & (PARENT_CHAIN_CACHE_SIZE - 1));
+        
+        PARENT_CHAIN_KEYS[slot] = key;
+        PARENT_CHAIN_VALUES[slot] = chain;
+    }
+    
+    /**
+     * Get parent chain cache statistics.
+     *
+     * @return hit rate as a percentage
+     */
+    public static double getParentChainHitRate() {
+        long total = parentChainHits + parentChainMisses;
+        return total > 0 ? (double) parentChainHits / total : 0.0;
     }
 
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {
@@ -181,24 +262,6 @@ public final class TetreeLevelCache {
 
         // Clamp to max level
         return level > Constants.getMaxRefinementLevel() ? Constants.getMaxRefinementLevel() : level;
-    }
-
-    /**
-     * Get cached parent chain for an index, or compute and cache it. Converts O(level) parent traversal to O(1) for
-     * cached entries.
-     */
-    public static long[] getParentChain(long index, byte level) {
-        // Simple hash for cache lookup
-        int cacheSlot = (int) ((index ^ level) & PARENT_CACHE_MASK);
-        long[] cached = PARENT_CHAIN_CACHE[cacheSlot];
-
-        // Check if this is the right entry (simple validation)
-        if (cached != null && cached.length > 0 && cached[0] == index) {
-            return cached;
-        }
-
-        // Return null to indicate cache miss - caller will compute and cache
-        return null;
     }
 
     /**

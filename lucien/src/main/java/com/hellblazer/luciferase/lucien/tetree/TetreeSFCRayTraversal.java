@@ -78,7 +78,7 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
         for (int i = 0; i < 8; i++) {
             try {
                 Tet child = current.child(i);
-                if (!visited.contains(child.index()) && couldRayIntersect(ray, child)) {
+                if (!visited.contains(child.tmIndex()) && couldRayIntersect(ray, child)) {
                     toProcess.offer(child);
                     visited.add(child.tmIndex());
                 }
@@ -105,7 +105,7 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
             Tet neighborTet = neighbor.tet();
 
             // Check if neighbor is valid and not visited
-            if (neighborTet.isValid() && !visited.contains(neighborTet.index())) {
+            if (neighborTet.isValid() && !visited.contains(neighborTet.tmIndex())) {
                 // Quick check if ray could possibly intersect this neighbor
                 if (couldRayIntersect(ray, neighborTet)) {
                     toProcess.offer(neighborTet);

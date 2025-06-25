@@ -31,7 +31,7 @@ public class TetrahedralGeometryTest {
     @DisplayName("Test point to tetrahedron distance")
     void testDistancePointToTetrahedron() {
         var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
         // Debug: Show tetrahedron info
         var vertices = tet.coordinates();
@@ -41,11 +41,9 @@ public class TetrahedralGeometryTest {
         }
 
         // Test distance from tetrahedron center (should be 0)
-        Point3f center = tetrahedronCenter(new TetreeKey((byte) 10, java.math.BigInteger.valueOf(tetIndex)));
+        Point3f center = tetrahedronCenter(tetKey);
         System.out.println("Center: " + center);
-        float centerDistance = TetrahedralGeometry.distancePointToTetrahedron(center, new TetreeKey((byte) 10,
-                                                                                                    java.math.BigInteger.valueOf(
-                                                                                                    tetIndex)));
+        float centerDistance = TetrahedralGeometry.distancePointToTetrahedron(center, tetKey);
         assertEquals(0.0f, centerDistance, TOLERANCE, "Distance from center should be 0");
 
         // Test distance from far point (should be positive)
@@ -55,14 +53,10 @@ public class TetrahedralGeometryTest {
         System.out.println("Far point: " + farPoint);
 
         // Debug: Check if far point is incorrectly considered inside
-        boolean farPointInside = TetrahedralSearchBase.pointInTetrahedron(farPoint, new TetreeKey((byte) 10,
-                                                                                                  BigInteger.valueOf(
-                                                                                                  tetIndex)));
+        boolean farPointInside = TetrahedralSearchBase.pointInTetrahedron(farPoint, tetKey);
         System.out.println("Far point inside: " + farPointInside);
 
-        float farDistance = TetrahedralGeometry.distancePointToTetrahedron(farPoint, new TetreeKey((byte) 10,
-                                                                                                   BigInteger.valueOf(
-                                                                                                   tetIndex)));
+        float farDistance = TetrahedralGeometry.distancePointToTetrahedron(farPoint, tetKey);
         System.out.println("Far point distance: " + farDistance);
 
         assertTrue(farDistance > 0, "Distance to far point should be positive");
@@ -73,23 +67,20 @@ public class TetrahedralGeometryTest {
     void testDistanceTetrahedronToTetrahedron() {
         // Test distance from tetrahedron to itself
         var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
-        float selfDistance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(
-        new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)), new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)));
+        float selfDistance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(tetKey, tetKey);
         assertEquals(0.0f, selfDistance, TOLERANCE, "Distance from tetrahedron to itself should be 0");
 
         // Test distance to different tetrahedron
         var tet2 = new Tet(1000, 1000, 1000, (byte) 5, (byte) 2);
-        long tetIndex2 = tet2.index();
+        TetreeKey tetKey2 = tet2.tmIndex();
 
-        float distance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(
-        new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)), new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex2)));
+        float distance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(tetKey, tetKey2);
         assertTrue(distance >= 0, "Distance between tetrahedra should be non-negative");
 
         // Distance should be symmetric
-        float reverseDistance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(
-        new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex2)), new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)));
+        float reverseDistance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(tetKey2, tetKey);
         assertEquals(distance, reverseDistance, TOLERANCE, "Distance should be symmetric");
     }
 
@@ -99,13 +90,12 @@ public class TetrahedralGeometryTest {
         // Test with very small tetrahedron
         try {
             var smallTet = new Tet(1, 1, 1, (byte) 0, (byte) 0);
-            long smallIndex = smallTet.index();
+            TetreeKey smallKey = smallTet.tmIndex();
 
             // These should handle small tetrahedra gracefully
             assertDoesNotThrow(() -> {
-                Point3f center = tetrahedronCenter(new TetreeKey((byte) 0, BigInteger.valueOf(smallIndex)));
-                TetrahedralGeometry.distancePointToTetrahedron(center,
-                                                               new TetreeKey((byte) 0, BigInteger.valueOf(smallIndex)));
+                Point3f center = tetrahedronCenter(smallKey);
+                TetrahedralGeometry.distancePointToTetrahedron(center, smallKey);
             });
         } catch (Exception e) {
             // If small tetrahedron construction fails, that's acceptable
@@ -153,10 +143,10 @@ public class TetrahedralGeometryTest {
     void testFrustumTetrahedronIntersection() {
         // Create a tetrahedron
         var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
         // Create frustum pointing towards tetrahedron
-        Point3f tetCenter = tetrahedronCenter(new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)));
+        Point3f tetCenter = tetrahedronCenter(tetKey);
         Point3f frustumPos = new Point3f(tetCenter.x - 50, tetCenter.y - 50, tetCenter.z - 50);
         Vector3f forward = new Vector3f(1.0f, 1.0f, 1.0f);
         forward.normalize();
@@ -166,15 +156,11 @@ public class TetrahedralGeometryTest {
         var frustum = new TetrahedralGeometry.Frustum3D(frustumPos, forward, up, right, 1.0f, 1000.0f, 90.0f, 1.0f);
 
         // Test intersection
-        boolean intersects = TetrahedralGeometry.frustumIntersectsTetrahedron(frustum, new TetreeKey((byte) 5,
-                                                                                                     BigInteger.valueOf(
-                                                                                                     tetIndex)));
+        boolean intersects = TetrahedralGeometry.frustumIntersectsTetrahedron(frustum, tetKey);
 
         // Result depends on specific tetrahedron geometry and frustum setup
         // We mainly test that the method runs without error
-        assertDoesNotThrow(() -> TetrahedralGeometry.frustumIntersectsTetrahedron(frustum, new TetreeKey((byte) 5,
-                                                                                                         BigInteger.valueOf(
-                                                                                                         tetIndex))));
+        assertDoesNotThrow(() -> TetrahedralGeometry.frustumIntersectsTetrahedron(frustum, tetKey));
     }
 
     @Test
@@ -204,26 +190,22 @@ public class TetrahedralGeometryTest {
     void testPlaneTetrahedronIntersection() {
         // Create a tetrahedron
         var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
         // Create plane that might intersect tetrahedron
-        Point3f tetCenter = tetrahedronCenter(new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)));
+        Point3f tetCenter = tetrahedronCenter(tetKey);
         var plane = new TetrahedralGeometry.Plane3D(tetCenter, new Vector3f(1.0f, 0.0f, 0.0f));
 
         // Test intersection
-        boolean intersects = TetrahedralGeometry.planeIntersectsTetrahedron(plane, new TetreeKey((byte) 5,
-                                                                                                 BigInteger.valueOf(
-                                                                                                 tetIndex)));
+        boolean intersects = TetrahedralGeometry.planeIntersectsTetrahedron(plane, tetKey);
 
         // Result depends on specific tetrahedron geometry
         // We mainly test that the method runs without error
-        assertDoesNotThrow(() -> TetrahedralGeometry.planeIntersectsTetrahedron(plane, new TetreeKey((byte) 5,
-                                                                                                     BigInteger.valueOf(
-                                                                                                     tetIndex))));
+        assertDoesNotThrow(() -> TetrahedralGeometry.planeIntersectsTetrahedron(plane, tetKey));
 
         // Test with plane truly far away from tetrahedron
         // Since the tetrahedron can be very large (up to 65536^3), we need a truly distant plane
-        var vertices = Tet.tetrahedron(tetIndex).coordinates();
+        var vertices = Tet.tetrahedron(tetKey).coordinates();
         float maxExtent = 0;
         for (var vertex : vertices) {
             maxExtent = Math.max(maxExtent, Math.max(Math.max(vertex.x, vertex.y), vertex.z));
@@ -232,9 +214,7 @@ public class TetrahedralGeometryTest {
         // Place plane well beyond the tetrahedron's maximum extent
         Point3f farPoint = new Point3f(maxExtent + 100000, maxExtent + 100000, maxExtent + 100000);
         var farPlane = new TetrahedralGeometry.Plane3D(farPoint, new Vector3f(1.0f, 0.0f, 0.0f));
-        boolean farIntersects = TetrahedralGeometry.planeIntersectsTetrahedron(farPlane, new TetreeKey((byte) 5,
-                                                                                                       BigInteger.valueOf(
-                                                                                                       tetIndex)));
+        boolean farIntersects = TetrahedralGeometry.planeIntersectsTetrahedron(farPlane, tetKey);
 
         // Far plane should not intersect
         assertFalse(farIntersects, "Far plane should not intersect tetrahedron");
@@ -284,17 +264,16 @@ public class TetrahedralGeometryTest {
     void testRayTetrahedronIntersection() {
         // Create a tetrahedron
         var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
         // Test ray from far away pointing towards tetrahedron center
-        Point3f tetCenter = tetrahedronCenter(new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)));
+        Point3f tetCenter = tetrahedronCenter(tetKey);
         Point3f rayOrigin = new Point3f(tetCenter.x - 50, tetCenter.y - 50, tetCenter.z - 50);
         Vector3f rayDirection = new Vector3f(1.0f, 1.0f, 1.0f);
         rayDirection.normalize();
 
         var ray = new Ray3D(rayOrigin, rayDirection, 1000.0f);
-        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, new TetreeKey((byte) 5, BigInteger.valueOf(
-        tetIndex)));
+        var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetKey);
 
         // For a well-formed tetrahedron, we should get some intersection information
         // (exact results depend on tetrahedron geometry)
@@ -304,9 +283,7 @@ public class TetrahedralGeometryTest {
         Vector3f awayDirection = new Vector3f(-1.0f, -1.0f, -1.0f);
         awayDirection.normalize();
         var awayRay = new Ray3D(rayOrigin, awayDirection, 1000.0f);
-        var noIntersection = TetrahedralGeometry.rayIntersectsTetrahedron(awayRay, new TetreeKey((byte) 5,
-                                                                                                 BigInteger.valueOf(
-                                                                                                 tetIndex)));
+        var noIntersection = TetrahedralGeometry.rayIntersectsTetrahedron(awayRay, tetKey);
 
         assertFalse(noIntersection.intersects, "Ray pointing away should not intersect");
     }
@@ -316,19 +293,17 @@ public class TetrahedralGeometryTest {
     void testTetrahedronTetrahedronIntersection() {
         // Test intersection of tetrahedron with itself
         var tet = new Tet(100, 100, 100, (byte) 5, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
-        var selfIntersection = TetrahedralGeometry.tetrahedronIntersection(
-        new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)), new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)));
+        var selfIntersection = TetrahedralGeometry.tetrahedronIntersection(tetKey, tetKey);
         assertEquals(TetrahedralGeometry.IntersectionResult.IDENTICAL, selfIntersection,
                      "Tetrahedron should be identical to itself");
 
-        // Test with different tetrahedra - ensure they actually map to different SFC indices
-        // Due to many-to-one mapping, we need to use SFC indices directly
-        long tetIndex2 = tetIndex + 1; // Use next SFC index to ensure different tetrahedra
+        // Test with different tetrahedra - create a slightly different tet to ensure different TM-index
+        var tet2 = new Tet(101, 100, 100, (byte) 5, (byte) 2);
+        TetreeKey tetKey2 = tet2.tmIndex();
 
-        var intersection = TetrahedralGeometry.tetrahedronIntersection(
-        new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex)), new TetreeKey((byte) 5, BigInteger.valueOf(tetIndex2)));
+        var intersection = TetrahedralGeometry.tetrahedronIntersection(tetKey, tetKey2);
         assertNotNull(intersection, "Intersection result should not be null");
 
         // Result depends on specific tetrahedron positions

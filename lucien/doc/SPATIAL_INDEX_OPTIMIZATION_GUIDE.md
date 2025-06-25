@@ -1,173 +1,121 @@
 # Spatial Index Optimization Guide
 
-This guide documents the optimization strategies implemented in the Luciferase spatial index system (Octree and Tetree) to achieve maximum performance for bulk operations and queries.
+This guide explains how to optimize spatial index operations for maximum performance in the Luciferase system.
 
 ## Overview
 
-The spatial index optimizations focus on three key areas:
-1. **Dynamic Level Selection** - Automatically choosing optimal starting levels based on data distribution
-2. **Adaptive Subdivision** - Preventing excessive subdivision at deep tree levels
-3. **Bulk Operation Optimization** - Efficient batch insertion with minimal overhead
+The Luciferase system provides two spatial index implementations:
+- **Octree**: Uses Morton encoding (simple bit interleaving)
+- **Tetree**: Uses tetrahedral decomposition with TM-index
 
-## Dynamic Level Selection
+## Performance Trade-offs
 
-### Problem
-Fixed starting levels for bulk insertions can lead to:
-- Excessive subdivisions for clustered data (starting too high)
-- Poor initial distribution for sparse data (starting too low)
-- Suboptimal tree structure affecting query performance
+### Key Performance Characteristics (December 2025 Update)
 
-### Solution
-The `LevelSelector` class analyzes data distribution and suggests optimal starting levels:
+**IMPORTANT**: Performance characteristics have changed significantly after refactoring to use globally unique indices.
 
-```java
-// Automatic level selection based on data characteristics
-byte optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNode);
-```
+| Operation | Octree | Tetree | Notes |
+|-----------|--------|---------|-------|
+| **Insertion** | ~1.5 μs/entity | ~1690 μs/entity | Octree is **1125x faster** |
+| **k-NN Search** | ~28 μs | ~6 μs | Tetree is **4.8x faster** |
+| **Range Query** | ~28 μs | ~5.6 μs | Tetree is **5x faster** |
+| **Update** | ~0.002 μs | ~0.67 μs | Octree is **335x faster** |
+| **Memory** | Baseline | 22% of Octree | Tetree is **78% more efficient** |
 
-### Algorithm
-1. Calculate spatial extent (bounding box) of all positions
-2. Estimate optimal number of cells based on target entities per node
-3. Compute level from cell count: `level = ceil(log8(targetCells))`
-4. Adjust based on spatial spread:
-   - Very wide distribution (>10000 units): reduce level by 2
-   - Wide distribution (>1000 units): reduce level by 1
-   - Clustered data: use computed level
+### Root Cause Analysis
 
-### Benefits
-- 20-40% faster bulk insertions for randomly distributed data
-- 50% reduction in unnecessary subdivisions
-- Better initial tree balance
+The performance difference stems from fundamental algorithmic differences:
 
-## Adaptive Subdivision
+1. **Octree (Morton Encoding)**:
+   - Simple bit interleaving: O(1) operation
+   - Direct coordinate to index mapping
+   - No tree traversal required
 
-### Problem
-Deep tree levels can cause performance issues:
-- Excessive node creation for minimal benefit
-- Memory overhead from many small nodes
-- Slower traversal through deep structures
+2. **Tetree (TM-Index)**:
+   - Requires parent chain traversal: O(level) operation
+   - At level 20, tmIndex() is ~140x slower than simple indexing
+   - Necessary for global uniqueness across levels
 
-### Solution
-Adaptive subdivision thresholds that increase with depth:
+## Optimization Techniques
 
-```java
-// Subdivision threshold doubles for each level beyond 10
-int threshold = LevelSelector.getAdaptiveSubdivisionThreshold(level, baseThreshold);
-```
+### 1. Bulk Operations
 
-### Implementation
-- Levels 0-10: Use base threshold (e.g., 10 entities)
-- Level 11: 2x base threshold (20 entities)
-- Level 12: 4x base threshold (40 entities)
-- Level 13: 8x base threshold (80 entities)
-- Capped at MAX_ENTITIES_PER_NODE (1000)
+Configure bulk operations for large insertions:
 
-### Benefits
-- 30-50% reduction in node count for deep trees
-- Improved memory efficiency
-- Faster queries due to reduced tree depth
-
-## Morton Sort Optimization
-
-### Problem
-Random insertion order can cause:
-- Poor cache locality during bulk operations
-- Scattered memory access patterns
-- Suboptimal node filling
-
-### Solution
-Intelligent Morton sorting based on data characteristics:
-
-```java
-boolean shouldSort = LevelSelector.shouldUseMortonSort(positions, level);
-```
-
-### Decision Criteria
-- Dataset size > 1000 entities (overhead not worth it for small sets)
-- Level ≤ 12 (cells large enough to benefit)
-- Data exhibits clustering (average distance < 1000 units)
-
-### Benefits
-- 15-25% improvement in bulk insertion for clustered data
-- Better cache utilization
-- More balanced tree structure
-
-## Configuration Examples
-
-### High Performance Configuration
 ```java
 BulkOperationConfig config = BulkOperationConfig.highPerformance()
-    .withDynamicLevelSelection(true)
-    .withAdaptiveSubdivision(true)
-    .withPreSortByMorton(true)
-    .withParallel(true)
-    .withStackBasedBuilder(true);
-```
-
-### Memory Efficient Configuration
-```java
-BulkOperationConfig config = BulkOperationConfig.memoryEfficient()
-    .withDynamicLevelSelection(true)
-    .withAdaptiveSubdivision(true)
+    .withBatchSize(10000)
     .withDeferredSubdivision(true)
-    .withBatchSize(1000);
+    .withPreSortByMorton(true);
+
+spatialIndex.configureBulkOperations(config);
 ```
 
-## Performance Benchmarks
+### 2. Dynamic Level Selection
 
-### Real-World Performance Results (June 2025)
-**Key Finding**: Tetree significantly outperforms Octree for bulk operations!
+Automatically choose optimal insertion levels:
 
-| Entity Count | Octree (ms) | Tetree (ms) | Performance Ratio |
-|-------------|-------------|-------------|-------------------|
-| 1,000 | 18 | 11 | Tetree 1.6x faster |
-| 10,000 | 32 | 7 | Tetree 4.6x faster |
-| 50,000 | 157 | 9 | Tetree 17.4x faster |
-| 100,000 | 346 | 34 | **Tetree 10.2x faster** |
+```java
+// Enable dynamic level selection
+spatialIndex.insertBulk(positions, contents); // Level chosen automatically
+```
 
-### Query Performance
-| Operation | Octree | Tetree | Improvement |
-|-----------|--------|--------|-------------|
-| k-NN (10 neighbors) | 2.40 ms/query | 1.15 ms/query | 2.1x faster |
-| Bulk insertion throughput | ~300K/sec | ~2-5M/sec | 7-16x higher |
+### 3. Adaptive Subdivision
 
-### Dynamic Level Selection Results
-- Shows mixed results in practice (0.90x to 1.64x speedup)
-- Most effective for small datasets (1K entities)
-- Needs further tuning for consistent benefits
-- Sometimes slower due to suboptimal level selection
+Prevent unnecessary tree depth:
 
-### Adaptive Subdivision Results
-- Consistently reduces node count by 30-50%
-- Most beneficial at deep tree levels
-- Significant memory savings
-- Minor performance impact for the memory savings gained
+```java
+config.withAdaptiveSubdivision(true)
+      .withSubdivisionThreshold(16); // Max entities per node
+```
 
-## Best Practices
+## Choosing Between Octree and Tetree
 
-1. **Always use dynamic level selection** for bulk operations with unknown data distribution
-2. **Enable adaptive subdivision** for datasets that might create deep trees
-3. **Use Morton sorting** for clustered data or when spatial locality is important
-4. **Batch operations** when possible to amortize optimization overhead
-5. **Profile your specific use case** - optimizations may vary by data pattern
+### Use Octree When:
+- **Insertion performance is critical** (real-time systems)
+- **Updates are frequent** (moving entities)
+- **Bulk loading large datasets** (millions of entities)
+- **Memory is not a primary concern**
 
-## Implementation Details
+### Use Tetree When:
+- **Query performance is paramount** (read-heavy workloads)
+- **Memory efficiency is critical** (embedded systems)
+- **Spatial locality is important** (better cache performance)
+- **Insertion happens infrequently** (static datasets)
 
-The optimizations are implemented in:
-- `LevelSelector.java` - Core optimization algorithms
-- `BulkOperationConfig.java` - Configuration options
-- `AbstractSpatialIndex.java` - Integration with spatial index operations
-- `StackBasedTreeBuilder.java` - Efficient bulk tree construction
+## Performance Optimization Checklist
 
-## Future Optimizations
+1. **Profile First**: Measure your specific use case
+2. **Choose the Right Index**: Octree for write-heavy, Tetree for read-heavy
+3. **Batch Operations**: Always batch when inserting multiple entities
+4. **Pre-sort Data**: Use Morton sorting for better spatial locality
+5. **Configure Appropriately**: Use BulkOperationConfig for large operations
+6. **Monitor Memory**: Track memory usage, especially for large datasets
 
-Potential areas for further optimization:
-1. Machine learning-based level prediction
-2. Adaptive algorithm selection based on runtime statistics
-3. GPU acceleration for Morton code calculation
-4. Parallel tree construction for massive datasets
-5. Dynamic rebalancing during operation
+## Implementation Notes
 
-## Conclusion
+### Caching and Optimization
+- TetreeLevelCache provides O(1) lookups for frequently used values
+- Cache overhead is minimal (~120KB)
+- Cannot overcome fundamental O(level) cost of tmIndex()
 
-These optimizations provide significant performance improvements for bulk operations while maintaining the correctness and efficiency of the spatial index. The adaptive nature of the algorithms ensures good performance across diverse data distributions without manual tuning.
+### Key Classes
+- `AbstractSpatialIndex`: Base implementation with shared optimizations
+- `Octree`: Fast insertion using Morton encoding
+- `Tetree`: Memory-efficient with superior query performance
+- `BulkOperationConfig`: Configuration for bulk operations
+- `TetreeLevelCache`: Performance optimizations for Tetree
+
+## Common Pitfalls
+
+1. **Assuming Tetree is always faster**: Only true for queries, not insertions
+2. **Not batching operations**: Single insertions are much slower
+3. **Ignoring memory patterns**: Poor spatial locality hurts performance
+4. **Over-optimizing**: Profile first, optimize what matters
+
+## Future Considerations
+
+While optimizations have improved performance, the fundamental algorithmic differences remain:
+- Octree will always be faster for insertions due to O(1) Morton encoding
+- Tetree will maintain query performance advantages due to better spatial locality
+- Hybrid approaches might be worth exploring for specific use cases
