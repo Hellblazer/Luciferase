@@ -47,9 +47,38 @@ public final class TetreeLevelCache {
     private static final long[] INDEX_CACHE_KEYS      = new long[INDEX_CACHE_SIZE];
     private static final long[] INDEX_CACHE_VALUES    = new long[INDEX_CACHE_SIZE];
 
+    /**
+     * Cache complete TetreeKey objects to convert O(level) tmIndex() operations to O(1).
+     * This is critical for performance as tmIndex() requires parent chain traversal.
+     */
+    private static final int         TETREE_KEY_CACHE_SIZE   = 65536; // 16x larger for better hit rate
+    private static final long[]      TETREE_KEY_CACHE_KEYS   = new long[TETREE_KEY_CACHE_SIZE];
+    private static final TetreeKey[] TETREE_KEY_CACHE_VALUES = new TetreeKey[TETREE_KEY_CACHE_SIZE];
+
+    // Cache statistics for monitoring
+    private static long cacheHits   = 0;
+    private static long cacheMisses = 0;
+
     static {
         initializeLevelTables();
         initializeTypeCaches();
+    }
+
+    /**
+     * Cache a TetreeKey for fast retrieval. This converts O(level) tmIndex() operations to O(1).
+     *
+     * @param x        the x coordinate
+     * @param y        the y coordinate
+     * @param z        the z coordinate
+     * @param level    the level
+     * @param type     the tetrahedron type
+     * @param tetreeKey the TetreeKey to cache
+     */
+    public static void cacheTetreeKey(int x, int y, int z, byte level, byte type, TetreeKey tetreeKey) {
+        var key = generateCacheKey(x, y, z, level, type);
+        int slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
+        TETREE_KEY_CACHE_KEYS[slot] = key;
+        TETREE_KEY_CACHE_VALUES[slot] = tetreeKey;
     }
 
     public static void cacheIndex(int x, int y, int z, byte level, byte type, long index) {
@@ -88,6 +117,47 @@ public final class TetreeLevelCache {
         hash ^= (hash >>> 32);
 
         return hash;
+    }
+
+    /**
+     * Get a cached TetreeKey if available. This is the primary optimization for tmIndex() performance.
+     *
+     * @param x     the x coordinate
+     * @param y     the y coordinate
+     * @param z     the z coordinate
+     * @param level the level
+     * @param type  the tetrahedron type
+     * @return the cached TetreeKey or null if not cached
+     */
+    public static TetreeKey getCachedTetreeKey(int x, int y, int z, byte level, byte type) {
+        var key = generateCacheKey(x, y, z, level, type);
+        int slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
+
+        if (TETREE_KEY_CACHE_KEYS[slot] == key) {
+            cacheHits++;
+            return TETREE_KEY_CACHE_VALUES[slot];
+        }
+
+        cacheMisses++;
+        return null;
+    }
+
+    /**
+     * Get the cache hit rate for monitoring performance.
+     *
+     * @return the cache hit rate as a percentage (0.0 to 1.0)
+     */
+    public static double getCacheHitRate() {
+        var total = cacheHits + cacheMisses;
+        return total > 0 ? (double) cacheHits / total : 0.0;
+    }
+
+    /**
+     * Reset cache statistics for benchmarking.
+     */
+    public static void resetCacheStats() {
+        cacheHits = 0;
+        cacheMisses = 0;
     }
 
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {

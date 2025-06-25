@@ -1199,6 +1199,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      * that includes both spatial position and the complete ancestor type hierarchy for global uniqueness.
      */
     public TetreeKey tmIndex() {
+        // PERFORMANCE: Check cache first
+        var cached = TetreeLevelCache.getCachedTetreeKey(x, y, z, l, type);
+        if (cached != null) {
+            return cached;
+        }
+
         if (l == 0) {
             return ROOT_TET;
         }
@@ -1256,7 +1262,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             index = index.multiply(sixty_four).add(BigInteger.valueOf(sixBits));
         }
 
-        return new TetreeKey(l, index);
+        var result = new TetreeKey(l, index);
+        
+        // PERFORMANCE: Cache result before returning
+        TetreeLevelCache.cacheTetreeKey(x, y, z, l, type, result);
+        
+        return result;
     }
 
     public Point3i[] vertices() {
