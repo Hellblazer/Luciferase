@@ -24,7 +24,7 @@ public class ValidCoordinateTest {
 
             // Test (0, 0, 0) at this level
             var tet1 = new Tet(0, 0, 0, level, (byte) 0);
-            long index1 = tet1.index();
+            long index1 = tet1.consecutiveIndex();
             var reconstructed1 = Tet.tetrahedron(index1, (byte) 0);
             System.out.println(
             "    (0, 0, 0) -> index " + index1 + " -> " + reconstructed1 + " (round-trip: " + tet1.equals(
@@ -33,7 +33,7 @@ public class ValidCoordinateTest {
             // Test (stepSize, 0, 0) at this level
             if (stepSize < Constants.MAX_EXTENT) {
                 var tet2 = new Tet(stepSize, 0, 0, level, (byte) 0);
-                long index2 = tet2.index();
+                long index2 = tet2.consecutiveIndex();
                 var reconstructed2 = Tet.tetrahedron(index2, (byte) 0);
                 System.out.println(
                 "    (" + stepSize + ", 0, 0) -> index " + index2 + " -> " + reconstructed2 + " (round-trip: "
@@ -43,7 +43,7 @@ public class ValidCoordinateTest {
             // Test (0, 0, stepSize) at this level  
             if (stepSize < Constants.MAX_EXTENT) {
                 var tet3 = new Tet(0, 0, stepSize, level, (byte) 0);
-                long index3 = tet3.index();
+                long index3 = tet3.consecutiveIndex();
                 var reconstructed3 = Tet.tetrahedron(index3, (byte) 0);
                 System.out.println(
                 "    (0, 0, " + stepSize + ") -> index " + index3 + " -> " + reconstructed3 + " (round-trip: "
@@ -71,8 +71,8 @@ public class ValidCoordinateTest {
         // Try coordinates within the valid range
         var validTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         System.out.println("Valid level 0 tet: " + validTet);
-        System.out.println("Index: " + validTet.index());
-        var reconstructedValid = Tet.tetrahedron(validTet.index(), (byte) 0);
+        System.out.println("Index: " + validTet.consecutiveIndex());
+        var reconstructedValid = Tet.tetrahedron(validTet.consecutiveIndex(), (byte) 0);
         System.out.println("Reconstructed: " + reconstructedValid);
         System.out.println("Round-trip: " + validTet.equals(reconstructedValid));
     }

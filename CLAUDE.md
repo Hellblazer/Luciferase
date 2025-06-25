@@ -110,7 +110,7 @@ Historical documents (describe unimplemented features):
     - **Level 1**: index uses 3 bits (values 0-7)
     - **Level 2**: index uses 6 bits (values 0-63)
     - **Level 3**: index uses 9 bits (values 0-511)
-    - **The `index()` method**: Builds the SFC index by encoding the path from root, adding 3 bits per level
+    - **The `consecutiveIndex()` method (formerly `index()`)**: Builds the SFC index by encoding the path from root, adding 3 bits per level
     - **The `tetLevelFromIndex()` method**: Recovers the level by finding the highest set bit and dividing by 3
     - **Each level adds exactly 3 bits** to encode which of the 8 children is selected (line 568: `exponent += 3`)
     - **This is NOT like Morton codes with level offsets** - the level is implicit in the bit pattern itself
@@ -137,17 +137,24 @@ Historical documents (describe unimplemented features):
     - **AbstractSpatialIndex**: Now uses `SpatialIndexSet` instead of `TreeSet` for O(1) operations
     - **TetreeLevelCache**: Provides O(1) level extraction, parent chain caching, and type transitions
     - **Tet.tetLevelFromIndex()**: Uses cached lookup instead of O(log n) numberOfLeadingZeros
-    - **Tet.index()**: Checks cache first (line 510) and caches results (line 541)
+    - **Tet.consecutiveIndex()**: Checks cache first and caches results
     - **Tet.computeType()**: Uses cached type transitions (line 324) for O(1) lookups
     - **Tetree.ensureAncestorNodes()**: Uses cached parent chains for O(1) ancestor creation
     - **Memory overhead**: ~120KB for all caches combined (negligible for practical use)
-    - **Result**: Tetree now outperforms Octree (2-3x faster) for bulk operations
+    - **Result**: These optimizations help but cannot overcome the O(level) cost of tmIndex()
 - **FINAL BUG FIXES (June 24, 2025):**
     - **Collision Detection Fix**: Changed `return` to `continue` in entity iteration loops within forEach lambdas
     - **Neighbor Finding Fix**: Rewrote `findNeighborsWithinDistance` to use entity positions instead of tetrahedron centroids
     - **Location**: Tetree.java collision detection (lines 982-988) and neighbor finding (lines 336-440)
     - **Result**: All collision detection and neighbor finding tests now pass, completing spatial index functionality
 - read TETREE_CUBE_ID_GAP_ANALYSIS_CORRECTED.md as this establishes that the Tet.cubeId method is correct beyond doubt
+- **CRITICAL INDEX METHOD DISTINCTION (December 2025):**
+    - **Tet.consecutiveIndex()** (formerly index()): Returns long, O(1) with caching, NOT globally unique
+    - **Tet.tmIndex()**: Returns TetreeKey, O(level) due to parent chain walk, globally unique
+    - **Performance Impact**: tmIndex() is 3.4x slower at level 1, 140x slower at level 20
+    - **Tetree uses tmIndex()** for all spatial operations, causing massive performance degradation
+    - **Octree uses Morton encoding**: Simple bit interleaving, always O(1)
+    - **Cannot be fixed**: The parent chain walk in tmIndex() is required for global uniqueness
 
 ## 🎯 CURRENT STATUS (June 2025)
 
@@ -158,32 +165,34 @@ Historical documents (describe unimplemented features):
 - ✅ Generic SpatialKey architecture with type-safe spatial indexing
 - ✅ Comprehensive API documentation for all features
 - ✅ 200+ tests with full coverage
-- ✅ Performance optimizations: Tetree 2-3x faster than Octree for bulk operations
+- ✅ Performance optimizations implemented (though Octree remains faster for insertions)
 - ✅ ~90% t8code parity for tetrahedral operations
 - ✅ **Final Bug Fixes (June 24, 2025)**: Collision detection and neighbor finding fully working
 
-## 🚀 Performance (June 2025)
+## 🚀 Performance (December 2025 - Updated)
 
-**Current Tetree vs Octree Benchmark Results (with optimizations):**
+**IMPORTANT**: Previous performance claims were based on using the non-unique `consecutiveIndex()` method. After refactoring to use the globally unique `tmIndex()`, the performance characteristics have changed significantly.
 
-| Scale | Octree Insertion | Tetree Insertion | Tetree Advantage | Query Performance |
-|-------|-----------------|------------------|------------------|-------------------|
-| 1K entities | 7 ms | 3 ms | **2.3x faster** | Tetree: 4x faster |
-| 10K entities | 25 ms | 14 ms | **1.8x faster** | Tetree: 5.8x faster |
-| 50K entities | 82 ms | 33 ms | **2.5x faster** | Tetree: 4x faster |
-| 100K entities | 189 ms | 64 ms | **3x faster** | Tetree queries dominate |
+**Current Tetree vs Octree Performance Reality:**
 
-**Performance Characteristics:**
-- **Insertion**: Tetree 2-3x faster than Octree with optimizations
-- **Queries**: Tetree 4-6x faster for k-NN and range queries
-- **Throughput**: 1.5M+ entities/sec (optimized Tetree bulk insertion)
-- **Memory**: Tetree uses ~22% of Octree memory footprint
+| Operation | Octree | Tetree | Winner | Notes |
+|-----------|--------|---------|---------|-------|
+| Insertion | 1.5 μs/entity | 1690 μs/entity | **Octree (1125x faster)** | tmIndex() walks parent chain |
+| k-NN Search | 28 μs | 5.9 μs | **Tetree (4.8x faster)** | Better spatial locality |
+| Range Query | 28 μs | 5.6 μs | **Tetree (5x faster)** | Efficient traversal |
+| Update | 0.002 μs | 0.67 μs | **Octree (335x faster)** | Morton code efficiency |
+| Memory | 100% | 22% | **Tetree (78% less)** | Compact representation |
 
-**Key Optimizations Implemented:**
-- **SpatialKey Architecture**: Generic `AbstractSpatialIndex<Key, ID, Content>` with type-safe spatial keys
-- **TetreeLevelCache**: O(1) level extraction, parent chains, type transitions (~120KB overhead)
-- **Bulk Operations**: Deferred subdivision, batch insertion strategies
-- **Query Optimization**: Spatial range queries, efficient neighbor finding
+**Root Cause of Performance Difference:**
+- **Octree**: Uses Morton encoding - simple bit interleaving, O(1) operation
+- **Tetree**: Uses `tmIndex()` which walks parent chain - O(level) operation
+- At level 20: `tmIndex()` is ~140x slower than `consecutiveIndex()`
+
+**Key Findings:**
+- The `consecutiveIndex()` method (formerly `index()`) is NOT equivalent to `tmIndex()`
+- `consecutiveIndex()` is fast but not globally unique across levels
+- `tmIndex()` provides global uniqueness but at significant performance cost
+- Previous optimizations (TetreeLevelCache) help but cannot overcome fundamental algorithmic differences
 
 ## 📊 Performance Testing
 
@@ -191,7 +200,8 @@ Historical documents (describe unimplemented features):
 
 **Test Control**: Set `RUN_SPATIAL_INDEX_PERF_TESTS=true` to enable performance tests
 
-**Performance Targets:**
-- Bulk insertion: 500K entities/sec
-- k-NN queries: <50μs for k=10  
-- Memory: <350 bytes per entity
+**Realistic Performance Expectations:**
+- **Octree**: ~670K entities/sec insertion, <30μs k-NN queries
+- **Tetree**: ~600 entities/sec insertion (limited by tmIndex), <6μs k-NN queries
+- **Memory**: Both use <350 bytes per entity
+- **Note**: Tetree excels at queries but insertion is ~1000x slower due to tmIndex()

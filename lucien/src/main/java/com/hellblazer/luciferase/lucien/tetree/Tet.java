@@ -156,6 +156,94 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
+     * Test if a line segment intersects an AABB using the slab method.
+     */
+    private static boolean lineSegmentIntersectsAABB(Point3f p0, Point3f p1, VolumeBounds bounds) {
+        // Direction vector from p0 to p1
+        float dx = p1.x - p0.x;
+        float dy = p1.y - p0.y;
+        float dz = p1.z - p0.z;
+
+        // Parameter t ranges from 0 to 1 along the line segment
+        float tMin = 0.0f;
+        float tMax = 1.0f;
+
+        // Check X axis
+        if (Math.abs(dx) < 1e-6f) {
+            // Ray is parallel to X slab
+            if (p0.x < bounds.minX() || p0.x > bounds.maxX()) {
+                return false;
+            }
+        } else {
+            // Compute intersection t values
+            float t1 = (bounds.minX() - p0.x) / dx;
+            float t2 = (bounds.maxX() - p0.x) / dx;
+
+            if (t1 > t2) {
+                // Swap
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+
+            tMin = Math.max(tMin, t1);
+            tMax = Math.min(tMax, t2);
+
+            if (tMin > tMax) {
+                return false;
+            }
+        }
+
+        // Check Y axis
+        if (Math.abs(dy) < 1e-6f) {
+            // Ray is parallel to Y slab
+            if (p0.y < bounds.minY() || p0.y > bounds.maxY()) {
+                return false;
+            }
+        } else {
+            // Compute intersection t values
+            float t1 = (bounds.minY() - p0.y) / dy;
+            float t2 = (bounds.maxY() - p0.y) / dy;
+
+            if (t1 > t2) {
+                // Swap
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+
+            tMin = Math.max(tMin, t1);
+            tMax = Math.min(tMax, t2);
+
+            if (tMin > tMax) {
+                return false;
+            }
+        }
+
+        // Check Z axis
+        if (Math.abs(dz) < 1e-6f) {
+            // Ray is parallel to Z slab
+            return !(p0.z < bounds.minZ()) && !(p0.z > bounds.maxZ());
+        } else {
+            // Compute intersection t values
+            float t1 = (bounds.minZ() - p0.z) / dz;
+            float t2 = (bounds.maxZ() - p0.z) / dz;
+
+            if (t1 > t2) {
+                // Swap
+                float temp = t1;
+                t1 = t2;
+                t2 = temp;
+            }
+
+            tMin = Math.max(tMin, t1);
+            tMax = Math.min(tMax, t2);
+
+            return !(tMin > tMax);
+        }
+    }
+
+    /**
      * Optimized location method using simplified plane tests based on the actual tetrahedral decomposition geometry.
      * This version reduces computation by checking only the necessary planes in a decision tree structure.
      *
@@ -277,7 +365,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (level == 0) {
             return new Tet(0, 0, 0, (byte) 0, (byte) 0); // Root tetrahedron
         }
-        
+
         byte type = 0;
         int childrenM1 = 7;  // Mask for 3 bits (8 children - 1)
         var coordinates = new int[3];
@@ -285,7 +373,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Traverse from root to target level
         for (int i = 1; i <= level; i++) {
             var offsetIndex = level - i;
-            int cellSize = Constants.lengthAtLevel((byte)i); // Size of cell at this level
+            int cellSize = Constants.lengthAtLevel((byte) i); // Size of cell at this level
 
             // Extract 3 bits for the local index at this level
             var localIndex = (int) ((index >> (3 * offsetIndex)) & childrenM1);
@@ -296,9 +384,15 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
             // Accumulate actual coordinates based on cube position
             // cellSize is the size of cells at level i, so we add cellSize when the bit is set
-            if ((cid & 1) > 0) coordinates[0] += cellSize;
-            if ((cid & 2) > 0) coordinates[1] += cellSize;
-            if ((cid & 4) > 0) coordinates[2] += cellSize;
+            if ((cid & 1) > 0) {
+                coordinates[0] += cellSize;
+            }
+            if ((cid & 2) > 0) {
+                coordinates[1] += cellSize;
+            }
+            if ((cid & 4) > 0) {
+                coordinates[2] += cellSize;
+            }
         }
         return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
@@ -319,47 +413,46 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * Convert TM-index back to tetrahedron.
-     * This is the inverse of the tmIndex() method and properly decodes the
+     * Convert TM-index back to tetrahedron. This is the inverse of the tmIndex() method and properly decodes the
      * interleaved coordinate and type information.
      */
     public static Tet tetrahedron(BigInteger tmIndex, byte level) {
         if (level == 0) {
             return new Tet(0, 0, 0, (byte) 0, (byte) 0); // Root tetrahedron
         }
-        
+
         // We only need to process 'level' number of 6-bit chunks
         int maxBits = level;
-        
+
         // Extract interleaved bits from TM-index
         int[] coordXBits = new int[maxBits];
         int[] coordYBits = new int[maxBits];
         int[] coordZBits = new int[maxBits];
         int[] types = new int[maxBits];
-        
+
         BigInteger index = tmIndex;
         BigInteger sixty_four = BigInteger.valueOf(64);
-        
+
         // Extract from least significant to most significant
         for (int i = maxBits - 1; i >= 0; i--) {
             BigInteger[] divRem = index.divideAndRemainder(sixty_four);
             index = divRem[0];
             int sixBits = divRem[1].intValue();
-            
+
             // Lower 3 bits are type
             types[i] = sixBits & 7;
-            
+
             // Upper 3 bits are coordinate bits
             int coordBits = sixBits >> 3;
             coordXBits[i] = coordBits & 1;
             coordYBits[i] = (coordBits >> 1) & 1;
             coordZBits[i] = (coordBits >> 2) & 1;
         }
-        
+
         // Reconstruct coordinates from bits
         // Place bits at the correct positions: [MAX_LEVEL-1, MAX_LEVEL-2, ..., MAX_LEVEL-L]
         int x = 0, y = 0, z = 0;
-        
+
         // Build coordinates by placing bits at the correct positions
         for (int i = 0; i < maxBits; i++) {
             int bitPos = Constants.getMaxRefinementLevel() - 1 - i;
@@ -367,10 +460,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             y |= (coordYBits[i] << bitPos);
             z |= (coordZBits[i] << bitPos);
         }
-        
+
         // Current type is at the last position
-        byte type = (byte)types[maxBits - 1];
-        
+        byte type = (byte) types[maxBits - 1];
+
         return new Tet(x, y, z, level, type);
     }
 
@@ -461,16 +554,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
 
         // Test if any corner of bounds is inside tetrahedron
-        var boundCorners = new Point3f[] { 
-            new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), 
-            new Point3f(bounds.maxX(), bounds.minY(), bounds.minZ()), 
-            new Point3f(bounds.minX(), bounds.maxY(), bounds.minZ()),
-            new Point3f(bounds.maxX(), bounds.maxY(), bounds.minZ()), 
-            new Point3f(bounds.minX(), bounds.minY(), bounds.maxZ()), 
-            new Point3f(bounds.maxX(), bounds.minY(), bounds.maxZ()),
-            new Point3f(bounds.minX(), bounds.maxY(), bounds.maxZ()), 
-            new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ()) 
-        };
+        var boundCorners = new Point3f[] { new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()), new Point3f(
+        bounds.maxX(), bounds.minY(), bounds.minZ()), new Point3f(bounds.minX(), bounds.maxY(), bounds.minZ()),
+                                           new Point3f(bounds.maxX(), bounds.maxY(), bounds.minZ()), new Point3f(
+        bounds.minX(), bounds.minY(), bounds.maxZ()), new Point3f(bounds.maxX(), bounds.minY(), bounds.maxZ()),
+                                           new Point3f(bounds.minX(), bounds.maxY(), bounds.maxZ()), new Point3f(
+        bounds.maxX(), bounds.maxY(), bounds.maxZ()) };
 
         for (var corner : boundCorners) {
             if (tet.contains(corner)) {
@@ -480,12 +569,12 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // Test tetrahedron edges against AABB
         // A tetrahedron has 6 edges: (0,1), (0,2), (0,3), (1,2), (1,3), (2,3)
-        int[][] edges = {{0,1}, {0,2}, {0,3}, {1,2}, {1,3}, {2,3}};
-        
+        int[][] edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
+
         for (int[] edge : edges) {
             Point3f p0 = new Point3f(vertices[edge[0]].x, vertices[edge[0]].y, vertices[edge[0]].z);
             Point3f p1 = new Point3f(vertices[edge[1]].x, vertices[edge[1]].y, vertices[edge[1]].z);
-            
+
             if (lineSegmentIntersectsAABB(p0, p1, bounds)) {
                 return true;
             }
@@ -493,100 +582,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // If we've gotten this far, the volumes might still intersect along faces
         // For now, use conservative approximation
-        return true;
-    }
-    
-    /**
-     * Test if a line segment intersects an AABB using the slab method.
-     */
-    private static boolean lineSegmentIntersectsAABB(Point3f p0, Point3f p1, VolumeBounds bounds) {
-        // Direction vector from p0 to p1
-        float dx = p1.x - p0.x;
-        float dy = p1.y - p0.y;
-        float dz = p1.z - p0.z;
-        
-        // Parameter t ranges from 0 to 1 along the line segment
-        float tMin = 0.0f;
-        float tMax = 1.0f;
-        
-        // Check X axis
-        if (Math.abs(dx) < 1e-6f) {
-            // Ray is parallel to X slab
-            if (p0.x < bounds.minX() || p0.x > bounds.maxX()) {
-                return false;
-            }
-        } else {
-            // Compute intersection t values
-            float t1 = (bounds.minX() - p0.x) / dx;
-            float t2 = (bounds.maxX() - p0.x) / dx;
-            
-            if (t1 > t2) {
-                // Swap
-                float temp = t1;
-                t1 = t2;
-                t2 = temp;
-            }
-            
-            tMin = Math.max(tMin, t1);
-            tMax = Math.min(tMax, t2);
-            
-            if (tMin > tMax) {
-                return false;
-            }
-        }
-        
-        // Check Y axis
-        if (Math.abs(dy) < 1e-6f) {
-            // Ray is parallel to Y slab
-            if (p0.y < bounds.minY() || p0.y > bounds.maxY()) {
-                return false;
-            }
-        } else {
-            // Compute intersection t values
-            float t1 = (bounds.minY() - p0.y) / dy;
-            float t2 = (bounds.maxY() - p0.y) / dy;
-            
-            if (t1 > t2) {
-                // Swap
-                float temp = t1;
-                t1 = t2;
-                t2 = temp;
-            }
-            
-            tMin = Math.max(tMin, t1);
-            tMax = Math.min(tMax, t2);
-            
-            if (tMin > tMax) {
-                return false;
-            }
-        }
-        
-        // Check Z axis
-        if (Math.abs(dz) < 1e-6f) {
-            // Ray is parallel to Z slab
-            if (p0.z < bounds.minZ() || p0.z > bounds.maxZ()) {
-                return false;
-            }
-        } else {
-            // Compute intersection t values
-            float t1 = (bounds.minZ() - p0.z) / dz;
-            float t2 = (bounds.maxZ() - p0.z) / dz;
-            
-            if (t1 > t2) {
-                // Swap
-                float temp = t1;
-                t1 = t2;
-                t2 = temp;
-            }
-            
-            tMin = Math.max(tMin, t1);
-            tMax = Math.min(tMax, t2);
-            
-            if (tMin > tMax) {
-                return false;
-            }
-        }
-        
         return true;
     }
 
@@ -734,6 +729,66 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             type = CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(i)][type];
         }
         return type;
+    }
+
+    /**
+     * Compute the consecutive index of this tetrahedron at this level.
+     *
+     * <p><b>Algorithm Overview:</b></p>
+     * Encodes the path from root to this tetrahedron by:
+     * <ol>
+     *   <li>Starting at this tetrahedron's level</li>
+     *   <li>Working backwards to root, extracting cube ID at each level</li>
+     *   <li>Converting cube ID to local index using connectivity table</li>
+     *   <li>Packing 3-bit local indices to form complete SFC index</li>
+     * </ol>
+     *
+     * <p><b>CRITICAL:</b> The consecutive index encodes the complete path with NO level offset.</p>
+     * Each level contributes exactly 3 bits to the final index.
+     *
+     * <p><b>CRITICAL:</b> The consecutive index is not unique across levels. thus this index
+     * does <b>not</b> implement a space filling curve.  This index is not a replacement
+     * for the <code>tmIndex()</code> method.</p>
+     *
+     * @return the consecutive index (0 for root, 1-7 for level 1, etc.)
+     */
+    public long consecutiveIndex() {
+        // Try cache first for O(1) lookup
+        long cachedIndex = TetreeLevelCache.getCachedIndex(x, y, z, l, type);
+        if (cachedIndex != -1) {
+            return cachedIndex;
+        }
+
+        // Cache miss - compute index
+        long id = 0;
+        byte typeTemp = 0;
+        byte cid;
+        int i;
+        int exponent;
+
+        assert (0 <= l && l <= getMaxRefinementLevel());
+
+        exponent = 0;
+        typeTemp = computeType(l);
+
+        // Traverse from this level back to root
+        for (i = l; i > 0; i--) {
+            // Get cube position at this level
+            cid = cubeId((byte) i);
+
+            // Convert to local index using connectivity table
+            id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeTemp][cid]) << exponent;
+
+            // Each level adds 3 bits
+            exponent += 3;
+            typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
+        }
+
+        // Cache the result for future lookups
+        TetreeLevelCache.cacheIndex(x, y, z, l, type, id);
+
+        // Return the raw SFC index without level offset (matching t8code)
+        return id;
     }
 
     public boolean contains(Tuple3f point) {
@@ -1015,62 +1070,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return current.tmIndex().getTmIndex().longValue();
     }
 
-    /**
-     * Compute the consecutive index of this tetrahedron at this level.
-     *
-     * <p><b>Algorithm Overview:</b></p>
-     * Encodes the path from root to this tetrahedron by:
-     * <ol>
-     *   <li>Starting at this tetrahedron's level</li>
-     *   <li>Working backwards to root, extracting cube ID at each level</li>
-     *   <li>Converting cube ID to local index using connectivity table</li>
-     *   <li>Packing 3-bit local indices to form complete SFC index</li>
-     * </ol>
-     *
-     * <p><b>CRITICAL:</b> The index encodes the complete path with NO level offset.</p>
-     * Each level contributes exactly 3 bits to the final index.
-     *
-     * @return the consecutive SFC index (0 for root, 1-7 for level 1, etc.)
-     */
-    public long index() {
-        // Try cache first for O(1) lookup
-        long cachedIndex = TetreeLevelCache.getCachedIndex(x, y, z, l, type);
-        if (cachedIndex != -1) {
-            return cachedIndex;
-        }
-
-        // Cache miss - compute index
-        long id = 0;
-        byte typeTemp = 0;
-        byte cid;
-        int i;
-        int exponent;
-
-        assert (0 <= l && l <= getMaxRefinementLevel());
-
-        exponent = 0;
-        typeTemp = computeType(l);
-
-        // Traverse from this level back to root
-        for (i = l; i > 0; i--) {
-            // Get cube position at this level
-            cid = cubeId((byte) i);
-
-            // Convert to local index using connectivity table
-            id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeTemp][cid]) << exponent;
-
-            // Each level adds 3 bits
-            exponent += 3;
-            typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
-        }
-
-        // Cache the result for future lookups
-        TetreeLevelCache.cacheIndex(x, y, z, l, type, id);
-
-        // Return the raw SFC index without level offset (matching t8code)
-        return id;
-    }
-
     public long intersecting(Spatial volume) {
         // Simple implementation: find first intersecting tetrahedron
         var bounds = VolumeBounds.from(volume);
@@ -1193,26 +1192,25 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * Compute the TM-index (Tetrahedral Morton index) which is globally unique across all levels.
-     * Based on the algorithm from TMIndexSimple.tetToTMIndex().
-     * 
-     * The TM-index interleaves coordinate bits with tetrahedral type information,
-     * creating a space-filling curve index that includes both spatial position and
-     * the complete ancestor type hierarchy for global uniqueness.
+     * Compute the TM-index (Tetrahedral Morton index) which is globally unique across all levels. Based on the
+     * algorithm from TMIndexSimple.tetToTMIndex().
+     *
+     * The TM-index interleaves coordinate bits with tetrahedral type information, creating a space-filling curve index
+     * that includes both spatial position and the complete ancestor type hierarchy for global uniqueness.
      */
     public TetreeKey tmIndex() {
         if (l == 0) {
             return ROOT_TET;
         }
-        
+
         // For TM-index, we only process bits up to the current level
         // This matches the reference implementation behavior
         int maxBits = l;
-        
+
         // Get ancestor types by walking up the tree
         List<Byte> ancestorTypes = new ArrayList<>();
         Tet current = this;
-        
+
         // Collect types from parent up to root
         while (current.l() > 1) {
             current = current.parent();
@@ -1220,44 +1218,44 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                 ancestorTypes.addFirst(current.type());
             }
         }
-        
+
         // Build type array for the bits we'll process (ancestor types + current type)
         int[] typeArray = new int[maxBits];
-        
+
         // Fill ancestor types from the most significant bits
         for (int i = 0; i < ancestorTypes.size() && i < maxBits; i++) {
             typeArray[i] = ancestorTypes.get(i);
         }
-        
+
         // Set current type at the least significant position
         if (l > 0 && ancestorTypes.size() < maxBits) {
             typeArray[maxBits - 1] = type;
         }
-        
+
         // Build TM-index by interleaving coordinate bits with type information
         BigInteger index = BigInteger.ZERO;
         BigInteger sixty_four = BigInteger.valueOf(64);
-        
+
         // Process each bit position from most significant to least
         // For level L, we need to extract bits [MAX_LEVEL-1, MAX_LEVEL-2, ..., MAX_LEVEL-L]
-        
+
         for (int i = 0; i < maxBits; i++) {
             // Extract bit at position: start from highest significant bit for this level
             int bitPos = Constants.getMaxRefinementLevel() - 1 - i;
             int xBit = (x >> bitPos) & 1;
             int yBit = (y >> bitPos) & 1;
             int zBit = (z >> bitPos) & 1;
-            
+
             // Combine coordinate bits (z is MSB, x is LSB in this encoding)
             int coordBits = (zBit << 2) | (yBit << 1) | xBit;
-            
+
             // Combine with type bits: upper 3 bits are coords, lower 3 bits are type
             int sixBits = (coordBits << 3) | typeArray[i];
-            
+
             // Add to result
             index = index.multiply(sixty_four).add(BigInteger.valueOf(sixBits));
         }
-        
+
         return new TetreeKey(l, index);
     }
 
