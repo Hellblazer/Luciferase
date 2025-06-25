@@ -75,7 +75,7 @@ public class TetrahedralGeometryPerformanceTest {
 
         var tetIndex = testTetIndices.get(0);
         int intersections = 0;
-        var boundingSphere = EnhancedTetrahedralGeometry.getTetrahedronBoundingSphere(tetIndex);
+        var boundingSphere = TetrahedralGeometry.getTetrahedronBoundingSphere(tetIndex);
 
         // Test without early rejection
         long startTime = System.nanoTime();
@@ -92,7 +92,7 @@ public class TetrahedralGeometryPerformanceTest {
         int earlyRejections = 0;
         intersections = 0;
         for (Ray3D ray : missRays) {
-            if (!EnhancedTetrahedralGeometry.rayIntersectsSphere(ray, boundingSphere)) {
+            if (!TetrahedralGeometry.rayIntersectsSphere(ray, boundingSphere)) {
                 earlyRejections++;
                 continue;
             }
@@ -163,7 +163,7 @@ public class TetrahedralGeometryPerformanceTest {
 
         // Batch approach
         startTime = System.nanoTime();
-        var batchResults = EnhancedTetrahedralGeometry.batchRayIntersectsTetrahedron(rayBatch, tetIndex);
+        var batchResults = TetrahedralGeometry.batchRayIntersectsTetrahedron(rayBatch, tetIndex);
         int batchIntersectionCount = 0;
         for (var result : batchResults) {
             if (result.intersects) {
@@ -190,7 +190,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < 1000; i++) {
             var ray = testRays.get(i % testRays.size());
             var tetIndex = frequentTets[i % frequentTets.length];
-            EnhancedTetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
+            TetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
         }
         long firstPassTime = System.nanoTime() - startTime;
 
@@ -199,7 +199,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < 1000; i++) {
             var ray = testRays.get(i % testRays.size());
             var tetIndex = frequentTets[i % frequentTets.length];
-            EnhancedTetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
+            TetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
         }
         long secondPassTime = System.nanoTime() - startTime;
 
@@ -213,7 +213,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             var ray = testRays.get(i % testRays.size());
             var tetIndex = testTetIndices.get(i % testTetIndices.size());
-            EnhancedTetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
+            TetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
         }
 
         // Actual test
@@ -223,7 +223,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < TEST_ITERATIONS; i++) {
             var ray = testRays.get(i % testRays.size());
             var tetIndex = testTetIndices.get(i % testTetIndices.size());
-            var result = EnhancedTetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
+            var result = TetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tetIndex);
             if (result.intersects) {
                 intersectionCount++;
             }
@@ -244,7 +244,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             var ray = testRays.get(i % testRays.size());
             var tetIndex = testTetIndices.get(i % testTetIndices.size());
-            EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex);
+            TetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex);
         }
 
         // Actual test
@@ -254,7 +254,7 @@ public class TetrahedralGeometryPerformanceTest {
         for (int i = 0; i < TEST_ITERATIONS; i++) {
             Ray3D ray = testRays.get(i % testRays.size());
             var tetIndex = testTetIndices.get(i % testTetIndices.size());
-            if (EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex)) {
+            if (TetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetIndex)) {
                 intersectionCount++;
             }
         }

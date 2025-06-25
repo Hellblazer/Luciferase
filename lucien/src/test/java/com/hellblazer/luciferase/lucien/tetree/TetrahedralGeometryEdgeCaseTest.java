@@ -96,8 +96,8 @@ public class TetrahedralGeometryEdgeCaseTest {
             var standardResult = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetKey);
 
             // Test enhanced implementations
-            var cachedResult = EnhancedTetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tet.tmIndex());
-            var fastResult = EnhancedTetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetKey);
+            var cachedResult = TetrahedralGeometry.rayIntersectsTetrahedronCached(ray, tet.tmIndex());
+            var fastResult = TetrahedralGeometry.rayIntersectsTetrahedronFast(ray, tetKey);
 
             // Verify consistency
             assertEquals(standardResult.intersects, cachedResult.intersects,

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -53,10 +52,9 @@ public class TetreeEdgeNeighborTest {
 
         // Find the node containing our entity
         Tet rootTet = tetree.locateTetrahedron(p1, (byte) 0);
-        long rootIndex = rootTet.index();
+        TetreeKey rootKey = rootTet.tmIndex();
 
         // Test invalid edge indices
-        TetreeKey rootKey = new TetreeKey((byte) 0, BigInteger.valueOf(rootIndex));
         assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, -1));
         assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, 6));
         assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, 10));
@@ -81,16 +79,17 @@ public class TetreeEdgeNeighborTest {
         Tet tet2 = tetree.locateTetrahedron(p2, (byte) 2);
 
         // Check if they share any edges
+        TetreeKey tet1Key = tet1.tmIndex();
+        TetreeKey tet2Key = tet2.tmIndex();
+        
         for (int edge1 = 0; edge1 < 6; edge1++) {
-            List<TetreeKey> neighbors1 = tetree.findEdgeNeighbors(new TetreeKey((byte) 2, BigInteger.valueOf(tet1.index())), edge1);
+            List<TetreeKey> neighbors1 = tetree.findEdgeNeighbors(tet1Key, edge1);
             
-            TetreeKey tet2Key = new TetreeKey((byte) 2, BigInteger.valueOf(tet2.index()));
             if (neighbors1.contains(tet2Key)) {
                 // If tet2 is an edge neighbor of tet1, then tet1 should be an edge neighbor of tet2
                 boolean foundSymmetric = false;
                 for (int edge2 = 0; edge2 < 6; edge2++) {
                     List<TetreeKey> neighbors2 = tetree.findEdgeNeighbors(tet2Key, edge2);
-                    TetreeKey tet1Key = new TetreeKey((byte) 2, BigInteger.valueOf(tet1.index()));
                     if (neighbors2.contains(tet1Key)) {
                         foundSymmetric = true;
                         break;
@@ -116,11 +115,11 @@ public class TetreeEdgeNeighborTest {
 
         // Find a tetrahedron at level 1
         Tet tet1 = tetree.locateTetrahedron(p1, (byte) 1);
-        long tetIndex = tet1.index();
+        TetreeKey tetKey = tet1.tmIndex();
 
         // Test all 6 edges (0-5)
         for (int edge = 0; edge < 6; edge++) {
-            List<TetreeKey> edgeNeighbors = tetree.findEdgeNeighbors(new TetreeKey((byte) 1, BigInteger.valueOf(tetIndex)), edge);
+            List<TetreeKey> edgeNeighbors = tetree.findEdgeNeighbors(tetKey, edge);
             assertNotNull(edgeNeighbors, "Edge neighbors should not be null for edge " + edge);
 
             // At minimum, neighbors should include face neighbors that share the edge
@@ -224,12 +223,12 @@ public class TetreeEdgeNeighborTest {
         // Pick a central tetrahedron
         Point3f center = new Point3f(400, 400, 400);
         Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
-        long centerIndex = centerTet.index();
+        TetreeKey centerKey = centerTet.tmIndex();
 
         // In a dense configuration, we expect more edge neighbors
         int totalEdgeNeighbors = 0;
         for (int edge = 0; edge < 6; edge++) {
-            List<TetreeKey> neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte) 3, BigInteger.valueOf(centerIndex)), edge);
+            List<TetreeKey> neighbors = tetree.findEdgeNeighbors(centerKey, edge);
             totalEdgeNeighbors += neighbors.size();
         }
 

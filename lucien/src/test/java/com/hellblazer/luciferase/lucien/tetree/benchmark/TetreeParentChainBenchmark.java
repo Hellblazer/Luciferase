@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.lucien.tetree.benchmark;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeBits;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
-import com.hellblazer.luciferase.lucien.tetree.TetreeLevelCache;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
@@ -31,12 +31,12 @@ import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 /**
- * JMH Benchmark comparing original O(level) parent chain traversal vs optimized O(1) cached version.
+ * JMH Benchmark for parent chain traversal performance.
  * 
- * Demonstrates performance improvements in:
- * - Parent chain traversal (O(level) -> O(1) for cached entries)
- * - Type computation along parent chain (O(level) -> O(1))
- * - Ancestor queries at different levels
+ * Measures performance of:
+ * - Parent chain traversal at different levels
+ * - Type computation along parent chain
+ * - Ancestor queries at different depths
  * 
  * @author hal.hildebrand
  */
@@ -78,9 +78,9 @@ public class TetreeParentChainBenchmark {
         }
         
         private void warmupCache() {
-            // Warm up cache with some parent chain computations
+            // Warm up JVM with some parent chain computations
             for (int i = 0; i < 10; i++) {
-                computeParentChainCached(deepTets[i]);
+                computeParentChainOriginal(deepTets[i]);
             }
         }
     }
@@ -90,18 +90,18 @@ public class TetreeParentChainBenchmark {
     /**
      * Original parent chain computation - O(level)
      */
-    private static long[] computeParentChainOriginal(Tet tet) {
+    private static TetreeKey[] computeParentChainOriginal(Tet tet) {
         byte level = tet.l();
-        long[] chain = new long[level + 1];
+        TetreeKey[] chain = new TetreeKey[level + 1];
         
-        // Start with current index
-        chain[0] = tet.index();
+        // Start with current tmIndex
+        chain[0] = tet.tmIndex();
         
         // Compute each parent up to root
         Tet current = tet;
         for (int i = 1; i <= level; i++) {
             current = computeParentOriginal(current);
-            chain[i] = current.index();
+            chain[i] = current.tmIndex();
         }
         
         return chain;
@@ -157,40 +157,6 @@ public class TetreeParentChainBenchmark {
         return (byte) ((childType + childIndex) % 6);
     }
     
-    // ====== Optimized O(1) implementations ======
-    
-    /**
-     * Cached parent chain computation - O(1) for cached entries, O(level) otherwise
-     */
-    private static long[] computeParentChainCached(Tet tet) {
-        long index = tet.index();
-        byte level = tet.l();
-        
-        // Check cache first
-        long[] cached = TetreeLevelCache.getParentChain(index, level);
-        if (cached != null) {
-            return cached; // O(1) cache hit
-        }
-        
-        // Cache miss - compute and cache
-        long[] chain = computeParentChainOriginal(tet);
-        TetreeLevelCache.cacheParentChain(index, level, chain);
-        return chain;
-    }
-    
-    /**
-     * Cached type computation - O(1) lookup
-     */
-    private static byte computeTypeAtLevelCached(Tet tet, byte targetLevel) {
-        byte cachedType = TetreeLevelCache.getTypeAtLevel(tet.type(), tet.l(), targetLevel);
-        if (cachedType != -1) {
-            return cachedType; // O(1) cache hit
-        }
-        
-        // Cache miss - compute using original method
-        return computeTypeAtLevelOriginal(tet, targetLevel);
-    }
-    
     // ====== Benchmarks ======
     
     // --- Parent chain computation benchmarks ---
@@ -199,18 +165,8 @@ public class TetreeParentChainBenchmark {
     public long originalShallowParentChain(BenchmarkState state) {
         long sum = 0;
         for (Tet tet : state.shallowTets) {
-            long[] chain = computeParentChainOriginal(tet);
-            sum += chain[chain.length - 1]; // Use result to prevent optimization
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long cachedShallowParentChain(BenchmarkState state) {
-        long sum = 0;
-        for (Tet tet : state.shallowTets) {
-            long[] chain = computeParentChainCached(tet);
-            sum += chain[chain.length - 1];
+            TetreeKey[] chain = computeParentChainOriginal(tet);
+            sum += chain[chain.length - 1].getTmIndex().longValue(); // Use result to prevent optimization
         }
         return sum;
     }
@@ -219,18 +175,8 @@ public class TetreeParentChainBenchmark {
     public long originalMediumParentChain(BenchmarkState state) {
         long sum = 0;
         for (Tet tet : state.mediumTets) {
-            long[] chain = computeParentChainOriginal(tet);
-            sum += chain[chain.length - 1];
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long cachedMediumParentChain(BenchmarkState state) {
-        long sum = 0;
-        for (Tet tet : state.mediumTets) {
-            long[] chain = computeParentChainCached(tet);
-            sum += chain[chain.length - 1];
+            TetreeKey[] chain = computeParentChainOriginal(tet);
+            sum += chain[chain.length - 1].getTmIndex().longValue();
         }
         return sum;
     }
@@ -239,18 +185,8 @@ public class TetreeParentChainBenchmark {
     public long originalDeepParentChain(BenchmarkState state) {
         long sum = 0;
         for (Tet tet : state.deepTets) {
-            long[] chain = computeParentChainOriginal(tet);
-            sum += chain[chain.length - 1];
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long cachedDeepParentChain(BenchmarkState state) {
-        long sum = 0;
-        for (Tet tet : state.deepTets) {
-            long[] chain = computeParentChainCached(tet);
-            sum += chain[chain.length - 1];
+            TetreeKey[] chain = computeParentChainOriginal(tet);
+            sum += chain[chain.length - 1].getTmIndex().longValue();
         }
         return sum;
     }
@@ -269,18 +205,6 @@ public class TetreeParentChainBenchmark {
         return sum;
     }
     
-    @Benchmark
-    public int cachedTypeComputation(BenchmarkState state) {
-        int sum = 0;
-        for (Tet tet : state.deepTets) {
-            // Compute type at various ancestor levels
-            sum += computeTypeAtLevelCached(tet, (byte) 0);
-            sum += computeTypeAtLevelCached(tet, (byte) (tet.l() / 2));
-            sum += computeTypeAtLevelCached(tet, tet.l());
-        }
-        return sum;
-    }
-    
     // --- Single parent computation benchmarks ---
     
     @Benchmark
@@ -290,31 +214,14 @@ public class TetreeParentChainBenchmark {
         return computeParentOriginal(state.deepTets[0]);
     }
     
-    @Benchmark
-    @BenchmarkMode(Mode.Throughput)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public long cachedSingleParent(BenchmarkState state) {
-        // Using cached parent chain to get immediate parent
-        long[] chain = computeParentChainCached(state.deepTets[0]);
-        return chain.length > 1 ? chain[1] : chain[0];
-    }
-    
     // --- Worst case scenario: deep trees ---
     
     @Benchmark
     public long originalWorstCase() {
         // Create a very deep tetrahedron (level 21)
         Tet deepTet = new Tet(1048576, 1048576, 1048576, (byte) 21, (byte) 0);
-        long[] chain = computeParentChainOriginal(deepTet);
-        return chain[chain.length - 1];
-    }
-    
-    @Benchmark
-    public long cachedWorstCase() {
-        // Create a very deep tetrahedron (level 21)
-        Tet deepTet = new Tet(1048576, 1048576, 1048576, (byte) 21, (byte) 0);
-        long[] chain = computeParentChainCached(deepTet);
-        return chain[chain.length - 1];
+        TetreeKey[] chain = computeParentChainOriginal(deepTet);
+        return chain[chain.length - 1].getTmIndex().longValue();
     }
     
     // ====== Main method to run benchmark ======

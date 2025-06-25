@@ -22,7 +22,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
-import java.math.BigInteger;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -90,10 +89,9 @@ public class TetreeEnhancedIteratorTest {
         // Find a leaf node
         Point3f leafPoint = new Point3f(612, 612, 612);
         Tet leafTet = tetree.locateTetrahedron(leafPoint, (byte) 3);
-        long leafIndex = leafTet.index();
+        TetreeKey leafKey = leafTet.tmIndex();
 
         // Test parent-child iterator
-        TetreeKey leafKey = new TetreeKey((byte)3, BigInteger.valueOf(leafIndex));
         
         // First check if the node actually exists in the tree
         boolean nodeExists = tetree.hasNode(leafKey);
@@ -132,11 +130,11 @@ public class TetreeEnhancedIteratorTest {
         // Find a tetrahedron with siblings
         Point3f testPoint = new Point3f(400, 400, 400);
         Tet testTet = tetree.locateTetrahedron(testPoint, (byte) 2);
-        long testIndex = testTet.index();
+        TetreeKey testKey = testTet.tmIndex();
 
         // Get siblings
         List<TetreeNodeImpl<LongEntityID>> siblings = new ArrayList<>();
-        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.siblingIterator(new TetreeKey((byte)2, BigInteger.valueOf(testIndex)));
+        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.siblingIterator(testKey);
         while (iter.hasNext()) {
             siblings.add(iter.next());
         }
@@ -203,10 +201,10 @@ public class TetreeEnhancedIteratorTest {
 
         // Find a node to validate its subtree
         Tet rootTet = tetree.locateTetrahedron(p1, (byte) 2);
-        long rootIndex = rootTet.index();
+        TetreeKey rootKey = rootTet.tmIndex();
 
         // Validate the subtree
-        TetreeValidator.ValidationResult result = tetree.validateSubtree(new TetreeKey((byte)2, BigInteger.valueOf(rootIndex)));
+        TetreeValidator.ValidationResult result = tetree.validateSubtree(rootKey);
         
         assertNotNull(result);
         // The validation should pass for a correctly constructed tree
