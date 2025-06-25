@@ -334,46 +334,80 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      * @return Set of neighbor node indices within the distance
      */
     public Set<TetreeNodeImpl<ID>> findNeighborsWithinDistance(TetreeKey tetIndex, float distance) {
-        Tet tet = Tet.tetrahedron(tetIndex);
-        Point3i[] vertices = tet.coordinates();
-
-        // Calculate centroid of tetrahedron
-        float centerX = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
-        float centerY = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
-        float centerZ = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
-
         Set<TetreeNodeImpl<ID>> neighbors = new HashSet<>();
 
-        // Manually search through all nodes (since findIntersectingNodes doesn't exist)
         lock.readLock().lock();
         try {
-            for (var entry : spatialIndex.entrySet()) {
-                if (!entry.getValue().isEmpty()) {
-                    var candidateTet = Tet.tetrahedron(entry.getKey());
-                    var candidateVertices = candidateTet.coordinates();
+            // Get the reference node
+            TetreeNodeImpl<ID> referenceNode = spatialIndex.get(tetIndex);
+            if (referenceNode == null || referenceNode.isEmpty()) {
+                return neighbors; // No entities in reference node
+            }
 
-                    // Calculate centroid of candidate
-                    var candX =
-                    (candidateVertices[0].x + candidateVertices[1].x + candidateVertices[2].x + candidateVertices[3].x)
-                    / 4.0f;
-                    var candY =
-                    (candidateVertices[0].y + candidateVertices[1].y + candidateVertices[2].y + candidateVertices[3].y)
-                    / 4.0f;
-                    var candZ =
-                    (candidateVertices[0].z + candidateVertices[1].z + candidateVertices[2].z + candidateVertices[3].z)
-                    / 4.0f;
-
-                    // Check distance
-                    var dx = centerX - candX;
-                    var dy = centerY - candY;
-                    var dz = centerZ - candZ;
-                    var distSq = dx * dx + dy * dy + dz * dz;
-
-                    if (distSq <= distance * distance) {
-                        neighbors.add(entry.getValue());
-                    }
+            // Get all entity positions in the reference node
+            List<Point3f> referencePositions = new ArrayList<>();
+            for (ID entityId : referenceNode.getEntityIds()) {
+                Point3f entityPos = entityManager.getEntityPosition(entityId);
+                if (entityPos != null) {
+                    referencePositions.add(entityPos);
                 }
             }
+
+            if (referencePositions.isEmpty()) {
+                return neighbors; // No valid entity positions
+            }
+
+            // Calculate bounding box around all reference entities
+            float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
+            float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
+            float minZ = Float.MAX_VALUE, maxZ = Float.MIN_VALUE;
+
+            for (Point3f pos : referencePositions) {
+                minX = Math.min(minX, pos.x);
+                maxX = Math.max(maxX, pos.x);
+                minY = Math.min(minY, pos.y);
+                maxY = Math.max(maxY, pos.y);
+                minZ = Math.min(minZ, pos.z);
+                maxZ = Math.max(maxZ, pos.z);
+            }
+
+            // Expand bounding box by distance
+            VolumeBounds searchBounds = new VolumeBounds(
+                minX - distance, minY - distance, minZ - distance,
+                maxX + distance, maxY + distance, maxZ + distance
+            );
+
+            // Use spatial range query to find candidate nodes
+            spatialRangeQuery(searchBounds, true).forEach(entry -> {
+                TetreeNodeImpl<ID> node = entry.getValue();
+                if (node != null && !node.isEmpty()) {
+                    boolean hasNearbyEntity = false;
+
+                    // Check if any entity in this node is within distance of any reference entity
+                    for (ID entityId : node.getEntityIds()) {
+                        Point3f entityPos = entityManager.getEntityPosition(entityId);
+                        if (entityPos != null) {
+                            // Check distance to any reference entity
+                            for (Point3f refPos : referencePositions) {
+                                float dx = refPos.x - entityPos.x;
+                                float dy = refPos.y - entityPos.y;
+                                float dz = refPos.z - entityPos.z;
+                                float distSq = dx * dx + dy * dy + dz * dz;
+
+                                if (distSq <= distance * distance) {
+                                    hasNearbyEntity = true;
+                                    break;
+                                }
+                            }
+                            if (hasNearbyEntity) break;
+                        }
+                    }
+
+                    if (hasNearbyEntity) {
+                        neighbors.add(node);
+                    }
+                }
+            });
         } finally {
             lock.readLock().unlock();
         }
@@ -921,40 +955,121 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         levelStream(level).forEach(visitor);
     }
 
+    /**
+     * Override collision detection for tetree to use spatial range queries instead of neighbor search.
+     * Tetrahedral SFC means spatially close entities may not be in structurally neighboring nodes.
+     */
+    @Override
+    public List<CollisionPair<ID, Content>> findCollisions(ID entityId) {
+        lock.readLock().lock();
+        try {
+            List<CollisionPair<ID, Content>> collisions = new ArrayList<>();
+
+            // Get entity position for spatial range query
+            Point3f entityPos = entityManager.getEntityPosition(entityId);
+            if (entityPos == null) {
+                return collisions;
+            }
+
+            EntityBounds entityBounds = entityManager.getEntityBounds(entityId);
+            float searchRadius = 0.1f; // Standard collision threshold for point entities
+
+            if (entityBounds != null) {
+                // For bounded entities, use the bounds for collision detection
+                var nodesToCheck = findNodesIntersectingBounds(entityBounds);
+                Set<ID> checkedEntities = new HashSet<>();
+                checkedEntities.add(entityId);
+
+                for (var nodeIndex : nodesToCheck) {
+                    TetreeNodeImpl<ID> node = spatialIndex.get(nodeIndex);
+                    if (node == null || node.isEmpty()) {
+                        continue;
+                    }
+
+                    for (ID otherId : node.getEntityIds()) {
+                        if (!checkedEntities.add(otherId)) {
+                            continue;
+                        }
+                        var collision = checkCollision(entityId, otherId);
+                        collision.ifPresent(collisions::add);
+                    }
+                }
+            } else {
+                // For point entities, use spatial range query with collision threshold
+                VolumeBounds searchBounds = new VolumeBounds(
+                    entityPos.x - searchRadius, entityPos.y - searchRadius, entityPos.z - searchRadius,
+                    entityPos.x + searchRadius, entityPos.y + searchRadius, entityPos.z + searchRadius
+                );
+
+                // Find all nodes within the search bounds
+                Set<ID> checkedEntities = new HashSet<>();
+                checkedEntities.add(entityId);
+
+                spatialRangeQuery(searchBounds, true).forEach(entry -> {
+                    TetreeKey nodeIndex = entry.getKey();
+                    TetreeNodeImpl<ID> node = entry.getValue();
+                    if (node == null || node.isEmpty()) {
+                        return;
+                    }
+
+                    for (ID otherId : node.getEntityIds()) {
+                        if (!checkedEntities.add(otherId)) {
+                            continue; // Continue to next entity in this node
+                        }
+                        var collision = checkCollision(entityId, otherId);
+                        collision.ifPresent(collisions::add);
+                    }
+                });
+            }
+
+            Collections.sort(collisions);
+            return collisions;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     @Override
     protected void addNeighboringNodes(TetreeKey tetIndex, Queue<TetreeKey> toVisit, Set<TetreeKey> visitedNodes) {
+        // For tetree, use spatial coordinate-based neighbor search for k-NN queries
         Tet currentTet = Tet.tetrahedron(tetIndex);
-
-        // Use proper neighbor finding instead of grid-based approach
-        var neighborFinder = getNeighborFinder();
-        var neighbors = neighborFinder.findAllNeighbors(currentTet);
-
-        for (Tet neighbor : neighbors) {
-            var neighborIndex = neighbor.tmIndex();
-            if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
-                toVisit.add(neighborIndex);
-            }
-        }
-
-        // Also check neighbors at different levels for multi-level support
-        // Check one level coarser
-        if (currentTet.l() > 0) {
-            var coarserNeighbors = neighborFinder.findNeighborsAtLevel(currentTet, (byte) (currentTet.l() - 1));
-            for (var neighbor : coarserNeighbors) {
-                var neighborIndex = neighbor.tmIndex();
-                if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
-                    toVisit.add(neighborIndex);
-                }
-            }
-        }
-
-        // Check one level finer
-        if (currentTet.l() < Constants.getMaxRefinementLevel()) {
-            var finerNeighbors = neighborFinder.findNeighborsAtLevel(currentTet, (byte) (currentTet.l() + 1));
-            for (var neighbor : finerNeighbors) {
-                var neighborIndex = neighbor.tmIndex();
-                if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
-                    toVisit.add(neighborIndex);
+        byte level = currentTet.l();
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Use a smaller search radius for k-NN neighbor finding
+        int searchRadius = 1; // Check immediate neighbors only for k-NN
+        
+        // Check all neighbors within search radius
+        for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (int dy = -searchRadius; dy <= searchRadius; dy++) {
+                for (int dz = -searchRadius; dz <= searchRadius; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue; // Skip center (current node)
+                    }
+                    
+                    int nx = currentTet.x() + dx * cellSize;
+                    int ny = currentTet.y() + dy * cellSize; 
+                    int nz = currentTet.z() + dz * cellSize;
+                    
+                    // Check bounds (must be within valid coordinate range)
+                    if (nx >= 0 && ny >= 0 && nz >= 0 && 
+                        nx <= Constants.MAX_COORD && ny <= Constants.MAX_COORD && nz <= Constants.MAX_COORD) {
+                        
+                        // Find all tetrahedra in this grid cell
+                        // Each grid cell contains 6 tetrahedra (types 0-5)
+                        for (byte tetType = 0; tetType < TetreeConnectivity.TET_TYPES; tetType++) {
+                            try {
+                                var neighborTet = new Tet(nx, ny, nz, level, tetType);
+                                var neighborIndex = neighborTet.tmIndex();
+                                
+                                if (!visitedNodes.contains(neighborIndex) && spatialIndex.containsKey(neighborIndex)) {
+                                    toVisit.add(neighborIndex);
+                                }
+                            } catch (Exception e) {
+                                // Invalid tetrahedron or out of bounds - skip
+                            }
+                        }
+                    }
                 }
             }
         }
