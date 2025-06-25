@@ -22,6 +22,8 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.Test;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import java.math.BigInteger;
 
 import java.lang.reflect.Field;
 import java.util.NavigableSet;
@@ -111,19 +113,19 @@ public class OptimizationVerificationTest {
         int iterations = 10000;
         
         // Test TreeSet vs SpatialIndexSet
-        TreeSet<Long> treeSet = new TreeSet<>();
+        TreeSet<TetreeKey> treeSet = new TreeSet<>();
         SpatialIndexSet spatialSet = new SpatialIndexSet();
         
         // Add performance
         long start = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            treeSet.add((long) i);
+            treeSet.add(new TetreeKey((byte)10, java.math.BigInteger.valueOf(i)));
         }
         long treeSetAddTime = System.nanoTime() - start;
         
         start = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            spatialSet.add((long) i);
+            spatialSet.add(new TetreeKey((byte)10, java.math.BigInteger.valueOf(i)));
         }
         long spatialSetAddTime = System.nanoTime() - start;
         
@@ -136,14 +138,14 @@ public class OptimizationVerificationTest {
         start = System.nanoTime();
         boolean found = false;
         for (int i = 0; i < iterations; i++) {
-            found |= treeSet.contains((long) (i / 2));
+            found |= treeSet.contains(new TetreeKey((byte)10, BigInteger.valueOf(i / 2)));
         }
         long treeSetContainsTime = System.nanoTime() - start;
         
         start = System.nanoTime();
         found = false;
         for (int i = 0; i < iterations; i++) {
-            found |= spatialSet.contains((long) (i / 2));
+            found |= spatialSet.contains(new TetreeKey((byte)10, BigInteger.valueOf(i / 2)));
         }
         long spatialSetContainsTime = System.nanoTime() - start;
         

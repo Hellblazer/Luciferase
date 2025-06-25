@@ -58,12 +58,12 @@ public final class TetreeValidator {
      * @param nodeIndices the node indices to analyze
      * @return tree statistics
      */
-    public static TreeStats analyzeTreeIndices(Collection<Long> nodeIndices) {
+    public static TreeStats analyzeTreeIndices(Collection<TetreeKey> nodeIndices) {
         // Collect level statistics
         Map<Byte, Long> levelCounts = new HashMap<>();
-        Map<Byte, List<Long>> levelNodes = new HashMap<>();
+        Map<Byte, List<TetreeKey>> levelNodes = new HashMap<>();
 
-        for (Long index : nodeIndices) {
+        for (var index : nodeIndices) {
             Tet tet = Tet.tetrahedron(index);
             byte level = tet.l();
             levelCounts.merge(level, 1L, Long::sum);
@@ -133,13 +133,13 @@ public final class TetreeValidator {
     /**
      * Calculate balance factor for the tree. Lower values indicate better balance.
      */
-    private static double calculateBalanceFactor(Map<Byte, List<Long>> levelNodes, byte maxDepth) {
+    private static double calculateBalanceFactor(Map<Byte, List<TetreeKey>> levelNodes, byte maxDepth) {
         if (maxDepth == 0) {
             return 0.0;
         }
 
         // Get leaf nodes (nodes at max depth or with no children)
-        List<Long> leafNodes = levelNodes.getOrDefault(maxDepth, new ArrayList<>());
+        var leafNodes = levelNodes.getOrDefault(maxDepth, new ArrayList<>());
 
         if (leafNodes.isEmpty()) {
             return 0.0;
@@ -211,8 +211,12 @@ public final class TetreeValidator {
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             try {
                 Tet.FaceNeighbor neighbor = tet.faceNeighbor(face);
-                sb.append(
-                String.format("  Face %d: %s (face %d)\n", face, describeTet(neighbor.tet()), neighbor.face()));
+                if (neighbor == null) {
+                    sb.append(String.format("  Face %d: BOUNDARY (outside positive octant)\n", face));
+                } else {
+                    sb.append(
+                    String.format("  Face %d: %s (face %d)\n", face, describeTet(neighbor.tet()), neighbor.face()));
+                }
             } catch (Exception e) {
                 sb.append(String.format("  Face %d: ERROR - %s\n", face, e.getMessage()));
             }
@@ -281,7 +285,7 @@ public final class TetreeValidator {
         // Check if tet2 is a face neighbor of tet1
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             Tet.FaceNeighbor neighbor = tet1.faceNeighbor(face);
-            if (neighbor.tet().equals(tet2)) {
+            if (neighbor != null && neighbor.tet().equals(tet2)) {
                 return true;
             }
         }
@@ -289,7 +293,7 @@ public final class TetreeValidator {
         // Check reverse direction
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             Tet.FaceNeighbor neighbor = tet2.faceNeighbor(face);
-            if (neighbor.tet().equals(tet1)) {
+            if (neighbor != null && neighbor.tet().equals(tet1)) {
                 return true;
             }
         }
@@ -446,7 +450,7 @@ public final class TetreeValidator {
      * @param nodeIndices the node indices to validate
      * @return validation result with any errors found
      */
-    public static ValidationResult validateTreeStructure(Collection<Long> nodeIndices) {
+    public static ValidationResult validateTreeStructure(Collection<TetreeKey> nodeIndices) {
         if (!validationEnabled) {
             return ValidationResult.valid();
         }
@@ -454,7 +458,7 @@ public final class TetreeValidator {
         List<String> errors = new ArrayList<>();
 
         // Check each node
-        for (Long index : nodeIndices) {
+        for (var index : nodeIndices) {
             try {
                 Tet tet = Tet.tetrahedron(index);
                 validateTet(tet);

@@ -88,7 +88,7 @@ public class ConcurrentSpatialIndexTest {
         performConcurrentMixedOperations(tetree, "Tetree");
     }
 
-    private void performConcurrentInserts(SpatialIndex<LongEntityID, String> index, String indexType)
+    private void performConcurrentInserts(SpatialIndex<?, LongEntityID, String> index, String indexType)
     throws InterruptedException {
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch endLatch = new CountDownLatch(THREAD_COUNT);
@@ -149,7 +149,7 @@ public class ConcurrentSpatialIndexTest {
         }
     }
 
-    private void performConcurrentKNNSearch(AbstractSpatialIndex<LongEntityID, String, ?> index, String indexType)
+    private void performConcurrentKNNSearch(AbstractSpatialIndex<?, LongEntityID, String, ?> index, String indexType)
     throws InterruptedException {
         // Pre-populate with entities in a grid
         for (int x = 0; x < 10; x++) {
@@ -223,7 +223,7 @@ public class ConcurrentSpatialIndexTest {
         assertTrue(successCount.get() > 0, "At least some k-NN searches should succeed");
     }
 
-    private void performConcurrentMixedOperations(SpatialIndex<LongEntityID, String> index, String indexType)
+    private void performConcurrentMixedOperations(SpatialIndex<?, LongEntityID, String> index, String indexType)
     throws InterruptedException {
         // Pre-populate with some entities
         for (int i = 0; i < 1000; i++) {

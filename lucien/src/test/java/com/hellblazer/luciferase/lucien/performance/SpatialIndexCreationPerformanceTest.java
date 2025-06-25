@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, Content> extends AbstractSpatialIndexPerformanceTest<ID, Content> {
+public abstract class SpatialIndexCreationPerformanceTest<Key extends com.hellblazer.luciferase.lucien.SpatialKey<Key>, ID extends com.hellblazer.luciferase.lucien.entity.EntityID, Content> extends AbstractSpatialIndexPerformanceTest<Key, ID, Content> {
     
     private static final byte DEFAULT_LEVEL = 10;
     
@@ -61,7 +61,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
             size,
             () -> {}, // No setup needed
             () -> {
-                SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 for (TestEntity entity : entities) {
                     index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                 }
@@ -100,7 +100,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
                 "incremental_insertion_baseline",
                 size,
                 () -> {
-                    SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                    SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                     for (TestEntity entity : entities) {
                         index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                     }
@@ -112,7 +112,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
                 "bulk_insertion_basic",
                 size,
                 () -> {
-                    SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                    SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                     index.insertBatch(positions, contents, DEFAULT_LEVEL);
                 }
             );
@@ -122,10 +122,10 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
                 "bulk_insertion_optimized",
                 size,
                 () -> {
-                    SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                    SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                     // Enable optimizations if supported by AbstractSpatialIndex
                     if (index instanceof com.hellblazer.luciferase.lucien.AbstractSpatialIndex) {
-                        var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<ID, Content, ?>) index;
+                        var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<Key, ID, Content, ?>) index;
                         // Pre-allocate nodes for better performance
                         abstractIndex.preAllocateAdaptive(positions.subList(0, Math.min(1000, size)), size, DEFAULT_LEVEL);
                     }
@@ -140,10 +140,10 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
                     "bulk_insertion_parallel",
                     size,
                     () -> {
-                        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                         try {
                             if (index instanceof com.hellblazer.luciferase.lucien.AbstractSpatialIndex) {
-                                var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<ID, Content, ?>) index;
+                                var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<Key, ID, Content, ?>) index;
                                 abstractIndex.insertBatchParallel(positions, contents, DEFAULT_LEVEL);
                             } else {
                                 // Fallback to regular bulk insertion
@@ -218,7 +218,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
             "sorted_insertion",
             size,
             () -> {
-                SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 for (TestEntity entity : sortedEntities) {
                     index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                 }
@@ -230,7 +230,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
             "random_insertion",
             size,
             () -> {
-                SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 for (TestEntity entity : randomEntities) {
                     index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                 }
@@ -254,7 +254,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
             "creation_scalability",
             size,
             () -> {
-                SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 for (TestEntity entity : entities) {
                     index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                 }
@@ -284,7 +284,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
                 "memory_usage",
                 size,
                 () -> {
-                    SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                    SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                     for (TestEntity entity : entities) {
                         index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                     }
@@ -313,7 +313,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
             "worst_case_creation",
             size,
             () -> {
-                SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 for (TestEntity entity : entities) {
                     index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                 }
@@ -326,7 +326,7 @@ public abstract class SpatialIndexCreationPerformanceTest<ID extends com.hellbla
             "uniform_creation",
             size,
             () -> {
-                SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+                SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 for (TestEntity entity : uniformEntities) {
                     index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
                 }

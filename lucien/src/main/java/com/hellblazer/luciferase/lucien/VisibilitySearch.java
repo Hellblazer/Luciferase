@@ -275,7 +275,7 @@ public class VisibilitySearch {
         // Get all entities with their positions
         Map<ID, Point3f> entitiesWithPositions = octree.getEntitiesWithPositions();
 
-        for (Map.Entry<ID, Point3f> entry : entitiesWithPositions.entrySet()) {
+        for (var entry : entitiesWithPositions.entrySet()) {
             ID entityId = entry.getKey();
             Point3f entityPos = entry.getValue();
 
@@ -297,7 +297,7 @@ public class VisibilitySearch {
                 EntityLineOfSightResult<ID, Content> losResult = testLineOfSight(observer, entityPos, octree, 0.1f);
 
                 if (losResult.hasLineOfSight || isEntitySelfVisible(entityId, losResult)) {
-                    Content content = octree.getEntity(entityId);
+                    var content = octree.getEntity(entityId);
                     if (content != null) {
                         // Calculate distance to target point along view direction
                         Point3f targetPoint = new Point3f();

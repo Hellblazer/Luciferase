@@ -17,16 +17,18 @@
 package com.hellblazer.luciferase.lucien.visitor;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 /**
  * Visitor interface for traversing spatial tree structures. Supports both pre-order and post-order traversal patterns.
  *
+ * @param <Key>     The type of spatial key used in the index
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public interface TreeVisitor<ID extends EntityID, Content> {
+public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     /**
      * Called before traversal begins.
@@ -64,7 +66,7 @@ public interface TreeVisitor<ID extends EntityID, Content> {
      * @param level      The depth level of this node
      * @param childCount Number of child nodes that were visited
      */
-    default void leaveNode(SpatialNode<ID> node, int level, int childCount) {
+    default void leaveNode(SpatialNode<Key, ID> node, int level, int childCount) {
         // Default: do nothing
     }
 
@@ -85,7 +87,7 @@ public interface TreeVisitor<ID extends EntityID, Content> {
      * @param nodeIndex The spatial index of the containing node
      * @param level     The depth level of the containing node
      */
-    default void visitEntity(ID entityId, Content content, long nodeIndex, int level) {
+    default void visitEntity(ID entityId, Content content, Key nodeIndex, int level) {
         // Default: do nothing
     }
 
@@ -94,8 +96,8 @@ public interface TreeVisitor<ID extends EntityID, Content> {
      *
      * @param node        The spatial node being visited
      * @param level       The depth level of this node (0 = root)
-     * @param parentIndex The parent node's spatial index (-1 for root)
+     * @param parentIndex The parent node's spatial index (null for root)
      * @return true to continue traversing children, false to skip children
      */
-    boolean visitNode(SpatialNode<ID> node, int level, long parentIndex);
+    boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex);
 }

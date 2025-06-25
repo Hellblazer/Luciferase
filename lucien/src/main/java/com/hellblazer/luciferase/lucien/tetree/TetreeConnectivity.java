@@ -36,6 +36,9 @@ public final class TetreeConnectivity {
     // Number of vertices per tetrahedron
     public static final int VERTICES_PER_TET = 4;
 
+    // Number of edges per tetrahedron
+    public static final int EDGES_PER_TET = 6;
+
     // Number of vertices per face
     public static final int VERTICES_PER_FACE = 3;
 

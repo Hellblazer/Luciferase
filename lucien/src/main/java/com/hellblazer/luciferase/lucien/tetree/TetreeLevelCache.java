@@ -46,16 +46,16 @@ public final class TetreeLevelCache {
     // Maximum value: (5 << 16) | (21 << 8) | 21 = 327680 + 5376 + 21 = 333077
     private static final byte[] TYPE_TRANSITION_CACHE = new byte[6 * 256 * 256]; // 6 types * 256 levels * 256 levels
     // De Bruijn lookup table for 64-bit integers
-    private static final int[] DeBruijnTable = { 0, 1, 48, 2, 57, 49, 28, 3, 61, 58, 50, 42, 38, 29, 17, 4, 62, 55, 59,
-                                                 36, 53, 51, 43, 22, 45, 39, 33, 30, 24, 18, 12, 5, 63, 47, 56, 27, 60,
-                                                 41, 37, 16, 54, 35, 52, 21, 44, 32, 23, 11, 46, 26, 40, 15, 34, 20, 31,
-                                                 10, 25, 14, 19, 9, 13, 8, 7, 6 };
+    private static final int[]  DeBruijnTable         = { 0, 1, 48, 2, 57, 49, 28, 3, 61, 58, 50, 42, 38, 29, 17, 4, 62,
+                                                          55, 59, 36, 53, 51, 43, 22, 45, 39, 33, 30, 24, 18, 12, 5, 63,
+                                                          47, 56, 27, 60, 41, 37, 16, 54, 35, 52, 21, 44, 32, 23, 11,
+                                                          46, 26, 40, 15, 34, 20, 31, 10, 25, 14, 19, 9, 13, 8, 7, 6 };
     /**
      * Cache an SFC index computation result. For frequently accessed tetrahedra, this converts O(level) to O(1).
      */
-    private static final int    INDEX_CACHE_SIZE   = 4096;
-    private static final long[] INDEX_CACHE_KEYS   = new long[INDEX_CACHE_SIZE];
-    private static final long[] INDEX_CACHE_VALUES = new long[INDEX_CACHE_SIZE];
+    private static final int    INDEX_CACHE_SIZE      = 4096;
+    private static final long[] INDEX_CACHE_KEYS      = new long[INDEX_CACHE_SIZE];
+    private static final long[] INDEX_CACHE_VALUES    = new long[INDEX_CACHE_SIZE];
 
     static {
         initializeLevelTables();
@@ -64,7 +64,7 @@ public final class TetreeLevelCache {
 
     public static void cacheIndex(int x, int y, int z, byte level, byte type, long index) {
         // Use hash function for full 32-bit coordinate support
-        long key = generateCacheKey(x, y, z, level, type);
+        var key = generateCacheKey(x, y, z, level, type);
         int slot = (int) (key & (INDEX_CACHE_SIZE - 1));
         INDEX_CACHE_KEYS[slot] = key;
         INDEX_CACHE_VALUES[slot] = index;
@@ -110,6 +110,28 @@ public final class TetreeLevelCache {
         return DeBruijnTable[(int) ((v * debruijn) >>> 58)];
     }
 
+    /**
+     * Generate a high-quality hash key for cache lookups. This fixes the bit overlap issue in the original
+     * implementation. Uses prime multipliers to ensure good distribution.
+     */
+    private static long generateCacheKey(int x, int y, int z, byte level, byte type) {
+        // Use large primes to minimize collisions
+        long hash = x * 0x9E3779B97F4A7C15L;    // Golden ratio prime
+        hash ^= y * 0xBF58476D1CE4E5B9L;        // Another large prime
+        hash ^= z * 0x94D049BB133111EBL;        // Another large prime
+        hash ^= level * 0x2127599BF4325C37L;    // Another large prime
+        hash ^= type * 0xFD5167A1D8E52FB7L;     // Another large prime
+
+        // Mix the bits for better distribution
+        hash ^= (hash >>> 32);
+        hash *= 0xD6E8FEB86659FD93L;
+        hash ^= (hash >>> 32);
+        hash *= 0xD6E8FEB86659FD93L;
+        hash ^= (hash >>> 32);
+
+        return hash;
+    }
+
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {
         // Use hash function for full 32-bit coordinate support
         long key = generateCacheKey(x, y, z, level, type);
@@ -126,13 +148,9 @@ public final class TetreeLevelCache {
 
     /**
      * Get the level from a Tet SFC index in O(1) time.
-     * 
-     * For Tet SFC, the level is encoded in the index itself:
-     * - Level 0: index = 0
-     * - Level 1: indices 1-7 (8^1 - 1)
-     * - Level 2: indices 8-63 (8^2 - 1)
-     * - Level 3: indices 64-511 (8^3 - 1)
-     * - Level n: indices 8^(n-1) to 8^n - 1
+     *
+     * For Tet SFC, the level is encoded in the index itself: - Level 0: index = 0 - Level 1: indices 1-7 (8^1 - 1) -
+     * Level 2: indices 8-63 (8^2 - 1) - Level 3: indices 64-511 (8^3 - 1) - Level n: indices 8^(n-1) to 8^n - 1
      */
     public static byte getLevelFromIndex(long index) {
         if (index < 0) {
@@ -147,18 +165,20 @@ public final class TetreeLevelCache {
         // For Tet SFC: level = floor(log8(index + 1))
         // Since log8(x) = log2(x) / 3, we can use:
         // level = floor(log2(index + 1) / 3)
-        
+
         // However, since indices are in ranges [8^(n-1), 8^n - 1],
         // we need to find which power of 8 range the index falls into
-        
+
         // Use numberOfLeadingZeros for correctness (we'll optimize later if needed)
-        if (index == 0) return 0;
-        
+        if (index == 0) {
+            return 0;
+        }
+
         // For index > 0, find the level by checking which power of 8 range it falls into
         // This is essentially finding floor(log8(index + 1))
         int bits = 64 - Long.numberOfLeadingZeros(index);
         byte level = (byte) ((bits + 2) / 3);  // +2 for proper rounding of log8
-        
+
         // Clamp to max level
         return level > Constants.getMaxRefinementLevel() ? Constants.getMaxRefinementLevel() : level;
     }
@@ -237,28 +257,5 @@ public final class TetreeLevelCache {
 
     private static int packTypeTransition(int startType, int startLevel, int endLevel) {
         return (startType << 16) | (startLevel << 8) | endLevel;
-    }
-    
-    /**
-     * Generate a high-quality hash key for cache lookups.
-     * This fixes the bit overlap issue in the original implementation.
-     * Uses prime multipliers to ensure good distribution.
-     */
-    private static long generateCacheKey(int x, int y, int z, byte level, byte type) {
-        // Use large primes to minimize collisions
-        long hash = x * 0x9E3779B97F4A7C15L;    // Golden ratio prime
-        hash ^= y * 0xBF58476D1CE4E5B9L;        // Another large prime
-        hash ^= z * 0x94D049BB133111EBL;        // Another large prime  
-        hash ^= level * 0x2127599BF4325C37L;    // Another large prime
-        hash ^= type * 0xFD5167A1D8E52FB7L;     // Another large prime
-        
-        // Mix the bits for better distribution
-        hash ^= (hash >>> 32);
-        hash *= 0xD6E8FEB86659FD93L;
-        hash ^= (hash >>> 32);
-        hash *= 0xD6E8FEB86659FD93L;
-        hash ^= (hash >>> 32);
-        
-        return hash;
     }
 }

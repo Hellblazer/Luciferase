@@ -28,227 +28,212 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Octree-specific subdivision strategy implementation.
- * Optimized for cubic spatial decomposition with Morton ordering.
- * 
- * Key features:
- * - Efficient child node calculation using Morton codes
- * - Support for entity spanning across multiple octants
- * - Adaptive subdivision based on entity distribution
- * - Memory-efficient single child creation
+ * Octree-specific subdivision strategy implementation. Optimized for cubic spatial decomposition with Morton ordering.
+ *
+ * Key features: - Efficient child node calculation using Morton codes - Support for entity spanning across multiple
+ * octants - Adaptive subdivision based on entity distribution - Memory-efficient single child creation
  *
  * @param <ID>      The type of EntityID used
  * @param <Content> The type of content stored
- * 
  * @author hal.hildebrand
  */
-public class OctreeSubdivisionStrategy<ID extends EntityID, Content> extends SubdivisionStrategy<ID, Content> {
-    
+public class OctreeSubdivisionStrategy<ID extends EntityID, Content>
+extends SubdivisionStrategy<MortonKey, ID, Content> {
+
     private static final int OCTREE_CHILDREN = 8;
-    
-    @Override
-    public SubdivisionResult determineStrategy(SubdivisionContext<ID> context) {
-        // Check if we're at maximum depth
-        if (context.isAtMaxDepth()) {
-            return SubdivisionResult.insertInParent("At maximum depth");
-        }
-        
-        // During bulk operations, defer subdivision for better performance
-        if (context.isBulkOperation && !context.isCriticallyOverloaded()) {
-            return SubdivisionResult.deferSubdivision("Bulk operation in progress");
-        }
-        
-        // If critically overloaded, force immediate subdivision
-        if (context.isCriticallyOverloaded()) {
-            return SubdivisionResult.forceSubdivision("Node critically overloaded");
-        }
-        
-        // Check if we have enough entities to warrant subdivision
-        if (context.currentNodeSize < minEntitiesForSplit) {
-            return SubdivisionResult.insertInParent("Too few entities for efficient subdivision");
-        }
-        
-        // Estimate subdivision benefit
-        double benefit = estimateSubdivisionBenefit(context);
-        
-        // Low benefit - keep in parent
-        if (benefit < 0.3) {
-            return SubdivisionResult.insertInParent("Low subdivision benefit score: " + benefit);
-        }
-        
-        // Check if entity should span multiple children
-        int nodeSize = Constants.lengthAtLevel(context.nodeLevel);
-        if (shouldSpanEntity(context, nodeSize)) {
-            // Calculate which children the entity intersects
-            Set<Long> targetChildren = calculateTargetNodes(
-                context.nodeIndex, context.nodeLevel, 
-                context.newEntityBounds, null
-            );
-            
-            if (targetChildren.size() > 1) {
-                return SubdivisionResult.splitToChildren(targetChildren, 
-                    "Entity spans " + targetChildren.size() + " children");
-            }
-        }
-        
-        // High benefit and not spanning - use standard subdivision
-        if (benefit > 0.7) {
-            return SubdivisionResult.forceSubdivision("High subdivision benefit score: " + benefit);
-        }
-        
-        // Medium benefit - consider single child creation if entity fits in one octant
-        if (context.newEntityBounds != null) {
-            Long targetChild = calculateSingleTargetChild(context);
-            if (targetChild != null) {
-                return SubdivisionResult.createSingleChild(targetChild, 
-                    "Entity fits in single child octant");
-            }
-        }
-        
-        // Default to standard subdivision
-        return SubdivisionResult.forceSubdivision("Standard subdivision threshold reached");
-    }
-    
-    @Override
-    public Set<Long> calculateTargetNodes(long parentIndex, byte parentLevel, 
-                                         EntityBounds entityBounds,
-                                         AbstractSpatialIndex<ID, Content, ?> spatialIndex) {
-        Set<Long> targetNodes = new HashSet<>();
-        
-        if (entityBounds == null) {
-            return targetNodes;
-        }
-        
-        // Decode parent node location
-        int[] parentCoords = MortonCurve.decode(parentIndex);
-        int parentCellSize = Constants.lengthAtLevel(parentLevel);
-        int childCellSize = parentCellSize / 2;
-        byte childLevel = (byte) (parentLevel + 1);
-        
-        // Check each octant
-        for (int i = 0; i < OCTREE_CHILDREN; i++) {
-            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
-            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
-            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
-            
-            // Check if entity bounds intersect this octant
-            if (entityBounds.intersectsCube(childX, childY, childZ, childCellSize)) {
-                // Calculate child Morton code
-                Point3f childCenter = new Point3f(
-                    childX + childCellSize / 2.0f,
-                    childY + childCellSize / 2.0f,
-                    childZ + childCellSize / 2.0f
-                );
-                long childIndex = Constants.calculateMortonIndex(childCenter, childLevel);
-                targetNodes.add(childIndex);
-            }
-        }
-        
-        return targetNodes;
-    }
-    
-    @Override
-    protected double estimateEntitySizeFactor(SubdivisionContext<ID> context) {
-        if (context.newEntityBounds == null) {
-            return 0.5; // Default for point entities
-        }
-        
-        // Calculate entity size
-        float entitySizeX = context.newEntityBounds.getMaxX() - context.newEntityBounds.getMinX();
-        float entitySizeY = context.newEntityBounds.getMaxY() - context.newEntityBounds.getMinY();
-        float entitySizeZ = context.newEntityBounds.getMaxZ() - context.newEntityBounds.getMinZ();
-        float maxEntityDimension = Math.max(Math.max(entitySizeX, entitySizeY), entitySizeZ);
-        
-        // Get node size at current level
-        int nodeSize = Constants.lengthAtLevel(context.nodeLevel);
-        
-        // Calculate relative size (0.0 to 1.0, clamped)
-        double relativeFactor = maxEntityDimension / nodeSize;
-        return Math.min(relativeFactor, 1.0);
-    }
-    
-    /**
-     * Calculate the single child octant where a bounded entity would fit
-     * @return Morton index of the target child, or null if entity spans multiple children
-     */
-    private Long calculateSingleTargetChild(SubdivisionContext<ID> context) {
-        if (context.newEntityBounds == null) {
-            return null;
-        }
-        
-        // Calculate entity center
-        float centerX = (context.newEntityBounds.getMinX() + context.newEntityBounds.getMaxX()) / 2.0f;
-        float centerY = (context.newEntityBounds.getMinY() + context.newEntityBounds.getMaxY()) / 2.0f;
-        float centerZ = (context.newEntityBounds.getMinZ() + context.newEntityBounds.getMaxZ()) / 2.0f;
-        Point3f entityCenter = new Point3f(centerX, centerY, centerZ);
-        
-        // Decode parent node
-        int[] parentCoords = MortonCurve.decode(context.nodeIndex);
-        int parentCellSize = Constants.lengthAtLevel(context.nodeLevel);
-        int childCellSize = parentCellSize / 2;
-        
-        // Determine which octant the center falls into
-        int octant = 0;
-        if (entityCenter.x >= parentCoords[0] + childCellSize) octant |= 1;
-        if (entityCenter.y >= parentCoords[1] + childCellSize) octant |= 2;
-        if (entityCenter.z >= parentCoords[2] + childCellSize) octant |= 4;
-        
-        // Calculate child coordinates
-        int childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
-        int childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
-        int childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
-        
-        // Verify the entity fits entirely within this octant
-        if (context.newEntityBounds.getMinX() >= childX &&
-            context.newEntityBounds.getMinY() >= childY &&
-            context.newEntityBounds.getMinZ() >= childZ &&
-            context.newEntityBounds.getMaxX() <= childX + childCellSize &&
-            context.newEntityBounds.getMaxY() <= childY + childCellSize &&
-            context.newEntityBounds.getMaxZ() <= childZ + childCellSize) {
-            
-            // Entity fits in single octant
-            Point3f childCenter = new Point3f(
-                childX + childCellSize / 2.0f,
-                childY + childCellSize / 2.0f,
-                childZ + childCellSize / 2.0f
-            );
-            byte childLevel = (byte) (context.nodeLevel + 1);
-            return Constants.calculateMortonIndex(childCenter, childLevel);
-        }
-        
-        return null; // Entity spans multiple octants
-    }
-    
-    /**
-     * Create a strategy optimized for dense point clouds
-     */
-    public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> forDensePointClouds() {
-        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
-        strategy.withMinEntitiesForSplit(8)
-            .withLoadFactor(0.9)
-            .withSpanningThreshold(0.1);
-        return strategy;
-    }
-    
-    /**
-     * Create a strategy optimized for large entities
-     */
-    public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> forLargeEntities() {
-        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
-        strategy.withMinEntitiesForSplit(2)
-            .withLoadFactor(0.5)
-            .withSpanningThreshold(0.7);
-        return strategy;
-    }
-    
+
     /**
      * Create a balanced strategy for mixed workloads
      */
     public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> balanced() {
         OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
-        strategy.withMinEntitiesForSplit(4)
-            .withLoadFactor(0.75)
-            .withSpanningThreshold(0.5);
+        strategy.withMinEntitiesForSplit(4).withLoadFactor(0.75).withSpanningThreshold(0.5);
         return strategy;
+    }
+
+    /**
+     * Create a strategy optimized for dense point clouds
+     */
+    public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> forDensePointClouds() {
+        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
+        strategy.withMinEntitiesForSplit(8).withLoadFactor(0.9).withSpanningThreshold(0.1);
+        return strategy;
+    }
+
+    /**
+     * Create a strategy optimized for large entities
+     */
+    public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> forLargeEntities() {
+        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
+        strategy.withMinEntitiesForSplit(2).withLoadFactor(0.5).withSpanningThreshold(0.7);
+        return strategy;
+    }
+
+    @Override
+    public Set<MortonKey> calculateTargetNodes(MortonKey parentIndex, byte parentLevel, EntityBounds entityBounds,
+                                               AbstractSpatialIndex<MortonKey, ID, Content, ?> spatialIndex) {
+        Set<MortonKey> targetNodes = new HashSet<>();
+
+        if (entityBounds == null) {
+            return targetNodes;
+        }
+
+        // Decode parent node location
+        int[] parentCoords = MortonCurve.decode(parentIndex.getMortonCode());
+        int parentCellSize = Constants.lengthAtLevel(parentLevel);
+        int childCellSize = parentCellSize / 2;
+        byte childLevel = (byte) (parentLevel + 1);
+
+        // Check each octant
+        for (int i = 0; i < OCTREE_CHILDREN; i++) {
+            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
+            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
+            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
+
+            // Check if entity bounds intersect this octant
+            if (entityBounds.intersectsCube(childX, childY, childZ, childCellSize)) {
+                // Calculate child Morton code
+                Point3f childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
+                                                  childZ + childCellSize / 2.0f);
+                var childIndex = new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
+                targetNodes.add(childIndex);
+            }
+        }
+
+        return targetNodes;
+    }
+
+    @Override
+    public SubdivisionResult determineStrategy(SubdivisionContext<MortonKey, ID> context) {
+        // Check if we're at maximum depth
+        if (context.isAtMaxDepth()) {
+            return SubdivisionResult.insertInParent("At maximum depth");
+        }
+
+        // During bulk operations, defer subdivision for better performance
+        if (context.isBulkOperation && !context.isCriticallyOverloaded()) {
+            return SubdivisionResult.deferSubdivision("Bulk operation in progress");
+        }
+
+        // If critically overloaded, force immediate subdivision
+        if (context.isCriticallyOverloaded()) {
+            return SubdivisionResult.forceSubdivision("Node critically overloaded");
+        }
+
+        // Check if we have enough entities to warrant subdivision
+        if (context.currentNodeSize < minEntitiesForSplit) {
+            return SubdivisionResult.insertInParent("Too few entities for efficient subdivision");
+        }
+
+        // Estimate subdivision benefit
+        double benefit = estimateSubdivisionBenefit(context);
+
+        // Low benefit - keep in parent
+        if (benefit < 0.3) {
+            return SubdivisionResult.insertInParent("Low subdivision benefit score: " + benefit);
+        }
+
+        // Check if entity should span multiple children
+        int nodeSize = Constants.lengthAtLevel(context.nodeLevel);
+        if (shouldSpanEntity(context, nodeSize)) {
+            // Calculate which children the entity intersects
+            var targetChildren = calculateTargetNodes(context.nodeIndex, context.nodeLevel, context.newEntityBounds,
+                                                      null);
+
+            if (targetChildren.size() > 1) {
+                return SubdivisionResult.splitToChildren(targetChildren,
+                                                         "Entity spans " + targetChildren.size() + " children");
+            }
+        }
+
+        // High benefit and not spanning - use standard subdivision
+        if (benefit > 0.7) {
+            return SubdivisionResult.forceSubdivision("High subdivision benefit score: " + benefit);
+        }
+
+        // Medium benefit - consider single child creation if entity fits in one octant
+        if (context.newEntityBounds != null) {
+            var targetChild = calculateSingleTargetChild(context);
+            if (targetChild != null) {
+                return SubdivisionResult.createSingleChild(targetChild, "Entity fits in single child octant");
+            }
+        }
+
+        // Default to standard subdivision
+        return SubdivisionResult.forceSubdivision("Standard subdivision threshold reached");
+    }
+
+    @Override
+    protected double estimateEntitySizeFactor(SubdivisionContext<MortonKey, ID> context) {
+        if (context.newEntityBounds == null) {
+            return 0.5; // Default for point entities
+        }
+
+        // Calculate entity size
+        float entitySizeX = context.newEntityBounds.getMaxX() - context.newEntityBounds.getMinX();
+        float entitySizeY = context.newEntityBounds.getMaxY() - context.newEntityBounds.getMinY();
+        float entitySizeZ = context.newEntityBounds.getMaxZ() - context.newEntityBounds.getMinZ();
+        float maxEntityDimension = Math.max(Math.max(entitySizeX, entitySizeY), entitySizeZ);
+
+        // Get node size at current level
+        int nodeSize = Constants.lengthAtLevel(context.nodeLevel);
+
+        // Calculate relative size (0.0 to 1.0, clamped)
+        double relativeFactor = maxEntityDimension / nodeSize;
+        return Math.min(relativeFactor, 1.0);
+    }
+
+    /**
+     * Calculate the single child octant where a bounded entity would fit
+     *
+     * @return Morton index of the target child, or null if entity spans multiple children
+     */
+    private MortonKey calculateSingleTargetChild(SubdivisionContext<MortonKey, ID> context) {
+        if (context.newEntityBounds == null) {
+            return null;
+        }
+
+        // Calculate entity center
+        float centerX = (context.newEntityBounds.getMinX() + context.newEntityBounds.getMaxX()) / 2.0f;
+        float centerY = (context.newEntityBounds.getMinY() + context.newEntityBounds.getMaxY()) / 2.0f;
+        float centerZ = (context.newEntityBounds.getMinZ() + context.newEntityBounds.getMaxZ()) / 2.0f;
+        Point3f entityCenter = new Point3f(centerX, centerY, centerZ);
+
+        // Decode parent node
+        int[] parentCoords = MortonCurve.decode(context.nodeIndex.getMortonCode());
+        int parentCellSize = Constants.lengthAtLevel(context.nodeLevel);
+        int childCellSize = parentCellSize / 2;
+
+        // Determine which octant the center falls into
+        int octant = 0;
+        if (entityCenter.x >= parentCoords[0] + childCellSize) {
+            octant |= 1;
+        }
+        if (entityCenter.y >= parentCoords[1] + childCellSize) {
+            octant |= 2;
+        }
+        if (entityCenter.z >= parentCoords[2] + childCellSize) {
+            octant |= 4;
+        }
+
+        // Calculate child coordinates
+        int childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
+        int childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
+        int childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
+
+        // Verify the entity fits entirely within this octant
+        if (context.newEntityBounds.getMinX() >= childX && context.newEntityBounds.getMinY() >= childY
+        && context.newEntityBounds.getMinZ() >= childZ && context.newEntityBounds.getMaxX() <= childX + childCellSize
+        && context.newEntityBounds.getMaxY() <= childY + childCellSize
+        && context.newEntityBounds.getMaxZ() <= childZ + childCellSize) {
+
+            // Entity fits in single octant
+            Point3f childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
+                                              childZ + childCellSize / 2.0f);
+            byte childLevel = (byte) (context.nodeLevel + 1);
+            return new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
+        }
+
+        return null; // Entity spans multiple octants
     }
 }

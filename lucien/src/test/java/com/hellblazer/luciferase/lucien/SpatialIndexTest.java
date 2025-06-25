@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -19,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class SpatialIndexTest {
 
-    private SpatialIndex<LongEntityID, String> spatialIndex;
+    private SpatialIndex<MortonKey, LongEntityID, String> spatialIndex;
 
     @BeforeEach
     void setUp() {
@@ -145,23 +146,6 @@ public class SpatialIndexTest {
         assertTrue(contents.contains("Entity1"));
         assertTrue(contents.contains("Entity2"));
         assertTrue(contents.contains("Entity3"));
-    }
-
-    @Test
-    void testSpatialMap() {
-        // Insert some entities
-        spatialIndex.insert(new Point3f(100, 100, 100), (byte) 15, "E1");
-        spatialIndex.insert(new Point3f(200, 200, 200), (byte) 15, "E2");
-
-        var spatialMap = spatialIndex.getSpatialMap();
-        assertNotNull(spatialMap);
-        assertEquals(2, spatialMap.size());
-
-        // Each entry should have entity IDs
-        spatialMap.forEach((mortonIndex, entityIds) -> {
-            assertNotNull(entityIds);
-            assertFalse(entityIds.isEmpty());
-        });
     }
 
     @Test

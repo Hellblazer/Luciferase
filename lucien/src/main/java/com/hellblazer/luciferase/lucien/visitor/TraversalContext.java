@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.visitor;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import java.util.*;
@@ -26,14 +27,14 @@ import java.util.*;
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
  */
-public class TraversalContext<ID extends EntityID> {
+public class TraversalContext<Key extends SpatialKey<Key>, ID extends EntityID> {
 
-    private final Set<Long>          visitedNodes;
-    private final Stack<Long>        nodeStack;
-    private final Map<Long, Integer> nodeLevels;
-    private       int                nodesVisited;
-    private       int                entitiesVisited;
-    private       boolean            cancelled;
+    private final Set<Key>          visitedNodes;
+    private final Stack<Key>        nodeStack;
+    private final Map<Key, Integer> nodeLevels;
+    private       int               nodesVisited;
+    private       int               entitiesVisited;
+    private       boolean           cancelled;
 
     public TraversalContext() {
         this.visitedNodes = new HashSet<>();
@@ -66,7 +67,7 @@ public class TraversalContext<ID extends EntityID> {
      * @param nodeIndex The spatial index of the node
      * @return The depth level, or -1 if not found
      */
-    public int getNodeLevel(long nodeIndex) {
+    public int getNodeLevel(Key nodeIndex) {
         return nodeLevels.getOrDefault(nodeIndex, -1);
     }
 
@@ -85,9 +86,9 @@ public class TraversalContext<ID extends EntityID> {
      * @param nodeIndex The target node
      * @return list of node indices from root to target
      */
-    public List<Long> getPathToNode(long nodeIndex) {
+    public List<Key> getPathToNode(Key nodeIndex) {
         // This would require parent tracking - simplified for now
-        List<Long> path = new ArrayList<>();
+        List<Key> path = new ArrayList<>();
         path.add(nodeIndex);
         return path;
     }
@@ -97,7 +98,7 @@ public class TraversalContext<ID extends EntityID> {
      *
      * @return set of visited node indices
      */
-    public Set<Long> getVisitedNodes() {
+    public Set<Key> getVisitedNodes() {
         return Collections.unmodifiableSet(visitedNodes);
     }
 
@@ -123,7 +124,7 @@ public class TraversalContext<ID extends EntityID> {
      * @param nodeIndex The spatial index of the node
      * @return true if visited, false otherwise
      */
-    public boolean isVisited(long nodeIndex) {
+    public boolean isVisited(Key nodeIndex) {
         return visitedNodes.contains(nodeIndex);
     }
 
@@ -133,7 +134,7 @@ public class TraversalContext<ID extends EntityID> {
      * @param nodeIndex The spatial index of the node
      * @return true if this is the first visit, false if already visited
      */
-    public boolean markVisited(long nodeIndex) {
+    public boolean markVisited(Key nodeIndex) {
         if (visitedNodes.add(nodeIndex)) {
             nodesVisited++;
             return true;
@@ -146,7 +147,7 @@ public class TraversalContext<ID extends EntityID> {
      *
      * @return The spatial index of the top node, or null if stack is empty
      */
-    public Long peekNode() {
+    public Key peekNode() {
         return nodeStack.isEmpty() ? null : nodeStack.peek();
     }
 
@@ -155,7 +156,7 @@ public class TraversalContext<ID extends EntityID> {
      *
      * @return The spatial index of the popped node, or null if stack is empty
      */
-    public Long popNode() {
+    public Key popNode() {
         return nodeStack.isEmpty() ? null : nodeStack.pop();
     }
 
@@ -165,7 +166,7 @@ public class TraversalContext<ID extends EntityID> {
      * @param nodeIndex The spatial index of the node
      * @param level     The depth level of the node
      */
-    public void pushNode(long nodeIndex, int level) {
+    public void pushNode(Key nodeIndex, int level) {
         nodeStack.push(nodeIndex);
         nodeLevels.put(nodeIndex, level);
     }

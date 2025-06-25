@@ -17,17 +17,19 @@
 package com.hellblazer.luciferase.lucien.visitor;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 /**
  * Abstract base class for tree visitors that provides default implementations. Subclasses can override only the methods
  * they need.
  *
+ * @param <Key>     The type of spatial key used in the index
  * @param <ID>      The type of EntityID used for entity identification
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public abstract class AbstractTreeVisitor<ID extends EntityID, Content> implements TreeVisitor<ID, Content> {
+public abstract class AbstractTreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> implements TreeVisitor<Key, ID, Content> {
 
     protected boolean visitEntities = true;
     protected int     maxDepth      = -1;
@@ -48,7 +50,7 @@ public abstract class AbstractTreeVisitor<ID extends EntityID, Content> implemen
     }
 
     @Override
-    public void leaveNode(SpatialNode<ID> node, int level, int childCount) {
+    public void leaveNode(SpatialNode<Key, ID> node, int level, int childCount) {
         // Default: do nothing
     }
 
@@ -76,12 +78,12 @@ public abstract class AbstractTreeVisitor<ID extends EntityID, Content> implemen
     }
 
     @Override
-    public void visitEntity(ID entityId, Content content, long nodeIndex, int level) {
+    public void visitEntity(ID entityId, Content content, Key nodeIndex, int level) {
         // Default: do nothing
     }
 
     @Override
-    public boolean visitNode(SpatialNode<ID> node, int level, long parentIndex) {
+    public boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex) {
         // Default: continue traversal
         return true;
     }

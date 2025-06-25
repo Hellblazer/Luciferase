@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Content> extends AbstractSpatialIndexPerformanceTest<ID, Content> {
+public abstract class SpatialIndexQueryPerformanceTest<Key extends com.hellblazer.luciferase.lucien.SpatialKey<Key>, ID extends EntityID, Content> extends AbstractSpatialIndexPerformanceTest<Key, ID, Content> {
     
     private static final int[] TREE_SIZES = {1000, 10000, 100000, 1000000};
     private static final float[] QUERY_BOX_PERCENTAGES = {0.01f, 0.05f, 0.1f, 0.25f}; // 1%, 5%, 10%, 25% of space
@@ -42,7 +42,7 @@ public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Cont
     @DisplayName("Test range search performance with varying tree sizes")
     void testRangeSearchPerformance(int treeSize) {
         // Create and populate index
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> entities = generateTestEntities(treeSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {
@@ -85,7 +85,7 @@ public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Cont
         int treeSize = 100000;
         
         // Create and populate index
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> entities = generateTestEntities(treeSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {
@@ -122,7 +122,7 @@ public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Cont
         int treeSize = 100000;
         
         // Create and populate index
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> entities = generateTestEntities(treeSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {
@@ -157,7 +157,7 @@ public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Cont
         int treeSize = 100000;
         
         // Create and populate index
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> entities = generateTestEntities(treeSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {
@@ -194,7 +194,7 @@ public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Cont
     void testQueryScaling() {
         for (int treeSize : TREE_SIZES) {
             // Create and populate index
-            SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+            SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
             List<TestEntity> entities = generateTestEntities(treeSize, SpatialDistribution.UNIFORM_RANDOM);
             
             for (TestEntity entity : entities) {
@@ -230,7 +230,7 @@ public abstract class SpatialIndexQueryPerformanceTest<ID extends EntityID, Cont
         int treeSize = 100000;
         
         // Create and populate index
-        SpatialIndex<ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         List<TestEntity> entities = generateTestEntities(treeSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {

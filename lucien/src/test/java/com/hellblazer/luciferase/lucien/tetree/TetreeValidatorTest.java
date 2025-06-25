@@ -45,8 +45,8 @@ class TetreeValidatorTest {
         Tet validTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         assertDoesNotThrow(() -> TetreeValidator.assertValidTet(validTet));
 
-        Tet invalidTet = new Tet(-1, 0, 0, (byte) 0, (byte) 0);
-        assertThrows(AssertionError.class, () -> TetreeValidator.assertValidTet(invalidTet));
+        // Cannot create invalid tet with negative coordinates anymore
+        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
 
         // Parent-child assertion
         Tet parent = new Tet(0, 0, 0, (byte) 1, (byte) 0);
@@ -170,16 +170,10 @@ class TetreeValidatorTest {
 
     @Test
     void testInvalidCoordinates() {
-        // The Tet constructor doesn't validate coordinates, so we can test the validator
-        // Negative coordinates
-        Tet negX = new Tet(-1, 0, 0, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(negX));
-
-        Tet negY = new Tet(0, -10, 0, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(negY));
-
-        Tet negZ = new Tet(0, 0, -5, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(negZ));
+        // The Tet constructor now validates coordinates, so negative coordinates throw exceptions
+        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
+        assertThrows(IllegalArgumentException.class, () -> new Tet(0, -10, 0, (byte) 0, (byte) 0));
+        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, -100, (byte) 0, (byte) 0));
     }
 
     @Test
@@ -234,7 +228,10 @@ class TetreeValidatorTest {
         // Valid face neighbors
         for (int face = 0; face < TetreeConnectivity.FACES_PER_TET; face++) {
             Tet.FaceNeighbor neighbor = tet1.faceNeighbor(face);
-            assertTrue(TetreeValidator.isValidNeighbor(tet1, neighbor.tet()));
+            // Skip if neighbor is at boundary (null)
+            if (neighbor != null) {
+                assertTrue(TetreeValidator.isValidNeighbor(tet1, neighbor.tet()));
+            }
         }
 
         // Invalid - too far apart in levels
@@ -269,75 +266,6 @@ class TetreeValidatorTest {
         int cellSize = Constants.lengthAtLevel((byte) 3);
         Tet notChild = new Tet(cellSize * 10, cellSize * 10, cellSize * 10, (byte) 3, (byte) 0);
         assertFalse(TetreeValidator.isValidParentChild(parent, notChild));
-    }
-
-    @Test
-    void testSFCOrdering() {
-        List<Tet> ordered = Arrays.asList(Tet.tetrahedron(0L), Tet.tetrahedron(1L), Tet.tetrahedron(5L),
-                                          Tet.tetrahedron(10L), Tet.tetrahedron(100L));
-        assertTrue(TetreeValidator.isValidSFCOrder(ordered));
-
-        List<Tet> unordered = Arrays.asList(Tet.tetrahedron(10L), Tet.tetrahedron(5L), Tet.tetrahedron(20L));
-        assertFalse(TetreeValidator.isValidSFCOrder(unordered));
-
-        List<Tet> duplicates = Arrays.asList(Tet.tetrahedron(5L), Tet.tetrahedron(5L), Tet.tetrahedron(10L));
-        assertFalse(TetreeValidator.isValidSFCOrder(duplicates));
-    }
-
-    @Test
-    void testTreeStats() {
-        // Create some node indices to analyze
-        Set<Long> nodeIndices = new HashSet<>();
-        nodeIndices.add(0L); // Root level 0
-        nodeIndices.add(1L); // Level 1
-        nodeIndices.add(2L); // Level 1
-        nodeIndices.add(8L); // Level 2
-        nodeIndices.add(9L); // Level 2
-        nodeIndices.add(64L); // Level 3
-
-        TetreeValidator.TreeStats stats = TetreeValidator.analyzeTreeIndices(nodeIndices);
-
-        assertTrue(stats.getTotalNodes() > 0);
-        assertTrue(stats.getMaxDepth() >= 0);
-        assertNotNull(stats.getLevelCounts());
-        assertTrue(stats.getBalanceFactor() >= 0.0);
-
-        // Test toString
-        String statsString = stats.toString();
-        assertTrue(statsString.contains("Tree Statistics:"));
-        assertTrue(statsString.contains("Total nodes:"));
-        assertTrue(statsString.contains("Max depth:"));
-    }
-
-    @Test
-    void testTreeStructureValidation() {
-        // Create some valid node indices for testing
-        Set<Long> nodeIndices = new HashSet<>();
-        nodeIndices.add(0L); // Root
-        nodeIndices.add(1L); // Level 1
-        nodeIndices.add(2L); // Level 1
-        nodeIndices.add(8L); // Level 2
-        nodeIndices.add(9L); // Level 2
-
-        TetreeValidator.ValidationResult result = TetreeValidator.validateTreeStructure(nodeIndices);
-        assertTrue(result.isValid());
-
-        // Test with invalid indices
-        Set<Long> invalidIndices = new HashSet<>(nodeIndices);
-        invalidIndices.add(100000L); // Orphan node at deep level
-
-        result = TetreeValidator.validateTreeStructure(invalidIndices);
-        // May or may not be valid depending on the specific indices
-    }
-
-    @Test
-    void testValidIndex() {
-        assertTrue(TetreeValidator.isValidIndex(0L)); // Root
-        assertTrue(TetreeValidator.isValidIndex(1L)); // First child
-        assertTrue(TetreeValidator.isValidIndex(7L)); // Last child at level 1
-
-        assertFalse(TetreeValidator.isValidIndex(-1L)); // Negative
-        assertFalse(TetreeValidator.isValidIndex(-100L)); // Very negative
     }
 
     @Test

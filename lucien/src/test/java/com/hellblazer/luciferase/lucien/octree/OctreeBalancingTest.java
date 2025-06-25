@@ -60,12 +60,12 @@ public class OctreeBalancingTest {
 
         // For each node, verify parent-child relationships
         for (var node : nodes) {
-            long nodeIndex = node.mortonIndex();
-            List<Long> children = octree.getChildNodes(nodeIndex);
+            MortonKey nodeKey = node.sfcIndex();
+            List<MortonKey> children = octree.getChildNodes(nodeKey);
 
             // If node has children, verify they exist
-            for (Long childIndex : children) {
-                assertTrue(octree.hasNode(childIndex), "Child node should exist: " + childIndex);
+            for (MortonKey childKey : children) {
+                assertTrue(octree.hasNode(childKey), "Child node should exist: " + childKey);
             }
         }
     }
@@ -283,7 +283,7 @@ public class OctreeBalancingTest {
         int nodesAtLevel5 = 0;
         int nodesAtLevel6 = 0;
         for (var node : octree.nodes().toList()) {
-            byte nodeLevel = octree.getLevelFromIndex(node.mortonIndex());
+            byte nodeLevel = node.sfcIndex().getLevel();
             if (nodeLevel == 5) {
                 nodesAtLevel5++;
             }
@@ -311,7 +311,7 @@ public class OctreeBalancingTest {
 
         // Check at all levels where this position maps
         for (byte level = 0; level <= 10; level++) {
-            long morton = Constants.calculateMortonIndex(pos0, level);
+            MortonKey morton = new MortonKey(Constants.calculateMortonIndex(pos0, level));
             boolean hasNode = octree.hasNode(morton);
             if (hasNode) {
                 var lookup = octree.lookup(pos0, level);
@@ -319,18 +319,6 @@ public class OctreeBalancingTest {
                 System.out.println(
                 "Level " + level + ": morton=" + morton + ", hasNode=" + hasNode + ", lookup=" + lookup
                 + ", contains entity 0=" + containsEntity0);
-            }
-        }
-
-        // Check spatial map to see exactly where entity 0 is
-        var spatialMap = octree.getSpatialMap();
-        System.out.println("\nSpatial map entries containing entity 0:");
-        for (var entry : spatialMap.entrySet()) {
-            if (entry.getValue().contains(entity0)) {
-                long morton = entry.getKey();
-                byte level = octree.getLevelFromIndex(morton);
-                System.out.println(
-                "Found entity 0 at morton=" + morton + ", level=" + level + ", entities=" + entry.getValue());
             }
         }
 

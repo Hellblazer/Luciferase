@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
@@ -152,9 +153,11 @@ public class TetreeCollisionEdgeCaseTest {
 
     @Test
     void testExtremePositiveCoordinateValues() {
-        // Test collision detection with very large positive coordinate values
-        Point3f pos1 = new Point3f(Float.MAX_VALUE / 4, Float.MAX_VALUE / 4, Float.MAX_VALUE / 4);
-        Point3f pos2 = new Point3f(Float.MAX_VALUE / 4, Float.MAX_VALUE / 4, Float.MAX_VALUE / 4);
+        // Test collision detection with large positive coordinate values within valid range
+        // MAX_COORD is (1 << 21) - 1 = 2097151
+        float maxValidCoord = Constants.MAX_COORD - 1000; // Leave some margin
+        Point3f pos1 = new Point3f(maxValidCoord, maxValidCoord, maxValidCoord);
+        Point3f pos2 = new Point3f(maxValidCoord, maxValidCoord, maxValidCoord);
 
         LongEntityID id1 = tetree.insert(pos1, (byte) 10, "Entity1");
         LongEntityID id2 = tetree.insert(pos2, (byte) 10, "Entity2");

@@ -79,6 +79,67 @@ public class TetreeNeighborFinder {
     }
 
     /**
+     * Find all neighbors that share a specific edge with the given tetrahedron. Each tetrahedron has 6 edges
+     * (connecting pairs of its 4 vertices).
+     *
+     * @param tetIndex  The SFC index of the tetrahedron
+     * @param edgeIndex The edge index (0-5)
+     * @return List of neighbor tetrahedron indices sharing the specified edge
+     */
+    public List<TetreeKey> findEdgeNeighbors(TetreeKey tetIndex, int edgeIndex) {
+        if (edgeIndex < 0 || edgeIndex > 5) {
+            throw new IllegalArgumentException("Edge index must be between 0 and 5, got: " + edgeIndex);
+        }
+
+        Tet tet = Tet.tetrahedron(tetIndex);
+        List<TetreeKey> edgeNeighbors = new ArrayList<>();
+
+        // Each edge is shared by multiple faces
+        // Edge-to-face mapping for tetrahedron:
+        // Edge 0 (v0-v1): faces 0, 2
+        // Edge 1 (v0-v2): faces 0, 3
+        // Edge 2 (v0-v3): faces 1, 3
+        // Edge 3 (v1-v2): faces 0, 1
+        // Edge 4 (v1-v3): faces 1, 2
+        // Edge 5 (v2-v3): faces 2, 3
+        int[][] edgeToFaces = { { 0, 2 },  // Edge 0
+                                { 0, 3 },  // Edge 1
+                                { 1, 3 },  // Edge 2
+                                { 0, 1 },  // Edge 3
+                                { 1, 2 },  // Edge 4
+                                { 2, 3 }   // Edge 5
+        };
+
+        // Check neighbors across both faces that share this edge
+        Set<TetreeKey> uniqueNeighbors = new HashSet<>();
+        for (int faceIndex : edgeToFaces[edgeIndex]) {
+            Tet neighbor = findFaceNeighbor(tet, faceIndex);
+            if (neighbor != null) {
+                uniqueNeighbors.add(neighbor.tmIndex());
+            }
+        }
+
+        // Also need to check for neighbors at different levels that share the edge
+        byte level = tet.l();
+
+        // Check coarser level
+        if (level > 0) {
+            Tet parent = tet.parent();
+            List<TetreeKey> parentEdgeNeighbors = findEdgeNeighborsAtLevel(parent, edgeIndex, (byte) (level - 1));
+            uniqueNeighbors.addAll(parentEdgeNeighbors);
+        }
+
+        // Check finer level
+        if (level < Constants.getMaxRefinementLevel()) {
+            List<TetreeKey> childEdgeNeighbors = findEdgeNeighborsAtLevel(tet, edgeIndex, (byte) (level + 1));
+            uniqueNeighbors.addAll(childEdgeNeighbors);
+        }
+
+        edgeNeighbors.addAll(uniqueNeighbors);
+        return edgeNeighbors;
+    }
+
+    /**
      * Find the neighbor across a specific face of a tetrahedron.
      *
      * @param tet       The tetrahedron to find the neighbor of
@@ -92,6 +153,11 @@ public class TetreeNeighborFinder {
 
         // Use t8code's face neighbor algorithm
         Tet.FaceNeighbor neighbor = tet.faceNeighbor(faceIndex);
+
+        // Check if neighbor exists (null when at boundary of positive octant)
+        if (neighbor == null) {
+            return null; // At boundary
+        }
 
         // Check if neighbor is within domain bounds
         if (isWithinDomain(neighbor.tet())) {
@@ -199,6 +265,83 @@ public class TetreeNeighborFinder {
         return -1;
     }
 
+    /**
+     * Find all neighbors that share a specific vertex with the given tetrahedron. Each tetrahedron has 4 vertices.
+     *
+     * @param tetIndex    The SFC index of the tetrahedron
+     * @param vertexIndex The vertex index (0-3)
+     * @return List of neighbor tetrahedron indices sharing the specified vertex
+     */
+    public List<TetreeKey> findVertexNeighbors(TetreeKey tetIndex, int vertexIndex) {
+        if (vertexIndex < 0 || vertexIndex > 3) {
+            throw new IllegalArgumentException("Vertex index must be between 0 and 3, got: " + vertexIndex);
+        }
+
+        Tet tet = Tet.tetrahedron(tetIndex);
+        Set<TetreeKey> vertexNeighbors = new HashSet<>();
+
+        // Vertex-to-face mapping for tetrahedron:
+        // Vertex 0: faces 1, 2, 3
+        // Vertex 1: faces 0, 2, 3
+        // Vertex 2: faces 0, 1, 3
+        // Vertex 3: faces 0, 1, 2
+        int[][] vertexToFaces = { { 1, 2, 3 },  // Vertex 0
+                                  { 0, 2, 3 },  // Vertex 1
+                                  { 0, 1, 3 },  // Vertex 2
+                                  { 0, 1, 2 }   // Vertex 3
+        };
+
+        // First, find all face neighbors
+        for (int faceIndex : vertexToFaces[vertexIndex]) {
+            Tet neighbor = findFaceNeighbor(tet, faceIndex);
+            if (neighbor != null) {
+                vertexNeighbors.add(neighbor.tmIndex());
+            }
+        }
+
+        // Also find edge neighbors for edges containing this vertex
+        // Vertex-to-edge mapping:
+        // Vertex 0: edges 0, 1, 2
+        // Vertex 1: edges 0, 3, 4
+        // Vertex 2: edges 1, 3, 5
+        // Vertex 3: edges 2, 4, 5
+        int[][] vertexToEdges = { { 0, 1, 2 },  // Vertex 0
+                                  { 0, 3, 4 },  // Vertex 1
+                                  { 1, 3, 5 },  // Vertex 2
+                                  { 2, 4, 5 }   // Vertex 3
+        };
+
+        for (int edgeIndex : vertexToEdges[vertexIndex]) {
+            List<TetreeKey> edgeNeighborsList = findEdgeNeighbors(tetIndex, edgeIndex);
+            vertexNeighbors.addAll(edgeNeighborsList);
+        }
+
+        // Check different levels for vertex neighbors
+        byte level = tet.l();
+
+        // Check coarser levels
+        if (level > 0) {
+            Tet current = tet;
+            for (byte l = (byte) (level - 1); l >= 0; l--) {
+                current = current.parent();
+                // Find all neighbors at this level that share the vertex
+                List<TetreeKey> coarserNeighbors = findVertexNeighborsAtLevel(current, vertexIndex, l);
+                vertexNeighbors.addAll(coarserNeighbors);
+            }
+        }
+
+        // Check finer levels
+        if (level < Constants.getMaxRefinementLevel()) {
+            List<TetreeKey> finerNeighbors = findVertexNeighborsAtFinerLevels(tet, vertexIndex, (byte) (level + 1));
+            vertexNeighbors.addAll(finerNeighbors);
+        }
+
+        // Remove self
+        vertexNeighbors.remove(tetIndex);
+
+        return new ArrayList<>(vertexNeighbors);
+    }
+
     // Find ancestor at a specific level
     private Tet findAncestorAtLevel(Tet descendant, byte targetLevel) {
         if (descendant.l() <= targetLevel) {
@@ -246,176 +389,34 @@ public class TetreeNeighborFinder {
         return descendants;
     }
 
-    // Helper method to check if tetrahedron is within domain bounds
-    private boolean isWithinDomain(Tet tet) {
-        int maxCoord = Constants.lengthAtLevel((byte) 0);
-        return tet.x() >= 0 && tet.x() < maxCoord && tet.y() >= 0 && tet.y() < maxCoord && tet.z() >= 0
-        && tet.z() < maxCoord;
-    }
-
-    /**
-     * Find all neighbors that share a specific edge with the given tetrahedron.
-     * Each tetrahedron has 6 edges (connecting pairs of its 4 vertices).
-     *
-     * @param tetIndex  The SFC index of the tetrahedron
-     * @param edgeIndex The edge index (0-5)
-     * @return List of neighbor tetrahedron indices sharing the specified edge
-     */
-    public List<Long> findEdgeNeighbors(long tetIndex, int edgeIndex) {
-        if (edgeIndex < 0 || edgeIndex > 5) {
-            throw new IllegalArgumentException("Edge index must be between 0 and 5, got: " + edgeIndex);
-        }
-
-        Tet tet = Tet.tetrahedron(tetIndex);
-        List<Long> edgeNeighbors = new ArrayList<>();
-
-        // Each edge is shared by multiple faces
-        // Edge-to-face mapping for tetrahedron:
-        // Edge 0 (v0-v1): faces 0, 2
-        // Edge 1 (v0-v2): faces 0, 3
-        // Edge 2 (v0-v3): faces 1, 3
-        // Edge 3 (v1-v2): faces 0, 1
-        // Edge 4 (v1-v3): faces 1, 2
-        // Edge 5 (v2-v3): faces 2, 3
-        int[][] edgeToFaces = {
-            {0, 2},  // Edge 0
-            {0, 3},  // Edge 1
-            {1, 3},  // Edge 2
-            {0, 1},  // Edge 3
-            {1, 2},  // Edge 4
-            {2, 3}   // Edge 5
-        };
-
-        // Check neighbors across both faces that share this edge
-        Set<Long> uniqueNeighbors = new HashSet<>();
-        for (int faceIndex : edgeToFaces[edgeIndex]) {
-            Tet neighbor = findFaceNeighbor(tet, faceIndex);
-            if (neighbor != null) {
-                uniqueNeighbors.add(neighbor.index());
-            }
-        }
-
-        // Also need to check for neighbors at different levels that share the edge
-        byte level = tet.l();
-        
-        // Check coarser level
-        if (level > 0) {
-            Tet parent = tet.parent();
-            List<Long> parentEdgeNeighbors = findEdgeNeighborsAtLevel(parent, edgeIndex, (byte)(level - 1));
-            uniqueNeighbors.addAll(parentEdgeNeighbors);
-        }
-
-        // Check finer level
-        if (level < Constants.getMaxRefinementLevel()) {
-            List<Long> childEdgeNeighbors = findEdgeNeighborsAtLevel(tet, edgeIndex, (byte)(level + 1));
-            uniqueNeighbors.addAll(childEdgeNeighbors);
-        }
-
-        edgeNeighbors.addAll(uniqueNeighbors);
-        return edgeNeighbors;
-    }
-
-    /**
-     * Find all neighbors that share a specific vertex with the given tetrahedron.
-     * Each tetrahedron has 4 vertices.
-     *
-     * @param tetIndex    The SFC index of the tetrahedron
-     * @param vertexIndex The vertex index (0-3)
-     * @return List of neighbor tetrahedron indices sharing the specified vertex
-     */
-    public List<Long> findVertexNeighbors(long tetIndex, int vertexIndex) {
-        if (vertexIndex < 0 || vertexIndex > 3) {
-            throw new IllegalArgumentException("Vertex index must be between 0 and 3, got: " + vertexIndex);
-        }
-
-        Tet tet = Tet.tetrahedron(tetIndex);
-        Set<Long> vertexNeighbors = new HashSet<>();
-
-        // Vertex-to-face mapping for tetrahedron:
-        // Vertex 0: faces 1, 2, 3
-        // Vertex 1: faces 0, 2, 3
-        // Vertex 2: faces 0, 1, 3
-        // Vertex 3: faces 0, 1, 2
-        int[][] vertexToFaces = {
-            {1, 2, 3},  // Vertex 0
-            {0, 2, 3},  // Vertex 1
-            {0, 1, 3},  // Vertex 2
-            {0, 1, 2}   // Vertex 3
-        };
-
-        // First, find all face neighbors
-        for (int faceIndex : vertexToFaces[vertexIndex]) {
-            Tet neighbor = findFaceNeighbor(tet, faceIndex);
-            if (neighbor != null) {
-                vertexNeighbors.add(neighbor.index());
-            }
-        }
-
-        // Also find edge neighbors for edges containing this vertex
-        // Vertex-to-edge mapping:
-        // Vertex 0: edges 0, 1, 2
-        // Vertex 1: edges 0, 3, 4
-        // Vertex 2: edges 1, 3, 5
-        // Vertex 3: edges 2, 4, 5
-        int[][] vertexToEdges = {
-            {0, 1, 2},  // Vertex 0
-            {0, 3, 4},  // Vertex 1
-            {1, 3, 5},  // Vertex 2
-            {2, 4, 5}   // Vertex 3
-        };
-
-        for (int edgeIndex : vertexToEdges[vertexIndex]) {
-            List<Long> edgeNeighborsList = findEdgeNeighbors(tetIndex, edgeIndex);
-            vertexNeighbors.addAll(edgeNeighborsList);
-        }
-
-        // Check different levels for vertex neighbors
-        byte level = tet.l();
-        
-        // Check coarser levels
-        if (level > 0) {
-            Tet current = tet;
-            for (byte l = (byte)(level - 1); l >= 0; l--) {
-                current = current.parent();
-                // Find all neighbors at this level that share the vertex
-                List<Long> coarserNeighbors = findVertexNeighborsAtLevel(current, vertexIndex, l);
-                vertexNeighbors.addAll(coarserNeighbors);
-            }
-        }
-
-        // Check finer levels
-        if (level < Constants.getMaxRefinementLevel()) {
-            List<Long> finerNeighbors = findVertexNeighborsAtFinerLevels(tet, vertexIndex, (byte)(level + 1));
-            vertexNeighbors.addAll(finerNeighbors);
-        }
-
-        // Remove self
-        vertexNeighbors.remove(tetIndex);
-        
-        return new ArrayList<>(vertexNeighbors);
-    }
-
     // Helper method to find edge neighbors at a specific level
-    private List<Long> findEdgeNeighborsAtLevel(Tet tet, int edgeIndex, byte targetLevel) {
-        List<Long> neighbors = new ArrayList<>();
+    private List<TetreeKey> findEdgeNeighborsAtLevel(Tet tet, int edgeIndex, byte targetLevel) {
+        List<TetreeKey> neighbors = new ArrayList<>();
         // Implementation would traverse to find all tets at target level sharing the edge
         // This is a placeholder for the complex geometric calculation
         return neighbors;
     }
 
+    // Helper method to find vertex neighbors at finer levels
+    private List<TetreeKey> findVertexNeighborsAtFinerLevels(Tet tet, int vertexIndex, byte startLevel) {
+        List<TetreeKey> neighbors = new ArrayList<>();
+        // Implementation would recursively check children that share the vertex
+        // This is a placeholder for the complex geometric calculation
+        return neighbors;
+    }
+
     // Helper method to find vertex neighbors at a specific level
-    private List<Long> findVertexNeighborsAtLevel(Tet tet, int vertexIndex, byte targetLevel) {
-        List<Long> neighbors = new ArrayList<>();
+    private List<TetreeKey> findVertexNeighborsAtLevel(Tet tet, int vertexIndex, byte targetLevel) {
+        List<TetreeKey> neighbors = new ArrayList<>();
         // Implementation would traverse to find all tets at target level sharing the vertex
         // This is a placeholder for the complex geometric calculation
         return neighbors;
     }
 
-    // Helper method to find vertex neighbors at finer levels
-    private List<Long> findVertexNeighborsAtFinerLevels(Tet tet, int vertexIndex, byte startLevel) {
-        List<Long> neighbors = new ArrayList<>();
-        // Implementation would recursively check children that share the vertex
-        // This is a placeholder for the complex geometric calculation
-        return neighbors;
+    // Helper method to check if tetrahedron is within domain bounds
+    private boolean isWithinDomain(Tet tet) {
+        int maxCoord = Constants.lengthAtLevel((byte) 0);
+        return tet.x() >= 0 && tet.x() < maxCoord && tet.y() >= 0 && tet.y() < maxCoord && tet.z() >= 0
+        && tet.z() < maxCoord;
     }
 }
