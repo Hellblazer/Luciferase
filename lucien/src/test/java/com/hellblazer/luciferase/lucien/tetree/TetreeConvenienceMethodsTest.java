@@ -98,9 +98,10 @@ public class TetreeConvenienceMethodsTest {
         tetree.insert(p1, (byte) 2, "entity1");
 
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
+        TetreeKey tetKey = tet.tmIndex();
         
         // Zero radius should only find the node itself (if it exists)
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(new TetreeKey((byte)2, BigInteger.valueOf(tet.index())), 0f);
+        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(tetKey, 0f);
         
         // Should find at most the node itself
         assertTrue(neighbors.size() <= 1, "Zero radius should find at most the node itself");

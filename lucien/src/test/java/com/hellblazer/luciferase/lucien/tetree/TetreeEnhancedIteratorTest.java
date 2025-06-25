@@ -227,7 +227,8 @@ public class TetreeEnhancedIteratorTest {
         tetree.insert(p1, (byte) 2, "test");
         
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        tetree.findAllFaceNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tet.index())));
+        TetreeKey tetKey = tet.tmIndex();
+        tetree.findAllFaceNeighbors(tetKey);
         
         // Get metrics
         TetreeMetrics metrics = tetree.getMetrics();

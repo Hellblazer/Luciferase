@@ -158,7 +158,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
                                       (bounds.minZ() + bounds.maxZ()) / 2);
 
         var tet = locate(centerPoint, level);
-        TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
+        TetreeNodeImpl<ID> node = spatialIndex.get(tet.tmIndex());
         if (node != null && !node.isEmpty()) {
             return new SpatialNode<>(tet.tmIndex(), new HashSet<>(node.getEntityIds()));
         }
@@ -170,7 +170,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         TetreeValidationUtils.validatePositiveCoordinates(point);
 
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
-        TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
+        TetreeNodeImpl<ID> node = spatialIndex.get(tet.tmIndex());
         if (node != null && !node.isEmpty()) {
             return new SpatialNode<>(tet.tmIndex(), new HashSet<>(node.getEntityIds()));
         }

@@ -248,7 +248,7 @@ public class TetreeVertexNeighborTest {
         tetree.insert(p4, (byte) 2, "tet4");
 
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
         // Vertex-to-edge mapping:
         // Vertex 0: edges 0, 1, 2
@@ -257,12 +257,12 @@ public class TetreeVertexNeighborTest {
         // Vertex 3: edges 2, 4, 5
 
         // Get edge neighbors for edges connected to vertex 0
-        List<TetreeKey> edge0Neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 0);
-        List<TetreeKey> edge1Neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 1);
-        List<TetreeKey> edge2Neighbors = tetree.findEdgeNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 2);
+        List<TetreeKey> edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0);
+        List<TetreeKey> edge1Neighbors = tetree.findEdgeNeighbors(tetKey, 1);
+        List<TetreeKey> edge2Neighbors = tetree.findEdgeNeighbors(tetKey, 2);
 
         // Get vertex 0 neighbors
-        List<TetreeKey> vertex0Neighbors = tetree.findVertexNeighbors(new TetreeKey((byte)2, BigInteger.valueOf(tetIndex)), 0);
+        List<TetreeKey> vertex0Neighbors = tetree.findVertexNeighbors(tetKey, 0);
 
         // Vertex neighbors should include all edge neighbors for edges connected to that vertex
         Set<TetreeKey> expectedFromEdges = new HashSet<>();

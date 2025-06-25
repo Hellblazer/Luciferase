@@ -698,9 +698,9 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public int compareElements(Tet other) {
         // Compare by SFC index
-        long thisIndex = this.index();
-        long otherIndex = other.index();
-        return Long.compare(thisIndex, otherIndex);
+        TetreeKey thisKey = this.tmIndex();
+        TetreeKey otherKey = other.tmIndex();
+        return thisKey.compareTo(otherKey);
     }
 
     /* A routine to compute the type of t's ancestor of level "level",
@@ -931,7 +931,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                                       (bounds.minZ() + bounds.maxZ()) / 2);
 
         var tet = locate(centerPoint, level);
-        return tet.index();
+        return tet.tmIndex().getTmIndex().longValue();
     }
 
     /**
@@ -941,7 +941,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
      */
     public long enclosing(Tuple3f point, byte level) {
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
-        return tet.index();
+        return tet.tmIndex().getTmIndex().longValue();
     }
 
     public FaceNeighbor faceNeighbor(int face) {
@@ -1003,7 +1003,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalArgumentException("Target level must be >= current level");
         }
         if (level == this.l) {
-            return this.index();
+            return this.tmIndex().getTmIndex().longValue();
         }
 
         // The first descendant is found by repeatedly taking child 0
@@ -1012,7 +1012,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         while (current.l < level) {
             current = current.child(0); // Always take the first child
         }
-        return current.index();
+        return current.tmIndex().getTmIndex().longValue();
     }
 
     /**
@@ -1127,7 +1127,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalArgumentException("Target level must be >= current level");
         }
         if (level == this.l) {
-            return this.index();
+            return this.tmIndex().getTmIndex().longValue();
         }
 
         // The last descendant is found by repeatedly taking child 7
@@ -1136,7 +1136,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         while (current.l < level) {
             current = current.child(7); // Always take the last child
         }
-        return current.index();
+        return current.tmIndex().getTmIndex().longValue();
     }
 
     /**
@@ -1318,7 +1318,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Find the SFC indices for all tetrahedron types at this location
         return IntStream.range(0, 6).mapToObj(type -> {
             var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, (byte) type);
-            long index = tet.index();
+            long index = tet.tmIndex().getTmIndex().longValue();
             return new SFCRange(index, index);
         });
     }
@@ -1630,7 +1630,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // Create representative tetrahedron and get its SFC location
         var tet = new Tet(centerX, centerY, centerZ, level, (byte) 0);
-        long locationID = tet.index();
+        long locationID = tet.tmIndex().getTmIndex().longValue();
 
         return new SpatialRangeMetaData(level, locationID, touched);
     }

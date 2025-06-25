@@ -143,7 +143,7 @@ public class TetreeEdgeNeighborTest {
         tetree.insert(p4, (byte) 2, "tet4");
 
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        long tetIndex = tet.index();
+        TetreeKey tetKey = tet.tmIndex();
 
         // Edge-to-face mapping (from TetreeNeighborFinder):
         // Edge 0 (v0-v1): faces 0, 2
@@ -158,8 +158,6 @@ public class TetreeEdgeNeighborTest {
         List<TetreeKey> face1Neighbors = new ArrayList<>();
         List<TetreeKey> face2Neighbors = new ArrayList<>();
         List<TetreeKey> face3Neighbors = new ArrayList<>();
-
-        TetreeKey tetKey = new TetreeKey((byte) 2, BigInteger.valueOf(tetIndex));
         
         TetreeKey face0 = tetree.findFaceNeighbor(tetKey, 0);
         if (face0 != null) {

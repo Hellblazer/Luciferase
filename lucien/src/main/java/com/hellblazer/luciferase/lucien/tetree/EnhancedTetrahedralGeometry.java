@@ -44,9 +44,9 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
      * @param tetIndex The tetrahedron index
      * @return Array of intersection results
      */
-    public static RayTetrahedronIntersection[] batchRayIntersectsTetrahedron(Ray3D[] rays, long tetIndex) {
+    public static RayTetrahedronIntersection[] batchRayIntersectsTetrahedron(Ray3D[] rays, TetreeKey tetKey) {
         // Get vertices once
-        Tet tet = Tet.tetrahedron(tetIndex);
+        Tet tet = Tet.tetrahedron(tetKey);
         Point3i[] coords = tet.coordinates();
 
         Point3f v0 = new Point3f(coords[0].x, coords[0].y, coords[0].z);
@@ -55,7 +55,7 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
         Point3f v3 = new Point3f(coords[3].x, coords[3].y, coords[3].z);
 
         // Cache vertices for future use
-        cacheVertices(tetIndex, v0, v1, v2, v3);
+        cacheVertices(tetKey, v0, v1, v2, v3);
 
         // Process all rays
         RayTetrahedronIntersection[] results = new RayTetrahedronIntersection[rays.length];
@@ -66,10 +66,10 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
         return results;
     }
 
-    private static void cacheVertices(long tetIndex, Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
-        int cacheIndex = (int) (tetIndex % CACHE_SIZE);
+    private static void cacheVertices(TetreeKey tetKey, Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
+        int cacheIndex = (int) (tetKey.getTmIndex().longValue() % CACHE_SIZE);
         synchronized (cacheLocks[cacheIndex]) {
-            cachedIndices[cacheIndex] = tetIndex;
+            cachedIndices[cacheIndex] = tetKey.getTmIndex().longValue();
             cachedVertices[cacheIndex][0].set(v0);
             cachedVertices[cacheIndex][1].set(v1);
             cachedVertices[cacheIndex][2].set(v2);
@@ -77,10 +77,10 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
         }
     }
 
-    private static Point3f[] getCachedVertices(long tetIndex) {
-        int cacheIndex = (int) (tetIndex % CACHE_SIZE);
+    private static Point3f[] getCachedVertices(TetreeKey tetKey) {
+        int cacheIndex = (int) (tetKey.getTmIndex().longValue() % CACHE_SIZE);
         synchronized (cacheLocks[cacheIndex]) {
-            if (cachedIndices[cacheIndex] == tetIndex) {
+            if (cachedIndices[cacheIndex] == tetKey.getTmIndex().longValue()) {
                 return cachedVertices[cacheIndex];
             }
         }
@@ -93,8 +93,8 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
      * @param tetIndex The tetrahedron index
      * @return Array containing [centerX, centerY, centerZ, radius]
      */
-    public static float[] getTetrahedronBoundingSphere(long tetIndex) {
-        Tet tet = Tet.tetrahedron(tetIndex);
+    public static float[] getTetrahedronBoundingSphere(TetreeKey tetKey) {
+        Tet tet = Tet.tetrahedron(tetKey);
         Point3i[] coords = tet.coordinates();
 
         // Calculate centroid
@@ -214,12 +214,12 @@ public class EnhancedTetrahedralGeometry extends TetrahedralGeometry {
      * @param tetIndex The tetrahedron index
      * @return Intersection result with detailed information
      */
-    public static RayTetrahedronIntersection rayIntersectsTetrahedronCached(Ray3D ray, long tetIndex) {
+    public static RayTetrahedronIntersection rayIntersectsTetrahedronCached(Ray3D ray, TetreeKey tetKey) {
         // Get cached vertices if available
-        Point3f[] vertices = getCachedVertices(tetIndex);
+        Point3f[] vertices = getCachedVertices(tetKey);
         if (vertices == null) {
             // Fall back to regular method if not in cache
-            return rayIntersectsTetrahedron(ray, new TetreeKey((byte)0, BigInteger.valueOf(tetIndex)));
+            return rayIntersectsTetrahedron(ray, tetKey);
         }
 
         // Create a custom implementation for cached vertices

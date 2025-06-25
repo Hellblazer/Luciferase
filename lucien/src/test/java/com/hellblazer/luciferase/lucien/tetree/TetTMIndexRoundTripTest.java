@@ -94,7 +94,7 @@ public class TetTMIndexRoundTripTest {
     void testIndexMethod() {
         // Test the index() method which uses SFC encoding
         Tet tet = new Tet(448, 448, 448, (byte) 15, (byte) 0);
-        long sfcIndex = tet.index();
+        long sfcIndex = tet.index(); // Keep this as index() - it's testing the SFC encoding specifically
         
         System.out.println("\nTesting index() method:");
         System.out.println("  Tet: " + tet);
