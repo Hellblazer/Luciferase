@@ -58,6 +58,13 @@ public final class TetreeLevelCache {
     // Cache statistics for monitoring
     private static long cacheHits   = 0;
     private static long cacheMisses = 0;
+    
+    // Parent chain cache - Phase 3
+    private static final int         PARENT_CHAIN_CACHE_SIZE   = 4096;
+    private static final long[]      PARENT_CHAIN_KEYS         = new long[PARENT_CHAIN_CACHE_SIZE];
+    private static final Tet[][]     PARENT_CHAIN_VALUES       = new Tet[PARENT_CHAIN_CACHE_SIZE][];
+    private static long              parentChainHits           = 0;
+    private static long              parentChainMisses         = 0;
 
     static {
         initializeLevelTables();
@@ -158,6 +165,52 @@ public final class TetreeLevelCache {
     public static void resetCacheStats() {
         cacheHits = 0;
         cacheMisses = 0;
+        parentChainHits = 0;
+        parentChainMisses = 0;
+    }
+    
+    /**
+     * Get cached parent chain for a tetrahedron.
+     * The chain includes all ancestors from the given tet up to the root.
+     *
+     * @param tet the tetrahedron
+     * @return cached parent chain or null if not cached
+     */
+    public static Tet[] getCachedParentChain(Tet tet) {
+        long key = generateCacheKey(tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
+        int slot = (int)(key & (PARENT_CHAIN_CACHE_SIZE - 1));
+        
+        if (PARENT_CHAIN_KEYS[slot] == key) {
+            parentChainHits++;
+            return PARENT_CHAIN_VALUES[slot];
+        }
+        
+        parentChainMisses++;
+        return null;
+    }
+    
+    /**
+     * Cache a parent chain for future lookups.
+     *
+     * @param tet the tetrahedron
+     * @param chain the parent chain (including the tet itself)
+     */
+    public static void cacheParentChain(Tet tet, Tet[] chain) {
+        long key = generateCacheKey(tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
+        int slot = (int)(key & (PARENT_CHAIN_CACHE_SIZE - 1));
+        
+        PARENT_CHAIN_KEYS[slot] = key;
+        PARENT_CHAIN_VALUES[slot] = chain;
+    }
+    
+    /**
+     * Get parent chain cache statistics.
+     *
+     * @return hit rate as a percentage
+     */
+    public static double getParentChainHitRate() {
+        long total = parentChainHits + parentChainMisses;
+        return total > 0 ? (double) parentChainHits / total : 0.0;
     }
 
     public static long getCachedIndex(int x, int y, int z, byte level, byte type) {

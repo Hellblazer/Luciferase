@@ -1213,16 +1213,36 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // This matches the reference implementation behavior
         int maxBits = l;
 
-        // Get ancestor types by walking up the tree
+        // PERFORMANCE: Check parent chain cache first
+        var cachedChain = TetreeLevelCache.getCachedParentChain(this);
         List<Byte> ancestorTypes = new ArrayList<>();
-        Tet current = this;
-
-        // Collect types from parent up to root
-        while (current.l() > 1) {
-            current = current.parent();
-            if (current != null) {
-                ancestorTypes.addFirst(current.type());
+        
+        if (cachedChain != null) {
+            // Use cached parent chain to build ancestor types
+            for (int i = 1; i < cachedChain.length; i++) { // Skip self at index 0
+                if (cachedChain[i] != null) {
+                    ancestorTypes.addFirst(cachedChain[i].type());
+                }
             }
+        } else {
+            // Build parent chain and cache it
+            var chain = new ArrayList<Tet>();
+            chain.add(this);
+            
+            // Get ancestor types by walking up the tree
+            Tet current = this;
+
+            // Collect types from parent up to root
+            while (current.l() > 1) {
+                current = current.parent();
+                if (current != null) {
+                    ancestorTypes.addFirst(current.type());
+                    chain.add(current);
+                }
+            }
+            
+            // Cache the parent chain for future use
+            TetreeLevelCache.cacheParentChain(this, chain.toArray(new Tet[0]));
         }
 
         // Build type array for the bits we'll process (ancestor types + current type)

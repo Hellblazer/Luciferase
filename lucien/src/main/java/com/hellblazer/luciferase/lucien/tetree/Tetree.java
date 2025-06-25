@@ -115,6 +115,9 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     // ===== Abstract Method Implementations =====
     private long cacheHits   = 0;
     private long cacheMisses = 0;
+    
+    // Thread-local caching configuration (Phase 3)
+    private boolean useThreadLocalCache = false;
 
     /**
      * Create a Tetree with default configuration
@@ -853,6 +856,34 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     }
 
     /**
+     * Enable or disable thread-local caching for TetreeKey computation.
+     * Thread-local caches reduce contention in heavily concurrent workloads.
+     *
+     * @param enabled true to enable thread-local caching, false to use global cache
+     */
+    public void setThreadLocalCaching(boolean enabled) {
+        this.useThreadLocalCache = enabled;
+    }
+    
+    /**
+     * Check if thread-local caching is enabled.
+     *
+     * @return true if thread-local caching is enabled
+     */
+    public boolean isThreadLocalCachingEnabled() {
+        return useThreadLocalCache;
+    }
+    
+    /**
+     * Get thread-local cache statistics.
+     *
+     * @return statistics string if thread-local caching is enabled, empty string otherwise
+     */
+    public String getThreadLocalCacheStatistics() {
+        return useThreadLocalCache ? ThreadLocalTetreeCache.getGlobalStatistics() : "";
+    }
+
+    /**
      * Create an iterator over all sibling nodes of the given tetrahedron. Siblings are tetrahedra that share the same
      * parent in the tree hierarchy.
      *
@@ -1091,6 +1122,12 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     @Override
     protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
         var tet = locate(position, level);
+        
+        // Use thread-local cache if enabled
+        if (useThreadLocalCache) {
+            return ThreadLocalTetreeCache.getTetreeKey(tet);
+        }
+        
         return tet.tmIndex();
     }
 
