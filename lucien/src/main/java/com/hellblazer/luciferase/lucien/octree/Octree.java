@@ -117,48 +117,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     /**
      * Find all entities within a bounding box
      */
-    @Override
-    public List<ID> entitiesInRegion(Spatial.Cube region) {
-        var bounds = getVolumeBounds(region);
-        if (bounds == null) {
-            return Collections.emptyList();
-        }
-
-        // Use Morton code range optimization
-        var extendedCodes = getMortonCodeRange(bounds);
-
-        Set<ID> uniqueEntities = new HashSet<>();
-
-        // Check only candidate nodes
-        for (var mortonCode : extendedCodes) {
-            OctreeNode<ID> node = spatialIndex.get(mortonCode);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
-
-            // Decode Morton code to check if node intersects region
-            int[] coords = MortonCurve.decode(mortonCode.getMortonCode());
-            byte level = mortonCode.getLevel();
-            int cellSize = Constants.lengthAtLevel(level);
-
-            // Check if node cube intersects with region
-            Spatial.Cube nodeCube = new Spatial.Cube(coords[0], coords[1], coords[2], cellSize);
-            if (doesCubeIntersectVolume(nodeCube, region)) {
-                uniqueEntities.addAll(node.getEntityIds());
-            }
-        }
-
-        // Filter entities based on their actual positions
-        return uniqueEntities.stream().filter(entityId -> {
-            Point3f pos = entityManager.getEntityPosition(entityId);
-            if (pos == null) {
-                return false;
-            }
-            return pos.x >= region.originX() && pos.x <= region.originX() + region.extent() && pos.y >= region.originY()
-            && pos.y <= region.originY() + region.extent() && pos.z >= region.originZ()
-            && pos.z <= region.originZ() + region.extent();
-        }).collect(Collectors.toList());
-    }
+    // entitiesInRegion is now implemented in AbstractSpatialIndex
 
     /**
      * Bulk insert multiple entities efficiently
@@ -635,13 +594,13 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     protected void validateSpatialConstraints(Point3f position) {
         // Octree doesn't have specific spatial constraints
     }
-
-    // ===== Ray Intersection Implementation =====
-
+    
     @Override
     protected void validateSpatialConstraints(Spatial volume) {
         // Octree doesn't have specific spatial constraints
     }
+
+    // ===== Ray Intersection Implementation =====
 
     boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
         return switch (volume) {

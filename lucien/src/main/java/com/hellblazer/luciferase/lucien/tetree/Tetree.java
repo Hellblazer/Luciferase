@@ -164,38 +164,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         return null;
     }
 
-    @Override
-    public List<ID> entitiesInRegion(Spatial.Cube region) {
-        TetreeValidationUtils.validatePositiveCoordinates(region);
-
-        Set<ID> uniqueEntities = new HashSet<>();
-
-        lock.readLock().lock();
-        try {
-            // Use the spatial index to find entities in the region
-            // This properly handles spanning entities
-            var bounds = new VolumeBounds(region.originX(), region.originY(), region.originZ(),
-                                          region.originX() + region.extent(), region.originY() + region.extent(),
-                                          region.originZ() + region.extent());
-
-            // Get all spatial nodes that intersect with the region
-            var nodeList = spatialRangeQuery(bounds, true).collect(java.util.stream.Collectors.toList());
-
-            // Collect all entities from intersecting nodes
-            nodeList.forEach(entry -> {
-                if (!entry.getValue().isEmpty()) {
-                    uniqueEntities.addAll(entry.getValue().getEntityIds());
-                }
-            });
-
-            // For spanning entities found in intersecting spatial nodes, we should include them
-            // The spatial range query already found the correct intersecting nodes, so entities
-            // found in those nodes are valid regardless of their exact bounds
-            return new ArrayList<>(uniqueEntities);
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
+    // entitiesInRegion is now implemented in AbstractSpatialIndex
 
     // ===== New Algorithm Integration Methods =====
 
@@ -1049,6 +1018,16 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         if (bounds == null) {
             return false;
         }
+        
+        // Debug output
+        if (false) { // Enable for debugging
+            System.out.println("doesNodeIntersectVolume debug:");
+            System.out.println("  tetIndex: " + tetIndex);
+            System.out.println("  tet: " + tet);
+            System.out.println("  bounds: " + bounds);
+            System.out.println("  result: " + Tet.tetrahedronIntersectsVolumeBounds(tet, bounds));
+        }
+        
         return Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
     }
 
@@ -1089,11 +1068,11 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     
     @Override
     protected NavigableSet<TetreeKey> getSpatialIndexRange(VolumeBounds bounds) {
-        // For now, use a conservative approach that checks all existing nodes
-        // This ensures we don't miss any nodes due to SFC complexity
+        // For now, use a simpler approach that iterates through existing nodes
+        // The full optimization would require more careful handling of level ranges
         NavigableSet<TetreeKey> candidates = new TreeSet<>();
         
-        // Check all existing nodes for intersection with bounds
+        // Check each existing node to see if it intersects the bounds
         for (TetreeKey key : sortedSpatialIndices) {
             if (doesNodeIntersectVolume(key, createSpatialFromBounds(bounds))) {
                 candidates.add(key);
@@ -1101,6 +1080,49 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         }
         
         return candidates;
+    }
+    
+    /**
+     * Get all tetrahedra at a specific level that could intersect with the given bounds.
+     * This uses the tetrahedral SFC structure to efficiently find candidates.
+     * 
+     * NOTE: This method is currently unused due to memory concerns with large level values.
+     * The optimization needs more careful handling of level ranges to avoid excessive memory usage.
+     */
+    @SuppressWarnings("unused")
+    private NavigableSet<TetreeKey> getTetrahedraInBoundsAtLevel(VolumeBounds bounds, byte level) {
+        NavigableSet<TetreeKey> results = new TreeSet<>();
+        
+        // Calculate the grid resolution at this level
+        int gridSize = 1 << level; // 2^level
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Find grid cells that intersect the bounds
+        int minX = Math.max(0, (int)(bounds.minX() / cellSize));
+        int maxX = Math.min(gridSize - 1, (int)(bounds.maxX() / cellSize));
+        int minY = Math.max(0, (int)(bounds.minY() / cellSize));
+        int maxY = Math.min(gridSize - 1, (int)(bounds.maxY() / cellSize));
+        int minZ = Math.max(0, (int)(bounds.minZ() / cellSize));
+        int maxZ = Math.min(gridSize - 1, (int)(bounds.maxZ() / cellSize));
+        
+        // For each grid cell in range, check all 6 tetrahedra
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    // Each grid cell contains 6 tetrahedra (types 0-5)
+                    for (byte type = 0; type < 6; type++) {
+                        Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
+                        
+                        // Only add if the tetrahedron actually intersects the bounds
+                        if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                            results.add(tet.tmIndex());
+                        }
+                    }
+                }
+            }
+        }
+        
+        return results;
     }
 
     @Override
@@ -1843,40 +1865,59 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     private Set<TetreeKey> findIntersectingTets(EntityBounds bounds, byte level) {
         Set<TetreeKey> result = new HashSet<>();
 
-        // CRITICAL FIX: Instead of using complex SFC range computation that may miss indices,
-        // check all existing spatial indices in the tree and test them for intersection.
-        // This is simpler, more reliable, and works correctly for small entities.
+        // Use the same approach as Octree: calculate all grid cells that might intersect
+        int cellSize = Constants.lengthAtLevel(level);
 
-        for (TetreeKey spatialIndex : sortedSpatialIndices) {
-            try {
-                Tet tet = Tet.tetrahedron(spatialIndex);
+        // Calculate the range of grid cells that might intersect
+        int minX = (int) Math.floor(bounds.getMinX() / cellSize);
+        int minY = (int) Math.floor(bounds.getMinY() / cellSize);
+        int minZ = (int) Math.floor(bounds.getMinZ() / cellSize);
 
-                // For spanning, we want to find tetrahedra at the specified level
-                // that intersect with the entity bounds
-                if (tet.l() == level) {
-                    if (tetrahedronIntersectsBounds(tet, bounds)) {
-                        result.add(spatialIndex);
+        int maxX = (int) Math.floor(bounds.getMaxX() / cellSize);
+        int maxY = (int) Math.floor(bounds.getMaxY() / cellSize);
+        int maxZ = (int) Math.floor(bounds.getMaxZ() / cellSize);
+
+        // Check each potential cell
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    // Calculate actual cell coordinates
+                    int cellOriginX = x * cellSize;
+                    int cellOriginY = y * cellSize; 
+                    int cellOriginZ = z * cellSize;
+
+                    // Skip if coordinates are negative (not valid for tetrahedral SFC)
+                    if (cellOriginX < 0 || cellOriginY < 0 || cellOriginZ < 0) {
+                        continue;
+                    }
+
+                    // Find all tetrahedra in this grid cell (there are 6 per cube)
+                    for (byte tetType = 0; tetType < 6; tetType++) {
+                        try {
+                            Tet tet = new Tet(cellOriginX, cellOriginY, cellOriginZ, level, tetType);
+                            
+                            // Check if this tetrahedron intersects the bounds
+                            if (tetrahedronIntersectsBounds(tet, bounds)) {
+                                TetreeKey tetIndex = tet.tmIndex();
+                                result.add(tetIndex);
+                            }
+                        } catch (Exception e) {
+                            // Skip invalid tetrahedra
+                        }
                     }
                 }
-            } catch (Exception e) {
-                // Skip invalid indices
             }
         }
 
-        // If no existing indices found, we need to create a new tetrahedron at the exact level
+        // If no tetrahedra found (shouldn't happen for valid bounds), add center tetrahedron
         if (result.isEmpty()) {
-            // Find the tetrahedron that would contain the center of the bounds at the requested level
             Point3f center = new Point3f((bounds.getMinX() + bounds.getMaxX()) / 2,
                                          (bounds.getMinY() + bounds.getMaxY()) / 2,
                                          (bounds.getMinZ() + bounds.getMaxZ()) / 2);
 
             Tet containingTet = locate(center, level);
             TetreeKey tetIndex = containingTet.tmIndex();
-
-            // Verify this tetrahedron actually intersects the bounds
-            if (tetrahedronIntersectsBounds(containingTet, bounds)) {
-                result.add(tetIndex);
-            }
+            result.add(tetIndex);
         }
 
         return result;

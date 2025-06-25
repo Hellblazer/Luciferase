@@ -3098,6 +3098,73 @@ implements SpatialIndex<Key, ID, Content> {
                                                  entityManager.getEntityCount(), level);
     }
 
+    // ===== Common Region Query Implementation =====
+    
+    /**
+     * Get all entities within a spatial region.
+     * 
+     * This implementation:
+     * 1. Finds all nodes that intersect the region
+     * 2. Collects all entities from those nodes
+     * 3. Optionally filters by exact position (if precise is true)
+     * 
+     * @param region the spatial region to query
+     * @return list of entity IDs in the region
+     */
+    @Override
+    public List<ID> entitiesInRegion(Spatial.Cube region) {
+        // Validate region based on implementation constraints
+        validateSpatialConstraints(new Point3f(region.originX(), region.originY(), region.originZ()));
+        
+        Set<ID> uniqueEntities = new HashSet<>();
+        
+        lock.readLock().lock();
+        try {
+            // Convert to volume bounds
+            var bounds = new VolumeBounds(
+                region.originX(), region.originY(), region.originZ(),
+                region.originX() + region.extent(), 
+                region.originY() + region.extent(),
+                region.originZ() + region.extent()
+            );
+            
+            // Use spatial range query to find all intersecting nodes
+            var nodeList = spatialRangeQuery(bounds, true)
+                .collect(java.util.stream.Collectors.toList());
+            
+            // Collect all entities from intersecting nodes
+            nodeList.forEach(entry -> {
+                if (!entry.getValue().isEmpty()) {
+                    uniqueEntities.addAll(entry.getValue().getEntityIds());
+                }
+            });
+            
+            // Filter by exact intersection - check entity bounds vs query region
+            return uniqueEntities.stream().filter(entityId -> {
+                // Check if entity bounds intersect with query region
+                EntityBounds entityBounds = entityManager.getEntityBounds(entityId);
+                if (entityBounds != null) {
+                    // Entity has bounds - check bounds intersection
+                    return entityBounds.intersectsCube(region.originX(), region.originY(), region.originZ(), region.extent());
+                } else {
+                    // Entity is a point - check position intersection
+                    Point3f pos = entityManager.getEntityPosition(entityId);
+                    if (pos == null) {
+                        return false;
+                    }
+                    return pos.x >= region.originX() && 
+                           pos.x <= region.originX() + region.extent() &&
+                           pos.y >= region.originY() && 
+                           pos.y <= region.originY() + region.extent() &&
+                           pos.z >= region.originZ() && 
+                           pos.z <= region.originZ() + region.extent();
+                }
+            }).collect(Collectors.toList());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     // ===== Bulk Operations Implementation =====
 
     /**
