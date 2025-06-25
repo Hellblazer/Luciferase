@@ -1,16 +1,14 @@
 # Luciferase
 
-A bright spark - 3D spatial data structures and visualization library
+3D spatial data structures and visualization library
 
 ## Overview
 
-Luciferase is a high-performance 3D spatial indexing library that provides:
-- **Octree**: Multi-entity spatial indexing with Morton curve encoding
-- **Tetree**: Tetrahedral spatial decomposition 
-- **Entity Management**: First-class entity support with IDs, bounds, and spanning policies
+Luciferase provides spatial indexing for 3D applications:
+- **Octree**: Cubic spatial decomposition using Morton curves
+- **Tetree**: Tetrahedral spatial decomposition
+- **Entity Management**: Support for entities with IDs, bounds, and spanning
 - **Visualization**: JavaFX-based 3D visualization tools
-
-As of June 2025, the architecture has been significantly simplified to focus on core spatial indexing functionality.
 
 ## Build Status
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
