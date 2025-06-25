@@ -200,8 +200,8 @@ Historical documents (describe unimplemented features):
 
 **Test Control**: Set `RUN_SPATIAL_INDEX_PERF_TESTS=true` to enable performance tests
 
-**Realistic Performance Expectations:**
-- **Octree**: ~670K entities/sec insertion, <30μs k-NN queries
-- **Tetree**: ~600 entities/sec insertion (limited by tmIndex), <6μs k-NN queries
-- **Memory**: Both use <350 bytes per entity
-- **Note**: Tetree excels at queries but insertion is ~1000x slower due to tmIndex()
+**Realistic Performance Expectations (June 2025):**
+- **Octree**: ~670K entities/sec insertion, 90-130μs k-NN queries
+- **Tetree**: ~2K-10K entities/sec insertion (after optimizations), 11-33μs k-NN queries
+- **Memory**: Octree ~335 bytes/entity, Tetree ~78 bytes/entity (77% less)
+- **Note**: Tetree is 70-350x slower for insertions but 3-11x faster for queries

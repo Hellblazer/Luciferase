@@ -370,12 +370,13 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Results (June 2025)
+## Performance Characteristics (Updated June 2025)
 
-**Surprising Discovery**: Tetree significantly outperforms Octree
-- Bulk operations: 10x faster for Tetree
-- k-NN queries: 2-3x faster
-- Memory usage: 15-20% less per entity
+**Key Findings**: Different spatial indices excel in different areas
+- **Insertion Performance**: Octree is 70-350x faster due to O(1) Morton encoding
+- **Query Performance**: Tetree is 3-11x faster for k-NN and range queries
+- **Memory Usage**: Tetree uses 77-81% less memory for typical datasets
+- **Note**: Initial June 2025 metrics were based on non-unique index(); corrected metrics use tmIndex()
 
 ## Testing
 
