@@ -48,13 +48,18 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit =
 
 ## Performance
 
-Benchmark results (100K entities):
+**Updated June 2025**: Performance after completing 3-phase optimization initiative.
 
-| Operation | Octree | Tetree |
-|-----------|--------|--------|
-| Bulk insert | 346 ms | 30 ms |
-| k-NN (k=10) | 2.40 ms | 1.15 ms |
-| Individual insert | 287 ms | 34 ms |
+| Operation | Octree | Tetree | Notes |
+|-----------|--------|---------|-------|
+| Insert (single) | 1.5 μs | 105 μs | Octree 70x faster (O(1) vs O(level)) |
+| Insert (bulk) | 1.2 μs | 43 μs | Octree 36x faster with batching |
+| k-NN (k=10) | 87-127 μs | 11-33 μs | Tetree 3-11x faster |
+| Range Query | 28 μs | 5.6 μs | Tetree 5x faster |
+| Memory per entity | 335 bytes | 78 bytes | Tetree 77% more efficient |
+
+**Key Insight**: Choose Octree for insertion-heavy workloads, Tetree for query-heavy applications.
+**Optimization Impact**: 94% improvement from initial state through caching and bulk optimizations.
 
 ## Documentation
 

@@ -23,7 +23,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
-import java.math.BigInteger;
 import java.util.Set;
 import java.util.List;
 
@@ -64,12 +63,12 @@ public class TetreeConvenienceMethodsTest {
 
         // Find the center tetrahedron
         Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
-        long centerIndex = centerTet.index();
+        TetreeKey centerKey = centerTet.tmIndex();
 
         // Test finding neighbors within different distances
-        Set<TetreeNodeImpl<LongEntityID>> within100 = tetree.findNeighborsWithinDistance(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 100f);
-        Set<TetreeNodeImpl<LongEntityID>> within200 = tetree.findNeighborsWithinDistance(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 200f);
-        Set<TetreeNodeImpl<LongEntityID>> within300 = tetree.findNeighborsWithinDistance(new TetreeKey((byte)3, BigInteger.valueOf(centerIndex)), 300f);
+        Set<TetreeNodeImpl<LongEntityID>> within100 = tetree.findNeighborsWithinDistance(centerKey, 100f);
+        Set<TetreeNodeImpl<LongEntityID>> within200 = tetree.findNeighborsWithinDistance(centerKey, 200f);
+        Set<TetreeNodeImpl<LongEntityID>> within300 = tetree.findNeighborsWithinDistance(centerKey, 300f);
 
         // Should find more nodes as distance increases
         assertTrue(within100.size() <= within200.size(), 
@@ -85,7 +84,7 @@ public class TetreeConvenienceMethodsTest {
     void testFindNeighborsWithinDistanceEmpty() {
         // Test with empty tree
         Tet rootTet = new Tet(0, 0, 0, (byte)0, (byte)0);
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(new TetreeKey((byte)0, BigInteger.valueOf(rootTet.index())), 100f);
+        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100f);
         
         assertNotNull(neighbors);
         assertTrue(neighbors.isEmpty(), "Empty tree should return empty neighbor set");
@@ -98,9 +97,10 @@ public class TetreeConvenienceMethodsTest {
         tetree.insert(p1, (byte) 2, "entity1");
 
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
+        TetreeKey tetKey = tet.tmIndex();
         
         // Zero radius should only find the node itself (if it exists)
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(new TetreeKey((byte)2, BigInteger.valueOf(tet.index())), 0f);
+        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(tetKey, 0f);
         
         // Should find at most the node itself
         assertTrue(neighbors.size() <= 1, "Zero radius should find at most the node itself");
@@ -126,9 +126,9 @@ public class TetreeConvenienceMethodsTest {
         Tet tet4 = tetree.locateTetrahedron(p4, (byte) 3);
 
         // Test common ancestor of nearby tets
-        TetreeKey ancestor12 = tetree.findCommonAncestor(new TetreeKey((byte)3, BigInteger.valueOf(tet1.index())), new TetreeKey((byte)3, BigInteger.valueOf(tet2.index())));
-        TetreeKey ancestor13 = tetree.findCommonAncestor(new TetreeKey((byte)3, BigInteger.valueOf(tet1.index())), new TetreeKey((byte)3, BigInteger.valueOf(tet3.index())));
-        TetreeKey ancestor14 = tetree.findCommonAncestor(new TetreeKey((byte)3, BigInteger.valueOf(tet1.index())), new TetreeKey((byte)3, BigInteger.valueOf(tet4.index())));
+        TetreeKey ancestor12 = tetree.findCommonAncestor(tet1.tmIndex(), tet2.tmIndex());
+        TetreeKey ancestor13 = tetree.findCommonAncestor(tet1.tmIndex(), tet3.tmIndex());
+        TetreeKey ancestor14 = tetree.findCommonAncestor(tet1.tmIndex(), tet4.tmIndex());
 
         // Nearby tets should have a closer common ancestor than distant ones
         byte level12 = ancestor12.getLevel();
@@ -138,8 +138,8 @@ public class TetreeConvenienceMethodsTest {
             "Nearby tets should have a common ancestor at same or higher level than distant tets");
 
         // Test with single tet
-        TetreeKey selfAncestor = tetree.findCommonAncestor(new TetreeKey((byte)3, BigInteger.valueOf(tet1.index())));
-        assertEquals(tet1.index(), selfAncestor.getTmIndex().longValue(), 
+        TetreeKey selfAncestor = tetree.findCommonAncestor(tet1.tmIndex());
+        assertEquals(tet1.tmIndex().getTmIndex(), selfAncestor.getTmIndex(), 
             "Common ancestor of single tet should be itself");
 
         // Test with empty array
@@ -170,18 +170,18 @@ public class TetreeConvenienceMethodsTest {
 
         // First 4 tets are close together, should have nearby common ancestor
         TetreeKey ancestor0123 = tetree.findCommonAncestor(
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[0].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[1].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[2].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[3].index())));
+            tets[0].tmIndex(), 
+            tets[1].tmIndex(), 
+            tets[2].tmIndex(), 
+            tets[3].tmIndex());
 
         // All 5 tets include a distant one, should have lower level ancestor
         TetreeKey ancestorAll = tetree.findCommonAncestor(
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[0].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[1].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[2].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[3].index())), 
-            new TetreeKey((byte) 3, BigInteger.valueOf(tets[4].index())));
+            tets[0].tmIndex(), 
+            tets[1].tmIndex(), 
+            tets[2].tmIndex(), 
+            tets[3].tmIndex(), 
+            tets[4].tmIndex());
 
         byte level0123 = ancestor0123.getLevel();
         byte levelAll = ancestorAll.getLevel();
@@ -210,7 +210,7 @@ public class TetreeConvenienceMethodsTest {
         }
 
         Tet boundaryTet = tetree.locateTetrahedron(boundary, (byte) 2);
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(new TetreeKey((byte) 2, BigInteger.valueOf(boundaryTet.index())), 100f);
+        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(boundaryTet.tmIndex(), 100f);
 
         // Should find some neighbors even at boundary
         assertFalse(neighbors.isEmpty(), "Should find neighbors even at domain boundary");
@@ -249,10 +249,10 @@ public class TetreeConvenienceMethodsTest {
         // Find common ancestor of opposite corners
         Tet corner1 = tetree.locateTetrahedron(centers[0], (byte) 3);
         Tet corner2 = tetree.locateTetrahedron(centers[3], (byte) 3);
-        TetreeKey commonAncestor = tetree.findCommonAncestor(new TetreeKey((byte) 3, BigInteger.valueOf(corner1.index())), new TetreeKey((byte) 3, BigInteger.valueOf(corner2.index())));
+        TetreeKey commonAncestor = tetree.findCommonAncestor(corner1.tmIndex(), corner2.tmIndex());
 
         // Find neighbors within distance from one corner
-        Set<TetreeNodeImpl<LongEntityID>> nearbyNodes = tetree.findNeighborsWithinDistance(new TetreeKey((byte) 3, BigInteger.valueOf(corner1.index())), 200f);
+        Set<TetreeNodeImpl<LongEntityID>> nearbyNodes = tetree.findNeighborsWithinDistance(corner1.tmIndex(), 200f);
 
         // Use stream API to count entities in nearby nodes
         long nearbyEntityCount = nearbyNodes.stream()

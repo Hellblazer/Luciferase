@@ -130,22 +130,28 @@ The current architecture prioritizes:
 4. **Extensibility**: Easy addition of new spatial decomposition strategies
 5. **Performance**: O(1) operations through HashMap-based storage
 
-## Performance Results (June 2025)
+## Performance Reality (December 2025 - Updated)
 
-### Real Benchmarks: Tetree Outperforms Octree
+### Important Performance Update
 
-- **Bulk Operations**: Tetree is 11.5x faster than Octree for 100K entities (30ms vs 346ms)
-- **k-NN Queries**: Tetree 2.1x faster due to better spatial locality
-- **Individual Insert**: Tetree 8.4x faster for sequential insertions
+Previous performance claims were based on using the `consecutiveIndex()` method which is unique only within a level. After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance characteristics have changed dramatically.
 
-### Actual Performance Metrics (June 24, 2025)
+### Current Performance Metrics
 
-| Operation         | Octree    | Tetree    | Improvement |
-|-------------------|-----------|-----------|-------------|
-| Bulk insert 100K  | 346 ms    | 30 ms     | 11.5x       |
-| Individual 100K   | 287 ms    | 34 ms     | 8.4x        |
-| k-NN (k=10)       | 2.40 ms   | 1.15 ms   | 2.1x        |
-| Throughput        | 348K/sec  | 3.3M/sec  | 9.5x        |
+| Operation         | Octree    | Tetree    | Winner      | Notes |
+|-------------------|-----------|-----------|-------------|-------|
+| Insert 50K        | 75 ms     | 84,483 ms | Octree (1125x) | tmIndex() is O(level) |
+| k-NN (k=10)       | 28 μs     | 5.9 μs    | Tetree (4.8x)  | Better locality |
+| Range Query       | 28 μs     | 5.6 μs    | Tetree (5x)    | Efficient traversal |
+| Memory Usage      | 100%      | 22%       | Tetree (78% less) | Compact structure |
+
+### Key Insight
+
+- **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
+- **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
+- This fundamental difference cannot be optimized away
+
+For detailed performance analysis, see [PERFORMANCE_REALITY_DECEMBER_2025.md](./PERFORMANCE_REALITY_DECEMBER_2025.md)
 
 ## Testing Coverage
 

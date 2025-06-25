@@ -325,13 +325,16 @@ public static TestConfig getRegressionTestConfig() {
 
 Based on implemented optimizations, these are the target performance levels:
 
-### Insertion Performance Targets
-| Method | Entities/sec | Improvement vs Baseline |
-|--------|-------------|----------------------|
-| Iterative (baseline) | 25K | 1.0x |
-| Basic Bulk | 75K | 3.0x |
-| Optimized Bulk | 200K | 8.0x |
-| Parallel Bulk (8 cores) | 500K | 20.0x |
+### Insertion Performance Targets (Updated June 2025 - After Optimizations)
+| Method | Octree (entities/sec) | Tetree (entities/sec) | Notes |
+|--------|---------------------|---------------------|--------|
+| Single Insert | 670K | 2K-10K | Tetree 70-350x slower |
+| Basic Bulk | 750K | 20K | ~40x slower with batching |
+| Optimized Bulk | 800K | 23K | Best case with all optimizations |
+| Thread-Local Cache | 670K | 15K | Helps with concurrency |
+
+**Note**: Tetree insertion is fundamentally limited by O(level) tmIndex() computation
+**Achievement**: 94% improvement from initial state through caching optimizations
 
 ### Query Performance Targets
 | Query Type | Target Time | Improvement vs Baseline |

@@ -159,8 +159,8 @@ public final class TetreeValidator {
      * @return descriptive string
      */
     public static String describeTet(Tet tet) {
-        return String.format("Tet[x=%d, y=%d, z=%d, level=%d, type=%d, index=%d]", tet.x(), tet.y(), tet.z(), tet.l(),
-                             tet.type(), tet.index());
+        return String.format("Tet[x=%d, y=%d, z=%d, level=%d, type=%d, tmIndex=%s]", tet.x(), tet.y(), tet.z(), tet.l(),
+                             tet.type(), tet.tmIndex());
     }
 
     /**
@@ -332,10 +332,10 @@ public final class TetreeValidator {
         }
 
         // Check that indices are in ascending order
-        long prevIndex = tets.get(0).index();
+        TetreeKey prevIndex = tets.get(0).tmIndex();
         for (int i = 1; i < tets.size(); i++) {
-            long currentIndex = tets.get(i).index();
-            if (currentIndex <= prevIndex) {
+            TetreeKey currentIndex = tets.get(i).tmIndex();
+            if (currentIndex.compareTo(prevIndex) <= 0) {
                 return false;
             }
             prevIndex = currentIndex;
@@ -466,7 +466,7 @@ public final class TetreeValidator {
                 // Check parent-child relationships
                 if (tet.l() > 0) {
                     Tet parent = tet.parent();
-                    if (!nodeIndices.contains(parent.index()) && parent.l() > 0) {
+                    if (!nodeIndices.contains(parent.tmIndex()) && parent.l() > 0) {
                         // Parent should exist unless it's the root
                         errors.add(String.format("Orphan node: %s has no parent in tree", describeTet(tet)));
                     }

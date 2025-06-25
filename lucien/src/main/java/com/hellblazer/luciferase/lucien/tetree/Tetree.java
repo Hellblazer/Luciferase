@@ -37,6 +37,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -115,6 +116,15 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     // ===== Abstract Method Implementations =====
     private long cacheHits   = 0;
     private long cacheMisses = 0;
+    
+    // Thread-local caching configuration (Phase 3)
+    private boolean useThreadLocalCache = false;
+    
+    // Lazy evaluation configuration
+    private boolean useLazyEvaluation = false;
+    
+    // Intelligent lazy evaluation - only for bulk operations
+    private boolean autoLazyForBulk = true;
 
     /**
      * Create a Tetree with default configuration
@@ -158,7 +168,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
                                       (bounds.minZ() + bounds.maxZ()) / 2);
 
         var tet = locate(centerPoint, level);
-        TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
+        TetreeNodeImpl<ID> node = spatialIndex.get(tet.tmIndex());
         if (node != null && !node.isEmpty()) {
             return new SpatialNode<>(tet.tmIndex(), new HashSet<>(node.getEntityIds()));
         }
@@ -170,7 +180,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         TetreeValidationUtils.validatePositiveCoordinates(point);
 
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
-        TetreeNodeImpl<ID> node = spatialIndex.get(tet.index());
+        TetreeNodeImpl<ID> node = spatialIndex.get(tet.tmIndex());
         if (node != null && !node.isEmpty()) {
             return new SpatialNode<>(tet.tmIndex(), new HashSet<>(node.getEntityIds()));
         }
@@ -853,6 +863,104 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     }
 
     /**
+     * Enable or disable thread-local caching for TetreeKey computation.
+     * Thread-local caches reduce contention in heavily concurrent workloads.
+     *
+     * @param enabled true to enable thread-local caching, false to use global cache
+     */
+    public void setThreadLocalCaching(boolean enabled) {
+        this.useThreadLocalCache = enabled;
+    }
+    
+    /**
+     * Check if thread-local caching is enabled.
+     *
+     * @return true if thread-local caching is enabled
+     */
+    public boolean isThreadLocalCachingEnabled() {
+        return useThreadLocalCache;
+    }
+    
+    /**
+     * Get thread-local cache statistics.
+     *
+     * @return statistics string if thread-local caching is enabled, empty string otherwise
+     */
+    public String getThreadLocalCacheStatistics() {
+        return useThreadLocalCache ? ThreadLocalTetreeCache.getGlobalStatistics() : "";
+    }
+    
+    /**
+     * Enable or disable lazy evaluation for TetreeKey computation.
+     * When enabled, tmIndex() computation is deferred until the key is actually needed
+     * for comparison or ordering operations.
+     *
+     * @param enabled true to enable lazy evaluation, false to compute immediately
+     */
+    public void setLazyEvaluation(boolean enabled) {
+        this.useLazyEvaluation = enabled;
+    }
+    
+    /**
+     * Check if lazy evaluation is enabled.
+     *
+     * @return true if lazy evaluation is enabled
+     */
+    public boolean isLazyEvaluationEnabled() {
+        return useLazyEvaluation;
+    }
+    
+    /**
+     * Enable or disable automatic lazy evaluation for bulk operations.
+     * When enabled, bulk operations will automatically use lazy evaluation
+     * even if general lazy evaluation is disabled.
+     *
+     * @param enabled true to enable auto-lazy for bulk operations
+     */
+    public void setAutoLazyForBulk(boolean enabled) {
+        this.autoLazyForBulk = enabled;
+    }
+    
+    /**
+     * Check if automatic lazy evaluation for bulk operations is enabled.
+     *
+     * @return true if auto-lazy for bulk is enabled
+     */
+    public boolean isAutoLazyForBulkEnabled() {
+        return autoLazyForBulk;
+    }
+    
+    /**
+     * Force resolution of all lazy keys in the spatial index.
+     * This is useful before operations that require ordering or comparison.
+     *
+     * @return the number of lazy keys that were resolved
+     */
+    public int resolveLazyKeys() {
+        if (!useLazyEvaluation) {
+            return 0;
+        }
+        
+        lock.writeLock().lock();
+        try {
+            var lazyKeys = spatialIndex.keySet().stream()
+                .filter(k -> k instanceof LazyTetreeKey)
+                .map(k -> (LazyTetreeKey) k)
+                .filter(k -> !k.isResolved())
+                .toList();
+            
+            if (!lazyKeys.isEmpty()) {
+                // Resolve in parallel for better performance
+                lazyKeys.parallelStream().forEach(LazyTetreeKey::resolve);
+            }
+            
+            return lazyKeys.size();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * Create an iterator over all sibling nodes of the given tetrahedron. Siblings are tetrahedra that share the same
      * parent in the tree hierarchy.
      *
@@ -1091,6 +1199,17 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     @Override
     protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
         var tet = locate(position, level);
+        
+        // Use lazy evaluation if enabled
+        if (useLazyEvaluation) {
+            return new LazyTetreeKey(tet);
+        }
+        
+        // Use thread-local cache if enabled
+        if (useThreadLocalCache) {
+            return ThreadLocalTetreeCache.getTetreeKey(tet);
+        }
+        
         return tet.tmIndex();
     }
 
@@ -2853,6 +2972,69 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             // This ensures correct parent calculation using the exact t8code algorithm
             Tet parentTet = tet.parent();
             return parentTet.tmIndex();
+        }
+    }
+
+    /**
+     * Optimized bulk insertion that pre-computes spatial regions for better cache utilization.
+     * This override implements Phase 2 of the performance improvement plan.
+     *
+     * @param positions the positions to insert
+     * @param contents  the content for each position
+     * @param level     the level at which to insert
+     * @return list of generated entity IDs
+     */
+    @Override
+    public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level) {
+        // Enable lazy evaluation for bulk operations if configured
+        boolean wasLazy = useLazyEvaluation;
+        if (autoLazyForBulk && !useLazyEvaluation) {
+            useLazyEvaluation = true;
+        }
+        
+        try {
+        if (positions.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        // Calculate bounding box of all positions
+        var minX = Float.MAX_VALUE;
+        var minY = Float.MAX_VALUE;
+        var minZ = Float.MAX_VALUE;
+        var maxX = Float.MIN_VALUE;
+        var maxY = Float.MIN_VALUE;
+        var maxZ = Float.MIN_VALUE;
+        
+        for (var pos : positions) {
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            minZ = Math.min(minZ, pos.z);
+            maxX = Math.max(maxX, pos.x);
+            maxY = Math.max(maxY, pos.y);
+            maxZ = Math.max(maxZ, pos.z);
+        }
+        
+        // PERFORMANCE: Pre-cache the region
+        var bounds = new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+        var regionCache = new TetreeRegionCache();
+        
+        // Pre-compute only for the target level to avoid excessive memory usage
+        regionCache.precomputeRegion(bounds, level);
+        
+        // Pre-computation complete - cache is now warmed
+        
+        // Now perform normal bulk insertion with pre-warmed cache
+        var result = super.insertBatch(positions, contents, level);
+        
+        // Clear region cache to free memory
+        regionCache.clear();
+        
+        return result;
+        } finally {
+            // Restore lazy evaluation setting
+            if (autoLazyForBulk && wasLazy != useLazyEvaluation) {
+                useLazyEvaluation = wasLazy;
+            }
         }
     }
 }
