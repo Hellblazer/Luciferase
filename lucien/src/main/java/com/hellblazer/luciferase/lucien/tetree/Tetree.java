@@ -2855,4 +2855,54 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             return parentTet.tmIndex();
         }
     }
+
+    /**
+     * Optimized bulk insertion that pre-computes spatial regions for better cache utilization.
+     * This override implements Phase 2 of the performance improvement plan.
+     *
+     * @param positions the positions to insert
+     * @param contents  the content for each position
+     * @param level     the level at which to insert
+     * @return list of generated entity IDs
+     */
+    @Override
+    public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level) {
+        if (positions.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        // Calculate bounding box of all positions
+        var minX = Float.MAX_VALUE;
+        var minY = Float.MAX_VALUE;
+        var minZ = Float.MAX_VALUE;
+        var maxX = Float.MIN_VALUE;
+        var maxY = Float.MIN_VALUE;
+        var maxZ = Float.MIN_VALUE;
+        
+        for (var pos : positions) {
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            minZ = Math.min(minZ, pos.z);
+            maxX = Math.max(maxX, pos.x);
+            maxY = Math.max(maxY, pos.y);
+            maxZ = Math.max(maxZ, pos.z);
+        }
+        
+        // PERFORMANCE: Pre-cache the region
+        var bounds = new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
+        var regionCache = new TetreeRegionCache();
+        
+        // Pre-compute only for the target level to avoid excessive memory usage
+        regionCache.precomputeRegion(bounds, level);
+        
+        // Pre-computation complete - cache is now warmed
+        
+        // Now perform normal bulk insertion with pre-warmed cache
+        var result = super.insertBatch(positions, contents, level);
+        
+        // Clear region cache to free memory
+        regionCache.clear();
+        
+        return result;
+    }
 }
