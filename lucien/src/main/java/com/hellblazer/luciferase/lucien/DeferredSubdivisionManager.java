@@ -89,7 +89,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
     /**
      * Check if a node is marked for deferred subdivision
      */
-    public boolean isDeferred(long nodeIndex) {
+    public boolean isDeferred(Key nodeIndex) {
         return candidates.containsKey(nodeIndex);
     }
 

@@ -78,8 +78,8 @@ public class DeferredSubdivisionManagerTest {
         manager.clear();
 
         assertEquals(0, manager.getStats().currentDeferred);
-        assertFalse(manager.isDeferred(1L));
-        assertFalse(manager.isDeferred(2L));
+        assertFalse(manager.isDeferred(new MortonKey(1L)));
+        assertFalse(manager.isDeferred(new MortonKey(2L)));
     }
 
     @Test
@@ -106,10 +106,10 @@ public class DeferredSubdivisionManagerTest {
         manager.deferSubdivision(new MortonKey(300L), node3, 5, (byte) 4);
 
         // Check deferred status
-        assertTrue(manager.isDeferred(100L));
-        assertTrue(manager.isDeferred(200L));
-        assertTrue(manager.isDeferred(300L));
-        assertFalse(manager.isDeferred(400L));
+        assertTrue(manager.isDeferred(new MortonKey(100L)));
+        assertTrue(manager.isDeferred(new MortonKey(200L)));
+        assertTrue(manager.isDeferred(new MortonKey(300L)));
+        assertFalse(manager.isDeferred(new MortonKey(400L)));
 
         // Get stats before processing
         DeferredSubdivisionManager.DeferredStats statsBefore = manager.getStats();
@@ -141,9 +141,9 @@ public class DeferredSubdivisionManagerTest {
         assertEquals(0.33, result.getSubdivisionRate(), 0.01);
 
         // Check that all deferred nodes were cleared
-        assertFalse(manager.isDeferred(100L));
-        assertFalse(manager.isDeferred(200L));
-        assertFalse(manager.isDeferred(300L));
+        assertFalse(manager.isDeferred(new MortonKey(100L)));
+        assertFalse(manager.isDeferred(new MortonKey(200L)));
+        assertFalse(manager.isDeferred(new MortonKey(300L)));
 
         // Get stats after processing
         DeferredSubdivisionManager.DeferredStats statsAfter = manager.getStats();
@@ -197,8 +197,8 @@ public class DeferredSubdivisionManagerTest {
         manager.deferSubdivision(new MortonKey(3L), largeNode, 50, (byte) 5);
 
         // Small node should have been evicted
-        assertFalse(manager.isDeferred(1L));
-        assertTrue(manager.isDeferred(2L));
-        assertTrue(manager.isDeferred(3L));
+        assertFalse(manager.isDeferred(new MortonKey(1L)));
+        assertTrue(manager.isDeferred(new MortonKey(2L)));
+        assertTrue(manager.isDeferred(new MortonKey(3L)));
     }
 }

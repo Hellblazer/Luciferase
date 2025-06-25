@@ -1086,6 +1086,22 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
 
         return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
+    
+    @Override
+    protected NavigableSet<TetreeKey> getSpatialIndexRange(VolumeBounds bounds) {
+        // For now, use a conservative approach that checks all existing nodes
+        // This ensures we don't miss any nodes due to SFC complexity
+        NavigableSet<TetreeKey> candidates = new TreeSet<>();
+        
+        // Check all existing nodes for intersection with bounds
+        for (TetreeKey key : sortedSpatialIndices) {
+            if (doesNodeIntersectVolume(key, createSpatialFromBounds(bounds))) {
+                candidates.add(key);
+            }
+        }
+        
+        return candidates;
+    }
 
     @Override
     protected int getCellSizeAtLevel(byte level) {
@@ -1182,12 +1198,6 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         return spatialIndex;
     }
 
-    @Override
-    protected NavigableSet<TetreeKey> getSpatialIndexRange(VolumeBounds bounds) {
-        // CRITICAL FIX: The memory-efficient strategies are still broken.
-        // For now, use the direct approach that works correctly.
-        return getStandardEntitySpatialRange(bounds, true);
-    }
 
     @Override
     protected void handleNodeSubdivision(TetreeKey parentTetIndex, byte parentLevel, TetreeNodeImpl<ID> parentNode) {

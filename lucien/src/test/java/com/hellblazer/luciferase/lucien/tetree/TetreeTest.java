@@ -4,6 +4,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,7 +12,10 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -143,28 +147,24 @@ public class TetreeTest {
         // Find 2 nearest to (105, 105, 105)
         Point3f queryPoint = new Point3f(105, 105, 105);
         List<LongEntityID> nearest = tetree.kNearestNeighbors(queryPoint, 2, Float.MAX_VALUE);
-
-        // Debug: check if all entities were inserted
-        System.out.println("Total entities in tree: " + tetree.entityCount());
-        System.out.println("k-NN found " + nearest.size() + " neighbors: " + nearest);
-        System.out.println("id1=" + id1 + ", id2=" + id2 + ", id3=" + id3 + ", id4=" + id4);
         
-        // Check distances
-        for (LongEntityID id : new LongEntityID[]{id1, id2, id3, id4}) {
-            Point3f pos = tetree.getEntityPosition(id);
-            float dist = queryPoint.distance(pos);
-            System.out.println("Entity " + id + " at " + pos + " distance=" + dist);
-        }
+        // Calculate distances for verification
+        Map<LongEntityID, Float> distances = new HashMap<>();
+        distances.put(id1, queryPoint.distance(new Point3f(100, 100, 100)));
+        distances.put(id2, queryPoint.distance(new Point3f(110, 110, 110)));
+        distances.put(id3, queryPoint.distance(new Point3f(200, 200, 200)));
+        distances.put(id4, queryPoint.distance(new Point3f(500, 500, 500)));
         
-        // TODO: k-NN algorithm has a bug where it's not finding the actual nearest neighbors
-        // It's finding entity 2 (distance 164) instead of entities 0 and 1 (distance 8.66)
-        // For now, just verify we get some results
-        assertTrue(nearest.size() > 0, "Should find at least one neighbor");
-        assertTrue(nearest.size() <= 2, "Should find at most k neighbors");
+        // Check that we found exactly k neighbors
+        assertEquals(2, nearest.size(), "Should find exactly k neighbors");
         
-        // The current implementation has issues with spatial range queries
-        // This needs to be fixed in AbstractSpatialIndex.kNearestNeighbors
-        System.out.println("WARNING: k-NN is not returning correct nearest neighbors");
+        // Verify we found the actual nearest neighbors
+        assertTrue(nearest.contains(id1), "Should find id1 (distance " + distances.get(id1) + ")");
+        assertTrue(nearest.contains(id2), "Should find id2 (distance " + distances.get(id2) + ")");
+        
+        // Verify we didn't find the farther entities
+        assertFalse(nearest.contains(id3), "Should not find id3 (distance " + distances.get(id3) + ")");
+        assertFalse(nearest.contains(id4), "Should not find id4 (distance " + distances.get(id4) + ")");
     }
 
     @Test

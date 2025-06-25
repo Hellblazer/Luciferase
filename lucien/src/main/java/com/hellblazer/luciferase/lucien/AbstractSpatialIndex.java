@@ -466,6 +466,59 @@ implements SpatialIndex<Key, ID, Content> {
                     }
                 }
             }
+            
+            // 4. Additional pass for point entities: Check against all bounded entities
+            // This ensures we don't miss collisions between point entities and bounded entities in non-adjacent nodes
+            // First, collect all bounded entities and their expanded search regions
+            Map<ID, Set<Key>> boundedEntitySearchNodes = new HashMap<>();
+            
+            for (var nodeIndex : sortedSpatialIndices) {
+                NodeType node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    continue;
+                }
+                
+                for (ID entityId : node.getEntityIds()) {
+                    EntityBounds bounds = entityManager.getEntityBounds(entityId);
+                    if (bounds != null) {
+                        // Calculate nodes that could contain point entities that might collide
+                        // Expand search area slightly to catch nearby point entities
+                        float threshold = 0.1f; // Collision threshold for point entities
+                        EntityBounds expandedBounds = new EntityBounds(
+                            new Point3f(bounds.getMinX() - threshold,
+                                       bounds.getMinY() - threshold,
+                                       bounds.getMinZ() - threshold),
+                            new Point3f(bounds.getMaxX() + threshold,
+                                       bounds.getMaxY() + threshold,
+                                       bounds.getMaxZ() + threshold)
+                        );
+                        var searchNodes = findNodesIntersectingBounds(expandedBounds);
+                        boundedEntitySearchNodes.put(entityId, searchNodes);
+                    }
+                }
+            }
+            
+            // Now check point entities against bounded entities in their search regions
+            for (var entry : boundedEntitySearchNodes.entrySet()) {
+                ID boundedId = entry.getKey();
+                Set<Key> searchNodes = entry.getValue();
+                
+                for (var searchNodeIndex : searchNodes) {
+                    NodeType searchNode = spatialIndex.get(searchNodeIndex);
+                    if (searchNode == null || searchNode.isEmpty()) {
+                        continue;
+                    }
+                    
+                    for (ID pointId : searchNode.getEntityIds()) {
+                        if (entityManager.getEntityBounds(pointId) == null) { // Only check point entities
+                            UnorderedPair<ID> pair = new UnorderedPair<>(boundedId, pointId);
+                            if (checkedPairs.add(pair)) {
+                                checkAndAddCollision(boundedId, pointId, collisions);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Sort by penetration depth (deepest first)
             Collections.sort(collisions);
@@ -1271,9 +1324,9 @@ implements SpatialIndex<Key, ID, Content> {
         return lockingStrategy.executeRead(0L, () -> {
             // Priority queue to keep track of k nearest entities (max heap)
             PriorityQueue<EntityDistance<ID>> candidates = new PriorityQueue<>(EntityDistance.maxHeapComparator());
-
-            // Track visited entities to avoid duplicates
-            Set<ID> visited = new HashSet<>();
+            
+            // Track which entities we've already added to candidates
+            Set<ID> addedToCandidates = new HashSet<>();
 
             // Use spatial locality: start with nodes closest to query point and expand outward
             // This avoids the O(n) problem of checking all nodes
@@ -1282,8 +1335,11 @@ implements SpatialIndex<Key, ID, Content> {
             float searchRadius = Math.min(maxDistance, getCellSizeAtLevel(maxDepth));
             int searchExpansions = 0;
             final int maxExpansions = 5; // Limit search expansion to prevent runaway searches
+            
 
             while (candidates.size() < k && searchRadius <= maxDistance && searchExpansions < maxExpansions) {
+                // Track visited entities for this search radius to avoid duplicates within the same expansion
+                Set<ID> visitedThisExpansion = new HashSet<>();
                 // Create search bounds around query point
                 VolumeBounds searchBounds = new VolumeBounds(queryPoint.x - searchRadius, queryPoint.y - searchRadius,
                                                              queryPoint.z - searchRadius, queryPoint.x + searchRadius,
@@ -1291,34 +1347,41 @@ implements SpatialIndex<Key, ID, Content> {
 
                 // Find nodes that intersect with search bounds (spatial locality constraint)
                 boolean foundNewEntities = false;
-                spatialRangeQuery(searchBounds, true).forEach(entry -> {
+                
+                // For now, check all nodes to ensure we don't miss any
+                // TODO: Optimize spatial range query for Tetree
+                for (var entry : spatialIndex.entrySet()) {
                     NodeType node = entry.getValue();
 
                     if (node == null || node.isEmpty()) {
-                        return;
+                        continue;
                     }
 
-                    // Check all entities in this spatially-relevant node
+                    // Check all entities in this node
                     for (ID entityId : node.getEntityIds()) {
-                        if (visited.add(entityId)) {
+                        if (visitedThisExpansion.add(entityId)) {
                             Point3f entityPos = entityManager.getEntityPosition(entityId);
                             if (entityPos != null) {
                                 float distance = queryPoint.distance(entityPos);
-                                if (distance <= maxDistance) {
+                                // Only consider entities within current search radius
+                                if (distance <= searchRadius && distance <= maxDistance && !addedToCandidates.contains(entityId)) {
                                     candidates.add(new EntityDistance<>(entityId, distance));
+                                    addedToCandidates.add(entityId);
+                                    foundNewEntities = true;
 
                                     // Keep only k elements (maintain heap property)
                                     if (candidates.size() > k) {
-                                        candidates.poll();
+                                        var removed = candidates.poll();
+                                        addedToCandidates.remove(removed.entityId());
                                     }
                                 }
                             }
                         }
                     }
-                });
+                }
 
                 // If we didn't find enough candidates, expand search radius
-                if (candidates.size() < k) {
+                if (candidates.size() < k && searchRadius < maxDistance) {
                     searchRadius *= 2.0f;
                     searchExpansions++;
                 } else {
@@ -1373,14 +1436,16 @@ implements SpatialIndex<Key, ID, Content> {
 
                         // Check entities in current node
                         for (var entityId : node.getEntityIds()) {
-                            if (visited.add(entityId)) {
+                            if (!addedToCandidates.contains(entityId)) {
                                 var entityPos = entityManager.getEntityPosition(entityId);
                                 if (entityPos != null) {
                                     var distance = queryPoint.distance(entityPos);
                                     if (distance <= maxDistance) {
                                         candidates.add(new EntityDistance<>(entityId, distance));
+                                        addedToCandidates.add(entityId);
                                         if (candidates.size() > k) {
-                                            candidates.poll();
+                                            var removed = candidates.poll();
+                                            addedToCandidates.remove(removed.entityId());
                                         }
                                     }
                                 }
