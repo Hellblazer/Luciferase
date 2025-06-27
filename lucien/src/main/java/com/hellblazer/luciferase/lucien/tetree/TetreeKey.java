@@ -19,50 +19,43 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
-import java.math.BigInteger;
 import java.util.Objects;
 
 /**
- * Spatial key implementation for Tetree structures.
+ * Spatial key implementation for Tetree structures using 128-bit representation.
  *
  * Unlike Morton codes used in Octrees, Tetree SFC indices are NOT unique across levels. The same index value can
  * represent different tetrahedra at different levels. This key implementation combines both the level and the SFC index
  * to ensure uniqueness.
  *
- * The comparison ordering is lexicographic: first by level, then by SFC index. This maintains spatial locality within
- * each level while ensuring keys from different levels don't collide.
+ * The TM-index is represented using two longs (128 bits total), which is sufficient for levels 0-21.
+ * The comparison ordering ensures spatial locality within each level.
  *
  * @author hal.hildebrand
  */
 public class TetreeKey implements SpatialKey<TetreeKey> {
 
-    // Parent type table from the paper
-    private static final int[][]    PARENT_TYPES = { { 0, 1, 2, 3, 4, 5 }, // cube_id 0
-                                                     { 0, 1, 1, 1, 0, 0 }, // cube_id 1
-                                                     { 2, 2, 2, 3, 3, 3 }, // cube_id 2
-                                                     { 1, 1, 2, 2, 2, 1 }, // cube_id 3
-                                                     { 5, 5, 4, 4, 4, 5 }, // cube_id 4
-                                                     { 0, 0, 0, 5, 5, 5 }, // cube_id 5
-                                                     { 4, 3, 3, 3, 4, 4 }, // cube_id 6
-                                                     { 0, 1, 2, 3, 4, 5 }  // cube_id 7
-    };
-    private final        byte       level;
-    private final        BigInteger tmIndex;
+    private final byte level;
+    private final long lowBits;  // Lower 64 bits (levels 0-9, 6 bits per level)
+    private final long highBits; // Upper 64 bits (levels 10-20, 6 bits per level)
 
     /**
-     * Create a new TetreeKey from level and SFC index.
+     * Create a new TetreeKey using 128-bit representation.
      *
-     * @param level   the hierarchical level (0-based)
-     * @param tmIndex the space-filling curve index at this level
+     * @param level    the hierarchical level (0-based)
+     * @param lowBits  the lower 64 bits of the TM-index (levels 0-9)
+     * @param highBits the upper 64 bits of the TM-index (levels 10-20)
      */
-    public TetreeKey(byte level, BigInteger tmIndex) {
+    public TetreeKey(byte level, long lowBits, long highBits) {
         if (level < 0 || level > Constants.getMaxRefinementLevel()) {
             throw new IllegalArgumentException(
-            "Level must be between 0 and " + Constants.getMaxRefinementLevel() + ", got: " + level);
+                "Level must be between 0 and " + Constants.getMaxRefinementLevel() + ", got: " + level);
         }
         this.level = level;
-        this.tmIndex = tmIndex;
+        this.lowBits = lowBits;
+        this.highBits = highBits;
     }
+
 
     /**
      * Create a root-level TetreeKey.
@@ -70,13 +63,21 @@ public class TetreeKey implements SpatialKey<TetreeKey> {
      * @return the key for the root tetrahedron
      */
     public static TetreeKey getRoot() {
-        return new TetreeKey((byte) 0, BigInteger.ZERO);
+        return new TetreeKey((byte) 0, 0L, 0L);
     }
 
     @Override
     public int compareTo(TetreeKey other) {
         Objects.requireNonNull(other, "Cannot compare to null TetreeKey");
-        return this.tmIndex.compareTo(other.tmIndex);
+        
+        // Compare high bits first (unsigned comparison)
+        int highComparison = Long.compareUnsigned(this.highBits, other.highBits);
+        if (highComparison != 0) {
+            return highComparison;
+        }
+        
+        // If high bits are equal, compare low bits (unsigned comparison)
+        return Long.compareUnsigned(this.lowBits, other.lowBits);
     }
 
     @Override
@@ -87,7 +88,7 @@ public class TetreeKey implements SpatialKey<TetreeKey> {
         if (!(o instanceof final TetreeKey tetreeKey)) {
             return false;
         }
-        return level == tetreeKey.level && tmIndex.equals(tetreeKey.tmIndex);
+        return level == tetreeKey.level && lowBits == tetreeKey.lowBits && highBits == tetreeKey.highBits;
     }
 
     @Override
@@ -95,20 +96,33 @@ public class TetreeKey implements SpatialKey<TetreeKey> {
         return level;
     }
 
+
     /**
-     * Get the SFC index component of this key.
+     * Get the lower 64 bits of the 128-bit representation.
+     * Only valid when constructed with the 128-bit constructor.
      *
-     * @return the space-filling curve index
+     * @return the lower 64 bits (levels 0-9)
      */
-    public BigInteger getTmIndex() {
-        return tmIndex;
+    public long getLowBits() {
+        return lowBits;
     }
+
+    /**
+     * Get the upper 64 bits of the 128-bit representation.
+     * Only valid when constructed with the 128-bit constructor.
+     *
+     * @return the upper 64 bits (levels 10-20)
+     */
+    public long getHighBits() {
+        return highBits;
+    }
+
 
     @Override
     public int hashCode() {
-        // Combine level and sfcIndex for good hash distribution
+        // Combine level and both longs for good hash distribution
         // Use prime multiplier for level to reduce collisions
-        return Objects.hash(level, tmIndex);
+        return Objects.hash(level, lowBits, highBits);
     }
 
     @Override
@@ -118,17 +132,13 @@ public class TetreeKey implements SpatialKey<TetreeKey> {
             return false;
         }
 
-        if (tmIndex.signum() < 0) {
-            return false;
-        }
-
         // Special case: root tetrahedron
         if (level == 0) {
-            return tmIndex.equals(BigInteger.ZERO);
+            return lowBits == 0L && highBits == 0L;
         }
 
-        // For non-root levels, any non-negative tm-index is considered valid
-        // The tm-index structure is complex and validated during creation in Tet.tmIndex()
+        // For non-root levels, the tm-index structure is complex and validated during creation in Tet.tmIndex()
+        // We trust that if it was created, it's valid
         return true;
     }
 
@@ -143,77 +153,17 @@ public class TetreeKey implements SpatialKey<TetreeKey> {
 
     @Override
     public String toString() {
-        return String.format("TetreeKey[level=%d, tm-index=%d]", level, tmIndex);
+        // For display, show the 128-bit value in a readable format
+        if (level == 0) {
+            return "TetreeKey[level=0, tm-index=0]";
+        }
+        
+        // For debugging, show hex representation
+        if (highBits == 0L) {
+            return String.format("TetreeKey[level=%d, tm-index=0x%X]", level, lowBits);
+        } else {
+            return String.format("TetreeKey[level=%d, tm-index=0x%X%016X]", level, highBits, lowBits);
+        }
     }
 
-    /**
-     * Validate the type sequence in the TM-index Checks that all parent-child type relationships are valid
-     */
-    private boolean validateTypeSequence(BigInteger tmIndex, int level) {
-        // Extract interleaved bits
-        BigInteger index = tmIndex;
-        BigInteger sixtyFour = BigInteger.valueOf(64);
-        var maxLevel = Constants.getMaxRefinementLevel();
-        int[] types = new int[maxLevel];
-        int[] cubeIds = new int[maxLevel];
-
-        // Extract from least significant to most significant
-        for (int i = maxLevel - 1; i >= 0; i--) {
-            if (index.equals(BigInteger.ZERO) && i >= 0) {
-                // Rest are zeros
-                break;
-            }
-
-            BigInteger[] divRem = index.divideAndRemainder(sixtyFour);
-            index = divRem[0];
-            int value = divRem[1].intValue();
-
-            // Extract type (lower 3 bits)
-            types[i] = value & 7;
-
-            // Extract coordinate bits to get cube-id
-            int coordBits = value >> 3;
-            cubeIds[i] = coordBits & 7;
-
-            // Validate type is in range [0,5]
-            if (types[i] > 5) {
-                return false;
-            }
-        }
-
-        // Validate parent-child type relationships
-        // Start with root type 0
-        int currentType = 0;
-
-        // Walk from root to the target level
-        for (int i = 1; i <= level; i++) {
-            int childType = types[maxLevel - i];
-            int cubeId = cubeIds[maxLevel - i];
-
-            // Verify this is a valid child type for the current parent type
-            boolean validChild = false;
-            for (int j = 0; j < 6; j++) {
-                if (PARENT_TYPES[cubeId][j] == currentType && j == childType) {
-                    validChild = true;
-                    break;
-                }
-            }
-
-            if (!validChild) {
-                return false;
-            }
-
-            // Move to next level - child becomes parent
-            currentType = childType;
-        }
-
-        // Check that types beyond level are zero
-        for (int i = 0; i < maxLevel - level; i++) {
-            if (types[i] != 0) {
-                return false;
-            }
-        }
-
-        return true;
-    }
 }

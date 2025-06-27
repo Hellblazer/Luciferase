@@ -585,9 +585,10 @@ public class TetrahedralGeometry {
     }
 
     private static void cacheVertices(TetreeKey tetKey, Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
-        int cacheIndex = (int) (tetKey.getTmIndex().longValue() % CACHE_SIZE);
+        // Use the low bits for cache indexing
+        int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
         synchronized (cacheLocks[cacheIndex]) {
-            cachedIndices[cacheIndex] = tetKey.getTmIndex().longValue();
+            cachedIndices[cacheIndex] = tetKey.getLowBits();
             cachedVertices[cacheIndex][0].set(v0);
             cachedVertices[cacheIndex][1].set(v1);
             cachedVertices[cacheIndex][2].set(v2);
@@ -596,9 +597,10 @@ public class TetrahedralGeometry {
     }
 
     private static Point3f[] getCachedVertices(TetreeKey tetKey) {
-        int cacheIndex = (int) (tetKey.getTmIndex().longValue() % CACHE_SIZE);
+        // Use the low bits for cache indexing
+        int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
         synchronized (cacheLocks[cacheIndex]) {
-            if (cachedIndices[cacheIndex] == tetKey.getTmIndex().longValue()) {
+            if (cachedIndices[cacheIndex] == tetKey.getLowBits()) {
                 return cachedVertices[cacheIndex];
             }
         }

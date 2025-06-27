@@ -86,7 +86,8 @@ public class TetreeKeyCachePerformanceTest {
                 // Values should be identical
                 assertEquals(key1, key2, "Cached TetreeKey should equal computed TetreeKey");
                 assertEquals(key1.getLevel(), key2.getLevel());
-                assertEquals(key1.getTmIndex(), key2.getTmIndex());
+                assertEquals(key1.getLowBits(), key2.getLowBits());
+                assertEquals(key1.getHighBits(), key2.getHighBits());
             }
         }
     }

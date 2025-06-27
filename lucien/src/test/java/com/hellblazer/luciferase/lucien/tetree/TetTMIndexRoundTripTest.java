@@ -2,8 +2,6 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import org.junit.jupiter.api.Test;
 
-import java.math.BigInteger;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -71,7 +69,7 @@ public class TetTMIndexRoundTripTest {
 
         // Updated: The TM-index value depends on our specific implementation
         // Instead of checking a hard-coded value, verify round-trip consistency
-        System.out.println("  Computed TM-index: " + key.getTmIndex());
+        System.out.printf("  Computed TM-index: Low=0x%016X, High=0x%016X\n", key.getLowBits(), key.getHighBits());
 
         // Now convert back and test round-trip
         Tet fromKey = Tet.tetrahedron(key);
@@ -87,7 +85,6 @@ public class TetTMIndexRoundTripTest {
 
         // Let's manually trace the tmIndex calculation
         Tet current = tet;
-        BigInteger index = BigInteger.ZERO;
 
         for (int i = tet.l() - 1; i >= 0; i--) {
             Tet parent = current.parent();

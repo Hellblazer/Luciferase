@@ -62,7 +62,7 @@ public class LazyEvaluationProfilingTest {
         var instrumentedTetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator()) {
             @Override
             protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
-                var tet = Tet.locateFreudenthal(position.x, position.y, position.z, level);
+                var tet = Tet.locateStandardRefinement(position.x, position.y, position.z, level);
                 return new InstrumentedLazyTetreeKey(tet, "calculateSpatialIndex");
             }
         };
@@ -82,7 +82,7 @@ public class LazyEvaluationProfilingTest {
         
         // Test 1: Just create a lazy key directly
         System.out.println("1. Creating lazy key...");
-        var tet = Tet.locateFreudenthal(position.x, position.y, position.z, (byte) 10);
+        var tet = Tet.locateStandardRefinement(position.x, position.y, position.z, (byte) 10);
         var key = new LazyTetreeKey(tet);
         System.out.println("   Key type: " + key.getClass().getSimpleName());
         System.out.println("   Is resolved: " + key.isResolved());
@@ -125,7 +125,7 @@ public class LazyEvaluationProfilingTest {
         long directStart = System.nanoTime();
         var directKeys = new ArrayList<TetreeKey>();
         for (var pos : positions) {
-            var tet = Tet.locateFreudenthal(pos.x, pos.y, pos.z, (byte) 10);
+            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
             directKeys.add(tet.tmIndex());
         }
         long directTime = System.nanoTime() - directStart;
@@ -134,7 +134,7 @@ public class LazyEvaluationProfilingTest {
         long lazyStart = System.nanoTime();
         var lazyKeys = new ArrayList<LazyTetreeKey>();
         for (var pos : positions) {
-            var tet = Tet.locateFreudenthal(pos.x, pos.y, pos.z, (byte) 10);
+            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
             lazyKeys.add(new LazyTetreeKey(tet));
         }
         long lazyTime = System.nanoTime() - lazyStart;
@@ -143,7 +143,7 @@ public class LazyEvaluationProfilingTest {
         long resolvedStart = System.nanoTime();
         var resolvedKeys = new ArrayList<TetreeKey>();
         for (var pos : positions) {
-            var tet = Tet.locateFreudenthal(pos.x, pos.y, pos.z, (byte) 10);
+            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
             var lazy = new LazyTetreeKey(tet);
             lazy.resolve();
             resolvedKeys.add(lazy);

@@ -22,7 +22,6 @@ import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 
 import javax.vecmath.*;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -772,7 +771,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             {
                 // Build path from start to root, but only include nodes that exist
                 TetreeKey current = startIndex;
-                while (current != null && current.getTmIndex().compareTo(BigInteger.ZERO) >= 0) {
+                while (current != null && (current.getLevel() > 0 || (current.getLowBits() == 0L && current.getHighBits() == 0L))) {
                     if (spatialIndex.containsKey(current)) {
                         path.add(0, current); // Insert at beginning (to maintain root->leaf order)
                     }
@@ -1485,7 +1484,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
 
         // Get parent tetrahedron from the SFC index directly
         // This is the actual tetrahedron being subdivided
-        Tet parentTet = Tet.tetrahedron(parentTetIndex.getTmIndex(), parentLevel);
+        Tet parentTet = Tet.tetrahedron(parentTetIndex);
 
         // Generate all 8 children using Bey refinement
         Tet[] children = new Tet[8];
@@ -2565,7 +2564,7 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
      * Locate the tetrahedron containing a point at a given level
      */
     private Tet locate(Tuple3f point, byte level) {
-        return Tet.locateFreudenthal(point.x, point.y, point.z, level);
+        return Tet.locateStandardRefinement(point.x, point.y, point.z, level);
     }
 
     // Merge overlapping SFC ranges for efficiency
@@ -2615,18 +2614,12 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         for (int i = 1; i < ranges.size(); i++) {
             SFCRange next = ranges.get(i);
 
-            // Merge if ranges overlap or are very close (adaptive gap based on range size)
-            var gap = next.start.getTmIndex().subtract(current.end.getTmIndex());
-            var rangeSize = current.end.getTmIndex().subtract(current.start.getTmIndex());
-            var adaptiveGap = BigInteger.valueOf(
-            Math.max(8, rangeSize.divide(BigInteger.valueOf(10)).longValue())); // Dynamic gap based on range size
-
-            if (gap.compareTo(adaptiveGap) <= 0) {
-                if (current.end.getTmIndex().compareTo(next.end.getTmIndex()) <= 0) {
-                    current = new SFCRange(current.start, current.end);
-                } else {
-                    current = new SFCRange(current.start, next.end);
-                }
+            // Merge if ranges overlap or are contiguous
+            // For now, use a simple merging strategy since we can't easily compute gaps with 128-bit keys
+            // TODO: Implement proper 128-bit arithmetic for gap calculation
+            if (current.end.equals(next.start) || current.end.getLevel() == next.start.getLevel()) {
+                // Merge adjacent ranges at the same level
+                current = new SFCRange(current.start, next.end);
             } else {
                 merged.add(current);
                 current = next;
