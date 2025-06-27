@@ -25,7 +25,6 @@ import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
-import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -93,7 +92,9 @@ public class SpatialIndexSetBenchmark {
             long minBit = 3 * (level - 1);
             long maxBit = 3 * level - 1;
             long index = 1L << (minBit + random.nextInt((int)(maxBit - minBit + 1)));
-            return new TetreeKey(level, BigInteger.valueOf(index + random.nextInt(1000))); // Add some variation
+            // Create a TetreeKey with the generated index in lowBits
+            long lowBits = index + random.nextInt(1000); // Add some variation
+            return new TetreeKey(level, lowBits, 0L);
         }
     }
     

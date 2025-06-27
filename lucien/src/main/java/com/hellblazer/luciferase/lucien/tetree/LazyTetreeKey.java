@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
-import java.math.BigInteger;
 import java.util.Objects;
 
 /**
@@ -38,7 +37,7 @@ public class LazyTetreeKey extends TetreeKey {
      * @param tet the tetrahedron to lazily compute the key for
      */
     public LazyTetreeKey(Tet tet) {
-        super(tet.l(), BigInteger.ZERO);  // Use actual level, placeholder tmIndex
+        super(tet.l(), 0L, 0L);  // Use actual level, placeholder values
         this.tet = Objects.requireNonNull(tet, "Tet cannot be null");
         this.lazyHashCode = computeLazyHash(tet);
     }
@@ -57,9 +56,15 @@ public class LazyTetreeKey extends TetreeKey {
     }
     
     @Override
-    public BigInteger getTmIndex() {
+    public long getLowBits() {
         ensureResolved();
-        return resolved.getTmIndex();
+        return resolved.getLowBits();
+    }
+    
+    @Override
+    public long getHighBits() {
+        ensureResolved();
+        return resolved.getHighBits();
     }
     
     @Override

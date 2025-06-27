@@ -241,30 +241,6 @@ public final class TetreeValidator {
     }
 
     /**
-     * Validate a tetrahedral SFC index.
-     *
-     * @param index the SFC index to validate
-     * @return true if the index is valid
-     */
-    public static boolean isValidIndex(long index) {
-        if (!validationEnabled) {
-            return true;
-        }
-
-        if (index < 0) {
-            return false;
-        }
-
-        try {
-            // Try to create a tetrahedron from the index
-            Tet tet = Tet.tetrahedron(index);
-            return isValidTet(tet);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    /**
      * Validate neighbor relationship between two tetrahedra.
      *
      * @param tet1 first tetrahedron
@@ -380,28 +356,6 @@ public final class TetreeValidator {
      */
     public static void setValidationEnabled(boolean enabled) {
         validationEnabled = enabled;
-    }
-
-    /**
-     * Validate a batch of tetrahedra indices.
-     *
-     * @param indices collection of SFC indices
-     * @return validation result with any errors found
-     */
-    public static ValidationResult validateIndices(Collection<Long> indices) {
-        if (!validationEnabled) {
-            return ValidationResult.valid();
-        }
-
-        List<String> errors = new ArrayList<>();
-
-        for (Long index : indices) {
-            if (!isValidIndex(index)) {
-                errors.add(String.format(INVALID_INDEX, index));
-            }
-        }
-
-        return errors.isEmpty() ? ValidationResult.valid() : ValidationResult.invalid(errors);
     }
 
     /**

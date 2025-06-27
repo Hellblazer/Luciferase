@@ -176,9 +176,9 @@ public class ThreadLocalTetreeCache {
                 typeArray[maxBits - 1] = tet.type();
             }
             
-            // Build TM-index by interleaving coordinate bits with type information
-            java.math.BigInteger index = java.math.BigInteger.ZERO;
-            java.math.BigInteger sixty_four = java.math.BigInteger.valueOf(64);
+            // Build TM-index using 128-bit representation
+            long lowBits = 0L;
+            long highBits = 0L;
             
             // Process each bit position
             for (int i = 0; i < maxBits; i++) {
@@ -193,11 +193,15 @@ public class ThreadLocalTetreeCache {
                 // Combine with type: upper 3 bits are coords, lower 3 bits are type
                 int sixBits = (coordBits << 3) | typeArray[i];
                 
-                // Add to index
-                index = index.multiply(sixty_four).add(java.math.BigInteger.valueOf(sixBits));
+                // Pack into appropriate long (10 levels per long, 6 bits per level)
+                if (i < 10) {
+                    lowBits |= ((long) sixBits) << (6 * i);
+                } else {
+                    highBits |= ((long) sixBits) << (6 * (i - 10));
+                }
             }
             
-            return new TetreeKey(tet.l(), index);
+            return new TetreeKey(tet.l(), lowBits, highBits);
         }
     }
 }
