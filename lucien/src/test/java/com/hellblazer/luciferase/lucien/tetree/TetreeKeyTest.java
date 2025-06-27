@@ -19,7 +19,6 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
-import java.math.BigInteger;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,15 +32,16 @@ class TetreeKeyTest {
 
     @Test
     void testBasicConstruction() {
-        // Create a valid Tet to get a proper tm-index
+        // Create a TetreeKey directly with low and high bits
         byte level = 5;
-        Tet tet = new Tet(32, 64, 96, level, (byte) 0);
-        BigInteger tmIndex = tet.tmIndex().getTmIndex();
-
-        TetreeKey key = new TetreeKey(level, tmIndex);
+        long lowBits = 0x123456789ABCDEFL;
+        long highBits = 0L;
+        
+        TetreeKey key = new TetreeKey(level, lowBits, highBits);
 
         assertEquals(level, key.getLevel());
-        assertEquals(tmIndex, key.getTmIndex());
+        assertEquals(lowBits, key.getLowBits());
+        assertEquals(highBits, key.getHighBits());
         assertNotNull(key.toString());
         assertTrue(key.toString().contains("level=5"));
         assertTrue(key.toString().contains("tm-index="));
@@ -49,18 +49,11 @@ class TetreeKeyTest {
 
     @Test
     void testEquality() {
-        // Create Tets to get valid tm-indices
-        // Use different coordinates to ensure different tm-indices
-        int cellSize = Constants.lengthAtLevel((byte) 5);
-        Tet tet1 = new Tet(0, 0, 0, (byte) 5, (byte) 0);
-        Tet tet2 = new Tet(cellSize, 0, 0, (byte) 5, (byte) 0);
-        BigInteger tmIndex1 = tet1.tmIndex().getTmIndex();
-        BigInteger tmIndex2 = tet2.tmIndex().getTmIndex();
-
-        TetreeKey key1 = new TetreeKey((byte) 5, tmIndex1);
-        TetreeKey key2 = new TetreeKey((byte) 5, tmIndex1);
-        TetreeKey key3 = new TetreeKey((byte) 5, tmIndex2);
-        TetreeKey key4 = new TetreeKey((byte) 6, tmIndex1);
+        // Create TetreeKeys with specific bit patterns
+        TetreeKey key1 = new TetreeKey((byte) 5, 100L, 0L);
+        TetreeKey key2 = new TetreeKey((byte) 5, 100L, 0L);
+        TetreeKey key3 = new TetreeKey((byte) 5, 200L, 0L);
+        TetreeKey key4 = new TetreeKey((byte) 6, 100L, 0L);
 
         // Reflexive
         assertEquals(key1, key1);
@@ -92,15 +85,19 @@ class TetreeKeyTest {
 
         assertEquals(tet.l(), key.getLevel());
         assertEquals(tet.tmIndex(), key);
+        
+        // TODO: Fix round-trip test once coordinate system is properly understood
+        // The current encode/decode assumes coordinates have bits in specific positions
+        // (bits 20 down to 20-level+1) which doesn't match typical grid coordinates
     }
 
     @Test
     void testInvalidConstruction() {
         // Negative level
-        assertThrows(IllegalArgumentException.class, () -> new TetreeKey((byte) -1, BigInteger.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> new TetreeKey((byte) -1, 0L, 0L));
 
         // Level too high
-        assertThrows(IllegalArgumentException.class, () -> new TetreeKey((byte) 22, BigInteger.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> new TetreeKey((byte) 22, 0L, 0L));
     }
 
     @Test
@@ -115,10 +112,10 @@ class TetreeKeyTest {
         Tet tet2a = new Tet(0, 0, 0, (byte) 2, (byte) 0);
         Tet tet2b = new Tet(cellSize2, 0, 0, (byte) 2, (byte) 0);
 
-        TetreeKey key1 = new TetreeKey((byte) 1, tet1a.tmIndex().getTmIndex());
-        TetreeKey key2 = new TetreeKey((byte) 1, tet1b.tmIndex().getTmIndex());
-        TetreeKey key3 = new TetreeKey((byte) 2, tet2a.tmIndex().getTmIndex());
-        TetreeKey key4 = new TetreeKey((byte) 2, tet2b.tmIndex().getTmIndex());
+        TetreeKey key1 = tet1a.tmIndex();
+        TetreeKey key2 = tet1b.tmIndex();
+        TetreeKey key3 = tet2a.tmIndex();
+        TetreeKey key4 = tet2b.tmIndex();
 
         // Within same level, ordered by tm-index
         assertTrue(key1.compareTo(key2) < 0);
@@ -157,9 +154,9 @@ class TetreeKeyTest {
         Tet tet2 = new Tet(cellSize2, 0, 0, (byte) 2, (byte) 0);
         Tet tet3 = new Tet(cellSize3, 0, 0, (byte) 3, (byte) 0);
 
-        TetreeKey level1 = new TetreeKey((byte) 1, tet1.tmIndex().getTmIndex());
-        TetreeKey level2 = new TetreeKey((byte) 2, tet2.tmIndex().getTmIndex());
-        TetreeKey level3 = new TetreeKey((byte) 3, tet3.tmIndex().getTmIndex());
+        TetreeKey level1 = tet1.tmIndex();
+        TetreeKey level2 = tet2.tmIndex();
+        TetreeKey level3 = tet3.tmIndex();
 
         // Different levels may have different tm-indices (but not guaranteed)
         // The key point is that the TetreeKey objects are different
@@ -194,7 +191,8 @@ class TetreeKeyTest {
         TetreeKey root = TetreeKey.getRoot();
 
         assertEquals(0, root.getLevel());
-        assertEquals(BigInteger.ZERO, root.getTmIndex());
+        assertEquals(0L, root.getLowBits());
+        assertEquals(0L, root.getHighBits());
         assertTrue(root.isValid());
     }
 
@@ -209,7 +207,7 @@ class TetreeKeyTest {
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
                 Tet tet = new Tet(x * cellSize, y * cellSize, 0, level, (byte) 0);
-                keys.add(new TetreeKey(level, tet.tmIndex().getTmIndex()));
+                keys.add(tet.tmIndex());
             }
         }
 
@@ -225,9 +223,9 @@ class TetreeKeyTest {
 
     @Test
     void testValidation() {
-        // Root level - only tm-index 0 is valid
-        assertTrue(new TetreeKey((byte) 0, BigInteger.ZERO).isValid());
-        assertFalse(new TetreeKey((byte) 0, BigInteger.ONE).isValid());
+        // Root level - only all zeros is valid
+        assertTrue(new TetreeKey((byte) 0, 0L, 0L).isValid());
+        assertFalse(new TetreeKey((byte) 0, 1L, 0L).isValid());
 
         // Create valid Tets at different levels and verify their tm-indices are valid
         for (byte level = 1; level <= 3; level++) {
@@ -236,8 +234,8 @@ class TetreeKeyTest {
             Tet tet2 = new Tet(Constants.lengthAtLevel(level), 0, 0, level, (byte) 0);
 
             // These should be valid since they come from actual Tet instances
-            TetreeKey key1 = new TetreeKey(level, tet1.tmIndex().getTmIndex());
-            TetreeKey key2 = new TetreeKey(level, tet2.tmIndex().getTmIndex());
+            TetreeKey key1 = tet1.tmIndex();
+            TetreeKey key2 = tet2.tmIndex();
 
             assertTrue(key1.isValid());
             assertTrue(key2.isValid());

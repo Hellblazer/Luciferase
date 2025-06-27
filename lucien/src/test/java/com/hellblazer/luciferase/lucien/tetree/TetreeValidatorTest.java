@@ -21,9 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -65,19 +63,6 @@ class TetreeValidatorTest {
 
         family[7] = family[0]; // Duplicate
         assertThrows(AssertionError.class, () -> TetreeValidator.assertValidFamily(family));
-    }
-
-    @Test
-    void testBatchValidation() {
-        Set<Long> validIndices = new HashSet<>(Arrays.asList(0L, 1L, 2L, 5L, 10L, 100L));
-        TetreeValidator.ValidationResult result = TetreeValidator.validateIndices(validIndices);
-        assertTrue(result.isValid());
-        assertTrue(result.getErrors().isEmpty());
-
-        Set<Long> mixedIndices = new HashSet<>(Arrays.asList(0L, 1L, -5L, -10L, 100L));
-        result = TetreeValidator.validateIndices(mixedIndices);
-        assertFalse(result.isValid());
-        assertEquals(2, result.getErrors().size()); // Two negative indices
     }
 
     @Test

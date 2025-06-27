@@ -139,12 +139,12 @@ public class TetreeConvenienceMethodsTest {
 
         // Test with single tet
         TetreeKey selfAncestor = tetree.findCommonAncestor(tet1.tmIndex());
-        assertEquals(tet1.tmIndex().getTmIndex(), selfAncestor.getTmIndex(), 
+        assertEquals(tet1.tmIndex(), selfAncestor, 
             "Common ancestor of single tet should be itself");
 
         // Test with empty array
         TetreeKey emptyAncestor = tetree.findCommonAncestor();
-        assertEquals(0L, emptyAncestor.getTmIndex().longValue(), "Empty array should return root (0)");
+        assertEquals(TetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
     }
 
     @Test

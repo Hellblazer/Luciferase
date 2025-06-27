@@ -172,7 +172,7 @@ public class Phase3AdvancedOptimizationTest {
         TetreeLevelCache.resetCacheStats();
         
         // Pre-cache the ray path
-        var startTet = Tet.locateFreudenthal(origin.x, origin.y, origin.z, (byte) 10);
+        var startTet = Tet.locateStandardRefinement(origin.x, origin.y, origin.z, (byte) 10);
         var localityCache = new SpatialLocalityCache(2);
         
         long preCacheStart = System.nanoTime();
@@ -188,7 +188,7 @@ public class Phase3AdvancedOptimizationTest {
                 origin.y + direction.y * i * 100,
                 origin.z + direction.z * i * 100
             );
-            var tet = Tet.locateFreudenthal(pos.x, pos.y, pos.z, (byte) 10);
+            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
             tet.tmIndex(); // This should hit the cache
             hitCount++;
         }

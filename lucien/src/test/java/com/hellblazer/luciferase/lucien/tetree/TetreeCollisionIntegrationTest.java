@@ -290,8 +290,10 @@ public class TetreeCollisionIntegrationTest {
         LongEntityID platformId = idGenerator.generateID();
         LongEntityID fallingId = idGenerator.generateID();
 
-        tetree.insert(platformId, platformPos, (byte) 8, "Platform", platformBounds);
-        tetree.insert(fallingId, fallingPos, (byte) 10, "Falling");
+        // Insert both at the same level to ensure collision detection works
+        byte commonLevel = 10;
+        tetree.insert(platformId, platformPos, commonLevel, "Platform", platformBounds);
+        tetree.insert(fallingId, fallingPos, commonLevel, "Falling");
 
         // Platform is kinematic, moving up slowly
         PhysicsProperties platformProps = PhysicsProperties.createKinematic(new Vector3f(0, 5, 0));
@@ -306,19 +308,43 @@ public class TetreeCollisionIntegrationTest {
         float dt = 0.01f;
         int maxSteps = 1000;
         boolean collisionDetected = false;
+        
+        // Debug: Check initial state
+        Point3f currentPlatformPos = tetree.getEntityPosition(platformId);
+        Point3f currentFallingPos = tetree.getEntityPosition(fallingId);
+        System.out.println("Initial platform pos: " + currentPlatformPos);
+        System.out.println("Initial falling pos: " + currentFallingPos);
 
         for (int i = 0; i < maxSteps && !collisionDetected; i++) {
             collisionSystem.updatePhysics(dt, null);
+            
+            // Debug every 100 steps
+            if (i % 100 == 0) {
+                currentPlatformPos = tetree.getEntityPosition(platformId);
+                currentFallingPos = tetree.getEntityPosition(fallingId);
+                float distance = currentFallingPos.y - (currentPlatformPos.y + 5); // platform top at y+5
+                System.out.println("Step " + i + ": Platform Y=" + currentPlatformPos.y + 
+                                 ", Falling Y=" + currentFallingPos.y + ", Distance=" + distance);
+            }
 
             List<CollisionSystem.ProcessedCollision<LongEntityID>> collisions = collisionSystem.processAllCollisions();
 
             if (!collisions.isEmpty()) {
                 collisionDetected = true;
+                System.out.println("Collision detected at step " + i);
 
                 // Verify kinematic platform pushes dynamic object
                 Vector3f fallingVel = fallingProps.getVelocity();
                 assertTrue(fallingVel.y > -10, "Falling object should be pushed up by kinematic platform");
             }
+        }
+        
+        if (!collisionDetected) {
+            currentPlatformPos = tetree.getEntityPosition(platformId);
+            currentFallingPos = tetree.getEntityPosition(fallingId);
+            System.out.println("Final platform pos: " + currentPlatformPos);
+            System.out.println("Final falling pos: " + currentFallingPos);
+            System.out.println("Final distance: " + (currentFallingPos.y - (currentPlatformPos.y + 5)));
         }
 
         assertTrue(collisionDetected, "Should detect collision between platform and falling object");

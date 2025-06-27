@@ -97,11 +97,21 @@ public final class TetreeLevelCache {
     }
 
     private static byte computeTypeTransition(byte startType, byte startLevel, byte endLevel) {
-        // This simulates the computeType loop without actually looping
-        // In practice, this would use the connectivity tables
-        byte type = startType;
-        // Simplified for now - actual implementation would use TetreeConnectivity
-        return type;
+        if (endLevel > startLevel) {
+            throw new IllegalArgumentException("End level must be <= start level");
+        }
+        if (endLevel == startLevel) {
+            return startType;
+        }
+        if (endLevel == 0) {
+            return 0; // Root is always type 0
+        }
+        
+        // We need to walk up the tree to find the ancestor type
+        // This is a simplified version that doesn't have access to actual coordinates
+        // In a real implementation, we would need the actual tetrahedron to compute this
+        // For now, return -1 to indicate we can't compute this without more information
+        return -1;
     }
 
     /**
@@ -320,5 +330,29 @@ public final class TetreeLevelCache {
 
     private static int packTypeTransition(int startType, int startLevel, int endLevel) {
         return (startType << 16) | (startLevel << 8) | endLevel;
+    }
+    
+    /**
+     * Clear all runtime caches. This is useful for testing to ensure consistent results.
+     * Note: This does NOT clear the static lookup tables which are computed once at initialization.
+     */
+    public static void clearCaches() {
+        // Clear index cache
+        for (int i = 0; i < INDEX_CACHE_SIZE; i++) {
+            INDEX_CACHE_KEYS[i] = 0;
+            INDEX_CACHE_VALUES[i] = 0;
+        }
+        
+        // Clear TetreeKey cache
+        for (int i = 0; i < TETREE_KEY_CACHE_SIZE; i++) {
+            TETREE_KEY_CACHE_KEYS[i] = 0;
+            TETREE_KEY_CACHE_VALUES[i] = null;
+        }
+        
+        // Clear parent chain cache
+        for (int i = 0; i < PARENT_CHAIN_CACHE_SIZE; i++) {
+            PARENT_CHAIN_KEYS[i] = 0;
+            PARENT_CHAIN_VALUES[i] = null;
+        }
     }
 }

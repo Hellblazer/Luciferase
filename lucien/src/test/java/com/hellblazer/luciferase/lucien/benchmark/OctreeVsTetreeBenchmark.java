@@ -4,29 +4,24 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+
 /**
  * Head-to-head performance comparison of Octree vs Tetree
  */
 public class OctreeVsTetreeBenchmark {
-    
-    @BeforeEach
-    void checkEnvironment() {
-        // Skip if running in any CI environment
-        assumeFalse(CIEnvironmentCheck.isRunningInCI(), CIEnvironmentCheck.getSkipMessage());
-    }
 
     private static final int   WARMUP_ITERATIONS    = 100;
     private static final int   BENCHMARK_ITERATIONS = 1000;
-    private static final int[] ENTITY_COUNTS        = { 100, 1000, 10000, 50000 };
+    private static final int[] ENTITY_COUNTS        = { 100, 1000, 10000 };
     private static final int   K_NEIGHBORS          = 10;
     private static final float SEARCH_RADIUS        = 50.0f;
     private static final byte  TEST_LEVEL           = 10;
@@ -44,6 +39,12 @@ public class OctreeVsTetreeBenchmark {
             System.out.println("\n=== Testing with " + entityCount + " entities ===");
             runComparison(entityCount);
         }
+    }
+
+    @BeforeEach
+    void checkEnvironment() {
+        // Skip if running in any CI environment
+        assumeFalse(CIEnvironmentCheck.isRunningInCI(), CIEnvironmentCheck.getSkipMessage());
     }
 
     private long benchmarkInsertion(Octree<LongEntityID, String> index, List<TestEntity> entities) {

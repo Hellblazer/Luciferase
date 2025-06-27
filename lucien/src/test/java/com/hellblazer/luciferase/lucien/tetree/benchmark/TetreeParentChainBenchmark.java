@@ -166,7 +166,7 @@ public class TetreeParentChainBenchmark {
         long sum = 0;
         for (Tet tet : state.shallowTets) {
             TetreeKey[] chain = computeParentChainOriginal(tet);
-            sum += chain[chain.length - 1].getTmIndex().longValue(); // Use result to prevent optimization
+            sum += chain[chain.length - 1].getLowBits(); // Use result to prevent optimization
         }
         return sum;
     }
@@ -176,7 +176,7 @@ public class TetreeParentChainBenchmark {
         long sum = 0;
         for (Tet tet : state.mediumTets) {
             TetreeKey[] chain = computeParentChainOriginal(tet);
-            sum += chain[chain.length - 1].getTmIndex().longValue();
+            sum += chain[chain.length - 1].getLowBits();
         }
         return sum;
     }
@@ -186,7 +186,7 @@ public class TetreeParentChainBenchmark {
         long sum = 0;
         for (Tet tet : state.deepTets) {
             TetreeKey[] chain = computeParentChainOriginal(tet);
-            sum += chain[chain.length - 1].getTmIndex().longValue();
+            sum += chain[chain.length - 1].getLowBits();
         }
         return sum;
     }
@@ -221,7 +221,7 @@ public class TetreeParentChainBenchmark {
         // Create a very deep tetrahedron (level 21)
         Tet deepTet = new Tet(1048576, 1048576, 1048576, (byte) 21, (byte) 0);
         TetreeKey[] chain = computeParentChainOriginal(deepTet);
-        return chain[chain.length - 1].getTmIndex().longValue();
+        return chain[chain.length - 1].getLowBits();
     }
     
     // ====== Main method to run benchmark ======

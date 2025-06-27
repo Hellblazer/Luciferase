@@ -63,13 +63,15 @@ public class LazyEvaluationPerformanceTest {
         assertFalse(lazyKey.isResolved());
         assertEquals((byte) 10, lazyKey.getLevel());
         
-        // Getting tmIndex should trigger resolution
-        var tmIndex = lazyKey.getTmIndex();
-        assertNotNull(tmIndex);
+        // Getting low/high bits should trigger resolution
+        var lowBits = lazyKey.getLowBits();
+        var highBits = lazyKey.getHighBits();
+        assertNotEquals(0L, lowBits | highBits); // At least one should be non-zero
         assertTrue(lazyKey.isResolved());
         
         // Subsequent calls should return same value
-        assertEquals(tmIndex, lazyKey.getTmIndex());
+        assertEquals(lowBits, lazyKey.getLowBits());
+        assertEquals(highBits, lazyKey.getHighBits());
     }
 
     @Test
