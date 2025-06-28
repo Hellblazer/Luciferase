@@ -8,7 +8,6 @@ import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.performance.SpatialIndexMemoryPerformanceTest;
-import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.junit.jupiter.api.DisplayName;
 
 /**
@@ -17,25 +16,27 @@ import org.junit.jupiter.api.DisplayName;
  * @author hal.hildebrand
  */
 @DisplayName("Tetree Memory Performance Tests")
-public class TetreeMemoryPerformanceTest extends SpatialIndexMemoryPerformanceTest<BaseTetreeKey<?>, LongEntityID, String> {
-    
+public class TetreeMemoryPerformanceTest
+extends SpatialIndexMemoryPerformanceTest<BaseTetreeKey<?>, LongEntityID, String> {
+
+    @Override
+    protected SequentialLongIDGenerator createIDGenerator() {
+        return new SequentialLongIDGenerator();
+    }
+
+    @Override
+    protected SpatialIndex<BaseTetreeKey<?>, LongEntityID, String> createSpatialIndex(VolumeBounds bounds,
+                                                                                      int maxDepth) {
+        return new Tetree<>(createIDGenerator());
+    }
+
     @Override
     protected String createTestContent(int entityIndex) {
         return "Entity-" + entityIndex;
     }
-    
-    @Override
-    protected SpatialIndex<BaseTetreeKey<?>, LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
-        return new Tetree<>(createIDGenerator());
-    }
-    
+
     @Override
     protected String getImplementationName() {
         return "Tetree";
-    }
-    
-    @Override
-    protected SequentialLongIDGenerator createIDGenerator() {
-        return new SequentialLongIDGenerator();
     }
 }

@@ -29,7 +29,8 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public abstract class AbstractTreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> implements TreeVisitor<Key, ID, Content> {
+public abstract class AbstractTreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+implements TreeVisitor<Key, ID, Content> {
 
     protected boolean visitEntities = true;
     protected int     maxDepth      = -1;

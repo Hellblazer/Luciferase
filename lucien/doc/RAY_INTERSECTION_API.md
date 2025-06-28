@@ -76,9 +76,13 @@ Finds the closest entity that intersects with the ray. This method is optimized 
 
 ```java
 Optional<RayIntersection<LongEntityID, String>> firstHit = spatialIndex.rayIntersectFirst(ray);
-if (firstHit.isPresent()) {
-    RayIntersection<LongEntityID, String> hit = firstHit.get();
-    System.out.println("First hit at distance: " + hit.distance());
+if(firstHit.
+
+isPresent()){
+RayIntersection<LongEntityID, String> hit = firstHit.get();
+    System.out.
+
+println("First hit at distance: "+hit.distance());
 }
 ```
 
@@ -94,8 +98,7 @@ Finds all entities that intersect with the ray within a specified maximum distan
 
 ```java
 // Find all intersections within 100 units
-List<RayIntersection<LongEntityID, String>> nearHits = 
-    spatialIndex.rayIntersectWithin(ray, 100.0f);
+List<RayIntersection<LongEntityID, String>> nearHits = spatialIndex.rayIntersectWithin(ray, 100.0f);
 ```
 
 ## Intersection Types
@@ -147,7 +150,7 @@ public boolean hasLineOfSight(Point3f from, Point3f to, ID excludeEntity) {
 ```java
 public void simulateProjectile(Point3f origin, Vector3f velocity, float maxRange) {
     Ray3D trajectory = new Ray3D(origin, velocity, maxRange);
-    
+
     Optional<RayIntersection<ID, Content>> impact = spatialIndex.rayIntersectFirst(trajectory);
     if (impact.isPresent()) {
         Point3f impactPoint = impact.get().intersectionPoint();
@@ -162,17 +165,17 @@ public void simulateProjectile(Point3f origin, Vector3f velocity, float maxRange
 ```java
 public List<ID> scanCone(Point3f apex, Vector3f direction, float angle, float range) {
     List<ID> entitiesInCone = new ArrayList<>();
-    
+
     // Create multiple rays in a cone pattern
     for (Vector3f rayDir : generateConeDirections(direction, angle)) {
         Ray3D scanRay = new Ray3D(apex, rayDir, range);
         List<RayIntersection<ID, Content>> hits = spatialIndex.rayIntersectAll(scanRay);
-        
+
         for (RayIntersection<ID, Content> hit : hits) {
             entitiesInCone.add(hit.entityId());
         }
     }
-    
+
     return entitiesInCone.stream().distinct().collect(Collectors.toList());
 }
 ```
@@ -202,27 +205,25 @@ consistency during concurrent operations.
 ```java
 public class VisibilitySystem {
     private final SpatialIndex<LongEntityID, GameObject> spatialIndex;
-    
-    public Set<LongEntityID> getVisibleEntities(Point3f viewerPos, Vector3f viewDir, 
-                                                float fov, float viewDistance) {
+
+    public Set<LongEntityID> getVisibleEntities(Point3f viewerPos, Vector3f viewDir, float fov, float viewDistance) {
         Set<LongEntityID> visible = new HashSet<>();
-        
+
         // Generate rays for field of view
         int raysPerDimension = 10;
         for (int i = 0; i < raysPerDimension; i++) {
             for (int j = 0; j < raysPerDimension; j++) {
                 Vector3f rayDir = calculateRayDirection(viewDir, fov, i, j, raysPerDimension);
                 Ray3D viewRay = new Ray3D(viewerPos, rayDir, viewDistance);
-                
-                List<RayIntersection<LongEntityID, GameObject>> hits = 
-                    spatialIndex.rayIntersectAll(viewRay);
-                
+
+                List<RayIntersection<LongEntityID, GameObject>> hits = spatialIndex.rayIntersectAll(viewRay);
+
                 for (RayIntersection<LongEntityID, GameObject> hit : hits) {
                     visible.add(hit.entityId());
                 }
             }
         }
-        
+
         return visible;
     }
 }

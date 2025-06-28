@@ -120,8 +120,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
 
             // Check if node still needs subdivision
             if (shouldSubdivide(candidate)) {
-                var result = processor.subdivideNode(candidate.nodeIndex, candidate.node,
-                                                                             candidate.level);
+                var result = processor.subdivideNode(candidate.nodeIndex, candidate.node, candidate.level);
 
                 if (result.wasSubdivided()) {
                     nodesSubdivided++;
@@ -162,8 +161,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
                 nodesProcessed++;
 
                 if (shouldSubdivide(candidate)) {
-                    var result = processor.subdivideNode(candidate.nodeIndex, candidate.node,
-                                                                                 candidate.level);
+                    var result = processor.subdivideNode(candidate.nodeIndex, candidate.node, candidate.level);
 
                     if (result.wasSubdivided()) {
                         nodesSubdivided++;

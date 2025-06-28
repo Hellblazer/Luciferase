@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
-import java.math.BigInteger;
 
 import static com.hellblazer.luciferase.lucien.tetree.TetrahedralSearchBase.tetrahedronCenter;
 import static org.junit.jupiter.api.Assertions.*;

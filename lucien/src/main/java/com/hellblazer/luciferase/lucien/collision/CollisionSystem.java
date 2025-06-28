@@ -282,9 +282,8 @@ public class CollisionSystem<ID extends EntityID, Content> {
     }
 
     /**
-     * Determine the appropriate level for an entity based on its properties.
-     * This method uses a heuristic based on entity size and velocity to determine
-     * an appropriate level in the spatial hierarchy.
+     * Determine the appropriate level for an entity based on its properties. This method uses a heuristic based on
+     * entity size and velocity to determine an appropriate level in the spatial hierarchy.
      *
      * @param entityId the entity to get the level for
      * @return the appropriate level for spatial updates
@@ -293,26 +292,30 @@ public class CollisionSystem<ID extends EntityID, Content> {
         // Check if we have physics properties for better level determination
         PhysicsProperties props = physicsProperties.get(entityId);
         EntityBounds bounds = spatialIndex.getEntityBounds(entityId);
-        
+
         // Use a heuristic based on entity size and velocity
         if (bounds != null) {
             // Calculate the maximum extent of the entity
             float maxExtent = Math.max(
-                Math.max(bounds.getMaxX() - bounds.getMinX(), 
-                         bounds.getMaxY() - bounds.getMinY()),
-                bounds.getMaxZ() - bounds.getMinZ()
-            );
-            
+            Math.max(bounds.getMaxX() - bounds.getMinX(), bounds.getMaxY() - bounds.getMinY()),
+            bounds.getMaxZ() - bounds.getMinZ());
+
             // Map entity size to appropriate level
             // Larger entities should be at coarser levels (lower numbers)
             // Smaller entities can be at finer levels (higher numbers)
-            if (maxExtent > 1000.0f) return 5;  // Very large entities
-            else if (maxExtent > 100.0f) return 8;  // Large entities
-            else if (maxExtent > 10.0f) return 10;  // Medium entities
-            else if (maxExtent > 1.0f) return 12;   // Small entities
-            else return 15;  // Very small entities
+            if (maxExtent > 1000.0f) {
+                return 5;  // Very large entities
+            } else if (maxExtent > 100.0f) {
+                return 8;  // Large entities
+            } else if (maxExtent > 10.0f) {
+                return 10;  // Medium entities
+            } else if (maxExtent > 1.0f) {
+                return 12;   // Small entities
+            } else {
+                return 15;  // Very small entities
+            }
         }
-        
+
         // If we have velocity information, fast-moving objects might benefit
         // from slightly coarser levels to reduce update frequency
         if (props != null && !props.isStatic()) {
@@ -321,7 +324,7 @@ public class CollisionSystem<ID extends EntityID, Content> {
                 return 8;  // Fast-moving objects at coarser level
             }
         }
-        
+
         // Default to level 10 for entities without size information
         return 10;
     }

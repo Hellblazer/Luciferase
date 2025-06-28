@@ -11,6 +11,7 @@ NodeType node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {...});
 ```
 
 This is because:
+
 1. The spatial index Map requires the key immediately
 2. The sorted set needs the key for ordering
 3. Entity tracking needs the key
@@ -21,17 +22,17 @@ This is because:
 
 ```java
 public class LazyTetreeKey extends TetreeKey {
-    private final Tet tet;
-    private final int lazyHashCode;  // Pre-computed for HashMap
+    private final    Tet       tet;
+    private final    int       lazyHashCode;  // Pre-computed for HashMap
     private volatile TetreeKey resolved;
-    
+
     public LazyTetreeKey(Tet tet) {
         super((byte) -1, null);  // Placeholder values
         this.tet = tet;
         // Pre-compute hash based on Tet coordinates for HashMap efficiency
         this.lazyHashCode = computeLazyHash(tet);
     }
-    
+
     private static int computeLazyHash(Tet tet) {
         // Hash based on coordinates only - sufficient for HashMap distribution
         int hash = 31 * tet.x();
@@ -41,28 +42,30 @@ public class LazyTetreeKey extends TetreeKey {
         hash = 31 * hash + tet.type();
         return hash;
     }
-    
+
     @Override
     public BigInteger getTmIndex() {
         ensureResolved();
         return resolved.getTmIndex();
     }
-    
+
     @Override
     public byte getLevel() {
         return tet.l();  // Can return immediately
     }
-    
+
     @Override
     public int hashCode() {
         return lazyHashCode;  // Use pre-computed hash
     }
-    
+
     @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (!(obj instanceof TetreeKey)) return false;
-        
+        if (this == obj)
+            return true;
+        if (!(obj instanceof TetreeKey))
+            return false;
+
         if (obj instanceof LazyTetreeKey other) {
             // Compare Tet directly if both are lazy
             return tet.equals(other.tet);
@@ -72,14 +75,14 @@ public class LazyTetreeKey extends TetreeKey {
             return resolved.equals(obj);
         }
     }
-    
+
     @Override
     public int compareTo(TetreeKey other) {
         // Only resolve when actual comparison needed
         ensureResolved();
         return resolved.compareTo(other);
     }
-    
+
     private void ensureResolved() {
         if (resolved == null) {
             synchronized (this) {
@@ -89,7 +92,7 @@ public class LazyTetreeKey extends TetreeKey {
             }
         }
     }
-    
+
     public boolean isResolved() {
         return resolved != null;
     }
@@ -103,17 +106,17 @@ public class LazyTetreeKey extends TetreeKey {
 @Override
 protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
     var tet = locate(position, level);
-    
+
     // Return lazy key for deferred computation
     if (bulkLoadingMode || deferTmIndexComputation) {
         return new LazyTetreeKey(tet);
     }
-    
+
     // Use existing caching for immediate computation
     if (useThreadLocalCache) {
         return ThreadLocalTetreeCache.getTetreeKey(tet);
     }
-    
+
     return tet.tmIndex();
 }
 
@@ -171,18 +174,15 @@ For bulk operations, resolve keys in batches:
 
 ```java
 public void resolveLazyKeys() {
-    List<LazyTetreeKey> lazyKeys = spatialIndex.keySet().stream()
-        .filter(k -> k instanceof LazyTetreeKey)
-        .map(k -> (LazyTetreeKey) k)
-        .filter(k -> !k.isResolved())
-        .collect(toList());
-    
+    List<LazyTetreeKey> lazyKeys = spatialIndex.keySet().stream().filter(k -> k instanceof LazyTetreeKey).map(
+    k -> (LazyTetreeKey) k).filter(k -> !k.isResolved()).collect(toList());
+
     if (!lazyKeys.isEmpty()) {
         log.debug("Resolving {} lazy keys", lazyKeys.size());
-        
+
         // Resolve in parallel for better performance
         lazyKeys.parallelStream().forEach(LazyTetreeKey::ensureResolved);
-        
+
         // Rebuild sorted indices if needed
         if (sortedSpatialIndices instanceof LazyNavigableSet) {
             ((LazyNavigableSet<Key>) sortedSpatialIndices).ensureOrdered();
@@ -194,16 +194,19 @@ public void resolveLazyKeys() {
 ## Expected Performance Impact
 
 ### Single Insertions
+
 - Current: 105μs (with tmIndex computation)
 - With lazy evaluation: ~15-20μs (deferred computation)
 - **5-7x improvement** for insertion
 
 ### Bulk Insertions
+
 - Current: 43μs per entity
 - With lazy evaluation: ~10-15μs per entity
-- **3-4x improvement** 
+- **3-4x improvement**
 
 ### When Keys Are Resolved
+
 - During range queries (need ordering)
 - During k-NN searches (need comparison)
 - During tree balancing
@@ -220,22 +223,28 @@ public void resolveLazyKeys() {
 ## Risks and Mitigations
 
 ### Risk 1: Memory Overhead
+
 - Each LazyTetreeKey holds a Tet reference
 - Mitigation: Tet objects are small (20 bytes)
 
 ### Risk 2: Comparison Performance
+
 - First comparison forces resolution
 - Mitigation: Batch operations can pre-resolve
 
 ### Risk 3: Concurrent Resolution
+
 - Multiple threads might resolve same key
 - Mitigation: Synchronized resolution with volatile field
 
 ## Conclusion
 
-Lazy evaluation of TetreeKey can provide significant performance improvements by deferring the expensive tmIndex() computation until absolutely necessary. This is particularly effective for:
+Lazy evaluation of TetreeKey can provide significant performance improvements by deferring the expensive tmIndex()
+computation until absolutely necessary. This is particularly effective for:
+
 - High-volume insertions
-- Bulk loading scenarios  
+- Bulk loading scenarios
 - Cases where many inserted entities are never queried
 
-Combined with the existing optimizations, this could reduce the Tetree insertion performance gap from 70x to approximately 15-20x compared to Octree.
+Combined with the existing optimizations, this could reduce the Tetree insertion performance gap from 70x to
+approximately 15-20x compared to Octree.

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -184,7 +183,8 @@ public class MortonCurveRoundTripTest {
     @DisplayName("Test Morton curve encode/decode round trip")
     void testMortonCurveRoundTrip() {
         // Test a range of coordinates
-        var testCoords = new int[] { 0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023, 1024 };
+        var testCoords = new int[] { 0, 1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023,
+                                     1024 };
 
         for (int x : testCoords) {
             for (int y : testCoords) {
@@ -249,11 +249,11 @@ public class MortonCurveRoundTripTest {
 
         // Adjacent cells
         var adjacent = new Point3f[] { new Point3f(100 + length, 100, 100),  // +X
-                               new Point3f(100, 100 + length, 100),  // +Y
-                               new Point3f(100, 100, 100 + length),  // +Z
-                               new Point3f(100 - length, 100, 100),  // -X
-                               new Point3f(100, 100 - length, 100),  // -Y
-                               new Point3f(100, 100, 100 - length)   // -Z
+                                       new Point3f(100, 100 + length, 100),  // +Y
+                                       new Point3f(100, 100, 100 + length),  // +Z
+                                       new Point3f(100 - length, 100, 100),  // -X
+                                       new Point3f(100, 100 - length, 100),  // -Y
+                                       new Point3f(100, 100, 100 - length)   // -Z
         };
 
         for (var adj : adjacent) {

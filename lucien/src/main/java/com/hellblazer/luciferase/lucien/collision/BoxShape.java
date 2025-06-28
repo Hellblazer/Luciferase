@@ -165,97 +165,103 @@ public class BoxShape extends CollisionShape {
         // - 3 face normals from AABB
         // - 3 face normals from OBB
         // - 9 edge cross products (3 AABB edges × 3 OBB edges)
-        
+
         // Get OBB properties
         var obbOrientation = obb.getOrientation();
         var obbHalfExtents = obb.getHalfExtents();
-        
+
         // Transform OBB center to AABB's local space (centered at AABB position)
         var centerDiff = new Vector3f();
         centerDiff.sub(obb.getPosition(), this.position);
-        
+
         // We'll track the minimum penetration across all axes
         var minPenetration = Float.MAX_VALUE;
         var minPenetrationAxis = new Vector3f();
-        
+
         // Test AABB face normals (world axes)
         for (var i = 0; i < 3; i++) {
             var axis = new Vector3f();
-            if (i == 0) axis.set(1, 0, 0);
-            else if (i == 1) axis.set(0, 1, 0);
-            else axis.set(0, 0, 1);
-            
-            var penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
-                                                  obbHalfExtents, obbOrientation);
+            if (i == 0) {
+                axis.set(1, 0, 0);
+            } else if (i == 1) {
+                axis.set(0, 1, 0);
+            } else {
+                axis.set(0, 0, 1);
+            }
+
+            var penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, obbHalfExtents, obbOrientation);
             if (penetration < 0) {
                 return CollisionResult.noCollision();
             }
-            
+
             if (penetration < minPenetration) {
                 minPenetration = penetration;
                 minPenetrationAxis.set(axis);
             }
         }
-        
+
         // Test OBB face normals
         for (var i = 0; i < 3; i++) {
             var axis = new Vector3f();
             obbOrientation.getColumn(i, axis);
-            
-            var penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
-                                                  obbHalfExtents, obbOrientation);
+
+            var penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, obbHalfExtents, obbOrientation);
             if (penetration < 0) {
                 return CollisionResult.noCollision();
             }
-            
+
             if (penetration < minPenetration) {
                 minPenetration = penetration;
                 minPenetrationAxis.set(axis);
             }
         }
-        
+
         // Test edge cross products
         for (var i = 0; i < 3; i++) {
             for (var j = 0; j < 3; j++) {
                 var aabbAxis = new Vector3f();
-                if (i == 0) aabbAxis.set(1, 0, 0);
-                else if (i == 1) aabbAxis.set(0, 1, 0);
-                else aabbAxis.set(0, 0, 1);
-                
+                if (i == 0) {
+                    aabbAxis.set(1, 0, 0);
+                } else if (i == 1) {
+                    aabbAxis.set(0, 1, 0);
+                } else {
+                    aabbAxis.set(0, 0, 1);
+                }
+
                 var obbAxis = new Vector3f();
                 obbOrientation.getColumn(j, obbAxis);
-                
+
                 var crossAxis = new Vector3f();
                 crossAxis.cross(aabbAxis, obbAxis);
-                
+
                 // Skip if cross product is zero (parallel axes)
                 if (crossAxis.lengthSquared() < 1e-6f) {
                     continue;
                 }
-                
+
                 crossAxis.normalize();
-                
-                var penetration = testSeparatingAxis(crossAxis, centerDiff, this.halfExtents, 
-                                                      obbHalfExtents, obbOrientation);
+
+                var penetration = testSeparatingAxis(crossAxis, centerDiff, this.halfExtents, obbHalfExtents,
+                                                     obbOrientation);
                 if (penetration < 0) {
                     return CollisionResult.noCollision();
                 }
-                
+
                 if (penetration < minPenetration) {
                     minPenetration = penetration;
                     minPenetrationAxis.set(crossAxis);
                 }
             }
         }
-        
+
         // Ensure the normal points from AABB to OBB
         if (minPenetrationAxis.dot(centerDiff) < 0) {
             minPenetrationAxis.scale(-1);
         }
-        
+
         // Calculate contact point
         var contactPoint = calculateContactPoint(this, obb, minPenetrationAxis, minPenetration);
-        
+
         return CollisionResult.collision(contactPoint, minPenetrationAxis, minPenetration);
     }
 
@@ -391,6 +397,31 @@ public class BoxShape extends CollisionShape {
         && b1.getMinY() <= b2.getMaxY() && b1.getMaxZ() >= b2.getMinZ() && b1.getMinZ() <= b2.getMaxZ();
     }
 
+    /**
+     * Calculate contact point for AABB vs OBB collision
+     */
+    private Point3f calculateContactPoint(BoxShape aabb, OrientedBoxShape obb, Vector3f collisionNormal,
+                                          float penetration) {
+        // Get the closest points on each box along the collision normal
+        var aabbPoint = new Point3f(aabb.position);
+        var obbPoint = new Point3f(obb.getPosition());
+
+        // Move along normal to find approximate contact
+        var offset = new Vector3f(collisionNormal);
+        offset.scale(penetration * 0.5f);
+
+        // The contact point is between the two shapes
+        if (collisionNormal.dot(
+        new Vector3f(obb.getPosition().x - aabb.position.x, obb.getPosition().y - aabb.position.y,
+                     obb.getPosition().z - aabb.position.z)) > 0) {
+            aabbPoint.add(offset);
+        } else {
+            aabbPoint.sub(offset);
+        }
+
+        return aabbPoint;
+    }
+
     private Vector3f calculateRayIntersectionNormal(Point3f intersectionPoint) {
         // Determine which face was hit based on position
         var epsilon = 0.001f;
@@ -413,15 +444,6 @@ public class BoxShape extends CollisionShape {
         return new Vector3f(1, 0, 0);
     }
 
-    private float getComponent(Vector3f vector, int axis) {
-        return switch (axis) {
-            case 0 -> vector.x;
-            case 1 -> vector.y;
-            case 2 -> vector.z;
-            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
-        };
-    }
-
     private float getComponent(EntityBounds bounds, int axis, boolean min) {
         return switch (axis) {
             case 0 -> min ? bounds.getMinX() : bounds.getMaxX();
@@ -439,21 +461,29 @@ public class BoxShape extends CollisionShape {
             default -> throw new IllegalArgumentException("Invalid axis: " + axis);
         };
     }
-    
+
+    private float getComponent(Vector3f vector, int axis) {
+        return switch (axis) {
+            case 0 -> vector.x;
+            case 1 -> vector.y;
+            case 2 -> vector.z;
+            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
+        };
+    }
+
     /**
-     * Test a potential separating axis for AABB vs OBB collision.
-     * Returns the penetration depth if overlapping, or negative if separated.
+     * Test a potential separating axis for AABB vs OBB collision. Returns the penetration depth if overlapping, or
+     * negative if separated.
      */
     private float testSeparatingAxis(Vector3f axis, Vector3f centerDiff, Vector3f aabbHalfExtents,
-                                   Vector3f obbHalfExtents, Matrix3f obbOrientation) {
+                                     Vector3f obbHalfExtents, Matrix3f obbOrientation) {
         // Project center distance onto axis
         var separation = Math.abs(axis.dot(centerDiff));
-        
+
         // Project AABB onto axis (AABB is axis-aligned, so this is simple)
-        var aabbProjection = Math.abs(axis.x) * aabbHalfExtents.x +
-                              Math.abs(axis.y) * aabbHalfExtents.y +
-                              Math.abs(axis.z) * aabbHalfExtents.z;
-        
+        var aabbProjection = Math.abs(axis.x) * aabbHalfExtents.x + Math.abs(axis.y) * aabbHalfExtents.y + Math.abs(
+        axis.z) * aabbHalfExtents.z;
+
         // Project OBB onto axis
         var obbProjection = 0f;
         for (var i = 0; i < 3; i++) {
@@ -462,39 +492,14 @@ public class BoxShape extends CollisionShape {
             var halfExtent = (i == 0) ? obbHalfExtents.x : (i == 1) ? obbHalfExtents.y : obbHalfExtents.z;
             obbProjection += Math.abs(axis.dot(obbAxis)) * halfExtent;
         }
-        
+
         // Check for separation
         var totalProjection = aabbProjection + obbProjection;
         if (separation > totalProjection) {
             return -1; // Separated
         }
-        
+
         // Return penetration depth
         return totalProjection - separation;
-    }
-    
-    /**
-     * Calculate contact point for AABB vs OBB collision
-     */
-    private Point3f calculateContactPoint(BoxShape aabb, OrientedBoxShape obb, 
-                                        Vector3f collisionNormal, float penetration) {
-        // Get the closest points on each box along the collision normal
-        var aabbPoint = new Point3f(aabb.position);
-        var obbPoint = new Point3f(obb.getPosition());
-        
-        // Move along normal to find approximate contact
-        var offset = new Vector3f(collisionNormal);
-        offset.scale(penetration * 0.5f);
-        
-        // The contact point is between the two shapes
-        if (collisionNormal.dot(new Vector3f(obb.getPosition().x - aabb.position.x,
-                                            obb.getPosition().y - aabb.position.y,
-                                            obb.getPosition().z - aabb.position.z)) > 0) {
-            aabbPoint.add(offset);
-        } else {
-            aabbPoint.sub(offset);
-        }
-        
-        return aabbPoint;
     }
 }

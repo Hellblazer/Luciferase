@@ -6,25 +6,27 @@ The lucien spatial indexing module provides complete 3D spatial indexing functio
 
 - **34 classes** organized in 4 packages
 - **Unified architecture** with ~90% code reuse between Octree and Tetree
-- **Performance** - Tetree 2-3x faster than Octree for bulk operations  
+- **Performance** - Tetree 2-3x faster than Octree for bulk operations
 - **Features** - Ray intersection, collision detection, frustum culling, k-NN, bulk operations
 - **Testing** - 200+ tests with comprehensive coverage
 
 ## Architecture (34 Classes)
 
 **Package Structure:**
+
 - Core abstractions (13) - `AbstractSpatialIndex`, `SpatialIndex`, etc.
-- Entity management (12) - `EntityManager`, ID generators, bounds  
+- Entity management (12) - `EntityManager`, ID generators, bounds
 - Octree implementation (3) - Morton curve cubic decomposition
 - Tetree implementation (6) - Tetrahedral SFC decomposition
 
 **Key Design:** Unified architecture with 90% shared code in `AbstractSpatialIndex`
 
-## Performance 
+## Performance
 
 **Key Result:** Tetree outperforms Octree by **2-3x for bulk operations** based on real benchmarks
 
 **Optimizations Implemented:**
+
 - O(1) operations via `SpatialIndexSet` and `TetreeLevelCache`
 - Adaptive subdivision reduces node count by 30-50%
 - Bulk operations with deferred subdivision
@@ -46,7 +48,7 @@ The lucien spatial indexing module provides complete 3D spatial indexing functio
 ## Recent Fixes (June 2025)
 
 1. ✅ **Collision Detection Bug**: Fixed control flow in forEach loops (return → continue)
-2. ✅ **Neighbor Finding Bug**: Fixed distance calculations (centroids → entity positions)  
+2. ✅ **Neighbor Finding Bug**: Fixed distance calculations (centroids → entity positions)
 3. ✅ **SpatialKey Architecture**: Implemented type-safe keys (MortonKey, TetreeKey)
 4. ✅ **All Tests Passing**: 200+ tests with full coverage maintained
 

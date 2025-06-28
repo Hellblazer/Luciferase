@@ -2,19 +2,23 @@
 
 ## Overview
 
-This document compares the TM-index encode/decode implementations between our current `Tet` class and the `TMIndex128Clean` reference implementation. Both implement the same tetrahedral space-filling curve index but with different design philosophies and optimizations.
+This document compares the TM-index encode/decode implementations between our current `Tet` class and the
+`TMIndex128Clean` reference implementation. Both implement the same tetrahedral space-filling curve index but with
+different design philosophies and optimizations.
 
 ## Key Differences
 
 ### 1. Architecture & Design
 
 **TMIndex128Clean:**
+
 - Pure algorithmic implementation focused on the TM-index encoding/decoding
 - Self-contained with minimal dependencies
 - Uses simple data structures (`TetId` record, `TMIndex128Bit` for storage)
 - Clean separation between encode and decode operations
 
 **Tet Implementation:**
+
 - Integrated into a larger spatial indexing system
 - Heavy use of caching infrastructure (`TetreeLevelCache`)
 - Returns `TetreeKey` objects that include level information
@@ -23,6 +27,7 @@ This document compares the TM-index encode/decode implementations between our cu
 ### 2. Coordinate System & Bit Extraction
 
 **TMIndex128Clean:**
+
 ```java
 // Extracts bits from LSB to MSB (level 0 to level n-1)
 int xBit = (tet.x >> level) & 1;
@@ -31,6 +36,7 @@ int zBit = (tet.z >> level) & 1;
 ```
 
 **Tet Implementation:**
+
 ```java
 // Extracts bits from MSB to LSB (level n-1 down to level 0)
 int bitPos = Constants.getMaxRefinementLevel() - 1 - i;
@@ -39,36 +45,46 @@ int yBit = (y >> bitPos) & 1;
 int zBit = (z >> bitPos) & 1;
 ```
 
-**Critical Difference:** The bit extraction order is reversed! This is a fundamental difference that affects how the SFC index is built.
+**Critical Difference:** The bit extraction order is reversed! This is a fundamental difference that affects how the SFC
+index is built.
 
 ### 3. Type Sequence Computation
 
 **TMIndex128Clean:**
+
 ```java
 // Computes type sequence forward from root to current level
 int currentType = 0;
-for (int level = 1; level < tet.level; level++) {
-    int bitPos = level - 1;
-    int childIdx = ((tet.z >> bitPos) & 1) << 2 | 
-                   ((tet.y >> bitPos) & 1) << 1 | 
-                   ((tet.x >> bitPos) & 1);
-    currentType = CHILD_TYPES[currentType][childIdx];
-    types[level] = currentType;
+for(
+int level = 1;
+level<tet.level;level++){
+int bitPos = level - 1;
+int childIdx = ((tet.z >> bitPos) & 1) << 2 | ((tet.y >> bitPos) & 1) << 1 | ((tet.x >> bitPos) & 1);
+currentType =CHILD_TYPES[currentType][childIdx];
+types[level]=currentType;
 }
 ```
 
 **Tet Implementation:**
+
 ```java
 // Attempts to use cached transitions, falls back to parent chain walk
 // Walks backwards from current tetrahedron to root
 Tet current = this;
-while (current.l() > 1) {
-    current = current.parent();
-    ancestorTypes.addFirst(current.type());
+while(current.
+
+l() >1){
+current =current.
+
+parent();
+    ancestorTypes.
+
+addFirst(current.type());
 }
 ```
 
 **Key Differences:**
+
 - TMIndex128Clean computes types algorithmically using a child type table
 - Tet uses actual parent traversal or cached parent chains
 - TMIndex128Clean is more efficient but requires knowing the full coordinate path
@@ -77,6 +93,7 @@ while (current.l() > 1) {
 ### 4. Data Structures
 
 **TMIndex128Clean:**
+
 ```java
 // Simple records
 record TetId(int x, int y, int z, int type, int level) {}
@@ -84,6 +101,7 @@ record TMIndex128Bit(long low, long high) {}
 ```
 
 **Tet Implementation:**
+
 ```java
 // Rich domain objects
 record Tet(int x, int y, int z, byte l, byte type) {
@@ -97,12 +115,14 @@ class TetreeKey implements SpatialKey<TetreeKey> {
 ### 5. Performance Optimizations
 
 **TMIndex128Clean:**
+
 - Direct bit manipulation
 - No caching (pure computation)
 - Minimal object allocation
 - Optimized for bulk operations
 
 **Tet Implementation:**
+
 - Multiple cache layers (TetreeKey cache, parent chain cache, type transition cache)
 - Lazy evaluation support
 - Thread-local caching option
@@ -111,18 +131,21 @@ class TetreeKey implements SpatialKey<TetreeKey> {
 ### 6. Bit Packing Format
 
 Both use the same 6-bit packing format:
+
 ```
 [coord_bits(3)][type_bits(3)]
      z y x         t t t
 ```
 
 However, the order these are stored differs:
+
 - **TMIndex128Clean**: Level 0 at bits 0-5, Level 1 at bits 6-11, etc.
 - **Tet**: Same storage order, but interprets the levels differently due to MSB-first extraction
 
 ### 7. Decode Implementation
 
 **TMIndex128Clean:**
+
 ```java
 // Rebuilds coordinates bit by bit from level 0 up
 for (int i = 0; i < level; i++) {
@@ -136,6 +159,7 @@ for (int i = 0; i < level; i++) {
 ```
 
 **Tet Implementation:**
+
 ```java
 // Extracts all bits first, then reconstructs coordinates
 for (int i = 0; i < maxBits; i++) {
@@ -151,22 +175,27 @@ for (int i = 0; i < maxBits; i++) {
 ## Critical Implementation Issues
 
 ### 1. Incompatible Bit Ordering
+
 The most significant difference is the bit extraction order. This means:
+
 - TM-indices generated by TMIndex128Clean are **not compatible** with those from Tet
 - The same tetrahedron will have different TM-index values in each system
 - This affects spatial locality properties of the SFC
 
 ### 2. Type Computation Differences
+
 - TMIndex128Clean uses a consistent forward computation
 - Tet uses actual parent relationships which may differ if the tetrahedron wasn't created through standard refinement
 
 ### 3. Coordinate Scaling
+
 - Tet uses coordinates scaled to the full integer range (0 to 2^21)
 - TMIndex128Clean works with grid coordinates (0 to 2^level - 1)
 
 ## Recommendations
 
-1. **Standardize Bit Order**: Both implementations should use the same bit extraction order (recommend LSB to MSB as in TMIndex128Clean)
+1. **Standardize Bit Order**: Both implementations should use the same bit extraction order (recommend LSB to MSB as in
+   TMIndex128Clean)
 
 2. **Unify Type Computation**: Use the algorithmic approach from TMIndex128Clean for consistency and performance
 
@@ -178,9 +207,11 @@ The most significant difference is the bit extraction order. This means:
 
 ## Conclusion
 
-While both implementations achieve the same goal of encoding tetrahedral positions into a space-filling curve index, they use fundamentally different approaches:
+While both implementations achieve the same goal of encoding tetrahedral positions into a space-filling curve index,
+they use fundamentally different approaches:
 
 - **TMIndex128Clean**: Clean, algorithmic, self-contained, efficient
 - **Tet**: Feature-rich, cache-heavy, integrated with spatial index, flexible
 
-The incompatible bit ordering means these implementations cannot interoperate without conversion. Any system using TM-indices must choose one approach and stick with it consistently.
+The incompatible bit ordering means these implementations cannot interoperate without conversion. Any system using
+TM-indices must choose one approach and stick with it consistently.

@@ -79,7 +79,7 @@
 
     <!-- Turn off verbose logging for JMH benchmarks -->
     <logger name="org.openjdk.jmh" level="WARN"/>
-    
+
     <!-- Turn off verbose logging for test framework -->
     <logger name="org.junit" level="WARN"/>
 </configuration>

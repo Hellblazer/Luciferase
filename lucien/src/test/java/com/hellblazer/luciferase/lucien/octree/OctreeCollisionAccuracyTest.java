@@ -3,7 +3,6 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
-import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.collision.BoxShape;
 import com.hellblazer.luciferase.lucien.collision.OrientedBoxShape;
 import com.hellblazer.luciferase.lucien.collision.SphereShape;
@@ -16,8 +15,6 @@ import org.junit.jupiter.api.Test;
 import javax.vecmath.Matrix3f;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
-import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -88,7 +85,7 @@ public class OctreeCollisionAccuracyTest {
 
         var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
         var bounds2 = new EntityBounds(new Point3f(104, 95, 95),   // 1 unit overlap on X
-                                                new Point3f(114, 105, 105));
+                                       new Point3f(114, 105, 105));
 
         var id1 = idGenerator.generateID();
         var id2 = idGenerator.generateID();
@@ -121,7 +118,7 @@ public class OctreeCollisionAccuracyTest {
         var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105)  // 10x10x10 box
         );
         var bounds2 = new EntityBounds(new Point3f(103, 95, 95),   // Overlaps by 2 units on X axis
-                                                new Point3f(113, 105, 105)  // 10x10x10 box
+                                       new Point3f(113, 105, 105)  // 10x10x10 box
         );
 
         var id1 = idGenerator.generateID();
@@ -192,11 +189,11 @@ public class OctreeCollisionAccuracyTest {
 
         // Create surrounding boxes that all collide with central
         var surroundingCenters = new Point3f[] { new Point3f(108, 100, 100), // +X
-                                         new Point3f(92, 100, 100),  // -X
-                                         new Point3f(100, 108, 100), // +Y
-                                         new Point3f(100, 92, 100),  // -Y
-                                         new Point3f(100, 100, 108), // +Z
-                                         new Point3f(100, 100, 92)   // -Z
+                                                 new Point3f(92, 100, 100),  // -X
+                                                 new Point3f(100, 108, 100), // +Y
+                                                 new Point3f(100, 92, 100),  // -Y
+                                                 new Point3f(100, 100, 108), // +Z
+                                                 new Point3f(100, 100, 92)   // -Z
         };
 
         var surroundingIds = new LongEntityID[6];
@@ -249,9 +246,9 @@ public class OctreeCollisionAccuracyTest {
             var center2 = new Point3f(108 * scale, 100 * scale, 100 * scale);
 
             var bounds1 = new EntityBounds(new Point3f(95 * scale, 95 * scale, 95 * scale),
-                                                    new Point3f(105 * scale, 105 * scale, 105 * scale));
+                                           new Point3f(105 * scale, 105 * scale, 105 * scale));
             var bounds2 = new EntityBounds(new Point3f(103 * scale, 95 * scale, 95 * scale),
-                                                    new Point3f(113 * scale, 105 * scale, 105 * scale));
+                                           new Point3f(113 * scale, 105 * scale, 105 * scale));
 
             LongEntityID id1 = idGenerator.generateID();
             LongEntityID id2 = idGenerator.generateID();
@@ -259,8 +256,7 @@ public class OctreeCollisionAccuracyTest {
             scaledOctree.insert(id1, center1, (byte) 10, "Box1", bounds1);
             scaledOctree.insert(id2, center2, (byte) 10, "Box2", bounds2);
 
-            var collision = scaledOctree.checkCollision(id1,
-                                                                                                               id2);
+            var collision = scaledOctree.checkCollision(id1, id2);
             assertTrue(collision.isPresent(), "Collision should be detected at scale " + scale);
 
             // Verify scaled penetration depth
@@ -324,10 +320,10 @@ public class OctreeCollisionAccuracyTest {
         var center2 = new Point3f(107, 100, 100); // Centers 7 units apart
 
         var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105)
-                                                // Right edge at x=105
+                                       // Right edge at x=105
         );
         var bounds2 = new EntityBounds(new Point3f(102, 95, 95),   // Left edge at x=102, so 3 units overlap
-                                                new Point3f(112, 105, 105));
+                                       new Point3f(112, 105, 105));
 
         var id1 = idGenerator.generateID();
         var id2 = idGenerator.generateID();

@@ -116,20 +116,20 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     }
 
     @Override
-    public MortonKey root() {
-        return new MortonKey(0);
-    }
-
-    @Override
     public MortonKey parent() {
         if (level == 0) {
             return null; // Root has no parent
         }
-        
+
         // Calculate parent Morton code by shifting right by 3 bits (removing one octant level)
         var parentLevel = (byte) (level - 1);
         var parentCode = mortonCode >> 3;
         return new MortonKey(parentCode, parentLevel);
+    }
+
+    @Override
+    public MortonKey root() {
+        return new MortonKey(0);
     }
 
     @Override

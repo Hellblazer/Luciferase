@@ -82,11 +82,13 @@ public class TetrahedralGeometryEdgeCaseTest {
         var tetKey = tet.tmIndex();
 
         // Test various ray configurations
-        var origins = new Point3f[] { new Point3f(950, 1000, 1000), new Point3f(1050, 1050, 1050), new Point3f(1000, 950, 1100),
-                              new Point3f(900, 900, 900) };
+        var origins = new Point3f[] { new Point3f(950, 1000, 1000), new Point3f(1050, 1050, 1050), new Point3f(1000,
+                                                                                                               950,
+                                                                                                               1100),
+                                      new Point3f(900, 900, 900) };
 
-        var directions = new Vector3f[] { new Vector3f(1, 0, 0), new Vector3f(-1, -1, -1), new Vector3f(0, 1, -1), new Vector3f(
-        1, 1, 1) };
+        var directions = new Vector3f[] { new Vector3f(1, 0, 0), new Vector3f(-1, -1, -1), new Vector3f(0, 1, -1),
+                                          new Vector3f(1, 1, 1) };
 
         for (int i = 0; i < origins.length; i++) {
             directions[i].normalize();

@@ -23,11 +23,8 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Random;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -137,7 +134,7 @@ public class TetreeIteratorTest {
 
         // We should have visited at least one node
         assertTrue(nodeCount > 0, "Should have visited at least one node");
-        
+
         // The iterator should be exhausted after visiting all nodes
         if (nodeCount < maxIterations) {
             assertFalse(iter.hasNext(), "Iterator should be exhausted");

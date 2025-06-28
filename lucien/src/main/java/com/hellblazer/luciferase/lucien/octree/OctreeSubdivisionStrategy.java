@@ -94,7 +94,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
             if (entityBounds.intersectsCube(childX, childY, childZ, childCellSize)) {
                 // Calculate child Morton code
                 var childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
-                                                  childZ + childCellSize / 2.0f);
+                                              childZ + childCellSize / 2.0f);
                 var childIndex = new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
                 targetNodes.add(childIndex);
             }
@@ -229,7 +229,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
 
             // Entity fits in single octant
             var childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
-                                              childZ + childCellSize / 2.0f);
+                                          childZ + childCellSize / 2.0f);
             var childLevel = (byte) (context.nodeLevel + 1);
             return new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
         }

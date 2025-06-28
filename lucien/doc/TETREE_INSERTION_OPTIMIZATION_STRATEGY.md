@@ -2,7 +2,8 @@
 
 ## Executive Summary
 
-After analyzing the insertion implementations, the performance gap between Octree (1.5μs) and Tetree (105μs) comes down to one critical difference in `calculateSpatialIndex()`:
+After analyzing the insertion implementations, the performance gap between Octree (1.5μs) and Tetree (105μs) comes down
+to one critical difference in `calculateSpatialIndex()`:
 
 ```java
 // Octree - O(1) operation
@@ -20,6 +21,7 @@ protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
 ## The Core Problem
 
 The `tmIndex()` method MUST walk the parent chain because:
+
 1. The tmIndex IS unique across all levels (forms a globally unique identifier)
 2. However, the level cannot be derived from the index alone (unlike Morton codes)
 3. The parent chain walk builds the complete hierarchical path to ensure global uniqueness
@@ -42,13 +44,13 @@ Instead of computing the full TetreeKey immediately, defer computation until nee
 
 ```java
 public class LazyTetreeKey extends TetreeKey {
-    private final Tet tet;
+    private final    Tet       tet;
     private volatile TetreeKey computed;
-    
+
     public LazyTetreeKey(Tet tet) {
         this.tet = tet;
     }
-    
+
     @Override
     public BigInteger getTmIndex() {
         if (computed == null) {
@@ -60,6 +62,7 @@ public class LazyTetreeKey extends TetreeKey {
 ```
 
 **Benefits**:
+
 - Insertion just stores the Tet (O(1))
 - tmIndex only computed when key is actually used
 - Many operations (like bulk insert) may never need the full key
@@ -70,9 +73,9 @@ Since Tetree nodes are accessed by TetreeKey, we could store additional metadata
 
 ```java
 public class TetreeNodeImpl<ID> extends AbstractSpatialNode<TetreeKey, ID> {
-    private final Tet tet;  // Store the Tet directly
+    private final Tet    tet;  // Store the Tet directly
     private final byte[] parentTypes;  // Pre-computed parent chain
-    
+
     // Avoid recomputing tmIndex for operations on this node
 }
 ```
@@ -84,13 +87,11 @@ When inserting multiple entities, collect all Tets first, then resolve parent ch
 ```java
 protected void insertBatch(List<EntityData> entities) {
     // Step 1: Locate all Tets (parallel, O(1) each)
-    List<Tet> tets = entities.parallelStream()
-        .map(e -> locate(e.position, e.level))
-        .collect(toList());
-    
+    List<Tet> tets = entities.parallelStream().map(e -> locate(e.position, e.level)).collect(toList());
+
     // Step 2: Build parent chains efficiently
     Map<Long, Tet[]> parentChains = buildParentChainsInBatch(tets);
-    
+
     // Step 3: Insert with pre-computed chains
     for (int i = 0; i < entities.size(); i++) {
         insertWithCachedChain(entities.get(i), tets.get(i), parentChains);
@@ -104,14 +105,29 @@ The profiling showed 82.8% of time is in the insertion logic AFTER tmIndex:
 
 ```java
 // Current flow in insertAtPosition():
-1. calculateSpatialIndex() - 6.8% (after caching)
-2. computeIfAbsent() - Creates node if needed
-3. node.addEntity() - Adds to entity list
-4. entityManager.addEntityLocation() - EXPENSIVE tracking
-5. subdivision checks - Can trigger cascading work
+1.calculateSpatialIndex() -6.8%(
+after caching)
+2.
+
+computeIfAbsent() -
+Creates node if needed
+3.node.
+
+addEntity() -
+Adds to
+entity list
+4.entityManager.
+
+addEntityLocation() -
+EXPENSIVE tracking
+5.
+subdivision checks -
+Can trigger
+cascading work
 ```
 
 Optimizations:
+
 - Pool EntityLocation objects
 - Use primitive collections for entity tracking
 - Batch entity manager updates
@@ -150,6 +166,7 @@ public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byt
 ## Expected Impact
 
 With all optimizations:
+
 - Single insert: Could improve from 105μs to ~30-40μs (3x improvement)
 - Bulk insert: Could improve from 43μs to ~15-20μs (2-3x improvement)
 - Final gap: From 70x to ~20-25x slower than Octree
@@ -157,8 +174,10 @@ With all optimizations:
 ## Conclusion
 
 While we cannot eliminate the O(level) complexity of tmIndex(), we can:
+
 1. Defer its computation (lazy evaluation)
 2. Optimize the surrounding insertion logic (82.8% of time)
 3. Exploit spatial locality and batching
 
-These optimizations would make Tetree much more practical for real-world use cases, especially when combined with its superior query performance.
+These optimizations would make Tetree much more practical for real-world use cases, especially when combined with its
+superior query performance.

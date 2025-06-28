@@ -281,7 +281,6 @@ public class TetrahedralGeometry {
     // Ray3D has been moved to com.hellblazer.luciferase.lucien.Ray3D as a unified implementation
 
     // Helper methods
-
     private static boolean rayIntersectsFaceFast(Ray3D ray, Point3f v0, Point3f v1, Point3f v2) {
         Vector3f edge1 = new Vector3f();
         Vector3f edge2 = new Vector3f();

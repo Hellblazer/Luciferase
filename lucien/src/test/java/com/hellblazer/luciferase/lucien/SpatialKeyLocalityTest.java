@@ -152,7 +152,8 @@ class SpatialKeyLocalityTest {
                 int y = (i / 3) * cellSize;
                 Tet tet = new Tet(x, y, 0, level, (byte) 0);
                 var key = tet.tmIndex();
-                TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey((CompactTetreeKey) key);
+                TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(
+                (CompactTetreeKey) key);
                 mixedLevelKeys.add(tetreeKey);
             }
         }
@@ -184,7 +185,8 @@ class SpatialKeyLocalityTest {
                 for (int z = 0; z < 10; z++) {
                     Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, (byte) 0);
                     var key = tet.tmIndex();
-                    TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey((CompactTetreeKey) key);
+                    TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(
+                    (CompactTetreeKey) key);
                     keys.add(tetreeKey);
                 }
             }

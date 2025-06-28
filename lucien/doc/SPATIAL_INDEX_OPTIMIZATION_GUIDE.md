@@ -5,6 +5,7 @@ This guide explains how to optimize spatial index operations for maximum perform
 ## Overview
 
 The Luciferase system provides two spatial index implementations:
+
 - **Octree**: Uses Morton encoding (simple bit interleaving)
 - **Tetree**: Uses tetrahedral decomposition with TM-index
 
@@ -14,27 +15,27 @@ The Luciferase system provides two spatial index implementations:
 
 **IMPORTANT**: Performance characteristics have changed significantly after refactoring to use globally unique indices.
 
-| Operation | Octree | Tetree | Notes |
-|-----------|--------|---------|-------|
-| **Insertion** | ~1.5 μs/entity | ~1690 μs/entity | Octree is **1125x faster** |
-| **k-NN Search** | ~28 μs | ~6 μs | Tetree is **4.8x faster** |
-| **Range Query** | ~28 μs | ~5.6 μs | Tetree is **5x faster** |
-| **Update** | ~0.002 μs | ~0.67 μs | Octree is **335x faster** |
-| **Memory** | Baseline | 22% of Octree | Tetree is **78% more efficient** |
+| Operation       | Octree         | Tetree          | Notes                            |
+|-----------------|----------------|-----------------|----------------------------------|
+| **Insertion**   | ~1.5 μs/entity | ~1690 μs/entity | Octree is **1125x faster**       |
+| **k-NN Search** | ~28 μs         | ~6 μs           | Tetree is **4.8x faster**        |
+| **Range Query** | ~28 μs         | ~5.6 μs         | Tetree is **5x faster**          |
+| **Update**      | ~0.002 μs      | ~0.67 μs        | Octree is **335x faster**        |
+| **Memory**      | Baseline       | 22% of Octree   | Tetree is **78% more efficient** |
 
 ### Root Cause Analysis
 
 The performance difference stems from fundamental algorithmic differences:
 
 1. **Octree (Morton Encoding)**:
-   - Simple bit interleaving: O(1) operation
-   - Direct coordinate to index mapping
-   - No tree traversal required
+    - Simple bit interleaving: O(1) operation
+    - Direct coordinate to index mapping
+    - No tree traversal required
 
 2. **Tetree (TM-Index)**:
-   - Requires parent chain traversal: O(level) operation
-   - At level 20, tmIndex() is ~140x slower than simple indexing
-   - Necessary for global uniqueness across levels
+    - Requires parent chain traversal: O(level) operation
+    - At level 20, tmIndex() is ~140x slower than simple indexing
+    - Necessary for global uniqueness across levels
 
 ## Optimization Techniques
 
@@ -44,11 +45,13 @@ Configure bulk operations for large insertions:
 
 ```java
 BulkOperationConfig config = BulkOperationConfig.highPerformance()
-    .withBatchSize(10000)
-    .withDeferredSubdivision(true)
-    .withPreSortByMorton(true);
+                                                .withBatchSize(10000)
+                                                .withDeferredSubdivision(true)
+                                                .withPreSortByMorton(true);
 
-spatialIndex.configureBulkOperations(config);
+spatialIndex.
+
+configureBulkOperations(config);
 ```
 
 ### 2. Dynamic Level Selection
@@ -66,18 +69,22 @@ Prevent unnecessary tree depth:
 
 ```java
 config.withAdaptiveSubdivision(true)
-      .withSubdivisionThreshold(16); // Max entities per node
+      .
+
+withSubdivisionThreshold(16); // Max entities per node
 ```
 
 ## Choosing Between Octree and Tetree
 
 ### Use Octree When:
+
 - **Insertion performance is critical** (real-time systems)
 - **Updates are frequent** (moving entities)
 - **Bulk loading large datasets** (millions of entities)
 - **Memory is not a primary concern**
 
 ### Use Tetree When:
+
 - **Query performance is paramount** (read-heavy workloads)
 - **Memory efficiency is critical** (embedded systems)
 - **Spatial locality is important** (better cache performance)
@@ -95,11 +102,13 @@ config.withAdaptiveSubdivision(true)
 ## Implementation Notes
 
 ### Caching and Optimization
+
 - TetreeLevelCache provides O(1) lookups for frequently used values
 - Cache overhead is minimal (~120KB)
 - Cannot overcome fundamental O(level) cost of tmIndex()
 
 ### Key Classes
+
 - `AbstractSpatialIndex`: Base implementation with shared optimizations
 - `Octree`: Fast insertion using Morton encoding
 - `Tetree`: Memory-efficient with superior query performance
@@ -116,6 +125,7 @@ config.withAdaptiveSubdivision(true)
 ## Future Considerations
 
 While optimizations have improved performance, the fundamental algorithmic differences remain:
+
 - Octree will always be faster for insertions due to O(1) Morton encoding
 - Tetree will maintain query performance advantages due to better spatial locality
 - Hybrid approaches might be worth exploring for specific use cases

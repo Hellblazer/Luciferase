@@ -88,8 +88,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
 
         // Phase 1: Prepare entities
         var phaseStart = System.currentTimeMillis();
-        var mortonEntities = prepareEntities(index, positions,
-                                                                                              contents, startLevel);
+        var mortonEntities = prepareEntities(index, positions, contents, startLevel);
         phaseTimes.put("preparation", System.currentTimeMillis() - phaseStart);
 
         // Debug output for large builds
@@ -136,28 +135,28 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         // Phase 1: Find the maximum level needed (leaf level)
         var maxLevel = startLevel;
         var leafNodes = new HashMap<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>>();
-        
+
         // Group entities by their leaf nodes
         for (var entity : entities) {
             // Find the deepest level where this entity would be placed
             var entityLevel = determineEntityLevel(index, entity.position, startLevel);
             maxLevel = (byte) Math.max(maxLevel, entityLevel);
-            
+
             var leafIndex = index.calculateSpatialIndex(entity.position, entityLevel);
             leafNodes.computeIfAbsent(leafIndex, k -> new ArrayList<>()).add(entity);
         }
-        
+
         // Phase 2: Create all leaf nodes
         for (var entry : leafNodes.entrySet()) {
             var nodeIndex = entry.getKey();
             var nodeEntities = entry.getValue();
-            
+
             // Create the node and insert entities
             var node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
                 nodesCreated.incrementAndGet();
                 return index.createNode();
             });
-            
+
             // Add entities to the node
             for (var entity : nodeEntities) {
                 var id = index.getEntityManager().generateEntityId();
@@ -169,17 +168,17 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                 index.getEntityManager().addEntityLocation(id, nodeIndex);
                 entitiesProcessed.incrementAndGet();
             }
-            
+
             index.getSortedSpatialIndices().add(nodeIndex);
         }
-        
+
         // Phase 3: Build internal nodes from bottom to top
         var currentLevelNodes = new HashSet<>(leafNodes.keySet());
         var currentLevel = maxLevel;
-        
+
         while (currentLevel > startLevel && !currentLevelNodes.isEmpty()) {
             var parentNodes = new HashSet<Key>();
-            
+
             // For each node at current level, ensure its parent exists
             for (var childIndex : currentLevelNodes) {
                 var parentIndex = childIndex.parent();
@@ -189,24 +188,24 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                     index.getSpatialIndex().put(parentIndex, parentNode);
                     index.getSortedSpatialIndices().add(parentIndex);
                     nodesCreated.incrementAndGet();
-                    
+
                     // Mark parent as having children
                     if (parentNode instanceof AbstractSpatialNode) {
                         ((AbstractSpatialNode<ID>) parentNode).setHasChildren(true);
                     }
-                    
+
                     parentNodes.add(parentIndex);
                 }
             }
-            
+
             // Move up one level
             currentLevelNodes = parentNodes;
             currentLevel--;
         }
-        
+
         // Update max depth reached
         maxDepthReached = maxLevel;
-        
+
         // Report progress
         if (config.isEnableProgressTracking() && progressListener != null) {
             progressListener.onProgress(entitiesProcessed.get(), entities.size(), nodesCreated.get());
@@ -224,111 +223,60 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
 
         // Determine the bulk loading level (typically a few levels down from root)
         var bulkLoadLevel = (byte) Math.min(startLevel + 3, index.getMaxDepth() - 2);
-        
+
         // Phase 1: Bulk load entities at the bulk load level
         var bulkNodes = new HashMap<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>>();
-        
+
         // Group entities by their bulk load level nodes
         for (var entity : entities) {
             var bulkIndex = index.calculateSpatialIndex(entity.position, bulkLoadLevel);
             bulkNodes.computeIfAbsent(bulkIndex, k -> new ArrayList<>()).add(entity);
         }
-        
+
         // Phase 2: Create bulk nodes and process their contents
         var stack = new ArrayDeque<BuildStackFrame<Key, ID, Content>>();
-        
+
         for (var entry : bulkNodes.entrySet()) {
             var nodeIndex = entry.getKey();
             var nodeEntities = entry.getValue();
-            
+
             // If this bulk node has too many entities, use top-down subdivision
             if (nodeEntities.size() > index.getMaxEntitiesPerNode() && bulkLoadLevel < index.getMaxDepth()) {
                 // Push frame for top-down processing of this subtree
-                stack.push(new BuildStackFrame<>(nodeIndex, bulkLoadLevel, nodeEntities, 
-                                               0, nodeEntities.size(), BuildPhase.PROCESS_NODE));
+                stack.push(new BuildStackFrame<>(nodeIndex, bulkLoadLevel, nodeEntities, 0, nodeEntities.size(),
+                                                 BuildPhase.PROCESS_NODE));
             } else {
                 // Direct insertion for small nodes
                 createAndPopulateNode(index, nodeIndex, nodeEntities);
             }
         }
-        
+
         // Phase 3: Process stack for nodes that need subdivision
         processStackFrames(index, stack, entities.size());
-        
+
         // Phase 4: Build internal nodes from bulk load level up to root
         buildInternalNodesUpward(index, bulkNodes.keySet(), bulkLoadLevel, startLevel);
-        
+
         // Update statistics
         maxDepthReached = Math.max(maxDepthReached, bulkLoadLevel);
-        
+
         // Report final progress
         if (config.isEnableProgressTracking() && progressListener != null) {
             progressListener.onProgress(entitiesProcessed.get(), entities.size(), nodesCreated.get());
         }
     }
-    
-    /**
-     * Create and populate a node with entities
-     */
-    private void createAndPopulateNode(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
-                                      Key nodeIndex, 
-                                      List<BulkOperationProcessor.SfcEntity<Key, Content>> entities) {
-        var node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
-            nodesCreated.incrementAndGet();
-            return index.createNode();
-        });
-        
-        for (var entity : entities) {
-            var id = index.getEntityManager().generateEntityId();
-            if (config.isTrackInsertedIds()) {
-                insertedIds.add(id);
-            }
-            node.addEntity(id);
-            index.getEntityManager().createOrUpdateEntity(id, entity.content, entity.position, null);
-            index.getEntityManager().addEntityLocation(id, nodeIndex);
-            entitiesProcessed.incrementAndGet();
-        }
-        
-        index.getSortedSpatialIndices().add(nodeIndex);
-    }
-    
-    /**
-     * Process stack frames for subdivision
-     */
-    private void processStackFrames(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
-                                   Deque<BuildStackFrame<Key, ID, Content>> stack,
-                                   int totalEntities) {
-        while (!stack.isEmpty()) {
-            if (stack.size() > config.getMaxStackDepth()) {
-                log.debug("Hybrid builder: Stack depth exceeded {}, processing in batches", config.getMaxStackDepth());
-                var batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
-                for (int i = 0; i < batchSize && !stack.isEmpty(); i++) {
-                    var frame = stack.pop();
-                    processSingleFrame(index, frame, stack);
-                }
-                continue;
-            }
-            
-            var frame = stack.pop();
-            processSingleFrame(index, frame, stack);
-            
-            if (config.isEnableProgressTracking() && progressListener != null) {
-                progressListener.onProgress(entitiesProcessed.get(), totalEntities, nodesCreated.get());
-            }
-        }
-    }
-    
+
     /**
      * Build internal nodes from a set of child nodes up to the root level
      */
-    private void buildInternalNodesUpward(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
-                                         Set<Key> childNodes, byte fromLevel, byte toLevel) {
+    private void buildInternalNodesUpward(AbstractSpatialIndex<Key, ID, Content, NodeType> index, Set<Key> childNodes,
+                                          byte fromLevel, byte toLevel) {
         var currentLevelNodes = new HashSet<>(childNodes);
         var currentLevel = fromLevel;
-        
+
         while (currentLevel > toLevel && !currentLevelNodes.isEmpty()) {
             var parentNodes = new HashSet<Key>();
-            
+
             for (var childIndex : currentLevelNodes) {
                 var parentIndex = childIndex.parent();
                 if (parentIndex != null && !index.getSpatialIndex().containsKey(parentIndex)) {
@@ -336,15 +284,15 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                     index.getSpatialIndex().put(parentIndex, parentNode);
                     index.getSortedSpatialIndices().add(parentIndex);
                     nodesCreated.incrementAndGet();
-                    
+
                     if (parentNode instanceof AbstractSpatialNode) {
                         ((AbstractSpatialNode<ID>) parentNode).setHasChildren(true);
                     }
-                    
+
                     parentNodes.add(parentIndex);
                 }
             }
-            
+
             currentLevelNodes = parentNodes;
             currentLevel--;
         }
@@ -405,6 +353,30 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
+     * Create and populate a node with entities
+     */
+    private void createAndPopulateNode(AbstractSpatialIndex<Key, ID, Content, NodeType> index, Key nodeIndex,
+                                       List<BulkOperationProcessor.SfcEntity<Key, Content>> entities) {
+        var node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
+            nodesCreated.incrementAndGet();
+            return index.createNode();
+        });
+
+        for (var entity : entities) {
+            var id = index.getEntityManager().generateEntityId();
+            if (config.isTrackInsertedIds()) {
+                insertedIds.add(id);
+            }
+            node.addEntity(id);
+            index.getEntityManager().createOrUpdateEntity(id, entity.content, entity.position, null);
+            index.getEntityManager().addEntityLocation(id, nodeIndex);
+            entitiesProcessed.incrementAndGet();
+        }
+
+        index.getSortedSpatialIndices().add(nodeIndex);
+    }
+
+    /**
      * Create child nodes for subdivision
      */
     private void createChildren(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
@@ -439,6 +411,23 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         // Finalize parent after children
         stack.push(new BuildStackFrame<>(frame.nodeIndex, frame.level, frame.entities, frame.startIdx, frame.endIdx,
                                          BuildPhase.FINALIZE_NODE));
+    }
+
+    /**
+     * Determine the appropriate level for an entity based on spatial density
+     */
+    private byte determineEntityLevel(AbstractSpatialIndex<Key, ID, Content, NodeType> index, Point3f position,
+                                      byte startLevel) {
+        // Start at the given level and potentially go deeper based on density
+        var level = startLevel;
+
+        // Simple heuristic: use adaptive level selection if available
+        if (config.isUseAdaptiveSubdivision()) {
+            // Could be enhanced with density-based logic
+            level = (byte) Math.min(startLevel + 2, index.getMaxDepth());
+        }
+
+        return level;
     }
 
     /**
@@ -602,6 +591,31 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
+     * Process stack frames for subdivision
+     */
+    private void processStackFrames(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
+                                    Deque<BuildStackFrame<Key, ID, Content>> stack, int totalEntities) {
+        while (!stack.isEmpty()) {
+            if (stack.size() > config.getMaxStackDepth()) {
+                log.debug("Hybrid builder: Stack depth exceeded {}, processing in batches", config.getMaxStackDepth());
+                var batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
+                for (int i = 0; i < batchSize && !stack.isEmpty(); i++) {
+                    var frame = stack.pop();
+                    processSingleFrame(index, frame, stack);
+                }
+                continue;
+            }
+
+            var frame = stack.pop();
+            processSingleFrame(index, frame, stack);
+
+            if (config.isEnableProgressTracking() && progressListener != null) {
+                progressListener.onProgress(entitiesProcessed.get(), totalEntities, nodesCreated.get());
+            }
+        }
+    }
+
+    /**
      * Build strategies
      */
     public enum BuildStrategy {
@@ -628,6 +642,8 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         PROCESS_NODE, CREATE_CHILDREN, FINALIZE_NODE
     }
 
+    // Factory methods
+
     /**
      * Progress listener for monitoring large builds
      */
@@ -636,8 +652,6 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
 
         void onProgress(int entitiesProcessed, int totalEntities, int nodesCreated);
     }
-
-    // Factory methods
 
     /**
      * Build configuration
@@ -751,24 +765,6 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
             return endIdx - startIdx;
         }
     }
-
-    /**
-     * Determine the appropriate level for an entity based on spatial density
-     */
-    private byte determineEntityLevel(AbstractSpatialIndex<Key, ID, Content, NodeType> index, 
-                                     Point3f position, byte startLevel) {
-        // Start at the given level and potentially go deeper based on density
-        var level = startLevel;
-        
-        // Simple heuristic: use adaptive level selection if available
-        if (config.isUseAdaptiveSubdivision()) {
-            // Could be enhanced with density-based logic
-            level = (byte) Math.min(startLevel + 2, index.getMaxDepth());
-        }
-        
-        return level;
-    }
-    
 
     /**
      * Build result with statistics

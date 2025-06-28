@@ -52,13 +52,13 @@ public final class TetreeBits {
         byte r_level = c_level;
         byte t1_type_at_l = tet1.computeType(c_level);
         byte t2_type_at_l = tet2.computeType(c_level);
-        
+
         while (t1_type_at_l != t2_type_at_l && r_level > 0) {
             r_level--;
             t1_type_at_l = tet1.computeType(r_level);
             t2_type_at_l = tet2.computeType(r_level);
         }
-        
+
         assert r_level >= 0 : "Failed to find common ancestor level";
         return r_level;
     }

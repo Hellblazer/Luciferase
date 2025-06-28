@@ -155,14 +155,23 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
     List<CollisionPair<ID, Content>> findCollisionsInRegion(Spatial region);
 
     /**
+     * Find all entities that are visible within a view frustum. This performs frustum culling by testing spatial nodes
+     * against the frustum planes.
+     *
+     * @param frustum the view frustum to test against
+     * @return list of entity IDs that are potentially visible within the frustum
+     */
+    List<ID> frustumCullVisible(Frustum3D frustum);
+
+    // ===== Spatial Queries =====
+
+    /**
      * Get collision shape for an entity
      *
      * @param entityId the entity ID
      * @return the collision shape, or null if using default AABB
      */
     CollisionShape getCollisionShape(ID entityId);
-
-    // ===== Spatial Queries =====
 
     /**
      * Get content for multiple entity IDs
@@ -194,15 +203,6 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @return the entity's bounds, or null if not found or not set
      */
     EntityBounds getEntityBounds(ID entityId);
-    
-    /**
-     * Find all entities that are visible within a view frustum.
-     * This performs frustum culling by testing spatial nodes against the frustum planes.
-     *
-     * @param frustum the view frustum to test against
-     * @return list of entity IDs that are potentially visible within the frustum
-     */
-    List<ID> frustumCullVisible(Frustum3D frustum);
 
     // ===== Map Operations =====
 

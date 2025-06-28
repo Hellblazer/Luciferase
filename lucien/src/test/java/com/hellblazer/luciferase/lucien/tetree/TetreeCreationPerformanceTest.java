@@ -16,25 +16,27 @@ import org.junit.jupiter.api.DisplayName;
  * @author hal.hildebrand
  */
 @DisplayName("Tetree Creation Performance Tests")
-public class TetreeCreationPerformanceTest extends SpatialIndexCreationPerformanceTest<BaseTetreeKey<?>, LongEntityID, String> {
-    
+public class TetreeCreationPerformanceTest
+extends SpatialIndexCreationPerformanceTest<BaseTetreeKey<?>, LongEntityID, String> {
+
+    @Override
+    protected SequentialLongIDGenerator createIDGenerator() {
+        return new SequentialLongIDGenerator();
+    }
+
+    @Override
+    protected SpatialIndex<BaseTetreeKey<?>, LongEntityID, String> createSpatialIndex(VolumeBounds bounds,
+                                                                                      int maxDepth) {
+        return new Tetree<>(createIDGenerator());
+    }
+
     @Override
     protected String createTestContent(int entityIndex) {
         return "Entity-" + entityIndex;
     }
-    
-    @Override
-    protected SpatialIndex<BaseTetreeKey<?>, LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
-        return new Tetree<>(createIDGenerator());
-    }
-    
+
     @Override
     protected String getImplementationName() {
         return "Tetree";
-    }
-    
-    @Override
-    protected SequentialLongIDGenerator createIDGenerator() {
-        return new SequentialLongIDGenerator();
     }
 }

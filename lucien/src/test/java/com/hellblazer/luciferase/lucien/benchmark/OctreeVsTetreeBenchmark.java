@@ -169,8 +169,8 @@ public class OctreeVsTetreeBenchmark {
             // Move within 5% of current position to stay within valid bounds
             var moveRange = 50.0f; // 5% of 1000 max coordinate
             var newPos = new Point3f(e.position.x + random.nextFloat(-moveRange, moveRange),
-                                         e.position.y + random.nextFloat(-moveRange, moveRange),
-                                         e.position.z + random.nextFloat(-moveRange, moveRange));
+                                     e.position.y + random.nextFloat(-moveRange, moveRange),
+                                     e.position.z + random.nextFloat(-moveRange, moveRange));
             // Clamp to valid coordinate range [0.1, 999.9]
             newPos.x = Math.max(0.1f, Math.min(999.9f, newPos.x));
             newPos.y = Math.max(0.1f, Math.min(999.9f, newPos.y));
@@ -191,8 +191,8 @@ public class OctreeVsTetreeBenchmark {
         for (int i = 0; i < updates; i++) {
             var e = entities.get(random.nextInt(entities.size()));
             var newPos = new Point3f(Math.max(0.1f, e.position.x + random.nextFloat(-10, 10)),
-                                         Math.max(0.1f, e.position.y + random.nextFloat(-10, 10)),
-                                         Math.max(0.1f, e.position.z + random.nextFloat(-10, 10)));
+                                     Math.max(0.1f, e.position.y + random.nextFloat(-10, 10)),
+                                     Math.max(0.1f, e.position.z + random.nextFloat(-10, 10)));
 
             var start = System.nanoTime();
             index.updateEntity(e.id, newPos, TEST_LEVEL);

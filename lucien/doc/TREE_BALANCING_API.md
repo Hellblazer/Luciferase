@@ -77,6 +77,7 @@ public interface TreeBalancer<ID extends EntityID> {
 
 ```java
 void setAutoBalancingEnabled(boolean enabled)
+
 boolean isAutoBalancingEnabled()
 ```
 
@@ -89,7 +90,9 @@ Enables automatic rebalancing after insert/remove operations.
 spatialIndex.setAutoBalancingEnabled(true);
 
 // Now insertions and removals will trigger rebalancing checks
-spatialIndex.insert(position, level, content);
+spatialIndex.
+
+insert(position, level, content);
 // Automatic rebalancing may occur here
 ```
 
@@ -107,11 +110,21 @@ Manually triggers a full tree rebalancing operation.
 // Perform manual rebalancing
 TreeBalancer.RebalancingResult result = spatialIndex.rebalanceTree();
 
-System.out.println("Rebalancing complete:");
-System.out.println("  Nodes created: " + result.nodesCreated());
-System.out.println("  Nodes removed: " + result.nodesRemoved());
-System.out.println("  Entities relocated: " + result.entitiesRelocated());
-System.out.println("  Time taken: " + result.timeTaken() + "ms");
+System.out.
+
+println("Rebalancing complete:");
+System.out.
+
+println("  Nodes created: "+result.nodesCreated());
+System.out.
+
+println("  Nodes removed: "+result.nodesRemoved());
+System.out.
+
+println("  Entities relocated: "+result.entitiesRelocated());
+System.out.
+
+println("  Time taken: "+result.timeTaken() +"ms");
 ```
 
 ### 3. Set Balancing Strategy
@@ -129,7 +142,9 @@ Configures the balancing strategy used by the tree.
 spatialIndex.setBalancingStrategy(new AggressiveBalancingStrategy<>());
 
 // Use conservative balancing for better insertion performance
-spatialIndex.setBalancingStrategy(new ConservativeBalancingStrategy<>());
+spatialIndex.
+
+setBalancingStrategy(new ConservativeBalancingStrategy<>());
 ```
 
 ### 4. Get Balancing Statistics
@@ -145,9 +160,15 @@ Retrieves current tree balance statistics.
 ```java
 TreeBalancingStrategy.TreeBalancingStats stats = spatialIndex.getBalancingStats();
 
-if (stats.loadVariance() > 100) {
-    System.out.println("Tree is imbalanced, manual rebalancing recommended");
-    spatialIndex.rebalanceTree();
+if(stats.
+
+loadVariance() >100){
+System.out.
+
+println("Tree is imbalanced, manual rebalancing recommended");
+    spatialIndex.
+
+rebalanceTree();
 }
 ```
 
@@ -344,27 +365,25 @@ Full tree rebalancing process:
 ```java
 public class BalancingMetrics {
     private long totalRebalanceTime = 0;
-    private int rebalanceCount = 0;
-    
+    private int  rebalanceCount     = 0;
+
     public void monitorBalancing(SpatialIndex<ID, Content> index) {
-        index.setBalancingStrategy(new MetricsStrategy<>(
-            index.getBalancingStrategy()
-        ));
+        index.setBalancingStrategy(new MetricsStrategy<>(index.getBalancingStrategy()));
     }
-    
+
     class MetricsStrategy<ID extends EntityID> implements TreeBalancingStrategy<ID> {
         private final TreeBalancingStrategy<ID> delegate;
-        
+
         @Override
         public boolean shouldRebalanceTree(TreeBalancingStats stats) {
             long start = System.nanoTime();
             boolean result = delegate.shouldRebalanceTree(stats);
-            
+
             if (result) {
                 totalRebalanceTime += System.nanoTime() - start;
                 rebalanceCount++;
             }
-            
+
             return result;
         }
     }
@@ -379,13 +398,13 @@ public class BatchBalancing {
         // Disable auto-balancing during batch insert
         boolean wasEnabled = spatialIndex.isAutoBalancingEnabled();
         spatialIndex.setAutoBalancingEnabled(false);
-        
+
         try {
             // Insert all entities
             for (EntityData data : entities) {
                 spatialIndex.insert(data.position, data.level, data.content);
             }
-            
+
             // Single rebalance at the end
             spatialIndex.rebalanceTree();
         } finally {
@@ -416,13 +435,13 @@ public class BatchBalancing {
 ```java
 public class AdaptiveBalancingSystem {
     private final SpatialIndex<LongEntityID, GameObject> spatialIndex;
-    private final BalancingMetrics metrics = new BalancingMetrics();
-    
+    private final BalancingMetrics                       metrics = new BalancingMetrics();
+
     public void initialize() {
         // Create adaptive strategy
         TreeBalancingStrategy<LongEntityID> strategy = new TreeBalancingStrategy<>() {
             private double targetVariance = 50.0;
-            
+
             @Override
             public boolean shouldRebalanceTree(TreeBalancingStats stats) {
                 // Adapt based on current performance
@@ -433,10 +452,10 @@ public class AdaptiveBalancingSystem {
                     // Inserts are slow, be less aggressive
                     targetVariance = Math.min(100.0, targetVariance * 1.1);
                 }
-                
+
                 return stats.loadVariance() > targetVariance;
             }
-            
+
             @Override
             public int getSplitThreshold(int level, int maxEntitiesPerNode) {
                 // Adjust based on tree depth
@@ -444,24 +463,25 @@ public class AdaptiveBalancingSystem {
                 return (int) (maxEntitiesPerNode * Math.max(0.5, utilization));
             }
         };
-        
+
         spatialIndex.setBalancingStrategy(strategy);
         spatialIndex.setAutoBalancingEnabled(true);
     }
-    
+
     public void performMaintenance() {
         TreeBalancingStats stats = spatialIndex.getBalancingStats();
-        
+
         System.out.println("Tree Health Report:");
         System.out.println("  Average load: " + stats.averageLoad());
         System.out.println("  Load variance: " + stats.loadVariance());
         System.out.println("  Empty nodes: " + stats.emptyNodes() + "/" + stats.totalNodes());
-        
+
         if (stats.loadVariance() > 100) {
             System.out.println("Performing maintenance rebalancing...");
             TreeBalancer.RebalancingResult result = spatialIndex.rebalanceTree();
-            System.out.println("Rebalancing improved variance by " + 
-                             (stats.loadVariance() - spatialIndex.getBalancingStats().loadVariance()));
+            System.out.println(
+            "Rebalancing improved variance by " + (stats.loadVariance() - spatialIndex.getBalancingStats()
+                                                                                      .loadVariance()));
         }
     }
 }

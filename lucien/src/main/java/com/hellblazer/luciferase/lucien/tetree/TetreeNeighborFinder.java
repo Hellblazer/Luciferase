@@ -21,7 +21,6 @@ import com.hellblazer.luciferase.lucien.Constants;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Neighbor finding algorithms for tetrahedral trees. Implements t8code's face neighbor finding using connectivity
@@ -102,12 +101,12 @@ public class TetreeNeighborFinder {
         // Edge 3 (v1-v2): faces 0, 1
         // Edge 4 (v1-v3): faces 1, 2
         // Edge 5 (v2-v3): faces 2, 3
-        var edgeToFaces = new int[][]{ { 0, 2 },  // Edge 0
-                                { 0, 3 },  // Edge 1
-                                { 1, 3 },  // Edge 2
-                                { 0, 1 },  // Edge 3
-                                { 1, 2 },  // Edge 4
-                                { 2, 3 }   // Edge 5
+        var edgeToFaces = new int[][] { { 0, 2 },  // Edge 0
+                                        { 0, 3 },  // Edge 1
+                                        { 1, 3 },  // Edge 2
+                                        { 0, 1 },  // Edge 3
+                                        { 1, 2 },  // Edge 4
+                                        { 2, 3 }   // Edge 5
         };
 
         // Check neighbors across both faces that share this edge
@@ -286,10 +285,10 @@ public class TetreeNeighborFinder {
         // Vertex 1: faces 0, 2, 3
         // Vertex 2: faces 0, 1, 3
         // Vertex 3: faces 0, 1, 2
-        var vertexToFaces = new int[][]{ { 1, 2, 3 },  // Vertex 0
-                                  { 0, 2, 3 },  // Vertex 1
-                                  { 0, 1, 3 },  // Vertex 2
-                                  { 0, 1, 2 }   // Vertex 3
+        var vertexToFaces = new int[][] { { 1, 2, 3 },  // Vertex 0
+                                          { 0, 2, 3 },  // Vertex 1
+                                          { 0, 1, 3 },  // Vertex 2
+                                          { 0, 1, 2 }   // Vertex 3
         };
 
         // First, find all face neighbors
@@ -306,10 +305,10 @@ public class TetreeNeighborFinder {
         // Vertex 1: edges 0, 3, 4
         // Vertex 2: edges 1, 3, 5
         // Vertex 3: edges 2, 4, 5
-        var vertexToEdges = new int[][]{ { 0, 1, 2 },  // Vertex 0
-                                  { 0, 3, 4 },  // Vertex 1
-                                  { 1, 3, 5 },  // Vertex 2
-                                  { 2, 4, 5 }   // Vertex 3
+        var vertexToEdges = new int[][] { { 0, 1, 2 },  // Vertex 0
+                                          { 0, 3, 4 },  // Vertex 1
+                                          { 1, 3, 5 },  // Vertex 2
+                                          { 2, 4, 5 }   // Vertex 3
         };
 
         for (var edgeIndex : vertexToEdges[vertexIndex]) {

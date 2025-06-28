@@ -9,45 +9,54 @@
 ## Executive Summary
 
 This updated performance testing plan incorporates the major optimizations implemented in 2025:
+
 - O(1) optimizations (SpatialIndexSet, TetreeLevelCache)
 - Bulk operation optimizations (batch insertion, stack-based builder)
 - Memory optimizations (pre-allocation, node pooling)
 - Parallel processing capabilities
 - Advanced spatial queries (plane intersection, frustum culling)
 
-The plan focuses on **validating optimization effectiveness** and **preventing performance regressions** rather than just basic benchmarking.
+The plan focuses on **validating optimization effectiveness** and **preventing performance regressions** rather than
+just basic benchmarking.
 
 ## 🚀 Key Optimizations to Test
 
 ### 1. **O(1) Performance Optimizations**
+
 - **SpatialIndexSet**: Hash-based replacement for TreeSet (O(log n) → O(1))
 - **TetreeLevelCache**: Cached level extraction and parent chains
 - **Cached Spatial Calculations**: Morton code and type computations
 
 ### 2. **Bulk Operation Optimizations**
+
 - **Stack-based TreeBuilder**: Iterative construction avoiding recursion
 - **Batch Insertion**: Process multiple entities in single operation
 - **Deferred Subdivision**: Delay node splitting until bulk complete
 - **Morton Pre-sorting**: Sort entities by spatial code for cache locality
 
 ### 3. **Memory Optimizations**
+
 - **Adaptive Pre-allocation**: Estimate and pre-create nodes
 - **Node Pooling**: Reuse nodes for frequent insertions/deletions
 - **Distribution-aware Allocation**: Optimize for spatial patterns
 
 ### 4. **Parallel Processing**
+
 - **Parallel Bulk Operations**: Multi-threaded batch processing
 - **Work-stealing Queues**: Efficient task distribution
 - **NUMA-aware Processing**: Optimize for large datasets
 
 ## 🎯 Current Testing Phases
 
-### **Phase 1: Optimization Validation (CURRENT)** 
+### **Phase 1: Optimization Validation (CURRENT)**
+
 **Duration**: 2-3 weeks  
 **Goal**: Prove optimization effectiveness
 
 #### 1.1 Bulk Operation Performance Testing
+
 ```java
+
 @Test
 void testBulkOperationOptimizations() {
     // Test configurations:
@@ -55,14 +64,13 @@ void testBulkOperationOptimizations() {
     // - Bulk insertion (optimized)
     // - Stack-based builder
     // - Parallel bulk operations
-    
-    BulkOperationConfig[] configs = {
-        BulkOperationConfig.disabled(),          // Baseline
-        BulkOperationConfig.defaultConfig(),     // Basic bulk
-        BulkOperationConfig.highPerformance(),   // Full optimization
-        BulkOperationConfig.memoryEfficient()   // Memory focused
+
+    BulkOperationConfig[] configs = { BulkOperationConfig.disabled(),          // Baseline
+                                      BulkOperationConfig.defaultConfig(),     // Basic bulk
+                                      BulkOperationConfig.highPerformance(),   // Full optimization
+                                      BulkOperationConfig.memoryEfficient()   // Memory focused
     };
-    
+
     // Expected improvements:
     // - 2-5x speedup over baseline
     // - 10x speedup with parallel processing
@@ -70,6 +78,7 @@ void testBulkOperationOptimizations() {
 ```
 
 #### 1.2 Cache Effectiveness Testing
+
 ```java
 @Test
 void testCacheEffectiveness() {
@@ -85,6 +94,7 @@ void testCacheEffectiveness() {
 ```
 
 #### 1.3 Memory Optimization Testing
+
 ```java
 @Test
 void testMemoryOptimizations() {
@@ -100,9 +110,11 @@ void testMemoryOptimizations() {
 ```
 
 ### **Phase 2: Regression Prevention (Weeks 3-4)**
+
 **Goal**: Establish performance baselines and regression detection
 
 #### 2.1 Performance Baseline Establishment
+
 ```java
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class PerformanceBaselineTest {
@@ -128,6 +140,7 @@ public class PerformanceBaselineTest {
 ```
 
 #### 2.2 Automated Regression Detection
+
 ```java
 public class PerformanceRegressionDetector {
     
@@ -147,9 +160,11 @@ public class PerformanceRegressionDetector {
 ```
 
 ### **Phase 3: Advanced Feature Testing (Weeks 5-6)**
+
 **Goal**: Test advanced spatial query optimizations
 
 #### 3.1 Plane Intersection Performance
+
 ```java
 @Test
 void testPlaneIntersectionPerformance() {
@@ -160,6 +175,7 @@ void testPlaneIntersectionPerformance() {
 ```
 
 #### 3.2 Frustum Culling Performance
+
 ```java
 @Test
 void testFrustumCullingPerformance() {
@@ -170,9 +186,11 @@ void testFrustumCullingPerformance() {
 ```
 
 ### **Phase 4: Comparative Analysis (Weeks 7-8)**
+
 **Goal**: Compare Octree vs Tetree with optimizations
 
 #### 4.1 Head-to-Head Performance
+
 ```java
 @ParameterizedTest
 @MethodSource("dataDistributions")
@@ -285,31 +303,31 @@ public class CachePerformanceTest {
 ## 🔧 Test Configuration Templates
 
 ### High-Performance Configuration
+
 ```java
 public static BulkOperationConfig getHighPerformanceConfig() {
     return BulkOperationConfig.highPerformance()
-        .withBatchSize(10000)
-        .withDeferSubdivision(true)
-        .withPreSortByMorton(true)
-        .withEnableParallel(true)
-        .withParallelThreads(Runtime.getRuntime().availableProcessors())
-        .withStackBasedBuilder(true)
-        .withStackBuilderThreshold(10000);
+                              .withBatchSize(10000)
+                              .withDeferSubdivision(true)
+                              .withPreSortByMorton(true)
+                              .withEnableParallel(true)
+                              .withParallelThreads(Runtime.getRuntime().availableProcessors())
+                              .withStackBasedBuilder(true)
+                              .withStackBuilderThreshold(10000);
 }
 ```
 
 ### Memory-Efficient Configuration
+
 ```java
 public static BulkOperationConfig getMemoryEfficientConfig() {
-    return BulkOperationConfig.memoryEfficient()
-        .withBatchSize(1000)
-        .withNodePoolSize(5000)
-        .withAdaptivePreAllocation(true)
-        .withPreAllocationSafety(0.8f);
+    return BulkOperationConfig.memoryEfficient().withBatchSize(1000).withNodePoolSize(5000).withAdaptivePreAllocation(
+    true).withPreAllocationSafety(0.8f);
 }
 ```
 
 ### Regression Detection Configuration
+
 ```java
 public static TestConfig getRegressionTestConfig() {
     return TestConfig.builder()
@@ -326,36 +344,40 @@ public static TestConfig getRegressionTestConfig() {
 Based on implemented optimizations, these are the target performance levels:
 
 ### Insertion Performance Targets (Updated June 2025 - After Optimizations)
-| Method | Octree (entities/sec) | Tetree (entities/sec) | Notes |
-|--------|---------------------|---------------------|--------|
-| Single Insert | 670K | 2K-10K | Tetree 70-350x slower |
-| Basic Bulk | 750K | 20K | ~40x slower with batching |
-| Optimized Bulk | 800K | 23K | Best case with all optimizations |
-| Thread-Local Cache | 670K | 15K | Helps with concurrency |
+
+| Method             | Octree (entities/sec) | Tetree (entities/sec) | Notes                            |
+|--------------------|-----------------------|-----------------------|----------------------------------|
+| Single Insert      | 670K                  | 2K-10K                | Tetree 70-350x slower            |
+| Basic Bulk         | 750K                  | 20K                   | ~40x slower with batching        |
+| Optimized Bulk     | 800K                  | 23K                   | Best case with all optimizations |
+| Thread-Local Cache | 670K                  | 15K                   | Helps with concurrency           |
 
 **Note**: Tetree insertion is fundamentally limited by O(level) tmIndex() computation
 **Achievement**: 94% improvement from initial state through caching optimizations
 
 ### Query Performance Targets
-| Query Type | Target Time | Improvement vs Baseline |
-|------------|-------------|----------------------|
-| k-NN (k=10) | <50μs | 3.0x |
-| k-NN (k=100) | <200μs | 4.0x |
-| Range (1% space) | <100μs | 2.0x |
-| Plane intersection | <200μs | 10x vs brute force |
-| Frustum culling | <500μs | 20x vs brute force |
+
+| Query Type         | Target Time | Improvement vs Baseline |
+|--------------------|-------------|-------------------------|
+| k-NN (k=10)        | <50μs       | 3.0x                    |
+| k-NN (k=100)       | <200μs      | 4.0x                    |
+| Range (1% space)   | <100μs      | 2.0x                    |
+| Plane intersection | <200μs      | 10x vs brute force      |
+| Frustum culling    | <500μs      | 20x vs brute force      |
 
 ### Memory Usage Targets
-| Configuration | Bytes per Entity | Improvement |
-|---------------|------------------|-------------|
-| No optimization | 500 | baseline |
-| Pre-allocation | 400 | 20% reduction |
-| Node pooling | 380 | 24% reduction |
-| Combined | 350 | 30% reduction |
+
+| Configuration   | Bytes per Entity | Improvement   |
+|-----------------|------------------|---------------|
+| No optimization | 500              | baseline      |
+| Pre-allocation  | 400              | 20% reduction |
+| Node pooling    | 380              | 24% reduction |
+| Combined        | 350              | 30% reduction |
 
 ## 🧪 Test Execution Strategy
 
 ### Environment Setup
+
 ```bash
 # Enable performance tests
 export RUN_SPATIAL_INDEX_PERF_TESTS=true
@@ -374,6 +396,7 @@ mvn test -Dtest="PerformanceReportGenerator"
 ```
 
 ### Continuous Integration
+
 ```yaml
 performance_tests:
   schedule: "0 2 * * 0"  # Weekly on Sunday at 2 AM
@@ -386,23 +409,27 @@ performance_tests:
 ## 📋 Success Criteria
 
 ### Phase 1 Success Criteria (Optimization Validation)
+
 - [ ] Bulk operations show 5-10x improvement over iterative
 - [ ] TetreeLevelCache shows 3-5x improvement for Tetree operations
 - [ ] Memory optimizations show 20-30% reduction in usage
 - [ ] Parallel operations scale linearly up to core count
 
 ### Phase 2 Success Criteria (Regression Prevention)
+
 - [ ] Automated baseline establishment complete
 - [ ] Regression detection triggers on >20% degradation
 - [ ] Performance targets documented and enforced
 - [ ] CI integration detecting performance issues
 
 ### Phase 3 Success Criteria (Advanced Features)
+
 - [ ] Plane intersection performs 10x better than brute force
 - [ ] Frustum culling handles 1M+ entities in real-time
 - [ ] Advanced queries integrate with existing optimizations
 
 ### Phase 4 Success Criteria (Comparative Analysis)
+
 - [ ] Clear performance profiles for Octree vs Tetree
 - [ ] Documented recommendations for use cases
 - [ ] Performance parity achieved between implementations
@@ -410,18 +437,21 @@ performance_tests:
 ## 🎯 Current Action Items
 
 ### Immediate (This Week)
+
 1. **Update existing performance tests** to use optimization configurations
 2. **Add cache effectiveness tests** for TetreeLevelCache
-3. **Create bulk operation comparison tests** 
+3. **Create bulk operation comparison tests**
 4. **Establish performance baselines** for regression detection
 
 ### Short Term (Next 2 Weeks)
+
 1. **Implement parallel processing tests**
 2. **Add memory optimization validation**
 3. **Create automated regression detection**
 4. **Document optimization best practices**
 
 ### Medium Term (Next Month)
+
 1. **Complete advanced feature testing**
 2. **Finalize Octree vs Tetree comparison**
 3. **Generate comprehensive performance documentation**
@@ -436,4 +466,5 @@ performance_tests:
 
 ---
 
-**Next Review**: Plan should be reviewed after Phase 1 completion (~3 weeks) to assess optimization validation results and adjust subsequent phases based on findings.
+**Next Review**: Plan should be reviewed after Phase 1 completion (~3 weeks) to assess optimization validation results
+and adjust subsequent phases based on findings.

@@ -134,16 +134,18 @@ The current architecture prioritizes:
 
 ### Important Performance Update
 
-Previous performance claims were based on using the `consecutiveIndex()` method which is unique only within a level. After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance characteristics have changed dramatically.
+Previous performance claims were based on using the `consecutiveIndex()` method which is unique only within a level.
+After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
+characteristics have changed dramatically.
 
 ### Current Performance Metrics
 
-| Operation         | Octree    | Tetree    | Winner      | Notes |
-|-------------------|-----------|-----------|-------------|-------|
-| Insert 50K        | 75 ms     | 84,483 ms | Octree (1125x) | tmIndex() is O(level) |
-| k-NN (k=10)       | 28 μs     | 5.9 μs    | Tetree (4.8x)  | Better locality |
-| Range Query       | 28 μs     | 5.6 μs    | Tetree (5x)    | Efficient traversal |
-| Memory Usage      | 100%      | 22%       | Tetree (78% less) | Compact structure |
+| Operation    | Octree | Tetree    | Winner            | Notes                 |
+|--------------|--------|-----------|-------------------|-----------------------|
+| Insert 50K   | 75 ms  | 84,483 ms | Octree (1125x)    | tmIndex() is O(level) |
+| k-NN (k=10)  | 28 μs  | 5.9 μs    | Tetree (4.8x)     | Better locality       |
+| Range Query  | 28 μs  | 5.6 μs    | Tetree (5x)       | Efficient traversal   |
+| Memory Usage | 100%   | 22%       | Tetree (78% less) | Compact structure     |
 
 ### Key Insight
 

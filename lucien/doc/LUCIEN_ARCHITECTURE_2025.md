@@ -11,7 +11,8 @@ The Luciferase codebase underwent dramatic architectural simplification in 2025,
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 34 core Java classes plus additional support classes for advanced features, organized in a clean package hierarchy, prioritizing simplicity and correctness
+The module consists of 34 core Java classes plus additional support classes for advanced features, organized in a clean
+package hierarchy, prioritizing simplicity and correctness
 over advanced features. As of June 2025, all planned enhancements have been successfully implemented.
 
 ## Package Structure
@@ -251,6 +252,7 @@ public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Cont
 ```
 
 **SpatialKey Architecture**:
+
 - `MortonKey`: Wraps long Morton code for Octree
 - `TetreeKey`: Encodes (level, sfcIndex) tuple for Tetree
 - Type safety prevents mixing incompatible keys
@@ -302,9 +304,9 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 ### Key Addition (June 2025)
 
 - **SpatialKey Architecture**: Type-safe spatial keys to prevent index collisions
-  - Resolves Tetree's non-unique SFC index issue
-  - Provides type safety between Octree and Tetree operations
-  - Maintains performance with minimal object allocation overhead
+    - Resolves Tetree's non-unique SFC index issue
+    - Provides type safety between Octree and Tetree operations
+    - Maintains performance with minimal object allocation overhead
 
 ### What This Architecture Does NOT Include
 
@@ -349,23 +351,27 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 ## Completed Enhancements (June 2025)
 
 ### Phase 1: Essential Search Algorithms ✅
+
 - **Ray Intersection**: Complete implementation with spatial optimization
-- **Collision Detection**: Broad/narrow phase with physics integration  
+- **Collision Detection**: Broad/narrow phase with physics integration
 - **Tree Traversal API**: Visitor pattern with multiple strategies
 
 ### Phase 2: Performance Optimizations ✅
+
 - **Dynamic Tree Balancing**: Multiple strategies with monitoring
 - **Entity Spanning**: Advanced policies for large entities
 - **O(1) Operations**: SpatialIndexSet replaces TreeSet
 - **TetreeLevelCache**: Eliminates O(log n) calculations
 
 ### Phase 3: Additional Features ✅
+
 - **Plane Intersection**: Arbitrary 3D plane queries
 - **Frustum Culling**: View frustum visibility for graphics
 - **Bulk Operations**: 5-10x performance improvement
 - **Dynamic Level Selection**: Automatic optimization
 
 ### Phase 4: Comprehensive Documentation ✅
+
 - **10 API Documentation Files**: Complete coverage of all features
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
@@ -373,6 +379,7 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 ## Performance Characteristics (Updated June 2025)
 
 **Key Findings**: Different spatial indices excel in different areas
+
 - **Insertion Performance**: Octree is 70-350x faster due to O(1) Morton encoding
 - **Query Performance**: Tetree is 3-11x faster for k-NN and range queries
 - **Memory Usage**: Tetree uses 77-81% less memory for typical datasets
@@ -392,9 +399,11 @@ The module includes comprehensive test coverage:
 ## Current State
 
 As of June 2025, the lucien module represents a complete spatial indexing solution with:
+
 - All planned enhancements implemented
 - Comprehensive API documentation
 - Proven performance characteristics
 - Robust test coverage
 
-The architecture successfully balances simplicity with advanced features, providing both ease of use and high performance for 3D spatial indexing needs.
+The architecture successfully balances simplicity with advanced features, providing both ease of use and high
+performance for 3D spatial indexing needs.

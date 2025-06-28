@@ -13,6 +13,7 @@ The comparison test reveals fundamental differences between the implementations:
 ### 1. Change Bit Extraction Order in `tmIndex()`
 
 **Current (MSB to LSB):**
+
 ```java
 for (int i = 0; i < maxBits; i++) {
     int bitPos = Constants.getMaxRefinementLevel() - 1 - i;
@@ -23,6 +24,7 @@ for (int i = 0; i < maxBits; i++) {
 ```
 
 **Proposed (LSB to MSB):**
+
 ```java
 for (int i = 0; i < maxBits; i++) {
     int xBit = (x >> i) & 1;
@@ -34,6 +36,7 @@ for (int i = 0; i < maxBits; i++) {
 ### 2. Update Type Computation to Use Child Type Table
 
 **Add to Tet class:**
+
 ```java
 private static final int[][] CHILD_TYPES = {
     { 0, 0, 0, 0, 4, 5, 2, 1 },
@@ -46,6 +49,7 @@ private static final int[][] CHILD_TYPES = {
 ```
 
 **Replace type array building with:**
+
 ```java
 int[] typeArray = new int[maxBits];
 typeArray[0] = 0; // Root always type 0
@@ -64,6 +68,7 @@ for (int level = 1; level < maxBits; level++) {
 ### 3. Update Decode Method
 
 **Change bit reconstruction in `tetrahedron(BigInteger, byte)`:**
+
 ```java
 // Build coordinates by placing bits at their actual positions
 for (int i = 0; i < maxBits; i++) {
@@ -78,6 +83,7 @@ for (int i = 0; i < maxBits; i++) {
 Since Tet uses absolute coordinates (scaled to 2^21) while TMIndex128Clean uses grid coordinates:
 
 **Add conversion methods:**
+
 ```java
 public static Tet fromGridCoordinates(int gridX, int gridY, int gridZ, byte level) {
     int scale = 1 << (Constants.getMaxRefinementLevel() - level);
@@ -100,18 +106,18 @@ public Tet childStandard(int childIndex) {
     if (childIndex < 0 || childIndex >= 8) {
         throw new IllegalArgumentException("Child index must be 0-7: " + childIndex);
     }
-    
+
     byte childLevel = (byte) (l + 1);
     int cellSize = Constants.lengthAtLevel(childLevel);
-    
+
     // Calculate child coordinates based on which octant
     int childX = x + ((childIndex & 1) != 0 ? cellSize : 0);
     int childY = y + ((childIndex & 2) != 0 ? cellSize : 0);
     int childZ = z + ((childIndex & 4) != 0 ? cellSize : 0);
-    
+
     // Use CHILD_TYPES table for type
     byte childType = (byte) CHILD_TYPES[type][childIndex];
-    
+
     return new Tet(childX, childY, childZ, childLevel, childType);
 }
 ```
@@ -119,16 +125,19 @@ public Tet childStandard(int childIndex) {
 ## Migration Strategy
 
 ### Phase 1: Add Compatibility Layer
+
 1. Create `TetTMIndexCompat` class with both old and new implementations
 2. Add feature flag to switch between implementations
 3. Add conversion utilities between the two formats
 
 ### Phase 2: Parallel Testing
+
 1. Run both implementations in parallel for validation
 2. Compare performance characteristics
 3. Ensure spatial queries work correctly with new encoding
 
 ### Phase 3: Migration
+
 1. Update all code to use new implementation
 2. Provide migration tool for existing data
 3. Remove old implementation
@@ -143,17 +152,21 @@ public Tet childStandard(int childIndex) {
 ## Risks and Mitigations
 
 ### Risk 1: Breaking Existing Data
+
 - **Mitigation**: Provide migration tools and maintain backward compatibility during transition
 
 ### Risk 2: Performance Regression
+
 - **Mitigation**: Benchmark both implementations thoroughly before switching
 
 ### Risk 3: Integration Issues
+
 - **Mitigation**: Extensive testing with all spatial index operations
 
 ## Recommendation
 
 Proceed with alignment to TMIndex128Clean's approach because:
+
 1. It's algorithmically cleaner and more efficient
 2. LSB-to-MSB bit ordering is more standard
 3. Type computation via lookup table is O(1) vs O(level) for parent traversal

@@ -7,7 +7,6 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
-import com.hellblazer.luciferase.lucien.SpatialKey;
 import org.junit.jupiter.api.*;
 
 import javax.vecmath.Point3f;

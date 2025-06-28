@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.lucien.index;
 
-import com.hellblazer.luciferase.lucien.tetree.Tet;
-import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -10,14 +9,14 @@ import java.util.List;
 
 /**
  * Tetrahedral Morton Index (TM-Index) implementation in Java Using the simple Tet structure from the paper (Section 4)
- * 
- * Note: This implementation uses a different child ordering scheme than the main Tetree implementation.
- * - CHILD_TYPES differs from TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE
- * - LOCAL_INDICES differs from TetreeConnectivity.INDEX_TO_BEY_NUMBER
- * - PARENT_TYPES matches Constants.CUBE_ID_TYPE_TO_PARENT_TYPE (so we use the system table)
- * 
- * The differences in child ordering suggest this implements the TM-index paper's specific
- * ordering rather than the t8code Bey refinement ordering used in the main Tetree.
+ *
+ * Note: This implementation uses a different child ordering scheme than the main Tetree implementation. - CHILD_TYPES
+ * differs from TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE - LOCAL_INDICES differs from
+ * TetreeConnectivity.INDEX_TO_BEY_NUMBER - PARENT_TYPES matches Constants.CUBE_ID_TYPE_TO_PARENT_TYPE (so we use the
+ * system table)
+ *
+ * The differences in child ordering suggest this implements the TM-index paper's specific ordering rather than the
+ * t8code Bey refinement ordering used in the main Tetree.
  */
 public class TMIndexSimple {
 

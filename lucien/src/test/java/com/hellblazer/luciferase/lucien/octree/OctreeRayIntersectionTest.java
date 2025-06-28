@@ -4,7 +4,6 @@
 package com.hellblazer.luciferase.lucien.octree;
 
 import com.hellblazer.luciferase.lucien.Ray3D;
-import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -13,8 +12,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
-import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -224,8 +221,7 @@ public class OctreeRayIntersectionTest {
 
         // Test with limited distance - should only find closer entities
         var maxDistance = 250.0f;
-        var nearIntersections = octree.rayIntersectWithin(ray,
-                                                                                                               maxDistance);
+        var nearIntersections = octree.rayIntersectWithin(ray, maxDistance);
 
         // Should find only entities within the distance limit
         assertTrue(nearIntersections.size() >= 1, "Should find at least the close entity");
@@ -237,8 +233,7 @@ public class OctreeRayIntersectionTest {
         }
 
         // Test with larger distance - should find all entities
-        var allIntersections = octree.rayIntersectWithin(ray,
-                                                                                                              1000.0f);
+        var allIntersections = octree.rayIntersectWithin(ray, 1000.0f);
         assertEquals(3, allIntersections.size(), "Should find all entities with large distance");
     }
 

@@ -6,12 +6,12 @@ package com.hellblazer.luciferase.lucien.tetree;
 public class TMIndex128Clean {
 
     // Maximum supported levels (128 bits / 6 bits per level = 21)
-    private static final int MAX_LEVELS      = 21;
-    private static final int LEVELS_PER_LONG = 10;
+    private static final int     MAX_LEVELS      = 21;
+    private static final int     LEVELS_PER_LONG = 10;
     // Child type transformation table
-    private static final int[][] CHILD_TYPES = { { 0, 0, 0, 0, 4, 5, 2, 1 }, { 1, 1, 1, 1, 3, 2, 5, 0 },
-                                                 { 2, 2, 2, 2, 0, 1, 4, 3 }, { 3, 3, 3, 3, 5, 4, 1, 2 },
-                                                 { 4, 4, 4, 4, 2, 3, 0, 5 }, { 5, 5, 5, 5, 1, 0, 3, 4 } };
+    private static final int[][] CHILD_TYPES     = { { 0, 0, 0, 0, 4, 5, 2, 1 }, { 1, 1, 1, 1, 3, 2, 5, 0 },
+                                                     { 2, 2, 2, 2, 0, 1, 4, 3 }, { 3, 3, 3, 3, 5, 4, 1, 2 },
+                                                     { 4, 4, 4, 4, 2, 3, 0, 5 }, { 5, 5, 5, 5, 1, 0, 3, 4 } };
 
     /**
      * Compute type sequence for encoding

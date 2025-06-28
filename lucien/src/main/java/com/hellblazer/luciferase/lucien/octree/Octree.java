@@ -23,18 +23,7 @@ import com.hellblazer.luciferase.lucien.entity.*;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableSet;
-import java.util.PriorityQueue;
-import java.util.Queue;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -201,8 +190,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
                     if (nx >= 0 && ny >= 0 && nz >= 0 && nx <= Constants.MAX_COORD && ny <= Constants.MAX_COORD
                     && nz <= Constants.MAX_COORD) {
                         // Use level-aware encoding
-                        var neighborPos = new Point3f(nx + cellSize / 2.0f, ny + cellSize / 2.0f,
-                                                          nz + cellSize / 2.0f);
+                        var neighborPos = new Point3f(nx + cellSize / 2.0f, ny + cellSize / 2.0f, nz + cellSize / 2.0f);
                         var neighborCode = new MortonKey(Constants.calculateMortonIndex(neighborPos, level), level);
                         if (!visitedNodes.contains(neighborCode)) {
                             toVisit.add(neighborCode);
@@ -293,27 +281,22 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     // ===== Frustum Intersection Implementation =====
 
     @Override
-    protected int getCellSizeAtLevel(byte level) {
-        return Constants.lengthAtLevel(level);
-    }
-    
-    @Override
     protected Set<MortonKey> findNodesIntersectingBounds(VolumeBounds bounds) {
         var intersectingNodes = new HashSet<MortonKey>();
-        
+
         // For Octree, we can use Morton code ordering for efficient range queries
         // The sortedSpatialIndices are already ordered by Morton code
-        
+
         // Calculate the Morton code range that could contain nodes intersecting the bounds
         // This is more efficient than checking every node
-        
+
         // Find the minimum and maximum Morton codes that could intersect
         for (var nodeKey : sortedSpatialIndices) {
             // Decode the Morton code to get cell coordinates
             var coords = MortonCurve.decode(nodeKey.getMortonCode());
             var level = nodeKey.getLevel();
             var cellSize = Constants.lengthAtLevel(level);
-            
+
             // Calculate cell bounds
             var cellMinX = coords[0];
             var cellMinY = coords[1];
@@ -321,18 +304,22 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var cellMaxX = cellMinX + cellSize;
             var cellMaxY = cellMinY + cellSize;
             var cellMaxZ = cellMinZ + cellSize;
-            
+
             // Check AABB intersection
-            var intersects = !(cellMaxX < bounds.minX() || cellMinX > bounds.maxX() ||
-                                 cellMaxY < bounds.minY() || cellMinY > bounds.maxY() ||
-                                 cellMaxZ < bounds.minZ() || cellMinZ > bounds.maxZ());
-            
+            var intersects = !(cellMaxX < bounds.minX() || cellMinX > bounds.maxX() || cellMaxY < bounds.minY()
+                               || cellMinY > bounds.maxY() || cellMaxZ < bounds.minZ() || cellMinZ > bounds.maxZ());
+
             if (intersects && spatialIndex.containsKey(nodeKey)) {
                 intersectingNodes.add(nodeKey);
             }
         }
-        
+
         return intersectingNodes;
+    }
+
+    @Override
+    protected int getCellSizeAtLevel(byte level) {
+        return Constants.lengthAtLevel(level);
     }
 
     @Override
@@ -413,7 +400,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
         // Calculate ray-AABB intersection distance
         var distance = rayIntersectsAABB(ray, coords[0], coords[1], coords[2], coords[0] + cellSize,
-                                           coords[1] + cellSize, coords[2] + cellSize);
+                                         coords[1] + cellSize, coords[2] + cellSize);
 
         return distance >= 0 ? distance : Float.MAX_VALUE;
     }
@@ -643,7 +630,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     protected void validateSpatialConstraints(Point3f position) {
         // Octree doesn't have specific spatial constraints
     }
-    
+
     @Override
     protected void validateSpatialConstraints(Spatial volume) {
         // Octree doesn't have specific spatial constraints
@@ -723,12 +710,12 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
             // Calculate child morton code at the child level
             var childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
-                                              childZ + childCellSize / 2.0f);
+                                          childZ + childCellSize / 2.0f);
             var childIndex = new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel));
 
             if (!visitedNodes.contains(childIndex)) {
                 var distance = rayIntersectsAABB(ray, childX, childY, childZ, childX + childCellSize,
-                                                   childY + childCellSize, childZ + childCellSize);
+                                                 childY + childCellSize, childZ + childCellSize);
                 if (distance >= 0 && distance <= ray.maxDistance()) {
                     nodeQueue.add(new NodeDistance(childIndex, distance));
                 }
@@ -770,7 +757,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
                     if (bounds.intersectsCube(cellOriginX, cellOriginY, cellOriginZ, cellSize)) {
                         // Use level-aware morton encoding
                         var cellCenter = new Point3f(cellOriginX + cellSize / 2.0f, cellOriginY + cellSize / 2.0f,
-                                                         cellOriginZ + cellSize / 2.0f);
+                                                     cellOriginZ + cellSize / 2.0f);
                         var mortonCode = new MortonKey(Constants.calculateMortonIndex(cellCenter, level), level);
                         result.add(mortonCode);
                     }

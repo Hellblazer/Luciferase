@@ -2,7 +2,8 @@
 
 ## Overview
 
-This plan addresses the 430x performance degradation in tmIndex() operations that has made Tetree insertions 1125x slower than Octree. The goal is to recover performance through strategic caching while maintaining correctness.
+This plan addresses the 430x performance degradation in tmIndex() operations that has made Tetree insertions 1125x
+slower than Octree. The goal is to recover performance through strategic caching while maintaining correctness.
 
 ## Goals
 
@@ -62,14 +63,14 @@ public TetreeKey tmIndex() {
     if (cached != null) {
         return cached;
     }
-    
+
     if (l == 0) {
         return ROOT_TET;
     }
-    
+
     // Existing implementation...
     // [Keep current code]
-    
+
     // PERFORMANCE: Cache result before returning
     TetreeKey result = new TetreeKey(l, index);
     TetreeLevelCache.cacheTetreeKey(x, y, z, l, type, result);
@@ -105,13 +106,13 @@ public static byte[] getCachedAncestorTypes(int x, int y, int z, byte level, byt
 ```java
 public class TetreeRegionCache {
     private final Map<Long, TetreeKey> regionCache = new ConcurrentHashMap<>();
-    
+
     public void precomputeRegion(VolumeBounds bounds, byte level) {
         int cellSize = Constants.lengthAtLevel(level);
-        int minX = (int)(bounds.minX() / cellSize) * cellSize;
-        int maxX = (int)(bounds.maxX() / cellSize) * cellSize;
+        int minX = (int) (bounds.minX() / cellSize) * cellSize;
+        int maxX = (int) (bounds.maxX() / cellSize) * cellSize;
         // ... similar for Y and Z
-        
+
         // Pre-compute all tetrahedra in region
         for (int x = minX; x <= maxX; x += cellSize) {
             for (int y = minY; y <= maxY; y += cellSize) {
@@ -136,11 +137,11 @@ public class TetreeRegionCache {
 public List<ID> insertBatch(List<Point3f> positions, List<Content> contents, byte level) {
     // Pre-compute bounding box
     VolumeBounds bounds = calculateBounds(positions);
-    
+
     // PERFORMANCE: Pre-cache the region
     TetreeRegionCache regionCache = new TetreeRegionCache();
     regionCache.precomputeRegion(bounds, level);
-    
+
     // Now perform insertions with cached tmIndex values
     return super.insertBatch(positions, contents, level);
 }
@@ -154,9 +155,8 @@ For heavily concurrent workloads:
 
 ```java
 public class ThreadLocalTetreeCache {
-    private static final ThreadLocal<TetreeKeyCache> tlCache = 
-        ThreadLocal.withInitial(() -> new TetreeKeyCache(4096));
-    
+    private static final ThreadLocal<TetreeKeyCache> tlCache = ThreadLocal.withInitial(() -> new TetreeKeyCache(4096));
+
     public static TetreeKey getTetreeKey(Tet tet) {
         return tlCache.get().get(tet);
     }
@@ -191,17 +191,17 @@ Exploit spatial locality in traversals:
 ```java
 public class SpatialLocalityCache {
     private final int LOCALITY_RADIUS = 2; // Cache 2 cells in each direction
-    
+
     public void preCacheNeighborhood(Tet center) {
         int cellSize = center.length();
-        
+
         for (int dx = -LOCALITY_RADIUS; dx <= LOCALITY_RADIUS; dx++) {
             for (int dy = -LOCALITY_RADIUS; dy <= LOCALITY_RADIUS; dy++) {
                 for (int dz = -LOCALITY_RADIUS; dz <= LOCALITY_RADIUS; dz++) {
                     int x = center.x() + dx * cellSize;
                     int y = center.y() + dy * cellSize;
                     int z = center.z() + dz * cellSize;
-                    
+
                     if (x >= 0 && y >= 0 && z >= 0) {
                         for (byte type = 0; type < 6; type++) {
                             new Tet(x, y, z, center.l(), type).tmIndex();
@@ -219,6 +219,7 @@ public class SpatialLocalityCache {
 ### 1. Unit Tests
 
 Create tests for:
+
 - Cache correctness (cached value == computed value)
 - Cache hit rate monitoring
 - Thread safety validation
@@ -227,22 +228,23 @@ Create tests for:
 ### 2. Performance Tests
 
 ```java
+
 @Test
 public void testTmIndexCachePerformance() {
     // Warm up cache
     for (int i = 0; i < 1000; i++) {
-        Tet tet = new Tet(i * 100, i * 100, i * 100, (byte)10, (byte)0);
+        Tet tet = new Tet(i * 100, i * 100, i * 100, (byte) 10, (byte) 0);
         tet.tmIndex();
     }
-    
+
     // Measure with cache
     long start = System.nanoTime();
     for (int i = 0; i < 10000; i++) {
-        Tet tet = new Tet(i % 1000 * 100, i % 1000 * 100, i % 1000 * 100, (byte)10, (byte)0);
+        Tet tet = new Tet(i % 1000 * 100, i % 1000 * 100, i % 1000 * 100, (byte) 10, (byte) 0);
         tet.tmIndex();
     }
     long cached = System.nanoTime() - start;
-    
+
     // Should be >90% cache hits
     assertTrue(TetreeLevelCache.getCacheHitRate() > 0.9);
 }
@@ -251,6 +253,7 @@ public void testTmIndexCachePerformance() {
 ### 3. Integration Tests
 
 Run full benchmark suite:
+
 - OctreeVsTetreeBenchmark
 - TetreeInsertionBenchmark
 - SpatialIndexQueryPerformanceTest
@@ -260,6 +263,7 @@ Run full benchmark suite:
 ### 1. Cache Statistics
 
 Add JMX beans for monitoring:
+
 ```java
 @MXBean
 public interface TetreeCacheStatsMXBean {
@@ -273,6 +277,7 @@ public interface TetreeCacheStatsMXBean {
 ### 2. Performance Metrics
 
 Track:
+
 - tmIndex() call frequency
 - Average tmIndex() latency
 - Cache hit rates by operation type
@@ -304,6 +309,7 @@ Track:
 ## Long-term Optimization
 
 If caching proves insufficient:
+
 1. Consider lazy tmIndex computation (compute only when needed)
 2. Investigate alternative index schemes that don't require parent walk
 3. Explore SIMD optimization for batch operations
@@ -312,9 +318,11 @@ If caching proves insufficient:
 ## Conclusion
 
 This plan provides a systematic approach to recovering Tetree performance:
+
 1. Start with simple, high-impact caching
 2. Measure and validate improvements
 3. Add advanced optimizations as needed
 4. Monitor long-term performance
 
-With proper implementation, we expect to reduce the performance gap from 1125x to under 10x while maintaining the correctness benefits of globally unique indices.
+With proper implementation, we expect to reduce the performance gap from 1125x to under 10x while maintaining the
+correctness benefits of globally unique indices.

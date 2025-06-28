@@ -5,9 +5,11 @@
 The Tetree implementation supports two coordinate systems:
 
 1. **Grid Coordinates**: Small integers in range [0, 2^level-1] as returned by `locateStandardRefinement()`
-2. **Absolute Coordinates**: Large integers representing absolute positions, typically multiples of `Constants.lengthAtLevel()`
+2. **Absolute Coordinates**: Large integers representing absolute positions, typically multiples of
+   `Constants.lengthAtLevel()`
 
-The `tmIndex()` method needs to encode both types of coordinates into the same TM-index format, which expects bits to be aligned with a hierarchical structure.
+The `tmIndex()` method needs to encode both types of coordinates into the same TM-index format, which expects bits to be
+aligned with a hierarchical structure.
 
 ## Current Implementation Issues
 
@@ -52,9 +54,9 @@ This detection is unreliable because:
 
 1. **Ambiguity**: A shifted grid coordinate can have the same value as an unshifted absolute coordinate
 2. **Example**: At level 1:
-   - Grid coordinate 1 shifted by 20 bits = 1048576
-   - Absolute coordinate 1048576 (= Constants.lengthAtLevel(1)) = 1048576
-   - Both encode to the same value, but decode differently
+    - Grid coordinate 1 shifted by 20 bits = 1048576
+    - Absolute coordinate 1048576 (= Constants.lengthAtLevel(1)) = 1048576
+    - Both encode to the same value, but decode differently
 
 ## Solutions
 
@@ -66,12 +68,14 @@ The cleanest solution is to standardize on absolute coordinates throughout:
 2. Convert grid coordinates to absolute at the API boundary
 3. Remove coordinate detection logic entirely
 
-**Pros**: 
+**Pros**:
+
 - Simple and unambiguous
 - No round-trip issues
 - Consistent with how Morton codes work in Octree
 
 **Cons**:
+
 - Breaking change for code using grid coordinates
 - May require updates throughout the codebase
 
@@ -80,10 +84,12 @@ The cleanest solution is to standardize on absolute coordinates throughout:
 Reserve a bit or use a different encoding scheme to indicate coordinate type.
 
 **Pros**:
+
 - Preserves both coordinate systems
 - Unambiguous decoding
 
 **Cons**:
+
 - Reduces available coordinate space
 - More complex encoding/decoding
 - Different from reference implementation
@@ -93,10 +99,12 @@ Reserve a bit or use a different encoding scheme to indicate coordinate type.
 Accept that round-trip conversion only works reliably for one coordinate system and document this clearly.
 
 **Pros**:
+
 - No code changes needed
 - Maintains compatibility
 
 **Cons**:
+
 - Surprise failures for users
 - Limits usability
 

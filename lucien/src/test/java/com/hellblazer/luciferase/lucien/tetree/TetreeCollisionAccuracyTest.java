@@ -3,7 +3,6 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
-import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.collision.CapsuleShape;
 import com.hellblazer.luciferase.lucien.collision.SphereShape;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
@@ -14,8 +13,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
-import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -46,7 +43,7 @@ public class TetreeCollisionAccuracyTest {
 
         // Elongated box along Y axis
         var elongatedBounds = new EntityBounds(new Point3f(295, 280, 295), new Point3f(305, 320, 305)
-                                                        // 10x40x10
+                                               // 10x40x10
         );
 
         // Wide box along Z axis
@@ -216,7 +213,7 @@ public class TetreeCollisionAccuracyTest {
 
         var bounds1 = new EntityBounds(new Point3f(195, 195, 195), new Point3f(205, 205, 205));
         var bounds2 = new EntityBounds(new Point3f(203, 195, 195),   // 2 unit overlap
-                                                new Point3f(213, 205, 205));
+                                       new Point3f(213, 205, 205));
 
         var id1 = idGenerator.generateID();
         var id2 = idGenerator.generateID();
@@ -265,13 +262,11 @@ public class TetreeCollisionAccuracyTest {
         for (int i = 0; i < gridSize - 1; i++) {
             for (int j = 0; j < gridSize - 1; j++) {
                 // Check horizontal neighbor
-                var hCollision = tetree.checkCollision(
-                grid[i][j], grid[i + 1][j]);
+                var hCollision = tetree.checkCollision(grid[i][j], grid[i + 1][j]);
                 assertTrue(hCollision.isPresent(), "Horizontal neighbors should collide at (" + i + "," + j + ")");
 
                 // Check vertical neighbor
-                var vCollision = tetree.checkCollision(
-                grid[i][j], grid[i][j + 1]);
+                var vCollision = tetree.checkCollision(grid[i][j], grid[i][j + 1]);
                 assertTrue(vCollision.isPresent(), "Vertical neighbors should collide at (" + i + "," + j + ")");
 
                 // Verify penetration depth is consistent
@@ -287,7 +282,7 @@ public class TetreeCollisionAccuracyTest {
     @Test
     void testMultiLevelCollisionAccuracy() {
         // Test collision accuracy across different tetree levels
-        var levels = new byte[]{ 5, 10, 15 };
+        var levels = new byte[] { 5, 10, 15 };
 
         for (byte level : levels) {
             var levelTetree = new Tetree<>(new SequentialLongIDGenerator());
@@ -298,9 +293,9 @@ public class TetreeCollisionAccuracyTest {
             var center2 = new Point3f(107 * scale, 100 * scale, 100 * scale);
 
             var bounds1 = new EntityBounds(new Point3f(95 * scale, 95 * scale, 95 * scale),
-                                                    new Point3f(105 * scale, 105 * scale, 105 * scale));
+                                           new Point3f(105 * scale, 105 * scale, 105 * scale));
             var bounds2 = new EntityBounds(new Point3f(102 * scale, 95 * scale, 95 * scale),
-                                                    new Point3f(112 * scale, 105 * scale, 105 * scale));
+                                           new Point3f(112 * scale, 105 * scale, 105 * scale));
 
             var id1 = idGenerator.generateID();
             var id2 = idGenerator.generateID();
@@ -330,14 +325,12 @@ public class TetreeCollisionAccuracyTest {
 
         // Create surrounding entities in tetrahedral pattern
         var offset = 15;
-        var tetVertices = new Point3f[]{ new Point3f(center.x + offset, center.y, center.z), new Point3f(center.x - offset / 2,
-                                                                                                  center.y
-                                                                                                  + offset * 0.866f,
-                                                                                                  center.z),
-                                  new Point3f(center.x - offset / 2, center.y - offset * 0.433f,
-                                              center.z + offset * 0.75f), new Point3f(center.x - offset / 2,
-                                                                                      center.y - offset * 0.433f,
-                                                                                      center.z - offset * 0.75f) };
+        var tetVertices = new Point3f[] { new Point3f(center.x + offset, center.y, center.z), new Point3f(
+        center.x - offset / 2, center.y + offset * 0.866f, center.z), new Point3f(center.x - offset / 2,
+                                                                                  center.y - offset * 0.433f,
+                                                                                  center.z + offset * 0.75f),
+                                          new Point3f(center.x - offset / 2, center.y - offset * 0.433f,
+                                                      center.z - offset * 0.75f) };
 
         var surroundingIds = new LongEntityID[4];
         for (int i = 0; i < 4; i++) {
