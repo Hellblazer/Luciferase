@@ -1257,6 +1257,23 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     }
 
     @Override
+    protected Set<TetreeKey> findNodesIntersectingBounds(VolumeBounds bounds) {
+        Set<TetreeKey> intersectingNodes = new HashSet<>();
+        
+        // For Tetree, we need to check each node's tetrahedron for intersection
+        for (TetreeKey nodeKey : sortedSpatialIndices) {
+            Tet tet = Tet.tetrahedron(nodeKey);
+            
+            // Check if the tetrahedron intersects with the bounds
+            if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                intersectingNodes.add(nodeKey);
+            }
+        }
+        
+        return intersectingNodes;
+    }
+
+    @Override
     protected boolean doesNodeIntersectVolume(TetreeKey tetIndex, Spatial volume) {
         Tet tet = Tet.tetrahedron(tetIndex);
         // Use the same logic as the SFC range computation for consistency
