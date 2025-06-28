@@ -794,6 +794,45 @@ implements SpatialIndex<Key, ID, Content> {
         return frustumCullVisible(frustum, cameraPosition).stream().filter(
         intersection -> intersection.distanceFromCamera() <= maxDistance).collect(Collectors.toList());
     }
+    
+    @Override
+    public List<ID> frustumCullVisible(Frustum3D frustum) {
+        // For the simple ID-only version, we don't need camera position or distance sorting
+        // We just need to find which entities are visible
+        lock.readLock().lock();
+        try {
+            List<ID> visibleEntities = new ArrayList<>();
+            Set<ID> visitedEntities = new HashSet<>();
+
+            // Traverse all nodes that could intersect with the frustum
+            spatialIndex.forEach((nodeIndex, node) -> {
+                if (node == null || node.isEmpty()) {
+                    return;
+                }
+
+                // Check if frustum intersects this node
+                if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
+                    return;
+                }
+
+                // Add all entities in visible nodes
+                for (ID entityId : node.getEntityIds()) {
+                    // Skip if already processed (for spanning entities)
+                    if (visitedEntities.add(entityId)) {
+                        // For the simple version, we just check if the entity position is in the frustum
+                        Point3f entityPos = entityManager.getEntityPosition(entityId);
+                        if (entityPos != null && frustum.containsPoint(entityPos)) {
+                            visibleEntities.add(entityId);
+                        }
+                    }
+                }
+            });
+
+            return visibleEntities;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
 
     /**
      * Get balancing statistics for the tree.
@@ -2273,6 +2312,7 @@ implements SpatialIndex<Key, ID, Content> {
             return planePointIntersection(plane, entityId, content, entityPos, tolerance);
         }
     }
+    
 
     /**
      * Calculate the spatial index for a position at a given level

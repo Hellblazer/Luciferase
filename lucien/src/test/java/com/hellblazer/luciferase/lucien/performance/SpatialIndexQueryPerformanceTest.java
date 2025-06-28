@@ -172,11 +172,8 @@ public abstract class SpatialIndexQueryPerformanceTest<Key extends com.hellblaze
             frustums.size(),
             () -> {
                 for (Frustum3D frustum : frustums) {
-                    // TODO: frustumCullVisible method doesn't exist yet
-                    // This is a placeholder that just counts entities instead
-                    List<ID> allEntities = new ArrayList<>();
-                    index.nodes().forEach(node -> allEntities.addAll(node.entityIds()));
-                    int count = allEntities.size(); // Just to consume the result
+                    List<ID> visibleEntities = index.frustumCullVisible(frustum);
+                    int count = visibleEntities.size(); // Consume the result
                 }
             }
         );

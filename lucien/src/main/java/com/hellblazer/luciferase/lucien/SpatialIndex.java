@@ -194,6 +194,15 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @return the entity's bounds, or null if not found or not set
      */
     EntityBounds getEntityBounds(ID entityId);
+    
+    /**
+     * Find all entities that are visible within a view frustum.
+     * This performs frustum culling by testing spatial nodes against the frustum planes.
+     *
+     * @param frustum the view frustum to test against
+     * @return list of entity IDs that are potentially visible within the frustum
+     */
+    List<ID> frustumCullVisible(Frustum3D frustum);
 
     // ===== Map Operations =====
 
