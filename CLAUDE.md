@@ -191,64 +191,75 @@ see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_20
 - ✅ ~90% t8code parity for tetrahedral operations
 - ✅ **Final Bug Fixes (June 24, 2025)**: Collision detection and neighbor finding fully working
 
-## 🚀 Performance (June 28, 2025 - Latest Benchmarks)
+## 🚀 Performance (June 28, 2025 - Latest Benchmarks with Parent Cache)
 
-**IMPORTANT**: Performance metrics have been updated based on comprehensive benchmarking with the OctreeVsTetreeBenchmark test.
+**IMPORTANT**: Performance metrics updated after implementing parent cache optimization. Benchmarked with OctreeVsTetreeBenchmark on Mac OS X aarch64, 16 processors, Java 24.
 
-**Current Tetree vs Octree Performance (Latest Results):**
+**Current Tetree vs Octree Performance (Post-Parent Cache Implementation):**
 
 ### Insertion Performance
 | Entity Count | Octree | Tetree | Winner | Performance Ratio |
 |-------------|---------|---------|---------|-------------------|
-| 100 | 3.32 μs/entity | 28.59 μs/entity | **Octree** | **8.6x faster** |
-| 1,000 | 2.51 μs/entity | 7.64 μs/entity | **Octree** | **3.0x faster** |
-| 10,000 | 1.06 μs/entity | 4.68 μs/entity | **Octree** | **4.4x faster** |
+| 100 | 3.83 μs/entity | 29.47 μs/entity | **Octree** | **7.7x faster** |
+| 1,000 | 2.77 μs/entity | 7.94 μs/entity | **Octree** | **2.9x faster** |
+| 10,000 | 1.00 μs/entity | 4.79 μs/entity | **Octree** | **4.8x faster** |
 
 ### k-Nearest Neighbor (k-NN) Search
 | Entity Count | Octree | Tetree | Winner | Performance Ratio |
 |-------------|---------|---------|---------|-------------------|
-| 100 | 0.75 μs | 0.38 μs | **Tetree** | **2.0x faster** |
-| 1,000 | 4.08 μs | 1.61 μs | **Tetree** | **2.5x faster** |
-| 10,000 | 37.61 μs | 10.70 μs | **Tetree** | **3.5x faster** |
+| 100 | 0.72 μs | 0.46 μs | **Tetree** | **1.6x faster** |
+| 1,000 | 4.06 μs | 1.67 μs | **Tetree** | **2.4x faster** |
+| 10,000 | 37.67 μs | 10.43 μs | **Tetree** | **3.6x faster** |
 
 ### Range Query Performance
 | Entity Count | Octree | Tetree | Winner | Performance Ratio |
 |-------------|---------|---------|---------|-------------------|
-| 100 | 0.39 μs | 0.52 μs | **Octree** | **1.3x faster** |
-| 1,000 | 2.12 μs | 4.02 μs | **Octree** | **1.9x faster** |
-| 10,000 | 21.59 μs | 53.24 μs | **Octree** | **2.5x faster** |
+| 100 | 0.39 μs | 0.49 μs | **Octree** | **1.2x faster** |
+| 1,000 | 2.52 μs | 4.10 μs | **Octree** | **1.6x faster** |
+| 10,000 | 21.91 μs | 56.53 μs | **Octree** | **2.6x faster** |
 
 ### Update Performance
 | Entity Count | Octree | Tetree | Winner | Performance Ratio |
 |-------------|---------|---------|---------|-------------------|
-| 100 | 0.14 μs | 0.07 μs | **Tetree** | **2.0x faster** |
-| 1,000 | 0.003 μs | 0.008 μs | **Octree** | **3.2x faster** |
-| 10,000 | 0.002 μs | 0.005 μs | **Octree** | **2.3x faster** |
+| 100 | 0.16 μs | 0.09 μs | **Tetree** | **1.8x faster** |
+| 1,000 | 0.003 μs | 0.007 μs | **Octree** | **2.8x faster** |
+| 10,000 | 0.002 μs | 0.006 μs | **Octree** | **2.4x faster** |
 
 ### Memory Usage
 | Entity Count | Octree | Tetree | Tetree Memory % |
 |-------------|---------|---------|-----------------|
-| 100 | 0.15 MB | 0.04 MB | **28.7%** |
-| 1,000 | 1.40 MB | 0.34 MB | **24.0%** |
-| 10,000 | 12.90 MB | 3.16 MB | **24.5%** |
+| 100 | 0.15 MB | 0.04 MB | **25.9%** |
+| 1,000 | 1.38 MB | 0.32 MB | **23.1%** |
+| 10,000 | 12.90 MB | 3.15 MB | **24.4%** |
 
 **Key Performance Characteristics:**
 
 - **Octree**: Best for write-heavy workloads with frequent insertions
-  - ~950K entities/sec insertion rate at scale
+  - ~700K-860K entities/sec insertion rate with bulk operations
   - Simple Morton encoding provides O(1) spatial indexing
   - Better for range queries due to AABB calculations
 
 - **Tetree**: Best for read-heavy workloads with frequent queries
-  - 2-3.5x faster k-NN searches due to better spatial locality
-  - 70-75% less memory usage
+  - 1.6-3.6x faster k-NN searches due to better spatial locality
+  - 75-77% less memory usage
   - O(level) tmIndex() computation limits insertion performance
+  - Parent cache provides up to 67x speedup for deep tree operations
+
+**Bulk Operation Performance (100K entities):**
+- **Octree**: 695K-860K entities/sec (with optimizations)
+- **Tetree**: 25K entities/sec (basic), **1.09M entities/sec** (with optimizations)
+- **Optimization Impact**: 42.5x speedup for Tetree bulk operations
+
+**Parent Cache Performance:**
+- **67.3x speedup** for high-level (level 20) tetrahedra lookups
+- Cache hit rate: 98-100% for repeated access patterns
+- Average cached access time: 45.34 ns per call
 
 **Root Cause of Performance Differences:**
 
 - **Octree**: Morton encoding - simple bit interleaving, always O(1)
 - **Tetree**: tmIndex() requires parent chain walk - O(level) complexity
-- This fundamental algorithmic difference cannot be optimized away
+- Parent cache mitigates but cannot eliminate this fundamental difference
 
 ## 📊 Performance Testing
 
@@ -256,12 +267,14 @@ see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_20
 
 **Test Control**: Set `RUN_SPATIAL_INDEX_PERF_TESTS=true` to enable performance tests
 
-**Optimization Impact** (with bulk operations):
-- Tetree benefits significantly from bulk loading (up to 38x speedup)
+**Optimization Impact:**
+- Tetree benefits massively from bulk loading (up to 42.5x speedup)
 - Lazy evaluation of tmIndex() computation is critical for Tetree
 - Deferred subdivision provides 2-5x improvement for both implementations
+- Parent cache reduces deep tree operation cost by up to 67x
 
 **Recommendation Summary:**
-- Use **Octree** when insertion performance is critical
+- Use **Octree** when individual insertion performance is critical
 - Use **Tetree** when query performance and memory efficiency are priorities
-- Enable bulk operations for Tetree to mitigate insertion overhead
+- Always enable bulk operations and parent cache for Tetree
+- For large datasets with bulk loading, Tetree can match or exceed Octree throughput

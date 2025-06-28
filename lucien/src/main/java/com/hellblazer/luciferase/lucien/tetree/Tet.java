@@ -1250,6 +1250,13 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             throw new IllegalStateException("Root tetrahedron has no parent");
         }
 
+        // Check if we have cached the parent of this Tet
+        // Cache maps: child coordinates -> parent Tet
+        Tet cached = TetreeLevelCache.getCachedParent(x, y, z, l, type);
+        if (cached != null) {
+            return cached;
+        }
+
         // Use t8code's parent coordinate calculation: parent->x = t->x & ~h;
         int h = length(); // Cell size at current level
         int parentX = x & ~h;
@@ -1258,10 +1265,20 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         byte parentLevel = (byte) (l - 1);
 
-        // Determine parent type using connectivity tables
-        byte parentType = computeParentType(parentX, parentY, parentZ, parentLevel);
+        // Try cached parent type to avoid table lookups
+        byte parentType = TetreeLevelCache.getCachedParentType(x, y, z, l, type);
+        if (parentType == -1) {
+            // Cache miss - compute parent type
+            parentType = computeParentType(parentX, parentY, parentZ, parentLevel);
+            TetreeLevelCache.cacheParentType(x, y, z, l, type, parentType);
+        }
 
-        return new Tet(parentX, parentY, parentZ, parentLevel, parentType);
+        Tet parent = new Tet(parentX, parentY, parentZ, parentLevel, parentType);
+        
+        // Cache the complete parent for future lookups
+        TetreeLevelCache.cacheParent(x, y, z, l, type, parent);
+        
+        return parent;
     }
 
     /**

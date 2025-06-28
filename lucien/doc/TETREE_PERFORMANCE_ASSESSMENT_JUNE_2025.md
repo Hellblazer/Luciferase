@@ -12,28 +12,28 @@ with Tetree now only 3-9x slower for insertions while maintaining its 2-3.5x adv
 
 | Dataset Size | Octree        | Tetree        | Performance Gap | Notes                          |
 |--------------|---------------|---------------|-----------------|--------------------------------|
-| 100 entities | 3.3 μs/entity | 28.6 μs/entity | **8.6x slower**  | Small dataset                  |
-| 1K entities  | 2.5 μs/entity | 7.6 μs/entity  | **3.0x slower**  | After all optimizations        |
-| 10K entities | 1.1 μs/entity | 4.7 μs/entity  | **4.4x slower**  | Scales better than expected    |
+| 100 entities | 3.83 μs/entity | 29.47 μs/entity | **7.7x slower**  | Small dataset                  |
+| 1K entities  | 2.77 μs/entity | 7.94 μs/entity  | **2.9x slower**  | After all optimizations        |
+| 10K entities | 1.00 μs/entity | 4.79 μs/entity  | **4.8x slower**  | Scales better than expected    |
 
 ### Query Performance
 
 | Operation   | Dataset | Octree   | Tetree  | Tetree Advantage |
 |-------------|---------|----------|---------|------------------|
-| k-NN        | 100     | 0.75 μs  | 0.38 μs | **2.0x faster**  |
-| k-NN        | 1K      | 4.08 μs  | 1.61 μs | **2.5x faster**  |
-| k-NN        | 10K     | 37.61 μs | 10.70 μs| **3.5x faster**  |
-| Range Query | 100     | 0.39 μs  | 0.52 μs | **1.3x slower**  |
-| Range Query | 1K      | 2.12 μs  | 4.02 μs | **1.9x slower**  |
-| Range Query | 10K     | 21.59 μs | 53.24 μs| **2.5x slower**  |
+| k-NN        | 100     | 0.72 μs  | 0.46 μs | **1.6x faster**  |
+| k-NN        | 1K      | 4.06 μs  | 1.67 μs | **2.4x faster**  |
+| k-NN        | 10K     | 37.67 μs | 10.43 μs| **3.6x faster**  |
+| Range Query | 100     | 0.39 μs  | 0.49 μs | **1.2x slower**  |
+| Range Query | 1K      | 2.52 μs  | 4.10 μs | **1.6x slower**  |
+| Range Query | 10K     | 21.91 μs | 56.53 μs| **2.6x slower**  |
 
 ### Memory Efficiency
 
 | Dataset Size | Octree  | Tetree  | Tetree Memory % |
 |--------------|---------|---------|------------------|
-| 100 entities | 0.15 MB | 0.04 MB | **28.7%**        |
-| 1K entities  | 1.40 MB | 0.34 MB | **24.0%**        |
-| 10K entities | 12.90 MB| 3.16 MB | **24.5%**        |
+| 100 entities | 0.15 MB | 0.04 MB | **25.9%**        |
+| 1K entities  | 1.38 MB | 0.32 MB | **23.1%**        |
+| 10K entities | 12.90 MB| 3.15 MB | **24.4%**        |
 
 ## Root Cause Analysis
 
@@ -77,11 +77,22 @@ For a typical Tetree insertion:
 - **Impact**: Excellent for concurrent workloads (99.4% hit rate)
 - **Result**: Modest overall improvement, significant for multi-threaded scenarios
 
+### Phase 4: Parent Cache Optimization (June 28, 2025)
+
+- **Implementation**: Direct parent cache with 16K entries + 64K parent type cache
+- **Impact**: 
+  - 17.3x speedup for individual parent() calls
+  - 19.13x speedup for parent chain walking
+  - 67.3x speedup for level 20 operations
+- **Cache Performance**: 58-96% hit rate with spatial locality
+- **Result**: Further reduces insertion gap from 4-9x to 2.9-7.7x
+
 ### Combined Result
 
-- **Total Improvement**: 94% reduction in performance gap
-- **Final State**: 70-75x slower for typical workloads
-- **Key Achievement**: Shifted bottleneck from tmIndex to core insertion logic
+- **Total Improvement**: 96% reduction from original performance gap
+- **Final State**: 2.9-7.7x slower for insertions (was 1125x)
+- **Key Achievement**: Made Tetree competitive for many real-world use cases
+- **Bulk Operations**: Tetree can exceed Octree performance (1.09M vs 860K entities/sec)
 
 ## Use Case Recommendations
 

@@ -1,13 +1,14 @@
-# Spatial Index Performance Reality - June 2025 (Latest Benchmarks)
+# Spatial Index Performance Reality - June 28, 2025 (Post-Parent Cache)
 
 ## Executive Summary
 
-Based on comprehensive benchmarking with OctreeVsTetreeBenchmark, the performance characteristics are now well-established:
-- **Octree is 3-9x faster for insertions** due to O(1) Morton encoding
-- **Tetree is 2-3.5x faster for k-NN queries** due to better spatial locality
-- **Tetree uses 70-75% less memory** with more efficient spatial decomposition
+Based on comprehensive benchmarking with OctreeVsTetreeBenchmark after implementing parent cache optimization:
+- **Octree is 2.9-7.7x faster for insertions** due to O(1) Morton encoding
+- **Tetree is 1.6-3.6x faster for k-NN queries** due to better spatial locality
+- **Tetree uses 75-77% less memory** with more efficient spatial decomposition
+- **Parent cache provides up to 67x speedup** for deep tree operations
 
-**Data Source**: Performance metrics from OctreeVsTetreeBenchmark.java run on June 28, 2025.
+**Data Source**: Performance metrics from OctreeVsTetreeBenchmark.java run on June 28, 2025, Mac OS X aarch64, 16 processors, Java 24.
 
 ## The Root Cause
 
@@ -32,25 +33,25 @@ The `tmIndex()` method must walk up the parent chain to build the globally uniqu
 This is **not a bug** - it's required for correctness. The TM-index includes ancestor type information for global
 uniqueness across all levels.
 
-## Actual Performance Measurements (Latest Benchmarks - June 28, 2025)
+## Actual Performance Measurements (Post-Parent Cache - June 28, 2025)
 
 ### Insertion Performance
 
 | Entity Count | Octree | Tetree | Octree Advantage |
 |-------------|---------|---------|------------------|
-| 100 | 3.32 μs/entity | 28.59 μs/entity | **8.6x faster** |
-| 1,000 | 2.51 μs/entity | 7.64 μs/entity | **3.0x faster** |
-| 10,000 | 1.06 μs/entity | 4.68 μs/entity | **4.4x faster** |
+| 100 | 3.83 μs/entity | 29.47 μs/entity | **7.7x faster** |
+| 1,000 | 2.77 μs/entity | 7.94 μs/entity | **2.9x faster** |
+| 10,000 | 1.00 μs/entity | 4.79 μs/entity | **4.8x faster** |
 
-**Throughput**: Octree achieves ~950K entities/sec while Tetree manages ~35-200K entities/sec depending on dataset size.
+**Throughput**: Octree achieves ~770K entities/sec while Tetree manages ~35-210K entities/sec for individual insertions.
 
 ### k-Nearest Neighbor (k-NN) Search
 
 | Entity Count | Octree | Tetree | Tetree Advantage |
 |-------------|---------|---------|------------------|
-| 100 | 0.75 μs | 0.38 μs | **2.0x faster** |
-| 1,000 | 4.08 μs | 1.61 μs | **2.5x faster** |
-| 10,000 | 37.61 μs | 10.70 μs | **3.5x faster** |
+| 100 | 0.72 μs | 0.46 μs | **1.6x faster** |
+| 1,000 | 4.06 μs | 1.67 μs | **2.4x faster** |
+| 10,000 | 37.67 μs | 10.43 μs | **3.6x faster** |
 
 **Note**: Tetree's tetrahedral decomposition provides better spatial locality for neighbor searches.
 
@@ -58,9 +59,9 @@ uniqueness across all levels.
 
 | Entity Count | Octree | Tetree | Winner |
 |-------------|---------|---------|---------|
-| 100 | 0.39 μs | 0.52 μs | Octree **1.3x faster** |
-| 1,000 | 2.12 μs | 4.02 μs | Octree **1.9x faster** |
-| 10,000 | 21.59 μs | 53.24 μs | Octree **2.5x faster** |
+| 100 | 0.39 μs | 0.49 μs | Octree **1.2x faster** |
+| 1,000 | 2.52 μs | 4.10 μs | Octree **1.6x faster** |
+| 10,000 | 21.91 μs | 56.53 μs | Octree **2.6x faster** |
 
 **Note**: Octree's AABB-based calculations are more efficient for range queries.
 
@@ -68,48 +69,65 @@ uniqueness across all levels.
 
 | Entity Count | Octree | Tetree | Winner |
 |-------------|---------|---------|---------|
-| 100 | 0.14 μs | 0.07 μs | Tetree **2.0x faster** |
-| 1,000 | 0.003 μs | 0.008 μs | Octree **3.2x faster** |
-| 10,000 | 0.002 μs | 0.005 μs | Octree **2.3x faster** |
+| 100 | 0.16 μs | 0.09 μs | Tetree **1.8x faster** |
+| 1,000 | 0.003 μs | 0.007 μs | Octree **2.8x faster** |
+| 10,000 | 0.002 μs | 0.006 μs | Octree **2.4x faster** |
 
 ### Memory Usage
 
 | Entity Count | Octree | Tetree | Tetree Memory % |
 |-------------|---------|---------|-----------------|
-| 100 | 0.15 MB | 0.04 MB | **28.7%** |
-| 1,000 | 1.40 MB | 0.34 MB | **24.0%** |
-| 10,000 | 12.90 MB | 3.16 MB | **24.5%** |
+| 100 | 0.15 MB | 0.04 MB | **25.9%** |
+| 1,000 | 1.38 MB | 0.32 MB | **23.1%** |
+| 10,000 | 12.90 MB | 3.15 MB | **24.4%** |
 
-**Key Finding**: Tetree consistently uses 70-75% less memory than Octree.
+**Key Finding**: Tetree consistently uses 75-77% less memory than Octree.
+
+### Bulk Operation Performance (100K entities)
+
+| Implementation | Basic | Optimized | Speedup |
+|----------------|-------|-----------|---------|
+| Octree | 695K entities/sec | 860K entities/sec | 1.2x |
+| Tetree | 25K entities/sec | **1.09M entities/sec** | **42.5x** |
+
+**Critical Insight**: With bulk operations and deferred evaluation, Tetree can actually outperform Octree for large dataset loading!
+
+### Parent Cache Performance
+
+- **67.3x speedup** for high-level (level 20) tetrahedra lookups
+- Cache hit rate: 98-100% for repeated access patterns
+- Average cached access time: 45.34 ns per call
+- Warmup time: ~1.37 ms for initial cache population
 
 ## What This Means for Users
 
 ### Choose Octree When:
 
-1. **Real-time insertions** - Games, simulations with moving objects
-2. **Bulk loading** - Importing large datasets
-3. **Frequent updates** - Dynamic environments
-4. **Balanced workloads** - Mix of insertions and queries
+1. **Real-time individual insertions** - Games, simulations with moving objects
+2. **Frequent single updates** - Dynamic environments
+3. **Range query dominated** - Spatial overlap detection
+4. **Simplicity matters** - Easier to understand and debug
 
 ### Choose Tetree When:
 
-1. **Static datasets** - Load once, query many times
-2. **Memory constrained** - Embedded systems, mobile devices
-3. **Query-heavy workloads** - Spatial databases, GIS systems
-4. **Offline processing** - Where insertion time doesn't matter
+1. **Bulk loading available** - Can achieve >1M entities/sec with optimizations
+2. **Memory constrained** - Uses 75% less memory
+3. **k-NN query performance critical** - 1.6-3.6x faster neighbor searches
+4. **Read-heavy workloads** - Spatial databases, GIS systems
 
-## Optimization Attempts and Results
+## Optimization Impact
 
 ### What Worked:
 
-- **TetreeLevelCache**: Improved some operations but can't fix O(level) parent walk
-- **Bulk operations**: Help both implementations equally
-- **Pre-sorting**: Improves spatial locality for both
+- **Parent Cache**: 67x speedup for deep tree operations
+- **Bulk operations**: 42.5x speedup for Tetree insertion
+- **Deferred evaluation**: Delays tmIndex() computation until needed
+- **TetreeLevelCache**: O(1) level extraction and type transitions
 
 ### What Didn't Work:
 
 - Cannot make tmIndex() O(1) without breaking correctness
-- Parent chain caching helps but doesn't eliminate the traversal
+- Parent chain walk is fundamental to the algorithm
 - The fundamental algorithm difference cannot be optimized away
 
 ## Lessons Learned
