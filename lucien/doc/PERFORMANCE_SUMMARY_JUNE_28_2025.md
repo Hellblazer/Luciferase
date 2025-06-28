@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the latest performance benchmarks for Octree and Tetree spatial indices based on comprehensive testing with OctreeVsTetreeBenchmark.
+This document summarizes the latest performance benchmarks for Octree and Tetree spatial indices based on comprehensive testing with OctreeVsTetreeBenchmark after implementing the parent cache optimization.
 
 ## Key Performance Metrics
 
