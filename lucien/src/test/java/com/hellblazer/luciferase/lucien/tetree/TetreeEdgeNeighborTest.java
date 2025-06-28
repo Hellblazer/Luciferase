@@ -52,8 +52,8 @@ public class TetreeEdgeNeighborTest {
         tetree.insert(p1, (byte) 0, "root");
 
         // Find the node containing our entity
-        Tet rootTet = tetree.locateTetrahedron(p1, (byte) 0);
-        TetreeKey rootKey = rootTet.tmIndex();
+        var rootTet = tetree.locateTetrahedron(p1, (byte) 0);
+        var rootKey = rootTet.tmIndex();
 
         // Test invalid edge indices
         assertThrows(IllegalArgumentException.class, () -> tetree.findEdgeNeighbors(rootKey, -1));
@@ -73,24 +73,24 @@ public class TetreeEdgeNeighborTest {
         }
 
         // Find two adjacent tetrahedra
-        Point3f p1 = new Point3f(200, 200, 200);
-        Point3f p2 = new Point3f(300, 200, 200);
+        var p1 = new Point3f(200, 200, 200);
+        var p2 = new Point3f(300, 200, 200);
 
-        Tet tet1 = tetree.locateTetrahedron(p1, (byte) 2);
-        Tet tet2 = tetree.locateTetrahedron(p2, (byte) 2);
+        var tet1 = tetree.locateTetrahedron(p1, (byte) 2);
+        var tet2 = tetree.locateTetrahedron(p2, (byte) 2);
 
         // Check if they share any edges
-        TetreeKey tet1Key = tet1.tmIndex();
-        TetreeKey tet2Key = tet2.tmIndex();
-        
+        var tet1Key = tet1.tmIndex();
+        var tet2Key = tet2.tmIndex();
+
         for (int edge1 = 0; edge1 < 6; edge1++) {
-            List<TetreeKey> neighbors1 = tetree.findEdgeNeighbors(tet1Key, edge1);
-            
+            var neighbors1 = tetree.findEdgeNeighbors(tet1Key, edge1);
+
             if (neighbors1.contains(tet2Key)) {
                 // If tet2 is an edge neighbor of tet1, then tet1 should be an edge neighbor of tet2
                 boolean foundSymmetric = false;
                 for (int edge2 = 0; edge2 < 6; edge2++) {
-                    List<TetreeKey> neighbors2 = tetree.findEdgeNeighbors(tet2Key, edge2);
+                    var neighbors2 = tetree.findEdgeNeighbors(tet2Key, edge2);
                     if (neighbors2.contains(tet1Key)) {
                         foundSymmetric = true;
                         break;
@@ -104,10 +104,10 @@ public class TetreeEdgeNeighborTest {
     @Test
     void testEdgeNeighborsAtRootLevel() {
         // Create entities to force subdivision
-        Point3f p1 = new Point3f(100, 100, 100);
-        Point3f p2 = new Point3f(900, 100, 100);
-        Point3f p3 = new Point3f(100, 900, 100);
-        Point3f p4 = new Point3f(100, 100, 900);
+        var p1 = new Point3f(100, 100, 100);
+        var p2 = new Point3f(900, 100, 100);
+        var p3 = new Point3f(100, 900, 100);
+        var p4 = new Point3f(100, 100, 900);
 
         tetree.insert(p1, (byte) 1, "v1");
         tetree.insert(p2, (byte) 1, "v2");
@@ -115,12 +115,12 @@ public class TetreeEdgeNeighborTest {
         tetree.insert(p4, (byte) 1, "v4");
 
         // Find a tetrahedron at level 1
-        Tet tet1 = tetree.locateTetrahedron(p1, (byte) 1);
-        TetreeKey tetKey = tet1.tmIndex();
+        var tet1 = tetree.locateTetrahedron(p1, (byte) 1);
+        var tetKey = tet1.tmIndex();
 
         // Test all 6 edges (0-5)
         for (int edge = 0; edge < 6; edge++) {
-            List<TetreeKey> edgeNeighbors = tetree.findEdgeNeighbors(tetKey, edge);
+            var edgeNeighbors = tetree.findEdgeNeighbors(tetKey, edge);
             assertNotNull(edgeNeighbors, "Edge neighbors should not be null for edge " + edge);
 
             // At minimum, neighbors should include face neighbors that share the edge
@@ -132,18 +132,18 @@ public class TetreeEdgeNeighborTest {
     @Test
     void testEdgeNeighborsConsistency() {
         // Create a simple configuration
-        Point3f p1 = new Point3f(300, 300, 300);
-        Point3f p2 = new Point3f(700, 300, 300);
-        Point3f p3 = new Point3f(300, 700, 300);
-        Point3f p4 = new Point3f(300, 300, 700);
+        var p1 = new Point3f(300, 300, 300);
+        var p2 = new Point3f(700, 300, 300);
+        var p3 = new Point3f(300, 700, 300);
+        var p4 = new Point3f(300, 300, 700);
 
         tetree.insert(p1, (byte) 2, "tet1");
         tetree.insert(p2, (byte) 2, "tet2");
         tetree.insert(p3, (byte) 2, "tet3");
         tetree.insert(p4, (byte) 2, "tet4");
 
-        Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        TetreeKey tetKey = tet.tmIndex();
+        var tet = tetree.locateTetrahedron(p1, (byte) 2);
+        var tetKey = tet.tmIndex();
 
         // Edge-to-face mapping (from TetreeNeighborFinder):
         // Edge 0 (v0-v1): faces 0, 2
@@ -154,51 +154,51 @@ public class TetreeEdgeNeighborTest {
         // Edge 5 (v2-v3): faces 2, 3
 
         // Get face neighbors
-        List<TetreeKey> face0Neighbors = new ArrayList<>();
-        List<TetreeKey> face1Neighbors = new ArrayList<>();
-        List<TetreeKey> face2Neighbors = new ArrayList<>();
-        List<TetreeKey> face3Neighbors = new ArrayList<>();
-        
-        TetreeKey face0 = tetree.findFaceNeighbor(tetKey, 0);
+        List<BaseTetreeKey<? extends BaseTetreeKey>> face0Neighbors = new ArrayList<>();
+        List<BaseTetreeKey<? extends BaseTetreeKey>> face1Neighbors = new ArrayList<>();
+        List<BaseTetreeKey<? extends BaseTetreeKey>> face2Neighbors = new ArrayList<>();
+        List<BaseTetreeKey<? extends BaseTetreeKey>> face3Neighbors = new ArrayList<>();
+
+        var face0 = tetree.findFaceNeighbor(tetKey, 0);
         if (face0 != null) {
             face0Neighbors.add(face0);
         }
 
-        TetreeKey face1 = tetree.findFaceNeighbor(tetKey, 1);
+        var face1 = tetree.findFaceNeighbor(tetKey, 1);
         if (face1 != null) {
             face1Neighbors.add(face1);
         }
 
-        TetreeKey face2 = tetree.findFaceNeighbor(tetKey, 2);
+        var face2 = tetree.findFaceNeighbor(tetKey, 2);
         if (face2 != null) {
             face2Neighbors.add(face2);
         }
 
-        TetreeKey face3 = tetree.findFaceNeighbor(tetKey, 3);
+        var face3 = tetree.findFaceNeighbor(tetKey, 3);
         if (face3 != null) {
             face3Neighbors.add(face3);
         }
 
         // Get edge neighbors
-        List<TetreeKey> edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0); // shares faces 0,2
-        List<TetreeKey> edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,1
+        var edge0Neighbors = tetree.findEdgeNeighbors(tetKey, 0); // shares faces 0,2
+        var edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,1
 
         // Edge neighbors should include at least the face neighbors of the faces that share the edge
-        Set<TetreeKey> edge0Expected = new HashSet<>();
+        Set<BaseTetreeKey<? extends BaseTetreeKey>> edge0Expected = new HashSet<>();
         edge0Expected.addAll(face0Neighbors);
         edge0Expected.addAll(face2Neighbors);
 
-        Set<TetreeKey> edge3Expected = new HashSet<>();
+        Set<BaseTetreeKey<? extends BaseTetreeKey>> edge3Expected = new HashSet<>();
         edge3Expected.addAll(face0Neighbors);
         edge3Expected.addAll(face1Neighbors);
 
         // Edge neighbors should include at least the face neighbors
-        for (TetreeKey neighbor : edge0Expected) {
+        for (var neighbor : edge0Expected) {
             assertTrue(edge0Neighbors.contains(neighbor) || edge0Neighbors.isEmpty(),
                        "Edge 0 neighbors should include face neighbors from faces 0 and 2");
         }
 
-        for (TetreeKey neighbor : edge3Expected) {
+        for (var neighbor : edge3Expected) {
             assertTrue(edge3Neighbors.contains(neighbor) || edge3Neighbors.isEmpty(),
                        "Edge 3 neighbors should include face neighbors from faces 0 and 1");
         }
@@ -210,13 +210,13 @@ public class TetreeEdgeNeighborTest {
         // Use level 10 where cells are much smaller (2048 units)
         byte level = 10;
         int cellSize = Constants.lengthAtLevel(level);
-        
+
         // Create a 3x3x3 grid with entities spaced at half cell size
         // This ensures they're in adjacent cells
         int gridSize = 3;
         float spacing = cellSize / 2.0f;
         float startPos = 100000; // Start far from origin to avoid boundary issues
-        
+
         for (int x = 0; x < gridSize; x++) {
             for (int y = 0; y < gridSize; y++) {
                 for (int z = 0; z < gridSize; z++) {
@@ -232,21 +232,20 @@ public class TetreeEdgeNeighborTest {
         // Pick the central entity
         Point3f center = new Point3f(startPos + spacing, startPos + spacing, startPos + spacing);
         Tet centerTet = tetree.locateTetrahedron(center, level);
-        TetreeKey centerKey = centerTet.tmIndex();
+        var centerKey = centerTet.tmIndex();
 
         // In a dense configuration, we expect edge neighbors
         int totalEdgeNeighbors = 0;
         for (int edge = 0; edge < 6; edge++) {
-            List<TetreeKey> neighbors = tetree.findEdgeNeighbors(centerKey, edge);
+            var neighbors = tetree.findEdgeNeighbors(centerKey, edge);
             totalEdgeNeighbors += neighbors.size();
         }
 
         // With standard refinement, the edge neighbor relationships are different
         // The test was written for Freudenthal decomposition which has different geometric properties
         // For now, we'll just verify the method doesn't crash and returns a valid result
-        assertTrue(totalEdgeNeighbors >= 0,
-                   "Edge neighbor count should be non-negative, got: " + totalEdgeNeighbors);
-        
+        assertTrue(totalEdgeNeighbors >= 0, "Edge neighbor count should be non-negative, got: " + totalEdgeNeighbors);
+
         // Note: With standard refinement, entities that were edge neighbors under Freudenthal
         // decomposition may not be edge neighbors anymore due to different spatial organization
     }

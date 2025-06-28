@@ -23,77 +23,74 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Region-based caching for bulk Tetree operations. Pre-computes TetreeKey values
- * for all tetrahedra in a spatial region to amortize the cost of tmIndex() calls
- * across multiple operations.
+ * Region-based caching for bulk Tetree operations. Pre-computes TetreeKey values for all tetrahedra in a spatial region
+ * to amortize the cost of tmIndex() calls across multiple operations.
  *
  * @author hal.hildebrand
  */
 public class TetreeRegionCache {
-    
+
     // Statistics for monitoring
-    private static final AtomicInteger totalRegionsPrecomputed = new AtomicInteger(0);
+    private static final AtomicInteger totalRegionsPrecomputed    = new AtomicInteger(0);
     private static final AtomicInteger totalTetrahedraPrecomputed = new AtomicInteger(0);
-    
-    private final ConcurrentHashMap<Long, TetreeKey> regionCache = new ConcurrentHashMap<>();
-    
+
+    private final ConcurrentHashMap<Long, BaseTetreeKey<? extends BaseTetreeKey>> regionCache = new ConcurrentHashMap<>();
+
     /**
-     * Pre-compute all tetrahedra in a spatial region at the specified level.
-     * This dramatically improves bulk insertion performance by ensuring all
-     * tmIndex() calls hit the cache.
+     * Get global statistics for monitoring.
      *
-     * @param bounds the spatial region to pre-compute
-     * @param level the tetrahedral decomposition level
+     * @return string with cache statistics
      */
-    public void precomputeRegion(VolumeBounds bounds, byte level) {
-        var cellSize = Constants.lengthAtLevel(level);
-        
-        // Calculate grid-aligned bounds
-        var minX = (int)(bounds.minX() / cellSize) * cellSize;
-        var maxX = ((int)(bounds.maxX() / cellSize) + 1) * cellSize;
-        var minY = (int)(bounds.minY() / cellSize) * cellSize;
-        var maxY = ((int)(bounds.maxY() / cellSize) + 1) * cellSize;
-        var minZ = (int)(bounds.minZ() / cellSize) * cellSize;
-        var maxZ = ((int)(bounds.maxZ() / cellSize) + 1) * cellSize;
-        
-        var count = 0;
-        
-        // Pre-compute all tetrahedra in the region
-        for (int x = minX; x <= maxX; x += cellSize) {
-            for (int y = minY; y <= maxY; y += cellSize) {
-                for (int z = minZ; z <= maxZ; z += cellSize) {
-                    // Skip if outside valid bounds
-                    if (x < 0 || y < 0 || z < 0) {
-                        continue;
-                    }
-                    
-                    // Pre-compute all 6 tetrahedron types at this position
-                    for (byte type = 0; type < 6; type++) {
-                        var tet = new Tet(x, y, z, level, type);
-                        
-                        // This will compute and cache the TetreeKey
-                        var key = tet.tmIndex();
-                        
-                        // Also store in our local cache for quick lookup
-                        var cacheKey = packCacheKey(x, y, z, level, type);
-                        regionCache.put(cacheKey, key);
-                        
-                        count++;
-                    }
-                }
-            }
-        }
-        
-        // Update statistics
-        totalRegionsPrecomputed.incrementAndGet();
-        totalTetrahedraPrecomputed.addAndGet(count);
+    public static String getStatistics() {
+        return String.format("Regions pre-computed: %d, Total tetrahedra: %d", totalRegionsPrecomputed.get(),
+                             totalTetrahedraPrecomputed.get());
     }
-    
+
     /**
-     * Pre-compute regions for multiple levels. Useful when entities might
-     * be inserted at different levels based on density.
+     * Pack coordinates and type into a cache key. Uses bit packing for efficient storage.
+     */
+    private static long packCacheKey(int x, int y, int z, byte level, byte type) {
+        // Use 12 bits each for x,y,z (4096 cells), 5 bits for level, 3 bits for type
+        // This gives us 44 bits total, well within a long
+        return ((long) (x & 0xFFF) << 32) | ((long) (y & 0xFFF) << 20) | ((long) (z & 0xFFF) << 8) | (
+        (long) (level & 0x1F) << 3) | (type & 0x7);
+    }
+
+    /**
+     * Reset global statistics.
+     */
+    public static void resetStatistics() {
+        totalRegionsPrecomputed.set(0);
+        totalTetrahedraPrecomputed.set(0);
+    }
+
+    /**
+     * Clear the region cache to free memory.
+     */
+    public void clear() {
+        regionCache.clear();
+    }
+
+    /**
+     * Get a cached TetreeKey from the region cache.
      *
-     * @param bounds the spatial region
+     * @param x     x coordinate
+     * @param y     y coordinate
+     * @param z     z coordinate
+     * @param level decomposition level
+     * @param type  tetrahedron type
+     * @return the cached TetreeKey or null if not in cache
+     */
+    public BaseTetreeKey<? extends BaseTetreeKey> getCachedKey(int x, int y, int z, byte level, byte type) {
+        var cacheKey = packCacheKey(x, y, z, level, type);
+        return regionCache.get(cacheKey);
+    }
+
+    /**
+     * Pre-compute regions for multiple levels. Useful when entities might be inserted at different levels based on
+     * density.
+     *
+     * @param bounds   the spatial region
      * @param minLevel minimum level to pre-compute
      * @param maxLevel maximum level to pre-compute
      */
@@ -102,29 +99,58 @@ public class TetreeRegionCache {
             precomputeRegion(bounds, level);
         }
     }
-    
+
     /**
-     * Get a cached TetreeKey from the region cache.
+     * Pre-compute all tetrahedra in a spatial region at the specified level. This dramatically improves bulk insertion
+     * performance by ensuring all tmIndex() calls hit the cache.
      *
-     * @param x x coordinate
-     * @param y y coordinate
-     * @param z z coordinate
-     * @param level decomposition level
-     * @param type tetrahedron type
-     * @return the cached TetreeKey or null if not in cache
+     * @param bounds the spatial region to pre-compute
+     * @param level  the tetrahedral decomposition level
      */
-    public TetreeKey getCachedKey(int x, int y, int z, byte level, byte type) {
-        var cacheKey = packCacheKey(x, y, z, level, type);
-        return regionCache.get(cacheKey);
+    public void precomputeRegion(VolumeBounds bounds, byte level) {
+        var cellSize = Constants.lengthAtLevel(level);
+
+        // Calculate grid-aligned bounds
+        var minX = (int) (bounds.minX() / cellSize) * cellSize;
+        var maxX = ((int) (bounds.maxX() / cellSize) + 1) * cellSize;
+        var minY = (int) (bounds.minY() / cellSize) * cellSize;
+        var maxY = ((int) (bounds.maxY() / cellSize) + 1) * cellSize;
+        var minZ = (int) (bounds.minZ() / cellSize) * cellSize;
+        var maxZ = ((int) (bounds.maxZ() / cellSize) + 1) * cellSize;
+
+        var count = 0;
+
+        // Pre-compute all tetrahedra in the region
+        for (int x = minX; x <= maxX; x += cellSize) {
+            for (int y = minY; y <= maxY; y += cellSize) {
+                for (int z = minZ; z <= maxZ; z += cellSize) {
+                    // Skip if outside valid bounds
+                    if (x < 0 || y < 0 || z < 0) {
+                        continue;
+                    }
+
+                    // Pre-compute all 6 tetrahedron types at this position
+                    for (byte type = 0; type < 6; type++) {
+                        var tet = new Tet(x, y, z, level, type);
+
+                        // This will compute and cache the BaseTetreeKey<? extends BaseTetreeKey>
+                        var key = tet.tmIndex();
+
+                        // Also store in our local cache for quick lookup
+                        var cacheKey = packCacheKey(x, y, z, level, type);
+                        regionCache.put(cacheKey, key);
+
+                        count++;
+                    }
+                }
+            }
+        }
+
+        // Update statistics
+        totalRegionsPrecomputed.incrementAndGet();
+        totalTetrahedraPrecomputed.addAndGet(count);
     }
-    
-    /**
-     * Clear the region cache to free memory.
-     */
-    public void clear() {
-        regionCache.clear();
-    }
-    
+
     /**
      * Get the number of pre-computed entries.
      *
@@ -132,38 +158,5 @@ public class TetreeRegionCache {
      */
     public int size() {
         return regionCache.size();
-    }
-    
-    /**
-     * Get global statistics for monitoring.
-     *
-     * @return string with cache statistics
-     */
-    public static String getStatistics() {
-        return String.format("Regions pre-computed: %d, Total tetrahedra: %d",
-                           totalRegionsPrecomputed.get(),
-                           totalTetrahedraPrecomputed.get());
-    }
-    
-    /**
-     * Reset global statistics.
-     */
-    public static void resetStatistics() {
-        totalRegionsPrecomputed.set(0);
-        totalTetrahedraPrecomputed.set(0);
-    }
-    
-    /**
-     * Pack coordinates and type into a cache key.
-     * Uses bit packing for efficient storage.
-     */
-    private static long packCacheKey(int x, int y, int z, byte level, byte type) {
-        // Use 12 bits each for x,y,z (4096 cells), 5 bits for level, 3 bits for type
-        // This gives us 44 bits total, well within a long
-        return ((long)(x & 0xFFF) << 32) |
-               ((long)(y & 0xFFF) << 20) |
-               ((long)(z & 0xFFF) << 8) |
-               ((long)(level & 0x1F) << 3) |
-               (type & 0x7);
     }
 }

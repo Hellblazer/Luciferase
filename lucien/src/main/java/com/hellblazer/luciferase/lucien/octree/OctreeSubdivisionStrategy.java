@@ -46,7 +46,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
      * Create a balanced strategy for mixed workloads
      */
     public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> balanced() {
-        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
+        var strategy = new OctreeSubdivisionStrategy<ID, Content>();
         strategy.withMinEntitiesForSplit(4).withLoadFactor(0.75).withSpanningThreshold(0.5);
         return strategy;
     }
@@ -55,7 +55,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
      * Create a strategy optimized for dense point clouds
      */
     public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> forDensePointClouds() {
-        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
+        var strategy = new OctreeSubdivisionStrategy<ID, Content>();
         strategy.withMinEntitiesForSplit(8).withLoadFactor(0.9).withSpanningThreshold(0.1);
         return strategy;
     }
@@ -64,7 +64,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
      * Create a strategy optimized for large entities
      */
     public static <ID extends EntityID, Content> OctreeSubdivisionStrategy<ID, Content> forLargeEntities() {
-        OctreeSubdivisionStrategy<ID, Content> strategy = new OctreeSubdivisionStrategy<>();
+        var strategy = new OctreeSubdivisionStrategy<ID, Content>();
         strategy.withMinEntitiesForSplit(2).withLoadFactor(0.5).withSpanningThreshold(0.7);
         return strategy;
     }
@@ -72,28 +72,28 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
     @Override
     public Set<MortonKey> calculateTargetNodes(MortonKey parentIndex, byte parentLevel, EntityBounds entityBounds,
                                                AbstractSpatialIndex<MortonKey, ID, Content, ?> spatialIndex) {
-        Set<MortonKey> targetNodes = new HashSet<>();
+        var targetNodes = new HashSet<MortonKey>();
 
         if (entityBounds == null) {
             return targetNodes;
         }
 
         // Decode parent node location
-        int[] parentCoords = MortonCurve.decode(parentIndex.getMortonCode());
-        int parentCellSize = Constants.lengthAtLevel(parentLevel);
-        int childCellSize = parentCellSize / 2;
-        byte childLevel = (byte) (parentLevel + 1);
+        var parentCoords = MortonCurve.decode(parentIndex.getMortonCode());
+        var parentCellSize = Constants.lengthAtLevel(parentLevel);
+        var childCellSize = parentCellSize / 2;
+        var childLevel = (byte) (parentLevel + 1);
 
         // Check each octant
-        for (int i = 0; i < OCTREE_CHILDREN; i++) {
-            int childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
-            int childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
-            int childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
+        for (var i = 0; i < OCTREE_CHILDREN; i++) {
+            var childX = parentCoords[0] + ((i & 1) != 0 ? childCellSize : 0);
+            var childY = parentCoords[1] + ((i & 2) != 0 ? childCellSize : 0);
+            var childZ = parentCoords[2] + ((i & 4) != 0 ? childCellSize : 0);
 
             // Check if entity bounds intersect this octant
             if (entityBounds.intersectsCube(childX, childY, childZ, childCellSize)) {
                 // Calculate child Morton code
-                Point3f childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
+                var childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
                                                   childZ + childCellSize / 2.0f);
                 var childIndex = new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
                 targetNodes.add(childIndex);
@@ -126,7 +126,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
         }
 
         // Estimate subdivision benefit
-        double benefit = estimateSubdivisionBenefit(context);
+        var benefit = estimateSubdivisionBenefit(context);
 
         // Low benefit - keep in parent
         if (benefit < 0.3) {
@@ -134,7 +134,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
         }
 
         // Check if entity should span multiple children
-        int nodeSize = Constants.lengthAtLevel(context.nodeLevel);
+        var nodeSize = Constants.lengthAtLevel(context.nodeLevel);
         if (shouldSpanEntity(context, nodeSize)) {
             // Calculate which children the entity intersects
             var targetChildren = calculateTargetNodes(context.nodeIndex, context.nodeLevel, context.newEntityBounds,
@@ -170,16 +170,16 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
         }
 
         // Calculate entity size
-        float entitySizeX = context.newEntityBounds.getMaxX() - context.newEntityBounds.getMinX();
-        float entitySizeY = context.newEntityBounds.getMaxY() - context.newEntityBounds.getMinY();
-        float entitySizeZ = context.newEntityBounds.getMaxZ() - context.newEntityBounds.getMinZ();
-        float maxEntityDimension = Math.max(Math.max(entitySizeX, entitySizeY), entitySizeZ);
+        var entitySizeX = context.newEntityBounds.getMaxX() - context.newEntityBounds.getMinX();
+        var entitySizeY = context.newEntityBounds.getMaxY() - context.newEntityBounds.getMinY();
+        var entitySizeZ = context.newEntityBounds.getMaxZ() - context.newEntityBounds.getMinZ();
+        var maxEntityDimension = Math.max(Math.max(entitySizeX, entitySizeY), entitySizeZ);
 
         // Get node size at current level
-        int nodeSize = Constants.lengthAtLevel(context.nodeLevel);
+        var nodeSize = Constants.lengthAtLevel(context.nodeLevel);
 
         // Calculate relative size (0.0 to 1.0, clamped)
-        double relativeFactor = maxEntityDimension / nodeSize;
+        var relativeFactor = maxEntityDimension / nodeSize;
         return Math.min(relativeFactor, 1.0);
     }
 
@@ -194,18 +194,18 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
         }
 
         // Calculate entity center
-        float centerX = (context.newEntityBounds.getMinX() + context.newEntityBounds.getMaxX()) / 2.0f;
-        float centerY = (context.newEntityBounds.getMinY() + context.newEntityBounds.getMaxY()) / 2.0f;
-        float centerZ = (context.newEntityBounds.getMinZ() + context.newEntityBounds.getMaxZ()) / 2.0f;
-        Point3f entityCenter = new Point3f(centerX, centerY, centerZ);
+        var centerX = (context.newEntityBounds.getMinX() + context.newEntityBounds.getMaxX()) / 2.0f;
+        var centerY = (context.newEntityBounds.getMinY() + context.newEntityBounds.getMaxY()) / 2.0f;
+        var centerZ = (context.newEntityBounds.getMinZ() + context.newEntityBounds.getMaxZ()) / 2.0f;
+        var entityCenter = new Point3f(centerX, centerY, centerZ);
 
         // Decode parent node
-        int[] parentCoords = MortonCurve.decode(context.nodeIndex.getMortonCode());
-        int parentCellSize = Constants.lengthAtLevel(context.nodeLevel);
-        int childCellSize = parentCellSize / 2;
+        var parentCoords = MortonCurve.decode(context.nodeIndex.getMortonCode());
+        var parentCellSize = Constants.lengthAtLevel(context.nodeLevel);
+        var childCellSize = parentCellSize / 2;
 
         // Determine which octant the center falls into
-        int octant = 0;
+        var octant = 0;
         if (entityCenter.x >= parentCoords[0] + childCellSize) {
             octant |= 1;
         }
@@ -217,9 +217,9 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
         }
 
         // Calculate child coordinates
-        int childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
-        int childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
-        int childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
+        var childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
+        var childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
+        var childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
 
         // Verify the entity fits entirely within this octant
         if (context.newEntityBounds.getMinX() >= childX && context.newEntityBounds.getMinY() >= childY
@@ -228,9 +228,9 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
         && context.newEntityBounds.getMaxZ() <= childZ + childCellSize) {
 
             // Entity fits in single octant
-            Point3f childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
+            var childCenter = new Point3f(childX + childCellSize / 2.0f, childY + childCellSize / 2.0f,
                                               childZ + childCellSize / 2.0f);
-            byte childLevel = (byte) (context.nodeLevel + 1);
+            var childLevel = (byte) (context.nodeLevel + 1);
             return new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel), childLevel);
         }
 

@@ -28,9 +28,7 @@ import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for TetreeSFCRayTraversal. Validates optimized ray traversal algorithm.
@@ -64,12 +62,14 @@ public class TetreeSFCRayTraversalTest {
         Ray3D ray = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
 
         long startTime = System.nanoTime();
-        List<TetreeKey> sfcResult = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> sfcResult = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
         long sfcTime = System.nanoTime() - startTime;
 
         // Compare with brute force (using getRayTraversalOrder)
         startTime = System.nanoTime();
-        List<TetreeKey> bruteResult = tetree.getRayTraversalOrder(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> bruteResult = tetree.getRayTraversalOrder(ray).collect(
+        Collectors.toList());
         long bruteTime = System.nanoTime() - startTime;
 
         System.out.println("SFC traversal time: " + sfcTime + " ns, found " + sfcResult.size() + " intersections");
@@ -87,7 +87,8 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray starting outside domain
         Ray3D ray = new Ray3D(new Point3f(-50, 50, 50), new Vector3f(1, 0, 0));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray from outside should still find intersections");
     }
@@ -99,7 +100,8 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray that misses the domain entirely
         Ray3D ray = new Ray3D(new Point3f(-50, -50, -50), new Vector3f(-1, -1, -1));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertTrue(result.isEmpty(), "Ray missing domain should return no intersections");
     }
@@ -111,7 +113,8 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray starting inside a tetrahedron
         Ray3D ray = new Ray3D(new Point3f(50, 50, 50), new Vector3f(1, 0, 0));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray starting inside should find intersections");
 
@@ -148,7 +151,8 @@ public class TetreeSFCRayTraversalTest {
 
         // Diagonal ray from corner to corner
         Ray3D ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 1, 1));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertFalse(result.isEmpty(), "Diagonal ray should intersect tetrahedra");
 
@@ -161,7 +165,8 @@ public class TetreeSFCRayTraversalTest {
         // Ray through empty tree should return no results
         // In a sparse tree, only existing nodes are returned
         Ray3D ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 0, 0));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         // In the updated implementation, ray traversal only returns existing nodes
         // An empty tree has no nodes, so the result should be empty
@@ -181,49 +186,49 @@ public class TetreeSFCRayTraversalTest {
 
         // Horizontal ray should intersect multiple nodes
         Ray3D ray = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         // Debug: Print what we found
         System.out.println("Ray traversal found " + result.size() + " tetrahedra:");
         for (int i = 0; i < result.size(); i++) {
             Tet tet = Tet.tetrahedron(result.get(i));
-            System.out.println("  " + i + ": index=" + result.get(i) + ", tet=" + tet + 
-                             ", x=" + tet.x() + ", level=" + tet.l());
+            System.out.println(
+            "  " + i + ": index=" + result.get(i) + ", tet=" + tet + ", x=" + tet.x() + ", level=" + tet.l());
         }
-        
+
         // For comparison, use the regular ray traversal from tree
-        List<TetreeKey> regularResult = tetree.getRayTraversalOrder(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> regularResult = tetree.getRayTraversalOrder(ray).collect(
+        Collectors.toList());
         System.out.println("Regular ray traversal found " + regularResult.size() + " tetrahedra");
 
         // In a sparse tree, the number of intersected nodes depends on how many were created
         // With 5 entities at level 10, we might have 1-5 nodes depending on their spatial distribution
         assertFalse(result.isEmpty(), "Ray should intersect at least one tetrahedron");
-        
+
         // The exact number depends on whether entities ended up in the same or different tetrahedra
         System.out.println("Note: Found " + result.size() + " nodes along ray path");
 
         // Verify general ordering (distance projection should be non-decreasing)
         Ray3D rayForSorting = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
         float prevDistance = Float.NEGATIVE_INFINITY;
-        
+
         for (int i = 0; i < Math.min(10, result.size()); i++) { // Check first 10 for performance
             Tet tet = Tet.tetrahedron(result.get(i));
             Point3i[] vertices = tet.coordinates();
-            
+
             // Calculate centroid
             float cx = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
             float cy = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
             float cz = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
-            
+
             // Project onto ray direction
-            Vector3f toCenter = new Vector3f(cx - rayForSorting.origin().x, 
-                                           cy - rayForSorting.origin().y, 
-                                           cz - rayForSorting.origin().z);
+            Vector3f toCenter = new Vector3f(cx - rayForSorting.origin().x, cy - rayForSorting.origin().y,
+                                             cz - rayForSorting.origin().z);
             float distance = toCenter.dot(rayForSorting.direction());
-            
+
             // Distance should be non-decreasing (allowing for some tolerance due to different levels)
-            assertTrue(distance >= prevDistance - 1000, 
-                      "Tetrahedra should be roughly ordered by distance along ray");
+            assertTrue(distance >= prevDistance - 1000, "Tetrahedra should be roughly ordered by distance along ray");
             prevDistance = distance;
         }
     }
@@ -235,13 +240,14 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray through center should hit the node
         Ray3D ray = new Ray3D(new Point3f(0, 50, 50), new Vector3f(1, 0, 0));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray should intersect at least one tetrahedron");
 
         // Find the tetrahedron that contains the entity
         Tet entityTet = tetree.locateTetrahedron(new Point3f(50, 50, 50), (byte) 10);
-        TetreeKey entityTetKey = entityTet.tmIndex();
+        BaseTetreeKey<? extends BaseTetreeKey> entityTetKey = entityTet.tmIndex();
 
         // Verify that the ray traversal found the tetrahedron containing our entity
         // Ray traversal generates tetrahedra along the ray path
@@ -250,9 +256,9 @@ public class TetreeSFCRayTraversalTest {
         assertEquals(1, result.size(), "Ray traversal should find the single node containing the entity");
 
         // Verify we found the correct tetrahedron
-        TetreeKey foundKey = result.get(0);
+        BaseTetreeKey<? extends BaseTetreeKey> foundKey = result.get(0);
         assertTrue(tetree.hasNode(foundKey), "Found tetrahedron should exist in the tree");
-        
+
         // Verify the tetrahedron is valid
         Tet tet = Tet.tetrahedron(foundKey);
         Point3i[] vertices = tet.coordinates();
@@ -280,7 +286,8 @@ public class TetreeSFCRayTraversalTest {
 
         // Ray through cluster
         Ray3D ray = new Ray3D(new Point3f(45, 50, 50), new Vector3f(1, 0, 0));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertFalse(result.isEmpty(), "Ray should intersect subdivided region");
 
@@ -300,7 +307,8 @@ public class TetreeSFCRayTraversalTest {
 
         // Vertical ray
         Ray3D ray = new Ray3D(new Point3f(50, 50, 0), new Vector3f(0, 0, 1));
-        List<TetreeKey> result = rayTraversal.traverseRay(ray).collect(Collectors.toList());
+        List<BaseTetreeKey<? extends BaseTetreeKey>> result = rayTraversal.traverseRay(ray).collect(
+        Collectors.toList());
 
         assertTrue(result.size() >= 1, "Vertical ray should hit at least 1 region");
 
@@ -309,10 +317,9 @@ public class TetreeSFCRayTraversalTest {
         for (int i = 1; i < Math.min(10, result.size()); i++) {
             Tet prev = Tet.tetrahedron(result.get(i - 1));
             Tet curr = Tet.tetrahedron(result.get(i));
-            
+
             // Allow some tolerance for mixed levels - general upward trend expected
-            assertTrue(curr.z() >= prev.z() - 100000, 
-                      "Should have generally increasing z-coordinates");
+            assertTrue(curr.z() >= prev.z() - 100000, "Should have generally increasing z-coordinates");
         }
     }
 }

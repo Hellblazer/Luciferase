@@ -50,17 +50,17 @@ public class OctreeVsTetreeBenchmark {
     private long benchmarkInsertion(Octree<LongEntityID, String> index, List<TestEntity> entities) {
         // Warmup
         for (int i = 0; i < Math.min(WARMUP_ITERATIONS, entities.size()); i++) {
-            TestEntity e = entities.get(i);
+            var e = entities.get(i);
             index.insert(e.id, e.position, TEST_LEVEL, e.data);
         }
         // Clear all entities
-        for (TestEntity e : entities.subList(0, Math.min(WARMUP_ITERATIONS, entities.size()))) {
+        for (var e : entities.subList(0, Math.min(WARMUP_ITERATIONS, entities.size()))) {
             index.removeEntity(e.id);
         }
 
         // Benchmark
-        long start = System.nanoTime();
-        for (TestEntity e : entities) {
+        var start = System.nanoTime();
+        for (var e : entities) {
             index.insert(e.id, e.position, TEST_LEVEL, e.data);
         }
         return System.nanoTime() - start;
@@ -69,27 +69,27 @@ public class OctreeVsTetreeBenchmark {
     private long benchmarkInsertion(Tetree<LongEntityID, String> index, List<TestEntity> entities) {
         // Warmup
         for (int i = 0; i < Math.min(WARMUP_ITERATIONS, entities.size()); i++) {
-            TestEntity e = entities.get(i);
+            var e = entities.get(i);
             index.insert(e.id, e.position, TEST_LEVEL, e.data);
         }
         // Clear all entities
-        for (TestEntity e : entities.subList(0, Math.min(WARMUP_ITERATIONS, entities.size()))) {
+        for (var e : entities.subList(0, Math.min(WARMUP_ITERATIONS, entities.size()))) {
             index.removeEntity(e.id);
         }
 
         // Benchmark
-        long start = System.nanoTime();
-        for (TestEntity e : entities) {
+        var start = System.nanoTime();
+        for (var e : entities) {
             index.insert(e.id, e.position, TEST_LEVEL, e.data);
         }
         return System.nanoTime() - start;
     }
 
     private long benchmarkKNN(Octree<LongEntityID, String> index, List<Point3f> queryPoints) {
-        long totalTime = 0;
+        var totalTime = 0L;
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            Point3f query = queryPoints.get(i % queryPoints.size());
-            long start = System.nanoTime();
+            var query = queryPoints.get(i % queryPoints.size());
+            var start = System.nanoTime();
             index.kNearestNeighbors(query, K_NEIGHBORS, Float.MAX_VALUE);
             totalTime += System.nanoTime() - start;
         }
@@ -97,10 +97,10 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkKNN(Tetree<LongEntityID, String> index, List<Point3f> queryPoints) {
-        long totalTime = 0;
+        var totalTime = 0L;
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            Point3f query = queryPoints.get(i % queryPoints.size());
-            long start = System.nanoTime();
+            var query = queryPoints.get(i % queryPoints.size());
+            var start = System.nanoTime();
             index.kNearestNeighbors(query, K_NEIGHBORS, Float.MAX_VALUE);
             totalTime += System.nanoTime() - start;
         }
@@ -108,10 +108,10 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkRangeQuery(Octree<LongEntityID, String> index, List<Point3f> queryPoints) {
-        long totalTime = 0;
+        var totalTime = 0L;
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            Point3f center = queryPoints.get(i % queryPoints.size());
-            long start = System.nanoTime();
+            var center = queryPoints.get(i % queryPoints.size());
+            var start = System.nanoTime();
             // Use k-NN with limited radius for range query
             index.kNearestNeighbors(center, Integer.MAX_VALUE, SEARCH_RADIUS);
             totalTime += System.nanoTime() - start;
@@ -120,10 +120,10 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkRangeQuery(Tetree<LongEntityID, String> index, List<Point3f> queryPoints) {
-        long totalTime = 0;
+        var totalTime = 0L;
         for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
-            Point3f center = queryPoints.get(i % queryPoints.size());
-            long start = System.nanoTime();
+            var center = queryPoints.get(i % queryPoints.size());
+            var start = System.nanoTime();
             // Use k-NN with limited radius for range query
             index.kNearestNeighbors(center, Integer.MAX_VALUE, SEARCH_RADIUS);
             totalTime += System.nanoTime() - start;
@@ -132,13 +132,13 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkRemoval(Octree<LongEntityID, String> index, List<TestEntity> entities) {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        int removals = Math.min(1000, entities.size());
-        long totalTime = 0;
+        var random = ThreadLocalRandom.current();
+        var removals = Math.min(1000, entities.size());
+        var totalTime = 0L;
 
         for (int i = 0; i < removals; i++) {
-            TestEntity e = entities.get(random.nextInt(entities.size()));
-            long start = System.nanoTime();
+            var e = entities.get(random.nextInt(entities.size()));
+            var start = System.nanoTime();
             index.removeEntity(e.id);
             totalTime += System.nanoTime() - start;
         }
@@ -146,13 +146,13 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkRemoval(Tetree<LongEntityID, String> index, List<TestEntity> entities) {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        int removals = Math.min(1000, entities.size());
-        long totalTime = 0;
+        var random = ThreadLocalRandom.current();
+        var removals = Math.min(1000, entities.size());
+        var totalTime = 0L;
 
         for (int i = 0; i < removals; i++) {
-            TestEntity e = entities.get(random.nextInt(entities.size()));
-            long start = System.nanoTime();
+            var e = entities.get(random.nextInt(entities.size()));
+            var start = System.nanoTime();
             index.removeEntity(e.id);
             totalTime += System.nanoTime() - start;
         }
@@ -160,15 +160,15 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkUpdate(Octree<LongEntityID, String> index, List<TestEntity> entities) {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        int updates = Math.min(1000, entities.size());
-        long totalTime = 0;
+        var random = ThreadLocalRandom.current();
+        var updates = Math.min(1000, entities.size());
+        var totalTime = 0L;
 
         for (int i = 0; i < updates; i++) {
-            TestEntity e = entities.get(random.nextInt(entities.size()));
+            var e = entities.get(random.nextInt(entities.size()));
             // Move within 5% of current position to stay within valid bounds
-            float moveRange = 50.0f; // 5% of 1000 max coordinate
-            Point3f newPos = new Point3f(e.position.x + random.nextFloat(-moveRange, moveRange),
+            var moveRange = 50.0f; // 5% of 1000 max coordinate
+            var newPos = new Point3f(e.position.x + random.nextFloat(-moveRange, moveRange),
                                          e.position.y + random.nextFloat(-moveRange, moveRange),
                                          e.position.z + random.nextFloat(-moveRange, moveRange));
             // Clamp to valid coordinate range [0.1, 999.9]
@@ -176,7 +176,7 @@ public class OctreeVsTetreeBenchmark {
             newPos.y = Math.max(0.1f, Math.min(999.9f, newPos.y));
             newPos.z = Math.max(0.1f, Math.min(999.9f, newPos.z));
 
-            long start = System.nanoTime();
+            var start = System.nanoTime();
             index.updateEntity(e.id, newPos, TEST_LEVEL);
             totalTime += System.nanoTime() - start;
         }
@@ -184,17 +184,17 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long benchmarkUpdate(Tetree<LongEntityID, String> index, List<TestEntity> entities) {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        int updates = Math.min(1000, entities.size());
-        long totalTime = 0;
+        var random = ThreadLocalRandom.current();
+        var updates = Math.min(1000, entities.size());
+        var totalTime = 0L;
 
         for (int i = 0; i < updates; i++) {
-            TestEntity e = entities.get(random.nextInt(entities.size()));
-            Point3f newPos = new Point3f(Math.max(0.1f, e.position.x + random.nextFloat(-10, 10)),
+            var e = entities.get(random.nextInt(entities.size()));
+            var newPos = new Point3f(Math.max(0.1f, e.position.x + random.nextFloat(-10, 10)),
                                          Math.max(0.1f, e.position.y + random.nextFloat(-10, 10)),
                                          Math.max(0.1f, e.position.z + random.nextFloat(-10, 10)));
 
-            long start = System.nanoTime();
+            var start = System.nanoTime();
             index.updateEntity(e.id, newPos, TEST_LEVEL);
             totalTime += System.nanoTime() - start;
         }
@@ -202,8 +202,8 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private List<TestEntity> generateEntities(int count) {
-        List<TestEntity> entities = new ArrayList<>(count);
-        ThreadLocalRandom random = ThreadLocalRandom.current();
+        var entities = new ArrayList<TestEntity>(count);
+        var random = ThreadLocalRandom.current();
 
         for (int i = 0; i < count; i++) {
             entities.add(new TestEntity(new LongEntityID(i),
@@ -214,8 +214,8 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private List<Point3f> generateQueryPoints(int count) {
-        List<Point3f> points = new ArrayList<>(count);
-        ThreadLocalRandom random = ThreadLocalRandom.current();
+        var points = new ArrayList<Point3f>(count);
+        var random = ThreadLocalRandom.current();
 
         for (int i = 0; i < count; i++) {
             points.add(new Point3f(random.nextFloat(0, 1000), random.nextFloat(0, 1000), random.nextFloat(0, 1000)));
@@ -224,36 +224,36 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private long getUsedMemory() {
-        Runtime runtime = Runtime.getRuntime();
+        var runtime = Runtime.getRuntime();
         return runtime.totalMemory() - runtime.freeMemory();
     }
 
     private void measureMemoryUsage(int entityCount) {
         System.gc();
-        long baseMemory = getUsedMemory();
+        var baseMemory = getUsedMemory();
 
         // Measure Octree memory
-        SequentialLongIDGenerator idGen1 = new SequentialLongIDGenerator();
-        Octree<LongEntityID, String> octree = new Octree<>(idGen1);
-        List<TestEntity> entities = generateEntities(entityCount);
-        for (TestEntity e : entities) {
+        var idGen1 = new SequentialLongIDGenerator();
+        var octree = new Octree<LongEntityID, String>(idGen1);
+        var entities = generateEntities(entityCount);
+        for (var e : entities) {
             octree.insert(e.id, e.position, TEST_LEVEL, e.data);
         }
         System.gc();
-        long octreeMemory = getUsedMemory() - baseMemory;
+        var octreeMemory = getUsedMemory() - baseMemory;
 
         // Clear and measure Tetree memory
         octree = null;
         System.gc();
         baseMemory = getUsedMemory();
 
-        SequentialLongIDGenerator idGen2 = new SequentialLongIDGenerator();
-        Tetree<LongEntityID, String> tetree = new Tetree<>(idGen2);
-        for (TestEntity e : entities) {
+        var idGen2 = new SequentialLongIDGenerator();
+        var tetree = new Tetree<LongEntityID, String>(idGen2);
+        for (var e : entities) {
             tetree.insert(e.id, e.position, TEST_LEVEL, e.data);
         }
         System.gc();
-        long tetreeMemory = getUsedMemory() - baseMemory;
+        var tetreeMemory = getUsedMemory() - baseMemory;
 
         System.out.printf("Octree Memory: %.2f MB%n", octreeMemory / 1024.0 / 1024.0);
         System.out.printf("Tetree Memory: %.2f MB (%.1f%% of Octree)%n", tetreeMemory / 1024.0 / 1024.0,
@@ -261,11 +261,11 @@ public class OctreeVsTetreeBenchmark {
     }
 
     private void printComparison(String operation, long octreeTime, long tetreeTime, int operations) {
-        double octreeMs = octreeTime / 1_000_000.0;
-        double tetreeMs = tetreeTime / 1_000_000.0;
-        double ratio = tetreeMs / octreeMs;
-        String winner = octreeTime < tetreeTime ? "Octree" : "Tetree";
-        double speedup = Math.max(octreeMs, tetreeMs) / Math.min(octreeMs, tetreeMs);
+        var octreeMs = octreeTime / 1_000_000.0;
+        var tetreeMs = tetreeTime / 1_000_000.0;
+        var ratio = tetreeMs / octreeMs;
+        var winner = octreeTime < tetreeTime ? "Octree" : "Tetree";
+        var speedup = Math.max(octreeMs, tetreeMs) / Math.min(octreeMs, tetreeMs);
 
         System.out.printf("Octree: %.3f ms%n", octreeMs);
         System.out.printf("Tetree: %.3f ms (%.2fx)%n", tetreeMs, ratio);
@@ -279,42 +279,42 @@ public class OctreeVsTetreeBenchmark {
 
     private void runComparison(int entityCount) {
         // Generate test data
-        List<TestEntity> entities = generateEntities(entityCount);
-        List<Point3f> queryPoints = generateQueryPoints(100);
+        var entities = generateEntities(entityCount);
+        var queryPoints = generateQueryPoints(100);
 
         // Create indices
-        SequentialLongIDGenerator idGen = new SequentialLongIDGenerator();
-        Octree<LongEntityID, String> octree = new Octree<>(idGen);
-        Tetree<LongEntityID, String> tetree = new Tetree<>(idGen);
+        var idGen = new SequentialLongIDGenerator();
+        var octree = new Octree<LongEntityID, String>(idGen);
+        var tetree = new Tetree<LongEntityID, String>(idGen);
 
         // 1. Insertion Performance
         System.out.println("\n1. INSERTION PERFORMANCE:");
-        long octreeInsertTime = benchmarkInsertion(octree, entities);
-        long tetreeInsertTime = benchmarkInsertion(tetree, entities);
+        var octreeInsertTime = benchmarkInsertion(octree, entities);
+        var tetreeInsertTime = benchmarkInsertion(tetree, entities);
         printComparison("Insertion", octreeInsertTime, tetreeInsertTime, entityCount);
 
         // 2. K-NN Search Performance
         System.out.println("\n2. K-NEAREST NEIGHBOR SEARCH:");
-        long octreeKnnTime = benchmarkKNN(octree, queryPoints);
-        long tetreeKnnTime = benchmarkKNN(tetree, queryPoints);
+        var octreeKnnTime = benchmarkKNN(octree, queryPoints);
+        var tetreeKnnTime = benchmarkKNN(tetree, queryPoints);
         printComparison("K-NN Search", octreeKnnTime, tetreeKnnTime, queryPoints.size());
 
         // 3. Range Query Performance
         System.out.println("\n3. RANGE QUERY PERFORMANCE:");
-        long octreeRangeTime = benchmarkRangeQuery(octree, queryPoints);
-        long tetreeRangeTime = benchmarkRangeQuery(tetree, queryPoints);
+        var octreeRangeTime = benchmarkRangeQuery(octree, queryPoints);
+        var tetreeRangeTime = benchmarkRangeQuery(tetree, queryPoints);
         printComparison("Range Query", octreeRangeTime, tetreeRangeTime, queryPoints.size());
 
         // 4. Update Performance
         System.out.println("\n4. UPDATE PERFORMANCE:");
-        long octreeUpdateTime = benchmarkUpdate(octree, entities);
-        long tetreeUpdateTime = benchmarkUpdate(tetree, entities);
+        var octreeUpdateTime = benchmarkUpdate(octree, entities);
+        var tetreeUpdateTime = benchmarkUpdate(tetree, entities);
         printComparison("Update", octreeUpdateTime, tetreeUpdateTime, Math.min(1000, entityCount));
 
         // 5. Removal Performance
         System.out.println("\n5. REMOVAL PERFORMANCE:");
-        long octreeRemoveTime = benchmarkRemoval(octree, entities);
-        long tetreeRemoveTime = benchmarkRemoval(tetree, entities);
+        var octreeRemoveTime = benchmarkRemoval(octree, entities);
+        var tetreeRemoveTime = benchmarkRemoval(tetree, entities);
         printComparison("Removal", octreeRemoveTime, tetreeRemoveTime, Math.min(1000, entityCount));
 
         // 6. Memory Usage

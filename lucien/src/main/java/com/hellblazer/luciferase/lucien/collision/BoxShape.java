@@ -56,13 +56,13 @@ public class BoxShape extends CollisionShape {
         }
 
         // Calculate overlap on each axis
-        float xOverlap = Math.min(bounds.getMaxX() - other.bounds.getMinX(), other.bounds.getMaxX() - bounds.getMinX());
-        float yOverlap = Math.min(bounds.getMaxY() - other.bounds.getMinY(), other.bounds.getMaxY() - bounds.getMinY());
-        float zOverlap = Math.min(bounds.getMaxZ() - other.bounds.getMinZ(), other.bounds.getMaxZ() - bounds.getMinZ());
+        var xOverlap = Math.min(bounds.getMaxX() - other.bounds.getMinX(), other.bounds.getMaxX() - bounds.getMinX());
+        var yOverlap = Math.min(bounds.getMaxY() - other.bounds.getMinY(), other.bounds.getMaxY() - bounds.getMinY());
+        var zOverlap = Math.min(bounds.getMaxZ() - other.bounds.getMinZ(), other.bounds.getMaxZ() - bounds.getMinZ());
 
         // Find minimum overlap axis (separation axis)
-        float minOverlap = xOverlap;
-        int axis = 0;
+        var minOverlap = xOverlap;
+        var axis = 0;
 
         if (yOverlap < minOverlap) {
             minOverlap = yOverlap;
@@ -75,8 +75,8 @@ public class BoxShape extends CollisionShape {
         }
 
         // Determine contact normal direction
-        Vector3f normal = new Vector3f();
-        Point3f contactPoint = new Point3f();
+        var normal = new Vector3f();
+        var contactPoint = new Point3f();
 
         switch (axis) {
             case 0 -> { // X-axis
@@ -126,34 +126,34 @@ public class BoxShape extends CollisionShape {
     @Override
     public CollisionResult collidesWithCapsule(CapsuleShape capsule) {
         // Find closest point on box to capsule's line segment
-        Point3f p1 = capsule.getEndpoint1();
-        Point3f p2 = capsule.getEndpoint2();
+        var p1 = capsule.getEndpoint1();
+        var p2 = capsule.getEndpoint2();
 
         // Clamp line segment to box
-        Point3f closest1 = getClosestPoint(p1);
-        Point3f closest2 = getClosestPoint(p2);
+        var closest1 = getClosestPoint(p1);
+        var closest2 = getClosestPoint(p2);
 
         // Find closest point on clamped segment
-        Point3f closestOnSegment = capsule.getClosestPointOnSegment(position);
-        Point3f closestOnBox = getClosestPoint(closestOnSegment);
+        var closestOnSegment = capsule.getClosestPointOnSegment(position);
+        var closestOnBox = getClosestPoint(closestOnSegment);
 
         // Check distance
-        Vector3f delta = new Vector3f();
+        var delta = new Vector3f();
         delta.sub(closestOnSegment, closestOnBox);
-        float distance = delta.length();
+        var distance = delta.length();
 
         if (distance > capsule.getRadius()) {
             return CollisionResult.noCollision();
         }
 
-        Vector3f normal = new Vector3f(delta);
+        var normal = new Vector3f(delta);
         if (distance > 0) {
             normal.scale(1.0f / distance);
         } else {
             normal = getClosestFaceNormal(closestOnSegment);
         }
 
-        float penetrationDepth = capsule.getRadius() - distance;
+        var penetrationDepth = capsule.getRadius() - distance;
 
         return CollisionResult.collision(closestOnBox, normal, penetrationDepth);
     }
@@ -167,25 +167,25 @@ public class BoxShape extends CollisionShape {
         // - 9 edge cross products (3 AABB edges × 3 OBB edges)
         
         // Get OBB properties
-        Matrix3f obbOrientation = obb.getOrientation();
-        Vector3f obbHalfExtents = obb.getHalfExtents();
+        var obbOrientation = obb.getOrientation();
+        var obbHalfExtents = obb.getHalfExtents();
         
         // Transform OBB center to AABB's local space (centered at AABB position)
-        Vector3f centerDiff = new Vector3f();
+        var centerDiff = new Vector3f();
         centerDiff.sub(obb.getPosition(), this.position);
         
         // We'll track the minimum penetration across all axes
-        float minPenetration = Float.MAX_VALUE;
-        Vector3f minPenetrationAxis = new Vector3f();
+        var minPenetration = Float.MAX_VALUE;
+        var minPenetrationAxis = new Vector3f();
         
         // Test AABB face normals (world axes)
-        for (int i = 0; i < 3; i++) {
-            Vector3f axis = new Vector3f();
+        for (var i = 0; i < 3; i++) {
+            var axis = new Vector3f();
             if (i == 0) axis.set(1, 0, 0);
             else if (i == 1) axis.set(0, 1, 0);
             else axis.set(0, 0, 1);
             
-            float penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
+            var penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
                                                   obbHalfExtents, obbOrientation);
             if (penetration < 0) {
                 return CollisionResult.noCollision();
@@ -198,11 +198,11 @@ public class BoxShape extends CollisionShape {
         }
         
         // Test OBB face normals
-        for (int i = 0; i < 3; i++) {
-            Vector3f axis = new Vector3f();
+        for (var i = 0; i < 3; i++) {
+            var axis = new Vector3f();
             obbOrientation.getColumn(i, axis);
             
-            float penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
+            var penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
                                                   obbHalfExtents, obbOrientation);
             if (penetration < 0) {
                 return CollisionResult.noCollision();
@@ -215,17 +215,17 @@ public class BoxShape extends CollisionShape {
         }
         
         // Test edge cross products
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                Vector3f aabbAxis = new Vector3f();
+        for (var i = 0; i < 3; i++) {
+            for (var j = 0; j < 3; j++) {
+                var aabbAxis = new Vector3f();
                 if (i == 0) aabbAxis.set(1, 0, 0);
                 else if (i == 1) aabbAxis.set(0, 1, 0);
                 else aabbAxis.set(0, 0, 1);
                 
-                Vector3f obbAxis = new Vector3f();
+                var obbAxis = new Vector3f();
                 obbOrientation.getColumn(j, obbAxis);
                 
-                Vector3f crossAxis = new Vector3f();
+                var crossAxis = new Vector3f();
                 crossAxis.cross(aabbAxis, obbAxis);
                 
                 // Skip if cross product is zero (parallel axes)
@@ -235,7 +235,7 @@ public class BoxShape extends CollisionShape {
                 
                 crossAxis.normalize();
                 
-                float penetration = testSeparatingAxis(crossAxis, centerDiff, this.halfExtents, 
+                var penetration = testSeparatingAxis(crossAxis, centerDiff, this.halfExtents, 
                                                       obbHalfExtents, obbOrientation);
                 if (penetration < 0) {
                     return CollisionResult.noCollision();
@@ -254,7 +254,7 @@ public class BoxShape extends CollisionShape {
         }
         
         // Calculate contact point
-        Point3f contactPoint = calculateContactPoint(this, obb, minPenetrationAxis, minPenetration);
+        var contactPoint = calculateContactPoint(this, obb, minPenetrationAxis, minPenetration);
         
         return CollisionResult.collision(contactPoint, minPenetrationAxis, minPenetration);
     }
@@ -262,9 +262,9 @@ public class BoxShape extends CollisionShape {
     @Override
     public CollisionResult collidesWithSphere(SphereShape sphere) {
         // Delegate to sphere implementation but flip the normal
-        CollisionResult result = sphere.collidesWithBox(this);
+        var result = sphere.collidesWithBox(this);
         if (result.collides) {
-            Vector3f flippedNormal = new Vector3f(result.contactNormal);
+            var flippedNormal = new Vector3f(result.contactNormal);
             flippedNormal.scale(-1);
             return CollisionResult.collision(result.contactPoint, flippedNormal, result.penetrationDepth);
         }
@@ -281,7 +281,7 @@ public class BoxShape extends CollisionShape {
      */
     public Vector3f getClosestFaceNormal(Point3f point) {
         // Find which face is closest
-        float[] distances = new float[6];
+        var distances = new float[6];
         distances[0] = point.x - bounds.getMinX(); // Left face
         distances[1] = bounds.getMaxX() - point.x; // Right face
         distances[2] = point.y - bounds.getMinY(); // Bottom face
@@ -289,9 +289,9 @@ public class BoxShape extends CollisionShape {
         distances[4] = point.z - bounds.getMinZ(); // Back face
         distances[5] = bounds.getMaxZ() - point.z; // Front face
 
-        int minIndex = 0;
-        float minDistance = distances[0];
-        for (int i = 1; i < 6; i++) {
+        var minIndex = 0;
+        var minDistance = distances[0];
+        for (var i = 1; i < 6; i++) {
             if (distances[i] < minDistance) {
                 minDistance = distances[i];
                 minIndex = i;
@@ -313,9 +313,9 @@ public class BoxShape extends CollisionShape {
      * Get the closest point on this box to a given point
      */
     public Point3f getClosestPoint(Point3f point) {
-        float x = Math.max(bounds.getMinX(), Math.min(point.x, bounds.getMaxX()));
-        float y = Math.max(bounds.getMinY(), Math.min(point.y, bounds.getMaxY()));
-        float z = Math.max(bounds.getMinZ(), Math.min(point.z, bounds.getMaxZ()));
+        var x = Math.max(bounds.getMinX(), Math.min(point.x, bounds.getMaxX()));
+        var y = Math.max(bounds.getMinY(), Math.min(point.y, bounds.getMaxY()));
+        var z = Math.max(bounds.getMinZ(), Math.min(point.z, bounds.getMaxZ()));
         return new Point3f(x, y, z);
     }
 
@@ -325,7 +325,7 @@ public class BoxShape extends CollisionShape {
 
     @Override
     public Point3f getSupport(Vector3f direction) {
-        Point3f support = new Point3f(position);
+        var support = new Point3f(position);
 
         support.x += (direction.x >= 0) ? halfExtents.x : -halfExtents.x;
         support.y += (direction.y >= 0) ? halfExtents.y : -halfExtents.y;
@@ -336,15 +336,15 @@ public class BoxShape extends CollisionShape {
 
     @Override
     public RayIntersectionResult intersectRay(Ray3D ray) {
-        float tmin = 0.0f;
-        float tmax = ray.maxDistance();
+        var tmin = 0.0f;
+        var tmax = ray.maxDistance();
 
         // For each axis
-        for (int i = 0; i < 3; i++) {
-            float origin = getComponent(ray.origin(), i);
-            float direction = getComponent(ray.direction(), i);
-            float min = getComponent(bounds, i, true);
-            float max = getComponent(bounds, i, false);
+        for (var i = 0; i < 3; i++) {
+            var origin = getComponent(ray.origin(), i);
+            var direction = getComponent(ray.direction(), i);
+            var min = getComponent(bounds, i, true);
+            var max = getComponent(bounds, i, false);
 
             if (Math.abs(direction) < 1e-6f) {
                 // Ray is parallel to slab
@@ -353,11 +353,11 @@ public class BoxShape extends CollisionShape {
                 }
             } else {
                 // Compute intersection distances
-                float t1 = (min - origin) / direction;
-                float t2 = (max - origin) / direction;
+                var t1 = (min - origin) / direction;
+                var t2 = (max - origin) / direction;
 
                 if (t1 > t2) {
-                    float temp = t1;
+                    var temp = t1;
                     t1 = t2;
                     t2 = temp;
                 }
@@ -371,8 +371,8 @@ public class BoxShape extends CollisionShape {
             }
         }
 
-        Point3f intersectionPoint = ray.pointAt(tmin);
-        Vector3f normal = calculateRayIntersectionNormal(intersectionPoint);
+        var intersectionPoint = ray.pointAt(tmin);
+        var normal = calculateRayIntersectionNormal(intersectionPoint);
 
         return RayIntersectionResult.intersection(tmin, intersectionPoint, normal);
     }
@@ -381,8 +381,8 @@ public class BoxShape extends CollisionShape {
     public void translate(Vector3f delta) {
         position.add(delta);
         // Update bounds
-        Point3f min = new Point3f(bounds.getMinX() + delta.x, bounds.getMinY() + delta.y, bounds.getMinZ() + delta.z);
-        Point3f max = new Point3f(bounds.getMaxX() + delta.x, bounds.getMaxY() + delta.y, bounds.getMaxZ() + delta.z);
+        var min = new Point3f(bounds.getMinX() + delta.x, bounds.getMinY() + delta.y, bounds.getMinZ() + delta.z);
+        var max = new Point3f(bounds.getMaxX() + delta.x, bounds.getMaxY() + delta.y, bounds.getMaxZ() + delta.z);
         this.bounds = new EntityBounds(min, max);
     }
 
@@ -393,7 +393,7 @@ public class BoxShape extends CollisionShape {
 
     private Vector3f calculateRayIntersectionNormal(Point3f intersectionPoint) {
         // Determine which face was hit based on position
-        float epsilon = 0.001f;
+        var epsilon = 0.001f;
 
         if (Math.abs(intersectionPoint.x - bounds.getMinX()) < epsilon) {
             return new Vector3f(-1, 0, 0);
@@ -447,24 +447,24 @@ public class BoxShape extends CollisionShape {
     private float testSeparatingAxis(Vector3f axis, Vector3f centerDiff, Vector3f aabbHalfExtents,
                                    Vector3f obbHalfExtents, Matrix3f obbOrientation) {
         // Project center distance onto axis
-        float separation = Math.abs(axis.dot(centerDiff));
+        var separation = Math.abs(axis.dot(centerDiff));
         
         // Project AABB onto axis (AABB is axis-aligned, so this is simple)
-        float aabbProjection = Math.abs(axis.x) * aabbHalfExtents.x +
+        var aabbProjection = Math.abs(axis.x) * aabbHalfExtents.x +
                               Math.abs(axis.y) * aabbHalfExtents.y +
                               Math.abs(axis.z) * aabbHalfExtents.z;
         
         // Project OBB onto axis
-        float obbProjection = 0;
-        for (int i = 0; i < 3; i++) {
-            Vector3f obbAxis = new Vector3f();
+        var obbProjection = 0f;
+        for (var i = 0; i < 3; i++) {
+            var obbAxis = new Vector3f();
             obbOrientation.getColumn(i, obbAxis);
-            float halfExtent = (i == 0) ? obbHalfExtents.x : (i == 1) ? obbHalfExtents.y : obbHalfExtents.z;
+            var halfExtent = (i == 0) ? obbHalfExtents.x : (i == 1) ? obbHalfExtents.y : obbHalfExtents.z;
             obbProjection += Math.abs(axis.dot(obbAxis)) * halfExtent;
         }
         
         // Check for separation
-        float totalProjection = aabbProjection + obbProjection;
+        var totalProjection = aabbProjection + obbProjection;
         if (separation > totalProjection) {
             return -1; // Separated
         }
@@ -479,11 +479,11 @@ public class BoxShape extends CollisionShape {
     private Point3f calculateContactPoint(BoxShape aabb, OrientedBoxShape obb, 
                                         Vector3f collisionNormal, float penetration) {
         // Get the closest points on each box along the collision normal
-        Point3f aabbPoint = new Point3f(aabb.position);
-        Point3f obbPoint = new Point3f(obb.getPosition());
+        var aabbPoint = new Point3f(aabb.position);
+        var obbPoint = new Point3f(obb.getPosition());
         
         // Move along normal to find approximate contact
-        Vector3f offset = new Vector3f(collisionNormal);
+        var offset = new Vector3f(collisionNormal);
         offset.scale(penetration * 0.5f);
         
         // The contact point is between the two shapes

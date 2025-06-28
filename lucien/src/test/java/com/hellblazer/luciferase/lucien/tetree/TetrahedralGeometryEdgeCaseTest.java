@@ -20,9 +20,9 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testBoundaryPrecision() {
         // Test numerical precision at boundaries
-        Tet tet = new Tet(900, 900, 900, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
-        Point3i[] coords = tet.coordinates();
+        var tet = new Tet(900, 900, 900, (byte) 10, (byte) 0);
+        var tetKey = tet.tmIndex();
+        var coords = tet.coordinates();
 
         // Debug: print actual coordinates
         System.out.println("Tetrahedron at (900,900,900) level 10 type 0:");
@@ -32,7 +32,7 @@ public class TetrahedralGeometryEdgeCaseTest {
 
         // Check if the tetrahedron contains any positive-space vertices
         boolean hasPositiveVertex = false;
-        for (Point3i v : coords) {
+        for (var v : coords) {
             if (v.x >= 0 && v.y >= 0 && v.z >= 0) {
                 hasPositiveVertex = true;
                 break;
@@ -46,9 +46,9 @@ public class TetrahedralGeometryEdgeCaseTest {
         }
 
         // Test a simple ray that should intersect
-        Point3f rayOrigin = new Point3f(850, 900, 900);
-        Vector3f rayDir = new Vector3f(1, 0, 0);
-        Ray3D ray = new Ray3D(rayOrigin, rayDir);
+        var rayOrigin = new Point3f(850, 900, 900);
+        var rayDir = new Vector3f(1, 0, 0);
+        var ray = new Ray3D(rayOrigin, rayDir);
 
         var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetKey);
 
@@ -58,8 +58,8 @@ public class TetrahedralGeometryEdgeCaseTest {
 
     @Test
     void testDegenerateRay() {
-        Tet tet = new Tet(700, 700, 700, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tet = new Tet(700, 700, 700, (byte) 10, (byte) 0);
+        var tetKey = tet.tmIndex();
 
         // Zero direction vector (should be rejected by Ray3D constructor)
         assertThrows(IllegalArgumentException.class, () -> {
@@ -67,9 +67,9 @@ public class TetrahedralGeometryEdgeCaseTest {
         });
 
         // Very small but non-zero direction
-        Vector3f tinyDirection = new Vector3f(EPSILON / 2, 0, 0);
+        var tinyDirection = new Vector3f(EPSILON / 2, 0, 0);
         tinyDirection.normalize();
-        Ray3D tinyRay = new Ray3D(new Point3f(0, 0, 0), tinyDirection);
+        var tinyRay = new Ray3D(new Point3f(0, 0, 0), tinyDirection);
 
         var result = TetrahedralGeometry.rayIntersectsTetrahedron(tinyRay, tetKey);
         assertNotNull(result);
@@ -78,19 +78,19 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testEnhancedVsStandardConsistency() {
         // Verify enhanced implementation gives same results as standard
-        Tet tet = new Tet(1000, 1000, 1000, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tet = new Tet(1000, 1000, 1000, (byte) 10, (byte) 0);
+        var tetKey = tet.tmIndex();
 
         // Test various ray configurations
-        Point3f[] origins = { new Point3f(950, 1000, 1000), new Point3f(1050, 1050, 1050), new Point3f(1000, 950, 1100),
+        var origins = new Point3f[] { new Point3f(950, 1000, 1000), new Point3f(1050, 1050, 1050), new Point3f(1000, 950, 1100),
                               new Point3f(900, 900, 900) };
 
-        Vector3f[] directions = { new Vector3f(1, 0, 0), new Vector3f(-1, -1, -1), new Vector3f(0, 1, -1), new Vector3f(
+        var directions = new Vector3f[] { new Vector3f(1, 0, 0), new Vector3f(-1, -1, -1), new Vector3f(0, 1, -1), new Vector3f(
         1, 1, 1) };
 
         for (int i = 0; i < origins.length; i++) {
             directions[i].normalize();
-            Ray3D ray = new Ray3D(origins[i], directions[i]);
+            var ray = new Ray3D(origins[i], directions[i]);
 
             // Test standard implementation
             var standardResult = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetKey);

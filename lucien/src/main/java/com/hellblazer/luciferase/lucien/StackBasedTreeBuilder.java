@@ -77,8 +77,8 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
      */
     public BuildResult buildTree(AbstractSpatialIndex<Key, ID, Content, NodeType> index, List<Point3f> positions,
                                  List<Content> contents, byte startLevel) {
-        long startTime = System.currentTimeMillis();
-        Map<String, Long> phaseTimes = new HashMap<>();
+        var startTime = System.currentTimeMillis();
+        var phaseTimes = new HashMap<String, Long>();
 
         // Clear previous build state
         insertedIds.clear();
@@ -87,8 +87,8 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         maxDepthReached = 0;
 
         // Phase 1: Prepare entities
-        long phaseStart = System.currentTimeMillis();
-        List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities = prepareEntities(index, positions,
+        var phaseStart = System.currentTimeMillis();
+        var mortonEntities = prepareEntities(index, positions,
                                                                                               contents, startLevel);
         phaseTimes.put("preparation", System.currentTimeMillis() - phaseStart);
 
@@ -113,7 +113,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         }
         phaseTimes.put("construction", System.currentTimeMillis() - phaseStart);
 
-        long totalTime = System.currentTimeMillis() - startTime;
+        var totalTime = System.currentTimeMillis() - startTime;
 
         return new BuildResult<>(nodesCreated.get(), entitiesProcessed.get(), totalTime, maxDepthReached, phaseTimes,
                                  insertedIds);
@@ -134,33 +134,33 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         }
 
         // Phase 1: Find the maximum level needed (leaf level)
-        byte maxLevel = startLevel;
-        Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> leafNodes = new HashMap<>();
+        var maxLevel = startLevel;
+        var leafNodes = new HashMap<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>>();
         
         // Group entities by their leaf nodes
-        for (BulkOperationProcessor.SfcEntity<Key, Content> entity : entities) {
+        for (var entity : entities) {
             // Find the deepest level where this entity would be placed
-            byte entityLevel = determineEntityLevel(index, entity.position, startLevel);
+            var entityLevel = determineEntityLevel(index, entity.position, startLevel);
             maxLevel = (byte) Math.max(maxLevel, entityLevel);
             
-            Key leafIndex = index.calculateSpatialIndex(entity.position, entityLevel);
+            var leafIndex = index.calculateSpatialIndex(entity.position, entityLevel);
             leafNodes.computeIfAbsent(leafIndex, k -> new ArrayList<>()).add(entity);
         }
         
         // Phase 2: Create all leaf nodes
-        for (Map.Entry<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> entry : leafNodes.entrySet()) {
-            Key nodeIndex = entry.getKey();
-            List<BulkOperationProcessor.SfcEntity<Key, Content>> nodeEntities = entry.getValue();
+        for (var entry : leafNodes.entrySet()) {
+            var nodeIndex = entry.getKey();
+            var nodeEntities = entry.getValue();
             
             // Create the node and insert entities
-            NodeType node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
+            var node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
                 nodesCreated.incrementAndGet();
                 return index.createNode();
             });
             
             // Add entities to the node
-            for (BulkOperationProcessor.SfcEntity<Key, Content> entity : nodeEntities) {
-                ID id = index.getEntityManager().generateEntityId();
+            for (var entity : nodeEntities) {
+                var id = index.getEntityManager().generateEntityId();
                 if (config.isTrackInsertedIds()) {
                     insertedIds.add(id);
                 }
@@ -174,18 +174,18 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         }
         
         // Phase 3: Build internal nodes from bottom to top
-        Set<Key> currentLevelNodes = new HashSet<>(leafNodes.keySet());
-        byte currentLevel = maxLevel;
+        var currentLevelNodes = new HashSet<>(leafNodes.keySet());
+        var currentLevel = maxLevel;
         
         while (currentLevel > startLevel && !currentLevelNodes.isEmpty()) {
-            Set<Key> parentNodes = new HashSet<>();
+            var parentNodes = new HashSet<Key>();
             
             // For each node at current level, ensure its parent exists
-            for (Key childIndex : currentLevelNodes) {
-                Key parentIndex = childIndex.parent();
+            for (var childIndex : currentLevelNodes) {
+                var parentIndex = childIndex.parent();
                 if (parentIndex != null && !index.getSpatialIndex().containsKey(parentIndex)) {
                     // Create parent node
-                    NodeType parentNode = index.createNode();
+                    var parentNode = index.createNode();
                     index.getSpatialIndex().put(parentIndex, parentNode);
                     index.getSortedSpatialIndices().add(parentIndex);
                     nodesCreated.incrementAndGet();
@@ -223,23 +223,23 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         }
 
         // Determine the bulk loading level (typically a few levels down from root)
-        byte bulkLoadLevel = (byte) Math.min(startLevel + 3, index.getMaxDepth() - 2);
+        var bulkLoadLevel = (byte) Math.min(startLevel + 3, index.getMaxDepth() - 2);
         
         // Phase 1: Bulk load entities at the bulk load level
-        Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> bulkNodes = new HashMap<>();
+        var bulkNodes = new HashMap<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>>();
         
         // Group entities by their bulk load level nodes
-        for (BulkOperationProcessor.SfcEntity<Key, Content> entity : entities) {
-            Key bulkIndex = index.calculateSpatialIndex(entity.position, bulkLoadLevel);
+        for (var entity : entities) {
+            var bulkIndex = index.calculateSpatialIndex(entity.position, bulkLoadLevel);
             bulkNodes.computeIfAbsent(bulkIndex, k -> new ArrayList<>()).add(entity);
         }
         
         // Phase 2: Create bulk nodes and process their contents
-        Deque<BuildStackFrame<Key, ID, Content>> stack = new ArrayDeque<>();
+        var stack = new ArrayDeque<BuildStackFrame<Key, ID, Content>>();
         
-        for (Map.Entry<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> entry : bulkNodes.entrySet()) {
-            Key nodeIndex = entry.getKey();
-            List<BulkOperationProcessor.SfcEntity<Key, Content>> nodeEntities = entry.getValue();
+        for (var entry : bulkNodes.entrySet()) {
+            var nodeIndex = entry.getKey();
+            var nodeEntities = entry.getValue();
             
             // If this bulk node has too many entities, use top-down subdivision
             if (nodeEntities.size() > index.getMaxEntitiesPerNode() && bulkLoadLevel < index.getMaxDepth()) {
@@ -273,13 +273,13 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     private void createAndPopulateNode(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
                                       Key nodeIndex, 
                                       List<BulkOperationProcessor.SfcEntity<Key, Content>> entities) {
-        NodeType node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
+        var node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
             nodesCreated.incrementAndGet();
             return index.createNode();
         });
         
-        for (BulkOperationProcessor.SfcEntity<Key, Content> entity : entities) {
-            ID id = index.getEntityManager().generateEntityId();
+        for (var entity : entities) {
+            var id = index.getEntityManager().generateEntityId();
             if (config.isTrackInsertedIds()) {
                 insertedIds.add(id);
             }
@@ -301,7 +301,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         while (!stack.isEmpty()) {
             if (stack.size() > config.getMaxStackDepth()) {
                 log.debug("Hybrid builder: Stack depth exceeded {}, processing in batches", config.getMaxStackDepth());
-                int batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
+                var batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
                 for (int i = 0; i < batchSize && !stack.isEmpty(); i++) {
                     var frame = stack.pop();
                     processSingleFrame(index, frame, stack);
@@ -323,16 +323,16 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
      */
     private void buildInternalNodesUpward(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
                                          Set<Key> childNodes, byte fromLevel, byte toLevel) {
-        Set<Key> currentLevelNodes = new HashSet<>(childNodes);
-        byte currentLevel = fromLevel;
+        var currentLevelNodes = new HashSet<>(childNodes);
+        var currentLevel = fromLevel;
         
         while (currentLevel > toLevel && !currentLevelNodes.isEmpty()) {
-            Set<Key> parentNodes = new HashSet<>();
+            var parentNodes = new HashSet<Key>();
             
-            for (Key childIndex : currentLevelNodes) {
-                Key parentIndex = childIndex.parent();
+            for (var childIndex : currentLevelNodes) {
+                var parentIndex = childIndex.parent();
                 if (parentIndex != null && !index.getSpatialIndex().containsKey(parentIndex)) {
-                    NodeType parentNode = index.createNode();
+                    var parentNode = index.createNode();
                     index.getSpatialIndex().put(parentIndex, parentNode);
                     index.getSortedSpatialIndices().add(parentIndex);
                     nodesCreated.incrementAndGet();
@@ -361,9 +361,9 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         }
 
         // Initialize stack with root frame
-        Deque<BuildStackFrame<Key, ID, Content>> stack = new ArrayDeque<>();
+        var stack = new ArrayDeque<BuildStackFrame<Key, ID, Content>>();
         // Get the root key for this spatial index type
-        Key rootKey = entities.get(0).sfcIndex.root();
+        var rootKey = entities.get(0).sfcIndex.root();
         stack.push(new BuildStackFrame<>(rootKey, startLevel, entities, 0, entities.size(), BuildPhase.PROCESS_NODE));
 
         // Process stack
@@ -373,7 +373,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                 log.debug("StackBasedTreeBuilder: Stack depth exceeded {}, processing remaining {} frames in batches",
                           config.getMaxStackDepth(), stack.size());
                 // Process frames in smaller batches to avoid stack overflow
-                int batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
+                var batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
                 for (int i = 0; i < batchSize && !stack.isEmpty(); i++) {
                     var frame = stack.pop();
                     processSingleFrame(index, frame, stack);
@@ -412,23 +412,23 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                                 Deque<BuildStackFrame<Key, ID, Content>> stack) {
 
         // Group entities by child node
-        Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> childGroups = groupByChildNode(index, frame);
+        var childGroups = groupByChildNode(index, frame);
 
         // Debug output for large builds
         if (frame.getEntityCount() > 1000) {
             log.debug("StackBasedTreeBuilder.createChildren: frame has {} entities, created {} child groups",
                       frame.getEntityCount(), childGroups.size());
-            for (Map.Entry<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> entry : childGroups.entrySet()) {
+            for (var entry : childGroups.entrySet()) {
                 log.debug("  Child {}: {} entities", entry.getKey(), entry.getValue().size());
             }
         }
 
         // Create frames for each child (in reverse order for DFS)
-        List<Key> childIndices = new ArrayList<>(childGroups.keySet());
+        var childIndices = new ArrayList<>(childGroups.keySet());
         Collections.reverse(childIndices);
 
-        for (Key childIndex : childIndices) {
-            List<BulkOperationProcessor.SfcEntity<Key, Content>> childEntities = childGroups.get(childIndex);
+        for (var childIndex : childIndices) {
+            var childEntities = childGroups.get(childIndex);
             if (!childEntities.isEmpty()) {
                 stack.push(
                 new BuildStackFrame<>(childIndex, (byte) (frame.level + 1), childEntities, 0, childEntities.size(),
@@ -447,7 +447,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     private void finalizeNode(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
                               BuildStackFrame<Key, ID, Content> frame) {
         // Mark node as having children if applicable
-        NodeType node = index.getSpatialIndex().get(frame.nodeIndex);
+        var node = index.getSpatialIndex().get(frame.nodeIndex);
         if (node != null && node instanceof AbstractSpatialNode) {
             ((AbstractSpatialNode<ID>) node).setHasChildren(true);
         }
@@ -459,11 +459,11 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     private Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> groupByChildNode(
     AbstractSpatialIndex<Key, ID, Content, NodeType> index, BuildStackFrame<Key, ID, Content> frame) {
 
-        Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> groups = new HashMap<>();
-        byte childLevel = (byte) (frame.level + 1);
+        var groups = new HashMap<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>>();
+        var childLevel = (byte) (frame.level + 1);
 
-        for (int i = frame.startIdx; i < frame.endIdx; i++) {
-            BulkOperationProcessor.SfcEntity<Key, Content> entity = frame.entities.get(i);
+        for (var i = frame.startIdx; i < frame.endIdx; i++) {
+            var entity = frame.entities.get(i);
 
             // Calculate child node index
             var childIndex = index.calculateSpatialIndex(entity.position, childLevel);
@@ -486,11 +486,11 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         });
 
         // Add entities to node
-        for (int i = frame.startIdx; i < frame.endIdx; i++) {
-            BulkOperationProcessor.SfcEntity<Key, Content> entity = frame.entities.get(i);
+        for (var i = frame.startIdx; i < frame.endIdx; i++) {
+            var entity = frame.entities.get(i);
 
             // Generate ID for entity
-            ID id = index.getEntityManager().generateEntityId();
+            var id = index.getEntityManager().generateEntityId();
 
             // Track inserted ID (only if configured to do so)
             if (config.isTrackInsertedIds()) {
@@ -520,11 +520,11 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     AbstractSpatialIndex<Key, ID, Content, NodeType> index, List<Point3f> positions, List<Content> contents,
     byte level) {
 
-        List<BulkOperationProcessor.SfcEntity<Key, Content>> entities = new ArrayList<>(positions.size());
+        var entities = new ArrayList<BulkOperationProcessor.SfcEntity<Key, Content>>(positions.size());
 
-        for (int i = 0; i < positions.size(); i++) {
-            Point3f pos = positions.get(i);
-            Content content = contents.get(i);
+        for (var i = 0; i < positions.size(); i++) {
+            var pos = positions.get(i);
+            var content = contents.get(i);
 
             // Calculate Morton code
             var mortonCode = index.calculateSpatialIndex(pos, level);
@@ -546,20 +546,20 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     private void processNode(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
                              BuildStackFrame<Key, ID, Content> frame, Deque<BuildStackFrame<Key, ID, Content>> stack) {
 
-        int entityCount = frame.getEntityCount();
+        var entityCount = frame.getEntityCount();
 
         // Update max depth
         maxDepthReached = Math.max(maxDepthReached, frame.level);
 
         // Get adaptive subdivision threshold if enabled
-        int subdivisionThreshold = config.getMinEntitiesForSubdivision();
+        var subdivisionThreshold = config.getMinEntitiesForSubdivision();
         if (config.isUseAdaptiveSubdivision()) {
             subdivisionThreshold = LevelSelector.getAdaptiveSubdivisionThreshold(frame.level,
                                                                                  config.getMinEntitiesForSubdivision());
         }
 
         // Check if we should subdivide
-        boolean shouldSubdivide = entityCount > index.getMaxEntitiesPerNode() && frame.level < index.getMaxDepth()
+        var shouldSubdivide = entityCount > index.getMaxEntitiesPerNode() && frame.level < index.getMaxDepth()
         && entityCount >= subdivisionThreshold;
 
         // Debug output for large builds
@@ -758,7 +758,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     private byte determineEntityLevel(AbstractSpatialIndex<Key, ID, Content, NodeType> index, 
                                      Point3f position, byte startLevel) {
         // Start at the given level and potentially go deeper based on density
-        byte level = startLevel;
+        var level = startLevel;
         
         // Simple heuristic: use adaptive level selection if available
         if (config.isUseAdaptiveSubdivision()) {

@@ -103,17 +103,17 @@ public class ParallelProcessingBenchmark {
         System.out.println("\n=== Parallel Scaling Benchmarks ===\n");
         
         // Test with moderate sizes to avoid memory issues
-        int[] testSizes = {10_000, 50_000, 100_000, 250_000};
-        int[] threadCounts = {1, 2, 4, 8, Math.min(16, AVAILABLE_CORES), AVAILABLE_CORES};
+        var testSizes = new int[]{10_000, 50_000, 100_000, 250_000};
+        var threadCounts = new int[]{1, 2, 4, 8, Math.min(16, AVAILABLE_CORES), AVAILABLE_CORES};
         
         for (int size : testSizes) {
             System.out.printf("\n--- Testing with %,d entities ---\n", size);
             
-            List<Point3f> positions = generateUniformTestData(size);
-            List<String> contents = generateContents(size);
+            var positions = generateUniformTestData(size);
+            var contents = generateContents(size);
             
             // Establish baseline with single thread
-            long baseline = benchmarkSingleThreaded(positions, contents);
+            var baseline = benchmarkSingleThreaded(positions, contents);
             baselineDurations.put(size, baseline);
             
             // Test scaling with different thread counts
@@ -133,16 +133,16 @@ public class ParallelProcessingBenchmark {
     void benchmarkWorkStealingVsFixedPool() {
         System.out.println("\n=== Work-Stealing vs Fixed Thread Pool ===\n");
         
-        int[] testSizes = {10_000, 50_000, 100_000, 250_000};
+        var testSizes = new int[]{10_000, 50_000, 100_000, 250_000};
         
         for (int size : testSizes) {
             System.out.printf("\n--- Testing with %,d entities ---\n", size);
             
-            List<Point3f> positions = generateUniformTestData(size);
-            List<String> contents = generateContents(size);
+            var positions = generateUniformTestData(size);
+            var contents = generateContents(size);
             
             // Get baseline
-            long baseline = baselineDurations.computeIfAbsent(size, 
+            var baseline = baselineDurations.computeIfAbsent(size, 
                 k -> benchmarkSingleThreaded(positions, contents));
             
             // Test work-stealing pool
@@ -159,7 +159,7 @@ public class ParallelProcessingBenchmark {
     void benchmarkSpatialPartitioning() {
         System.out.println("\n=== Spatial Partitioning Effectiveness ===\n");
         
-        int testSize = 200_000;
+        var testSize = 200_000;
         
         // Test different data distributions
         testSpatialPartitioning("Uniform", generateUniformTestData(testSize));
@@ -172,9 +172,9 @@ public class ParallelProcessingBenchmark {
     void benchmarkLockContention() {
         System.out.println("\n=== Lock Contention Analysis ===\n");
         
-        int testSize = 200_000;
-        List<Point3f> positions = generateClusteredTestData(testSize); // Worst case for contention
-        List<String> contents = generateContents(testSize);
+        var testSize = 200_000;
+        var positions = generateClusteredTestData(testSize); // Worst case for contention
+        var contents = generateContents(testSize);
         
         System.out.println("Testing with clustered data (high contention scenario):");
         
@@ -188,23 +188,23 @@ public class ParallelProcessingBenchmark {
     private long benchmarkSingleThreaded(List<Point3f> positions, List<String> contents) {
         // Warmup
         for (int i = 0; i < WARMUP_ROUNDS; i++) {
-            Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+            var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
             octree.insertBatch(positions, contents, DEFAULT_LEVEL);
         }
         
         // Measurement
-        long totalDuration = 0;
+        var totalDuration = 0L;
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
-            Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+            var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
             
-            long start = System.nanoTime();
+            var start = System.nanoTime();
             octree.insertBatch(positions, contents, DEFAULT_LEVEL);
             totalDuration += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
         }
         
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
         
-        ParallelBenchmarkResult result = new ParallelBenchmarkResult(
+        var result = new ParallelBenchmarkResult(
             "Single-threaded baseline", 1, avgDuration, positions.size(), avgDuration, 0);
         results.add(result);
         System.out.println(result);
@@ -214,10 +214,10 @@ public class ParallelProcessingBenchmark {
     
     private void benchmarkParallelInsertion(int threadCount, List<Point3f> positions, 
                                           List<String> contents, long baseline) {
-        String testName = String.format("Parallel insertion", threadCount);
+        var testName = String.format("Parallel insertion", threadCount);
         
         // Configure parallel operations
-        ParallelBulkOperations.ParallelConfig config = new ParallelBulkOperations.ParallelConfig()
+        var config = new ParallelBulkOperations.ParallelConfig()
             .withThreadCount(threadCount)
             .withBatchSize(1000)
             .withWorkStealing(true);
@@ -228,67 +228,67 @@ public class ParallelProcessingBenchmark {
         }
         
         // Measurement
-        long totalDuration = 0;
-        long totalLockTime = 0;
+        var totalDuration = 0L;
+        var totalLockTime = 0L;
         
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
-            ParallelBulkOperations.ParallelOperationResult<LongEntityID> result = 
+            var result = 
                 runParallelInsertion(positions, contents, config);
             
             totalDuration += result.getTotalTime();
             totalLockTime += result.getTimings().getOrDefault("lockWait", 0L);
         }
         
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
-        long avgLockTime = totalLockTime / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgLockTime = totalLockTime / MEASUREMENT_ROUNDS;
         
-        ParallelBenchmarkResult benchResult = new ParallelBenchmarkResult(
+        var benchResult = new ParallelBenchmarkResult(
             testName, threadCount, avgDuration, positions.size(), baseline, avgLockTime);
         results.add(benchResult);
         System.out.println(benchResult);
     }
     
     private void benchmarkWorkStealingPool(List<Point3f> positions, List<String> contents, long baseline) {
-        String testName = "Work-stealing pool";
+        var testName = "Work-stealing pool";
         
-        ParallelBulkOperations.ParallelConfig config = ParallelBulkOperations.highPerformanceConfig()
+        var config = ParallelBulkOperations.highPerformanceConfig()
             .withThreadCount(AVAILABLE_CORES)
             .withWorkStealing(true);
         
-        long totalDuration = 0;
+        var totalDuration = 0L;
         
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
-            ParallelBulkOperations.ParallelOperationResult<LongEntityID> result = 
+            var result = 
                 runParallelInsertion(positions, contents, config);
             totalDuration += result.getTotalTime();
         }
         
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
         
-        ParallelBenchmarkResult benchResult = new ParallelBenchmarkResult(
+        var benchResult = new ParallelBenchmarkResult(
             testName, AVAILABLE_CORES, avgDuration, positions.size(), baseline, 0);
         results.add(benchResult);
         System.out.println(benchResult);
     }
     
     private void benchmarkFixedThreadPool(List<Point3f> positions, List<String> contents, long baseline) {
-        String testName = "Fixed thread pool";
+        var testName = "Fixed thread pool";
         
-        ParallelBulkOperations.ParallelConfig config = ParallelBulkOperations.highPerformanceConfig()
+        var config = ParallelBulkOperations.highPerformanceConfig()
             .withThreadCount(AVAILABLE_CORES)
             .withWorkStealing(false);
         
-        long totalDuration = 0;
+        var totalDuration = 0L;
         
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
-            ParallelBulkOperations.ParallelOperationResult<LongEntityID> result = 
+            var result = 
                 runParallelInsertion(positions, contents, config);
             totalDuration += result.getTotalTime();
         }
         
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
         
-        ParallelBenchmarkResult benchResult = new ParallelBenchmarkResult(
+        var benchResult = new ParallelBenchmarkResult(
             testName, AVAILABLE_CORES, avgDuration, positions.size(), baseline, 0);
         results.add(benchResult);
         System.out.println(benchResult);
@@ -297,14 +297,14 @@ public class ParallelProcessingBenchmark {
     private void testSpatialPartitioning(String distribution, List<Point3f> positions) {
         System.out.printf("\n%s distribution:\n", distribution);
         
-        List<String> contents = generateContents(positions.size());
-        long baseline = benchmarkSingleThreaded(positions, contents);
+        var contents = generateContents(positions.size());
+        var baseline = benchmarkSingleThreaded(positions, contents);
         
         // Test with spatial partitioning
-        ParallelBulkOperations.ParallelConfig config = ParallelBulkOperations.highPerformanceConfig()
+        var config = ParallelBulkOperations.highPerformanceConfig()
             .withThreadCount(AVAILABLE_CORES);
         
-        ParallelBulkOperations.ParallelOperationResult<LongEntityID> result = 
+        var result = 
             runParallelInsertion(positions, contents, config);
         
         System.out.printf("  Partitions created: %d\n", 
@@ -317,18 +317,18 @@ public class ParallelProcessingBenchmark {
     private void benchmarkCoarseLocking(List<Point3f> positions, List<String> contents) {
         System.out.println("\nCoarse-grained locking (single lock):");
         
-        long start = System.nanoTime();
+        var start = System.nanoTime();
         
-        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
-        ExecutorService executor = Executors.newFixedThreadPool(AVAILABLE_CORES);
-        List<Future<?>> futures = new ArrayList<>();
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var executor = Executors.newFixedThreadPool(AVAILABLE_CORES);
+        var futures = new ArrayList<Future<?>>();
         
-        int batchSize = positions.size() / AVAILABLE_CORES;
-        Object globalLock = new Object();
+        var batchSize = positions.size() / AVAILABLE_CORES;
+        var globalLock = new Object();
         
         for (int i = 0; i < AVAILABLE_CORES; i++) {
-            int startIdx = i * batchSize;
-            int endIdx = Math.min((i + 1) * batchSize, positions.size());
+            var startIdx = i * batchSize;
+            var endIdx = Math.min((i + 1) * batchSize, positions.size());
             
             futures.add(executor.submit(() -> {
                 for (int j = startIdx; j < endIdx; j++) {
@@ -340,7 +340,7 @@ public class ParallelProcessingBenchmark {
         }
         
         // Wait for completion
-        for (Future<?> future : futures) {
+        for (var future : futures) {
             try {
                 future.get();
             } catch (Exception e) {
@@ -348,7 +348,7 @@ public class ParallelProcessingBenchmark {
             }
         }
         
-        long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+        var duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
         System.out.printf("  Duration: %,d ms\n", duration);
         
         executor.shutdown();
@@ -358,11 +358,11 @@ public class ParallelProcessingBenchmark {
         System.out.println("\nFine-grained locking (per-node locks):");
         
         // Use parallel bulk operations with fine-grained locking
-        ParallelBulkOperations.ParallelConfig config = new ParallelBulkOperations.ParallelConfig()
+        var config = new ParallelBulkOperations.ParallelConfig()
             .withThreadCount(AVAILABLE_CORES)
             .withBatchSize(100);
         
-        ParallelBulkOperations.ParallelOperationResult<LongEntityID> result = 
+        var result = 
             runParallelInsertion(positions, contents, config);
         
         System.out.printf("  Duration: %,d ms\n", result.getTotalTime());
@@ -373,10 +373,10 @@ public class ParallelProcessingBenchmark {
     private void benchmarkRegionBasedLocking(List<Point3f> positions, List<String> contents) {
         System.out.println("\nRegion-based locking (spatial partitioning):");
         
-        ParallelBulkOperations.ParallelConfig config = ParallelBulkOperations.largeDatasetConfig()
+        var config = ParallelBulkOperations.largeDatasetConfig()
             .withThreadCount(AVAILABLE_CORES);
         
-        ParallelBulkOperations.ParallelOperationResult<LongEntityID> result = 
+        var result = 
             runParallelInsertion(positions, contents, config);
         
         System.out.printf("  Duration: %,d ms\n", result.getTotalTime());
@@ -387,17 +387,17 @@ public class ParallelProcessingBenchmark {
         System.out.println("\nLock-free concurrent structures:");
         
         // Simulate lock-free approach using concurrent collections
-        long start = System.nanoTime();
+        var start = System.nanoTime();
         
-        ConcurrentHashMap<Long, List<Integer>> nodeEntities = new ConcurrentHashMap<>();
+        var nodeEntities = new ConcurrentHashMap<Long, List<Integer>>();
         
         IntStream.range(0, positions.size()).parallel().forEach(i -> {
-            Point3f pos = positions.get(i);
-            long nodeIndex = Constants.calculateMortonIndex(pos, DEFAULT_LEVEL);
+            var pos = positions.get(i);
+            var nodeIndex = Constants.calculateMortonIndex(pos, DEFAULT_LEVEL);
             nodeEntities.computeIfAbsent(nodeIndex, k -> new CopyOnWriteArrayList<>()).add(i);
         });
         
-        long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+        var duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
         System.out.printf("  Duration: %,d ms\n", duration);
         System.out.printf("  Nodes created: %d\n", nodeEntities.size());
     }
@@ -406,11 +406,11 @@ public class ParallelProcessingBenchmark {
             List<Point3f> positions, List<String> contents, 
             ParallelBulkOperations.ParallelConfig config) {
         
-        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
-        BulkOperationProcessor<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> processor = new BulkOperationProcessor<>(octree);
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
+        var processor = new BulkOperationProcessor<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String>(octree);
         
-        ParallelBulkOperations<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String, OctreeNode<LongEntityID>> parallelOps = 
-            new ParallelBulkOperations<>(octree, processor, config);
+        var parallelOps = 
+            new ParallelBulkOperations<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String, OctreeNode<LongEntityID>>(octree, processor, config);
         
         try {
             return parallelOps.insertBatchParallel(positions, contents, DEFAULT_LEVEL);
@@ -423,8 +423,8 @@ public class ParallelProcessingBenchmark {
     
     // Test data generation methods
     private List<Point3f> generateUniformTestData(int count) {
-        List<Point3f> positions = new ArrayList<>(count);
-        Random rand = new Random(42);
+        var positions = new ArrayList<Point3f>(count);
+        var rand = new Random(42);
         
         for (int i = 0; i < count; i++) {
             positions.add(new Point3f(
@@ -437,15 +437,15 @@ public class ParallelProcessingBenchmark {
     }
     
     private List<Point3f> generateClusteredTestData(int count) {
-        List<Point3f> positions = new ArrayList<>(count);
-        Random rand = new Random(42);
+        var positions = new ArrayList<Point3f>(count);
+        var rand = new Random(42);
         
-        int numClusters = 20;
+        var numClusters = 20;
         for (int i = 0; i < count; i++) {
-            int cluster = i % numClusters;
-            float baseX = (cluster % 5) * 200;
-            float baseY = ((cluster / 5) % 4) * 250;
-            float baseZ = (cluster / 20) * 500;
+            var cluster = i % numClusters;
+            var baseX = (cluster % 5) * 200f;
+            var baseY = ((cluster / 5) % 4) * 250f;
+            var baseZ = (cluster / 20) * 500f;
             
             positions.add(new Point3f(
                 baseX + rand.nextFloat() * 30,
@@ -457,11 +457,11 @@ public class ParallelProcessingBenchmark {
     }
     
     private List<Point3f> generateDiagonalTestData(int count) {
-        List<Point3f> positions = new ArrayList<>(count);
-        Random rand = new Random(42);
+        var positions = new ArrayList<Point3f>(count);
+        var rand = new Random(42);
         
         for (int i = 0; i < count; i++) {
-            float t = (float) i / count;
+            var t = (float) i / count;
             positions.add(new Point3f(
                 t * 1000 + rand.nextFloat() * 10,
                 t * 1000 + rand.nextFloat() * 10,
@@ -472,10 +472,10 @@ public class ParallelProcessingBenchmark {
     }
     
     private List<Point3f> generateGridTestData(int count) {
-        List<Point3f> positions = new ArrayList<>(count);
-        int gridSize = (int) Math.cbrt(count);
+        var positions = new ArrayList<Point3f>(count);
+        var gridSize = (int) Math.cbrt(count);
         
-        int idx = 0;
+        var idx = 0;
         for (int x = 0; x < gridSize && idx < count; x++) {
             for (int y = 0; y < gridSize && idx < count; y++) {
                 for (int z = 0; z < gridSize && idx < count; z++) {
@@ -492,7 +492,7 @@ public class ParallelProcessingBenchmark {
     }
     
     private List<String> generateContents(int count) {
-        List<String> contents = new ArrayList<>(count);
+        var contents = new ArrayList<String>(count);
         for (int i = 0; i < count; i++) {
             contents.add("Entity_" + i);
         }
@@ -503,13 +503,13 @@ public class ParallelProcessingBenchmark {
         System.out.println("\n=== Parallel Scaling Summary ===\n");
         
         // Group by entity count
-        Map<Integer, List<ParallelBenchmarkResult>> bySize = new TreeMap<>();
+        var bySize = new TreeMap<Integer, List<ParallelBenchmarkResult>>();
         for (ParallelBenchmarkResult result : results) {
             bySize.computeIfAbsent(result.entityCount, k -> new ArrayList<>()).add(result);
         }
         
         // Print scaling curves
-        for (Map.Entry<Integer, List<ParallelBenchmarkResult>> entry : bySize.entrySet()) {
+        for (var entry : bySize.entrySet()) {
             System.out.printf("\n%,d entities:\n", entry.getKey());
             System.out.println("Threads  Speedup  Efficiency");
             System.out.println("-------  -------  ----------");

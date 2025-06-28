@@ -18,7 +18,7 @@ import javax.vecmath.Vector3f;
 public class TetrahedralGeometry {
 
     private static final float EPSILON = 1e-6f;
-    
+
     // Cache for frequently accessed tetrahedron vertices
     private static final int         CACHE_SIZE     = 1024;
     private static final long[]      cachedIndices  = new long[CACHE_SIZE];
@@ -31,6 +31,50 @@ public class TetrahedralGeometry {
             cacheLocks[i] = new Object();
             cachedIndices[i] = -1;
             cachedVertices[i] = new Point3f[] { new Point3f(), new Point3f(), new Point3f(), new Point3f() };
+        }
+    }
+
+    /**
+     * Batch ray-tetrahedron intersection test for multiple rays against the same tetrahedron. Optimized for testing
+     * many rays against a single tetrahedron.
+     *
+     * @param rays   Array of rays to test
+     * @param tetKey The tetrahedron key
+     * @return Array of intersection results
+     */
+    public static RayTetrahedronIntersection[] batchRayIntersectsTetrahedron(Ray3D[] rays,
+                                                                             BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+        // Get vertices once
+        Tet tet = Tet.tetrahedron(tetKey);
+        Point3i[] coords = tet.coordinates();
+
+        Point3f v0 = new Point3f(coords[0].x, coords[0].y, coords[0].z);
+        Point3f v1 = new Point3f(coords[1].x, coords[1].y, coords[1].z);
+        Point3f v2 = new Point3f(coords[2].x, coords[2].y, coords[2].z);
+        Point3f v3 = new Point3f(coords[3].x, coords[3].y, coords[3].z);
+
+        // Cache vertices for future use
+        cacheVertices(tetKey, v0, v1, v2, v3);
+
+        // Process all rays
+        RayTetrahedronIntersection[] results = new RayTetrahedronIntersection[rays.length];
+        for (int i = 0; i < rays.length; i++) {
+            results[i] = rayIntersectsTetrahedronWithVertices(rays[i], v0, v1, v2, v3);
+        }
+
+        return results;
+    }
+
+    private static void cacheVertices(BaseTetreeKey<? extends BaseTetreeKey> tetKey, Point3f v0, Point3f v1, Point3f v2,
+                                      Point3f v3) {
+        // Use the low bits for cache indexing
+        int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
+        synchronized (cacheLocks[cacheIndex]) {
+            cachedIndices[cacheIndex] = tetKey.getLowBits();
+            cachedVertices[cacheIndex][0].set(v0);
+            cachedVertices[cacheIndex][1].set(v1);
+            cachedVertices[cacheIndex][2].set(v2);
+            cachedVertices[cacheIndex][3].set(v3);
         }
     }
 
@@ -112,6 +156,17 @@ public class TetrahedralGeometry {
         return true; // Tetrahedron intersects or is inside frustum
     }
 
+    private static Point3f[] getCachedVertices(BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+        // Use the low bits for cache indexing
+        int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
+        synchronized (cacheLocks[cacheIndex]) {
+            if (cachedIndices[cacheIndex] == tetKey.getLowBits()) {
+                return cachedVertices[cacheIndex];
+            }
+        }
+        return null;
+    }
+
     private static Point3i[] getFaceVertices(Point3i[] tetrahedronVertices, int faceIndex) {
         return switch (faceIndex) {
             case 0 -> new Point3i[] { tetrahedronVertices[0], tetrahedronVertices[1], tetrahedronVertices[2] };
@@ -120,6 +175,70 @@ public class TetrahedralGeometry {
             case 3 -> new Point3i[] { tetrahedronVertices[1], tetrahedronVertices[2], tetrahedronVertices[3] };
             default -> throw new IllegalArgumentException("Face index must be 0-3");
         };
+    }
+
+    /**
+     * Get precise bounding sphere for tetrahedron. Useful for early rejection tests.
+     *
+     * @param tetKey The tetrahedron key
+     * @return Array containing [centerX, centerY, centerZ, radius]
+     */
+    public static float[] getTetrahedronBoundingSphere(BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+        Tet tet = Tet.tetrahedron(tetKey);
+        Point3i[] coords = tet.coordinates();
+
+        // Calculate centroid
+        float centerX = (coords[0].x + coords[1].x + coords[2].x + coords[3].x) / 4.0f;
+        float centerY = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
+        float centerZ = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
+
+        // Find radius as max distance from center to any vertex
+        float maxDistSq = 0;
+        for (Point3i coord : coords) {
+            float dx = coord.x - centerX;
+            float dy = coord.y - centerY;
+            float dz = coord.z - centerZ;
+            float distSq = dx * dx + dy * dy + dz * dz;
+            maxDistSq = Math.max(maxDistSq, distSq);
+        }
+
+        return new float[] { centerX, centerY, centerZ, (float) Math.sqrt(maxDistSq) };
+    }
+
+    /**
+     * Check if a point is inside a tetrahedron using barycentric coordinates.
+     */
+    private static boolean isPointInTetrahedronByVertices(Point3f p, Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
+        // Use barycentric coordinate test
+        Vector3f vp0 = new Vector3f(p.x - v0.x, p.y - v0.y, p.z - v0.z);
+        Vector3f v10 = new Vector3f(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+        Vector3f v20 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
+        Vector3f v30 = new Vector3f(v3.x - v0.x, v3.y - v0.y, v3.z - v0.z);
+
+        // Solve for barycentric coordinates
+        float det = v10.x * (v20.y * v30.z - v20.z * v30.y) - v10.y * (v20.x * v30.z - v20.z * v30.x) + v10.z * (
+        v20.x * v30.y - v20.y * v30.x);
+
+        if (Math.abs(det) < EPSILON) {
+            return false; // Degenerate tetrahedron
+        }
+
+        float invDet = 1.0f / det;
+
+        // Compute barycentric coordinates
+        float b1 = invDet * (vp0.x * (v20.y * v30.z - v20.z * v30.y) - vp0.y * (v20.x * v30.z - v20.z * v30.x)
+                             + vp0.z * (v20.x * v30.y - v20.y * v30.x));
+
+        float b2 = invDet * (v10.x * (vp0.y * v30.z - vp0.z * v30.y) - v10.y * (vp0.x * v30.z - vp0.z * v30.x)
+                             + v10.z * (vp0.x * v30.y - vp0.y * v30.x));
+
+        float b3 = invDet * (v10.x * (v20.y * vp0.z - v20.z * vp0.y) - v10.y * (v20.x * vp0.z - v20.z * vp0.x)
+                             + v10.z * (v20.x * vp0.y - v20.y * vp0.x));
+
+        float b0 = 1.0f - b1 - b2 - b3;
+
+        // Point is inside if all barycentric coordinates are non-negative
+        return b0 >= -EPSILON && b1 >= -EPSILON && b2 >= -EPSILON && b3 >= -EPSILON;
     }
 
     /**
@@ -157,13 +276,77 @@ public class TetrahedralGeometry {
     }
 
     /**
+     * 3D Ray representation for ray-tetrahedron intersection tests
+     */
+    // Ray3D has been moved to com.hellblazer.luciferase.lucien.Ray3D as a unified implementation
+
+    // Helper methods
+
+    private static boolean rayIntersectsFaceFast(Ray3D ray, Point3f v0, Point3f v1, Point3f v2) {
+        Vector3f edge1 = new Vector3f();
+        Vector3f edge2 = new Vector3f();
+        Vector3f h = new Vector3f();
+        Vector3f s = new Vector3f();
+        Vector3f q = new Vector3f();
+
+        edge1.sub(v1, v0);
+        edge2.sub(v2, v0);
+
+        h.cross(ray.direction(), edge2);
+        float a = edge1.dot(h);
+
+        if (a > -EPSILON && a < EPSILON) {
+            return false;
+        }
+
+        float f = 1.0f / a;
+        s.sub(ray.origin(), v0);
+        float u = f * s.dot(h);
+
+        if (u < 0.0f || u > 1.0f) {
+            return false;
+        }
+
+        q.cross(s, edge1);
+        float v = f * ray.direction().dot(q);
+
+        if (v < 0.0f || u + v > 1.0f) {
+            return false;
+        }
+
+        float t = f * edge2.dot(q);
+        return t > EPSILON;
+    }
+
+    /**
+     * Fast ray-sphere intersection test for early rejection.
+     *
+     * @param ray    The ray to test
+     * @param sphere Bounding sphere [centerX, centerY, centerZ, radius]
+     * @return true if ray might intersect sphere, false if definitely no intersection
+     */
+    public static boolean rayIntersectsSphere(Ray3D ray, float[] sphere) {
+        float dx = ray.origin().x - sphere[0];
+        float dy = ray.origin().y - sphere[1];
+        float dz = ray.origin().z - sphere[2];
+
+        float a = ray.direction().dot(ray.direction());
+        float b = 2.0f * (ray.direction().x * dx + ray.direction().y * dy + ray.direction().z * dz);
+        float c = dx * dx + dy * dy + dz * dz - sphere[3] * sphere[3];
+
+        float discriminant = b * b - 4 * a * c;
+        return discriminant >= 0;
+    }
+
+    /**
      * Test if a ray intersects with a tetrahedron and return detailed intersection information
      *
      * @param ray      the ray to test (must have positive origin coordinates)
      * @param tetIndex the tetrahedral SFC index
      * @return intersection result with detailed information
      */
-    public static RayTetrahedronIntersection rayIntersectsTetrahedron(Ray3D ray, TetreeKey tetIndex) {
+    public static RayTetrahedronIntersection rayIntersectsTetrahedron(Ray3D ray,
+                                                                      BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -230,319 +413,15 @@ public class TetrahedralGeometry {
         }
     }
 
-    private static RayTetrahedronIntersection rayTriangleIntersection(Ray3D ray, Point3i[] triangleVertices) {
-        // Möller-Trumbore ray-triangle intersection algorithm
-        Point3f v0 = new Point3f(triangleVertices[0].x, triangleVertices[0].y, triangleVertices[0].z);
-        Point3f v1 = new Point3f(triangleVertices[1].x, triangleVertices[1].y, triangleVertices[1].z);
-        Point3f v2 = new Point3f(triangleVertices[2].x, triangleVertices[2].y, triangleVertices[2].z);
-
-        Vector3f edge1 = new Vector3f(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
-        Vector3f edge2 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
-
-        Vector3f h = new Vector3f();
-        h.cross(ray.direction(), edge2);
-
-        float a = edge1.dot(h);
-        if (a > -EPSILON && a < EPSILON) {
-            return RayTetrahedronIntersection.noIntersection(); // Ray is parallel to triangle
-        }
-
-        float f = 1.0f / a;
-        Vector3f s = new Vector3f(ray.origin().x - v0.x, ray.origin().y - v0.y, ray.origin().z - v0.z);
-        float u = f * s.dot(h);
-
-        if (u < 0.0f || u > 1.0f) {
-            return RayTetrahedronIntersection.noIntersection();
-        }
-
-        Vector3f q = new Vector3f();
-        q.cross(s, edge1);
-        float v = f * ray.direction().dot(q);
-
-        if (v < 0.0f || u + v > 1.0f) {
-            return RayTetrahedronIntersection.noIntersection();
-        }
-
-        float t = f * edge2.dot(q);
-
-        if (t > EPSILON && t <= ray.maxDistance()) {
-            Point3f intersection = ray.pointAt(t);
-
-            // Compute face normal
-            Vector3f normal = new Vector3f();
-            normal.cross(edge1, edge2);
-            normal.normalize();
-
-            return new RayTetrahedronIntersection(true, t, intersection, normal, -1);
-        }
-
-        return RayTetrahedronIntersection.noIntersection();
-    }
-
-    private static boolean tetrahedraShareSpace(Point3i[] vertices1, Point3i[] vertices2) {
-        // Simplified spatial overlap test - could be made more sophisticated
-        // Check if bounding boxes overlap
-
-        float min1X = Float.MAX_VALUE, min1Y = Float.MAX_VALUE, min1Z = Float.MAX_VALUE;
-        float max1X = Float.MIN_VALUE, max1Y = Float.MIN_VALUE, max1Z = Float.MIN_VALUE;
-
-        for (Point3i v : vertices1) {
-            min1X = Math.min(min1X, v.x);
-            min1Y = Math.min(min1Y, v.y);
-            min1Z = Math.min(min1Z, v.z);
-            max1X = Math.max(max1X, v.x);
-            max1Y = Math.max(max1Y, v.y);
-            max1Z = Math.max(max1Z, v.z);
-        }
-
-        float min2X = Float.MAX_VALUE, min2Y = Float.MAX_VALUE, min2Z = Float.MAX_VALUE;
-        float max2X = Float.MIN_VALUE, max2Y = Float.MIN_VALUE, max2Z = Float.MIN_VALUE;
-
-        for (Point3i v : vertices2) {
-            min2X = Math.min(min2X, v.x);
-            min2Y = Math.min(min2Y, v.y);
-            min2Z = Math.min(min2Z, v.z);
-            max2X = Math.max(max2X, v.x);
-            max2Y = Math.max(max2Y, v.y);
-            max2Z = Math.max(max2Z, v.z);
-        }
-
-        // AABB overlap test
-        return !(max1X < min2X || min1X > max2X || max1Y < min2Y || min1Y > max2Y || max1Z < min2Z || min1Z > max2Z);
-    }
-
-    /**
-     * Test intersection between two tetrahedra
-     *
-     * @param tetIndex1 first tetrahedral SFC index
-     * @param tetIndex2 second tetrahedral SFC index
-     * @return type of intersection between the tetrahedra
-     */
-    public static IntersectionResult tetrahedronIntersection(TetreeKey tetIndex1, TetreeKey tetIndex2) {
-        if (tetIndex1 == tetIndex2) {
-            return IntersectionResult.IDENTICAL;
-        }
-
-        var tet1 = Tet.tetrahedron(tetIndex1);
-        var tet2 = Tet.tetrahedron(tetIndex2);
-        var vertices1 = tet1.coordinates();
-        var vertices2 = tet2.coordinates();
-
-        // Check if any vertex of tet1 is inside tet2
-        boolean tet1InTet2 = false;
-        for (Point3i vertex : vertices1) {
-            Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
-            if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex2)) {
-                tet1InTet2 = true;
-                break;
-            }
-        }
-
-        // Check if any vertex of tet2 is inside tet1
-        boolean tet2InTet1 = false;
-        for (Point3i vertex : vertices2) {
-            Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
-            if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex1)) {
-                tet2InTet1 = true;
-                break;
-            }
-        }
-
-        if (tet1InTet2 && tet2InTet1) {
-            return IntersectionResult.PARTIAL_OVERLAP;
-        } else if (tet1InTet2 || tet2InTet1) {
-            return IntersectionResult.COMPLETE_OVERLAP;
-        }
-
-        // Check for edge-face intersections (simplified test)
-        if (tetrahedraShareSpace(vertices1, vertices2)) {
-            return IntersectionResult.TOUCHING;
-        }
-
-        return IntersectionResult.NO_INTERSECTION;
-    }
-
-    /**
-     * Result of tetrahedron-tetrahedron intersection test
-     */
-    public enum IntersectionResult {
-        NO_INTERSECTION,     // Tetrahedra do not intersect
-        TOUCHING,           // Tetrahedra touch at a point or edge
-        PARTIAL_OVERLAP,    // Tetrahedra partially overlap
-        COMPLETE_OVERLAP,   // One tetrahedron completely contains the other
-        IDENTICAL          // Tetrahedra are the same
-    }
-
-    /**
-     * 3D Ray representation for ray-tetrahedron intersection tests
-     */
-    // Ray3D has been moved to com.hellblazer.luciferase.lucien.Ray3D as a unified implementation
-
-    // Helper methods
-
-    /**
-     * 3D Plane representation for plane-tetrahedron intersection tests
-     */
-    public record Plane3D(Point3f point, Vector3f normal) {
-        public Plane3D {
-            float length = normal.length();
-            if (length < EPSILON) {
-                throw new IllegalArgumentException("Plane normal must have non-zero length");
-            }
-            normal.normalize(); // Ensure unit normal
-        }
-
-        public float distanceToPoint(Point3f p) {
-            return normal.x * (p.x - point.x) + normal.y * (p.y - point.y) + normal.z * (p.z - point.z);
-        }
-    }
-
-    /**
-     * 3D Frustum representation for frustum culling operations
-     */
-    public static class Frustum3D {
-        private final Plane3D[] planes;
-
-        public Frustum3D(Point3f position, Vector3f forward, Vector3f up, Vector3f right, float near, float far,
-                         float fovY, float aspect) {
-            if (position.x < 0 || position.y < 0 || position.z < 0) {
-                throw new IllegalArgumentException("Frustum position must have positive coordinates: " + position);
-            }
-
-            this.planes = new Plane3D[6];
-
-            float halfHeight = far * (float) Math.tan(Math.toRadians(fovY / 2.0));
-            float halfWidth = halfHeight * aspect;
-
-            Point3f farCenter = new Point3f(position.x + far * forward.x, position.y + far * forward.y,
-                                            position.z + far * forward.z);
-
-            // Near and far planes
-            planes[0] = new Plane3D(
-            new Point3f(position.x + near * forward.x, position.y + near * forward.y, position.z + near * forward.z),
-            new Vector3f(forward));
-            planes[1] = new Plane3D(farCenter, new Vector3f(-forward.x, -forward.y, -forward.z));
-
-            // Left and right planes
-            Vector3f leftNormal = new Vector3f();
-            leftNormal.cross(up,
-                             new Vector3f(forward.x + right.x * halfWidth / far, forward.y + right.y * halfWidth / far,
-                                          forward.z + right.z * halfWidth / far));
-            leftNormal.normalize();
-            planes[2] = new Plane3D(position, leftNormal);
-
-            Vector3f rightNormal = new Vector3f();
-            rightNormal.cross(new Vector3f(forward.x - right.x * halfWidth / far, forward.y - right.y * halfWidth / far,
-                                           forward.z - right.z * halfWidth / far), up);
-            rightNormal.normalize();
-            planes[3] = new Plane3D(position, rightNormal);
-
-            // Top and bottom planes
-            Vector3f topNormal = new Vector3f();
-            topNormal.cross(right,
-                            new Vector3f(forward.x + up.x * halfHeight / far, forward.y + up.y * halfHeight / far,
-                                         forward.z + up.z * halfHeight / far));
-            topNormal.normalize();
-            planes[4] = new Plane3D(position, topNormal);
-
-            Vector3f bottomNormal = new Vector3f();
-            bottomNormal.cross(new Vector3f(forward.x - up.x * halfHeight / far, forward.y - up.y * halfHeight / far,
-                                            forward.z - up.z * halfHeight / far), right);
-            bottomNormal.normalize();
-            planes[5] = new Plane3D(position, bottomNormal);
-        }
-
-        public Plane3D[] getPlanes() {
-            return planes.clone();
-        }
-    }
-
-    /**
-     * Batch ray-tetrahedron intersection test for multiple rays against the same tetrahedron. Optimized for testing
-     * many rays against a single tetrahedron.
-     *
-     * @param rays     Array of rays to test
-     * @param tetKey The tetrahedron key
-     * @return Array of intersection results
-     */
-    public static RayTetrahedronIntersection[] batchRayIntersectsTetrahedron(Ray3D[] rays, TetreeKey tetKey) {
-        // Get vertices once
-        Tet tet = Tet.tetrahedron(tetKey);
-        Point3i[] coords = tet.coordinates();
-
-        Point3f v0 = new Point3f(coords[0].x, coords[0].y, coords[0].z);
-        Point3f v1 = new Point3f(coords[1].x, coords[1].y, coords[1].z);
-        Point3f v2 = new Point3f(coords[2].x, coords[2].y, coords[2].z);
-        Point3f v3 = new Point3f(coords[3].x, coords[3].y, coords[3].z);
-
-        // Cache vertices for future use
-        cacheVertices(tetKey, v0, v1, v2, v3);
-
-        // Process all rays
-        RayTetrahedronIntersection[] results = new RayTetrahedronIntersection[rays.length];
-        for (int i = 0; i < rays.length; i++) {
-            results[i] = rayIntersectsTetrahedronWithVertices(rays[i], v0, v1, v2, v3);
-        }
-
-        return results;
-    }
-
-    /**
-     * Get precise bounding sphere for tetrahedron. Useful for early rejection tests.
-     *
-     * @param tetKey The tetrahedron key
-     * @return Array containing [centerX, centerY, centerZ, radius]
-     */
-    public static float[] getTetrahedronBoundingSphere(TetreeKey tetKey) {
-        Tet tet = Tet.tetrahedron(tetKey);
-        Point3i[] coords = tet.coordinates();
-
-        // Calculate centroid
-        float centerX = (coords[0].x + coords[1].x + coords[2].x + coords[3].x) / 4.0f;
-        float centerY = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
-        float centerZ = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
-
-        // Find radius as max distance from center to any vertex
-        float maxDistSq = 0;
-        for (Point3i coord : coords) {
-            float dx = coord.x - centerX;
-            float dy = coord.y - centerY;
-            float dz = coord.z - centerZ;
-            float distSq = dx * dx + dy * dy + dz * dz;
-            maxDistSq = Math.max(maxDistSq, distSq);
-        }
-
-        return new float[] { centerX, centerY, centerZ, (float) Math.sqrt(maxDistSq) };
-    }
-
-    /**
-     * Fast ray-sphere intersection test for early rejection.
-     *
-     * @param ray    The ray to test
-     * @param sphere Bounding sphere [centerX, centerY, centerZ, radius]
-     * @return true if ray might intersect sphere, false if definitely no intersection
-     */
-    public static boolean rayIntersectsSphere(Ray3D ray, float[] sphere) {
-        float dx = ray.origin().x - sphere[0];
-        float dy = ray.origin().y - sphere[1];
-        float dz = ray.origin().z - sphere[2];
-
-        float a = ray.direction().dot(ray.direction());
-        float b = 2.0f * (ray.direction().x * dx + ray.direction().y * dy + ray.direction().z * dz);
-        float c = dx * dx + dy * dy + dz * dz - sphere[3] * sphere[3];
-
-        float discriminant = b * b - 4 * a * c;
-        return discriminant >= 0;
-    }
-
     /**
      * Enhanced ray-tetrahedron intersection with vertex caching.
      *
-     * @param ray      The ray to test
+     * @param ray    The ray to test
      * @param tetKey The tetrahedron key
      * @return Intersection result with detailed information
      */
-    public static RayTetrahedronIntersection rayIntersectsTetrahedronCached(Ray3D ray, TetreeKey tetKey) {
+    public static RayTetrahedronIntersection rayIntersectsTetrahedronCached(Ray3D ray,
+                                                                            BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
         // Get cached vertices if available
         Point3f[] vertices = getCachedVertices(tetKey);
         if (vertices == null) {
@@ -562,7 +441,7 @@ public class TetrahedralGeometry {
      * @param tetIndex The tetrahedron index
      * @return true if ray intersects tetrahedron, false otherwise
      */
-    public static boolean rayIntersectsTetrahedronFast(Ray3D ray, TetreeKey tetIndex) {
+    public static boolean rayIntersectsTetrahedronFast(Ray3D ray, BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         Point3i[] coords = tet.coordinates();
 
@@ -582,101 +461,6 @@ public class TetrahedralGeometry {
         // Test each face using simplified Möller-Trumbore (no intersection point calculation)
         return rayIntersectsFaceFast(ray, v0, v1, v2) || rayIntersectsFaceFast(ray, v0, v1, v3)
         || rayIntersectsFaceFast(ray, v0, v2, v3) || rayIntersectsFaceFast(ray, v1, v2, v3);
-    }
-
-    private static void cacheVertices(TetreeKey tetKey, Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
-        // Use the low bits for cache indexing
-        int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
-        synchronized (cacheLocks[cacheIndex]) {
-            cachedIndices[cacheIndex] = tetKey.getLowBits();
-            cachedVertices[cacheIndex][0].set(v0);
-            cachedVertices[cacheIndex][1].set(v1);
-            cachedVertices[cacheIndex][2].set(v2);
-            cachedVertices[cacheIndex][3].set(v3);
-        }
-    }
-
-    private static Point3f[] getCachedVertices(TetreeKey tetKey) {
-        // Use the low bits for cache indexing
-        int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
-        synchronized (cacheLocks[cacheIndex]) {
-            if (cachedIndices[cacheIndex] == tetKey.getLowBits()) {
-                return cachedVertices[cacheIndex];
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Check if a point is inside a tetrahedron using barycentric coordinates.
-     */
-    private static boolean isPointInTetrahedronByVertices(Point3f p, Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
-        // Use barycentric coordinate test
-        Vector3f vp0 = new Vector3f(p.x - v0.x, p.y - v0.y, p.z - v0.z);
-        Vector3f v10 = new Vector3f(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
-        Vector3f v20 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
-        Vector3f v30 = new Vector3f(v3.x - v0.x, v3.y - v0.y, v3.z - v0.z);
-
-        // Solve for barycentric coordinates
-        float det = v10.x * (v20.y * v30.z - v20.z * v30.y) - v10.y * (v20.x * v30.z - v20.z * v30.x) + v10.z * (
-        v20.x * v30.y - v20.y * v30.x);
-
-        if (Math.abs(det) < EPSILON) {
-            return false; // Degenerate tetrahedron
-        }
-
-        float invDet = 1.0f / det;
-
-        // Compute barycentric coordinates
-        float b1 = invDet * (vp0.x * (v20.y * v30.z - v20.z * v30.y) - vp0.y * (v20.x * v30.z - v20.z * v30.x)
-                             + vp0.z * (v20.x * v30.y - v20.y * v30.x));
-
-        float b2 = invDet * (v10.x * (vp0.y * v30.z - vp0.z * v30.y) - v10.y * (vp0.x * v30.z - vp0.z * v30.x)
-                             + v10.z * (vp0.x * v30.y - vp0.y * v30.x));
-
-        float b3 = invDet * (v10.x * (v20.y * vp0.z - v20.z * vp0.y) - v10.y * (v20.x * vp0.z - v20.z * vp0.x)
-                             + v10.z * (v20.x * vp0.y - v20.y * vp0.x));
-
-        float b0 = 1.0f - b1 - b2 - b3;
-
-        // Point is inside if all barycentric coordinates are non-negative
-        return b0 >= -EPSILON && b1 >= -EPSILON && b2 >= -EPSILON && b3 >= -EPSILON;
-    }
-
-    private static boolean rayIntersectsFaceFast(Ray3D ray, Point3f v0, Point3f v1, Point3f v2) {
-        Vector3f edge1 = new Vector3f();
-        Vector3f edge2 = new Vector3f();
-        Vector3f h = new Vector3f();
-        Vector3f s = new Vector3f();
-        Vector3f q = new Vector3f();
-
-        edge1.sub(v1, v0);
-        edge2.sub(v2, v0);
-
-        h.cross(ray.direction(), edge2);
-        float a = edge1.dot(h);
-
-        if (a > -EPSILON && a < EPSILON) {
-            return false;
-        }
-
-        float f = 1.0f / a;
-        s.sub(ray.origin(), v0);
-        float u = f * s.dot(h);
-
-        if (u < 0.0f || u > 1.0f) {
-            return false;
-        }
-
-        q.cross(s, edge1);
-        float v = f * ray.direction().dot(q);
-
-        if (v < 0.0f || u + v > 1.0f) {
-            return false;
-        }
-
-        float t = f * edge2.dot(q);
-        return t > EPSILON;
     }
 
     /**
@@ -762,10 +546,12 @@ public class TetrahedralGeometry {
         }
     }
 
-    /**
-     * Ray-triangle intersection using Möller-Trumbore algorithm (float version).
-     */
-    private static RayTetrahedronIntersection rayTriangleIntersectionFloat(Ray3D ray, Point3f v0, Point3f v1, Point3f v2) {
+    private static RayTetrahedronIntersection rayTriangleIntersection(Ray3D ray, Point3i[] triangleVertices) {
+        // Möller-Trumbore ray-triangle intersection algorithm
+        Point3f v0 = new Point3f(triangleVertices[0].x, triangleVertices[0].y, triangleVertices[0].z);
+        Point3f v1 = new Point3f(triangleVertices[1].x, triangleVertices[1].y, triangleVertices[1].z);
+        Point3f v2 = new Point3f(triangleVertices[2].x, triangleVertices[2].y, triangleVertices[2].z);
+
         Vector3f edge1 = new Vector3f(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
         Vector3f edge2 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
 
@@ -807,6 +593,226 @@ public class TetrahedralGeometry {
         }
 
         return RayTetrahedronIntersection.noIntersection();
+    }
+
+    /**
+     * Ray-triangle intersection using Möller-Trumbore algorithm (float version).
+     */
+    private static RayTetrahedronIntersection rayTriangleIntersectionFloat(Ray3D ray, Point3f v0, Point3f v1,
+                                                                           Point3f v2) {
+        Vector3f edge1 = new Vector3f(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+        Vector3f edge2 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
+
+        Vector3f h = new Vector3f();
+        h.cross(ray.direction(), edge2);
+
+        float a = edge1.dot(h);
+        if (a > -EPSILON && a < EPSILON) {
+            return RayTetrahedronIntersection.noIntersection(); // Ray is parallel to triangle
+        }
+
+        float f = 1.0f / a;
+        Vector3f s = new Vector3f(ray.origin().x - v0.x, ray.origin().y - v0.y, ray.origin().z - v0.z);
+        float u = f * s.dot(h);
+
+        if (u < 0.0f || u > 1.0f) {
+            return RayTetrahedronIntersection.noIntersection();
+        }
+
+        Vector3f q = new Vector3f();
+        q.cross(s, edge1);
+        float v = f * ray.direction().dot(q);
+
+        if (v < 0.0f || u + v > 1.0f) {
+            return RayTetrahedronIntersection.noIntersection();
+        }
+
+        float t = f * edge2.dot(q);
+
+        if (t > EPSILON && t <= ray.maxDistance()) {
+            Point3f intersection = ray.pointAt(t);
+
+            // Compute face normal
+            Vector3f normal = new Vector3f();
+            normal.cross(edge1, edge2);
+            normal.normalize();
+
+            return new RayTetrahedronIntersection(true, t, intersection, normal, -1);
+        }
+
+        return RayTetrahedronIntersection.noIntersection();
+    }
+
+    private static boolean tetrahedraShareSpace(Point3i[] vertices1, Point3i[] vertices2) {
+        // Simplified spatial overlap test - could be made more sophisticated
+        // Check if bounding boxes overlap
+
+        float min1X = Float.MAX_VALUE, min1Y = Float.MAX_VALUE, min1Z = Float.MAX_VALUE;
+        float max1X = Float.MIN_VALUE, max1Y = Float.MIN_VALUE, max1Z = Float.MIN_VALUE;
+
+        for (Point3i v : vertices1) {
+            min1X = Math.min(min1X, v.x);
+            min1Y = Math.min(min1Y, v.y);
+            min1Z = Math.min(min1Z, v.z);
+            max1X = Math.max(max1X, v.x);
+            max1Y = Math.max(max1Y, v.y);
+            max1Z = Math.max(max1Z, v.z);
+        }
+
+        float min2X = Float.MAX_VALUE, min2Y = Float.MAX_VALUE, min2Z = Float.MAX_VALUE;
+        float max2X = Float.MIN_VALUE, max2Y = Float.MIN_VALUE, max2Z = Float.MIN_VALUE;
+
+        for (Point3i v : vertices2) {
+            min2X = Math.min(min2X, v.x);
+            min2Y = Math.min(min2Y, v.y);
+            min2Z = Math.min(min2Z, v.z);
+            max2X = Math.max(max2X, v.x);
+            max2Y = Math.max(max2Y, v.y);
+            max2Z = Math.max(max2Z, v.z);
+        }
+
+        // AABB overlap test
+        return !(max1X < min2X || min1X > max2X || max1Y < min2Y || min1Y > max2Y || max1Z < min2Z || min1Z > max2Z);
+    }
+
+    /**
+     * Test intersection between two tetrahedra
+     *
+     * @param tetIndex1 first tetrahedral SFC index
+     * @param tetIndex2 second tetrahedral SFC index
+     * @return type of intersection between the tetrahedra
+     */
+    public static IntersectionResult tetrahedronIntersection(BaseTetreeKey<? extends BaseTetreeKey> tetIndex1,
+                                                             BaseTetreeKey<? extends BaseTetreeKey> tetIndex2) {
+        if (tetIndex1 == tetIndex2) {
+            return IntersectionResult.IDENTICAL;
+        }
+
+        var tet1 = Tet.tetrahedron(tetIndex1);
+        var tet2 = Tet.tetrahedron(tetIndex2);
+        var vertices1 = tet1.coordinates();
+        var vertices2 = tet2.coordinates();
+
+        // Check if any vertex of tet1 is inside tet2
+        boolean tet1InTet2 = false;
+        for (Point3i vertex : vertices1) {
+            Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
+            if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex2)) {
+                tet1InTet2 = true;
+                break;
+            }
+        }
+
+        // Check if any vertex of tet2 is inside tet1
+        boolean tet2InTet1 = false;
+        for (Point3i vertex : vertices2) {
+            Point3f v = new Point3f(vertex.x, vertex.y, vertex.z);
+            if (TetrahedralSearchBase.pointInTetrahedron(v, tetIndex1)) {
+                tet2InTet1 = true;
+                break;
+            }
+        }
+
+        if (tet1InTet2 && tet2InTet1) {
+            return IntersectionResult.PARTIAL_OVERLAP;
+        } else if (tet1InTet2 || tet2InTet1) {
+            return IntersectionResult.COMPLETE_OVERLAP;
+        }
+
+        // Check for edge-face intersections (simplified test)
+        if (tetrahedraShareSpace(vertices1, vertices2)) {
+            return IntersectionResult.TOUCHING;
+        }
+
+        return IntersectionResult.NO_INTERSECTION;
+    }
+
+    /**
+     * Result of tetrahedron-tetrahedron intersection test
+     */
+    public enum IntersectionResult {
+        NO_INTERSECTION,     // Tetrahedra do not intersect
+        TOUCHING,           // Tetrahedra touch at a point or edge
+        PARTIAL_OVERLAP,    // Tetrahedra partially overlap
+        COMPLETE_OVERLAP,   // One tetrahedron completely contains the other
+        IDENTICAL          // Tetrahedra are the same
+    }
+
+    /**
+     * 3D Plane representation for plane-tetrahedron intersection tests
+     */
+    public record Plane3D(Point3f point, Vector3f normal) {
+        public Plane3D {
+            float length = normal.length();
+            if (length < EPSILON) {
+                throw new IllegalArgumentException("Plane normal must have non-zero length");
+            }
+            normal.normalize(); // Ensure unit normal
+        }
+
+        public float distanceToPoint(Point3f p) {
+            return normal.x * (p.x - point.x) + normal.y * (p.y - point.y) + normal.z * (p.z - point.z);
+        }
+    }
+
+    /**
+     * 3D Frustum representation for frustum culling operations
+     */
+    public static class Frustum3D {
+        private final Plane3D[] planes;
+
+        public Frustum3D(Point3f position, Vector3f forward, Vector3f up, Vector3f right, float near, float far,
+                         float fovY, float aspect) {
+            if (position.x < 0 || position.y < 0 || position.z < 0) {
+                throw new IllegalArgumentException("Frustum position must have positive coordinates: " + position);
+            }
+
+            this.planes = new Plane3D[6];
+
+            float halfHeight = far * (float) Math.tan(Math.toRadians(fovY / 2.0));
+            float halfWidth = halfHeight * aspect;
+
+            Point3f farCenter = new Point3f(position.x + far * forward.x, position.y + far * forward.y,
+                                            position.z + far * forward.z);
+
+            // Near and far planes
+            planes[0] = new Plane3D(
+            new Point3f(position.x + near * forward.x, position.y + near * forward.y, position.z + near * forward.z),
+            new Vector3f(forward));
+            planes[1] = new Plane3D(farCenter, new Vector3f(-forward.x, -forward.y, -forward.z));
+
+            // Left and right planes
+            Vector3f leftNormal = new Vector3f();
+            leftNormal.cross(up,
+                             new Vector3f(forward.x + right.x * halfWidth / far, forward.y + right.y * halfWidth / far,
+                                          forward.z + right.z * halfWidth / far));
+            leftNormal.normalize();
+            planes[2] = new Plane3D(position, leftNormal);
+
+            Vector3f rightNormal = new Vector3f();
+            rightNormal.cross(new Vector3f(forward.x - right.x * halfWidth / far, forward.y - right.y * halfWidth / far,
+                                           forward.z - right.z * halfWidth / far), up);
+            rightNormal.normalize();
+            planes[3] = new Plane3D(position, rightNormal);
+
+            // Top and bottom planes
+            Vector3f topNormal = new Vector3f();
+            topNormal.cross(right,
+                            new Vector3f(forward.x + up.x * halfHeight / far, forward.y + up.y * halfHeight / far,
+                                         forward.z + up.z * halfHeight / far));
+            topNormal.normalize();
+            planes[4] = new Plane3D(position, topNormal);
+
+            Vector3f bottomNormal = new Vector3f();
+            bottomNormal.cross(new Vector3f(forward.x - up.x * halfHeight / far, forward.y - up.y * halfHeight / far,
+                                            forward.z - up.z * halfHeight / far), right);
+            bottomNormal.normalize();
+            planes[5] = new Plane3D(position, bottomNormal);
+        }
+
+        public Plane3D[] getPlanes() {
+            return planes.clone();
+        }
     }
 
     /**

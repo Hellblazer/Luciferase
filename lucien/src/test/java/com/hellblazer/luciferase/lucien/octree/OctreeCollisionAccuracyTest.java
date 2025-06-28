@@ -43,31 +43,31 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testCollisionResponseVectorAccuracy() {
         // Test that collision normal and penetration depth can be used for separation
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(107, 100, 100);
+        var center1 = new Point3f(100, 100, 100);
+        var center2 = new Point3f(107, 100, 100);
 
-        EntityBounds bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
-        EntityBounds bounds2 = new EntityBounds(new Point3f(102, 95, 95), new Point3f(112, 105, 105));
+        var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
+        var bounds2 = new EntityBounds(new Point3f(102, 95, 95), new Point3f(112, 105, 105));
 
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
+        var id1 = idGenerator.generateID();
+        var id2 = idGenerator.generateID();
 
         octree.insert(id1, center1, (byte) 10, "Box1", bounds1);
         octree.insert(id2, center2, (byte) 10, "Box2", bounds2);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        var collision = octree.checkCollision(id1, id2);
         assertTrue(collision.isPresent());
 
         var pair = collision.get();
 
         // Apply minimum separation with a small buffer
-        Vector3f separation = new Vector3f(pair.contactNormal());
+        var separation = new Vector3f(pair.contactNormal());
         separation.scale(pair.penetrationDepth() * 0.5f + 0.1f); // Add small buffer
 
-        Point3f newCenter1 = new Point3f(center1);
+        var newCenter1 = new Point3f(center1);
         newCenter1.sub(separation);
 
-        Point3f newCenter2 = new Point3f(center2);
+        var newCenter2 = new Point3f(center2);
         newCenter2.add(separation);
 
         // Update positions
@@ -75,7 +75,7 @@ public class OctreeCollisionAccuracyTest {
         octree.updateEntity(id2, newCenter2, (byte) 10);
 
         // Verify they no longer collide
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> afterSeparation = octree.checkCollision(id1, id2);
+        var afterSeparation = octree.checkCollision(id1, id2);
         assertFalse(afterSeparation.isPresent(),
                     "Entities should not collide after applying separation based on collision data");
     }
@@ -83,23 +83,23 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testContactNormalAccuracy() {
         // Create two AABBs colliding from known direction
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(109, 100, 100); // Approaching from +X direction
+        var center1 = new Point3f(100, 100, 100);
+        var center2 = new Point3f(109, 100, 100); // Approaching from +X direction
 
-        EntityBounds bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
-        EntityBounds bounds2 = new EntityBounds(new Point3f(104, 95, 95),   // 1 unit overlap on X
+        var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
+        var bounds2 = new EntityBounds(new Point3f(104, 95, 95),   // 1 unit overlap on X
                                                 new Point3f(114, 105, 105));
 
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
+        var id1 = idGenerator.generateID();
+        var id2 = idGenerator.generateID();
 
         octree.insert(id1, center1, (byte) 10, "Box1", bounds1);
         octree.insert(id2, center2, (byte) 10, "Box2", bounds2);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        var collision = octree.checkCollision(id1, id2);
         assertTrue(collision.isPresent());
 
-        Vector3f normal = collision.get().contactNormal();
+        var normal = collision.get().contactNormal();
         assertNotNull(normal, "Contact normal should not be null");
 
         // Normal should point along X axis (either +X or -X)
@@ -108,35 +108,35 @@ public class OctreeCollisionAccuracyTest {
         assertEquals(0.0f, normal.z, EPSILON, "Normal Z component should be zero");
 
         // Verify normal is normalized
-        float length = normal.length();
+        var length = normal.length();
         assertEquals(1.0f, length, EPSILON, "Normal should be unit length");
     }
 
     @Test
     void testContactPointAccuracyForAABBCollision() {
         // Create two AABBs with known overlap
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(108, 100, 100); // 8 units apart on X axis
+        var center1 = new Point3f(100, 100, 100);
+        var center2 = new Point3f(108, 100, 100); // 8 units apart on X axis
 
-        EntityBounds bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105)  // 10x10x10 box
+        var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105)  // 10x10x10 box
         );
-        EntityBounds bounds2 = new EntityBounds(new Point3f(103, 95, 95),   // Overlaps by 2 units on X axis
+        var bounds2 = new EntityBounds(new Point3f(103, 95, 95),   // Overlaps by 2 units on X axis
                                                 new Point3f(113, 105, 105)  // 10x10x10 box
         );
 
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
+        var id1 = idGenerator.generateID();
+        var id2 = idGenerator.generateID();
 
         octree.insert(id1, center1, (byte) 10, "Box1", bounds1);
         octree.insert(id2, center2, (byte) 10, "Box2", bounds2);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        var collision = octree.checkCollision(id1, id2);
         assertTrue(collision.isPresent(), "Overlapping AABBs should collide");
 
         var pair = collision.get();
 
         // Verify contact point is in the overlap region
-        Point3f contactPoint = pair.contactPoint();
+        var contactPoint = pair.contactPoint();
         assertNotNull(contactPoint, "Contact point should not be null");
 
         // Contact point should be in the overlap region (103-105 on X, 95-105 on Y and Z)
@@ -151,25 +151,25 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testMixedShapeCollisionAccuracy() {
         // Test collision between box and sphere
-        Point3f boxCenter = new Point3f(100, 100, 100);
-        Point3f sphereCenter = new Point3f(105.5f, 100, 100);
+        var boxCenter = new Point3f(100, 100, 100);
+        var sphereCenter = new Point3f(105.5f, 100, 100);
 
-        EntityBounds boxBounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
+        var boxBounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
 
-        LongEntityID boxId = idGenerator.generateID();
-        LongEntityID sphereId = idGenerator.generateID();
+        var boxId = idGenerator.generateID();
+        var sphereId = idGenerator.generateID();
 
         octree.insert(boxId, boxCenter, (byte) 10, "Box", boxBounds);
         octree.insert(sphereId, sphereCenter, (byte) 10, "Sphere");
 
         // Set collision shapes
-        BoxShape boxShape = new BoxShape(boxCenter, new Vector3f(10, 10, 10));
-        SphereShape sphereShape = new SphereShape(sphereCenter, 1.0f);
+        var boxShape = new BoxShape(boxCenter, new Vector3f(10, 10, 10));
+        var sphereShape = new SphereShape(sphereCenter, 1.0f);
 
         octree.setCollisionShape(boxId, boxShape);
         octree.setCollisionShape(sphereId, sphereShape);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(boxId, sphereId);
+        var collision = octree.checkCollision(boxId, sphereId);
         assertTrue(collision.isPresent(), "Box and sphere should collide");
 
         // Verify collision properties
@@ -182,16 +182,16 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testMultipleCollisionAccuracy() {
         // Test accuracy with multiple simultaneous collisions
-        Point3f center = new Point3f(100, 100, 100);
+        var center = new Point3f(100, 100, 100);
 
         // Create a central box
-        EntityBounds centralBounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
+        var centralBounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
 
-        LongEntityID centralId = idGenerator.generateID();
+        var centralId = idGenerator.generateID();
         octree.insert(centralId, center, (byte) 10, "Central", centralBounds);
 
         // Create surrounding boxes that all collide with central
-        Point3f[] surroundingCenters = { new Point3f(108, 100, 100), // +X
+        var surroundingCenters = new Point3f[] { new Point3f(108, 100, 100), // +X
                                          new Point3f(92, 100, 100),  // -X
                                          new Point3f(100, 108, 100), // +Y
                                          new Point3f(100, 92, 100),  // -Y
@@ -199,9 +199,9 @@ public class OctreeCollisionAccuracyTest {
                                          new Point3f(100, 100, 92)   // -Z
         };
 
-        LongEntityID[] surroundingIds = new LongEntityID[6];
-        for (int i = 0; i < 6; i++) {
-            EntityBounds bounds = new EntityBounds(
+        var surroundingIds = new LongEntityID[6];
+        for (var i = 0; i < 6; i++) {
+            var bounds = new EntityBounds(
             new Point3f(surroundingCenters[i].x - 5, surroundingCenters[i].y - 5, surroundingCenters[i].z - 5),
             new Point3f(surroundingCenters[i].x + 5, surroundingCenters[i].y + 5, surroundingCenters[i].z + 5));
 
@@ -210,16 +210,16 @@ public class OctreeCollisionAccuracyTest {
         }
 
         // Test all collisions
-        List<SpatialIndex.CollisionPair<LongEntityID, String>> allCollisions = octree.findCollisions(centralId);
+        var allCollisions = octree.findCollisions(centralId);
         assertEquals(6, allCollisions.size(), "Central box should collide with all 6 surrounding boxes");
 
         // Verify each collision has accurate normals
         for (var collision : allCollisions) {
-            Vector3f normal = collision.contactNormal();
+            var normal = collision.contactNormal();
             assertNotNull(normal);
 
             // Normal should be aligned with one axis
-            int alignedAxis = 0;
+            var alignedAxis = 0;
             if (Math.abs(normal.x) > 0.9f) {
                 alignedAxis++;
             }
@@ -240,17 +240,17 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testNumericalScaleInvariance() {
         // Test that collision detection is accurate at different scales
-        float[] scales = { 0.001f, 1.0f, 1000.0f };
+        var scales = new float[] { 0.001f, 1.0f, 1000.0f };
 
-        for (float scale : scales) {
-            Octree<LongEntityID, String> scaledOctree = new Octree<>(new SequentialLongIDGenerator());
+        for (var scale : scales) {
+            var scaledOctree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
 
-            Point3f center1 = new Point3f(100 * scale, 100 * scale, 100 * scale);
-            Point3f center2 = new Point3f(108 * scale, 100 * scale, 100 * scale);
+            var center1 = new Point3f(100 * scale, 100 * scale, 100 * scale);
+            var center2 = new Point3f(108 * scale, 100 * scale, 100 * scale);
 
-            EntityBounds bounds1 = new EntityBounds(new Point3f(95 * scale, 95 * scale, 95 * scale),
+            var bounds1 = new EntityBounds(new Point3f(95 * scale, 95 * scale, 95 * scale),
                                                     new Point3f(105 * scale, 105 * scale, 105 * scale));
-            EntityBounds bounds2 = new EntityBounds(new Point3f(103 * scale, 95 * scale, 95 * scale),
+            var bounds2 = new EntityBounds(new Point3f(103 * scale, 95 * scale, 95 * scale),
                                                     new Point3f(113 * scale, 105 * scale, 105 * scale));
 
             LongEntityID id1 = idGenerator.generateID();
@@ -259,12 +259,12 @@ public class OctreeCollisionAccuracyTest {
             scaledOctree.insert(id1, center1, (byte) 10, "Box1", bounds1);
             scaledOctree.insert(id2, center2, (byte) 10, "Box2", bounds2);
 
-            Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = scaledOctree.checkCollision(id1,
+            var collision = scaledOctree.checkCollision(id1,
                                                                                                                id2);
             assertTrue(collision.isPresent(), "Collision should be detected at scale " + scale);
 
             // Verify scaled penetration depth
-            float expectedPenetration = 2.0f * scale;
+            var expectedPenetration = 2.0f * scale;
             assertEquals(expectedPenetration, collision.get().penetrationDepth(), EPSILON * scale,
                          "Penetration depth should scale correctly at scale " + scale);
         }
@@ -273,38 +273,38 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testOrientedBoxCollisionAccuracy() {
         // Test collision with oriented bounding boxes
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(105, 100, 100);
+        var center1 = new Point3f(100, 100, 100);
+        var center2 = new Point3f(105, 100, 100);
 
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
+        var id1 = idGenerator.generateID();
+        var id2 = idGenerator.generateID();
 
         octree.insert(id1, center1, (byte) 10, "OBB1");
         octree.insert(id2, center2, (byte) 10, "OBB2");
 
         // Create oriented box shapes
-        Vector3f halfExtents = new Vector3f(5, 5, 5);
+        var halfExtents = new Vector3f(5, 5, 5);
 
         // Identity matrix for first box
-        Matrix3f orientation1 = new Matrix3f();
+        var orientation1 = new Matrix3f();
         orientation1.setIdentity();
 
         // Second box rotated 45 degrees around Y axis
-        float angle = (float) Math.PI / 4;
-        Matrix3f orientation2 = new Matrix3f();
+        var angle = (float) Math.PI / 4;
+        var orientation2 = new Matrix3f();
         orientation2.setIdentity();
         orientation2.m00 = (float) Math.cos(angle);
         orientation2.m02 = (float) Math.sin(angle);
         orientation2.m20 = -(float) Math.sin(angle);
         orientation2.m22 = (float) Math.cos(angle);
 
-        OrientedBoxShape obb1 = new OrientedBoxShape(center1, halfExtents, orientation1);
-        OrientedBoxShape obb2 = new OrientedBoxShape(center2, halfExtents, orientation2);
+        var obb1 = new OrientedBoxShape(center1, halfExtents, orientation1);
+        var obb2 = new OrientedBoxShape(center2, halfExtents, orientation2);
 
         octree.setCollisionShape(id1, obb1);
         octree.setCollisionShape(id2, obb2);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        var collision = octree.checkCollision(id1, id2);
         assertTrue(collision.isPresent(), "Oriented boxes should collide");
 
         // Verify collision properties make sense
@@ -320,68 +320,68 @@ public class OctreeCollisionAccuracyTest {
     @Test
     void testPenetrationDepthAccuracy() {
         // Create AABBs with known penetration depth
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(107, 100, 100); // Centers 7 units apart
+        var center1 = new Point3f(100, 100, 100);
+        var center2 = new Point3f(107, 100, 100); // Centers 7 units apart
 
-        EntityBounds bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105)
+        var bounds1 = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105)
                                                 // Right edge at x=105
         );
-        EntityBounds bounds2 = new EntityBounds(new Point3f(102, 95, 95),   // Left edge at x=102, so 3 units overlap
+        var bounds2 = new EntityBounds(new Point3f(102, 95, 95),   // Left edge at x=102, so 3 units overlap
                                                 new Point3f(112, 105, 105));
 
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
+        var id1 = idGenerator.generateID();
+        var id2 = idGenerator.generateID();
 
         octree.insert(id1, center1, (byte) 10, "Box1", bounds1);
         octree.insert(id2, center2, (byte) 10, "Box2", bounds2);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        var collision = octree.checkCollision(id1, id2);
         assertTrue(collision.isPresent());
 
-        float penetrationDepth = collision.get().penetrationDepth();
+        var penetrationDepth = collision.get().penetrationDepth();
         assertEquals(3.0f, penetrationDepth, EPSILON, "Penetration depth should be 3 units");
     }
 
     @Test
     void testSphereCollisionAccuracy() {
         // Test collision with sphere collision shapes
-        Point3f center1 = new Point3f(100, 100, 100);
-        Point3f center2 = new Point3f(103, 100, 100); // 3 units apart
+        var center1 = new Point3f(100, 100, 100);
+        var center2 = new Point3f(103, 100, 100); // 3 units apart
 
-        LongEntityID id1 = idGenerator.generateID();
-        LongEntityID id2 = idGenerator.generateID();
+        var id1 = idGenerator.generateID();
+        var id2 = idGenerator.generateID();
 
         // Insert entities
         octree.insert(id1, center1, (byte) 10, "Sphere1");
         octree.insert(id2, center2, (byte) 10, "Sphere2");
 
         // Set sphere collision shapes
-        SphereShape sphere1 = new SphereShape(center1, 2.0f); // Radius 2
-        SphereShape sphere2 = new SphereShape(center2, 2.0f); // Radius 2
+        var sphere1 = new SphereShape(center1, 2.0f); // Radius 2
+        var sphere2 = new SphereShape(center2, 2.0f); // Radius 2
 
         octree.setCollisionShape(id1, sphere1);
         octree.setCollisionShape(id2, sphere2);
 
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
+        var collision = octree.checkCollision(id1, id2);
         assertTrue(collision.isPresent(), "Overlapping spheres should collide");
 
         var pair = collision.get();
 
         // Verify contact point is on the line between centers
-        Point3f contactPoint = pair.contactPoint();
-        Vector3f centerLine = new Vector3f();
+        var contactPoint = pair.contactPoint();
+        var centerLine = new Vector3f();
         centerLine.sub(center2, center1);
         centerLine.normalize();
 
         // Contact point should be between the two centers
-        Vector3f toContact = new Vector3f();
+        var toContact = new Vector3f();
         toContact.sub(contactPoint, center1);
-        float projection = toContact.dot(centerLine);
+        var projection = toContact.dot(centerLine);
 
         assertTrue(projection > 0 && projection < 3.0f, "Contact point should be between sphere centers");
 
         // Verify penetration depth
-        float expectedPenetration = 4.0f - 3.0f; // Sum of radii - distance
+        var expectedPenetration = 4.0f - 3.0f; // Sum of radii - distance
         assertEquals(expectedPenetration, pair.penetrationDepth(), EPSILON, "Penetration depth should be 1 unit");
     }
 }

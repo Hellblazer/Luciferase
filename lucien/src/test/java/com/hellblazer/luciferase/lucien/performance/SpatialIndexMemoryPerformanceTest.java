@@ -31,30 +31,30 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
     @Test
     @DisplayName("Test memory usage scaling with entity count")
     void testMemoryUsageScaling() {
-        int[] testSizes = {1000, 5000, 10000, 50000, 100000};
-        List<MemoryScalingResult> results = new ArrayList<>();
+        var testSizes = new int[]{1000, 5000, 10000, 50000, 100000};
+        var results = new ArrayList<MemoryScalingResult>();
         
         for (int size : testSizes) {
             // Force GC and measure baseline
             forceGarbageCollection();
-            long baselineMemory = getHeapUsage();
+            var baselineMemory = getHeapUsage();
             
             // Create index and populate
-            SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
-            List<TestEntity> entities = generateTestEntities(size, SpatialDistribution.UNIFORM_RANDOM);
+            var index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+            var entities = generateTestEntities(size, SpatialDistribution.UNIFORM_RANDOM);
             
-            for (TestEntity entity : entities) {
+            for (var entity : entities) {
                 index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
             }
             
             // Force GC and measure after population
             forceGarbageCollection();
-            long usedMemory = getHeapUsage() - baselineMemory;
+            var usedMemory = getHeapUsage() - baselineMemory;
             
-            double memoryPerEntity = (double) usedMemory / size;
+            var memoryPerEntity = (double) usedMemory / size;
             results.add(new MemoryScalingResult(size, usedMemory, memoryPerEntity));
             
-            PerformanceMetrics metrics = new PerformanceMetrics(
+            var metrics = new PerformanceMetrics(
                 "memory_scaling",
                 size,
                 0, // Not timing-based
@@ -69,11 +69,11 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
         
         // Check that memory scales linearly (within reasonable bounds)
         if (results.size() >= 2) {
-            MemoryScalingResult first = results.get(0);
-            MemoryScalingResult last = results.get(results.size() - 1);
+            var first = results.get(0);
+            var last = results.get(results.size() - 1);
             
-            double expectedRatio = (double) last.size / first.size;
-            double actualRatio = (double) last.totalMemory / first.totalMemory;
+            var expectedRatio = (double) last.size / first.size;
+            var actualRatio = (double) last.totalMemory / first.totalMemory;
             
             // Memory should scale roughly linearly (allow 50% deviation)
             assertTrue(actualRatio < expectedRatio * 1.5,
@@ -85,12 +85,12 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
     @Test
     @DisplayName("Test memory fragmentation after many operations")
     void testMemoryFragmentation() {
-        int baseSize = 10000;
-        int operations = 5000;
+        var baseSize = 10000;
+        var operations = 5000;
         
         // Create initial index
-        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
-        List<TestEntity> entities = generateTestEntities(baseSize, SpatialDistribution.UNIFORM_RANDOM);
+        var index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        var entities = generateTestEntities(baseSize, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : entities) {
             index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
@@ -98,18 +98,18 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
         
         // Measure initial memory
         forceGarbageCollection();
-        long initialMemory = getHeapUsage();
+        var initialMemory = getHeapUsage();
         
         // Perform many insert/remove operations
-        List<TestEntity> additionalEntities = generateTestEntities(operations, SpatialDistribution.UNIFORM_RANDOM);
+        var additionalEntities = generateTestEntities(operations, SpatialDistribution.UNIFORM_RANDOM);
         
         for (int i = 0; i < operations; i++) {
             // Insert new entity
-            TestEntity newEntity = additionalEntities.get(i);
+            var newEntity = additionalEntities.get(i);
             index.insert((ID) newEntity.id, newEntity.position, DEFAULT_LEVEL, (Content) newEntity.content);
             
             // Remove old entity (cycling through original entities)
-            TestEntity toRemove = entities.get(i % entities.size());
+            var toRemove = entities.get(i % entities.size());
             index.removeEntity((ID) toRemove.id);
             
             // Re-insert removed entity
@@ -118,11 +118,11 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
         
         // Measure memory after operations
         forceGarbageCollection();
-        long finalMemory = getHeapUsage();
+        var finalMemory = getHeapUsage();
         
-        double fragmentationRatio = (double) finalMemory / initialMemory;
+        var fragmentationRatio = (double) finalMemory / initialMemory;
         
-        PerformanceMetrics metrics = new PerformanceMetrics(
+        var metrics = new PerformanceMetrics(
             "memory_fragmentation",
             operations,
             0,
@@ -144,24 +144,24 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
     @Test
     @DisplayName("Test memory usage with different spatial distributions")
     void testMemoryWithDifferentDistributions() {
-        int size = 50000;
+        var size = 50000;
         
-        for (SpatialDistribution distribution : SpatialDistribution.values()) {
+        for (var distribution : SpatialDistribution.values()) {
             forceGarbageCollection();
-            long baselineMemory = getHeapUsage();
+            var baselineMemory = getHeapUsage();
             
             // Create index and populate
-            SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
-            List<TestEntity> entities = generateTestEntities(size, distribution);
+            var index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+            var entities = generateTestEntities(size, distribution);
             
-            for (TestEntity entity : entities) {
+            for (var entity : entities) {
                 index.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
             }
             
             forceGarbageCollection();
-            long usedMemory = getHeapUsage() - baselineMemory;
+            var usedMemory = getHeapUsage() - baselineMemory;
             
-            PerformanceMetrics metrics = new PerformanceMetrics(
+            var metrics = new PerformanceMetrics(
                 "memory_distribution_" + distribution.name().toLowerCase(),
                 size,
                 0,
@@ -179,17 +179,17 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
     @DisplayName("Test memory overhead of empty nodes")
     void testEmptyNodeOverhead() {
         // Create sparse index with entities only at corners
-        SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        var index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
         
         forceGarbageCollection();
-        long baselineMemory = getHeapUsage();
+        var baselineMemory = getHeapUsage();
         
         // Insert entities only at the 8 corners of the space
-        int entityCount = 0;
+        var entityCount = 0;
         for (int x = 0; x <= 1; x++) {
             for (int y = 0; y <= 1; y++) {
                 for (int z = 0; z <= 1; z++) {
-                    ID id = (ID) new com.hellblazer.luciferase.lucien.entity.LongEntityID(entityCount);
+                    var id = (ID) new com.hellblazer.luciferase.lucien.entity.LongEntityID(entityCount);
                     index.insert(
                         id,
                         new javax.vecmath.Point3f(
@@ -206,9 +206,9 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
         }
         
         forceGarbageCollection();
-        long usedMemory = getHeapUsage() - baselineMemory;
+        var usedMemory = getHeapUsage() - baselineMemory;
         
-        PerformanceMetrics metrics = new PerformanceMetrics(
+        var metrics = new PerformanceMetrics(
             "empty_node_overhead",
             entityCount,
             0,
@@ -224,45 +224,45 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
     @Test
     @DisplayName("Test memory efficiency of dense vs sparse regions")
     void testDenseVsSparseMemoryEfficiency() {
-        int totalEntities = 10000;
+        var totalEntities = 10000;
         
         // Test 1: Dense packing in small region
         forceGarbageCollection();
-        long denseBaseline = getHeapUsage();
+        var denseBaseline = getHeapUsage();
         
-        SpatialIndex<Key, ID, Content> denseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
-        List<TestEntity> denseEntities = generateTestEntities(totalEntities, SpatialDistribution.WORST_CASE);
+        var denseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        var denseEntities = generateTestEntities(totalEntities, SpatialDistribution.WORST_CASE);
         
         for (TestEntity entity : denseEntities) {
             denseIndex.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
         }
         
         forceGarbageCollection();
-        long denseMemory = getHeapUsage() - denseBaseline;
+        var denseMemory = getHeapUsage() - denseBaseline;
         
         // Test 2: Sparse distribution
         forceGarbageCollection();
-        long sparseBaseline = getHeapUsage();
+        var sparseBaseline = getHeapUsage();
         
-        SpatialIndex<Key, ID, Content> sparseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
-        List<TestEntity> sparseEntities = generateTestEntities(totalEntities, SpatialDistribution.UNIFORM_RANDOM);
+        var sparseIndex = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
+        var sparseEntities = generateTestEntities(totalEntities, SpatialDistribution.UNIFORM_RANDOM);
         
         for (TestEntity entity : sparseEntities) {
             sparseIndex.insert((ID) entity.id, entity.position, DEFAULT_LEVEL, (Content) entity.content);
         }
         
         forceGarbageCollection();
-        long sparseMemory = getHeapUsage() - sparseBaseline;
+        var sparseMemory = getHeapUsage() - sparseBaseline;
         
-        double efficiencyRatio = (double) denseMemory / sparseMemory;
+        var efficiencyRatio = (double) denseMemory / sparseMemory;
         
         System.out.printf("Memory efficiency - Dense: %.2f MB, Sparse: %.2f MB, Ratio: %.2fx%n",
             denseMemory / (1024.0 * 1024.0),
             sparseMemory / (1024.0 * 1024.0),
             efficiencyRatio);
         
-        PerformanceMetrics denseMet = new PerformanceMetrics("memory_dense", totalEntities, 0, denseMemory, null);
-        PerformanceMetrics sparseMet = new PerformanceMetrics("memory_sparse", totalEntities, 0, sparseMemory, null);
+        var denseMet = new PerformanceMetrics("memory_dense", totalEntities, 0, denseMemory, null);
+        var sparseMet = new PerformanceMetrics("memory_sparse", totalEntities, 0, sparseMemory, null);
         performanceResults.add(denseMet);
         performanceResults.add(sparseMet);
     }
@@ -281,7 +281,7 @@ public abstract class SpatialIndexMemoryPerformanceTest<Key extends com.hellblaz
     }
     
     private long getHeapUsage() {
-        MemoryUsage heapUsage = memoryBean.getHeapMemoryUsage();
+        var heapUsage = memoryBean.getHeapMemoryUsage();
         return heapUsage.getUsed();
     }
     

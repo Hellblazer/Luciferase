@@ -48,45 +48,45 @@ public class OctreeTest {
     @Test
     void testBasicInsertAndLookup() {
         // Insert with auto-generated ID
-        Point3f pos1 = new Point3f(100, 100, 100);
-        LongEntityID id1 = longIdOctree.insert(pos1, (byte) 15, "Entity1");
+        var pos1 = new Point3f(100, 100, 100);
+        var id1 = longIdOctree.insert(pos1, (byte) 15, "Entity1");
 
         assertNotNull(id1);
         assertEquals(0, id1.getValue());
 
         // Insert with explicit ID
-        LongEntityID id2 = new LongEntityID(42);
-        Point3f pos2 = new Point3f(200, 200, 200);
+        var id2 = new LongEntityID(42);
+        var pos2 = new Point3f(200, 200, 200);
         longIdOctree.insert(id2, pos2, (byte) 15, "Entity2");
 
         // Lookup entities
-        List<LongEntityID> idsAtPos1 = longIdOctree.lookup(pos1, (byte) 15);
+        var idsAtPos1 = longIdOctree.lookup(pos1, (byte) 15);
         assertEquals(1, idsAtPos1.size());
         assertEquals(id1, idsAtPos1.get(0));
 
         // Get entity content
-        String content1 = longIdOctree.getEntity(id1);
+        var content1 = longIdOctree.getEntity(id1);
         assertEquals("Entity1", content1);
 
-        String content2 = longIdOctree.getEntity(id2);
+        var content2 = longIdOctree.getEntity(id2);
         assertEquals("Entity2", content2);
     }
 
     @Test
     void testEntityIDGeneration() {
         // Test sequential long ID generation
-        SequentialLongIDGenerator longGen = new SequentialLongIDGenerator();
-        LongEntityID id1 = longGen.generateID();
-        LongEntityID id2 = longGen.generateID();
+        var longGen = new SequentialLongIDGenerator();
+        var id1 = longGen.generateID();
+        var id2 = longGen.generateID();
 
         assertEquals(0, id1.getValue());
         assertEquals(1, id2.getValue());
         assertNotEquals(id1, id2);
 
         // Test UUID generation
-        UUIDGenerator uuidGen = new UUIDGenerator();
-        UUIDEntityID uuid1 = uuidGen.generateID();
-        UUIDEntityID uuid2 = uuidGen.generateID();
+        var uuidGen = new UUIDGenerator();
+        var uuid1 = uuidGen.generateID();
+        var uuid2 = uuidGen.generateID();
 
         assertNotNull(uuid1.getValue());
         assertNotNull(uuid2.getValue());
@@ -95,12 +95,12 @@ public class OctreeTest {
 
     @Test
     void testEntityRemoval() {
-        Point3f pos = new Point3f(100, 100, 100);
-        byte level = 10;
+        var pos = new Point3f(100, 100, 100);
+        var level = (byte) 10;
 
         // Insert entities
-        LongEntityID id1 = longIdOctree.insert(pos, level, "Entity1");
-        LongEntityID id2 = longIdOctree.insert(pos, level, "Entity2");
+        var id1 = longIdOctree.insert(pos, level, "Entity1");
+        var id2 = longIdOctree.insert(pos, level, "Entity2");
 
         // Remove one entity
         assertTrue(longIdOctree.removeEntity(id1));
@@ -108,7 +108,7 @@ public class OctreeTest {
         assertTrue(longIdOctree.containsEntity(id2));
 
         // Lookup should only return remaining entity
-        List<LongEntityID> ids = longIdOctree.lookup(pos, level);
+        var ids = longIdOctree.lookup(pos, level);
         assertEquals(1, ids.size());
         assertEquals(id2, ids.get(0));
 
@@ -118,22 +118,22 @@ public class OctreeTest {
 
     @Test
     void testEntityUpdate() {
-        Point3f oldPos = new Point3f(100, 100, 100);
-        Point3f newPos = new Point3f(5000, 5000, 5000);
-        byte level = 15;
+        var oldPos = new Point3f(100, 100, 100);
+        var newPos = new Point3f(5000, 5000, 5000);
+        var level = (byte) 15;
 
         // Insert entity
-        LongEntityID id = longIdOctree.insert(oldPos, level, "MovingEntity");
+        var id = longIdOctree.insert(oldPos, level, "MovingEntity");
 
         // Update position
         longIdOctree.updateEntity(id, newPos, level);
 
         // Should not be at old position
-        List<LongEntityID> idsAtOld = longIdOctree.lookup(oldPos, level);
+        var idsAtOld = longIdOctree.lookup(oldPos, level);
         assertTrue(idsAtOld.isEmpty());
 
         // Should be at new position
-        List<LongEntityID> idsAtNew = longIdOctree.lookup(newPos, level);
+        var idsAtNew = longIdOctree.lookup(newPos, level);
         assertEquals(1, idsAtNew.size());
         assertEquals(id, idsAtNew.get(0));
 
@@ -143,13 +143,13 @@ public class OctreeTest {
 
     @Test
     void testMultipleEntitiesPerNode() {
-        Point3f samePos = new Point3f(100, 100, 100);
-        byte level = 10;
+        var samePos = new Point3f(100, 100, 100);
+        var level = (byte) 10;
 
         // Insert multiple entities at same position
-        LongEntityID id1 = longIdOctree.insert(samePos, level, "Entity1");
-        LongEntityID id2 = longIdOctree.insert(samePos, level, "Entity2");
-        LongEntityID id3 = longIdOctree.insert(samePos, level, "Entity3");
+        var id1 = longIdOctree.insert(samePos, level, "Entity1");
+        var id2 = longIdOctree.insert(samePos, level, "Entity2");
+        var id3 = longIdOctree.insert(samePos, level, "Entity3");
 
         // All should have different IDs
         assertNotEquals(id1, id2);
@@ -157,14 +157,14 @@ public class OctreeTest {
         assertNotEquals(id1, id3);
 
         // Lookup should return all three
-        List<LongEntityID> ids = longIdOctree.lookup(samePos, level);
+        var ids = longIdOctree.lookup(samePos, level);
         assertEquals(3, ids.size());
         assertTrue(ids.contains(id1));
         assertTrue(ids.contains(id2));
         assertTrue(ids.contains(id3));
 
         // Get all content
-        List<String> contents = longIdOctree.getEntities(ids);
+        var contents = longIdOctree.getEntities(ids);
         assertEquals(3, contents.size());
         assertTrue(contents.contains("Entity1"));
         assertTrue(contents.contains("Entity2"));
@@ -180,14 +180,14 @@ public class OctreeTest {
         longIdOctree.insert(new Point3f(300, 300, 300), (byte) 10, "E4");
 
         // Query region: cube from (50,50,50) to (250,250,250)
-        Spatial.Cube region = new Spatial.Cube(50, 50, 50, 200);
-        List<LongEntityID> entitiesInRegion = longIdOctree.entitiesInRegion(region);
+        var region = new Spatial.Cube(50, 50, 50, 200);
+        var entitiesInRegion = longIdOctree.entitiesInRegion(region);
 
         // E1 (100,100,100), E2 (150,150,150), and E3 (200,200,200) are inside
         // E4 (300,300,300) is outside the region
         assertEquals(3, entitiesInRegion.size());
 
-        List<String> contents = longIdOctree.getEntities(entitiesInRegion);
+        var contents = longIdOctree.getEntities(entitiesInRegion);
         assertTrue(contents.contains("E1"));
         assertTrue(contents.contains("E2"));
         assertTrue(contents.contains("E3"));
@@ -214,14 +214,14 @@ public class OctreeTest {
     @Test
     void testUUIDEntitySystem() {
         // Test with UUID-based entities
-        TestEntity entity1 = new TestEntity("Test1", 100);
-        TestEntity entity2 = new TestEntity("Test2", 200);
+        var entity1 = new TestEntity("Test1", 100);
+        var entity2 = new TestEntity("Test2", 200);
 
-        Point3f pos1 = new Point3f(100, 100, 100);
-        Point3f pos2 = new Point3f(200, 200, 200);
+        var pos1 = new Point3f(100, 100, 100);
+        var pos2 = new Point3f(200, 200, 200);
 
-        UUIDEntityID id1 = uuidOctree.insert(pos1, (byte) 10, entity1);
-        UUIDEntityID id2 = uuidOctree.insert(pos2, (byte) 10, entity2);
+        var id1 = uuidOctree.insert(pos1, (byte) 10, entity1);
+        var id2 = uuidOctree.insert(pos2, (byte) 10, entity2);
 
         // UUIDs should be valid
         assertNotNull(id1.getValue());
@@ -229,8 +229,8 @@ public class OctreeTest {
         assertNotEquals(id1.getValue(), id2.getValue());
 
         // Retrieve entities
-        TestEntity retrieved1 = uuidOctree.getEntity(id1);
-        TestEntity retrieved2 = uuidOctree.getEntity(id2);
+        var retrieved1 = uuidOctree.getEntity(id1);
+        var retrieved2 = uuidOctree.getEntity(id2);
 
         assertEquals("Test1", retrieved1.name);
         assertEquals(100, retrieved1.value);
