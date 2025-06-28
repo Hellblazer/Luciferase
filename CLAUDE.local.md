@@ -34,3 +34,4 @@
 - Package structure: core abstractions, octree/, tetree/, entity/, and geometry utilities
 - Tetree implementation includes: TetreeConnectivity, TetreeIterator, TetreeNeighborFinder, TetreeFamily, TetreeBits,
   TetreeSFCRayTraversal, TetreeValidator
+- Parent cache implemented (June 28, 2025): 17.3x speedup for parent() calls, reduces insertion gap to 2.9-7.7x

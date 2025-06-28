@@ -20,34 +20,44 @@ The parent cache reduced the Tetree insertion performance gap:
 
 ## Current Performance Metrics
 
-### Insertion Performance (Individual Operations)
+### tmIndex Optimization Results (New - June 28, 2025)
+| Optimization | Performance | Speedup vs Original |
+|-------------|-------------|-------------------|
+| Original tmIndex | 0.23 μs/op | 1.0x (baseline) |
+| Optimized V1 (bit processing) | 0.06 μs/op | **4.2x faster** |
+| Optimized V2 (parent chain) | 0.06 μs/op | **4.0x faster** |
+| Optimized V3 (cache locality) | 0.08 μs/op | **2.9x faster** |
+
+**Cache Key Generation**: 10% performance improvement with fast path for small coordinates
+
+### Insertion Performance (Individual Operations) - Updated June 28, 2025
 | Entity Count | Octree | Tetree | Performance Ratio |
 |-------------|---------|---------|-------------------|
-| 100 | 3.83 μs | 29.47 μs | Octree 7.7x faster |
-| 1,000 | 2.77 μs | 7.94 μs | Octree 2.9x faster |
-| 10,000 | 1.00 μs | 4.79 μs | Octree 4.8x faster |
+| 100 | 4.48 μs | 30.25 μs | Octree 6.8x faster |
+| 1,000 | 2.49 μs | 7.84 μs | Octree 3.1x faster |
+| 10,000 | 1.27 μs | 4.75 μs | Octree 3.7x faster |
 
-### Bulk Operation Performance (100K entities)
-| Implementation | Basic | Optimized | Speedup |
-|----------------|-------|-----------|---------|
-| Octree | 695K/sec | 860K/sec | 1.2x |
-| Tetree | 25K/sec | **1.09M/sec** | **42.5x** |
+### Bulk Operation Performance (100K entities) - Updated June 28, 2025
+| Implementation | Basic | Optimized | Speedup | Throughput |
+|----------------|-------|-----------|---------|------------|
+| Octree | 148 ms | 169 ms | 0.88x | 591K/sec |
+| Tetree | 4,146 ms | 101 ms | **41.1x** | **990K/sec** |
 
-**Critical Finding**: With bulk operations, Tetree can exceed Octree throughput!
+**BREAKTHROUGH**: Tetree with bulk loading is now **40% faster** than Octree!
 
-### k-NN Search Performance
+### k-NN Search Performance - Updated June 28, 2025
 | Entity Count | Octree | Tetree | Performance Ratio |
 |-------------|---------|---------|-------------------|
-| 100 | 0.72 μs | 0.46 μs | Tetree 1.6x faster |
-| 1,000 | 4.06 μs | 1.67 μs | Tetree 2.4x faster |
-| 10,000 | 37.67 μs | 10.43 μs | Tetree 3.6x faster |
+| 100 | 0.69 μs | 0.62 μs | Tetree 1.1x faster |
+| 1,000 | 4.10 μs | 2.15 μs | Tetree 1.9x faster |
+| 10,000 | 42.60 μs | 10.33 μs | Tetree 4.1x faster |
 
-### Memory Usage
+### Memory Usage - Updated June 28, 2025
 | Entity Count | Octree | Tetree | Tetree Savings |
 |-------------|---------|---------|----------------|
-| 100 | 0.15 MB | 0.04 MB | 74% less |
-| 1,000 | 1.38 MB | 0.32 MB | 77% less |
-| 10,000 | 12.90 MB | 3.15 MB | 76% less |
+| 100 | 0.15 MB | 0.04 MB | 75% less |
+| 1,000 | 1.39 MB | 0.34 MB | 76% less |
+| 10,000 | 12.93 MB | 3.29 MB | 75% less |
 
 ## Optimization History
 
@@ -67,6 +77,11 @@ The parent cache reduced the Tetree insertion performance gap:
 - Direct parent and parent type caching
 - 17-67x speedup for parent operations
 - Final gap: 2.9-7.7x for insertions
+
+### Phase 5: Micro-optimizations (June 28, 2025) ✅ INTEGRATED
+- tmIndex computation optimizations: 4x speedup (V2 integrated into production)
+- Cache key generation fast path: 10% improvement (integrated)
+- Better cache locality for parent chain walking (integrated)
 
 ## Recommendations
 

@@ -1340,98 +1340,20 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             shiftedZ = z;
         }
 
-        // For TM-index, we only process bits up to the current level
-        // This matches the reference implementation behavior
-        int maxBits = l;
-
-        // Build type array for the bits we'll process
-        int[] typeArray = new int[maxBits];
-
-        // PERFORMANCE: Try to use cached type transitions first
-        boolean needsParentChain = false;
-
-        // For levels > 1, we need ancestor types
-        if (l > 1) {
-            // Try to get types using cached transitions
-            // Start from current type and work backwards
-            typeArray[maxBits - 1] = type; // Current type at the end
-
-            // Try to fill in ancestor types using cached transitions
-            byte currentType = type;
-            byte currentLevel = l;
-
-            // Work backwards from current level to root
-            for (int i = maxBits - 2; i >= 0; i--) {
-                byte targetLevel = (byte) (i + 1);
-
-                // Try to get the type at this ancestor level
-                byte ancestorType = TetreeLevelCache.getTypeAtLevel(currentType, currentLevel, targetLevel);
-
-                if (ancestorType == -1) {
-                    // Cache miss - need to build parent chain
-                    needsParentChain = true;
-                    break;
-                }
-
-                typeArray[i] = ancestorType;
-
-                // For next iteration, we're at the ancestor level
-                currentType = ancestorType;
-                currentLevel = targetLevel;
+        // V2 OPTIMIZATION: Build parent chain in reverse order while building bits
+        // Stack to hold types as we walk up
+        byte[] types = new byte[l];
+        Tet current = this;
+        
+        // Walk up to collect types efficiently  
+        for (int i = l - 1; i >= 0; i--) {
+            types[i] = current.type();
+            if (i > 0) {
+                current = current.parent();
             }
-        } else if (l == 1) {
-            // Level 1 - only need current type since root type is always 0
-            typeArray[0] = type;
-        } else {
-            // Level 0 - root
-            typeArray[0] = 0;
         }
 
-        // If we couldn't fill the type array from cache, fall back to parent chain
-        if (needsParentChain) {
-            // Check parent chain cache first
-            var cachedChain = TetreeLevelCache.getCachedParentChain(this);
-            List<Byte> ancestorTypes = new ArrayList<>();
-
-            if (cachedChain != null) {
-                // Use cached parent chain to build ancestor types
-                for (int i = 1; i < cachedChain.length; i++) { // Skip self at index 0
-                    if (cachedChain[i] != null) {
-                        ancestorTypes.addFirst(cachedChain[i].type());
-                    }
-                }
-            } else {
-                // Build parent chain and cache it
-                var chain = new ArrayList<Tet>();
-                chain.add(this);
-
-                // Get ancestor types by walking up the tree
-                var current = this;
-
-                // Collect types from parent up to root
-                while (current.l() > 1) {
-                    current = current.parent();
-                    if (current != null) {
-                        ancestorTypes.addFirst(current.type());
-                        chain.add(current);
-                    }
-                }
-
-                // Cache the parent chain for future use
-                TetreeLevelCache.cacheParentChain(this, chain.toArray(new Tet[0]));
-            }
-
-            // Fill type array with ancestor types
-            int typeIndex = 0;
-            for (int i = 0; i < ancestorTypes.size() && typeIndex < maxBits - 1; i++) {
-                typeArray[typeIndex++] = ancestorTypes.get(i);
-            }
-
-            // Make sure current type is at the end
-            typeArray[maxBits - 1] = type;
-        }
-
-        // Build TM-index by interleaving coordinate bits with type information
+        // Now build bits with types in correct order
         // We support up to level 21 with 128-bit representation
         if (l > 21) {
             throw new IllegalStateException("Level " + l + " exceeds maximum supported level 21 for 128-bit TM-index");
@@ -1441,21 +1363,16 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         long lowBits = 0L;
         long highBits = 0L;
 
-        // Process each bit position from most significant to least
-        for (int i = 0; i < maxBits; i++) {
-            // Extract bit at position: start from highest significant bit for this level
+        // Process each level in order with cached types
+        for (int i = 0; i < l; i++) {
             int bitPos = Constants.getMaxRefinementLevel() - 1 - i;
             int xBit = (shiftedX >> bitPos) & 1;
             int yBit = (shiftedY >> bitPos) & 1;
             int zBit = (shiftedZ >> bitPos) & 1;
-
-            // Combine coordinate bits (z is MSB, x is LSB in this encoding)
+            
             int coordBits = (zBit << 2) | (yBit << 1) | xBit;
-
-            // Combine with type bits: upper 3 bits are coords, lower 3 bits are type
-            int sixBits = (coordBits << 3) | typeArray[i];
-
-            // Pack into appropriate long (10 levels per long, 6 bits per level)
+            int sixBits = (coordBits << 3) | types[i];
+            
             if (i < 10) {
                 lowBits |= ((long) sixBits) << (6 * i);
             } else {
