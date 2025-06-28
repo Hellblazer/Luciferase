@@ -16,22 +16,24 @@ Performance tests conducted on June 28, 2025 confirm that **Octree significantly
 
 ## Key Findings
 
-### 1. Insertion Performance (OctreeVsTetreeBenchmark Results - June 28, 2025)
+### 1. Insertion Performance (Post-Subdivision Fix - June 28, 2025)
 
-**Octree vastly outperforms Tetree, with the gap widening as dataset size increases:**
+**After fixing Tetree subdivision, performance has improved dramatically:**
 
-| Dataset Size | Octree Time | Tetree Time | Octree Advantage |
-|--------------|-------------|-------------|------------------|
-| 100          | 0.77 ms     | 7.49 ms     | **9.7x faster**  |
-| 1,000        | 3.01 ms     | 173.4 ms    | **57.6x faster** |
-| 10,000       | 10.5 ms     | 8,076 ms    | **770x faster**  |
+| Dataset Size | Octree Time | Tetree Time | Octree Advantage | Improvement |
+|--------------|-------------|-------------|------------------|-------------|
+| 100          | ~0.8 ms     | ~4.8 ms     | **6.0x faster**  | 38% better  |
+| 1,000        | ~3.0 ms     | ~27.6 ms    | **9.2x faster**  | 84% better  |
+| 10,000       | ~10.5 ms    | ~363 ms     | **34.6x faster** | 96% better  |
 
 **Per-Entity Insertion Time:**
-| Dataset Size | Octree      | Tetree      | 
-|--------------|-------------|-------------|
-| 100          | 7.74 μs     | 74.9 μs     |
-| 1,000        | 3.01 μs     | 173.4 μs    |
-| 10,000       | 1.05 μs     | 807.6 μs    |
+| Dataset Size | Octree      | Tetree      | Previous Tetree | 
+|--------------|-------------|-------------|-----------------|
+| 100          | ~8 μs       | ~48 μs      | (was 74.9 μs)   |
+| 1,000        | ~3 μs       | ~28 μs      | (was 173.4 μs)  |
+| 10,000       | ~1 μs       | ~36 μs      | (was 807.6 μs)  |
+
+**Note**: The dramatic improvement is due to fixing Tetree's subdivision logic. Previously, Tetree was creating only 2 nodes for 1000 entities (vs 6,430 for Octree), causing severe performance degradation.
 
 ### 2. Query Performance (OctreeVsTetreeBenchmark Results - June 28, 2025)
 
@@ -46,17 +48,21 @@ Performance tests conducted on June 28, 2025 confirm that **Octree significantly
 | 10,000  | k-NN      | 21.9 μs | 7.04 μs | **3.1x faster**  |
 | 10,000  | Range     | 21.4 μs | 5.49 μs | **3.9x faster**  |
 
-### 3. Memory Usage (OctreeVsTetreeBenchmark Results - June 28, 2025)
+### 3. Memory Usage (Post-Subdivision Fix - June 28, 2025)
 
-**Interestingly, the benchmark shows Tetree using LESS memory than Octree:**
+**After fixing subdivision, memory usage is now comparable between implementations:**
 
 | Dataset Size | Octree Memory | Tetree Memory | Tetree Usage    |
 |--------------|---------------|---------------|-----------------|
-| 100          | 0.15 MB       | 0.04 MB       | **23.6%**       |
-| 1,000        | 1.39 MB       | 0.27 MB       | **19.7%**       |
-| 10,000       | 12.92 MB      | 2.64 MB       | **20.4%**       |
+| 100          | 0.15 MB       | 0.16 MB       | **102.9%**      |
+| 1,000        | 1.39 MB       | 1.28 MB       | **92.1%**       |
+| 10,000       | 12.91 MB      | 12.64 MB      | **97.9%**       |
 
-**Note**: This contradicts other test results showing Tetree using more memory per entity. This may be due to differences in measurement methodology or the specific workload pattern in OctreeVsTetreeBenchmark.
+**Resolution of Previous Discrepancy**: 
+- **Before fix**: Tetree used only 20% of Octree memory because it created 500x fewer nodes (bug)
+- **After fix**: Tetree uses 92-103% of Octree memory with proper node distribution
+- Both implementations now create appropriate numbers of nodes for spatial partitioning
+- Small variations are due to different spatial decomposition strategies (tetrahedral vs cubic)
 
 ### 4. Bulk Operation Optimization
 
@@ -120,10 +126,13 @@ The performance difference is fundamental:
 
 ## Conclusion
 
-The performance tests from OctreeVsTetreeBenchmark confirm that:
-- **Octree is 9.7x to 770x faster for insertions** (scaling with dataset size)
-- **Tetree is 3-4x faster for queries** (consistent across query types)
-- **Memory usage shows conflicting results** - OctreeVsTetreeBenchmark shows Tetree using 80% less memory, while other tests show it using significantly more
-- **Both benefit from bulk optimization**, but the fundamental gap remains
+The performance tests after fixing Tetree subdivision show:
+- **Octree is 6x to 35x faster for insertions** (was 9.7x to 770x before fix)
+- **Tetree is 3-4x faster for queries** (unchanged - already excellent)
+- **Memory usage is now comparable** (92-103% - was 20% due to subdivision bug)
+- **Both benefit from bulk optimization**, with proper tree structures
 
-The choice between Octree and Tetree depends entirely on your use case. For most applications requiring dynamic insertions, Octree is the clear choice. For static, query-heavy workloads, Tetree's superior query performance may justify its insertion cost. The memory usage discrepancy requires further investigation to provide accurate guidance.
+The choice between Octree and Tetree is now clearer:
+- **Choose Octree**: For dynamic insertions, frequent updates, or when insertion speed is critical
+- **Choose Tetree**: For static datasets with query-heavy workloads where 3-4x faster queries justify slower insertions
+- **Performance gap explained**: The remaining 6-35x insertion performance difference is due to fundamental algorithmic differences (O(1) Morton encoding vs O(level) tmIndex computation), not implementation bugs

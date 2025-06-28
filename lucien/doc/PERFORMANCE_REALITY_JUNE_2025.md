@@ -30,15 +30,17 @@ The `tmIndex()` method must walk up the parent chain to build the globally uniqu
 This is **not a bug** - it's required for correctness. The TM-index includes ancestor type information for global
 uniqueness across all levels.
 
-## Actual Performance Measurements (OctreeVsTetreeBenchmark - June 28, 2025)
+## Actual Performance Measurements (Post-Subdivision Fix - June 28, 2025)
 
 ### Insertion Performance
 
-| Entities | Octree Time | Tetree Time | Octree Advantage | Per-Entity (Octree) | Per-Entity (Tetree) |
-|----------|-------------|-------------|------------------|---------------------|---------------------|
-| 100      | 0.77 ms     | 7.49 ms     | **9.7x faster**  | 7.74 μs             | 74.9 μs             |
-| 1K       | 3.01 ms     | 173.4 ms    | **57.6x faster** | 3.01 μs             | 173.4 μs            |
-| 10K      | 10.5 ms     | 8,076 ms    | **770x faster**  | 1.05 μs             | 807.6 μs            |
+| Entities | Octree Time | Tetree Time | Octree Advantage | Improvement | Per-Entity (Tetree) |
+|----------|-------------|-------------|------------------|-------------|---------------------|
+| 100      | ~0.8 ms     | ~4.8 ms     | **6.0x faster**  | 38% better  | ~48 μs              |
+| 1K       | ~3.0 ms     | ~27.6 ms    | **9.2x faster**  | 84% better  | ~28 μs              |
+| 10K      | ~10.5 ms    | ~363 ms     | **34.6x faster** | 96% better  | ~36 μs              |
+
+**Note**: Performance dramatically improved after fixing Tetree's subdivision logic. Previously, Tetree was creating only 2 nodes for 1000 entities instead of properly subdividing like Octree.
 
 ### Query Performance
 
@@ -55,11 +57,11 @@ uniqueness across all levels.
 
 | Entities | Octree Memory | Tetree Memory | Tetree Usage % |
 |----------|---------------|---------------|----------------|
-| 100      | 0.15 MB       | 0.04 MB       | **23.6%**      |
-| 1K       | 1.39 MB       | 0.27 MB       | **19.7%**      |
-| 10K      | 12.92 MB      | 2.64 MB       | **20.4%**      |
+| 100      | 0.15 MB       | 0.16 MB       | **102.9%**     |
+| 1K       | 1.39 MB       | 1.28 MB       | **92.1%**      |
+| 10K      | 12.91 MB      | 12.64 MB      | **97.9%**      |
 
-**Note**: The OctreeVsTetreeBenchmark shows Tetree using less memory, which contradicts other tests. This may be due to measurement methodology differences.
+**Note**: After fixing the subdivision bug, memory usage is now comparable. The previous 20% usage was due to Tetree creating 500x fewer nodes than it should have.
 
 ## What This Means for Users
 

@@ -1389,6 +1389,47 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
+    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
+        var tetIndex = calculateSpatialIndex(position, level);
+        
+        // Get or create node
+        var node = spatialIndex.computeIfAbsent(tetIndex, k -> {
+            sortedSpatialIndices.add(tetIndex);
+            return nodePool.acquire();
+        });
+
+        // If the node has been subdivided, insert into the appropriate child node
+        // This ensures proper spatial distribution by automatically going deeper
+        if (node.hasChildren() || node.isEmpty()) {
+            var childLevel = (byte) (level + 1);
+            if (childLevel <= maxDepth) {
+                insertAtPosition(entityId, position, childLevel);
+                return;
+            }
+        }
+
+        // Add entity to node
+        var shouldSplit = node.addEntity(entityId);
+
+        // Track entity location
+        entityManager.addEntityLocation(entityId, tetIndex);
+
+        // Handle subdivision if needed
+        if (shouldSplit && level < maxDepth) {
+            if (bulkLoadingMode) {
+                // Defer subdivision during bulk loading
+                subdivisionManager.deferSubdivision(tetIndex, node, node.getEntityCount(), level);
+            } else {
+                // Immediate subdivision
+                handleNodeSubdivision(tetIndex, level, node);
+            }
+        }
+
+        // Check for auto-balancing after insertion
+        checkAutoBalance();
+    }
+
+    @Override
     protected int getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }

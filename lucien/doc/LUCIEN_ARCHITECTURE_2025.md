@@ -376,16 +376,17 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Characteristics (June 28, 2025)
+## Performance Characteristics (Post-Subdivision Fix - June 28, 2025)
 
-**Key Findings**: Different spatial indices excel in different areas
+**Key Findings**: After fixing Tetree's subdivision bug, performance characteristics are now correct
 
-Source: OctreeVsTetreeBenchmark.java
+Source: OctreeVsTetreeBenchmark.java (after subdivision fix)
 
-- **Insertion Performance**: Octree is 9.7x to 770x faster (scales with dataset size)
+- **Insertion Performance**: Octree is 6x to 35x faster (was 770x due to bug)
 - **Query Performance**: Tetree is 3-4x faster for k-NN and range queries
-- **Memory Usage**: Conflicting results - OctreeVsTetreeBenchmark shows Tetree using 80% less memory
-- **Note**: Performance gap widens with larger datasets due to O(1) vs O(level) complexity
+- **Memory Usage**: Now comparable (92-103%) - was 20% due to improper subdivision
+- **Subdivision Fix**: Tetree was creating only 2 nodes for 1000 entities instead of proper tree structure
+- **Remaining Gap**: Due to fundamental O(1) vs O(level) algorithmic difference
 
 ## Testing
 

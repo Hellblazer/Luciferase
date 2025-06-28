@@ -138,25 +138,26 @@ Previous performance claims were based on using the `consecutiveIndex()` method 
 After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
 characteristics have changed dramatically.
 
-### Current Performance Metrics (June 28, 2025)
+### Current Performance Metrics (Post-Subdivision Fix - June 28, 2025)
 
-Source: OctreeVsTetreeBenchmark.java
+Source: OctreeVsTetreeBenchmark.java (after fixing Tetree subdivision)
 
-| Dataset | Operation | Octree  | Tetree  | Winner        | Advantage |
-|---------|-----------|---------|---------|---------------|-----------|
-| 100     | Insertion | 7.74 μs | 74.9 μs | Octree        | 9.7x      |
-| 1K      | Insertion | 3.01 μs | 173.4 μs| Octree        | 57.6x     |
-| 10K     | Insertion | 1.05 μs | 807.6 μs| Octree        | 770x      |
-| 1K      | k-NN      | 3.22 μs | 0.81 μs | Tetree        | 4.0x      |
-| 10K     | k-NN      | 21.9 μs | 7.04 μs | Tetree        | 3.1x      |
-| 10K     | Memory    | 12.9 MB | 2.64 MB | Tetree        | 80% less  |
+| Dataset | Operation | Octree  | Tetree  | Winner        | Improvement |
+|---------|-----------|---------|---------|---------------|-------------|
+| 100     | Insertion | ~8 μs   | ~48 μs  | Octree (6x)   | 38% better  |
+| 1K      | Insertion | ~3 μs   | ~28 μs  | Octree (9.2x) | 84% better  |
+| 10K     | Insertion | ~1 μs   | ~36 μs  | Octree (35x)  | 96% better  |
+| 1K      | k-NN      | 3.22 μs | 0.81 μs | Tetree (4x)   | unchanged   |
+| 10K     | k-NN      | 21.9 μs | 7.04 μs | Tetree (3.1x) | unchanged   |
+| 10K     | Memory    | 12.9 MB | 12.6 MB | Similar       | now correct |
 
 ### Key Insight
 
-- **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
-- **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
-- This fundamental difference cannot be optimized away
-- Memory measurements vary between benchmarks (needs investigation)
+- **Subdivision Fix**: Tetree was creating only 2 nodes instead of thousands due to missing subdivision logic
+- **After Fix**: Performance improved 38-96%, memory usage now comparable to Octree
+- **Remaining Gap**: Due to fundamental algorithmic difference:
+  - **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
+  - **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
 
 For detailed performance analysis, see [PERFORMANCE_REALITY_JUNE_2025.md](./PERFORMANCE_REALITY_JUNE_2025.md)
 

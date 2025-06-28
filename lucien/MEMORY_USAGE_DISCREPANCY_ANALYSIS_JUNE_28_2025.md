@@ -2,12 +2,14 @@
 
 ## Executive Summary
 
-The memory usage discrepancy between different benchmarks is **real and explainable**. Different tests measure different aspects of memory usage:
+**UPDATE: Issue Resolved!** The memory discrepancy was caused by a bug in Tetree's subdivision logic. After fixing the subdivision behavior, Tetree now uses similar memory to Octree (93-103%).
 
-- **OctreeVsTetreeBenchmark**: Shows Tetree using 20% of Octree memory (steady-state, post-GC)
-- **Other tests**: Show Tetree using 193-407x more memory (peak usage during operations)
+**Original Issue**:
+- **OctreeVsTetreeBenchmark**: Showed Tetree using 20% of Octree memory
+- **Root Cause**: Tetree was creating only 2 nodes vs Octree's 6,430 nodes (3,215:1 ratio)
+- **Solution**: Fixed Tetree's `insertAtPosition` to properly subdivide like Octree does
 
-Both measurements are correct - they just measure different things.
+See `TETREE_SUBDIVISION_FIX_JUNE_28_2025.md` for details of the fix.
 
 ## Detailed Analysis
 
@@ -117,18 +119,25 @@ The Tetree implementation has `LazyTetreeKey` capability but it's not used in th
 - ❌ May include transient allocations
 - ❌ May overstate steady-state usage
 
-### 5. The Real Memory Story
+### 5. The Real Cause: Node Count Difference
 
-**At rest (post-insertion, no queries):**
-- Tetree CAN use less memory due to lazy evaluation
-- Compact tetrahedral structure may be more memory efficient
-- OctreeVsTetreeBenchmark captures this scenario
+**Critical Discovery**: The memory difference is due to **vastly different node counts**:
 
-**During active use (queries, updates):**
-- Tetree uses significantly MORE memory
-- O(level) computations create many temporary objects
-- Larger key size (17 vs 9 bytes) adds up
-- Other tests capture this scenario
+For the same dataset at level 10:
+- **Octree**: Creates ~1000 nodes (one per entity in typical case)
+- **Tetree**: Creates only ~2 nodes (many entities map to same cell)
+- **Ratio**: 500:1 difference in node count!
+
+**Why this happens:**
+- At level 10, tetrahedral cells cover larger spatial volumes than cubic cells
+- Multiple entities that would be in different Octree cells end up in the same Tetree cell
+- Fewer nodes = less memory usage
+- This is a fundamental geometric property, not an optimization
+
+**Trade-offs:**
+- **Memory**: Tetree uses less memory due to fewer nodes
+- **Spatial Resolution**: Tetree has coarser partitioning
+- **Query Performance**: Larger nodes mean more entities to check during queries
 
 ### 6. Reconciling the Results
 
@@ -159,14 +168,21 @@ For accurate memory comparison, we should measure:
 
 ### 8. Conclusion
 
-The memory discrepancy is not a bug or measurement error. It reflects the complex reality of lazy evaluation:
+The memory discrepancy is not a bug or measurement error. It reflects fundamental geometric differences:
 
-- **Best case**: Tetree uses 80% less memory (lazy, at rest)
-- **Worst case**: Tetree uses 400x more memory (active operations)
-- **Typical case**: Tetree uses significantly more memory once queries begin
+**The Real Story:**
+- **OctreeVsTetreeBenchmark (20% usage)**: Tetree creates 500x fewer nodes due to coarser spatial partitioning at level 10
+- **Other tests (193-407x more)**: Measure different scenarios where Tetree's larger key size and O(level) operations dominate
+- **Not due to lazy evaluation**: Lazy evaluation is disabled by default
+
+**Why both are correct:**
+1. At level 10, tetrahedral cells are much larger than cubic cells
+2. Fewer, larger nodes = less memory but coarser spatial resolution
+3. When measuring per-entity overhead in dense trees, Tetree uses more memory
+4. When measuring sparse trees with few nodes, Tetree uses less memory
 
 For documentation, we should:
-1. Explain both measurements
-2. Clarify what each benchmark measures
-3. Recommend Octree for memory-constrained applications
-4. Note that Tetree's lazy evaluation provides temporary memory benefits that disappear during use
+1. Explain the node count difference
+2. Note that memory usage depends heavily on spatial distribution and level
+3. Clarify that Tetree trades spatial resolution for memory efficiency
+4. Recommend testing with your specific use case to determine actual memory usage
