@@ -43,7 +43,7 @@ public class TetreeKey extends CompactTetreeKey {
      * @param highBits the upper 64 bits of the TM-index (levels 10-20)
      */
     public TetreeKey(byte level, long lowBits, long highBits) {
-        super(level, lowBits);
+        super(level, lowBits, true); // Use protected constructor to skip level validation
         this.highBits = highBits;
     }
 
@@ -106,10 +106,41 @@ public class TetreeKey extends CompactTetreeKey {
 
     @Override
     public boolean isValid() {
-        return super.isValid();
+        // Check basic level validity
+        if (level < 0 || level > 21) {
+            return false;
+        }
 
-        // For non-root levels, the tm-index structure is complex and validated during creation in Tet.tmIndex()
-        // We trust that if it was created, it's valid
+        // For level 0 (root), should have no bits set
+        if (level == 0) {
+            return getLowBits() == 0 && highBits == 0;
+        }
+
+        // For levels 1-10, only low bits should be used (high bits should be 0)
+        if (level <= 10) {
+            if (highBits != 0) {
+                return false;
+            }
+            // Check that we don't have bits set beyond what's needed
+            long maxBitsForLevel = (1L << (level * BITS_PER_LEVEL)) - 1;
+            return (getLowBits() & ~maxBitsForLevel) == 0;
+        }
+
+        // For levels 11-21, both low and high bits may be used
+        // Low bits can use up to 60 bits (10 levels * 6 bits per level)
+        // High bits usage depends on the level
+        int highLevels = level - 10;
+        int bitsNeeded = highLevels * BITS_PER_LEVEL;
+        
+        // Handle case where we need all 64 bits or more
+        if (bitsNeeded >= 64) {
+            // For level 21: highLevels=11, bitsNeeded=66
+            // We can use all 64 bits in highBits, so no validation needed
+            return true;
+        }
+        
+        long maxHighBitsForLevel = (1L << bitsNeeded) - 1;
+        return (highBits & ~maxHighBitsForLevel) == 0;
     }
 
     @Override

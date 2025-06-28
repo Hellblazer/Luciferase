@@ -61,7 +61,7 @@ public class LazyEvaluationProfilingTest {
         // Override Tetree to use instrumented keys
         var instrumentedTetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator()) {
             @Override
-            protected TetreeKey calculateSpatialIndex(Point3f position, byte level) {
+            protected BaseTetreeKey<?> calculateSpatialIndex(Point3f position, byte level) {
                 var tet = Tet.locateStandardRefinement(position.x, position.y, position.z, level);
                 return new InstrumentedLazyTetreeKey(tet, "calculateSpatialIndex");
             }
@@ -89,7 +89,7 @@ public class LazyEvaluationProfilingTest {
         
         // Test 2: HashMap operations
         System.out.println("\n2. Testing HashMap operations...");
-        var map = new java.util.HashMap<TetreeKey, String>();
+        var map = new java.util.HashMap<BaseTetreeKey<?>, String>();
         map.put(key, "test");
         if (key instanceof LazyTetreeKey lazy) {
             System.out.println("   After put() - Is resolved: " + lazy.isResolved());
@@ -102,7 +102,7 @@ public class LazyEvaluationProfilingTest {
         
         // Test 3: TreeSet operations (sorted)
         System.out.println("\n3. Testing TreeSet operations...");
-        var set = new java.util.TreeSet<TetreeKey>();
+        var set = new java.util.TreeSet<BaseTetreeKey<?>>();
         if (key instanceof LazyTetreeKey lazy) {
             System.out.println("   Before add() - Is resolved: " + lazy.isResolved());
         }
@@ -123,7 +123,7 @@ public class LazyEvaluationProfilingTest {
         
         // Test 1: Direct TetreeKey creation
         long directStart = System.nanoTime();
-        var directKeys = new ArrayList<TetreeKey>();
+        var directKeys = new ArrayList<BaseTetreeKey<?>>();
         for (var pos : positions) {
             var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
             directKeys.add(tet.tmIndex());
@@ -141,7 +141,7 @@ public class LazyEvaluationProfilingTest {
         
         // Test 3: LazyTetreeKey with immediate resolution
         long resolvedStart = System.nanoTime();
-        var resolvedKeys = new ArrayList<TetreeKey>();
+        var resolvedKeys = new ArrayList<BaseTetreeKey<?>>();
         for (var pos : positions) {
             var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
             var lazy = new LazyTetreeKey(tet);

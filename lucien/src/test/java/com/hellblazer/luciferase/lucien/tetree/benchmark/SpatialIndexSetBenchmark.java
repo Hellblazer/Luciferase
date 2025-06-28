@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.SpatialIndexSet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.BaseTetreeKey;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
@@ -55,8 +56,8 @@ public class SpatialIndexSetBenchmark {
         Set<TetreeKey> lookupSet = new HashSet<>();
         
         // Collections to benchmark
-        NavigableSet<TetreeKey> treeSet;
-        SpatialIndexSet<TetreeKey> spatialSet;
+        NavigableSet<BaseTetreeKey<?>> treeSet;
+        SpatialIndexSet<BaseTetreeKey<?>> spatialSet;
         
         // Data sizes
         static final int SMALL_SIZE = 1_000;
@@ -222,7 +223,7 @@ public class SpatialIndexSetBenchmark {
         // Range query
         TetreeKey min = state.indices.get(100);
         TetreeKey max = state.indices.get(200);
-        NavigableSet<TetreeKey> subset = state.treeSet.subSet(min, true, max, true);
+        NavigableSet<BaseTetreeKey<?>> subset = state.treeSet.subSet(min, true, max, true);
         return subset.size();
     }
     
@@ -236,7 +237,7 @@ public class SpatialIndexSetBenchmark {
         // Range query
         TetreeKey min = state.indices.get(100);
         TetreeKey max = state.indices.get(200);
-        NavigableSet<TetreeKey> subset = state.spatialSet.subSet(min, true, max, true);
+        NavigableSet<BaseTetreeKey<?>> subset = state.spatialSet.subSet(min, true, max, true);
         return subset.size();
     }
     
@@ -252,7 +253,7 @@ public class SpatialIndexSetBenchmark {
         // Simulate level query on TreeSet (O(n) operation)
         int count = 0;
         byte targetLevel = 10;
-        for (TetreeKey index : state.treeSet) {
+        for (BaseTetreeKey<?> index : state.treeSet) {
             if (index.getLevel() == targetLevel) {
                 count++;
             }
@@ -283,7 +284,7 @@ public class SpatialIndexSetBenchmark {
         int count = 0;
         byte minLevel = 5;
         byte maxLevel = 15;
-        for (TetreeKey index : state.treeSet) {
+        for (BaseTetreeKey<?> index : state.treeSet) {
             byte level = index.getLevel();
             if (level >= minLevel && level <= maxLevel) {
                 count++;

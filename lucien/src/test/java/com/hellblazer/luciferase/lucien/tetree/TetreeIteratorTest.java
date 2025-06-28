@@ -18,7 +18,6 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
-import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -72,11 +71,11 @@ public class TetreeIteratorTest {
         // Traverse depth-first pre-order
         TetreeIterator<LongEntityID, String> iter = TetreeIterator.depthFirstPre(tetree);
 
-        List<TetreeKey> indices = new ArrayList<>();
+        var indices = new ArrayList<>();
 
         while (iter.hasNext()) {
             iter.next();
-            TetreeKey index = iter.getCurrentIndex();
+            var index = iter.getCurrentIndex();
             indices.add(index);
         }
 

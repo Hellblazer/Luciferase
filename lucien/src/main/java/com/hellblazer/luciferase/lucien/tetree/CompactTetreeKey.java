@@ -47,6 +47,19 @@ public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
         this.tmIndex = tmIndex;
     }
 
+    /**
+     * Protected constructor for subclasses that need to support higher levels.
+     * Used by TetreeKey to extend CompactTetreeKey for levels > 10.
+     *
+     * @param level   the hierarchical level (no validation)
+     * @param tmIndex the TM-index bits
+     * @param skipValidation marker parameter to distinguish from public constructor
+     */
+    protected CompactTetreeKey(byte level, long tmIndex, boolean skipValidation) {
+        super(level);
+        this.tmIndex = tmIndex;
+    }
+
     @Override
     public int compareTo(BaseTetreeKey other) {
         Objects.requireNonNull(other, "Cannot compare to null TetreeKey");

@@ -37,7 +37,7 @@ class TetreeKeyTest {
         long lowBits = 0x123456789ABCDEFL;
         long highBits = 0L;
         
-        TetreeKey key = new TetreeKey(level, lowBits, highBits);
+        var key = new TetreeKey(level, lowBits, highBits);
 
         assertEquals(level, key.getLevel());
         assertEquals(lowBits, key.getLowBits());
@@ -50,10 +50,10 @@ class TetreeKeyTest {
     @Test
     void testEquality() {
         // Create TetreeKeys with specific bit patterns
-        TetreeKey key1 = new TetreeKey((byte) 5, 100L, 0L);
-        TetreeKey key2 = new TetreeKey((byte) 5, 100L, 0L);
-        TetreeKey key3 = new TetreeKey((byte) 5, 200L, 0L);
-        TetreeKey key4 = new TetreeKey((byte) 6, 100L, 0L);
+        var key1 = new TetreeKey((byte) 5, 100L, 0L);
+        var key2 = new TetreeKey((byte) 5, 100L, 0L);
+        var key3 = new TetreeKey((byte) 5, 200L, 0L);
+        var key4 = new TetreeKey((byte) 6, 100L, 0L);
 
         // Reflexive
         assertEquals(key1, key1);
@@ -81,7 +81,7 @@ class TetreeKeyTest {
     void testFromTet() {
         // Create a Tet with coordinates, level and type
         Tet tet = new Tet(100, 200, 300, (byte) 5, (byte) 0);
-        TetreeKey key = tet.tmIndex();
+        var key = tet.tmIndex();
 
         assertEquals(tet.l(), key.getLevel());
         assertEquals(tet.tmIndex(), key);
@@ -103,7 +103,7 @@ class TetreeKeyTest {
             
             // Test origin - always works correctly
             Tet original1 = new Tet(0, 0, 0, level, (byte) 0);
-            TetreeKey key1 = original1.tmIndex();
+            var key1 = original1.tmIndex();
             Tet decoded1 = Tet.tetrahedron(key1);
             
             assertEquals(original1.x(), decoded1.x(), "Round-trip failed for x at level " + level);
@@ -118,7 +118,7 @@ class TetreeKeyTest {
                 // Use coordinates that are clearly grid coordinates (small values)
                 int testCoord = Math.min(10, maxGridCoord);
                 Tet original2 = new Tet(testCoord, testCoord, testCoord, level, (byte) 0);
-                TetreeKey key2 = original2.tmIndex();
+                var key2 = original2.tmIndex();
                 Tet decoded2 = Tet.tetrahedron(key2);
                 
                 assertEquals(original2.x(), decoded2.x(), "Round-trip failed for x at level " + level);
@@ -138,7 +138,7 @@ class TetreeKeyTest {
             if (gridSize >= 100) {
                 int testCoord = 50; // Safe value that works at these levels
                 Tet original = new Tet(testCoord, testCoord + 10, testCoord + 20, level, (byte) 0);
-                TetreeKey key = original.tmIndex();
+                var key = original.tmIndex();
                 Tet decoded = Tet.tetrahedron(key);
                 
                 assertEquals(original.x(), decoded.x(), "Round-trip failed for x at level " + level);
@@ -154,7 +154,7 @@ class TetreeKeyTest {
         for (byte type : types) {
             // Use small grid coordinates that won't be ambiguous
             Tet original = new Tet(4, 4, 4, (byte) 5, type);
-            TetreeKey key = original.tmIndex();
+            var key = original.tmIndex();
             Tet decoded = Tet.tetrahedron(key);
             
             assertEquals(original.x(), decoded.x(), "Round-trip failed for x with type " + type);
@@ -176,11 +176,11 @@ class TetreeKeyTest {
         
         // Create a Tet with absolute coordinates
         Tet absoluteCoordTet = new Tet(cellSize, 0, 0, level, (byte) 0);
-        TetreeKey absoluteKey = absoluteCoordTet.tmIndex();
+        var absoluteKey = absoluteCoordTet.tmIndex();
         
         // Create a Tet with grid coordinates
         Tet gridCoordTet = new Tet(1, 0, 0, level, (byte) 0);
-        TetreeKey gridKey = gridCoordTet.tmIndex();
+        var gridKey = gridCoordTet.tmIndex();
         
         // Both encode to the same TM-index because grid coord 1 shifted by 20 = absolute coord 1048576
         assertEquals(absoluteKey, gridKey, "Different coordinate systems can produce same TM-index");
@@ -213,10 +213,10 @@ class TetreeKeyTest {
         Tet tet2a = new Tet(0, 0, 0, (byte) 2, (byte) 0);
         Tet tet2b = new Tet(cellSize2, 0, 0, (byte) 2, (byte) 0);
 
-        TetreeKey key1 = tet1a.tmIndex();
-        TetreeKey key2 = tet1b.tmIndex();
-        TetreeKey key3 = tet2a.tmIndex();
-        TetreeKey key4 = tet2b.tmIndex();
+        var key1 = tet1a.tmIndex();
+        var key2 = tet1b.tmIndex();
+        var key3 = tet2a.tmIndex();
+        var key4 = tet2b.tmIndex();
 
         // Within same level, ordered by tm-index
         assertTrue(key1.compareTo(key2) < 0);
@@ -255,9 +255,12 @@ class TetreeKeyTest {
         Tet tet2 = new Tet(cellSize2, 0, 0, (byte) 2, (byte) 0);
         Tet tet3 = new Tet(cellSize3, 0, 0, (byte) 3, (byte) 0);
 
-        TetreeKey level1 = tet1.tmIndex();
-        TetreeKey level2 = tet2.tmIndex();
-        TetreeKey level3 = tet3.tmIndex();
+        var key1 = tet1.tmIndex();
+        var key2 = tet2.tmIndex();
+        var key3 = tet3.tmIndex();
+        var level1 = key1 instanceof TetreeKey ? (TetreeKey) key1 : TetreeKey.fromCompactKey((CompactTetreeKey) key1);
+        var level2 = key2 instanceof TetreeKey ? (TetreeKey) key2 : TetreeKey.fromCompactKey((CompactTetreeKey) key2);
+        var level3 = key3 instanceof TetreeKey ? (TetreeKey) key3 : TetreeKey.fromCompactKey((CompactTetreeKey) key3);
 
         // Different levels may have different tm-indices (but not guaranteed)
         // The key point is that the TetreeKey objects are different
@@ -289,7 +292,7 @@ class TetreeKeyTest {
 
     @Test
     void testRootFactory() {
-        TetreeKey root = TetreeKey.getRoot();
+        var root = TetreeKey.getRoot();
 
         assertEquals(0, root.getLevel());
         assertEquals(0L, root.getLowBits());
@@ -308,7 +311,9 @@ class TetreeKeyTest {
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
                 Tet tet = new Tet(x * cellSize, y * cellSize, 0, level, (byte) 0);
-                keys.add(tet.tmIndex());
+                var key = tet.tmIndex();
+                TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey((CompactTetreeKey) key);
+                keys.add(tetreeKey);
             }
         }
 
@@ -335,8 +340,8 @@ class TetreeKeyTest {
             Tet tet2 = new Tet(Constants.lengthAtLevel(level), 0, 0, level, (byte) 0);
 
             // These should be valid since they come from actual Tet instances
-            TetreeKey key1 = tet1.tmIndex();
-            TetreeKey key2 = tet2.tmIndex();
+            var key1 = tet1.tmIndex();
+            var key2 = tet2.tmIndex();
 
             assertTrue(key1.isValid());
             assertTrue(key2.isValid());

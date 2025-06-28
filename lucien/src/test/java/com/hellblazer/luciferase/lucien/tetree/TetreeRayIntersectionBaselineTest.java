@@ -203,7 +203,7 @@ public class TetreeRayIntersectionBaselineTest {
         // Create a test tetrahedron
         Tet testTet = new Tet(0, 0, 0, (byte)10, (byte)0);
         Point3i[] vertices = testTet.coordinates();
-        TetreeKey testKey = testTet.tmIndex();
+        var testKey = testTet.tmIndex();
         
         // Test direct ray-tetrahedron intersection performance
         long totalTime = 0;

@@ -17,19 +17,26 @@ public class TetreeKey128BitSimpleTest {
         assertEquals(0L, root.getHighBits());
         assertTrue(root.isValid());
         
-        // Test creating a key with specific values
-        TetreeKey key = new TetreeKey((byte) 5, 12345L, 67890L);
+        // Test creating a key with specific values (level 5 uses only low bits)
+        TetreeKey key = new TetreeKey((byte) 5, 12345L, 0L);
         assertEquals((byte) 5, key.getLevel());
         assertEquals(12345L, key.getLowBits());
-        assertEquals(67890L, key.getHighBits());
+        assertEquals(0L, key.getHighBits());
         assertTrue(key.isValid());
+        
+        // Test creating a key that uses high bits (level > 10)
+        TetreeKey highKey = new TetreeKey((byte) 15, 12345L, 67890L);
+        assertEquals((byte) 15, highKey.getLevel());
+        assertEquals(12345L, highKey.getLowBits());
+        assertEquals(67890L, highKey.getHighBits());
+        assertTrue(highKey.isValid());
     }
     
     @Test
     public void testTetTmIndexCreation() {
         // Test that a Tet can create a TetreeKey
         Tet tet = new Tet(100, 200, 300, (byte) 3, (byte) 2);
-        TetreeKey key = tet.tmIndex();
+        var key = tet.tmIndex();
         
         assertNotNull(key);
         assertEquals((byte) 3, key.getLevel());
@@ -70,7 +77,7 @@ public class TetreeKey128BitSimpleTest {
         Tet original = new Tet(x, y, z, level, type);
         
         // Get its TetreeKey
-        TetreeKey key = original.tmIndex();
+        var key = original.tmIndex();
         
         // For now, just verify the key is created correctly
         // The round-trip test needs proper coordinate system understanding

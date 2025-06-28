@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class SpatialKeyLocalityTest {
         // Verify that different key types cannot be mixed
         MortonKey mortonKey = new MortonKey(12345L);
         Tet tet = new Tet(100, 200, 300, (byte) 5, (byte) 0);
-        TetreeKey tetreeKey = tet.tmIndex();
+        var tetreeKey = tet.tmIndex();
 
         // These should be completely different types
         assertNotEquals(mortonKey, tetreeKey);
@@ -114,8 +115,8 @@ class SpatialKeyLocalityTest {
         long tetreeStart = System.nanoTime();
         Tet tet1 = new Tet(100, 200, 300, (byte) 5, (byte) 0);
         Tet tet2 = new Tet(200, 300, 400, (byte) 5, (byte) 0);
-        TetreeKey tKey1 = tet1.tmIndex();
-        TetreeKey tKey2 = tet2.tmIndex();
+        var tKey1 = tet1.tmIndex();
+        var tKey2 = tet2.tmIndex();
 
         for (int i = 0; i < iterations; i++) {
             tKey1.compareTo(tKey2);
@@ -150,7 +151,9 @@ class SpatialKeyLocalityTest {
                 int x = (i % 3) * cellSize;
                 int y = (i / 3) * cellSize;
                 Tet tet = new Tet(x, y, 0, level, (byte) 0);
-                mixedLevelKeys.add(tet.tmIndex());
+                var key = tet.tmIndex();
+                TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey((CompactTetreeKey) key);
+                mixedLevelKeys.add(tetreeKey);
             }
         }
 
@@ -160,8 +163,8 @@ class SpatialKeyLocalityTest {
         // Verify that keys are sorted by tm-index value (not by level)
         // TetreeKey comparison is based solely on tm-index
         for (int i = 0; i < mixedLevelKeys.size() - 1; i++) {
-            TetreeKey current = mixedLevelKeys.get(i);
-            TetreeKey next = mixedLevelKeys.get(i + 1);
+            var current = mixedLevelKeys.get(i);
+            var next = mixedLevelKeys.get(i + 1);
 
             // Keys should be in non-descending order by tm-index
             assertTrue(current.compareTo(next) <= 0, "Keys should be sorted in non-descending order by tm-index");
@@ -180,7 +183,9 @@ class SpatialKeyLocalityTest {
             for (int y = 0; y < 10; y++) {
                 for (int z = 0; z < 10; z++) {
                     Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, (byte) 0);
-                    keys.add(tet.tmIndex());
+                    var key = tet.tmIndex();
+                    TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey((CompactTetreeKey) key);
+                    keys.add(tetreeKey);
                 }
             }
         }

@@ -247,7 +247,7 @@ public class TetreeSFCRayTraversalTest {
 
         // Find the tetrahedron that contains the entity
         Tet entityTet = tetree.locateTetrahedron(new Point3f(50, 50, 50), (byte) 10);
-        BaseTetreeKey<? extends BaseTetreeKey> entityTetKey = entityTet.tmIndex();
+        var entityTetKey = entityTet.tmIndex();
 
         // Verify that the ray traversal found the tetrahedron containing our entity
         // Ray traversal generates tetrahedra along the ray path

@@ -74,15 +74,15 @@ public class CompactTetreeKeyTest {
     @Test
     void testFactoryMethods() {
         // Test root creation
-        BaseTetreeKey<? extends BaseTetreeKey> root = BaseTetreeKey.getRootCompact();
+        BaseTetreeKey<?> root = BaseTetreeKey.getRootCompact();
         assertInstanceOf(CompactTetreeKey.class, root);
         assertEquals(0, root.getLevel());
 
         // Test factory create method
-        BaseTetreeKey<? extends BaseTetreeKey> compact = BaseTetreeKey.create((byte) 8, 0x12345L, 0L);
+        BaseTetreeKey<?> compact = BaseTetreeKey.create((byte) 8, 0x12345L, 0L);
         assertInstanceOf(CompactTetreeKey.class, compact);
 
-        BaseTetreeKey<? extends BaseTetreeKey> full = BaseTetreeKey.create((byte) 15, 0x12345L, 0x67890L);
+        BaseTetreeKey<?> full = BaseTetreeKey.create((byte) 15, 0x12345L, 0x67890L);
         assertInstanceOf(TetreeKey.class, full);
     }
 
@@ -113,13 +113,13 @@ public class CompactTetreeKeyTest {
         CompactTetreeKey key5 = new CompactTetreeKey((byte) 5, tmIndex);
 
         // Parent at level 4 should remove the last 6 bits
-        CompactTetreeKey parent = key5.parent();
+        CompactTetreeKey parent = (CompactTetreeKey) key5.parent();
         assertNotNull(parent);
         assertEquals(4, parent.getLevel());
         assertEquals(tmIndex >>> 6, parent.getLowBits());
 
         // Continue up to root
-        CompactTetreeKey grandparent = parent.parent();
+        CompactTetreeKey grandparent = (CompactTetreeKey) parent.parent();
         assertEquals(3, grandparent.getLevel());
         assertEquals(tmIndex >>> 12, grandparent.getLowBits());
 

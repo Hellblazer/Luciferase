@@ -122,7 +122,7 @@ public class SpatialKeyParentTest {
 
         // Test with a specific tetrahedron at level 3
         Tet tet = new Tet(100, 100, 100, (byte) 3, (byte) 0);
-        BaseTetreeKey<? extends BaseTetreeKey> level3Key = tet.tmIndex();
+        var level3Key = tet.tmIndex();
 
         // Get parent
         BaseTetreeKey<? extends BaseTetreeKey> parent = level3Key.parent();

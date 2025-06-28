@@ -60,7 +60,7 @@ public class TetreeLUTTest {
         Tet tet = new Tet(100, 200, 300, (byte)5, (byte)3);
         
         // Get the standard tm-index
-        TetreeKey standardKey = tet.tmIndex();
+        var standardKey = tet.tmIndex();
         
         // For the LUT test, we need to prepare the data as the tmIndex method does
         int x = tet.x();
@@ -92,7 +92,7 @@ public class TetreeLUTTest {
         }
         
         // Compute using LUT
-        TetreeKey lutKey = TetreeLUT.computeTmIndexOptimized(shiftedX, shiftedY, shiftedZ, typeArray, level);
+        var lutKey = TetreeLUT.computeTmIndexOptimized(shiftedX, shiftedY, shiftedZ, typeArray, level);
         
         // The keys might not match exactly due to different type array construction,
         // but we can verify the structure is correct

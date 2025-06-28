@@ -89,7 +89,7 @@ public class TetreeEnhancedIteratorTest {
         // Find a leaf node
         Point3f leafPoint = new Point3f(612, 612, 612);
         Tet leafTet = tetree.locateTetrahedron(leafPoint, (byte) 3);
-        TetreeKey leafKey = leafTet.tmIndex();
+        var leafKey = leafTet.tmIndex();
 
         // Test parent-child iterator
         
@@ -130,7 +130,7 @@ public class TetreeEnhancedIteratorTest {
         // Find a tetrahedron with siblings
         Point3f testPoint = new Point3f(400, 400, 400);
         Tet testTet = tetree.locateTetrahedron(testPoint, (byte) 2);
-        TetreeKey testKey = testTet.tmIndex();
+        var testKey = testTet.tmIndex();
 
         // Get siblings
         List<TetreeNodeImpl<LongEntityID>> siblings = new ArrayList<>();
@@ -201,7 +201,7 @@ public class TetreeEnhancedIteratorTest {
 
         // Find a node to validate its subtree
         Tet rootTet = tetree.locateTetrahedron(p1, (byte) 2);
-        TetreeKey rootKey = rootTet.tmIndex();
+        var rootKey = rootTet.tmIndex();
 
         // Validate the subtree
         TetreeValidator.ValidationResult result = tetree.validateSubtree(rootKey);
@@ -225,7 +225,7 @@ public class TetreeEnhancedIteratorTest {
         tetree.insert(p1, (byte) 2, "test");
         
         Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         tetree.findAllFaceNeighbors(tetKey);
         
         // Get metrics

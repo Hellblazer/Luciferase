@@ -41,7 +41,7 @@ public class TMIndexBenchmark {
         long start = System.nanoTime();
         int iterations = 100000;
         for (int i = 0; i < iterations; i++) {
-            TetreeKey key = tet.tmIndex();
+            var key = tet.tmIndex();
             if (key == null) throw new RuntimeException();
         }
         long currentTime = (System.nanoTime() - start) / iterations;

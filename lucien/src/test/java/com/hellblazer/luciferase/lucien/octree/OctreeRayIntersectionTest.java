@@ -40,7 +40,7 @@ public class OctreeRayIntersectionTest {
         var pos1 = new Point3f(100, 100, 100);
         var pos2 = new Point3f(200, 200, 200);
         var pos3 = new Point3f(300, 300, 300);
-        var level = 10;
+        var level = (byte) 10;
 
         var id1 = octree.insert(pos1, level, "Entity1");
         var id2 = octree.insert(pos2, level, "Entity2");
@@ -94,7 +94,7 @@ public class OctreeRayIntersectionTest {
     void testMultipleEntitiesAtSamePosition() {
         // Insert multiple entities at the same position
         var pos = new Point3f(150, 150, 150);
-        var level = 10;
+        var level = (byte) 10;
 
         var id1 = octree.insert(pos, level, "Entity1");
         var id2 = octree.insert(pos, level, "Entity2");
@@ -157,7 +157,7 @@ public class OctreeRayIntersectionTest {
         // Test intersection point accuracy
         var entityPos = new Point3f(100, 100, 100);
         var bounds = new EntityBounds(new Point3f(95, 95, 95), new Point3f(105, 105, 105));
-        var level = 12; // Finer level for better accuracy
+        var level = (byte) 12; // Finer level for better accuracy
 
         var entityId = idGenerator.generateID();
         octree.insert(entityId, entityPos, level, "AccuracyTest", bounds);
@@ -191,7 +191,7 @@ public class OctreeRayIntersectionTest {
         // Create entities with bounds that should intersect the ray
         var pos = new Point3f(100, 100, 100);
         var bounds = new EntityBounds(new Point3f(90, 90, 90), new Point3f(110, 110, 110));
-        var level = 10;
+        var level = (byte) 10;
 
         var entityId = idGenerator.generateID();
         octree.insert(entityId, pos, level, "BoundedEntity", bounds);
@@ -213,7 +213,7 @@ public class OctreeRayIntersectionTest {
         var pos1 = new Point3f(100, 100, 100); // Closer
         var pos2 = new Point3f(200, 200, 200); // Medium distance
         var pos3 = new Point3f(400, 400, 400); // Farther
-        var level = 10;
+        var level = (byte) 10;
 
         octree.insert(pos1, level, "Close");
         octree.insert(pos2, level, "Medium");
@@ -247,7 +247,7 @@ public class OctreeRayIntersectionTest {
         // Insert entities at different distances
         var closePos = new Point3f(100, 100, 100);
         var farPos = new Point3f(300, 300, 300);
-        var level = 10;
+        var level = (byte) 10;
 
         octree.insert(closePos, level, "Close");
         octree.insert(farPos, level, "Far");

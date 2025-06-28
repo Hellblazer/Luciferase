@@ -119,7 +119,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testGrazingRay() {
         // Create tetrahedron
         Tet tet = new Tet(600, 600, 600, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
         // Calculate bounding box
@@ -151,7 +151,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testMultipleFaceIntersections() {
         // Create tetrahedron
         Tet tet = new Tet(800, 800, 800, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
         // Calculate centroid
@@ -178,7 +178,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testParallelRayNearFace() {
         // Create tetrahedron
         Tet tet = new Tet(500, 500, 500, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
         // Get face normal for face (0, 1, 2)
@@ -218,7 +218,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testRayAlongEdge() {
         // Create tetrahedron
         Tet tet = new Tet(300, 300, 300, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
         // Create ray along edge between vertex 0 and vertex 1
@@ -243,7 +243,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testRayFromFarDistance() {
         // Create small tetrahedron
         Tet tet = new Tet(100, 100, 100, (byte) 15, (byte) 0); // High level = small tet
-        TetreeKey tetKey = tet.tmIndex(); // Use TM-index, not SFC index
+        var tetKey = tet.tmIndex(); // Use TM-index, not SFC index
 
         // Ray from very far away
         Point3f farOrigin = new Point3f(-10000, -10000, -10000);
@@ -261,7 +261,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testRayInFacePlane() {
         // Create tetrahedron
         Tet tet = new Tet(400, 400, 400, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
         // Debug: print actual coordinates
@@ -292,7 +292,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testRayOriginInsideTetrahedron() {
         // Create a simple tetrahedron
         Tet tet = new Tet(100, 100, 100, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
 
         // Get tetrahedron centroid
         Point3i[] coords = tet.coordinates();
@@ -312,7 +312,7 @@ public class TetrahedralGeometryEdgeCaseTest {
     void testRayThroughVertex() {
         // Create tetrahedron and get its vertices
         Tet tet = new Tet(200, 200, 200, (byte) 10, (byte) 0);
-        TetreeKey tetKey = tet.tmIndex();
+        var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
         // Ray passing exactly through vertex 0

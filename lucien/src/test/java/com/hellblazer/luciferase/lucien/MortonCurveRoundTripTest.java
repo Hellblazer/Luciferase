@@ -112,7 +112,7 @@ public class MortonCurveRoundTripTest {
 
         // Document the overflow behavior at level 0
         // At level 0, length = 2^21 = 2,097,152 which is beyond max coordinate
-        var level0 = 0;
+        var level0 = (byte) 0;
         var level0Length = Constants.lengthAtLevel(level0);
         assertEquals(2097152, level0Length, "Level 0 length should be 2^21");
         assertTrue(level0Length > maxCoord, "Level 0 length exceeds max coordinate");
@@ -240,7 +240,7 @@ public class MortonCurveRoundTripTest {
     @DisplayName("Test spatial locality preservation")
     void testSpatialLocality() {
         // Morton codes should preserve spatial locality - nearby points should have similar codes
-        var level = 15;
+        var level = (byte) 15;
         var length = Constants.lengthAtLevel(level);
 
         // Test adjacent cells

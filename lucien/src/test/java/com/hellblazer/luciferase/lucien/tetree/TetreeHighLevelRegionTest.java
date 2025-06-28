@@ -42,7 +42,7 @@ public class TetreeHighLevelRegionTest {
             
             // Find which tetrahedron contains this entity
             Tet tet = tetree.locateTetrahedron(entityPos, level);
-            TetreeKey key = tet.tmIndex();
+            var key = tet.tmIndex();
             
             System.out.println("\nLevel " + level + ":");
             System.out.println("  Cell size: " + com.hellblazer.luciferase.lucien.Constants.lengthAtLevel(level));
