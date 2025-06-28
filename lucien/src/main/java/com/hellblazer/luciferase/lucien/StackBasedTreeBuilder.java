@@ -125,23 +125,229 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
     }
 
     /**
-     * Build tree bottom-up (not implemented - placeholder)
+     * Build tree bottom-up: create all leaf nodes first, then merge upwards
      */
     private void buildBottomUp(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
                                List<BulkOperationProcessor.SfcEntity<Key, Content>> entities, byte startLevel) {
-        // TODO: Implement bottom-up construction
-        // For now, fall back to top-down
-        buildTopDown(index, entities, startLevel);
+        if (entities.isEmpty()) {
+            return;
+        }
+
+        // Phase 1: Find the maximum level needed (leaf level)
+        byte maxLevel = startLevel;
+        Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> leafNodes = new HashMap<>();
+        
+        // Group entities by their leaf nodes
+        for (BulkOperationProcessor.SfcEntity<Key, Content> entity : entities) {
+            // Find the deepest level where this entity would be placed
+            byte entityLevel = determineEntityLevel(index, entity.position, startLevel);
+            maxLevel = (byte) Math.max(maxLevel, entityLevel);
+            
+            Key leafIndex = index.calculateSpatialIndex(entity.position, entityLevel);
+            leafNodes.computeIfAbsent(leafIndex, k -> new ArrayList<>()).add(entity);
+        }
+        
+        // Phase 2: Create all leaf nodes
+        for (Map.Entry<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> entry : leafNodes.entrySet()) {
+            Key nodeIndex = entry.getKey();
+            List<BulkOperationProcessor.SfcEntity<Key, Content>> nodeEntities = entry.getValue();
+            
+            // Create the node and insert entities
+            NodeType node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
+                nodesCreated.incrementAndGet();
+                return index.createNode();
+            });
+            
+            // Add entities to the node
+            for (BulkOperationProcessor.SfcEntity<Key, Content> entity : nodeEntities) {
+                ID id = index.getEntityManager().generateEntityId();
+                if (config.isTrackInsertedIds()) {
+                    insertedIds.add(id);
+                }
+                node.addEntity(id);
+                index.getEntityManager().createOrUpdateEntity(id, entity.content, entity.position, null);
+                index.getEntityManager().addEntityLocation(id, nodeIndex);
+                entitiesProcessed.incrementAndGet();
+            }
+            
+            index.getSortedSpatialIndices().add(nodeIndex);
+        }
+        
+        // Phase 3: Build internal nodes from bottom to top
+        Set<Key> currentLevelNodes = new HashSet<>(leafNodes.keySet());
+        byte currentLevel = maxLevel;
+        
+        while (currentLevel > startLevel && !currentLevelNodes.isEmpty()) {
+            Set<Key> parentNodes = new HashSet<>();
+            
+            // For each node at current level, ensure its parent exists
+            for (Key childIndex : currentLevelNodes) {
+                Key parentIndex = childIndex.parent();
+                if (parentIndex != null && !index.getSpatialIndex().containsKey(parentIndex)) {
+                    // Create parent node
+                    NodeType parentNode = index.createNode();
+                    index.getSpatialIndex().put(parentIndex, parentNode);
+                    index.getSortedSpatialIndices().add(parentIndex);
+                    nodesCreated.incrementAndGet();
+                    
+                    // Mark parent as having children
+                    if (parentNode instanceof AbstractSpatialNode) {
+                        ((AbstractSpatialNode<ID>) parentNode).setHasChildren(true);
+                    }
+                    
+                    parentNodes.add(parentIndex);
+                }
+            }
+            
+            // Move up one level
+            currentLevelNodes = parentNodes;
+            currentLevel--;
+        }
+        
+        // Update max depth reached
+        maxDepthReached = maxLevel;
+        
+        // Report progress
+        if (config.isEnableProgressTracking() && progressListener != null) {
+            progressListener.onProgress(entitiesProcessed.get(), entities.size(), nodesCreated.get());
+        }
     }
 
     /**
-     * Build tree using hybrid approach (not implemented - placeholder)
+     * Build tree using hybrid approach: bulk load at a specific level, then build internal nodes
      */
     private void buildHybrid(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
                              List<BulkOperationProcessor.SfcEntity<Key, Content>> entities, byte startLevel) {
-        // TODO: Implement hybrid construction
-        // For now, fall back to top-down
-        buildTopDown(index, entities, startLevel);
+        if (entities.isEmpty()) {
+            return;
+        }
+
+        // Determine the bulk loading level (typically a few levels down from root)
+        byte bulkLoadLevel = (byte) Math.min(startLevel + 3, index.getMaxDepth() - 2);
+        
+        // Phase 1: Bulk load entities at the bulk load level
+        Map<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> bulkNodes = new HashMap<>();
+        
+        // Group entities by their bulk load level nodes
+        for (BulkOperationProcessor.SfcEntity<Key, Content> entity : entities) {
+            Key bulkIndex = index.calculateSpatialIndex(entity.position, bulkLoadLevel);
+            bulkNodes.computeIfAbsent(bulkIndex, k -> new ArrayList<>()).add(entity);
+        }
+        
+        // Phase 2: Create bulk nodes and process their contents
+        Deque<BuildStackFrame<Key, ID, Content>> stack = new ArrayDeque<>();
+        
+        for (Map.Entry<Key, List<BulkOperationProcessor.SfcEntity<Key, Content>>> entry : bulkNodes.entrySet()) {
+            Key nodeIndex = entry.getKey();
+            List<BulkOperationProcessor.SfcEntity<Key, Content>> nodeEntities = entry.getValue();
+            
+            // If this bulk node has too many entities, use top-down subdivision
+            if (nodeEntities.size() > index.getMaxEntitiesPerNode() && bulkLoadLevel < index.getMaxDepth()) {
+                // Push frame for top-down processing of this subtree
+                stack.push(new BuildStackFrame<>(nodeIndex, bulkLoadLevel, nodeEntities, 
+                                               0, nodeEntities.size(), BuildPhase.PROCESS_NODE));
+            } else {
+                // Direct insertion for small nodes
+                createAndPopulateNode(index, nodeIndex, nodeEntities);
+            }
+        }
+        
+        // Phase 3: Process stack for nodes that need subdivision
+        processStackFrames(index, stack, entities.size());
+        
+        // Phase 4: Build internal nodes from bulk load level up to root
+        buildInternalNodesUpward(index, bulkNodes.keySet(), bulkLoadLevel, startLevel);
+        
+        // Update statistics
+        maxDepthReached = Math.max(maxDepthReached, bulkLoadLevel);
+        
+        // Report final progress
+        if (config.isEnableProgressTracking() && progressListener != null) {
+            progressListener.onProgress(entitiesProcessed.get(), entities.size(), nodesCreated.get());
+        }
+    }
+    
+    /**
+     * Create and populate a node with entities
+     */
+    private void createAndPopulateNode(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
+                                      Key nodeIndex, 
+                                      List<BulkOperationProcessor.SfcEntity<Key, Content>> entities) {
+        NodeType node = index.getSpatialIndex().computeIfAbsent(nodeIndex, k -> {
+            nodesCreated.incrementAndGet();
+            return index.createNode();
+        });
+        
+        for (BulkOperationProcessor.SfcEntity<Key, Content> entity : entities) {
+            ID id = index.getEntityManager().generateEntityId();
+            if (config.isTrackInsertedIds()) {
+                insertedIds.add(id);
+            }
+            node.addEntity(id);
+            index.getEntityManager().createOrUpdateEntity(id, entity.content, entity.position, null);
+            index.getEntityManager().addEntityLocation(id, nodeIndex);
+            entitiesProcessed.incrementAndGet();
+        }
+        
+        index.getSortedSpatialIndices().add(nodeIndex);
+    }
+    
+    /**
+     * Process stack frames for subdivision
+     */
+    private void processStackFrames(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
+                                   Deque<BuildStackFrame<Key, ID, Content>> stack,
+                                   int totalEntities) {
+        while (!stack.isEmpty()) {
+            if (stack.size() > config.getMaxStackDepth()) {
+                log.debug("Hybrid builder: Stack depth exceeded {}, processing in batches", config.getMaxStackDepth());
+                int batchSize = Math.min(stack.size(), config.getMaxStackDepth() / 2);
+                for (int i = 0; i < batchSize && !stack.isEmpty(); i++) {
+                    var frame = stack.pop();
+                    processSingleFrame(index, frame, stack);
+                }
+                continue;
+            }
+            
+            var frame = stack.pop();
+            processSingleFrame(index, frame, stack);
+            
+            if (config.isEnableProgressTracking() && progressListener != null) {
+                progressListener.onProgress(entitiesProcessed.get(), totalEntities, nodesCreated.get());
+            }
+        }
+    }
+    
+    /**
+     * Build internal nodes from a set of child nodes up to the root level
+     */
+    private void buildInternalNodesUpward(AbstractSpatialIndex<Key, ID, Content, NodeType> index,
+                                         Set<Key> childNodes, byte fromLevel, byte toLevel) {
+        Set<Key> currentLevelNodes = new HashSet<>(childNodes);
+        byte currentLevel = fromLevel;
+        
+        while (currentLevel > toLevel && !currentLevelNodes.isEmpty()) {
+            Set<Key> parentNodes = new HashSet<>();
+            
+            for (Key childIndex : currentLevelNodes) {
+                Key parentIndex = childIndex.parent();
+                if (parentIndex != null && !index.getSpatialIndex().containsKey(parentIndex)) {
+                    NodeType parentNode = index.createNode();
+                    index.getSpatialIndex().put(parentIndex, parentNode);
+                    index.getSortedSpatialIndices().add(parentIndex);
+                    nodesCreated.incrementAndGet();
+                    
+                    if (parentNode instanceof AbstractSpatialNode) {
+                        ((AbstractSpatialNode<ID>) parentNode).setHasChildren(true);
+                    }
+                    
+                    parentNodes.add(parentIndex);
+                }
+            }
+            
+            currentLevelNodes = parentNodes;
+            currentLevel--;
+        }
     }
 
     /**
@@ -545,6 +751,24 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
             return endIdx - startIdx;
         }
     }
+
+    /**
+     * Determine the appropriate level for an entity based on spatial density
+     */
+    private byte determineEntityLevel(AbstractSpatialIndex<Key, ID, Content, NodeType> index, 
+                                     Point3f position, byte startLevel) {
+        // Start at the given level and potentially go deeper based on density
+        byte level = startLevel;
+        
+        // Simple heuristic: use adaptive level selection if available
+        if (config.isUseAdaptiveSubdivision()) {
+            // Could be enhanced with density-based logic
+            level = (byte) Math.min(startLevel + 2, index.getMaxDepth());
+        }
+        
+        return level;
+    }
+    
 
     /**
      * Build result with statistics

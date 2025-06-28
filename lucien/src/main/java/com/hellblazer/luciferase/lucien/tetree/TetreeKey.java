@@ -152,6 +152,40 @@ public class TetreeKey implements SpatialKey<TetreeKey> {
     }
 
     @Override
+    public TetreeKey parent() {
+        if (level == 0) {
+            return null; // Root has no parent
+        }
+        
+        // Calculate parent by removing the last 6-bit tuple
+        // Each level in Tetree uses 6 bits (3 for child index, 3 for type)
+        byte parentLevel = (byte) (level - 1);
+        
+        // The tm-index structure stores levels 0-9 in lowBits (60 bits used)
+        // and levels 10-20 in highBits (66 bits used)
+        long parentLowBits;
+        long parentHighBits;
+        
+        if (level <= 10) {
+            // Current key uses only lowBits, parent also uses only lowBits
+            parentLowBits = lowBits >>> 6;
+            parentHighBits = 0L;
+        } else {
+            // Current key uses both lowBits and highBits
+            // When level > 10, the encoding changes:
+            // - lowBits contains levels 0-9 (unchanged)
+            // - highBits contains levels 10 and up
+            
+            // For parent, we need to remove 6 bits from the highBits
+            parentHighBits = highBits >>> 6;
+            // lowBits remains the same for levels 0-9
+            parentLowBits = lowBits;
+        }
+        
+        return new TetreeKey(parentLevel, parentLowBits, parentHighBits);
+    }
+
+    @Override
     public String toString() {
         // For display, show the 128-bit value in a readable format
         if (level == 0) {

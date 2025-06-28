@@ -121,6 +121,18 @@ public final class MortonKey implements SpatialKey<MortonKey> {
     }
 
     @Override
+    public MortonKey parent() {
+        if (level == 0) {
+            return null; // Root has no parent
+        }
+        
+        // Calculate parent Morton code by shifting right by 3 bits (removing one octant level)
+        byte parentLevel = (byte) (level - 1);
+        long parentCode = mortonCode >> 3;
+        return new MortonKey(parentCode, parentLevel);
+    }
+
+    @Override
     public String toString() {
         return String.format("MortonKey[code=%d, level=%d]", mortonCode, level);
     }

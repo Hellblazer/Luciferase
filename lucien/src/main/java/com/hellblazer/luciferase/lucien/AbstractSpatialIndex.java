@@ -3862,14 +3862,6 @@ implements SpatialIndex<Key, ID, Content> {
             return Collections.emptySet();
         }
 
-        /**
-         * Get parent node index.
-         */
-        protected Key getParentIndex(Key nodeIndex) {
-            // Default implementation: no parent tracking
-            // Subclasses should override based on their structure
-            return null;
-        }
 
         /**
          * Get entity counts of sibling nodes.
@@ -3915,7 +3907,7 @@ implements SpatialIndex<Key, ID, Content> {
                     // Find siblings for merging
                     Set<Key> siblings = findSiblings(rootNodeIndex);
                     if (!siblings.isEmpty()) {
-                        var parent = getParentIndex(rootNodeIndex);
+                        var parent = rootNodeIndex.parent();
                         if (mergeNodes(siblings, parent)) {
                             modifications++;
                         }

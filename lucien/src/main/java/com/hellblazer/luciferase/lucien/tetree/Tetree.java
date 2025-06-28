@@ -2971,18 +2971,6 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             return result;
         }
 
-        @Override
-        protected TetreeKey getParentIndex(TetreeKey tetIndex) {
-            Tet tet = Tet.tetrahedron(tetIndex);
-            if (tet.l() == 0) {
-                return null; // Root has no parent
-            }
-
-            // Use the t8code-compliant parent() method from the Tet class
-            // This ensures correct parent calculation using the exact t8code algorithm
-            Tet parentTet = tet.parent();
-            return parentTet.tmIndex();
-        }
     }
 
     /**

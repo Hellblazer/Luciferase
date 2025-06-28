@@ -58,6 +58,13 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     K root();
 
     /**
+     * Get the parent key of this spatial key in the hierarchy.
+     * 
+     * @return the parent key, or null if this is the root (level 0)
+     */
+    K parent();
+
+    /**
      * Get a human-readable string representation of this key. This should include all relevant components (level,
      * index, etc.) for debugging purposes.
      *

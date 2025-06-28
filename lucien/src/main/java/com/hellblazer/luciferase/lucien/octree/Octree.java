@@ -1159,23 +1159,5 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             return siblings;
         }
 
-        @Override
-        protected MortonKey getParentIndex(MortonKey nodeIndex) {
-            byte level = nodeIndex.getLevel();
-            if (level == 0) {
-                return null; // Root has no parent
-            }
-
-            int[] coords = MortonCurve.decode(nodeIndex.getMortonCode());
-            int cellSize = Constants.lengthAtLevel(level);
-            int parentCellSize = cellSize * 2;
-
-            // Calculate parent coordinates
-            int parentX = (coords[0] / parentCellSize) * parentCellSize;
-            int parentY = (coords[1] / parentCellSize) * parentCellSize;
-            int parentZ = (coords[2] / parentCellSize) * parentCellSize;
-
-            return new MortonKey(MortonCurve.encode(parentX, parentY, parentZ));
-        }
     }
 }
