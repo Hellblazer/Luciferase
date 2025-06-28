@@ -121,7 +121,7 @@ public class TetreeConvenienceMethodsTest {
 
         // Test with empty array
         var emptyAncestor = tetree.findCommonAncestor();
-        assertEquals(BaseTetreeKey.getRootCompact(), emptyAncestor, "Empty array should return root");
+        assertEquals(BaseTetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
     }
 
     @Test

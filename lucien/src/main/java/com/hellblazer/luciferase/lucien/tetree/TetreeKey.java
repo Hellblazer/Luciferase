@@ -57,15 +57,6 @@ public class TetreeKey extends CompactTetreeKey {
         return new TetreeKey(compactKey.getLevel(), compactKey.getLowBits(), 0L);
     }
 
-    /**
-     * Create a root-level TetreeKey.
-     *
-     * @return the key for the root tetrahedron
-     */
-    public static TetreeKey getRoot() {
-        return new TetreeKey((byte) 0, 0L, 0L);
-    }
-
     @Override
     public int compareTo(BaseTetreeKey other) {
         Objects.requireNonNull(other, "Cannot compare to null TetreeKey");
@@ -131,14 +122,14 @@ public class TetreeKey extends CompactTetreeKey {
         // High bits usage depends on the level
         int highLevels = level - 10;
         int bitsNeeded = highLevels * BITS_PER_LEVEL;
-        
+
         // Handle case where we need all 64 bits or more
         if (bitsNeeded >= 64) {
             // For level 21: highLevels=11, bitsNeeded=66
             // We can use all 64 bits in highBits, so no validation needed
             return true;
         }
-        
+
         long maxHighBitsForLevel = (1L << bitsNeeded) - 1;
         return (highBits & ~maxHighBitsForLevel) == 0;
     }

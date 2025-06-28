@@ -70,7 +70,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
         this.stack = (order == TraversalOrder.DEPTH_FIRST_PRE || order == TraversalOrder.DEPTH_FIRST_POST)
                      ? new ArrayDeque<>() : null;
         this.queue = (order == TraversalOrder.BREADTH_FIRST) ? new ArrayDeque<>() : null;
-        this.nextSFCIndex = BaseTetreeKey.getRootCompact();
+        this.nextSFCIndex = BaseTetreeKey.getRoot();
         this.initialModificationCount = getTreeModificationCount();
 
         // Initialize traversal
@@ -284,7 +284,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
 
         if (includeEmpty && sortedIndices.isEmpty()) {
             // Start with root tetrahedron if we're including empty nodes
-            queue.offer(new TraversalState<>(BaseTetreeKey.getRootCompact(), null));
+            queue.offer(new TraversalState<>(BaseTetreeKey.getRoot(), null));
             advance();
         } else {
             // For a sparse tree, just add all existing nodes to the traversal
@@ -313,7 +313,7 @@ public class TetreeIterator<ID extends EntityID, Content> implements Iterator<Te
 
         if (includeEmpty && sortedIndices.isEmpty()) {
             // Start with root tetrahedron if we're including empty nodes
-            stack.push(new TraversalState<>(BaseTetreeKey.getRootCompact(), null));
+            stack.push(new TraversalState<>(BaseTetreeKey.getRoot(), null));
             advance();
         } else {
             // For a sparse tree, just add all existing nodes to the traversal

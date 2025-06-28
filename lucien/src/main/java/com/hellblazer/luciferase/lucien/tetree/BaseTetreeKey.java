@@ -73,12 +73,7 @@ implements SpatialKey<BaseTetreeKey<? extends BaseTetreeKey>> {
         }
     }
 
-    /**
-     * Get the root key as a compact key.
-     *
-     * @return CompactTetreeKey root
-     */
-    public static CompactTetreeKey getRootCompact() {
+    public static BaseTetreeKey<? extends BaseTetreeKey> getRoot() {
         return ROOT;
     }
 

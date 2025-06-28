@@ -117,7 +117,7 @@ public class SpatialKeyParentTest {
     @Test
     void testTetreeKeyParent() {
         // Test root has no parent
-        BaseTetreeKey<? extends BaseTetreeKey> root = BaseTetreeKey.getRootCompact();
+        BaseTetreeKey<? extends BaseTetreeKey> root = BaseTetreeKey.getRoot();
         assertNull(root.parent(), "Root should have no parent");
 
         // Test with a specific tetrahedron at level 3

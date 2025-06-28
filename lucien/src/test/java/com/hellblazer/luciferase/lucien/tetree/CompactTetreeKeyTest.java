@@ -62,19 +62,9 @@ public class CompactTetreeKeyTest {
     }
 
     @Test
-    void testConversionToFullKey() {
-        CompactTetreeKey compact = new CompactTetreeKey((byte) 8, 0x123456789ABCDEFL);
-        TetreeKey full = compact.toFullKey();
-
-        assertEquals(compact.getLevel(), full.getLevel());
-        assertEquals(compact.getLowBits(), full.getLowBits());
-        assertEquals(0L, full.getHighBits());
-    }
-
-    @Test
     void testFactoryMethods() {
         // Test root creation
-        BaseTetreeKey<?> root = BaseTetreeKey.getRootCompact();
+        BaseTetreeKey<?> root = BaseTetreeKey.getRoot();
         assertInstanceOf(CompactTetreeKey.class, root);
         assertEquals(0, root.getLevel());
 

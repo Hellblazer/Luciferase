@@ -54,7 +54,7 @@ import static java.util.stream.Collectors.toList;
  **/
 public record Tet(int x, int y, int z, byte l, byte type) {
 
-    public static final  CompactTetreeKey ROOT_TET      = BaseTetreeKey.getRootCompact();
+    public static final  BaseTetreeKey<?> ROOT_TET      = BaseTetreeKey.getRoot();
     // Table 2: Local indices - Iloc(parent_type, bey_child_index)
     // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
     private static final byte[][]         LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
@@ -1042,7 +1042,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Extract bounding box of the volume
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
-            return BaseTetreeKey.getRootCompact();
+            return BaseTetreeKey.getRoot();
         }
 
         // Find the minimum level that can contain the volume
@@ -2127,7 +2127,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
                         // Check if this tetrahedron intersects/contains the bounds
                         var include = includeIntersecting ? tetrahedronIntersectsVolumeBounds(tet, bounds)
-                                                              : tetrahedronContainedInVolumeBounds(tet, bounds);
+                                                          : tetrahedronContainedInVolumeBounds(tet, bounds);
 
                         if (include) {
                             keys.add(tet.tmIndex());

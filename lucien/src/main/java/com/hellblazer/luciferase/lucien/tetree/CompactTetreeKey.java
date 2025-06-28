@@ -48,11 +48,11 @@ public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
     }
 
     /**
-     * Protected constructor for subclasses that need to support higher levels.
-     * Used by TetreeKey to extend CompactTetreeKey for levels > 10.
+     * Protected constructor for subclasses that need to support higher levels. Used by TetreeKey to extend
+     * CompactTetreeKey for levels > 10.
      *
-     * @param level   the hierarchical level (no validation)
-     * @param tmIndex the TM-index bits
+     * @param level          the hierarchical level (no validation)
+     * @param tmIndex        the TM-index bits
      * @param skipValidation marker parameter to distinguish from public constructor
      */
     protected CompactTetreeKey(byte level, long tmIndex, boolean skipValidation) {
@@ -143,22 +143,5 @@ public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
         long parentTmIndex = tmIndex >>> BITS_PER_LEVEL;
 
         return new CompactTetreeKey(parentLevel, parentTmIndex);
-    }
-
-    /**
-     * Convert to full TetreeKey representation.
-     *
-     * @return equivalent TetreeKey
-     */
-    public TetreeKey toFullKey() {
-        return new TetreeKey(level, tmIndex, 0L);
-    }
-
-    @Override
-    public String toString() {
-        if (level == 0) {
-            return "CompactTetreeKey[level=0, tm-index=0]";
-        }
-        return String.format("CompactTetreeKey[level=%d, tm-index=0x%X]", level, tmIndex);
     }
 }

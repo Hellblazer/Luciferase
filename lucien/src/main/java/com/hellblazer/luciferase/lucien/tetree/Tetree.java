@@ -301,7 +301,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     public BaseTetreeKey<? extends BaseTetreeKey> findCommonAncestor(
     BaseTetreeKey<? extends BaseTetreeKey>... tetIndices) {
         if (tetIndices.length == 0) {
-            return BaseTetreeKey.getRootCompact();
+            return BaseTetreeKey.getRoot();
         }
         if (tetIndices.length == 1) {
             return tetIndices[0];
