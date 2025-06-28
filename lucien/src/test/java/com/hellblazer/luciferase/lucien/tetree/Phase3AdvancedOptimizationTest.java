@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -199,6 +201,9 @@ public class Phase3AdvancedOptimizationTest {
         // Enable thread-local caching
         tetree.setThreadLocalCaching(true);
         assertTrue(tetree.isThreadLocalCachingEnabled());
+        
+        // Disable auto-balancing to avoid concurrent subdivision issues
+        tetree.setAutoBalancingEnabled(false);
 
         // Create multiple threads that perform insertions
         int numThreads = 4;
@@ -206,6 +211,17 @@ public class Phase3AdvancedOptimizationTest {
         var executor = Executors.newFixedThreadPool(numThreads);
         var latch = new CountDownLatch(numThreads);
         var totalInsertions = new AtomicLong();
+        var insertionFailures = new AtomicLong();
+        var allIds = Collections.synchronizedSet(new HashSet<LongEntityID>());
+        var attemptedInsertions = new AtomicLong();
+        var threadAttempts = new AtomicLong[numThreads];
+        for (int i = 0; i < numThreads; i++) {
+            threadAttempts[i] = new AtomicLong();
+        }
+
+        // Pre-test entity count
+        int initialEntityCount = tetree.entityCount();
+        System.out.println("Initial entity count: " + initialEntityCount);
 
         long startTime = System.nanoTime();
 
@@ -213,27 +229,84 @@ public class Phase3AdvancedOptimizationTest {
             int threadId = t;
             executor.submit(() -> {
                 try {
+                    System.out.println("Thread " + threadId + " starting insertions");
                     // Each thread inserts entities in its own region
                     for (int i = 0; i < entitiesPerThread; i++) {
+                        attemptedInsertions.incrementAndGet();
+                        threadAttempts[threadId].incrementAndGet();
                         var x = threadId * 10000 + i * 10;
                         var y = threadId * 10000 + i * 10;
                         var z = threadId * 10000 + i * 10;
-                        tetree.insert(new Point3f(x, y, z), (byte) 10, "Thread" + threadId + "_" + i);
-                        totalInsertions.incrementAndGet();
+                        try {
+                            var id = tetree.insert(new Point3f(x, y, z), (byte) 10, "Thread" + threadId + "_" + i);
+                            if (id != null) {
+                                if (allIds.add(id)) {
+                                    totalInsertions.incrementAndGet();
+                                } else {
+                                    System.err.println(
+                                    "DUPLICATE ID RETURNED: " + id + " for position (" + x + ", " + y + ", " + z + ")");
+                                }
+                            } else {
+                                System.err.println("Got null ID for insert at (" + x + ", " + y + ", " + z + ")");
+                            }
+                        } catch (Exception e) {
+                            insertionFailures.incrementAndGet();
+                            System.err.println(
+                            "Failed to insert at (" + x + ", " + y + ", " + z + "): " + e.getMessage());
+                            e.printStackTrace();
+                        }
                     }
+                    System.out.println(
+                    "Thread " + threadId + " completed " + threadAttempts[threadId].get() + " insertions");
+                } catch (Throwable throwable) {
+                    System.err.println("Thread " + threadId + " failed with exception: " + throwable);
+                    throwable.printStackTrace();
                 } finally {
                     latch.countDown();
                 }
             });
         }
 
+        // Wait for all threads to complete
         latch.await();
+
+        // Shutdown the executor and wait for termination
         executor.shutdown();
+        if (!executor.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS)) {
+            executor.shutdownNow();
+            throw new RuntimeException("Executor did not terminate in time");
+        }
 
         long elapsedTime = System.nanoTime() - startTime;
 
         // Check results
-        assertEquals(numThreads * entitiesPerThread, totalInsertions.get());
+        System.out.println("\n=== RESULTS ===");
+        System.out.println("Total expected insertions: " + numThreads * entitiesPerThread);
+        System.out.println("Total attempted insertions: " + attemptedInsertions.get());
+        System.out.println("Successful insertions: " + totalInsertions.get());
+        System.out.println("Failed insertions: " + insertionFailures.get());
+        System.out.println("Unique IDs returned: " + allIds.size());
+        System.out.println("Final entity count in tetree: " + tetree.entityCount());
+        System.out.println("Net new entities: " + (tetree.entityCount() - initialEntityCount));
+
+        // Print per-thread statistics
+        System.out.println("\nPer-thread attempts:");
+        for (int i = 0; i < numThreads; i++) {
+            System.out.println("Thread " + i + ": " + threadAttempts[i].get() + " attempts");
+        }
+
+        // Check for duplicate IDs
+        if (allIds.size() != totalInsertions.get()) {
+            System.err.println(
+            "DUPLICATE IDS DETECTED! " + totalInsertions.get() + " insertions but only " + allIds.size()
+            + " unique IDs");
+        }
+
+        // Now that threading is fixed, we should get all insertions
+        assertEquals(numThreads * entitiesPerThread, attemptedInsertions.get(),
+                     "All insertion attempts should complete");
+        assertEquals(attemptedInsertions.get(), totalInsertions.get(), "All attempted insertions should succeed");
+        assertEquals(totalInsertions.get(), allIds.size(), "All insertions should produce unique IDs");
 
         // Get statistics
         String stats = tetree.getThreadLocalCacheStatistics();

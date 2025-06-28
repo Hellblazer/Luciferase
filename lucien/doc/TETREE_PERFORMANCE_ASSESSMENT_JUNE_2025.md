@@ -2,36 +2,38 @@
 
 ## Executive Summary
 
-This document provides a comprehensive assessment of Tetree performance after completing all three phases of
-optimization. The assessment is based on actual benchmark results and reflects the fundamental algorithmic differences
-between Tetree and Octree spatial indexing.
+This document provides a comprehensive assessment of Tetree performance based on the latest benchmarks from
+OctreeVsTetreeBenchmark (June 28, 2025). The results show significant improvements after fixing subdivision logic,
+with Tetree now only 3-9x slower for insertions while maintaining its 2-3.5x advantage for k-NN queries.
 
-## Current Performance Metrics
+## Current Performance Metrics (Latest Benchmarks - June 28, 2025)
 
 ### Insertion Performance
 
 | Dataset Size | Octree        | Tetree        | Performance Gap | Notes                          |
 |--------------|---------------|---------------|-----------------|--------------------------------|
-| 1K entities  | 1.5 μs/entity | 88 μs/entity  | **59x slower**  | Small dataset                  |
-| 10K entities | 1.4 μs/entity | 105 μs/entity | **75x slower**  | After all optimizations        |
-| 50K entities | 1.5 μs/entity | 525 μs/entity | **350x slower** | Performance degrades with size |
+| 100 entities | 3.3 μs/entity | 28.6 μs/entity | **8.6x slower**  | Small dataset                  |
+| 1K entities  | 2.5 μs/entity | 7.6 μs/entity  | **3.0x slower**  | After all optimizations        |
+| 10K entities | 1.1 μs/entity | 4.7 μs/entity  | **4.4x slower**  | Scales better than expected    |
 
 ### Query Performance
 
 | Operation   | Dataset | Octree   | Tetree  | Tetree Advantage |
 |-------------|---------|----------|---------|------------------|
-| k-NN (k=10) | 1K      | 92.3 μs  | 32.8 μs | **2.8x faster**  |
-| k-NN (k=10) | 10K     | 86.9 μs  | 13.8 μs | **6.3x faster**  |
-| k-NN (k=10) | 50K     | 126.5 μs | 11.0 μs | **11.5x faster** |
-| Range Query | 10K     | 28 μs    | 5.6 μs  | **5.0x faster**  |
+| k-NN        | 100     | 0.75 μs  | 0.38 μs | **2.0x faster**  |
+| k-NN        | 1K      | 4.08 μs  | 1.61 μs | **2.5x faster**  |
+| k-NN        | 10K     | 37.61 μs | 10.70 μs| **3.5x faster**  |
+| Range Query | 100     | 0.39 μs  | 0.52 μs | **1.3x slower**  |
+| Range Query | 1K      | 2.12 μs  | 4.02 μs | **1.9x slower**  |
+| Range Query | 10K     | 21.59 μs | 53.24 μs| **2.5x slower**  |
 
 ### Memory Efficiency
 
-| Dataset Size | Octree           | Tetree           | Tetree Efficiency |
-|--------------|------------------|------------------|-------------------|
-| 1K entities  | 331 bytes/entity | 62 bytes/entity  | **81% less**      |
-| 10K entities | 335 bytes/entity | 78 bytes/entity  | **77% less**      |
-| 50K entities | 152 bytes/entity | 336 bytes/entity | 221% (worse)      |
+| Dataset Size | Octree  | Tetree  | Tetree Memory % |
+|--------------|---------|---------|------------------|
+| 100 entities | 0.15 MB | 0.04 MB | **28.7%**        |
+| 1K entities  | 1.40 MB | 0.34 MB | **24.0%**        |
+| 10K entities | 12.90 MB| 3.16 MB | **24.5%**        |
 
 ## Root Cause Analysis
 

@@ -191,32 +191,64 @@ see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_20
 - ✅ ~90% t8code parity for tetrahedral operations
 - ✅ **Final Bug Fixes (June 24, 2025)**: Collision detection and neighbor finding fully working
 
-## 🚀 Performance (June 28, 2025 - Post Subdivision Fix)
+## 🚀 Performance (June 28, 2025 - Latest Benchmarks)
 
-**IMPORTANT**: A critical bug was discovered and fixed on June 28, 2025. Tetree was not properly subdividing cells, creating only 2 nodes for 1000 entities instead of ~6,000 like Octree. After fixing this, performance improved dramatically.
+**IMPORTANT**: Performance metrics have been updated based on comprehensive benchmarking with the OctreeVsTetreeBenchmark test.
 
-**Current Tetree vs Octree Performance Reality (After Fix):**
+**Current Tetree vs Octree Performance (Latest Results):**
 
-| Operation   | Octree        | Tetree         | Winner                    | Improvement              |
-|-------------|---------------|----------------|---------------------------|--------------------------|
-| Insertion   | ~3 μs/entity  | ~28 μs/entity  | **Octree (9.2x faster)**  | Was 57.6x, now 84% better|
-| k-NN Search | 3.2 μs        | 0.81 μs        | **Tetree (4.0x faster)**  | Unchanged                |
-| Range Query | 2.0 μs        | 0.55 μs        | **Tetree (3.6x faster)**  | Unchanged                |
-| Update      | ~3 μs         | ~28 μs         | **Octree (9x faster)**    | Improved with subdivision|
-| Memory      | 1.39 MB/1K    | 1.28 MB/1K     | **Similar (92%)**         | Was 20%, now correct     |
+### Insertion Performance
+| Entity Count | Octree | Tetree | Winner | Performance Ratio |
+|-------------|---------|---------|---------|-------------------|
+| 100 | 3.32 μs/entity | 28.59 μs/entity | **Octree** | **8.6x faster** |
+| 1,000 | 2.51 μs/entity | 7.64 μs/entity | **Octree** | **3.0x faster** |
+| 10,000 | 1.06 μs/entity | 4.68 μs/entity | **Octree** | **4.4x faster** |
 
-**Root Cause of Remaining Performance Gap:**
+### k-Nearest Neighbor (k-NN) Search
+| Entity Count | Octree | Tetree | Winner | Performance Ratio |
+|-------------|---------|---------|---------|-------------------|
+| 100 | 0.75 μs | 0.38 μs | **Tetree** | **2.0x faster** |
+| 1,000 | 4.08 μs | 1.61 μs | **Tetree** | **2.5x faster** |
+| 10,000 | 37.61 μs | 10.70 μs | **Tetree** | **3.5x faster** |
 
-- **Octree**: Uses Morton encoding - simple bit interleaving, O(1) operation
-- **Tetree**: Uses `tmIndex()` which walks parent chain - O(level) operation
-- The 6-35x insertion performance gap is now purely algorithmic, not due to bugs
+### Range Query Performance
+| Entity Count | Octree | Tetree | Winner | Performance Ratio |
+|-------------|---------|---------|---------|-------------------|
+| 100 | 0.39 μs | 0.52 μs | **Octree** | **1.3x faster** |
+| 1,000 | 2.12 μs | 4.02 μs | **Octree** | **1.9x faster** |
+| 10,000 | 21.59 μs | 53.24 μs | **Octree** | **2.5x faster** |
 
-**Subdivision Fix Details:**
+### Update Performance
+| Entity Count | Octree | Tetree | Winner | Performance Ratio |
+|-------------|---------|---------|---------|-------------------|
+| 100 | 0.14 μs | 0.07 μs | **Tetree** | **2.0x faster** |
+| 1,000 | 0.003 μs | 0.008 μs | **Octree** | **3.2x faster** |
+| 10,000 | 0.002 μs | 0.005 μs | **Octree** | **2.3x faster** |
 
-- **Problem**: Tetree wasn't overriding `insertAtPosition` to handle empty/subdivided nodes
-- **Solution**: Added logic to automatically insert at finer levels like Octree does
-- **Result**: Proper tree structure with balanced node distribution
-- See `TETREE_SUBDIVISION_FIX_JUNE_28_2025.md` for full details
+### Memory Usage
+| Entity Count | Octree | Tetree | Tetree Memory % |
+|-------------|---------|---------|-----------------|
+| 100 | 0.15 MB | 0.04 MB | **28.7%** |
+| 1,000 | 1.40 MB | 0.34 MB | **24.0%** |
+| 10,000 | 12.90 MB | 3.16 MB | **24.5%** |
+
+**Key Performance Characteristics:**
+
+- **Octree**: Best for write-heavy workloads with frequent insertions
+  - ~950K entities/sec insertion rate at scale
+  - Simple Morton encoding provides O(1) spatial indexing
+  - Better for range queries due to AABB calculations
+
+- **Tetree**: Best for read-heavy workloads with frequent queries
+  - 2-3.5x faster k-NN searches due to better spatial locality
+  - 70-75% less memory usage
+  - O(level) tmIndex() computation limits insertion performance
+
+**Root Cause of Performance Differences:**
+
+- **Octree**: Morton encoding - simple bit interleaving, always O(1)
+- **Tetree**: tmIndex() requires parent chain walk - O(level) complexity
+- This fundamental algorithmic difference cannot be optimized away
 
 ## 📊 Performance Testing
 
@@ -224,10 +256,12 @@ see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_20
 
 **Test Control**: Set `RUN_SPATIAL_INDEX_PERF_TESTS=true` to enable performance tests
 
-**Realistic Performance Expectations (Post-Fix - June 28, 2025):**
+**Optimization Impact** (with bulk operations):
+- Tetree benefits significantly from bulk loading (up to 38x speedup)
+- Lazy evaluation of tmIndex() computation is critical for Tetree
+- Deferred subdivision provides 2-5x improvement for both implementations
 
-- **Octree**: ~330K entities/sec insertion, 3-22 μs k-NN queries
-- **Tetree**: ~36K entities/sec insertion, 0.4-7 μs k-NN queries  
-- **Memory**: Both use similar memory (Tetree 92-103% of Octree)
-- **Scaling**: Performance gap increases with dataset size (6x → 35x) due to O(level) complexity
-- **Query Advantage**: Tetree consistently 3-4x faster for spatial queries
+**Recommendation Summary:**
+- Use **Octree** when insertion performance is critical
+- Use **Tetree** when query performance and memory efficiency are priorities
+- Enable bulk operations for Tetree to mitigate insertion overhead
