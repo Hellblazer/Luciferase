@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.collision;
 import com.hellblazer.luciferase.lucien.Ray3D;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 
+import javax.vecmath.Matrix3f;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
@@ -159,25 +160,103 @@ public class BoxShape extends CollisionShape {
 
     @Override
     public CollisionResult collidesWithOrientedBox(OrientedBoxShape obb) {
-        // Use Separating Axis Theorem (SAT)
-        // For now, use simple AABB vs AABB test with OBB's AABB
-        EntityBounds obbAABB = obb.getAABB();
-        if (!boundsIntersect(this.bounds, obbAABB)) {
-            return CollisionResult.noCollision();
+        // Implement proper Separating Axis Theorem (SAT) test
+        // We need to test 15 potential separating axes:
+        // - 3 face normals from AABB
+        // - 3 face normals from OBB
+        // - 9 edge cross products (3 AABB edges × 3 OBB edges)
+        
+        // Get OBB properties
+        Matrix3f obbOrientation = obb.getOrientation();
+        Vector3f obbHalfExtents = obb.getHalfExtents();
+        
+        // Transform OBB center to AABB's local space (centered at AABB position)
+        Vector3f centerDiff = new Vector3f();
+        centerDiff.sub(obb.getPosition(), this.position);
+        
+        // We'll track the minimum penetration across all axes
+        float minPenetration = Float.MAX_VALUE;
+        Vector3f minPenetrationAxis = new Vector3f();
+        
+        // Test AABB face normals (world axes)
+        for (int i = 0; i < 3; i++) {
+            Vector3f axis = new Vector3f();
+            if (i == 0) axis.set(1, 0, 0);
+            else if (i == 1) axis.set(0, 1, 0);
+            else axis.set(0, 0, 1);
+            
+            float penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
+                                                  obbHalfExtents, obbOrientation);
+            if (penetration < 0) {
+                return CollisionResult.noCollision();
+            }
+            
+            if (penetration < minPenetration) {
+                minPenetration = penetration;
+                minPenetrationAxis.set(axis);
+            }
         }
-
-        // Simplified collision - treat OBB as AABB
-        // TODO: Implement proper SAT test
-        Vector3f delta = new Vector3f();
-        delta.sub(obb.getPosition(), this.position);
-
-        Vector3f normal = new Vector3f(delta);
-        normal.normalize();
-
-        Point3f contactPoint = getClosestPoint(obb.getPosition());
-        float penetrationDepth = 0.1f; // Placeholder
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
+        
+        // Test OBB face normals
+        for (int i = 0; i < 3; i++) {
+            Vector3f axis = new Vector3f();
+            obbOrientation.getColumn(i, axis);
+            
+            float penetration = testSeparatingAxis(axis, centerDiff, this.halfExtents, 
+                                                  obbHalfExtents, obbOrientation);
+            if (penetration < 0) {
+                return CollisionResult.noCollision();
+            }
+            
+            if (penetration < minPenetration) {
+                minPenetration = penetration;
+                minPenetrationAxis.set(axis);
+            }
+        }
+        
+        // Test edge cross products
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                Vector3f aabbAxis = new Vector3f();
+                if (i == 0) aabbAxis.set(1, 0, 0);
+                else if (i == 1) aabbAxis.set(0, 1, 0);
+                else aabbAxis.set(0, 0, 1);
+                
+                Vector3f obbAxis = new Vector3f();
+                obbOrientation.getColumn(j, obbAxis);
+                
+                Vector3f crossAxis = new Vector3f();
+                crossAxis.cross(aabbAxis, obbAxis);
+                
+                // Skip if cross product is zero (parallel axes)
+                if (crossAxis.lengthSquared() < 1e-6f) {
+                    continue;
+                }
+                
+                crossAxis.normalize();
+                
+                float penetration = testSeparatingAxis(crossAxis, centerDiff, this.halfExtents, 
+                                                      obbHalfExtents, obbOrientation);
+                if (penetration < 0) {
+                    return CollisionResult.noCollision();
+                }
+                
+                if (penetration < minPenetration) {
+                    minPenetration = penetration;
+                    minPenetrationAxis.set(crossAxis);
+                }
+            }
+        }
+        
+        // Ensure the normal points from AABB to OBB
+        if (minPenetrationAxis.dot(centerDiff) < 0) {
+            minPenetrationAxis.scale(-1);
+        }
+        
+        // Calculate contact point
+        Point3f contactPoint = calculateContactPoint(this, obb, minPenetrationAxis, minPenetration);
+        
+        return CollisionResult.collision(contactPoint, minPenetrationAxis, minPenetration);
     }
 
     @Override
@@ -359,5 +438,63 @@ public class BoxShape extends CollisionShape {
             case 2 -> point.z;
             default -> throw new IllegalArgumentException("Invalid axis: " + axis);
         };
+    }
+    
+    /**
+     * Test a potential separating axis for AABB vs OBB collision.
+     * Returns the penetration depth if overlapping, or negative if separated.
+     */
+    private float testSeparatingAxis(Vector3f axis, Vector3f centerDiff, Vector3f aabbHalfExtents,
+                                   Vector3f obbHalfExtents, Matrix3f obbOrientation) {
+        // Project center distance onto axis
+        float separation = Math.abs(axis.dot(centerDiff));
+        
+        // Project AABB onto axis (AABB is axis-aligned, so this is simple)
+        float aabbProjection = Math.abs(axis.x) * aabbHalfExtents.x +
+                              Math.abs(axis.y) * aabbHalfExtents.y +
+                              Math.abs(axis.z) * aabbHalfExtents.z;
+        
+        // Project OBB onto axis
+        float obbProjection = 0;
+        for (int i = 0; i < 3; i++) {
+            Vector3f obbAxis = new Vector3f();
+            obbOrientation.getColumn(i, obbAxis);
+            float halfExtent = (i == 0) ? obbHalfExtents.x : (i == 1) ? obbHalfExtents.y : obbHalfExtents.z;
+            obbProjection += Math.abs(axis.dot(obbAxis)) * halfExtent;
+        }
+        
+        // Check for separation
+        float totalProjection = aabbProjection + obbProjection;
+        if (separation > totalProjection) {
+            return -1; // Separated
+        }
+        
+        // Return penetration depth
+        return totalProjection - separation;
+    }
+    
+    /**
+     * Calculate contact point for AABB vs OBB collision
+     */
+    private Point3f calculateContactPoint(BoxShape aabb, OrientedBoxShape obb, 
+                                        Vector3f collisionNormal, float penetration) {
+        // Get the closest points on each box along the collision normal
+        Point3f aabbPoint = new Point3f(aabb.position);
+        Point3f obbPoint = new Point3f(obb.getPosition());
+        
+        // Move along normal to find approximate contact
+        Vector3f offset = new Vector3f(collisionNormal);
+        offset.scale(penetration * 0.5f);
+        
+        // The contact point is between the two shapes
+        if (collisionNormal.dot(new Vector3f(obb.getPosition().x - aabb.position.x,
+                                            obb.getPosition().y - aabb.position.y,
+                                            obb.getPosition().z - aabb.position.z)) > 0) {
+            aabbPoint.add(offset);
+        } else {
+            aabbPoint.sub(offset);
+        }
+        
+        return aabbPoint;
     }
 }

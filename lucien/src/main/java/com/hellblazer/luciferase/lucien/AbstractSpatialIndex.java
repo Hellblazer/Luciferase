@@ -1365,10 +1365,11 @@ implements SpatialIndex<Key, ID, Content> {
                 // Find nodes that intersect with search bounds (spatial locality constraint)
                 boolean foundNewEntities = false;
                 
-                // For now, check all nodes to ensure we don't miss any
-                // TODO: Optimize spatial range query for Tetree
-                for (var entry : spatialIndex.entrySet()) {
-                    NodeType node = entry.getValue();
+                // Use spatial range query to find only nodes that could contain entities within search bounds
+                Set<Key> candidateNodes = findNodesIntersectingBounds(searchBounds);
+                
+                for (Key nodeKey : candidateNodes) {
+                    NodeType node = spatialIndex.get(nodeKey);
 
                     if (node == null || node.isEmpty()) {
                         continue;
@@ -2553,6 +2554,16 @@ implements SpatialIndex<Key, ID, Content> {
      * Get the cell size at a given level (to be implemented by subclasses)
      */
     protected abstract int getCellSizeAtLevel(byte level);
+    
+    /**
+     * Find all nodes that intersect with the given bounds.
+     * This method should be implemented efficiently by subclasses using their
+     * specific spatial data structures (e.g., using sorted indices for range queries).
+     *
+     * @param bounds the volume bounds to check
+     * @return set of node keys that intersect with the bounds
+     */
+    protected abstract Set<Key> findNodesIntersectingBounds(VolumeBounds bounds);
 
     /**
      * Get child nodes of a given node. Default implementation returns empty list. Subclasses should override to provide

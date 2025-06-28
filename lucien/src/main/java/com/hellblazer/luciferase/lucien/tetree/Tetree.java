@@ -1375,6 +1375,95 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
     protected int getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }
+    
+    @Override
+    protected Set<TetreeKey> findNodesIntersectingBounds(VolumeBounds bounds) {
+        Set<TetreeKey> intersectingNodes = new HashSet<>();
+        
+        // For Tetree, we need to check tetrahedral geometry, not just AABB
+        // Since a cube contains 6 tetrahedra, we must check each type separately
+        
+        // First, determine an appropriate search level based on bounds size
+        float volumeSize = (bounds.maxX() - bounds.minX()) * 
+                          (bounds.maxY() - bounds.minY()) * 
+                          (bounds.maxZ() - bounds.minZ());
+        byte maxSearchLevel = determineOptimalSearchLevel(volumeSize);
+        
+        // Use a more efficient grid-based search at the determined level
+        // This avoids checking every single node in sortedSpatialIndices
+        int cellSize = Constants.lengthAtLevel(maxSearchLevel);
+        
+        // Calculate grid bounds at the search level
+        // Ensure coordinates are non-negative as required by Tet
+        int domainSize = Constants.lengthAtLevel((byte) 0);
+        int minX = Math.max(0, (int) Math.floor(bounds.minX() / cellSize) * cellSize);
+        int maxX = Math.min(domainSize, (int) Math.ceil(bounds.maxX() / cellSize) * cellSize);
+        int minY = Math.max(0, (int) Math.floor(bounds.minY() / cellSize) * cellSize);
+        int maxY = Math.min(domainSize, (int) Math.ceil(bounds.maxY() / cellSize) * cellSize);
+        int minZ = Math.max(0, (int) Math.floor(bounds.minZ() / cellSize) * cellSize);
+        int maxZ = Math.min(domainSize, (int) Math.ceil(bounds.maxZ() / cellSize) * cellSize);
+        
+        // Check each potential grid cell
+        for (int x = minX; x < maxX; x += cellSize) {
+            for (int y = minY; y < maxY; y += cellSize) {
+                for (int z = minZ; z < maxZ; z += cellSize) {
+                    // Check all 6 tetrahedron types in this cell
+                    for (byte type = 0; type < 6; type++) {
+                        // Check multiple levels to catch nodes at different resolutions
+                        for (byte level = (byte) Math.max(0, maxSearchLevel - 2); 
+                             level <= Math.min(maxDepth, maxSearchLevel + 2); level++) {
+                            
+                            Tet tet = new Tet(x, y, z, level, type);
+                            TetreeKey key = tet.tmIndex();
+                            
+                            // Only process if this node exists in our index
+                            if (spatialIndex.containsKey(key)) {
+                                // Use proper tetrahedral intersection test
+                                if (tetrahedronCouldIntersectBounds(tet, bounds)) {
+                                    intersectingNodes.add(key);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return intersectingNodes;
+    }
+    
+    /**
+     * Determine optimal search level based on volume size
+     */
+    private byte determineOptimalSearchLevel(float volumeSize) {
+        // Choose level based on volume size to balance precision and performance
+        if (volumeSize > 1000000.0f) return 5;  // Very large volumes
+        else if (volumeSize > 10000.0f) return 8;  // Large volumes
+        else if (volumeSize > 100.0f) return 10;  // Medium volumes
+        else if (volumeSize > 1.0f) return 12;  // Small volumes
+        else return 15;  // Very small volumes
+    }
+    
+    /**
+     * Check if a tetrahedron could potentially intersect with bounds using proper tetrahedral geometry
+     */
+    private boolean tetrahedronCouldIntersectBounds(Tet tet, VolumeBounds bounds) {
+        // Use proper tetrahedral intersection test, not AABB approximation
+        // A tetrahedron is only 1/6 of the cube volume, so AABB checks are incorrect
+        
+        // Check if the tetrahedron is completely contained in the bounds
+        if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
+            return true;
+        }
+        
+        // Check if the tetrahedron intersects with the bounds
+        // Convert VolumeBounds to EntityBounds for compatibility with existing methods
+        Point3f minPoint = new Point3f(bounds.minX(), bounds.minY(), bounds.minZ());
+        Point3f maxPoint = new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ());
+        EntityBounds entityBounds = new EntityBounds(minPoint, maxPoint);
+        
+        return tetrahedronIntersectsBounds(tet, entityBounds);
+    }
 
     @Override
     protected List<TetreeKey> getChildNodes(TetreeKey tetIndex) {
@@ -2615,10 +2704,12 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
             SFCRange next = ranges.get(i);
 
             // Merge if ranges overlap or are contiguous
-            // For now, use a simple merging strategy since we can't easily compute gaps with 128-bit keys
-            // TODO: Implement proper 128-bit arithmetic for gap calculation
-            if (current.end.equals(next.start) || current.end.getLevel() == next.start.getLevel()) {
-                // Merge adjacent ranges at the same level
+            // Calculate the gap between current.end and next.start using 128-bit arithmetic
+            long gapSize = calculateGapBetweenKeys(current.end, next.start);
+            
+            // Merge if ranges are at the same level and gap is small enough
+            // We allow merging if the gap is less than 8 indices to reduce fragmentation
+            if (current.end.getLevel() == next.start.getLevel() && gapSize >= 0 && gapSize <= 8) {
                 current = new SFCRange(current.start, next.end);
             } else {
                 merged.add(current);
@@ -2630,6 +2721,61 @@ extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>> {
         return merged;
     }
 
+    /**
+     * Calculate the gap between two TetreeKey values using 128-bit arithmetic.
+     * Returns the number of indices between end and start.
+     * Returns -1 if the keys are at different levels or if start comes before end.
+     *
+     * @param end the ending key of the first range
+     * @param start the starting key of the second range
+     * @return the gap size, or -1 if keys cannot be compared
+     */
+    private long calculateGapBetweenKeys(TetreeKey end, TetreeKey start) {
+        // Can only calculate gap between keys at the same level
+        if (end.getLevel() != start.getLevel()) {
+            return -1;
+        }
+        
+        // Check if start comes after end (valid gap scenario)
+        if (start.compareTo(end) <= 0) {
+            return -1; // No gap or invalid order
+        }
+        
+        // Perform 128-bit subtraction: (start - end - 1)
+        // This gives us the number of indices between end and start
+        
+        long startLow = start.getLowBits();
+        long startHigh = start.getHighBits();
+        long endLow = end.getLowBits();
+        long endHigh = end.getHighBits();
+        
+        // Subtract end from start
+        long diffLow = startLow - endLow;
+        long diffHigh = startHigh - endHigh;
+        
+        // Handle borrow from high bits if needed
+        if (Long.compareUnsigned(startLow, endLow) < 0) {
+            diffHigh--; // Borrow from high bits
+        }
+        
+        // Check if the difference is small enough to fit in a long
+        // For gap calculation, we only care about small gaps (< 2^63)
+        if (diffHigh != 0 && diffHigh != -1) {
+            // Gap is too large, treat as unmergeable
+            return Long.MAX_VALUE;
+        }
+        
+        // Subtract 1 to get the actual gap (number of indices between end and start)
+        long gap = diffLow - 1;
+        
+        // If gap becomes negative due to subtraction, there's no gap
+        if (gap < 0) {
+            return 0;
+        }
+        
+        return gap;
+    }
+    
     /**
      * Check if plane intersects with a tetrahedron
      */

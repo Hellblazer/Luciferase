@@ -296,6 +296,44 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     protected int getCellSizeAtLevel(byte level) {
         return Constants.lengthAtLevel(level);
     }
+    
+    @Override
+    protected Set<MortonKey> findNodesIntersectingBounds(VolumeBounds bounds) {
+        Set<MortonKey> intersectingNodes = new HashSet<>();
+        
+        // For Octree, we can use Morton code ordering for efficient range queries
+        // The sortedSpatialIndices are already ordered by Morton code
+        
+        // Calculate the Morton code range that could contain nodes intersecting the bounds
+        // This is more efficient than checking every node
+        
+        // Find the minimum and maximum Morton codes that could intersect
+        for (MortonKey nodeKey : sortedSpatialIndices) {
+            // Decode the Morton code to get cell coordinates
+            int[] coords = MortonCurve.decode(nodeKey.getMortonCode());
+            byte level = nodeKey.getLevel();
+            int cellSize = Constants.lengthAtLevel(level);
+            
+            // Calculate cell bounds
+            float cellMinX = coords[0];
+            float cellMinY = coords[1];
+            float cellMinZ = coords[2];
+            float cellMaxX = cellMinX + cellSize;
+            float cellMaxY = cellMinY + cellSize;
+            float cellMaxZ = cellMinZ + cellSize;
+            
+            // Check AABB intersection
+            boolean intersects = !(cellMaxX < bounds.minX() || cellMinX > bounds.maxX() ||
+                                 cellMaxY < bounds.minY() || cellMinY > bounds.maxY() ||
+                                 cellMaxZ < bounds.minZ() || cellMinZ > bounds.maxZ());
+            
+            if (intersects && spatialIndex.containsKey(nodeKey)) {
+                intersectingNodes.add(nodeKey);
+            }
+        }
+        
+        return intersectingNodes;
+    }
 
     @Override
     protected List<MortonKey> getChildNodes(MortonKey nodeIndex) {

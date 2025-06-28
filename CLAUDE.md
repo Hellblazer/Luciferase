@@ -163,6 +163,7 @@ Historical documents (describe unimplemented features):
     - **Tetree uses tmIndex()** for all spatial operations, causing massive performance degradation
     - **Octree uses Morton encoding**: Simple bit interleaving, always O(1)
     - **Cannot be fixed**: The parent chain walk in tmIndex() is required for global uniqueness across levels
+- use tetrahedral geometry rather than incorrect AABB approximations for Tet and Tetree
 
 ## 🎯 CURRENT STATUS (June 2025)
 
