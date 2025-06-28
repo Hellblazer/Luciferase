@@ -1,9 +1,11 @@
-# Spatial Index Performance Reality - December 2025
+# Spatial Index Performance Reality - June 2025 (Updated)
 
 ## Executive Summary
 
 After extensive refactoring to ensure correctness, the performance characteristics of Octree vs Tetree have become
-clear. **Octree is vastly superior for insertions (1125x faster) while Tetree excels at queries (5x faster)**.
+clear. **Octree is vastly superior for insertions (up to 770x faster) while Tetree excels at queries (3-4x faster)**.
+
+**Data Source**: Performance metrics from OctreeVsTetreeBenchmark.java run on June 28, 2025.
 
 ## The Root Cause
 
@@ -28,29 +30,36 @@ The `tmIndex()` method must walk up the parent chain to build the globally uniqu
 This is **not a bug** - it's required for correctness. The TM-index includes ancestor type information for global
 uniqueness across all levels.
 
-## Actual Performance Measurements
+## Actual Performance Measurements (OctreeVsTetreeBenchmark - June 28, 2025)
 
 ### Insertion Performance
 
-| Entities | Octree  | Tetree    | Octree Advantage  |
-|----------|---------|-----------|-------------------|
-| 100      | 0.46 ms | 4.4 ms    | 9.5x faster       |
-| 1K       | 2.7 ms  | 48 ms     | 17.5x faster      |
-| 10K      | 10.5 ms | 3,044 ms  | 288x faster       |
-| 50K      | 75 ms   | 84,483 ms | **1,125x faster** |
+| Entities | Octree Time | Tetree Time | Octree Advantage | Per-Entity (Octree) | Per-Entity (Tetree) |
+|----------|-------------|-------------|------------------|---------------------|---------------------|
+| 100      | 0.77 ms     | 7.49 ms     | **9.7x faster**  | 7.74 μs             | 74.9 μs             |
+| 1K       | 3.01 ms     | 173.4 ms    | **57.6x faster** | 3.01 μs             | 173.4 μs            |
+| 10K      | 10.5 ms     | 8,076 ms    | **770x faster**  | 1.05 μs             | 807.6 μs            |
 
 ### Query Performance
 
-| Operation       | Octree | Tetree | Tetree Advantage |
-|-----------------|--------|--------|------------------|
-| k-NN (k=10)     | 28 μs  | 5.9 μs | 4.8x faster      |
-| Range Query     | 28 μs  | 5.6 μs | 5x faster        |
-| Frustum Culling | 250 μs | 50 μs  | 5x faster        |
+| Entities | Operation | Octree  | Tetree  | Tetree Advantage |
+|----------|-----------|---------|---------|------------------|
+| 100      | k-NN      | 0.93 μs | 0.43 μs | **2.2x faster**  |
+| 100      | Range     | 0.47 μs | 0.33 μs | **1.4x faster**  |
+| 1K       | k-NN      | 3.22 μs | 0.81 μs | **4.0x faster**  |
+| 1K       | Range     | 2.00 μs | 0.55 μs | **3.6x faster**  |
+| 10K      | k-NN      | 21.9 μs | 7.04 μs | **3.1x faster**  |
+| 10K      | Range     | 21.4 μs | 5.49 μs | **3.9x faster**  |
 
 ### Memory Usage
 
-- Octree: 100% (baseline)
-- Tetree: 22% of Octree's memory
+| Entities | Octree Memory | Tetree Memory | Tetree Usage % |
+|----------|---------------|---------------|----------------|
+| 100      | 0.15 MB       | 0.04 MB       | **23.6%**      |
+| 1K       | 1.39 MB       | 0.27 MB       | **19.7%**      |
+| 10K      | 12.92 MB      | 2.64 MB       | **20.4%**      |
+
+**Note**: The OctreeVsTetreeBenchmark shows Tetree using less memory, which contradicts other tests. This may be due to measurement methodology differences.
 
 ## What This Means for Users
 

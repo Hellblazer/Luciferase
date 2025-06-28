@@ -1,113 +1,103 @@
-# Documentation Update Summary - June 2025
+# Documentation Update Summary - December 2025
 
 ## Overview
 
-This document summarizes all documentation updates made to reflect the current Tetree performance reality after
-completing the 3-phase optimization initiative.
+This document summarizes the comprehensive documentation updates made to reflect the actual performance characteristics
+of Octree vs Tetree after the refactoring to use globally unique indices.
 
-## Documents Updated
+## Key Changes
 
-### 1. **TETREE_PERFORMANCE_ASSESSMENT_JUNE_2025.md** (New)
+### 1. Root Cause Identified
 
-- Comprehensive assessment of current performance state
-- Detailed metrics from actual benchmarks
-- Root cause analysis of performance differences
-- Use case recommendations based on real data
+The performance degradation in Tetree was traced to the fundamental difference between:
 
-### 2. **LUCIEN_ARCHITECTURE_2025.md**
+- **`consecutiveIndex()`** (formerly `index()`): O(1) operation, unique only within a level
+- **`tmIndex()`**: O(level) operation due to parent chain traversal, globally unique across all levels
+- Tetree must use `tmIndex()` for correctness, causing 140x slowdown at level 20
 
-- **Updated**: Performance Results section (lines 373-379)
-- **Changed From**: Claims of Tetree outperforming Octree
-- **Changed To**: Accurate performance characteristics showing trade-offs
-- **Added**: Note about June 2025 metrics being based on incorrect index() method
+### 2. Updated Performance Claims
 
-### 3. **CLAUDE.md** (Project Root)
+**Previous (Incorrect) Claims:**
 
-- **Updated**: Realistic Performance Expectations (lines 203-207)
-- **Changed From**: ~600 entities/sec for Tetree
-- **Changed To**: 2K-10K entities/sec after optimizations
-- **Added**: Accurate memory usage figures
+- "Tetree 2-3x faster than Octree for bulk operations"
+- "Tetree outperforms Octree"
+- Performance tables showing Tetree advantages
 
-### 4. **SPATIAL_INDEX_PERFORMANCE_TESTING_PLAN_2025.md**
+**Current (Accurate) Reality:**
 
-- **Updated**: Performance Targets table (lines 328-337)
-- **Changed From**: Overly optimistic Tetree targets
-- **Changed To**: Realistic targets based on achieved performance
-- **Added**: Note about 94% improvement achievement
+- Octree is 1125x faster for insertions (1.5 μs vs 1690 μs per entity)
+- Tetree is 4.8x faster for k-NN queries (28 μs vs 5.9 μs)
+- Tetree uses 78% less memory
+- Each has distinct use cases based on workload
 
-### 5. **lucien/README.md**
+## Files Updated
 
-- **Updated**: Performance table and key insights
-- **Changed From**: December 2025 unoptimized metrics
-- **Changed To**: June 2025 post-optimization metrics
-- **Added**: Optimization impact statement
+### 1. `/CLAUDE.md` (Main project file)
 
-## Key Changes Made
+- Updated performance section with December 2025 reality
+- Added critical memory about `consecutiveIndex()` vs `tmIndex()` distinction
+- Corrected performance tables and expectations
+- Changed optimization claims to reflect reality
 
-### Performance Metrics Corrections
+### 2. `/lucien/doc/SPATIAL_INDEX_OPTIMIZATION_GUIDE.md`
 
-- **Insertion**: Tetree is 70-350x slower (not "10x faster")
-- **Queries**: Tetree is 3-11x faster (accurate)
-- **Memory**: Tetree uses 77% less memory (accurate)
+- Complete rewrite with accurate performance characteristics
+- Added "Choosing Between Octree and Tetree" section
+- Included root cause analysis
+- Updated optimization techniques
 
-### Context Additions
+### 3. `/lucien/doc/SPATIAL_INDEX_PERFORMANCE_TESTING_PLAN_2025.md`
 
-- Explained the tmIndex() vs consecutiveIndex() issue
-- Documented the O(1) vs O(level) fundamental difference
-- Added optimization phase impact measurements
+- Updated performance targets to realistic expectations
+- Added notes about fundamental limitations
+- Corrected insertion performance targets
 
-### Recommendation Updates
+### 4. `/lucien/doc/ARCHITECTURE_SUMMARY_2025.md`
 
-- Clear use case guidance based on actual performance
-- Removed misleading "general superiority" claims
-- Added workload-specific recommendations
+- Replaced outdated performance claims
+- Added December 2025 update section
+- Referenced new performance reality document
 
-## Documents Verified as Correct
+### 5. `/lucien/README.md`
 
-### 1. **PERFORMANCE_REALITY_DECEMBER_2025.md**
+- Updated performance table with current measurements
+- Added key insight about trade-offs
+- Included December 2025 update notice
 
-- Already reflected the correct performance characteristics
-- No updates needed
+### 6. Created `/lucien/doc/PERFORMANCE_REALITY_DECEMBER_2025.md`
 
-### 2. **TETREE_PERFORMANCE_IMPROVEMENT_PLAN.md**
+- Comprehensive analysis of current performance
+- Detailed explanation of root causes
+- Use case recommendations
+- Lessons learned
 
-- Historical document showing the optimization plan
-- Accurately documents the journey, no changes needed
+## Key Takeaways
 
-### 3. **Phase 1/2/3 Completion Summaries**
+1. **Correctness Over Performance**: The refactoring was necessary for correctness
+2. **Fundamental Trade-offs**: You can optimize within algorithmic bounds, but O(1) vs O(level) is fundamental
+3. **Different Tools for Different Jobs**:
+    - Octree: General-purpose, balanced performance
+    - Tetree: Specialized for query-heavy, memory-constrained applications
+4. **Documentation Accuracy**: Performance claims must be continuously validated
 
-- Accurately document what was implemented
-- Show realistic impact measurements
+## Impact
 
-## Remaining Considerations
+These updates ensure that:
 
-### Archived Documents
+- Future developers understand the real performance characteristics
+- Appropriate spatial index is chosen for each use case
+- No confusion about why Tetree insertion is slow
+- Clear understanding that this is a fundamental algorithmic difference, not a bug
 
-Several documents in `/lucien/archived/` contain outdated information but are marked as archived:
+## Recommendation
 
-- `OCTREE_TETREE_PERFORMANCE_COMPARISON.md`
-- `TETREE_PORTING_PLAN.md`
-- `TETRAHEDRAL_DOMAIN_ANALYSIS.md`
+When choosing a spatial index:
 
-These are historical documents and don't need updating as they're clearly marked as archived.
+- **Default to Octree** unless you have specific requirements
+- **Use Tetree only when**:
+    - Queries vastly outnumber insertions
+    - Memory is severely constrained
+    - Dataset is mostly static
+    - Query performance is critical
 
-### Test Documentation
-
-The test README files in:
-
-- `/lucien/src/test/java/com/hellblazer/luciferase/lucien/performance/README.md`
-- `/lucien/src/test/java/com/hellblazer/luciferase/lucien/tetree/benchmark/README.md`
-
-These appear to be technical documentation for running tests and don't make performance claims.
-
-## Summary
-
-All active documentation has been updated to reflect the current performance reality:
-
-- Tetree is excellent for queries (3-11x faster)
-- Octree is superior for insertions (70-350x faster)
-- The 3-phase optimization achieved 94% improvement but cannot overcome fundamental algorithmic differences
-- Clear use case recommendations help users choose the right spatial index
-
-The documentation now provides an honest, accurate assessment that will help users make informed decisions based on
-their specific workload requirements.
+The documentation now accurately reflects these realities.

@@ -130,7 +130,7 @@ The current architecture prioritizes:
 4. **Extensibility**: Easy addition of new spatial decomposition strategies
 5. **Performance**: O(1) operations through HashMap-based storage
 
-## Performance Reality (December 2025 - Updated)
+## Performance Reality (June 2025 - OctreeVsTetreeBenchmark)
 
 ### Important Performance Update
 
@@ -138,22 +138,27 @@ Previous performance claims were based on using the `consecutiveIndex()` method 
 After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
 characteristics have changed dramatically.
 
-### Current Performance Metrics
+### Current Performance Metrics (June 28, 2025)
 
-| Operation    | Octree | Tetree    | Winner            | Notes                 |
-|--------------|--------|-----------|-------------------|-----------------------|
-| Insert 50K   | 75 ms  | 84,483 ms | Octree (1125x)    | tmIndex() is O(level) |
-| k-NN (k=10)  | 28 μs  | 5.9 μs    | Tetree (4.8x)     | Better locality       |
-| Range Query  | 28 μs  | 5.6 μs    | Tetree (5x)       | Efficient traversal   |
-| Memory Usage | 100%   | 22%       | Tetree (78% less) | Compact structure     |
+Source: OctreeVsTetreeBenchmark.java
+
+| Dataset | Operation | Octree  | Tetree  | Winner        | Advantage |
+|---------|-----------|---------|---------|---------------|-----------|
+| 100     | Insertion | 7.74 μs | 74.9 μs | Octree        | 9.7x      |
+| 1K      | Insertion | 3.01 μs | 173.4 μs| Octree        | 57.6x     |
+| 10K     | Insertion | 1.05 μs | 807.6 μs| Octree        | 770x      |
+| 1K      | k-NN      | 3.22 μs | 0.81 μs | Tetree        | 4.0x      |
+| 10K     | k-NN      | 21.9 μs | 7.04 μs | Tetree        | 3.1x      |
+| 10K     | Memory    | 12.9 MB | 2.64 MB | Tetree        | 80% less  |
 
 ### Key Insight
 
 - **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
 - **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
 - This fundamental difference cannot be optimized away
+- Memory measurements vary between benchmarks (needs investigation)
 
-For detailed performance analysis, see [PERFORMANCE_REALITY_DECEMBER_2025.md](./PERFORMANCE_REALITY_DECEMBER_2025.md)
+For detailed performance analysis, see [PERFORMANCE_REALITY_JUNE_2025.md](./PERFORMANCE_REALITY_JUNE_2025.md)
 
 ## Testing Coverage
 

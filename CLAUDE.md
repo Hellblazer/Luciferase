@@ -97,6 +97,7 @@ Historical documents (describe unimplemented features):
 - TetrahedralGeometry is fully integrated with TetrahedralSearchBase methods
 - All documentation has been cleaned up to reflect current state (June 2025)
 - The lucien module contains 34 classes total (not 60+ as originally planned)
+- run OctreeVsTetreeBenchmark for benchmarking documentation
 - AbstractSpatialIndex provides common functionality through generics:
     - Contains the spatialIndex Map<Key, NodeType> field with type-safe spatial keys
     - Contains the sortedSpatialIndices NavigableSet<Key> field for range operations
@@ -183,20 +184,20 @@ see [COMPLETED_ROADMAPS_JUNE_2025.md](lucien/archived/COMPLETED_ROADMAPS_JUNE_20
 - ✅ ~90% t8code parity for tetrahedral operations
 - ✅ **Final Bug Fixes (June 24, 2025)**: Collision detection and neighbor finding fully working
 
-## 🚀 Performance (June 2025 - Post DeferredSortedSet Removal)
+## 🚀 Performance (June 2025 - Current Reality)
 
-**IMPORTANT**: Previous performance claims were based on using the non-unique `consecutiveIndex()` method. After
-refactoring to use the globally unique `tmIndex()`, the performance characteristics have changed significantly.
+**IMPORTANT**: After extensive testing and refactoring to ensure correctness, the performance characteristics are now
+clear.
 
-**Current Tetree vs Octree Performance Reality (Updated June 2025):**
+**Current Tetree vs Octree Performance Reality (June 2025):**
 
 | Operation   | Octree        | Tetree         | Winner                    | Notes                        |
 |-------------|---------------|----------------|---------------------------|------------------------------|
-| Insertion   | 1.3 μs/entity | 483 μs/entity  | **Octree (372x faster)**  | tmIndex() walks parent chain |
-| k-NN Search | 206 μs        | 64 μs          | **Tetree (3.2x faster)**  | Better spatial locality      |
-| Range Query | 203 μs        | 62 μs          | **Tetree (3.3x faster)**  | Efficient traversal          |
-| Update      | 0.012 μs      | 1.16 μs        | **Octree (97x faster)**   | Morton code efficiency       |
-| Memory      | 100%          | 20-220%        | **Mixed**                 | Varies with data size        |
+| Insertion   | 5.8 μs/entity | 88.3 μs/entity | **Octree (15.3x faster)** | tmIndex() walks parent chain |
+| k-NN Search | 28 μs         | 5.9 μs         | **Tetree (4.8x faster)**  | Better spatial locality      |
+| Range Query | 28 μs         | 5.6 μs         | **Tetree (5x faster)**    | Efficient traversal          |
+| Update      | ~6 μs         | ~88 μs         | **Octree (15x faster)**   | Morton code efficiency       |
+| Memory      | 340 bytes     | 65,533 bytes   | **Octree (193x less)**    | Tetree uses massive memory   |
 
 **Root Cause of Performance Difference:**
 
@@ -217,10 +218,10 @@ refactoring to use the globally unique `tmIndex()`, the performance characterist
 
 **Test Control**: Set `RUN_SPATIAL_INDEX_PERF_TESTS=true` to enable performance tests
 
-**Realistic Performance Expectations (June 2025 - Post DeferredSortedSet Removal):**
+**Realistic Performance Expectations (June 28, 2025):**
 
-- **Octree**: ~770K entities/sec insertion, 5-30μs k-NN queries  
-- **Tetree**: ~2K entities/sec insertion, 15-60μs k-NN queries
-- **Memory**: Mixed results - Tetree uses 20% memory for small datasets, 220% for large datasets
-- **Note**: Tetree is 372x slower for insertions but 3.2x faster for queries
-- **Lazy Evaluation**: Still provides 3.8x speedup for Tetree insertions by deferring tmIndex() computation
+- **Octree**: ~173K entities/sec insertion (1K entities), 28μs k-NN queries, 28μs range queries
+- **Tetree**: ~11K entities/sec insertion (1K entities), 5.9μs k-NN queries, 5.6μs range queries
+- **Memory**: Tetree uses 193x more memory than Octree (65KB vs 340 bytes per entity)
+- **Scaling**: Performance degrades significantly for Tetree (259 entities/sec at 50K)
+- **Lazy Evaluation**: Provides up to 16x speedup for Tetree bulk operations

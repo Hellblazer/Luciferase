@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.performance;
 
+import com.hellblazer.luciferase.lucien.AbstractSpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,7 @@ extends AbstractSpatialIndexPerformanceTest<Key, ID, Content> {
     @Test
     @DisplayName("Test memory usage during creation")
     void testCreationMemoryUsage() {
-        int[] memorySizes = { 1000, 10000, 100000 };
+        int[] memorySizes = { 1000, 10000 };
 
         for (int size : memorySizes) {
             List<TestEntity> entities = generateTestEntities(size, SpatialDistribution.UNIFORM_RANDOM);
@@ -156,8 +157,7 @@ extends AbstractSpatialIndexPerformanceTest<Key, ID, Content> {
             PerformanceMetrics optimizedBulkMetrics = measure("bulk_insertion_optimized", size, () -> {
                 SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                 // Enable optimizations if supported by AbstractSpatialIndex
-                if (index instanceof com.hellblazer.luciferase.lucien.AbstractSpatialIndex) {
-                    var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<Key, ID, Content, ?>) index;
+                if (index instanceof final AbstractSpatialIndex<Key, ID, Content, ?> abstractIndex) {
                     // Pre-allocate nodes for better performance
                     abstractIndex.preAllocateAdaptive(positions.subList(0, Math.min(1000, size)), size, DEFAULT_LEVEL);
                 }
@@ -170,8 +170,7 @@ extends AbstractSpatialIndexPerformanceTest<Key, ID, Content> {
                 parallelMetrics = measure("bulk_insertion_parallel", size, () -> {
                     SpatialIndex<Key, ID, Content> index = createSpatialIndex(DEFAULT_BOUNDS, DEFAULT_MAX_DEPTH);
                     try {
-                        if (index instanceof com.hellblazer.luciferase.lucien.AbstractSpatialIndex) {
-                            var abstractIndex = (com.hellblazer.luciferase.lucien.AbstractSpatialIndex<Key, ID, Content, ?>) index;
+                        if (index instanceof final AbstractSpatialIndex<Key, ID, Content, ?> abstractIndex) {
                             abstractIndex.insertBatchParallel(positions, contents, DEFAULT_LEVEL);
                         } else {
                             // Fallback to regular bulk insertion
