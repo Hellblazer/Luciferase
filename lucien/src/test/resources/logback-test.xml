@@ -30,7 +30,7 @@
     </root>
 
     <!-- Spatial Index specific logging -->
-    <logger name="com.hellblazer.luciferase.lucien" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
@@ -42,37 +42,37 @@
     </logger>
 
     <!-- Tetree specific logging for debugging -->
-    <logger name="com.hellblazer.luciferase.lucien.tetree" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.tetree" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
 
     <!-- Octree specific logging for debugging -->
-    <logger name="com.hellblazer.luciferase.lucien.octree" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.octree" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
 
     <!-- Collision detection logging -->
-    <logger name="com.hellblazer.luciferase.lucien.collision" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.collision" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
 
     <!-- Ray intersection logging -->
-    <logger name="com.hellblazer.luciferase.lucien.ray" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.ray" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
 
     <!-- Balancing algorithm logging -->
-    <logger name="com.hellblazer.luciferase.lucien.balancing" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.balancing" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
 
     <!-- Entity management logging -->
-    <logger name="com.hellblazer.luciferase.lucien.entity" level="DEBUG" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.entity" level="INFO" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>
