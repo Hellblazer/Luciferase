@@ -1147,4 +1147,93 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         }
 
     }
+    
+    /**
+     * Utility class for Octree hexahedron (cube) subdivision operations.
+     * Provides static methods for computing child nodes of a cube in the octree.
+     */
+    public static class HexahedronSubdivision {
+        
+        /**
+         * Subdivide a hexahedron (cube) into its 8 child octants.
+         * Children are ordered by their octant index (0-7) using standard Morton ordering:
+         * - Bit 0: X axis (0=left, 1=right)
+         * - Bit 1: Y axis (0=bottom, 1=top) 
+         * - Bit 2: Z axis (0=back, 1=front)
+         *
+         * @param parentKey the Morton key of the parent cube
+         * @return array of 8 child Morton keys
+         * @throws IllegalStateException if already at max refinement level
+         */
+        public static MortonKey[] subdivide(MortonKey parentKey) {
+            byte parentLevel = parentKey.getLevel();
+            if (parentLevel >= Constants.getMaxRefinementLevel()) {
+                throw new IllegalStateException("Cannot subdivide at max refinement level");
+            }
+            
+            // Decode parent coordinates
+            int[] parentCoords = MortonCurve.decode(parentKey.getMortonCode());
+            int parentX = parentCoords[0];
+            int parentY = parentCoords[1];
+            int parentZ = parentCoords[2];
+            
+            // Calculate child cell size
+            int childCellSize = Constants.lengthAtLevel((byte)(parentLevel + 1));
+            byte childLevel = (byte)(parentLevel + 1);
+            
+            // Generate 8 children
+            MortonKey[] children = new MortonKey[8];
+            for (int octant = 0; octant < 8; octant++) {
+                // Calculate child coordinates based on octant
+                int childX = parentX + ((octant & 1) != 0 ? childCellSize : 0);
+                int childY = parentY + ((octant & 2) != 0 ? childCellSize : 0);
+                int childZ = parentZ + ((octant & 4) != 0 ? childCellSize : 0);
+                
+                // Create child Morton key
+                long childMortonCode = MortonCurve.encode(childX, childY, childZ);
+                children[octant] = new MortonKey(childMortonCode, childLevel);
+            }
+            
+            return children;
+        }
+        
+        /**
+         * Get a specific child of a hexahedron.
+         *
+         * @param parentKey the Morton key of the parent cube
+         * @param octant the child index (0-7)
+         * @return the child Morton key
+         * @throws IllegalArgumentException if octant not in [0,7]
+         * @throws IllegalStateException if already at max refinement level
+         */
+        public static MortonKey getChild(MortonKey parentKey, int octant) {
+            if (octant < 0 || octant >= 8) {
+                throw new IllegalArgumentException("Octant must be 0-7: " + octant);
+            }
+            
+            byte parentLevel = parentKey.getLevel();
+            if (parentLevel >= Constants.getMaxRefinementLevel()) {
+                throw new IllegalStateException("Cannot get child at max refinement level");
+            }
+            
+            // Decode parent coordinates
+            int[] parentCoords = MortonCurve.decode(parentKey.getMortonCode());
+            int parentX = parentCoords[0];
+            int parentY = parentCoords[1];
+            int parentZ = parentCoords[2];
+            
+            // Calculate child cell size
+            int childCellSize = Constants.lengthAtLevel((byte)(parentLevel + 1));
+            byte childLevel = (byte)(parentLevel + 1);
+            
+            // Calculate child coordinates based on octant
+            int childX = parentX + ((octant & 1) != 0 ? childCellSize : 0);
+            int childY = parentY + ((octant & 2) != 0 ? childCellSize : 0);
+            int childZ = parentZ + ((octant & 4) != 0 ? childCellSize : 0);
+            
+            // Create child Morton key
+            long childMortonCode = MortonCurve.encode(childX, childY, childZ);
+            return new MortonKey(childMortonCode, childLevel);
+        }
+    }
 }

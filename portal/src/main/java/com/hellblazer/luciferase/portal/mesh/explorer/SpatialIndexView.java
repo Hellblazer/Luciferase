@@ -389,6 +389,7 @@ public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID extends E
     public DoubleProperty entitySizeProperty() { return entitySize; }
     
     public Group getSceneRoot() { return sceneRoot; }
+    public Group getNodeGroup() { return nodeGroup; }
     public int getVisibleNodeCount() { return visibleNodeCount; }
     public int getVisibleEntityCount() { return visibleEntityCount; }
     public long getLastUpdateTime() { return lastUpdateTime; }

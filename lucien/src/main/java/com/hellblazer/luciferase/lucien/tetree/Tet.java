@@ -12,12 +12,9 @@ import javax.vecmath.Tuple3i;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
-import java.util.stream.LongStream;
 import java.util.stream.Stream;
 
 import static com.hellblazer.luciferase.lucien.Constants.*;
-import static java.util.stream.Collectors.collectingAndThen;
-import static java.util.stream.Collectors.toList;
 
 /**
  * A tetrahedron in the tetrahedral space-filling curve (Tet SFC) implementation.
@@ -272,7 +269,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             float bestDistance = Float.MAX_VALUE;
 
             for (int i = 0; i < 8; i++) {
-                var child = current.childStandard(i);
+                var child = current.child(i);
                 if (containsPointInTetrahedron(child, px, py, pz)) {
                     selectedChild = child;
                     break; // Found exact match
@@ -410,17 +407,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
     public static Tet tetrahedron(BaseTetreeKey<? extends BaseTetreeKey> key) {
         return tetrahedron(key.getLowBits(), key.getHighBits(), key.getLevel());
-    }
-
-    /**
-     * @param index - the consecutive index of the tetrahedron
-     * @return the Tet corresponding to the consecutive index
-     * @deprecated This method is fundamentally flawed as it attempts to derive level from index. Use
-     * {@link #tetrahedron(long, byte)} with explicit level instead.
-     */
-    @Deprecated(since = "0.0.1", forRemoval = true)
-    public static Tet tetrahedron(long index) {
-        return tetrahedron(index, tetLevelFromIndex(index));
     }
 
     /**
@@ -653,32 +639,30 @@ public record Tet(int x, int y, int z, byte l, byte type) {
     }
 
     /**
-     * Generate the i-th child of this tetrahedron using Bey's refinement scheme.
+     * Generate the i-th child of this tetrahedron using t8code's subdivision scheme.
      *
      * <p><b>CRITICAL ALGORITHM (from t8code):</b></p>
-     * This uses Bey's tetrahedral refinement which creates 8 children:
-     * <ul>
-     *   <li>Child 0: Interior tetrahedron at parent's anchor</li>
-     *   <li>Children 1-7: Corner tetrahedra at vertex midpoints</li>
-     * </ul>
+     * This uses t8code's tetrahedral subdivision which creates 8 children.
+     * The subdivision is NOT Bey's refinement but a different scheme that's
+     * compatible with the coordinates() method.
      *
      * <p><b>Key Steps:</b></p>
      * <ol>
      *   <li>Convert Morton index (0-7) to Bey child ID</li>
      *   <li>Look up child type from connectivity table</li>
-     *   <li>For child 0: use parent anchor directly</li>
-     *   <li>For children 1-7: anchor = midpoint(parent_anchor, parent_vertex)</li>
+     *   <li>Calculate child position using cube-based bit offsets</li>
      * </ol>
      *
-     * <p><b>WARNING:</b> This is NOT cube-based subdivision!</p>
-     * The child positions are determined by vertex midpoints, not cube offsets.
+     * <p><b>IMPORTANT:</b> This subdivision scheme is different from classical
+     * Bey's refinement. The children are positioned to be compatible with the
+     * vertex generation in coordinates() which uses t8code's canonical algorithm.</p>
      *
      * @param childIndex Morton ordering index (0-7)
      * @return the child tetrahedron
      * @throws IllegalArgumentException if childIndex not in [0,7]
      * @throws IllegalStateException    if already at max refinement level
      */
-    public Tet child(int childIndex) {
+    public Tet childMorton(int childIndex) {
         if (childIndex < 0 || childIndex >= TetreeConnectivity.CHILDREN_PER_TET) {
             throw new IllegalArgumentException("Child index must be 0-7: " + childIndex);
         }
@@ -693,62 +677,120 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         byte childType = TetreeConnectivity.getChildType(type, beyChildId);
         byte childLevel = (byte) (l + 1);
 
-        // For all children, compute position as midpoint between parent anchor and vertex
-        // This is the t8code algorithm: child anchor = (parent anchor + parent vertex) / 2
-        byte vertex = TetreeConnectivity.getBeyVertex(beyChildId);
-
-        // Use the exact t8code algorithm to compute vertex coordinates
-        Point3i vertexCoords = computeVertexCoordinates(vertex);
-
-        // Child anchor is midpoint between parent anchor and the defining vertex
-        int childX = (x + vertexCoords.x) >> 1;  // Bit shift for division by 2
-        int childY = (y + vertexCoords.y) >> 1;
-        int childZ = (z + vertexCoords.z) >> 1;
+        // Calculate child position using t8code's cube-based approach
+        // This matches how coordinates() generates vertices
+        int halfLength = length() >> 1;
+        
+        // Use bit pattern to determine child position
+        int childX = x + ((childIndex & 1) != 0 ? halfLength : 0);
+        int childY = y + ((childIndex & 2) != 0 ? halfLength : 0);
+        int childZ = z + ((childIndex & 4) != 0 ? halfLength : 0);
 
         return new Tet(childX, childY, childZ, childLevel, childType);
     }
 
     /**
-     * Get child at the specified index using standard refinement rules. This method creates children that will pass the
-     * valid() check by ensuring they follow the standard refinement from type 0 root.
+     * Subdivide this tetrahedron into its 8 children using t8code's subdivision scheme.
+     * The children are returned in Morton order (0-7).
      *
-     * @param childIndex the child index (0-7) in standard Morton order
-     * @return the child tetrahedron with correct type for standard refinement
+     * @return array of 8 child tetrahedra in Morton order
+     * @throws IllegalStateException if already at max refinement level
      */
-    public Tet childStandard(int childIndex) {
-        if (childIndex < 0 || childIndex >= 8) {
-            throw new IllegalArgumentException("Child index must be 0-7: " + childIndex);
+    public Tet[] subdivide() {
+        if (l >= getMaxRefinementLevel()) {
+            throw new IllegalStateException("Cannot subdivide at max refinement level");
+        }
+        
+        Tet[] children = new Tet[8];
+        for (int i = 0; i < 8; i++) {
+            children[i] = childMorton(i);
+        }
+        return children;
+    }
+    
+    /**
+     * Subdivide this tetrahedron into its 8 children in TM-index order.
+     * TM-order provides better spatial locality than Morton order for tetrahedral decomposition.
+     *
+     * @return array of 8 child tetrahedra in TM order
+     * @throws IllegalStateException if already at max refinement level
+     */
+    public Tet[] subdivideTM() {
+        if (l >= getMaxRefinementLevel()) {
+            throw new IllegalStateException("Cannot subdivide at max refinement level");
+        }
+        
+        Tet[] children = new Tet[8];
+        for (int i = 0; i < 8; i++) {
+            children[i] = childTM(i);
+        }
+        return children;
+    }
+
+
+    // TM-to-Bey permutation table from the thesis (Table 4.2)
+    // For parent type b, TM_TO_BEY_PERMUTATION[b][i] gives the Bey index of the i-th child in TM-order
+    private static final int[][] TM_TO_BEY_PERMUTATION = {
+        { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
+        { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1  
+        { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
+        { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
+        { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
+        { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
+    };
+
+    /**
+     * Get child at specified TM index (true space-filling curve order).
+     * 
+     * TM-order provides better spatial locality than Morton order for tetrahedral decomposition.
+     * Adjacent indices in TM order correspond to spatially adjacent tetrahedra.
+     *
+     * @param tmIndex TM ordering index (0-7)
+     * @return the child tetrahedron at the TM position
+     * @throws IllegalArgumentException if tmIndex not in [0,7]
+     * @throws IllegalStateException if already at max refinement level
+     */
+    public Tet childTM(int tmIndex) {
+        if (tmIndex < 0 || tmIndex >= TetreeConnectivity.CHILDREN_PER_TET) {
+            throw new IllegalArgumentException("TM index must be 0-7: " + tmIndex);
         }
         if (l >= getMaxRefinementLevel()) {
             throw new IllegalStateException("Cannot create children at max refinement level");
         }
-
-        byte childLevel = (byte) (l + 1);
-        int cellSize = Constants.lengthAtLevel(childLevel);
-
-        // Calculate child coordinates based on which octant (standard Morton order)
-        int childX = x + ((childIndex & 1) != 0 ? cellSize : 0);
-        int childY = y + ((childIndex & 2) != 0 ? cellSize : 0);
-        int childZ = z + ((childIndex & 4) != 0 ? cellSize : 0);
-
-        // Determine child type using standard refinement rules
-        byte childType = TYPE_TO_TYPE_OF_CHILD[type][childIndex];
-
-        return new Tet(childX, childY, childZ, childLevel, childType);
+        
+        // Convert TM index to Bey index using permutation table
+        int beyIndex = TM_TO_BEY_PERMUTATION[type][tmIndex];
+        
+        // Convert Bey index to Morton index for child access
+        // This is the inverse of getBeyChildId
+        int mortonIndex = -1;
+        for (int morton = 0; morton < 8; morton++) {
+            if (TetreeConnectivity.getBeyChildId(type, morton) == beyIndex) {
+                mortonIndex = morton;
+                break;
+            }
+        }
+        
+        if (mortonIndex == -1) {
+            throw new IllegalStateException("Failed to find Morton index for Bey index " + beyIndex);
+        }
+        
+        return childMorton(mortonIndex);
     }
 
     /**
-     * @param i - the Tet Morton child id
-     * @return the i-th child (in Tet Morton order) of the receiver
+     * Convenience method: Get child at specified index using default Morton ordering.
+     * For better spatial locality, use childTM() instead.
+     *
+     * @param childIndex Morton ordering index (0-7)  
+     * @return the child tetrahedron
+     * @see #childMorton(int)
+     * @see #childTM(int)
      */
-    public Tet childTM(byte i) {
-        if (l == getMaxRefinementLevel()) {
-            throw new IllegalArgumentException(
-            "No children at maximum refinement level: %s".formatted(getMaxRefinementLevel()));
-        }
-        return child(TYPE_TO_TYPE_OF_CHILD_MORTON[type][i]);
+    public Tet child(int childIndex) {
+        return childMorton(childIndex);
     }
-
+    
     /**
      * Compare two tetrahedra for SFC ordering
      *
@@ -1125,23 +1167,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return new FaceNeighbor((byte) ret, new Tet(coords[0], coords[1], coords[2], l, (byte) typeNew));
     }
 
-    // TODO: This method needs to be updated for 128-bit tm-index
-    // Commenting out for now as it uses long-based spatial range queries
-    /*
-    public long intersecting(Spatial volume) {
-        // Simple implementation: find first intersecting tetrahedron
-        var bounds = VolumeBounds.from(volume);
-        if (bounds == null) {
-            return 0L;
-        }
-
-        return spatialRangeQuery(bounds, true).filter(index -> {
-            var tet = Tet.tetrahedron(index);
-            return tetrahedronIntersectsVolume(tet, volume);
-        }).findFirst().orElse(0L);
-    }
-    */
-
     /**
      * Get the first descendant at the given level
      *
@@ -1164,6 +1189,23 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
         return current.tmIndex();
     }
+
+    // TODO: This method needs to be updated for 128-bit tm-index
+    // Commenting out for now as it uses long-based spatial range queries
+    /*
+    public long intersecting(Spatial volume) {
+        // Simple implementation: find first intersecting tetrahedron
+        var bounds = VolumeBounds.from(volume);
+        if (bounds == null) {
+            return 0L;
+        }
+
+        return spatialRangeQuery(bounds, true).filter(index -> {
+            var tet = Tet.tetrahedron(index);
+            return tetrahedronIntersectsVolume(tet, volume);
+        }).findFirst().orElse(0L);
+    }
+    */
 
     @Override
     public int hashCode() {
@@ -1274,10 +1316,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
 
         Tet parent = new Tet(parentX, parentY, parentZ, parentLevel, parentType);
-        
+
         // Cache the complete parent for future lookups
         TetreeLevelCache.cacheParent(x, y, z, l, type, parent);
-        
+
         return parent;
     }
 
@@ -1298,6 +1340,73 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Get parent and then get the requested child
         var parentTet = parent();
         return parentTet.child(siblingIndex);
+    }
+
+    /**
+     * Returns the tetrahedron vertices in standard order following the right-hand rule. This ensures consistent face
+     * normals that point outward from the tetrahedron.
+     *
+     * <p>The standard ordering is based on {@link Constants#SIMPLEX_STANDARD} which
+     * defines the 6 characteristic tetrahedra with proper vertex winding for outward normals. This method builds
+     * vertices directly from the anchor position following the SIMPLEX_STANDARD patterns.</p>
+     *
+     * @return array of 4 vertices in standard order for right-hand rule face normals
+     */
+    public Point3i[] standardOrderCoordinates() {
+        var h = length();
+        var standard = new Point3i[4];
+
+        // Build vertices from anchor based on SIMPLEX_STANDARD patterns
+        // Cube corners: c0=(0,0,0), c1=(1,0,0), c2=(0,1,0), c3=(1,1,0),
+        //               c4=(0,0,1), c5=(1,0,1), c6=(0,1,1), c7=(1,1,1)
+
+        switch (type) {
+            case 0 -> {
+                // Type 0: SIMPLEX_STANDARD order is {c0, c1, c5, c7}
+                standard[0] = new Point3i(x, y, z);               // c0 = (0,0,0)
+                standard[1] = new Point3i(x + h, y, z);           // c1 = (1,0,0)
+                standard[2] = new Point3i(x + h, y, z + h);       // c5 = (1,0,1)
+                standard[3] = new Point3i(x + h, y + h, z + h);   // c7 = (1,1,1)
+            }
+            case 1 -> {
+                // Type 1: SIMPLEX_STANDARD order is {c0, c7, c3, c1}
+                standard[0] = new Point3i(x, y, z);               // c0 = (0,0,0)
+                standard[1] = new Point3i(x + h, y + h, z + h);   // c7 = (1,1,1)
+                standard[2] = new Point3i(x + h, y + h, z);       // c3 = (1,1,0)
+                standard[3] = new Point3i(x + h, y, z);           // c1 = (1,0,0)
+            }
+            case 2 -> {
+                // Type 2: SIMPLEX_STANDARD order is {c0, c2, c3, c7}
+                standard[0] = new Point3i(x, y, z);               // c0 = (0,0,0)
+                standard[1] = new Point3i(x, y + h, z);           // c2 = (0,1,0)
+                standard[2] = new Point3i(x + h, y + h, z);       // c3 = (1,1,0)
+                standard[3] = new Point3i(x + h, y + h, z + h);   // c7 = (1,1,1)
+            }
+            case 3 -> {
+                // Type 3: SIMPLEX_STANDARD order is {c0, c7, c6, c2}
+                standard[0] = new Point3i(x, y, z);               // c0 = (0,0,0)
+                standard[1] = new Point3i(x + h, y + h, z + h);   // c7 = (1,1,1)
+                standard[2] = new Point3i(x, y + h, z + h);       // c6 = (0,1,1)
+                standard[3] = new Point3i(x, y + h, z);           // c2 = (0,1,0)
+            }
+            case 4 -> {
+                // Type 4: SIMPLEX_STANDARD order is {c0, c4, c6, c7}
+                standard[0] = new Point3i(x, y, z);               // c0 = (0,0,0)
+                standard[1] = new Point3i(x, y, z + h);           // c4 = (0,0,1)
+                standard[2] = new Point3i(x, y + h, z + h);       // c6 = (0,1,1)
+                standard[3] = new Point3i(x + h, y + h, z + h);   // c7 = (1,1,1)
+            }
+            case 5 -> {
+                // Type 5: SIMPLEX_STANDARD order is {c0, c7, c5, c4}
+                standard[0] = new Point3i(x, y, z);               // c0 = (0,0,0)
+                standard[1] = new Point3i(x + h, y + h, z + h);   // c7 = (1,1,1)
+                standard[2] = new Point3i(x + h, y, z + h);       // c5 = (1,0,1)
+                standard[3] = new Point3i(x, y, z + h);           // c4 = (0,0,1)
+            }
+            default -> throw new IllegalStateException("Invalid type: " + type);
+        }
+
+        return standard;
     }
 
     /**
@@ -1344,7 +1453,7 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Stack to hold types as we walk up
         byte[] types = new byte[l];
         Tet current = this;
-        
+
         // Walk up to collect types efficiently  
         for (int i = l - 1; i >= 0; i--) {
             types[i] = current.type();
@@ -1369,10 +1478,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             int xBit = (shiftedX >> bitPos) & 1;
             int yBit = (shiftedY >> bitPos) & 1;
             int zBit = (shiftedZ >> bitPos) & 1;
-            
+
             int coordBits = (zBit << 2) | (yBit << 1) | xBit;
             int sixBits = (coordBits << 3) | types[i];
-            
+
             if (i < 10) {
                 lowBits |= ((long) sixBits) << (6 * i);
             } else {
@@ -2008,31 +2117,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Use depth-aware optimization for medium to large volumes
         // Small volumes benefit from simpler computation
         return volumeSize > 1000.0f && maxExtent > 10.0f;
-    }
-
-    // TODO: Remove this method once all callers have been migrated to use TetreeKey
-    // This method uses consecutiveIndex() which is only unique within a level
-    @Deprecated
-    private Stream<Long> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
-        // Choose optimization strategy based on volume characteristics
-        var rangeStream = selectOptimalRangeStrategy(bounds, includeIntersecting);
-
-        // Apply optimized range merging and streaming
-        return rangeStream.collect(collectingAndThen(toList(), this::mergeRangesOptimized)).stream().flatMap(
-        range -> LongStream.rangeClosed(range.start(), range.end()).boxed()).filter(index -> {
-            // Final precise filtering for elements that passed SFC range test
-            try {
-                var tet = Tet.tetrahedron(index);
-                if (includeIntersecting) {
-                    return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
-                } else {
-                    return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
-                }
-            } catch (Exception e) {
-                // Skip invalid indices
-                return false;
-            }
-        });
     }
 
     // Efficient spatial range query using tetrahedral space-filling curve properties - optimized version
