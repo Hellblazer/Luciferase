@@ -8,7 +8,7 @@ and the paper "A tetrahedral space-filling curve for non-conforming adaptive mes
 
 ## Current Implementation Status (June 2025)
 
-### ✅ Core Functionality Complete
+### Core Functionality Complete
 
 - **Tetrahedral Space-Filling Curve (SFC)**: Full implementation matching t8code
 - **Bey's Refinement Scheme**: 8 children per tetrahedron using vertex midpoints
@@ -16,7 +16,7 @@ and the paper "A tetrahedral space-filling curve for non-conforming adaptive mes
 - **Multi-Entity Support**: Multiple entities per tetrahedral node
 - **Thread-Safe Operations**: Read-write locks for concurrent access
 
-### 🔑 Key Architectural Decisions
+### Key Architectural Decisions
 
 1. **Unified Architecture**: Both Octree and Tetree extend `AbstractSpatialIndex`
 2. **SFC Index Encoding**: Direct encoding without level offsets (0 to 8^level - 1)
