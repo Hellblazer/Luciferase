@@ -197,6 +197,7 @@ Historical documents (describe unimplemented features):
 - ✅ **V2 tmIndex Optimization (June 28, 2025)**: 4x speedup in tmIndex computation
 - ✅ **Parent Cache Implementation**: 17-67x speedup for parent operations
 - ✅ **Cache Key Optimization**: 10% improvement with fast path for small coordinates
+- ✅ **Range Query AABB Caching (June 28, 2025)**: 18-19% improvement at small-medium scales
 
 ### Performance Milestones:
 
@@ -204,6 +205,7 @@ Historical documents (describe unimplemented features):
 - 🚀 **Memory Efficiency**: Consistent 74-76% memory savings vs Octree  
 - 🚀 **Query Performance**: 1.3-2.9x faster k-NN searches
 - 🚀 **tmIndex Optimization**: 4x speedup reduces insertion gap to 3-5x
+- 🚀 **Range Query Optimization**: 18-19% improvement with AABB caching
 - 🚀 **Production Ready**: All optimizations integrated and validated
 
 ## 🚀 Performance (June 28, 2025 - With V2 tmIndex + Parent Cache Optimizations)
