@@ -11,20 +11,21 @@ The Luciferase codebase underwent dramatic architectural simplification in 2025,
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 34 core Java classes plus additional support classes for advanced features, organized in a clean
-package hierarchy, prioritizing simplicity and correctness
-over advanced features. As of June 2025, all planned enhancements have been successfully implemented.
+The module consists of 96 Java files organized across 8 packages, providing a comprehensive spatial indexing system with advanced features including collision detection, tree balancing, and visitor patterns. As of June 2025, all planned enhancements have been successfully implemented.
 
 ## Package Structure
 
 ```
 com.hellblazer.luciferase.lucien/
-├── Root package (13 classes + 2 images)
+├── Root package (27 classes + 2 images)
 │   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex, 
-│   │                      SpatialNodeStorage, AbstractSpatialNode
-│   ├── Spatial types: Spatial, VolumeBounds
-│   ├── Geometry: Frustum3D, Plane3D, Ray3D, Simplex
-│   ├── Utilities: Constants, VisibilitySearch
+│   │                      SpatialNodeStorage, AbstractSpatialNode, SpatialKey
+│   ├── Spatial types: Spatial, VolumeBounds, SpatialIndexSet
+│   ├── Geometry: Frustum3D, Plane3D, Ray3D, Simplex, FrustumIntersection, PlaneIntersection
+│   ├── Performance: BulkOperationConfig, BulkOperationProcessor, DeferredSubdivisionManager,
+│   │                ParallelBulkOperations, SpatialNodePool, FineGrainedLockingStrategy
+│   ├── Utilities: Constants, VisibilitySearch, LevelSelector, NodeEstimator, 
+│   │              BatchInsertionResult, StackBasedTreeBuilder, SubdivisionStrategy
 │   └── Resources: reference-cube.png, reference-simplexes.png
 ├── entity/ (12 classes)
 │   ├── Core: Entity, EntityBounds, EntityData, EntityDistance
@@ -32,17 +33,37 @@ com.hellblazer.luciferase.lucien/
 │   ├── Management: EntityManager, EntitySpanningPolicy
 │   └── Implementations: LongEntityID, UUIDEntityID,
 │                       SequentialLongIDGenerator, UUIDGenerator
-├── octree/ (3 classes)
+├── octree/ (5 classes)
 │   ├── Octree - Main implementation
 │   ├── OctreeNode - Node storage
-│   └── Octant - Octant enumeration
-└── tetree/ (6 classes)
-    ├── Tetree - Main implementation
-    ├── TetreeNodeImpl - Node storage
-    ├── Tet - Tetrahedron representation
-    ├── TetrahedralGeometry - Geometric operations
-    ├── TetrahedralSearchBase - Search operations
-    └── TetreeHelper - Utility functions
+│   ├── MortonKey - Space-filling curve key
+│   ├── Octant - Octant enumeration
+│   └── OctreeSubdivisionStrategy - Subdivision policy
+├── tetree/ (30 classes)
+│   ├── Core: Tetree, TetreeNodeImpl, Tet, TetrahedralGeometry, TetrahedralSearchBase
+│   ├── Keys: TetreeKey, BaseTetreeKey, CompactTetreeKey, LazyTetreeKey
+│   ├── Indexing: TmIndex, SimpleTMIndex, TMIndex128Clean
+│   ├── Caching: TetreeLevelCache, TetreeRegionCache, SpatialLocalityCache, ThreadLocalTetreeCache
+│   ├── Utilities: TetreeBits, TetreeConnectivity, TetreeFamily, TetreeHelper, 
+│   │              TetreeIterator, TetreeLUT, TetreeMetrics, TetreeNeighborFinder
+│   └── Advanced: TetreeSFCRayTraversal, TetreeSubdivisionStrategy, TetreeValidator,
+│                 TetreeValidationUtils, PluckerCoordinate, TetOptimized
+├── balancing/ (3 classes)
+│   ├── TreeBalancer - Main balancing interface
+│   ├── TreeBalancingStrategy - Strategy pattern
+│   └── DefaultBalancingStrategy - Default implementation
+├── collision/ (12 classes)
+│   ├── Core: CollisionSystem, CollisionShape, CollisionResponse
+│   ├── Shapes: BoxShape, SphereShape, CapsuleShape, OrientedBoxShape
+│   └── Support: CollisionFilter, CollisionListener, CollisionResolver,
+│                CollisionShapeFactory, PhysicsProperties
+├── visitor/ (6 classes)
+│   ├── TreeVisitor - Visitor interface
+│   ├── AbstractTreeVisitor - Base implementation
+│   ├── Concrete: EntityCollectorVisitor, NodeCountVisitor
+│   └── Support: TraversalContext, TraversalStrategy
+└── index/ (1 class)
+    └── TMIndexSimple - Simplified TM-index implementation
 ```
 
 ## Class Hierarchy
@@ -50,10 +71,11 @@ com.hellblazer.luciferase.lucien/
 ### Core Inheritance Structure
 
 ```
-SpatialIndex<ID extends EntityID, Content> (interface)
-    └── AbstractSpatialIndex<ID, Content, NodeType extends SpatialNodeStorage<ID>>
-            ├── Octree<ID, Content> extends AbstractSpatialIndex<ID, Content, OctreeNode<ID>>
-            └── Tetree<ID, Content> extends AbstractSpatialIndex<ID, Content, TetreeNodeImpl<ID>>
+SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
+    └── AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content, 
+                            NodeType extends SpatialNodeStorage<ID>>
+            ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content, OctreeNode<ID>>
+            └── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>>
 ```
 
 ### Node Storage Hierarchy
@@ -71,8 +93,8 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 
 ### Common State
 
-- `spatialIndex: Map<Long, NodeType>` - Main spatial storage mapping indices to nodes
-- `sortedSpatialIndices: NavigableSet<Long>` - Sorted indices for efficient range queries
+- `spatialIndex: Map<Key, NodeType>` - Main spatial storage mapping spatial keys to nodes
+- `sortedSpatialIndices: NavigableSet<Key>` - Sorted keys for efficient range queries (uses SpatialIndexSet)
 - `entityManager: EntityManager<ID, Content>` - Centralized entity lifecycle management
 - `maxEntitiesPerNode: int` - Threshold for node subdivision
 - `maxDepth: byte` - Maximum tree depth
@@ -190,20 +212,41 @@ The `EntityManager` class provides centralized entity lifecycle:
 - **LongEntityID**, **UUIDEntityID** - Concrete ID types
 - **SequentialLongIDGenerator**, **UUIDGenerator** - ID generators
 
-### Octree Package (3)
+### Octree Package (5)
 
 - **Octree** - Morton curve-based spatial index
 - **OctreeNode** - List-based entity storage per node
+- **MortonKey** - Space-filling curve key using Morton encoding
 - **Octant** - Octant enumeration and utilities
+- **OctreeSubdivisionStrategy** - Subdivision policy for octree nodes
 
-### Tetree Package (6)
+### Tetree Package (30)
 
+Core classes:
 - **Tetree** - Tetrahedral tree with positive coordinate constraints
 - **TetreeNodeImpl** - Set-based entity storage per node
 - **Tet** - Tetrahedron representation with SFC indexing
-- **TetreeHelper** - Utility functions
 - **TetrahedralGeometry** - Geometric operations on tetrahedra
 - **TetrahedralSearchBase** - Base class for tetrahedral queries
+
+Key implementations (4):
+- **TetreeKey** - Main space-filling curve key
+- **BaseTetreeKey**, **CompactTetreeKey**, **LazyTetreeKey** - Optimized key variants
+
+Performance optimizations (7):
+- **TetreeLevelCache** - O(1) level extraction and parent caching
+- **TetreeRegionCache** - Regional caching for queries
+- **SpatialLocalityCache**, **ThreadLocalTetreeCache** - Thread-local optimizations
+- **TetreeMetrics** - Performance monitoring
+- **TetOptimized** - Optimized tetrahedron operations
+
+Additional utilities (14):
+- **TetreeBits**, **TetreeConnectivity**, **TetreeFamily** - Bit operations and connectivity
+- **TetreeHelper**, **TetreeIterator**, **TetreeLUT** - Helper utilities
+- **TetreeNeighborFinder**, **TetreeSFCRayTraversal** - Advanced search
+- **TetreeSubdivisionStrategy**, **TetreeValidator**, **TetreeValidationUtils**
+- **TmIndex**, **SimpleTMIndex**, **TMIndex128Clean** - Index implementations
+- **PluckerCoordinate** - Ray intersection optimization
 
 ## Performance Characteristics
 
@@ -376,23 +419,30 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Characteristics (Post-Subdivision Fix - June 28, 2025)
+## Performance Characteristics (June 28, 2025)
 
-**Key Findings**: After fixing Tetree's subdivision bug, performance characteristics are now correct
+**BREAKTHROUGH**: With V2 tmIndex optimization and parent cache, Tetree now outperforms Octree for bulk loading at large scales!
 
-Source: OctreeVsTetreeBenchmark.java (after subdivision fix)
+### Individual Operations
+- **Insertion**: Octree 3-5x faster due to O(1) Morton encoding
+- **k-NN Search**: Tetree 2.9x faster due to better spatial locality
+- **Range Query**: Octree 7.7x faster
+- **Memory**: Tetree uses 74-76% less memory
 
-- **Insertion Performance**: Octree is 6x to 35x faster (was 770x due to bug)
-- **Query Performance**: Tetree is 3-4x faster for k-NN and range queries
-- **Memory Usage**: Now comparable (92-103%) - was 20% due to improper subdivision
-- **Subdivision Fix**: Tetree was creating only 2 nodes for 1000 entities instead of proper tree structure
-- **Remaining Gap**: Due to fundamental O(1) vs O(level) algorithmic difference
+### Bulk Loading (The Game Changer)
+- **50K entities**: Tetree 35% faster than Octree
+- **100K entities**: Tetree 38% faster than Octree
+
+Key optimizations implemented:
+- V2 tmIndex: 4x speedup in tmIndex computation
+- Parent cache: 17-67x speedup for parent operations
+- Bulk operations: Deferred subdivision provides massive benefits
 
 ## Testing
 
 The module includes comprehensive test coverage:
 
-- 200+ total tests with complete feature coverage
+- 109 test files (many containing multiple test methods)
 - Unit tests for all major operations
 - Integration tests for spatial queries
 - Performance benchmarks (controlled by environment flag)

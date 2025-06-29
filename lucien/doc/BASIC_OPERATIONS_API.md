@@ -282,7 +282,7 @@ List<ID> entitiesInRoom = spatialIndex.entitiesInRegion(room);
 ### Find Bounding Nodes
 
 ```java
-Stream<SpatialNode<ID>> bounding(Spatial volume)
+Stream<SpatialNode<Key, ID>> bounding(Spatial volume)
 ```
 
 Find all nodes that intersect with a volume.
@@ -292,14 +292,14 @@ Find all nodes that intersect with a volume.
 ```java
 // Find all nodes intersecting a sphere
 Spatial.Sphere sphere = new Spatial.Sphere(center, radius);
-
-List<SpatialNode<ID>> intersectingNodes = spatialIndex.bounding(sphere).collect(Collectors.toList());
+List<SpatialNode<Key, ID>> intersectingNodes = spatialIndex.bounding(sphere)
+    .collect(Collectors.toList());
 ```
 
 ### Find Bounded Nodes
 
 ```java
-Stream<SpatialNode<ID>> boundedBy(Spatial volume)
+Stream<SpatialNode<Key, ID>> boundedBy(Spatial volume)
 ```
 
 Find nodes completely contained within a volume.
@@ -309,21 +309,14 @@ Find nodes completely contained within a volume.
 ```java
 // Find nodes completely inside a region
 Spatial.Cube region = new Spatial.Cube(min, max);
-
-spatialIndex.
-
-boundedBy(region)
-            .
-
-forEach(node ->
-
-processNode(node));
+spatialIndex.boundedBy(region)
+    .forEach(node -> processNode(node));
 ```
 
 ### Find Enclosing Node
 
 ```java
-SpatialNode<ID> enclosing(Spatial volume)
+SpatialNode<Key, ID> enclosing(Spatial volume)
 ```
 
 Find the smallest node that completely contains a volume.
@@ -333,13 +326,13 @@ Find the smallest node that completely contains a volume.
 ```java
 // Find node containing an object
 EntityBounds objectBounds = getObjectBounds();
-SpatialNode<ID> containingNode = spatialIndex.enclosing(objectBounds);
+SpatialNode<Key, ID> containingNode = spatialIndex.enclosing(objectBounds);
 ```
 
 ### Find Node at Position
 
 ```java
-SpatialNode<ID> enclosing(Tuple3i point, byte level)
+SpatialNode<Key, ID> enclosing(Tuple3i point, byte level)
 ```
 
 Find the node at a specific discrete position and level.
@@ -349,7 +342,7 @@ Find the node at a specific discrete position and level.
 ```java
 // Find node at grid position
 Tuple3i gridPos = worldToGrid(worldPos);
-SpatialNode<ID> node = spatialIndex.enclosing(gridPos, (byte) 10);
+SpatialNode<Key, ID> node = spatialIndex.enclosing(gridPos, (byte) 10);
 ```
 
 ## Node Operations
@@ -357,26 +350,31 @@ SpatialNode<ID> node = spatialIndex.enclosing(gridPos, (byte) 10);
 ### Check Node Existence
 
 ```java
-boolean hasNode(long mortonIndex)
+boolean hasNode(Key sfcIndex)
 ```
 
-Check if a node exists at a Morton index.
+Check if a node exists at a spatial key index.
 
 **Example:**
 
 ```java
-long mortonIndex = MortonCurve.encode(x, y, z, level);
-if(spatialIndex.
+// For Octree, create a MortonKey
+MortonKey key = MortonKey.fromCoordinates(x, y, z, level);
+if (spatialIndex.hasNode(key)) {
+    // Node exists at this location
+}
 
-hasNode(mortonIndex)){
-// Node exists at this location
+// For Tetree, create a TetreeKey
+TetreeKey key = TetreeKey.fromCoordinates(x, y, z, level);
+if (spatialIndex.hasNode(key)) {
+    // Node exists at this location
 }
 ```
 
 ### Get All Nodes
 
 ```java
-Stream<SpatialNode<ID>> nodes()
+Stream<SpatialNode<Key, ID>> nodes()
 ```
 
 Stream all nodes in the spatial index.
@@ -385,17 +383,12 @@ Stream all nodes in the spatial index.
 
 ```java
 // Count entities per node
-Map<Long, Integer> entitiesPerNode = spatialIndex.nodes().collect(
-Collectors.toMap(SpatialNode::mortonIndex, node -> node.entityIds().size()));
+Map<Key, Integer> entitiesPerNode = spatialIndex.nodes()
+    .collect(Collectors.toMap(
+        SpatialNode::sfcIndex, 
+        node -> node.entityIds().size()
+    ));
 ```
-
-### Get Spatial Map
-
-```java
-NavigableMap<Long, Set<ID>> getSpatialMap()
-```
-
-Get a navigable view of the spatial index for range queries.
 
 **Example:**
 

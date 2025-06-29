@@ -13,18 +13,18 @@ serialization, and tree visualization.
 The `TreeVisitor` interface defines callbacks for tree traversal events:
 
 ```java
-public interface TreeVisitor<ID extends EntityID, Content> {
+public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     // Called at start of traversal
     void beginTraversal(int totalNodes, int totalEntities);
     
     // Called for each node (return false to skip children)
-    boolean visitNode(SpatialNode<ID> node, int level, long parentIndex);
+    boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex);
     
     // Called for each entity in a node
-    void visitEntity(ID entityId, Content content, long nodeIndex, int level);
+    void visitEntity(ID entityId, Content content, Key nodeIndex, int level);
     
     // Called when leaving a node
-    void leaveNode(SpatialNode<ID> node, int level, int childCount);
+    void leaveNode(SpatialNode<Key, ID> node, int level, int childCount);
     
     // Called at end of traversal
     void endTraversal(int nodesVisited, int entitiesVisited);
@@ -68,12 +68,14 @@ Traverses the entire spatial tree using the specified strategy.
 **Example:**
 
 ```java
-spatialIndex.traverse(new TreeVisitor<LongEntityID, String>() {
-    @Override public void beginTraversal ( int totalNodes, int totalEntities){
+spatialIndex.traverse(new TreeVisitor<Key, LongEntityID, String>() {
+    @Override
+    public void beginTraversal(int totalNodes, int totalEntities) {
         System.out.println("Starting traversal: " + totalNodes + " nodes");
     }
 
-    @Override public boolean visitNode (SpatialNode < LongEntityID > node,int level, long parentIndex){
+    @Override
+    public boolean visitNode(SpatialNode<Key, LongEntityID> node, int level, Key parentIndex) {
         System.out.println("Node at level " + level + ": " + node.getEntityIds().size() + " entities");
         return true; // Continue to children
     }

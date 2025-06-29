@@ -11,16 +11,20 @@ The lucien module provides spatial indexing through a unified architecture suppo
 decomposition. Following major consolidation in January 2025, the module uses inheritance to maximize code reuse while
 maintaining the unique characteristics of each approach. As of June 2025, all planned enhancements have been completed.
 
-**Total Classes: 34** (organized across 4 packages) + additional support classes for advanced features
+**Total Classes: 96 Java files** organized across 8 packages
 
 ## Package Overview
 
 For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_2025.md](./LUCIEN_ARCHITECTURE_2025.md).
 
-- **Root Package (13 classes)**: Core abstractions, spatial types, geometry utilities
+- **Root Package (27 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
-- **Octree Package (3 classes)**: Morton curve-based cubic spatial decomposition
-- **Tetree Package (6 classes)**: Tetrahedral spatial decomposition
+- **Octree Package (5 classes)**: Morton curve-based cubic spatial decomposition
+- **Tetree Package (30 classes)**: Tetrahedral spatial decomposition with extensive optimizations
+- **Balancing Package (3 classes)**: Tree balancing strategies
+- **Collision Package (12 classes)**: Comprehensive collision detection system
+- **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
+- **Index Package (1 class)**: Additional indexing utilities
 
 ## Key Architecture Components
 
@@ -69,16 +73,6 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
 ✅ **Bulk Loading Mode**: 5-10x performance for large datasets
 ✅ **SpatialKey Architecture**: Type-safe keys with MortonKey and TetreeKey
-
-## Architectural Evolution
-
-The codebase underwent dramatic simplification over the course of a few weeks:
-
-- **From**: 60+ planned classes with complex abstractions
-- **To**: 34 actual classes with direct APIs
-- **Focus**: Core functionality over premature optimization
-
-For consolidation details, see [SPATIAL_INDEX_CONSOLIDATION.md](./archived/SPATIAL_INDEX_CONSOLIDATION.md).
 
 ## Documentation Structure
 
@@ -156,8 +150,8 @@ Source: OctreeVsTetreeBenchmark.java (after fixing Tetree subdivision)
 - **Subdivision Fix**: Tetree was creating only 2 nodes instead of thousands due to missing subdivision logic
 - **After Fix**: Performance improved 38-96%, memory usage now comparable to Octree
 - **Remaining Gap**: Due to fundamental algorithmic difference:
-  - **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
-  - **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
+    - **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
+    - **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
 
 For detailed performance analysis, see [PERFORMANCE_REALITY_JUNE_2025.md](./PERFORMANCE_REALITY_JUNE_2025.md)
 

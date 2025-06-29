@@ -343,50 +343,40 @@ public void processStreamingData(DataStream stream) {
 }
 ```
 
-### 4. Parallel Import
+### 4. Large Dataset Import
 
 ```java
-public void importLargeDataset(String[] files) throws InterruptedException {
-    // Configure for parallel processing
-    ParallelBulkOperations.ParallelConfig parallelConfig = ParallelBulkOperations.ParallelConfig.highPerformanceConfig()
-                                                                                                .withThreadCount(
-                                                                                                Runtime.getRuntime()
-                                                                                                       .availableProcessors())
-                                                                                                .withBatchSize(10000);
-
-    spatialIndex.configureParallelOperations(parallelConfig);
-
-    // Process files in parallel
-    ExecutorService executor = Executors.newFixedThreadPool(parallelConfig.getThreadCount());
-
-    List<Future<ParallelOperationResult<ID>>> futures = new ArrayList<>();
-
+public void importLargeDataset(String[] files) {
+    // Configure for high performance bulk loading
+    BulkOperationConfig config = BulkOperationConfig.highPerformance()
+                                                    .withBatchSize(10000)
+                                                    .withDeferredSubdivision(true)
+                                                    .withStackBasedBuilder(true);
+    
+    spatialIndex.configureBulkOperations(config);
+    spatialIndex.enableBulkLoading();
+    
+    // Process each file with bulk operations
     for (String file : files) {
-        futures.add(executor.submit(() -> {
-            DataFile data = DataFile.load(file);
-            return spatialIndex.insertBatchParallel(data.positions, data.contents, (byte) 10);
-        }));
+        DataFile data = DataFile.load(file);
+        List<ID> ids = spatialIndex.insertBatch(data.positions, data.contents, (byte) 10);
+        System.out.println("Processed " + file + ": " + ids.size() + " entities");
     }
-
-    // Wait for completion
-    for (Future<ParallelOperationResult<ID>> future : futures) {
-        ParallelOperationResult<ID> result = future.get();
-        System.out.println("Processed: " + result.getSuccessCount());
-    }
-
-    executor.shutdown();
+    
+    // Finalize bulk loading
+    spatialIndex.finalizeBulkLoading();
 }
 ```
 
 ## Performance Benchmarks
 
-Based on our testing with uniform random distribution:
+Based on testing with uniform random distribution (June 2025):
 
-| Operation     | Single Insert | Basic Batch | Optimized Batch | Parallel Batch |
-|---------------|---------------|-------------|-----------------|----------------|
-| 10K entities  | 145ms         | 89ms        | 32ms            | 28ms           |
-| 100K entities | 1,450ms       | 670ms       | 157ms           | 95ms           |
-| 1M entities   | 15,200ms      | 6,100ms     | 1,250ms         | 480ms          |
+| Operation     | Single Insert | Basic Batch | Optimized Batch |
+|---------------|---------------|-------------|-----------------|
+| 10K entities  | 145ms         | 89ms        | 32ms            |
+| 100K entities | 1,450ms       | 670ms       | 157ms           |
+| 1M entities   | 15,200ms      | 6,100ms     | 1,250ms         |
 
 ## Best Practices
 

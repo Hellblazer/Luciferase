@@ -334,7 +334,7 @@ warn("Entity {} spans {} nodes - consider optimization",
 
 ### Spanning Policies
 
-Configure how entities span nodes:
+The `EntitySpanningPolicy` enum defines how entities span multiple nodes:
 
 ```java
 public enum EntitySpanningPolicy {
@@ -344,17 +344,22 @@ public enum EntitySpanningPolicy {
 }
 ```
 
-**Example Configuration:**
+**Note**: The spanning policy is configured during spatial index construction and cannot be changed at runtime.
+
+**Example Usage:**
 
 ```java
-// Configure spanning for large entities
-spatialIndex.setSpanningPolicy(EntitySpanningPolicy.ADAPTIVE);
+// Configure spanning policy during construction
+Octree<ID, Content> octree = new Octree<>(
+    idGenerator, 
+    maxEntitiesPerNode,
+    maxDepth,
+    EntitySpanningPolicy.ADAPTIVE  // Set policy here
+);
 
-// Insert with bounds triggers spanning
+// Insert with bounds triggers spanning based on policy
 EntityBounds shipBounds = calculateShipBounds(shipModel);
-spatialIndex.
-
-insert(shipId, shipCenter, level, ship, shipBounds);
+spatialIndex.insert(shipId, shipCenter, level, ship, shipBounds);
 ```
 
 ## Collision Shape Management
