@@ -63,9 +63,9 @@ public class EntityBounds {
      * Check if this bounds is completely contained within a cube
      */
     public boolean containedInCube(float cubeX, float cubeY, float cubeZ, float cubeSize) {
-        float cubeMaxX = cubeX + cubeSize;
-        float cubeMaxY = cubeY + cubeSize;
-        float cubeMaxZ = cubeZ + cubeSize;
+        var cubeMaxX = cubeX + cubeSize;
+        var cubeMaxY = cubeY + cubeSize;
+        var cubeMaxZ = cubeZ + cubeSize;
 
         return min.x >= cubeX && max.x <= cubeMaxX && min.y >= cubeY && max.y <= cubeMaxY && min.z >= cubeZ
         && max.z <= cubeMaxZ;
@@ -114,9 +114,9 @@ public class EntityBounds {
      * Check if this bounds intersects with a cube defined by origin and size
      */
     public boolean intersectsCube(float cubeX, float cubeY, float cubeZ, float cubeSize) {
-        float cubeMaxX = cubeX + cubeSize;
-        float cubeMaxY = cubeY + cubeSize;
-        float cubeMaxZ = cubeZ + cubeSize;
+        var cubeMaxX = cubeX + cubeSize;
+        var cubeMaxY = cubeY + cubeSize;
+        var cubeMaxZ = cubeZ + cubeSize;
 
         return !(max.x < cubeX || min.x > cubeMaxX || max.y < cubeY || min.y > cubeMaxY || max.z < cubeZ
                  || min.z > cubeMaxZ);

@@ -29,11 +29,11 @@ import javax.vecmath.Vector3f;
  */
 public class CollisionResolver {
 
-    private static final float DEFAULT_RESTITUTION         = 0.5f;
-    private static final float DEFAULT_FRICTION            = 0.3f;
-    private static final float POSITION_CORRECTION_PERCENT = 0.8f;
-    private static final float POSITION_CORRECTION_SLOP    = 0.01f;
-    private final CollisionConfig config;
+    private static final float           DEFAULT_RESTITUTION         = 0.5f;
+    private static final float           DEFAULT_FRICTION            = 0.3f;
+    private static final float           POSITION_CORRECTION_PERCENT = 0.8f;
+    private static final float           POSITION_CORRECTION_SLOP    = 0.01f;
+    private final        CollisionConfig config;
 
     public CollisionResolver() {
         this(CollisionConfig.defaultConfig());

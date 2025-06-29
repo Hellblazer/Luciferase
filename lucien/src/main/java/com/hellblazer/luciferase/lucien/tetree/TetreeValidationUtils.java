@@ -18,19 +18,23 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Spatial;
 
-import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
 
 /**
  * Utility class for common tetree validation operations.
- * 
- * This class consolidates validation methods that were duplicated across multiple tetree classes.
- * The tetrahedral space-filling curve requires all coordinates to be positive.
+ *
+ * This class consolidates validation methods that were duplicated across multiple tetree classes. The tetrahedral
+ * space-filling curve requires all coordinates to be positive.
  *
  * @author hal.hildebrand
  */
 public class TetreeValidationUtils {
+
+    // Private constructor to prevent instantiation
+    private TetreeValidationUtils() {
+        throw new AssertionError("Utility class should not be instantiated");
+    }
 
     /**
      * Validate that a 3D float point has positive coordinates.
@@ -53,7 +57,7 @@ public class TetreeValidationUtils {
     public static void validatePositiveCoordinates(Tuple3i point) {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException(
-                "Tetree requires positive coordinates. Got: (" + point.x + ", " + point.y + ", " + point.z + ")");
+            "Tetree requires positive coordinates. Got: (" + point.x + ", " + point.y + ", " + point.z + ")");
         }
     }
 
@@ -68,7 +72,7 @@ public class TetreeValidationUtils {
     public static void validatePositiveCoordinates(float x, float y, float z) {
         if (x < 0 || y < 0 || z < 0) {
             throw new IllegalArgumentException(
-                "Tetree requires positive coordinates. Got: (" + x + ", " + y + ", " + z + ")");
+            "Tetree requires positive coordinates. Got: (" + x + ", " + y + ", " + z + ")");
         }
     }
 
@@ -84,22 +88,22 @@ public class TetreeValidationUtils {
             case Spatial.Cube cube -> {
                 if (cube.originX() < 0 || cube.originY() < 0 || cube.originZ() < 0) {
                     throw new IllegalArgumentException(
-                        "Tetree requires positive coordinates. Cube origin: (" + cube.originX() + ", " + 
-                        cube.originY() + ", " + cube.originZ() + ")");
+                    "Tetree requires positive coordinates. Cube origin: (" + cube.originX() + ", " + cube.originY()
+                    + ", " + cube.originZ() + ")");
                 }
             }
             case Spatial.Sphere sphere -> {
                 if (sphere.centerX() < 0 || sphere.centerY() < 0 || sphere.centerZ() < 0) {
                     throw new IllegalArgumentException(
-                        "Tetree requires positive coordinates. Sphere center: (" + sphere.centerX() + ", " + 
-                        sphere.centerY() + ", " + sphere.centerZ() + ")");
+                    "Tetree requires positive coordinates. Sphere center: (" + sphere.centerX() + ", "
+                    + sphere.centerY() + ", " + sphere.centerZ() + ")");
                 }
             }
             case Spatial.aabb bounds -> {
                 if (bounds.originX() < 0 || bounds.originY() < 0 || bounds.originZ() < 0) {
                     throw new IllegalArgumentException(
-                        "Tetree requires positive coordinates. AABB origin: (" + bounds.originX() + ", " + 
-                        bounds.originY() + ", " + bounds.originZ() + ")");
+                    "Tetree requires positive coordinates. AABB origin: (" + bounds.originX() + ", " + bounds.originY()
+                    + ", " + bounds.originZ() + ")");
                 }
             }
             default -> {
@@ -107,10 +111,5 @@ public class TetreeValidationUtils {
                 // This is handled by the specific implementation
             }
         }
-    }
-
-    // Private constructor to prevent instantiation
-    private TetreeValidationUtils() {
-        throw new AssertionError("Utility class should not be instantiated");
     }
 }

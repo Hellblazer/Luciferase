@@ -20,14 +20,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 
 import javax.vecmath.Point3f;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -131,9 +124,9 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
      * with more efficient versions
      */
     public List<ID> findEntitiesInRegion(float minX, float maxX, float minY, float maxY, float minZ, float maxZ) {
-        List<ID> result = new ArrayList<>();
+        var result = new ArrayList<ID>();
         for (var entry : entities.entrySet()) {
-            Point3f pos = entry.getValue().getPosition();
+            var pos = entry.getValue().getPosition();
             if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY && pos.z >= minZ && pos.z <= maxZ) {
                 result.add(entry.getKey());
             }
@@ -169,7 +162,7 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
      * Get all entities with their positions
      */
     public Map<ID, Point3f> getEntitiesWithPositions() {
-        Map<ID, Point3f> result = new HashMap<>();
+        var result = new HashMap<ID, Point3f>();
         for (var entry : entities.entrySet()) {
             result.put(entry.getKey(), entry.getValue().getPosition());
         }

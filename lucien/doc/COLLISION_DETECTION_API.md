@@ -41,10 +41,17 @@ Detects all collisions between entities in the spatial index. Results are sorted
 
 ```java
 List<CollisionPair<LongEntityID, String>> collisions = spatialIndex.findAllCollisions();
-for (CollisionPair<LongEntityID, String> collision : collisions) {
-    System.out.println("Collision between " + collision.entity1Id() + 
-                      " and " + collision.entity2Id() + 
-                      " with penetration: " + collision.penetrationDepth());
+for(
+CollisionPair<LongEntityID, String> collision :collisions){
+System.out.
+
+println("Collision between "+collision.entity1Id() +
+" and "+collision.
+
+entity2Id() +
+" with penetration: "+collision.
+
+penetrationDepth());
 }
 ```
 
@@ -60,8 +67,7 @@ Finds all entities colliding with a specific entity. More efficient than checkin
 
 ```java
 LongEntityID playerId = new LongEntityID(42);
-List<CollisionPair<LongEntityID, String>> playerCollisions = 
-    spatialIndex.findCollisions(playerId);
+List<CollisionPair<LongEntityID, String>> playerCollisions = spatialIndex.findCollisions(playerId);
 ```
 
 ### 3. Check Specific Pair
@@ -75,10 +81,12 @@ Checks if two specific entities are colliding. Returns detailed collision inform
 **Example:**
 
 ```java
-Optional<CollisionPair<LongEntityID, String>> collision = 
-    spatialIndex.checkCollision(entity1, entity2);
-if (collision.isPresent()) {
-    handleCollision(collision.get());
+Optional<CollisionPair<LongEntityID, String>> collision = spatialIndex.checkCollision(entity1, entity2);
+if(collision.
+
+isPresent()){
+
+handleCollision(collision.get());
 }
 ```
 
@@ -94,14 +102,14 @@ Finds all collisions occurring within a specific spatial region.
 
 ```java
 Spatial.Cube region = new Spatial.Cube(0, 0, 0, 100); // 100x100x100 cube at origin
-List<CollisionPair<LongEntityID, String>> regionalCollisions = 
-    spatialIndex.findCollisionsInRegion(region);
+List<CollisionPair<LongEntityID, String>> regionalCollisions = spatialIndex.findCollisionsInRegion(region);
 ```
 
 ### 5. Set Custom Collision Shape
 
 ```java
 void setCollisionShape(ID entityId, CollisionShape shape)
+
 CollisionShape getCollisionShape(ID entityId)
 ```
 
@@ -112,7 +120,9 @@ Associates a custom collision shape with an entity for precise narrow-phase dete
 ```java
 // Create a sphere collision shape
 CollisionShape sphere = new SphereShape(center, radius);
-spatialIndex.setCollisionShape(entityId, sphere);
+spatialIndex.
+
+setCollisionShape(entityId, sphere);
 ```
 
 ## Collision Detection Phases
@@ -210,12 +220,12 @@ public class SphereShape extends CollisionShape {
 ```java
 public void handleCollisions() {
     List<CollisionPair<ID, GameObject>> collisions = spatialIndex.findAllCollisions();
-    
+
     for (CollisionPair<ID, GameObject> collision : collisions) {
         // Apply separation
         Vector3f separation = new Vector3f(collision.contactNormal());
         separation.scale(collision.penetrationDepth() * 0.5f);
-        
+
         // Move entities apart
         moveEntity(collision.entity1Id(), separation);
         moveEntity(collision.entity2Id(), separation.negate());
@@ -230,14 +240,14 @@ public void moveWithCollisionDetection(ID entityId, Vector3f velocity, float del
     Point3f currentPos = spatialIndex.getEntityPosition(entityId);
     Point3f targetPos = new Point3f(currentPos);
     targetPos.scaleAdd(deltaTime, velocity, currentPos);
-    
+
     // Create swept bounds
     EntityBounds sweptBounds = createSweptBounds(currentPos, targetPos);
-    
+
     // Check for collisions along path
     spatialIndex.updateEntity(entityId, targetPos, level);
     List<CollisionPair<ID, Content>> collisions = spatialIndex.findCollisions(entityId);
-    
+
     if (!collisions.isEmpty()) {
         // Handle collision, adjust position
         resolveCollisions(entityId, collisions, velocity);
@@ -250,14 +260,14 @@ public void moveWithCollisionDetection(ID entityId, Vector3f velocity, float del
 ```java
 public class TriggerSystem {
     private final Map<ID, Set<ID>> triggeredPairs = new HashMap<>();
-    
+
     public void updateTriggers() {
         List<CollisionPair<ID, GameObject>> collisions = spatialIndex.findAllCollisions();
-        
+
         for (CollisionPair<ID, GameObject> collision : collisions) {
             if (isTrigger(collision.entity1Content()) || isTrigger(collision.entity2Content())) {
                 UnorderedPair<ID> pair = new UnorderedPair<>(collision.entity1Id(), collision.entity2Id());
-                
+
                 if (!triggeredPairs.containsKey(pair)) {
                     // New trigger event
                     onTriggerEnter(collision);
@@ -265,7 +275,7 @@ public class TriggerSystem {
                 }
             }
         }
-        
+
         // Check for exit events
         cleanupExitedTriggers(collisions);
     }
@@ -324,36 +334,31 @@ public class LayeredCollisionSystem {
 ```java
 public class PhysicsEngine {
     private final SpatialIndex<LongEntityID, PhysicsBody> spatialIndex;
-    
+
     public void simulateStep(float deltaTime) {
         // Update positions based on velocity
         updatePositions(deltaTime);
-        
+
         // Detect collisions
-        List<CollisionPair<LongEntityID, PhysicsBody>> collisions = 
-            spatialIndex.findAllCollisions();
-        
+        List<CollisionPair<LongEntityID, PhysicsBody>> collisions = spatialIndex.findAllCollisions();
+
         // Resolve collisions
         for (CollisionPair<LongEntityID, PhysicsBody> collision : collisions) {
             resolveCollision(collision);
         }
-        
+
         // Apply forces and constraints
         applyForces(deltaTime);
     }
-    
+
     private void resolveCollision(CollisionPair<LongEntityID, PhysicsBody> collision) {
         PhysicsBody body1 = collision.entity1Content();
         PhysicsBody body2 = collision.entity2Content();
-        
+
         // Calculate impulse
-        Vector3f impulse = calculateImpulse(
-            body1, body2, 
-            collision.contactPoint(), 
-            collision.contactNormal(),
-            collision.penetrationDepth()
-        );
-        
+        Vector3f impulse = calculateImpulse(body1, body2, collision.contactPoint(), collision.contactNormal(),
+                                            collision.penetrationDepth());
+
         // Apply impulse
         body1.applyImpulse(impulse);
         body2.applyImpulse(impulse.negate());

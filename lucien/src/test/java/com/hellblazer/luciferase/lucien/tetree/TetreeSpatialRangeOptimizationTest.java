@@ -180,7 +180,7 @@ public class TetreeSpatialRangeOptimizationTest {
         // We verify that:
         // 1. All entities found by the optimized method are within the AABB bounds
         // 2. The optimized method doesn't crash or return invalid results
-        
+
         // Verify all returned entities are within bounds
         for (LongEntityID id : optimizedResults) {
             int idx = allIds.indexOf(id);
@@ -190,12 +190,12 @@ public class TetreeSpatialRangeOptimizationTest {
             assertTrue(pos.y >= 500 && pos.y <= 1500, "Y coordinate should be in bounds");
             assertTrue(pos.z >= 500 && pos.z <= 1500, "Z coordinate should be in bounds");
         }
-        
+
         // The difference in results is expected due to proper tetrahedral geometry
         System.out.println("  Brute force (AABB) found: " + bruteForceResults.size());
         System.out.println("  Optimized (tetrahedral) found: " + optimizedResults.size());
-        System.out.println("  Difference due to correct geometry: " + 
-                         (bruteForceResults.size() - optimizedResults.size()) + " entities");
+        System.out.println(
+        "  Difference due to correct geometry: " + (bruteForceResults.size() - optimizedResults.size()) + " entities");
 
         // The optimized version should be faster (though with small test sizes,
         // it might not always be due to overhead)

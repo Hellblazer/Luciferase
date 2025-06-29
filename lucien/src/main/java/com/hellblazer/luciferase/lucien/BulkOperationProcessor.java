@@ -164,7 +164,7 @@ public class BulkOperationProcessor<Key extends SpatialKey<Key>, ID extends Enti
 
         // Use Fork/Join for parallel spatial key calculation
         ForkJoinTask<List<SfcEntity<Key, Content>>> task = new SpatialKeyCalculationTask(positions, contents, level, 0,
-                                                                                     positions.size());
+                                                                                         positions.size());
         List<SfcEntity<Key, Content>> mortonEntities = forkJoinPool.invoke(task);
 
         // Sort by spatial key if requested
@@ -275,8 +275,7 @@ public class BulkOperationProcessor<Key extends SpatialKey<Key>, ID extends Enti
     /**
      * Fork/Join task for parallel spatial key calculation
      */
-    private class SpatialKeyCalculationTask
-    extends RecursiveTask<List<SfcEntity<Key, Content>>> {
+    private class SpatialKeyCalculationTask extends RecursiveTask<List<SfcEntity<Key, Content>>> {
         private static final int           THRESHOLD = 1000;
         private final        List<Point3f> positions;
         private final        List<Content> contents;
@@ -305,8 +304,10 @@ public class BulkOperationProcessor<Key extends SpatialKey<Key>, ID extends Enti
             } else {
                 // Split task
                 int mid = start + (end - start) / 2;
-                SpatialKeyCalculationTask leftTask = new SpatialKeyCalculationTask(positions, contents, level, start, mid);
-                SpatialKeyCalculationTask rightTask = new SpatialKeyCalculationTask(positions, contents, level, mid, end);
+                SpatialKeyCalculationTask leftTask = new SpatialKeyCalculationTask(positions, contents, level, start,
+                                                                                   mid);
+                SpatialKeyCalculationTask rightTask = new SpatialKeyCalculationTask(positions, contents, level, mid,
+                                                                                    end);
 
                 leftTask.fork();
                 List<SfcEntity<Key, Content>> rightResult = rightTask.compute();

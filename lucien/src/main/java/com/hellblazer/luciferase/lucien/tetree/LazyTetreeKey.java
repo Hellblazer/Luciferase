@@ -19,20 +19,19 @@ package com.hellblazer.luciferase.lucien.tetree;
 import java.util.Objects;
 
 /**
- * A lazy implementation of TetreeKey that defers the expensive tmIndex() computation
- * until absolutely necessary. This significantly improves insertion performance by
- * avoiding the O(level) parent chain walk during initial insertion.
+ * A lazy implementation of TetreeKey that defers the expensive tmIndex() computation until absolutely necessary. This
+ * significantly improves insertion performance by avoiding the O(level) parent chain walk during initial insertion.
  *
  * @author hal.hildebrand
  */
 public class LazyTetreeKey extends TetreeKey {
-    
-    private final Tet tet;
-    private final int lazyHashCode;
-    private volatile TetreeKey resolved;
-    
+
+    private final    Tet                                    tet;
+    private final    int                                    lazyHashCode;
+    private volatile BaseTetreeKey<? extends BaseTetreeKey> resolved;
+
     /**
-     * Create a lazy TetreeKey from a Tet.
+     * Create a lazy BaseTetreeKey<? extends BaseTetreeKey> from a Tet.
      *
      * @param tet the tetrahedron to lazily compute the key for
      */
@@ -41,10 +40,10 @@ public class LazyTetreeKey extends TetreeKey {
         this.tet = Objects.requireNonNull(tet, "Tet cannot be null");
         this.lazyHashCode = computeLazyHash(tet);
     }
-    
+
     /**
-     * Compute a hash code based on Tet coordinates for HashMap efficiency.
-     * This allows the key to be used in HashMap without resolving tmIndex.
+     * Compute a hash code based on Tet coordinates for HashMap efficiency. This allows the key to be used in HashMap
+     * without resolving tmIndex.
      */
     private static int computeLazyHash(Tet tet) {
         int hash = 31 * tet.x();
@@ -54,51 +53,9 @@ public class LazyTetreeKey extends TetreeKey {
         hash = 31 * hash + tet.type();
         return hash;
     }
-    
+
     @Override
-    public long getLowBits() {
-        ensureResolved();
-        return resolved.getLowBits();
-    }
-    
-    @Override
-    public long getHighBits() {
-        ensureResolved();
-        return resolved.getHighBits();
-    }
-    
-    @Override
-    public byte getLevel() {
-        // Can return immediately without resolution
-        return tet.l();
-    }
-    
-    @Override
-    public int hashCode() {
-        // Use pre-computed hash for HashMap efficiency
-        return lazyHashCode;
-    }
-    
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        
-        if (obj instanceof LazyTetreeKey other) {
-            // Both lazy - compare Tet directly without resolution
-            return tet.equals(other.tet);
-        } else if (obj instanceof TetreeKey) {
-            // Must resolve to compare with regular TetreeKey
-            ensureResolved();
-            return resolved.equals(obj);
-        }
-        
-        return false;
-    }
-    
-    @Override
-    public int compareTo(TetreeKey other) {
+    public int compareTo(BaseTetreeKey other) {
         if (other instanceof LazyTetreeKey lazy) {
             // Both lazy - only resolve when needed
             if (tet.equals(lazy.tet)) {
@@ -109,20 +66,48 @@ public class LazyTetreeKey extends TetreeKey {
             lazy.ensureResolved();
             return resolved.compareTo(lazy.resolved);
         }
-        
-        // Comparison with regular TetreeKey requires resolution
+
+        // Comparison with regular BaseTetreeKey<? extends BaseTetreeKey> requires resolution
         ensureResolved();
         return resolved.compareTo(other);
     }
-    
+
     @Override
-    public String toString() {
-        if (resolved != null) {
-            return resolved.toString();
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
         }
-        return String.format("LazyTetreeKey[tet=%s, unresolved]", tet);
+
+        if (obj instanceof LazyTetreeKey other) {
+            // Both lazy - compare Tet directly without resolution
+            return tet.equals(other.tet);
+        } else if (obj instanceof BaseTetreeKey<? extends BaseTetreeKey>) {
+            // Must resolve to compare with regular BaseTetreeKey<? extends BaseTetreeKey>
+            ensureResolved();
+            return resolved.equals(obj);
+        }
+
+        return false;
     }
-    
+
+    @Override
+    public long getHighBits() {
+        ensureResolved();
+        return resolved.getHighBits();
+    }
+
+    @Override
+    public byte getLevel() {
+        // Can return immediately without resolution
+        return tet.l();
+    }
+
+    @Override
+    public long getLowBits() {
+        ensureResolved();
+        return resolved.getLowBits();
+    }
+
     /**
      * Get the underlying Tet without triggering resolution.
      *
@@ -131,7 +116,13 @@ public class LazyTetreeKey extends TetreeKey {
     public Tet getTet() {
         return tet;
     }
-    
+
+    @Override
+    public int hashCode() {
+        // Use pre-computed hash for HashMap efficiency
+        return lazyHashCode;
+    }
+
     /**
      * Check if this key has been resolved.
      *
@@ -140,11 +131,25 @@ public class LazyTetreeKey extends TetreeKey {
     public boolean isResolved() {
         return resolved != null;
     }
-    
+
     /**
-     * Force resolution of the tmIndex if not already resolved.
-     * This method is thread-safe and ensures the expensive computation
-     * happens only once.
+     * Explicitly resolve this key if not already resolved. Useful for batch resolution operations.
+     */
+    public void resolve() {
+        ensureResolved();
+    }
+
+    @Override
+    public String toString() {
+        if (resolved != null) {
+            return resolved.toString();
+        }
+        return String.format("LazyTetreeKey[tet=%s, unresolved]", tet);
+    }
+
+    /**
+     * Force resolution of the tmIndex if not already resolved. This method is thread-safe and ensures the expensive
+     * computation happens only once.
      */
     private void ensureResolved() {
         if (resolved == null) {
@@ -155,13 +160,5 @@ public class LazyTetreeKey extends TetreeKey {
                 }
             }
         }
-    }
-    
-    /**
-     * Explicitly resolve this key if not already resolved.
-     * Useful for batch resolution operations.
-     */
-    public void resolve() {
-        ensureResolved();
     }
 }

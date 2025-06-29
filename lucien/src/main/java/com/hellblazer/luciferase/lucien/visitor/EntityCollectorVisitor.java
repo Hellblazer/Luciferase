@@ -31,11 +31,12 @@ import java.util.function.Predicate;
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public class EntityCollectorVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> extends AbstractTreeVisitor<Key, ID, Content> {
+public class EntityCollectorVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+extends AbstractTreeVisitor<Key, ID, Content> {
 
     private final List<EntityMatch<Key, ID, Content>> collectedEntities = new ArrayList<>();
-    private final Predicate<Content>             contentFilter;
-    private final int                            maxResults;
+    private final Predicate<Content>                  contentFilter;
+    private final int                                 maxResults;
 
     /**
      * Create a collector that collects all entities.
@@ -129,6 +130,7 @@ public class EntityCollectorVisitor<Key extends SpatialKey<Key>, ID extends Enti
     /**
      * Entity match record.
      */
-    public record EntityMatch<Key extends SpatialKey<Key>, ID extends EntityID, Content>(ID entityId, Content content, Key nodeIndex, int level) {
+    public record EntityMatch<Key extends SpatialKey<Key>, ID extends EntityID, Content>(ID entityId, Content content,
+                                                                                         Key nodeIndex, int level) {
     }
 }

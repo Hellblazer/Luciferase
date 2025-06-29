@@ -22,13 +22,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for enhanced iterator functionality in Tetree.
- * Tests the nonEmptyIterator, parentChildIterator, and siblingIterator methods.
+ * Unit tests for enhanced iterator functionality in Tetree. Tests the nonEmptyIterator, parentChildIterator, and
+ * siblingIterator methods.
  *
  * @author hal.hildebrand
  */
@@ -39,6 +42,43 @@ public class TetreeEnhancedIteratorTest {
     @BeforeEach
     void setUp() {
         tetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator());
+    }
+
+    @Test
+    void testFindEntityNeighbors() {
+        // Create a cluster of entities
+        List<LongEntityID> entityIds = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            float x = 400 + i * 50;
+            float y = 400 + (i % 2) * 50;
+            float z = 400 + (i % 3) * 50;
+            Point3f p = new Point3f(x, y, z);
+            LongEntityID id = tetree.insert(p, (byte) 3, "entity" + i);
+            entityIds.add(id);
+        }
+
+        // Find neighbors of the middle entity
+        if (entityIds.size() >= 3) {
+            LongEntityID targetId = entityIds.get(2);
+            Set<LongEntityID> neighbors = tetree.findEntityNeighbors(targetId);
+
+            assertNotNull(neighbors);
+            assertFalse(neighbors.contains(targetId), "Neighbors should not include the entity itself");
+
+            // Should find at least some neighbors in this cluster
+            assertTrue(neighbors.size() >= 0, "Should find some neighboring entities");
+
+            // Check that some of our cluster entities are neighbors
+            boolean foundClusterNeighbor = false;
+            for (LongEntityID id : entityIds) {
+                if (!id.equals(targetId) && neighbors.contains(id)) {
+                    foundClusterNeighbor = true;
+                    break;
+                }
+            }
+            // This might not always be true depending on spatial distribution
+            // but is likely in our test setup
+        }
     }
 
     @Test
@@ -54,7 +94,8 @@ public class TetreeEnhancedIteratorTest {
 
         // Count non-empty nodes
         int nonEmptyCount = 0;
-        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.nonEmptyIterator(TetreeIterator.TraversalOrder.DEPTH_FIRST_PRE);
+        Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.nonEmptyIterator(
+        TetreeIterator.TraversalOrder.DEPTH_FIRST_PRE);
         while (iter.hasNext()) {
             TetreeNodeImpl<LongEntityID> node = iter.next();
             assertNotNull(node);
@@ -63,7 +104,7 @@ public class TetreeEnhancedIteratorTest {
         }
 
         assertTrue(nonEmptyCount > 0, "Should have at least one non-empty node");
-        
+
         // Compare with total node count
         int totalNodes = tetree.getNodeCount();
         assertTrue(nonEmptyCount <= totalNodes, "Non-empty nodes should be subset of all nodes");
@@ -78,24 +119,20 @@ public class TetreeEnhancedIteratorTest {
         // Add more entities to force subdivision
         for (int i = 0; i < 8; i++) {
             float offset = 100 + i * 50;
-            Point3f p = new Point3f(
-                512 + (i % 2) * offset,
-                512 + ((i / 2) % 2) * offset,
-                512 + ((i / 4) % 2) * offset
-            );
+            Point3f p = new Point3f(512 + (i % 2) * offset, 512 + ((i / 2) % 2) * offset, 512 + ((i / 4) % 2) * offset);
             tetree.insert(p, (byte) 3, "child" + i);
         }
 
         // Find a leaf node
         Point3f leafPoint = new Point3f(612, 612, 612);
         Tet leafTet = tetree.locateTetrahedron(leafPoint, (byte) 3);
-        TetreeKey leafKey = leafTet.tmIndex();
+        var leafKey = leafTet.tmIndex();
 
         // Test parent-child iterator
-        
+
         // First check if the node actually exists in the tree
         boolean nodeExists = tetree.hasNode(leafKey);
-        
+
         List<TetreeNodeImpl<LongEntityID>> path = new ArrayList<>();
         Iterator<TetreeNodeImpl<LongEntityID>> iter = tetree.parentChildIterator(leafKey);
         while (iter.hasNext()) {
@@ -117,6 +154,44 @@ public class TetreeEnhancedIteratorTest {
     }
 
     @Test
+    void testPerformanceMonitoring() {
+        // Initially disabled
+        assertFalse(tetree.isPerformanceMonitoringEnabled());
+
+        // Enable monitoring
+        tetree.setPerformanceMonitoring(true);
+        assertTrue(tetree.isPerformanceMonitoringEnabled());
+
+        // Perform some operations
+        Point3f p1 = new Point3f(100, 100, 100);
+        tetree.insert(p1, (byte) 2, "test");
+
+        Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
+        var tetKey = tet.tmIndex();
+        tetree.findAllFaceNeighbors(tetKey);
+
+        // Get metrics
+        TetreeMetrics metrics = tetree.getMetrics();
+        assertNotNull(metrics);
+        assertTrue(metrics.monitoringEnabled());
+
+        // Verify some metrics were recorded
+        // Note: exact values depend on operations performed
+        assertTrue(metrics.neighborQueryCount() >= 0);
+
+        // Reset counters
+        tetree.resetPerformanceCounters();
+
+        // Get metrics again
+        TetreeMetrics resetMetrics = tetree.getMetrics();
+        assertEquals(0, resetMetrics.neighborQueryCount());
+
+        // Disable monitoring
+        tetree.setPerformanceMonitoring(false);
+        assertFalse(tetree.isPerformanceMonitoringEnabled());
+    }
+
+    @Test
     void testSiblingIterator() {
         // Create entities that will be in sibling tetrahedra
         for (int i = 0; i < 10; i++) {
@@ -130,7 +205,7 @@ public class TetreeEnhancedIteratorTest {
         // Find a tetrahedron with siblings
         Point3f testPoint = new Point3f(400, 400, 400);
         Tet testTet = tetree.locateTetrahedron(testPoint, (byte) 2);
-        TetreeKey testKey = testTet.tmIndex();
+        var testKey = testTet.tmIndex();
 
         // Get siblings
         List<TetreeNodeImpl<LongEntityID>> siblings = new ArrayList<>();
@@ -150,48 +225,11 @@ public class TetreeEnhancedIteratorTest {
     }
 
     @Test
-    void testFindEntityNeighbors() {
-        // Create a cluster of entities
-        List<LongEntityID> entityIds = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            float x = 400 + i * 50;
-            float y = 400 + (i % 2) * 50;
-            float z = 400 + (i % 3) * 50;
-            Point3f p = new Point3f(x, y, z);
-            LongEntityID id = tetree.insert(p, (byte) 3, "entity" + i);
-            entityIds.add(id);
-        }
-
-        // Find neighbors of the middle entity
-        if (entityIds.size() >= 3) {
-            LongEntityID targetId = entityIds.get(2);
-            Set<LongEntityID> neighbors = tetree.findEntityNeighbors(targetId);
-            
-            assertNotNull(neighbors);
-            assertFalse(neighbors.contains(targetId), "Neighbors should not include the entity itself");
-            
-            // Should find at least some neighbors in this cluster
-            assertTrue(neighbors.size() >= 0, "Should find some neighboring entities");
-            
-            // Check that some of our cluster entities are neighbors
-            boolean foundClusterNeighbor = false;
-            for (LongEntityID id : entityIds) {
-                if (!id.equals(targetId) && neighbors.contains(id)) {
-                    foundClusterNeighbor = true;
-                    break;
-                }
-            }
-            // This might not always be true depending on spatial distribution
-            // but is likely in our test setup
-        }
-    }
-
-    @Test
     void testValidateSubtree() {
         // Create a simple tree structure
         Point3f p1 = new Point3f(256, 256, 256);
         tetree.insert(p1, (byte) 2, "node1");
-        
+
         // Add more nodes to create a subtree
         for (int i = 0; i < 4; i++) {
             float offset = 50 + i * 25;
@@ -201,51 +239,13 @@ public class TetreeEnhancedIteratorTest {
 
         // Find a node to validate its subtree
         Tet rootTet = tetree.locateTetrahedron(p1, (byte) 2);
-        TetreeKey rootKey = rootTet.tmIndex();
+        var rootKey = rootTet.tmIndex();
 
         // Validate the subtree
         TetreeValidator.ValidationResult result = tetree.validateSubtree(rootKey);
-        
+
         assertNotNull(result);
         // The validation should pass for a correctly constructed tree
         // Specific validation depends on TetreeValidator implementation
-    }
-
-    @Test
-    void testPerformanceMonitoring() {
-        // Initially disabled
-        assertFalse(tetree.isPerformanceMonitoringEnabled());
-        
-        // Enable monitoring
-        tetree.setPerformanceMonitoring(true);
-        assertTrue(tetree.isPerformanceMonitoringEnabled());
-        
-        // Perform some operations
-        Point3f p1 = new Point3f(100, 100, 100);
-        tetree.insert(p1, (byte) 2, "test");
-        
-        Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        TetreeKey tetKey = tet.tmIndex();
-        tetree.findAllFaceNeighbors(tetKey);
-        
-        // Get metrics
-        TetreeMetrics metrics = tetree.getMetrics();
-        assertNotNull(metrics);
-        assertTrue(metrics.monitoringEnabled());
-        
-        // Verify some metrics were recorded
-        // Note: exact values depend on operations performed
-        assertTrue(metrics.neighborQueryCount() >= 0);
-        
-        // Reset counters
-        tetree.resetPerformanceCounters();
-        
-        // Get metrics again
-        TetreeMetrics resetMetrics = tetree.getMetrics();
-        assertEquals(0, resetMetrics.neighborQueryCount());
-        
-        // Disable monitoring
-        tetree.setPerformanceMonitoring(false);
-        assertFalse(tetree.isPerformanceMonitoringEnabled());
     }
 }

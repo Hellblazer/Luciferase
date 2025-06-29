@@ -117,7 +117,7 @@ class TetreeValidatorTest {
         assertTrue(description.contains("z=512"));
         assertTrue(description.contains("level=5"));
         assertTrue(description.contains("type=3"));
-        assertTrue(description.contains("index="));
+        assertTrue(description.contains("tmIndex="));
     }
 
     @Test

@@ -20,8 +20,8 @@ import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
-import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -64,7 +64,8 @@ public class TreeTraversalTest {
         final int maxNodesToVisit = 3;
         TreeVisitor<MortonKey, LongEntityID, String> cancellingVisitor = new AbstractTreeVisitor<>() {
             @Override
-            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level, MortonKey parentIndex) {
+            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level,
+                                     MortonKey parentIndex) {
                 nodesVisited[0]++;
                 // Cancel after maxNodesToVisit nodes
                 return nodesVisited[0] < maxNodesToVisit;
@@ -190,8 +191,9 @@ public class TreeTraversalTest {
             }
 
             @Override
-            public void leaveNode(com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<MortonKey, LongEntityID> node,
-                                  int level, int childCount) {
+            public void leaveNode(
+            com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level,
+            int childCount) {
                 callOrder.add("leaveNode:" + node.sfcIndex());
             }
 
@@ -201,7 +203,8 @@ public class TreeTraversalTest {
             }
 
             @Override
-            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level, MortonKey parentIndex) {
+            public boolean visitNode(SpatialIndex.SpatialNode<MortonKey, LongEntityID> node, int level,
+                                     MortonKey parentIndex) {
                 callOrder.add("visitNode:" + node.sfcIndex());
                 return true;
             }

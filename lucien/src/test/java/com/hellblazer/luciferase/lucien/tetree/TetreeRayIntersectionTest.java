@@ -86,11 +86,11 @@ public class TetreeRayIntersectionTest {
 
         // Should find at least the entity that the ray passes through
         assertFalse(intersections.isEmpty(), "Should find at least one entity");
-        
+
         // Verify we found the coarse level entity
         boolean foundCoarse = intersections.stream().anyMatch(i -> "CoarseLevel".equals(i.content()));
         assertTrue(foundCoarse, "Should find coarse level entity that ray passes through");
-        
+
         // The second entity at (200,200,200) won't be found because the ray doesn't pass through it
         // This is correct behavior - ray intersection only finds entities the ray actually intersects
     }

@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class EntityManagerTest {
 
     private EntityManager<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> entityManager;
-    private SequentialLongIDGenerator           idGenerator;
+    private SequentialLongIDGenerator                                                              idGenerator;
 
     @BeforeEach
     void setUp() {
@@ -68,7 +68,8 @@ public class EntityManagerTest {
         String content = "Test Entity";
 
         // Create new entity
-        Entity<com.hellblazer.luciferase.lucien.octree.MortonKey, String> entity = entityManager.createOrUpdateEntity(id, content, position, null);
+        Entity<com.hellblazer.luciferase.lucien.octree.MortonKey, String> entity = entityManager.createOrUpdateEntity(
+        id, content, position, null);
         assertNotNull(entity);
         assertEquals(content, entity.getContent());
         assertEquals(position, entity.getPosition());
@@ -77,7 +78,8 @@ public class EntityManagerTest {
         // Update existing entity
         Point3f newPosition = new Point3f(400, 500, 600);
         EntityBounds bounds = new EntityBounds(newPosition, 50);
-        Entity<com.hellblazer.luciferase.lucien.octree.MortonKey, String> updatedEntity = entityManager.createOrUpdateEntity(id, content, newPosition, bounds);
+        Entity<com.hellblazer.luciferase.lucien.octree.MortonKey, String> updatedEntity = entityManager.createOrUpdateEntity(
+        id, content, newPosition, bounds);
         assertNotNull(updatedEntity);
         assertEquals(newPosition, updatedEntity.getPosition());
         assertNotNull(updatedEntity.getBounds());
@@ -88,7 +90,8 @@ public class EntityManagerTest {
     void testCustomStorageMap() {
         // Test with custom ConcurrentHashMap
         ConcurrentHashMap<LongEntityID, Entity<com.hellblazer.luciferase.lucien.octree.MortonKey, String>> customMap = new ConcurrentHashMap<>();
-        EntityManager<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> customManager = new EntityManager<>(idGenerator, customMap);
+        EntityManager<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String> customManager = new EntityManager<>(
+        idGenerator, customMap);
 
         LongEntityID id = new LongEntityID(1);
         customManager.createOrUpdateEntity(id, "Test", new Point3f(0, 0, 0), null);
@@ -302,7 +305,8 @@ public class EntityManagerTest {
 
         // Test with non-existent entity
         LongEntityID nonExistentId = new LongEntityID(999);
-        entityManager.addEntityLocation(nonExistentId, new com.hellblazer.luciferase.lucien.octree.MortonKey(11111L)); // Should not throw
+        entityManager.addEntityLocation(nonExistentId, new com.hellblazer.luciferase.lucien.octree.MortonKey(
+        11111L)); // Should not throw
         assertTrue(entityManager.getEntityLocations(nonExistentId).isEmpty());
     }
 
@@ -330,7 +334,9 @@ public class EntityManagerTest {
     @Test
     void testNullHandling() {
         // Test null ID generator
-        assertThrows(NullPointerException.class, () -> new EntityManager<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String>(null));
+        assertThrows(NullPointerException.class,
+                     () -> new EntityManager<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String>(
+                     null));
 
         // Test null storage map
         assertThrows(NullPointerException.class, () -> new EntityManager<>(idGenerator, null));

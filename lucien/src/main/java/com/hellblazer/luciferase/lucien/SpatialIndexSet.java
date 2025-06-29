@@ -16,15 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.NavigableSet;
-import java.util.Set;
-import java.util.SortedSet;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
@@ -56,7 +48,7 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
             throw new NullPointerException();
         }
 
-        boolean added = indices.add(index);
+        var added = indices.add(index);
         if (added) {
             // Add to level bucket
             levelBuckets.computeIfAbsent(index.getLevel(), k -> ConcurrentHashMap.newKeySet()).add(index);
@@ -69,7 +61,7 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
 
     @Override
     public boolean addAll(Collection<? extends Key> c) {
-        boolean modified = false;
+        var modified = false;
         for (var e : c) {
             if (add(e)) {
                 modified = true;
@@ -139,8 +131,8 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
      * Get all indices between levels (inclusive) - O(levels) operation
      */
     public Set<Key> getIndicesBetweenLevels(byte minLevel, byte maxLevel) {
-        Set<Key> result = new HashSet<>();
-        for (byte level = minLevel; level <= maxLevel; level++) {
+        var result = new HashSet<Key>();
+        for (var level = minLevel; level <= maxLevel; level++) {
             var bucket = levelBuckets.get(level);
             if (bucket != null) {
                 result.addAll(bucket);
@@ -186,7 +178,7 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
 
     @Override
     public Key pollFirst() {
-        Key first = getSortedView().pollFirst();
+        var first = getSortedView().pollFirst();
         if (first != null) {
             remove(first);
         }
@@ -195,7 +187,7 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
 
     @Override
     public Key pollLast() {
-        Key last = getSortedView().pollLast();
+        var last = getSortedView().pollLast();
         if (last != null) {
             remove(last);
         }
@@ -206,11 +198,11 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
     public boolean remove(Object o) {
         var index = (Key) o;
 
-        boolean removed = indices.remove(index);
+        var removed = indices.remove(index);
         if (removed) {
             // Remove from level bucket
-            byte level = index.getLevel();
-            Set<Key> bucket = levelBuckets.get(level);
+            var level = index.getLevel();
+            var bucket = levelBuckets.get(level);
             if (bucket != null) {
                 bucket.remove(index);
                 if (bucket.isEmpty()) {
@@ -226,8 +218,8 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
 
     @Override
     public boolean removeAll(Collection<?> c) {
-        boolean modified = false;
-        for (Object o : c) {
+        var modified = false;
+        for (var o : c) {
             if (remove(o)) {
                 modified = true;
             }
@@ -239,16 +231,16 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
 
     @Override
     public boolean retainAll(Collection<?> c) {
-        boolean modified = false;
-        Iterator<Key> it = indices.iterator();
+        var modified = false;
+        var it = indices.iterator();
         while (it.hasNext()) {
-            Key index = it.next();
+            var index = it.next();
             if (!c.contains(index)) {
                 it.remove();
 
                 // Remove from level bucket
-                byte level = index.getLevel();
-                Set<Key> bucket = levelBuckets.get(level);
+                var level = index.getLevel();
+                var bucket = levelBuckets.get(level);
                 if (bucket != null) {
                     bucket.remove(index);
                     if (bucket.isEmpty()) {
@@ -303,7 +295,7 @@ public class SpatialIndexSet<Key extends SpatialKey<Key>> implements NavigableSe
     }
 
     private NavigableSet<Key> getSortedView() {
-        NavigableSet<Key> view = sortedView;
+        var view = sortedView;
         if (view == null) {
             synchronized (this) {
                 view = sortedView;

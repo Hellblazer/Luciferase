@@ -101,7 +101,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
             return new SubdivisionResult(0, 0, 0, 0, Collections.emptyMap());
         }
 
-        long startTime = System.nanoTime();
+        var startTime = System.nanoTime();
 
         // Get candidates in processing order
         var toProcess = getProcessingOrder();
@@ -110,18 +110,17 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
         candidates.clear();
 
         // Process subdivisions
-        int nodesProcessed = 0;
-        int nodesSubdivided = 0;
-        int newNodesCreated = 0;
-        Map<Key, Integer> redistributionCounts = new HashMap<>();
+        var nodesProcessed = 0;
+        var nodesSubdivided = 0;
+        var newNodesCreated = 0;
+        var redistributionCounts = new HashMap<Key, Integer>();
 
-        for (SubdivisionCandidate<Key, NodeType> candidate : toProcess) {
+        for (var candidate : toProcess) {
             nodesProcessed++;
 
             // Check if node still needs subdivision
             if (shouldSubdivide(candidate)) {
-                SubdivisionProcessor.Result result = processor.subdivideNode(candidate.nodeIndex, candidate.node,
-                                                                             candidate.level);
+                var result = processor.subdivideNode(candidate.nodeIndex, candidate.node, candidate.level);
 
                 if (result.wasSubdivided()) {
                     nodesSubdivided++;
@@ -132,7 +131,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
         }
 
         totalProcessed.addAndGet(nodesProcessed);
-        long processingTime = System.nanoTime() - startTime;
+        var processingTime = System.nanoTime() - startTime;
 
         return new SubdivisionResult(nodesProcessed, nodesSubdivided, newNodesCreated, processingTime,
                                      redistributionCounts);
@@ -142,7 +141,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
      * Process deferred subdivisions in batches
      */
     public List<SubdivisionResult> processBatches(SubdivisionProcessor<Key, ID, NodeType> processor, int batchSize) {
-        List<SubdivisionResult> results = new ArrayList<>();
+        var results = new ArrayList<SubdivisionResult>();
 
         while (!candidates.isEmpty()) {
             // Get next batch
@@ -152,18 +151,17 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
             }
 
             // Process batch
-            long startTime = System.nanoTime();
-            int nodesProcessed = 0;
-            int nodesSubdivided = 0;
-            int newNodesCreated = 0;
-            Map<Key, Integer> redistributionCounts = new HashMap<>();
+            var startTime = System.nanoTime();
+            var nodesProcessed = 0;
+            var nodesSubdivided = 0;
+            var newNodesCreated = 0;
+            var redistributionCounts = new HashMap<Key, Integer>();
 
-            for (SubdivisionCandidate<Key, NodeType> candidate : batch) {
+            for (var candidate : batch) {
                 nodesProcessed++;
 
                 if (shouldSubdivide(candidate)) {
-                    SubdivisionProcessor.Result result = processor.subdivideNode(candidate.nodeIndex, candidate.node,
-                                                                                 candidate.level);
+                    var result = processor.subdivideNode(candidate.nodeIndex, candidate.node, candidate.level);
 
                     if (result.wasSubdivided()) {
                         nodesSubdivided++;
@@ -177,7 +175,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
             }
 
             totalProcessed.addAndGet(nodesProcessed);
-            long processingTime = System.nanoTime() - startTime;
+            var processingTime = System.nanoTime() - startTime;
 
             results.add(new SubdivisionResult(nodesProcessed, nodesSubdivided, newNodesCreated, processingTime,
                                               redistributionCounts));
@@ -191,16 +189,16 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
             return 0;
         }
 
-        int totalEntities = candidates.values().stream().mapToInt(c -> c.entityCount).sum();
+        var totalEntities = candidates.values().stream().mapToInt(c -> c.entityCount).sum();
 
         return (double) totalEntities / candidates.size();
     }
 
     private List<SubdivisionCandidate<Key, NodeType>> getNextBatch(int batchSize) {
-        List<SubdivisionCandidate<Key, NodeType>> batch = new ArrayList<>();
-        List<SubdivisionCandidate<Key, NodeType>> allCandidates = getProcessingOrder();
+        var batch = new ArrayList<SubdivisionCandidate<Key, NodeType>>();
+        var allCandidates = getProcessingOrder();
 
-        for (int i = 0; i < Math.min(batchSize, allCandidates.size()); i++) {
+        for (var i = 0; i < Math.min(batchSize, allCandidates.size()); i++) {
             batch.add(allCandidates.get(i));
         }
 
@@ -208,7 +206,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
     }
 
     private List<SubdivisionCandidate<Key, NodeType>> getProcessingOrder() {
-        List<SubdivisionCandidate<Key, NodeType>> toProcess = new ArrayList<>(candidates.values());
+        var toProcess = new ArrayList<>(candidates.values());
 
         if (priorityBasedProcessing) {
             // Sort by priority (highest entity count first)
@@ -221,7 +219,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
     private void processLowestPriorityIfNeeded(int newPriority) {
         // Find and process lowest priority candidate if new one has higher priority
         SubdivisionCandidate<Key, NodeType> lowest = null;
-        for (SubdivisionCandidate<Key, NodeType> candidate : candidates.values()) {
+        for (var candidate : candidates.values()) {
             if (lowest == null || candidate.getPriority() < lowest.getPriority()) {
                 lowest = candidate;
             }

@@ -31,7 +31,8 @@ import java.util.Map;
  * @param <Content> The type of content stored with each entity
  * @author hal.hildebrand
  */
-public class NodeCountVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> extends AbstractTreeVisitor<Key, ID, Content> {
+public class NodeCountVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content>
+extends AbstractTreeVisitor<Key, ID, Content> {
 
     private final Map<Integer, Integer> nodesPerLevel    = new HashMap<>();
     private final Map<Integer, Integer> entitiesPerLevel = new HashMap<>();

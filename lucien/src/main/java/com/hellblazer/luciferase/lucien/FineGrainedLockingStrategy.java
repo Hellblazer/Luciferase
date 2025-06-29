@@ -45,7 +45,9 @@ public class FineGrainedLockingStrategy<ID extends EntityID, Content, NodeType e
     private final LockingConfig                                  config;
     private final AbstractSpatialIndex<?, ID, Content, NodeType> spatialIndex;
     // Lock ordering for deadlock prevention
-    private final ThreadLocal<java.util.Set<Long>> heldLocks = ThreadLocal.withInitial(java.util.HashSet::new);
+    private final ThreadLocal<java.util.Set<Long>>               heldLocks = ThreadLocal.withInitial(
+    java.util.HashSet::new);
+
     public FineGrainedLockingStrategy(AbstractSpatialIndex<?, ID, Content, NodeType> spatialIndex,
                                       LockingConfig config) {
         this.spatialIndex = spatialIndex;

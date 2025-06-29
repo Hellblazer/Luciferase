@@ -40,10 +40,10 @@ public record VolumeBounds(float minX, float minY, float minZ, float maxX, float
                                                            sphere.centerX() + sphere.radius(),
                                                            sphere.centerY() + sphere.radius(),
                                                            sphere.centerZ() + sphere.radius());
-            case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(),
-                                                       aabb.extentX(), aabb.extentY(), aabb.extentZ());
-            case Spatial.aabt aabt -> new VolumeBounds(aabt.originX(), aabt.originY(), aabt.originZ(),
-                                                       aabt.extentX(), aabt.extentY(), aabt.extentZ());
+            case Spatial.aabb aabb -> new VolumeBounds(aabb.originX(), aabb.originY(), aabb.originZ(), aabb.extentX(),
+                                                       aabb.extentY(), aabb.extentZ());
+            case Spatial.aabt aabt -> new VolumeBounds(aabt.originX(), aabt.originY(), aabt.originZ(), aabt.extentX(),
+                                                       aabt.extentY(), aabt.extentZ());
             case Spatial.Parallelepiped para -> new VolumeBounds(para.originX(), para.originY(), para.originZ(),
                                                                  para.originX() + para.extentX(),
                                                                  para.originY() + para.extentY(),

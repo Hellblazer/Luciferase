@@ -139,7 +139,7 @@ public class TetrahedralGeometryPerformanceTest {
             byte type = (byte) random.nextInt(6); // Types 0-5
 
             Tet tet = new Tet(x, y, z, level, type);
-            indices.add(tet.tmIndex());
+            indices.add((TetreeKey) tet.tmIndex());
         }
 
         return indices;

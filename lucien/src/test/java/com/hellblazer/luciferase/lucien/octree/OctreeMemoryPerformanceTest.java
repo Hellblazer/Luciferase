@@ -7,7 +7,6 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
-import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.performance.SpatialIndexMemoryPerformanceTest;
 import org.junit.jupiter.api.DisplayName;
 
@@ -18,24 +17,24 @@ import org.junit.jupiter.api.DisplayName;
  */
 @DisplayName("Octree Memory Performance Tests")
 public class OctreeMemoryPerformanceTest extends SpatialIndexMemoryPerformanceTest<MortonKey, LongEntityID, String> {
-    
+
     @Override
-    protected String createTestContent(int entityIndex) {
-        return "Entity-" + entityIndex;
+    protected SequentialLongIDGenerator createIDGenerator() {
+        return new SequentialLongIDGenerator();
     }
-    
+
     @Override
     protected SpatialIndex<MortonKey, LongEntityID, String> createSpatialIndex(VolumeBounds bounds, int maxDepth) {
         return new Octree<>(createIDGenerator());
     }
-    
+
+    @Override
+    protected String createTestContent(int entityIndex) {
+        return "Entity-" + entityIndex;
+    }
+
     @Override
     protected String getImplementationName() {
         return "Octree";
-    }
-    
-    @Override
-    protected SequentialLongIDGenerator createIDGenerator() {
-        return new SequentialLongIDGenerator();
     }
 }

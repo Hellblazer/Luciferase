@@ -271,8 +271,8 @@ public final class TetreeConnectivity {
     // Static initializer for computed tables
     static {
         // Initialize sibling relationships (all children of same parent are siblings)
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < 8; j++) {
+        for (var i = 0; i < 8; i++) {
+            for (var j = 0; j < 8; j++) {
                 ARE_SIBLINGS[i][j] = true; // All 8 children are siblings
             }
         }
