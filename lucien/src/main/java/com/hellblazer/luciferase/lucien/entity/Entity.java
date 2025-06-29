@@ -156,6 +156,9 @@ public class Entity<Key extends SpatialKey<Key>, Content> {
         // Update bounds from collision shape's AABB
         if (shape != null) {
             this.bounds = shape.getAABB();
+        } else {
+            // Clear bounds when collision shape is removed to revert to point collision
+            this.bounds = null;
         }
     }
 

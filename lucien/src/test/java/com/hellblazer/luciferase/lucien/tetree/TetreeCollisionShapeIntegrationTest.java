@@ -252,7 +252,6 @@ public class TetreeCollisionShapeIntegrationTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("Known issue: collision shape removal doesn't properly revert to default collision detection")
     void testCollisionShapeRemoval() {
         // Test removing collision shapes reverts to default behavior
         var pos1 = new Point3f(100, 100, 100);

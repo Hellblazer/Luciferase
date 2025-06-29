@@ -5,22 +5,22 @@ the implemented optimizations and real-world benchmarks.
 
 ## Performance Update (June 28, 2025)
 
-**BREAKTHROUGH**: After V2 tmIndex optimization and parent cache implementation, Tetree now **outperforms Octree** in bulk loading scenarios at large scales!
+After V2 tmIndex optimization and parent cache implementation, Tetree now performs better than Octree in bulk loading scenarios at large scales.
 
 ### Individual Operation Performance
-| Operation | Entity Count | Octree | Tetree | Winner | Performance Ratio |
+| Operation | Entity Count | Octree | Tetree | Faster | Performance Ratio |
 |-----------|-------------|---------|---------|---------|-------------------|
-| **Insertion** | 100 | 5.58 μs/entity | 28.42 μs/entity | **Octree** | **5.1x faster** |
-| | 1,000 | 2.47 μs/entity | 7.66 μs/entity | **Octree** | **3.1x faster** |
-| | 10,000 | 1.03 μs/entity | 5.27 μs/entity | **Octree** | **5.1x faster** |
-| **k-NN Search** | 10,000 | 36.26 μs | 12.63 μs | **Tetree** | **2.9x faster** |
-| **Range Query** | 10,000 | 21.12 μs | 162.70 μs | **Octree** | **7.7x faster** |
+| Insertion | 100 | 5.58 μs/entity | 28.42 μs/entity | Octree | 5.1x faster |
+| | 1,000 | 2.47 μs/entity | 7.66 μs/entity | Octree | 3.1x faster |
+| | 10,000 | 1.03 μs/entity | 5.27 μs/entity | Octree | 5.1x faster |
+| k-NN Search | 10,000 | 36.26 μs | 12.63 μs | Tetree | 2.9x faster |
+| Range Query | 10,000 | 21.12 μs | 162.70 μs | Octree | 7.7x faster |
 
-### Bulk Loading Performance (The Game Changer)
-| Entity Count | Octree Bulk | Tetree Bulk | Winner | Performance |
+### Bulk Loading Performance
+| Entity Count | Octree Bulk | Tetree Bulk | Faster | Performance |
 |-------------|-------------|-------------|---------|-------------|
-| 50,000 | 82 ms | **53 ms** | **🚀 TETREE** | **35% faster** |
-| 100,000 | 162 ms | **101 ms** | **🚀 TETREE** | **38% faster** |
+| 50,000 | 82 ms | 53 ms | Tetree | 35% faster |
+| 100,000 | 162 ms | 101 ms | Tetree | 38% faster |
 
 **Recommendation**: Use Tetree for bulk loading scenarios (50K+ entities) and k-NN query intensive applications. Use Octree for real-time individual insertions and range queries.
 
@@ -397,10 +397,10 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 - Superior range query performance (7.7x faster)
 
 **Tetree Advantages:**
-- Superior bulk loading at scale (35-38% faster at 50K+)
+- Better bulk loading at scale (35-38% faster at 50K+)
 - Better k-NN search performance (2.9x faster)
 - 74-76% memory savings across all scales
-- Excellent cache locality for repeated operations
+- Good cache locality for repeated operations
 
 ### Performance Comparison by Use Case
 
@@ -426,9 +426,9 @@ The key to optimal performance is understanding your data distribution and opera
 
 3. **Memory matters**: Tetree uses 74-76% less memory consistently
 
-4. **Recent optimizations change the game**:
+4. **Recent optimizations make a difference**:
    - V2 tmIndex: 4x speedup for Tetree operations
    - Parent cache: Up to 67x improvement for deep trees
-   - Bulk loading: Tetree now outperforms Octree at large scales
+   - Bulk loading: Tetree now performs better than Octree at large scales
 
 Start with your dominant operation pattern (individual vs bulk, insertion vs query) to choose the right spatial index.

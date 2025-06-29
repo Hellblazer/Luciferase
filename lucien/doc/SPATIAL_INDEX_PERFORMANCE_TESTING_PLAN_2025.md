@@ -1,6 +1,6 @@
 # SpatialIndex Performance Testing Plan 2025
 
-**Status**: 🎯 CURRENT ACTIVE PLAN  
+**Status**: CURRENT ACTIVE PLAN  
 **Phase**: Implementation of Optimization-Aware Performance Testing  
 **Last Updated**: June 2025
 
@@ -19,7 +19,7 @@ This updated performance testing plan incorporates the major optimizations imple
 The plan focuses on **validating optimization effectiveness** and **preventing performance regressions** rather than
 just basic benchmarking.
 
-## 🚀 Key Optimizations to Test
+## Key Optimizations to Test
 
 ### 1. **O(1) Performance Optimizations**
 
@@ -46,7 +46,7 @@ just basic benchmarking.
 - **Work-stealing Queues**: Efficient task distribution
 - **NUMA-aware Processing**: Optimize for large datasets
 
-## 🎯 Current Testing Phases
+## Current Testing Phases
 
 ### **Phase 1: Optimization Validation (CURRENT)**
 
