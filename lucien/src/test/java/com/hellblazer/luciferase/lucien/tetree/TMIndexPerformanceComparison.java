@@ -21,7 +21,7 @@ public class TMIndexPerformanceComparison {
 
         for (int i = 0; i < TEST_ITERATIONS; i++) {
             TestCase tc = testCases.get(i % testCases.size());
-            TetreeKey result = tc.tet.tmIndex();
+            var result = tc.tet.tmIndex();
             // Prevent optimization
             if (result == null) {
                 throw new RuntimeException();

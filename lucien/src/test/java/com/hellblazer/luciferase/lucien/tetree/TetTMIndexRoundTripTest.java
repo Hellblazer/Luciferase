@@ -30,7 +30,7 @@ public class TetTMIndexRoundTripTest {
     void testSimpleRoundTrip() {
         // Test root
         Tet root = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        TetreeKey rootKey = root.tmIndex();
+        var rootKey = root.tmIndex();
         Tet rootFromKey = Tet.tetrahedron(rootKey);
 
         System.out.println("Root test:");
@@ -42,7 +42,7 @@ public class TetTMIndexRoundTripTest {
         // Test level 1
         for (byte type = 0; type < 6; type++) {
             Tet tet = new Tet(0, 0, 0, (byte) 1, type);
-            TetreeKey key = tet.tmIndex();
+            var key = tet.tmIndex();
             Tet fromKey = Tet.tetrahedron(key);
 
             System.out.println("\nLevel 1, type " + type + ":");
@@ -60,7 +60,7 @@ public class TetTMIndexRoundTripTest {
     void testSpecificFailingCase() {
         // The failing case from the debug test
         Tet tet = new Tet(448, 448, 448, (byte) 15, (byte) 0);
-        TetreeKey key = tet.tmIndex();
+        var key = tet.tmIndex();
 
         System.out.println("Specific failing case:");
         System.out.println("  Original tet: " + tet);

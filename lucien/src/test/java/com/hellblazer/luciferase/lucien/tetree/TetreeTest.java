@@ -11,8 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -33,11 +31,11 @@ public class TetreeTest {
     @Test
     void testBasicInsertAndLookup() {
         // Insert at positive coordinates (Tetree requirement)
-        Point3f position = new Point3f(100, 100, 100);
-        byte level = 10;
+        var position = new Point3f(100, 100, 100);
+        var level = (byte) 10;
 
-        LongEntityID id1 = tetree.insert(position, level, "Entity1");
-        LongEntityID id2 = tetree.insert(position, level, "Entity2");
+        var id1 = tetree.insert(position, level, "Entity1");
+        var id2 = tetree.insert(position, level, "Entity2");
 
         // Verify entities exist
         assertTrue(tetree.containsEntity(id1));
@@ -45,7 +43,7 @@ public class TetreeTest {
         assertEquals(2, tetree.entityCount());
 
         // Lookup at position
-        List<LongEntityID> found = tetree.lookup(position, level);
+        var found = tetree.lookup(position, level);
         assertEquals(2, found.size());
         assertTrue(found.contains(id1));
         assertTrue(found.contains(id2));
@@ -57,11 +55,11 @@ public class TetreeTest {
 
     @Test
     void testEntityRemoval() {
-        Point3f position = new Point3f(200, 200, 200);
-        byte level = 12;
+        var position = new Point3f(200, 200, 200);
+        var level = (byte) 12;
 
-        LongEntityID id1 = tetree.insert(position, level, "ToRemove1");
-        LongEntityID id2 = tetree.insert(position, level, "ToKeep");
+        var id1 = tetree.insert(position, level, "ToRemove1");
+        var id2 = tetree.insert(position, level, "ToKeep");
 
         assertEquals(2, tetree.entityCount());
 
@@ -72,7 +70,7 @@ public class TetreeTest {
         assertTrue(tetree.containsEntity(id2));
 
         // Lookup should only find remaining entity
-        List<LongEntityID> found = tetree.lookup(position, level);
+        var found = tetree.lookup(position, level);
         assertEquals(1, found.size());
         assertTrue(found.contains(id2));
     }
@@ -80,21 +78,21 @@ public class TetreeTest {
     @Test
     void testEntityUpdate() {
         // Use positions that are in different grid cells
-        Point3f oldPos = new Point3f(300, 300, 300);
-        Point3f newPos = new Point3f(3000, 3000, 3000); // Different cell at level 10
-        byte level = 10;
+        var oldPos = new Point3f(300, 300, 300);
+        var newPos = new Point3f(3000, 3000, 3000); // Different cell at level 10
+        var level = (byte) 10;
 
-        LongEntityID id = tetree.insert(oldPos, level, "Mobile");
+        var id = tetree.insert(oldPos, level, "Mobile");
 
         // Update position
         tetree.updateEntity(id, newPos, level);
 
         // Should not be at old position
-        List<LongEntityID> atOld = tetree.lookup(oldPos, level);
+        var atOld = tetree.lookup(oldPos, level);
         assertFalse(atOld.contains(id));
 
         // Should be at new position
-        List<LongEntityID> atNew = tetree.lookup(newPos, level);
+        var atNew = tetree.lookup(newPos, level);
         assertTrue(atNew.contains(id));
 
         // Position should be updated
@@ -104,19 +102,19 @@ public class TetreeTest {
     @Test
     void testGetReturnsAllEntities() {
         // Insert multiple entities at the same position
-        Point3f position = new Point3f(100, 100, 100);
-        byte level = 10;
+        var position = new Point3f(100, 100, 100);
+        var level = (byte) 10;
 
         tetree.insert(position, level, "Entity1");
         tetree.insert(position, level, "Entity2");
         tetree.insert(position, level, "Entity3");
 
         // Find the tetrahedral index for this position
-        Tet tet = tetree.locateTetrahedron(position, level);
-        TetreeKey tetKey = tet.tmIndex();
+        var tet = tetree.locateTetrahedron(position, level);
+        var tetKey = tet.tmIndex();
 
         // Get all entities at this index
-        List<String> contents = tetree.get(tetKey);
+        var contents = tetree.get(tetKey);
 
         // Verify we get all three entities
         assertEquals(3, contents.size());
@@ -125,27 +123,27 @@ public class TetreeTest {
         assertTrue(contents.contains("Entity3"));
 
         // Test empty index returns empty list
-        List<String> emptyContents = tetree.get(new Tet(50, 50, 50, (byte) 15, (byte) 0).tmIndex()); // Different index
+        var emptyContents = tetree.get(new Tet(50, 50, 50, (byte) 15, (byte) 0).tmIndex()); // Different index
         assertTrue(emptyContents.isEmpty());
     }
 
     @Test
     void testKNearestNeighbors() {
         // Use a finer level for more precise positioning
-        byte level = 15;
+        var level = (byte) 15;
 
         // Insert some entities
-        LongEntityID id1 = tetree.insert(new Point3f(100, 100, 100), level, "Near1");
-        LongEntityID id2 = tetree.insert(new Point3f(110, 110, 110), level, "Near2");
-        LongEntityID id3 = tetree.insert(new Point3f(200, 200, 200), level, "Far1");
-        LongEntityID id4 = tetree.insert(new Point3f(500, 500, 500), level, "VeryFar");
+        var id1 = tetree.insert(new Point3f(100, 100, 100), level, "Near1");
+        var id2 = tetree.insert(new Point3f(110, 110, 110), level, "Near2");
+        var id3 = tetree.insert(new Point3f(200, 200, 200), level, "Far1");
+        var id4 = tetree.insert(new Point3f(500, 500, 500), level, "VeryFar");
 
         // Find 2 nearest to (105, 105, 105)
-        Point3f queryPoint = new Point3f(105, 105, 105);
-        List<LongEntityID> nearest = tetree.kNearestNeighbors(queryPoint, 2, Float.MAX_VALUE);
+        var queryPoint = new Point3f(105, 105, 105);
+        var nearest = tetree.kNearestNeighbors(queryPoint, 2, Float.MAX_VALUE);
 
         // Calculate distances for verification
-        Map<LongEntityID, Float> distances = new HashMap<>();
+        var distances = new HashMap<LongEntityID, Float>();
         distances.put(id1, queryPoint.distance(new Point3f(100, 100, 100)));
         distances.put(id2, queryPoint.distance(new Point3f(110, 110, 110)));
         distances.put(id3, queryPoint.distance(new Point3f(200, 200, 200)));
@@ -168,17 +166,17 @@ public class TetreeTest {
         // In tetrahedral decomposition, each grid cell has 6 tetrahedra (types 0-5)
         // Entities in the same grid cell but different tetrahedra should be separate
 
-        Point3f pos = new Point3f(100, 100, 100);
-        byte level = 10;
+        var pos = new Point3f(100, 100, 100);
+        var level = (byte) 10;
 
         // Insert multiple entities at same position
         // They should all go to the same tetrahedron
-        LongEntityID id1 = tetree.insert(pos, level, "E1");
-        LongEntityID id2 = tetree.insert(pos, level, "E2");
-        LongEntityID id3 = tetree.insert(pos, level, "E3");
+        var id1 = tetree.insert(pos, level, "E1");
+        var id2 = tetree.insert(pos, level, "E2");
+        var id3 = tetree.insert(pos, level, "E3");
 
         // All should be found at this position
-        List<LongEntityID> found = tetree.lookup(pos, level);
+        var found = tetree.lookup(pos, level);
         assertEquals(3, found.size());
         assertTrue(found.contains(id1));
         assertTrue(found.contains(id2));
@@ -188,7 +186,7 @@ public class TetreeTest {
     @Test
     void testNegativeCoordinatesRejected() {
         // Tetree requires positive coordinates
-        Point3f negativePos = new Point3f(-10, 50, 50);
+        var negativePos = new Point3f(-10, 50, 50);
 
         assertThrows(IllegalArgumentException.class, () -> {
             tetree.insert(negativePos, (byte) 10, "Should fail");
@@ -198,23 +196,23 @@ public class TetreeTest {
     @Test
     void testRegionQuery() {
         // Use level 10 for reasonable cell sizes
-        byte level = 10;
+        var level = (byte) 10;
 
         // Insert entities at various positions
-        LongEntityID id1 = tetree.insert(new Point3f(100, 100, 100), level, "E1");
-        LongEntityID id2 = tetree.insert(new Point3f(150, 150, 150), level, "E2");
-        LongEntityID id3 = tetree.insert(new Point3f(200, 200, 200), level, "E3");
-        LongEntityID id4 = tetree.insert(new Point3f(300, 300, 300), level, "E4");
+        var id1 = tetree.insert(new Point3f(100, 100, 100), level, "E1");
+        var id2 = tetree.insert(new Point3f(150, 150, 150), level, "E2");
+        var id3 = tetree.insert(new Point3f(200, 200, 200), level, "E3");
+        var id4 = tetree.insert(new Point3f(300, 300, 300), level, "E4");
 
         // Query region from (50,50,50) to (250,250,250)
-        Spatial.Cube region = new Spatial.Cube(50, 50, 50, 200);
+        var region = new Spatial.Cube(50, 50, 50, 200);
 
         // Debug: Check if entities exist before query
         assertEquals(4, tetree.entityCount(), "Should have 4 entities");
 
         // For now, just verify that we can query without error
         // The spatial range query for Tetree needs more work
-        List<LongEntityID> inRegion = tetree.entitiesInRegion(region);
+        var inRegion = tetree.entitiesInRegion(region);
 
         // TODO: Fix spatial range query for Tetree
         // Currently it returns 0 entities due to issues with tetrahedral spatial indexing
@@ -225,7 +223,7 @@ public class TetreeTest {
     @Test
     void testSpatialNodeStream() {
         // Use positions that are far enough apart to be in different cells
-        byte level = 10;
+        var level = (byte) 10;
 
         // Insert entities at positions that will be in different grid cells
         tetree.insert(new Point3f(100, 100, 100), level, "E1");
@@ -233,7 +231,7 @@ public class TetreeTest {
         tetree.insert(new Point3f(5000, 5000, 5000), level, "E3");  // Different cell
 
         // Stream all nodes
-        long nodeCount = tetree.nodes().count();
+        var nodeCount = tetree.nodes().count();
         assertEquals(3, nodeCount);
 
         // Each node should have exactly one entity (different positions)
@@ -244,9 +242,9 @@ public class TetreeTest {
     void testStatistics() {
         // At level 10, cell size is 2048, so we need positions farther apart
         // Insert multiple entities
-        Point3f pos1 = new Point3f(100, 100, 100);
-        Point3f pos2 = new Point3f(3000, 3000, 3000); // Far enough to be in different cell
-        byte level = 10;
+        var pos1 = new Point3f(100, 100, 100);
+        var pos2 = new Point3f(3000, 3000, 3000); // Far enough to be in different cell
+        var level = (byte) 10;
 
         tetree.insert(pos1, level, "E1");
         tetree.insert(pos1, level, "E2"); // Same position as E1

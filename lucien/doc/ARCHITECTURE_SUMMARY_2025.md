@@ -11,16 +11,20 @@ The lucien module provides spatial indexing through a unified architecture suppo
 decomposition. Following major consolidation in January 2025, the module uses inheritance to maximize code reuse while
 maintaining the unique characteristics of each approach. As of June 2025, all planned enhancements have been completed.
 
-**Total Classes: 34** (organized across 4 packages) + additional support classes for advanced features
+**Total Classes: 96 Java files** organized across 8 packages
 
 ## Package Overview
 
 For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_2025.md](./LUCIEN_ARCHITECTURE_2025.md).
 
-- **Root Package (13 classes)**: Core abstractions, spatial types, geometry utilities
+- **Root Package (27 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
-- **Octree Package (3 classes)**: Morton curve-based cubic spatial decomposition
-- **Tetree Package (6 classes)**: Tetrahedral spatial decomposition
+- **Octree Package (5 classes)**: Morton curve-based cubic spatial decomposition
+- **Tetree Package (30 classes)**: Tetrahedral spatial decomposition with extensive optimizations
+- **Balancing Package (3 classes)**: Tree balancing strategies
+- **Collision Package (12 classes)**: Comprehensive collision detection system
+- **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
+- **Index Package (1 class)**: Additional indexing utilities
 
 ## Key Architecture Components
 
@@ -69,16 +73,6 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
 ✅ **Bulk Loading Mode**: 5-10x performance for large datasets
 ✅ **SpatialKey Architecture**: Type-safe keys with MortonKey and TetreeKey
-
-## Architectural Evolution
-
-The codebase underwent dramatic simplification over the course of a few weeks:
-
-- **From**: 60+ planned classes with complex abstractions
-- **To**: 34 actual classes with direct APIs
-- **Focus**: Core functionality over premature optimization
-
-For consolidation details, see [SPATIAL_INDEX_CONSOLIDATION.md](./archived/SPATIAL_INDEX_CONSOLIDATION.md).
 
 ## Documentation Structure
 
@@ -130,28 +124,36 @@ The current architecture prioritizes:
 4. **Extensibility**: Easy addition of new spatial decomposition strategies
 5. **Performance**: O(1) operations through HashMap-based storage
 
-## Performance Reality (December 2025 - Updated)
+## Performance Reality (June 2025 - OctreeVsTetreeBenchmark)
 
 ### Important Performance Update
 
-Previous performance claims were based on using the `consecutiveIndex()` method which is unique only within a level. After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance characteristics have changed dramatically.
+Previous performance claims were based on using the `consecutiveIndex()` method which is unique only within a level.
+After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
+characteristics have changed dramatically.
 
-### Current Performance Metrics
+### Current Performance Metrics (Post-Subdivision Fix - June 28, 2025)
 
-| Operation         | Octree    | Tetree    | Winner      | Notes |
-|-------------------|-----------|-----------|-------------|-------|
-| Insert 50K        | 75 ms     | 84,483 ms | Octree (1125x) | tmIndex() is O(level) |
-| k-NN (k=10)       | 28 μs     | 5.9 μs    | Tetree (4.8x)  | Better locality |
-| Range Query       | 28 μs     | 5.6 μs    | Tetree (5x)    | Efficient traversal |
-| Memory Usage      | 100%      | 22%       | Tetree (78% less) | Compact structure |
+Source: OctreeVsTetreeBenchmark.java (after fixing Tetree subdivision)
+
+| Dataset | Operation | Octree  | Tetree  | Winner        | Improvement |
+|---------|-----------|---------|---------|---------------|-------------|
+| 100     | Insertion | ~8 μs   | ~48 μs  | Octree (6x)   | 38% better  |
+| 1K      | Insertion | ~3 μs   | ~28 μs  | Octree (9.2x) | 84% better  |
+| 10K     | Insertion | ~1 μs   | ~36 μs  | Octree (35x)  | 96% better  |
+| 1K      | k-NN      | 3.22 μs | 0.81 μs | Tetree (4x)   | unchanged   |
+| 10K     | k-NN      | 21.9 μs | 7.04 μs | Tetree (3.1x) | unchanged   |
+| 10K     | Memory    | 12.9 MB | 12.6 MB | Similar       | now correct |
 
 ### Key Insight
 
-- **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
-- **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
-- This fundamental difference cannot be optimized away
+- **Subdivision Fix**: Tetree was creating only 2 nodes instead of thousands due to missing subdivision logic
+- **After Fix**: Performance improved 38-96%, memory usage now comparable to Octree
+- **Remaining Gap**: Due to fundamental algorithmic difference:
+    - **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
+    - **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
 
-For detailed performance analysis, see [PERFORMANCE_REALITY_DECEMBER_2025.md](./PERFORMANCE_REALITY_DECEMBER_2025.md)
+For detailed performance analysis, see [PERFORMANCE_REALITY_JUNE_2025.md](./PERFORMANCE_REALITY_JUNE_2025.md)
 
 ## Testing Coverage
 

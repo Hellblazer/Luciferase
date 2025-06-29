@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.performance.optimization;
 
-import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.NodeEstimator;
 import com.hellblazer.luciferase.lucien.SpatialNodePool;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
@@ -45,11 +44,11 @@ import java.util.concurrent.TimeUnit;
 @EnabledIfEnvironmentVariable(named = "RUN_SPATIAL_INDEX_PERF_TESTS", matches = "true")
 public class MemoryOptimizationBenchmark {
 
-    private static final int          WARMUP_ROUNDS      = 3;
-    private static final int          MEASUREMENT_ROUNDS = 10;
-    private static final byte         DEFAULT_LEVEL      = 10;
-    private static final MemoryMXBean memoryBean         = ManagementFactory.getMemoryMXBean();
-    private final List<MemoryBenchmarkResult> results = new ArrayList<>();
+    private static final int                         WARMUP_ROUNDS      = 3;
+    private static final int                         MEASUREMENT_ROUNDS = 10;
+    private static final byte                        DEFAULT_LEVEL      = 10;
+    private static final MemoryMXBean                memoryBean         = ManagementFactory.getMemoryMXBean();
+    private final        List<MemoryBenchmarkResult> results            = new ArrayList<>();
 
     @Test
     void benchmarkNodeEstimationAccuracy() {
@@ -135,7 +134,7 @@ public class MemoryOptimizationBenchmark {
         int operations = 100_000;
         List<OctreeNode<LongEntityID>> acquired = new ArrayList<>();
 
-        long start = System.nanoTime();
+        var start = System.nanoTime();
 
         // Simulate high churn scenario
         for (int i = 0; i < operations; i++) {
@@ -163,26 +162,26 @@ public class MemoryOptimizationBenchmark {
 
     private void benchmarkWithAdaptivePreAllocation(String indexType, NodeEstimator.SpatialDistribution dist,
                                                     List<Point3f> positions, List<String> contents) {
-        String testName = String.format("%s With Adaptive Pre-allocation - %s", indexType, dist.getType());
+        var testName = String.format("%s With Adaptive Pre-allocation - %s", indexType, dist.getType());
 
-        long totalDuration = 0;
-        long totalHeap = 0;
-        long totalAllocations = 0;
+        var totalDuration = 0L;
+        var totalHeap = 0L;
+        var totalAllocations = 0L;
 
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
             System.gc();
             memoryBean.gc();
 
-            long allocBefore = getAllocationCount();
-            MemoryUsage heapBefore = memoryBean.getHeapMemoryUsage();
+            var allocBefore = getAllocationCount();
+            var heapBefore = memoryBean.getHeapMemoryUsage();
 
-            Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+            var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
 
             // Use sample of positions for adaptive pre-allocation
             List<Point3f> sample = positions.subList(0, Math.min(1000, positions.size()));
             octree.preAllocateAdaptive(sample, positions.size(), DEFAULT_LEVEL);
 
-            long start = System.nanoTime();
+            var start = System.nanoTime();
             octree.insertBatch(positions, contents, DEFAULT_LEVEL);
             long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
@@ -194,18 +193,17 @@ public class MemoryOptimizationBenchmark {
             totalAllocations += (allocAfter - allocBefore);
         }
 
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
-        long avgHeap = totalHeap / MEASUREMENT_ROUNDS;
-        long avgAllocations = totalAllocations / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgHeap = totalHeap / MEASUREMENT_ROUNDS;
+        var avgAllocations = totalAllocations / MEASUREMENT_ROUNDS;
 
-        MemoryBenchmarkResult result = new MemoryBenchmarkResult(testName, avgDuration, positions.size(), avgHeap,
-                                                                 avgAllocations);
+        var result = new MemoryBenchmarkResult(testName, avgDuration, positions.size(), avgHeap, avgAllocations);
         results.add(result);
         System.out.println(result);
     }
 
     private void benchmarkWithPooling(int poolSize, List<Point3f> positions, List<String> contents) {
-        String testName = String.format("Octree With Node Pooling (size=%d)", poolSize);
+        var testName = String.format("Octree With Node Pooling (size=%d)", poolSize);
 
         System.gc();
         memoryBean.gc();
@@ -222,18 +220,17 @@ public class MemoryOptimizationBenchmark {
         // Note: Direct pool configuration not available in current implementation
         // Would need to extend AbstractSpatialIndex to expose nodePool configuration
 
-        long start = System.nanoTime();
+        var start = System.nanoTime();
         for (int i = 0; i < positions.size(); i++) {
             octree.insert(positions.get(i), DEFAULT_LEVEL, contents.get(i));
         }
         long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
-        MemoryUsage heapAfter = memoryBean.getHeapMemoryUsage();
-        long allocAfter = getAllocationCount();
+        var heapAfter = memoryBean.getHeapMemoryUsage();
+        var allocAfter = getAllocationCount();
 
-        MemoryBenchmarkResult result = new MemoryBenchmarkResult(testName, duration, positions.size(),
-                                                                 heapAfter.getUsed() - heapBefore.getUsed(),
-                                                                 allocAfter - allocBefore);
+        var result = new MemoryBenchmarkResult(testName, duration, positions.size(),
+                                               heapAfter.getUsed() - heapBefore.getUsed(), allocAfter - allocBefore);
         System.out.println(result);
 
         // Print pool statistics
@@ -243,25 +240,25 @@ public class MemoryOptimizationBenchmark {
 
     private void benchmarkWithPreAllocation(String indexType, NodeEstimator.SpatialDistribution dist,
                                             List<Point3f> positions, List<String> contents) {
-        String testName = String.format("%s With Pre-allocation - %s", indexType, dist.getType());
+        var testName = String.format("%s With Pre-allocation - %s", indexType, dist.getType());
 
-        long totalDuration = 0;
-        long totalHeap = 0;
-        long totalAllocations = 0;
+        var totalDuration = 0L;
+        var totalHeap = 0L;
+        var totalAllocations = 0L;
 
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
             System.gc();
             memoryBean.gc();
 
-            long allocBefore = getAllocationCount();
-            MemoryUsage heapBefore = memoryBean.getHeapMemoryUsage();
+            var allocBefore = getAllocationCount();
+            var heapBefore = memoryBean.getHeapMemoryUsage();
 
-            Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+            var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
 
             // Pre-allocate nodes based on estimation
             octree.preAllocateNodes(positions.size(), dist);
 
-            long start = System.nanoTime();
+            var start = System.nanoTime();
             octree.insertBatch(positions, contents, DEFAULT_LEVEL);
             long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
@@ -273,18 +270,17 @@ public class MemoryOptimizationBenchmark {
             totalAllocations += (allocAfter - allocBefore);
         }
 
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
-        long avgHeap = totalHeap / MEASUREMENT_ROUNDS;
-        long avgAllocations = totalAllocations / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgHeap = totalHeap / MEASUREMENT_ROUNDS;
+        var avgAllocations = totalAllocations / MEASUREMENT_ROUNDS;
 
-        MemoryBenchmarkResult result = new MemoryBenchmarkResult(testName, avgDuration, positions.size(), avgHeap,
-                                                                 avgAllocations);
+        var result = new MemoryBenchmarkResult(testName, avgDuration, positions.size(), avgHeap, avgAllocations);
         results.add(result);
         System.out.println(result);
     }
 
     private void benchmarkWithoutPooling(List<Point3f> positions, List<String> contents) {
-        String testName = "Octree Without Node Pooling";
+        var testName = "Octree Without Node Pooling";
 
         System.gc();
         memoryBean.gc();
@@ -294,39 +290,38 @@ public class MemoryOptimizationBenchmark {
 
         Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
 
-        long start = System.nanoTime();
+        var start = System.nanoTime();
         for (int i = 0; i < positions.size(); i++) {
             octree.insert(positions.get(i), DEFAULT_LEVEL, contents.get(i));
         }
         long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
-        MemoryUsage heapAfter = memoryBean.getHeapMemoryUsage();
-        long allocAfter = getAllocationCount();
+        var heapAfter = memoryBean.getHeapMemoryUsage();
+        var allocAfter = getAllocationCount();
 
-        MemoryBenchmarkResult result = new MemoryBenchmarkResult(testName, duration, positions.size(),
-                                                                 heapAfter.getUsed() - heapBefore.getUsed(),
-                                                                 allocAfter - allocBefore);
+        var result = new MemoryBenchmarkResult(testName, duration, positions.size(),
+                                               heapAfter.getUsed() - heapBefore.getUsed(), allocAfter - allocBefore);
         System.out.println(result);
     }
 
     private void benchmarkWithoutPreAllocation(String indexType, NodeEstimator.SpatialDistribution dist,
                                                List<Point3f> positions, List<String> contents) {
-        String testName = String.format("%s Without Pre-allocation - %s", indexType, dist.getType());
+        var testName = String.format("%s Without Pre-allocation - %s", indexType, dist.getType());
 
-        long totalDuration = 0;
-        long totalHeap = 0;
-        long totalAllocations = 0;
+        var totalDuration = 0L;
+        var totalHeap = 0L;
+        var totalAllocations = 0L;
 
         for (int i = 0; i < MEASUREMENT_ROUNDS; i++) {
             System.gc();
             memoryBean.gc();
 
-            long allocBefore = getAllocationCount();
-            MemoryUsage heapBefore = memoryBean.getHeapMemoryUsage();
+            var allocBefore = getAllocationCount();
+            var heapBefore = memoryBean.getHeapMemoryUsage();
 
-            Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+            var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
 
-            long start = System.nanoTime();
+            var start = System.nanoTime();
             octree.insertBatch(positions, contents, DEFAULT_LEVEL);
             long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
@@ -338,12 +333,11 @@ public class MemoryOptimizationBenchmark {
             totalAllocations += (allocAfter - allocBefore);
         }
 
-        long avgDuration = totalDuration / MEASUREMENT_ROUNDS;
-        long avgHeap = totalHeap / MEASUREMENT_ROUNDS;
-        long avgAllocations = totalAllocations / MEASUREMENT_ROUNDS;
+        var avgDuration = totalDuration / MEASUREMENT_ROUNDS;
+        var avgHeap = totalHeap / MEASUREMENT_ROUNDS;
+        var avgAllocations = totalAllocations / MEASUREMENT_ROUNDS;
 
-        MemoryBenchmarkResult result = new MemoryBenchmarkResult(testName, avgDuration, positions.size(), avgHeap,
-                                                                 avgAllocations);
+        var result = new MemoryBenchmarkResult(testName, avgDuration, positions.size(), avgHeap, avgAllocations);
         results.add(result);
         System.out.println(result);
     }
@@ -374,17 +368,17 @@ public class MemoryOptimizationBenchmark {
                 // At level 10, cell size is 2048. We need spread larger than this
                 // to ensure entities distribute across multiple cells
                 float spread = 3000.0f; // Larger than cell size at level 10
-                
+
                 // Keep clusters well separated
                 float clusterSpacing = 5000.0f;
-                
+
                 for (int i = 0; i < count; i++) {
                     int cluster = i % numClusters;
                     // Limit the spatial extent to avoid memory issues
                     float baseX = (cluster % 5) * clusterSpacing;
                     float baseY = ((cluster / 5) % 4) * clusterSpacing;
                     float baseZ = ((cluster / 20) % 3) * clusterSpacing;
-                    
+
                     positions.add(new Point3f(baseX + rand.nextFloat() * spread, baseY + rand.nextFloat() * spread,
                                               baseZ + rand.nextFloat() * spread));
                 }
@@ -452,18 +446,18 @@ public class MemoryOptimizationBenchmark {
 
     private void testEstimationAccuracy(int entityCount, NodeEstimator.SpatialDistribution dist, String distName) {
         // Generate test data
-        List<Point3f> positions = generateTestData(entityCount, dist);
-        List<String> contents = generateContents(entityCount);
+        var positions = generateTestData(entityCount, dist);
+        var contents = generateContents(entityCount);
 
         // Get estimation
-        int estimatedNodes = NodeEstimator.estimateNodeCount(entityCount, 32, (byte) 20, dist);
+        var estimatedNodes = NodeEstimator.estimateNodeCount(entityCount, 32, (byte) 20, dist);
 
         // Build actual tree and count nodes
-        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+        var octree = new Octree<LongEntityID, String>(new SequentialLongIDGenerator());
         octree.insertBatch(positions, contents, DEFAULT_LEVEL);
 
-        int actualNodes = octree.nodeCount();
-        double accuracy = 100.0 * Math.min(estimatedNodes, actualNodes) / Math.max(estimatedNodes, actualNodes);
+        var actualNodes = octree.nodeCount();
+        var accuracy = 100.0 * Math.min(estimatedNodes, actualNodes) / Math.max(estimatedNodes, actualNodes);
 
         System.out.printf("  %-20s: Estimated: %,6d, Actual: %,6d, Accuracy: %.1f%%\n", distName, estimatedNodes,
                           actualNodes, accuracy);

@@ -63,7 +63,7 @@ public class TetreeHelper {
      * @param bounds the bounding box to search within
      * @return stream of spatial nodes within the bounds
      */
-    public static <ID extends EntityID, Content> Stream<SpatialNode<TetreeKey, ID>> directScanNodes(
+    public static <ID extends EntityID, Content> Stream<SpatialNode<BaseTetreeKey<? extends BaseTetreeKey>, ID>> directScanNodes(
     Tetree<ID, Content> tetree, Spatial.aabb bounds) {
 
         // Convert AABB bounds to a Spatial volume that Tetree can use

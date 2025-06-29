@@ -17,10 +17,9 @@
 package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.Constants;
-import com.hellblazer.luciferase.lucien.tetree.TetreeLevelCache;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
+import com.hellblazer.luciferase.lucien.tetree.TetreeLevelCache;
 import org.openjdk.jmh.annotations.*;
-import org.openjdk.jmh.infra.Blackhole;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.Options;
@@ -31,92 +30,38 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * JMH Benchmark comparing original O(log n) level extraction vs optimized O(1) cached version.
- * 
+ *
  * To run this benchmark, add the following dependencies to lucien/pom.xml:
  * <dependency>
- *     <groupId>org.openjdk.jmh</groupId>
- *     <artifactId>jmh-core</artifactId>
- *     <version>1.37</version>
- *     <scope>test</scope>
+ * <groupId>org.openjdk.jmh</groupId>
+ * <artifactId>jmh-core</artifactId>
+ * <version>1.37</version>
+ * <scope>test</scope>
  * </dependency>
  * <dependency>
- *     <groupId>org.openjdk.jmh</groupId>
- *     <artifactId>jmh-generator-annprocess</artifactId>
- *     <version>1.37</version>
- *     <scope>test</scope>
+ * <groupId>org.openjdk.jmh</groupId>
+ * <artifactId>jmh-generator-annprocess</artifactId>
+ * <version>1.37</version>
+ * <scope>test</scope>
  * </dependency>
- * 
+ *
  * Run with: mvn test -Dtest=TetreeLevelCacheBenchmark
- * 
+ *
  * @author hal.hildebrand
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @State(Scope.Benchmark)
-@Fork(value = 2, jvmArgs = {"-Xms2G", "-Xmx2G"})
+@Fork(value = 2, jvmArgs = { "-Xms2G", "-Xmx2G" })
 @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
 public class TetreeLevelCacheBenchmark {
-    
+
     // Test data sizes
-    private static final int SMALL_SIZE = 100;
+    private static final int SMALL_SIZE  = 100;
     private static final int MEDIUM_SIZE = 10_000;
-    private static final int LARGE_SIZE = 1_000_000;
-    
-    @State(Scope.Benchmark)
-    public static class BenchmarkState {
-        // Test data arrays
-        long[] smallIndices = new long[SMALL_SIZE];
-        long[] mediumIndices = new long[MEDIUM_SIZE];
-        long[] largeIndices = new long[LARGE_SIZE];
-        
-        // Random index for single lookups
-        long randomIndex;
-        
-        @Setup(Level.Trial)
-        public void setup() {
-            Random random = new Random(42); // Fixed seed for reproducibility
-            
-            // Generate test indices across all levels (0-21)
-            generateIndices(smallIndices, random);
-            generateIndices(mediumIndices, random);
-            generateIndices(largeIndices, random);
-            
-            // Pick a random index for single lookup benchmarks
-            randomIndex = generateRandomIndex(random, 15); // Mid-range level
-        }
-        
-        private void generateIndices(long[] indices, Random random) {
-            for (int i = 0; i < indices.length; i++) {
-                int level = random.nextInt(22); // 0-21
-                indices[i] = generateIndexForLevel(level, random);
-            }
-        }
-        
-        private long generateIndexForLevel(int level, Random random) {
-            if (level == 0) {
-                return 0;
-            }
-            
-            // Generate an index that will be at the specified level
-            // Level 1: 1-7, Level 2: 8-63, Level 3: 64-511, etc.
-            long minIndex = (1L << (3 * (level - 1))) * 7 / 6; // Approximate
-            long maxIndex = (1L << (3 * level)) - 1;
-            
-            if (maxIndex < minIndex) {
-                maxIndex = minIndex + 1000; // Handle overflow
-            }
-            
-            return minIndex + Math.abs(random.nextLong()) % (maxIndex - minIndex + 1);
-        }
-        
-        private long generateRandomIndex(Random random, int level) {
-            return generateIndexForLevel(level, random);
-        }
-    }
-    
-    // ====== Original O(log n) implementation ======
-    
+    private static final int LARGE_SIZE  = 1_000_000;
+
     /**
      * Original level extraction using numberOfLeadingZeros - O(log n)
      */
@@ -124,76 +69,31 @@ public class TetreeLevelCacheBenchmark {
         if (index == 0) {
             return 0;
         }
-        
+
         // Original implementation using numberOfLeadingZeros
         int highBit = 63 - Long.numberOfLeadingZeros(index);
         byte level = (byte) ((highBit / 3) + 1);
-        
+
         // Clamp to max level
         return level > Constants.getMaxRefinementLevel() ? Constants.getMaxRefinementLevel() : level;
     }
-    
+
+    // ====== Original O(log n) implementation ======
+
+    public static void main(String[] args) throws RunnerException {
+        // Skip if running in any CI environment
+        if (CIEnvironmentCheck.isRunningInCI()) {
+            System.out.println(CIEnvironmentCheck.getSkipMessage());
+            return;
+        }
+
+        Options opt = new OptionsBuilder().include(TetreeLevelCacheBenchmark.class.getSimpleName()).forks(1).build();
+
+        new Runner(opt).run();
+    }
+
     // ====== Benchmarks ======
-    
-    @Benchmark
-    @BenchmarkMode(Mode.Throughput)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public byte originalSingleLookup(BenchmarkState state) {
-        return getLevelFromIndexOriginal(state.randomIndex);
-    }
-    
-    @Benchmark
-    @BenchmarkMode(Mode.Throughput)
-    @OutputTimeUnit(TimeUnit.MILLISECONDS)
-    public byte cachedSingleLookup(BenchmarkState state) {
-        return TetreeLevelCache.getLevelFromIndex(state.randomIndex);
-    }
-    
-    @Benchmark
-    public long originalSmallBatch(BenchmarkState state) {
-        long sum = 0;
-        for (long index : state.smallIndices) {
-            sum += getLevelFromIndexOriginal(index);
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long cachedSmallBatch(BenchmarkState state) {
-        long sum = 0;
-        for (long index : state.smallIndices) {
-            sum += TetreeLevelCache.getLevelFromIndex(index);
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long originalMediumBatch(BenchmarkState state) {
-        long sum = 0;
-        for (long index : state.mediumIndices) {
-            sum += getLevelFromIndexOriginal(index);
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long cachedMediumBatch(BenchmarkState state) {
-        long sum = 0;
-        for (long index : state.mediumIndices) {
-            sum += TetreeLevelCache.getLevelFromIndex(index);
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    public long originalLargeBatch(BenchmarkState state) {
-        long sum = 0;
-        for (long index : state.largeIndices) {
-            sum += getLevelFromIndexOriginal(index);
-        }
-        return sum;
-    }
-    
+
     @Benchmark
     public long cachedLargeBatch(BenchmarkState state) {
         long sum = 0;
@@ -202,43 +102,7 @@ public class TetreeLevelCacheBenchmark {
         }
         return sum;
     }
-    
-    // ====== Specific level range benchmarks ======
-    
-    @Benchmark
-    @OperationsPerInvocation(100)
-    public long originalSmallIndices() {
-        long sum = 0;
-        // Test small indices (levels 0-3) which should hit the fast path
-        for (int i = 0; i < 100; i++) {
-            sum += getLevelFromIndexOriginal(i);
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    @OperationsPerInvocation(100)
-    public long cachedSmallIndices() {
-        long sum = 0;
-        // Test small indices (levels 0-3) which should hit the fast path
-        for (int i = 0; i < 100; i++) {
-            sum += TetreeLevelCache.getLevelFromIndex(i);
-        }
-        return sum;
-    }
-    
-    @Benchmark
-    @OperationsPerInvocation(100)
-    public long originalLargeIndices() {
-        long sum = 0;
-        // Test large indices (higher levels) which use De Bruijn optimization
-        long base = 1L << 45; // Very large indices
-        for (int i = 0; i < 100; i++) {
-            sum += getLevelFromIndexOriginal(base + i);
-        }
-        return sum;
-    }
-    
+
     @Benchmark
     @OperationsPerInvocation(100)
     public long cachedLargeIndices() {
@@ -250,21 +114,153 @@ public class TetreeLevelCacheBenchmark {
         }
         return sum;
     }
-    
-    // ====== Main method to run benchmark ======
-    
-    public static void main(String[] args) throws RunnerException {
-        // Skip if running in any CI environment
-        if (CIEnvironmentCheck.isRunningInCI()) {
-            System.out.println(CIEnvironmentCheck.getSkipMessage());
-            return;
+
+    @Benchmark
+    public long cachedMediumBatch(BenchmarkState state) {
+        long sum = 0;
+        for (long index : state.mediumIndices) {
+            sum += TetreeLevelCache.getLevelFromIndex(index);
         }
-        
-        Options opt = new OptionsBuilder()
-                .include(TetreeLevelCacheBenchmark.class.getSimpleName())
-                .forks(1)
-                .build();
-        
-        new Runner(opt).run();
+        return sum;
+    }
+
+    @Benchmark
+    @BenchmarkMode(Mode.Throughput)
+    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+    public byte cachedSingleLookup(BenchmarkState state) {
+        return TetreeLevelCache.getLevelFromIndex(state.randomIndex);
+    }
+
+    @Benchmark
+    public long cachedSmallBatch(BenchmarkState state) {
+        long sum = 0;
+        for (long index : state.smallIndices) {
+            sum += TetreeLevelCache.getLevelFromIndex(index);
+        }
+        return sum;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(100)
+    public long cachedSmallIndices() {
+        long sum = 0;
+        // Test small indices (levels 0-3) which should hit the fast path
+        for (int i = 0; i < 100; i++) {
+            sum += TetreeLevelCache.getLevelFromIndex(i);
+        }
+        return sum;
+    }
+
+    @Benchmark
+    public long originalLargeBatch(BenchmarkState state) {
+        long sum = 0;
+        for (long index : state.largeIndices) {
+            sum += getLevelFromIndexOriginal(index);
+        }
+        return sum;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(100)
+    public long originalLargeIndices() {
+        long sum = 0;
+        // Test large indices (higher levels) which use De Bruijn optimization
+        long base = 1L << 45; // Very large indices
+        for (int i = 0; i < 100; i++) {
+            sum += getLevelFromIndexOriginal(base + i);
+        }
+        return sum;
+    }
+
+    // ====== Specific level range benchmarks ======
+
+    @Benchmark
+    public long originalMediumBatch(BenchmarkState state) {
+        long sum = 0;
+        for (long index : state.mediumIndices) {
+            sum += getLevelFromIndexOriginal(index);
+        }
+        return sum;
+    }
+
+    @Benchmark
+    @BenchmarkMode(Mode.Throughput)
+    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+    public byte originalSingleLookup(BenchmarkState state) {
+        return getLevelFromIndexOriginal(state.randomIndex);
+    }
+
+    @Benchmark
+    public long originalSmallBatch(BenchmarkState state) {
+        long sum = 0;
+        for (long index : state.smallIndices) {
+            sum += getLevelFromIndexOriginal(index);
+        }
+        return sum;
+    }
+
+    @Benchmark
+    @OperationsPerInvocation(100)
+    public long originalSmallIndices() {
+        long sum = 0;
+        // Test small indices (levels 0-3) which should hit the fast path
+        for (int i = 0; i < 100; i++) {
+            sum += getLevelFromIndexOriginal(i);
+        }
+        return sum;
+    }
+
+    // ====== Main method to run benchmark ======
+
+    @State(Scope.Benchmark)
+    public static class BenchmarkState {
+        // Test data arrays
+        long[] smallIndices  = new long[SMALL_SIZE];
+        long[] mediumIndices = new long[MEDIUM_SIZE];
+        long[] largeIndices  = new long[LARGE_SIZE];
+
+        // Random index for single lookups
+        long randomIndex;
+
+        @Setup(Level.Trial)
+        public void setup() {
+            Random random = new Random(42); // Fixed seed for reproducibility
+
+            // Generate test indices across all levels (0-21)
+            generateIndices(smallIndices, random);
+            generateIndices(mediumIndices, random);
+            generateIndices(largeIndices, random);
+
+            // Pick a random index for single lookup benchmarks
+            randomIndex = generateRandomIndex(random, 15); // Mid-range level
+        }
+
+        private long generateIndexForLevel(int level, Random random) {
+            if (level == 0) {
+                return 0;
+            }
+
+            // Generate an index that will be at the specified level
+            // Level 1: 1-7, Level 2: 8-63, Level 3: 64-511, etc.
+            long minIndex = (1L << (3 * (level - 1))) * 7 / 6; // Approximate
+            long maxIndex = (1L << (3 * level)) - 1;
+
+            if (maxIndex < minIndex) {
+                maxIndex = minIndex + 1000; // Handle overflow
+            }
+
+            return minIndex + Math.abs(random.nextLong()) % (maxIndex - minIndex + 1);
+        }
+
+        private void generateIndices(long[] indices, Random random) {
+            for (int i = 0; i < indices.length; i++) {
+                int level = random.nextInt(22); // 0-21
+                indices[i] = generateIndexForLevel(level, random);
+            }
+        }
+
+        private long generateRandomIndex(Random random, int level) {
+            return generateIndexForLevel(level, random);
+        }
     }
 }

@@ -13,18 +13,18 @@ serialization, and tree visualization.
 The `TreeVisitor` interface defines callbacks for tree traversal events:
 
 ```java
-public interface TreeVisitor<ID extends EntityID, Content> {
+public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     // Called at start of traversal
     void beginTraversal(int totalNodes, int totalEntities);
     
     // Called for each node (return false to skip children)
-    boolean visitNode(SpatialNode<ID> node, int level, long parentIndex);
+    boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex);
     
     // Called for each entity in a node
-    void visitEntity(ID entityId, Content content, long nodeIndex, int level);
+    void visitEntity(ID entityId, Content content, Key nodeIndex, int level);
     
     // Called when leaving a node
-    void leaveNode(SpatialNode<ID> node, int level, int childCount);
+    void leaveNode(SpatialNode<Key, ID> node, int level, int childCount);
     
     // Called at end of traversal
     void endTraversal(int nodesVisited, int entitiesVisited);
@@ -68,28 +68,26 @@ Traverses the entire spatial tree using the specified strategy.
 **Example:**
 
 ```java
-spatialIndex.traverse(new TreeVisitor<LongEntityID, String>() {
+spatialIndex.traverse(new TreeVisitor<Key, LongEntityID, String>() {
     @Override
     public void beginTraversal(int totalNodes, int totalEntities) {
         System.out.println("Starting traversal: " + totalNodes + " nodes");
     }
-    
+
     @Override
-    public boolean visitNode(SpatialNode<LongEntityID> node, int level, long parentIndex) {
+    public boolean visitNode(SpatialNode<Key, LongEntityID> node, int level, Key parentIndex) {
         System.out.println("Node at level " + level + ": " + node.getEntityIds().size() + " entities");
         return true; // Continue to children
     }
-    
-    @Override
-    public void visitEntity(LongEntityID id, String content, long nodeIndex, int level) {
+
+    @Override public void visitEntity (LongEntityID id, String content,long nodeIndex, int level){
         System.out.println("  Entity: " + id + " - " + content);
     }
-    
-    @Override
-    public void endTraversal(int nodesVisited, int entitiesVisited) {
+
+    @Override public void endTraversal ( int nodesVisited, int entitiesVisited){
         System.out.println("Traversed " + nodesVisited + " nodes, " + entitiesVisited + " entities");
     }
-}, TraversalStrategy.DEPTH_FIRST);
+},TraversalStrategy.DEPTH_FIRST);
 ```
 
 ### 2. Subtree Traversal
@@ -105,7 +103,9 @@ Traverses a subtree starting from a specific node.
 ```java
 // Start from a specific spatial index
 long nodeIndex = 0x1234567890L;
-spatialIndex.traverseFrom(visitor, TraversalStrategy.BREADTH_FIRST, nodeIndex);
+spatialIndex.
+
+traverseFrom(visitor, TraversalStrategy.BREADTH_FIRST, nodeIndex);
 ```
 
 ### 3. Region Traversal
@@ -120,7 +120,9 @@ Traverses only nodes that intersect with the specified region.
 
 ```java
 Spatial.Sphere region = new Spatial.Sphere(100, 100, 100, 50); // Center (100,100,100), radius 50
-spatialIndex.traverseRegion(visitor, region, TraversalStrategy.DEPTH_FIRST);
+spatialIndex.
+
+traverseRegion(visitor, region, TraversalStrategy.DEPTH_FIRST);
 ```
 
 ## Visitor Patterns
@@ -129,12 +131,12 @@ spatialIndex.traverseRegion(visitor, region, TraversalStrategy.DEPTH_FIRST);
 
 ```java
 public class StatisticsVisitor implements TreeVisitor<ID, Content> {
-    private int maxDepth = 0;
-    private int totalNodes = 0;
-    private int leafNodes = 0;
+    private       int                   maxDepth         = 0;
+    private       int                   totalNodes       = 0;
+    private       int                   leafNodes        = 0;
     private       Map<Integer, Integer> nodesPerLevel    = new HashMap<>();
     private final Map<Integer, Integer> entitiesPerLevel = new HashMap<>();
-    
+
     @Override
     public boolean visitNode(SpatialNode<ID> node, int level, long parentIndex) {
         totalNodes++;
@@ -142,19 +144,19 @@ public class StatisticsVisitor implements TreeVisitor<ID, Content> {
         nodesPerLevel.merge(level, 1, Integer::sum);
         return true;
     }
-    
+
     @Override
     public void visitEntity(ID entityId, Content content, long nodeIndex, int level) {
         entitiesPerLevel.merge(level, 1, Integer::sum);
     }
-    
+
     @Override
     public void leaveNode(SpatialNode<ID> node, int level, int childCount) {
         if (childCount == 0) {
             leafNodes++;
         }
     }
-    
+
     public void printStatistics() {
         System.out.println("Tree Statistics:");
         System.out.println("  Max depth: " + maxDepth);

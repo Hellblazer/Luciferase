@@ -46,8 +46,20 @@ public final class TetreeBits {
         // This matches t8code: c_level = SC_MIN(T8_DTRI_MAXLEVEL - maxlevel, SC_MIN(t1->level, t2->level))
         byte c_level = (byte) Math.min(Constants.getMaxRefinementLevel() - maxlevel, Math.min(tet1.l(), tet2.l()));
 
-        // TODO: In t8code, they also check if the types are different at this level
-        // and potentially decrease the level further. For now, we return c_level.
-        return c_level;
+        // Check if the types are different at this level (t8code parity)
+        // If t1 and t2 have different types at c_level, we need to decrease the level
+        // until they have the same type
+        byte r_level = c_level;
+        byte t1_type_at_l = tet1.computeType(c_level);
+        byte t2_type_at_l = tet2.computeType(c_level);
+
+        while (t1_type_at_l != t2_type_at_l && r_level > 0) {
+            r_level--;
+            t1_type_at_l = tet1.computeType(r_level);
+            t2_type_at_l = tet2.computeType(r_level);
+        }
+
+        assert r_level >= 0 : "Failed to find common ancestor level";
+        return r_level;
     }
 }

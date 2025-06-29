@@ -308,7 +308,7 @@ public class TetreeCollisionIntegrationTest {
         float dt = 0.01f;
         int maxSteps = 1000;
         boolean collisionDetected = false;
-        
+
         // Debug: Check initial state
         Point3f currentPlatformPos = tetree.getEntityPosition(platformId);
         Point3f currentFallingPos = tetree.getEntityPosition(fallingId);
@@ -317,14 +317,15 @@ public class TetreeCollisionIntegrationTest {
 
         for (int i = 0; i < maxSteps && !collisionDetected; i++) {
             collisionSystem.updatePhysics(dt, null);
-            
+
             // Debug every 100 steps
             if (i % 100 == 0) {
                 currentPlatformPos = tetree.getEntityPosition(platformId);
                 currentFallingPos = tetree.getEntityPosition(fallingId);
                 float distance = currentFallingPos.y - (currentPlatformPos.y + 5); // platform top at y+5
-                System.out.println("Step " + i + ": Platform Y=" + currentPlatformPos.y + 
-                                 ", Falling Y=" + currentFallingPos.y + ", Distance=" + distance);
+                System.out.println(
+                "Step " + i + ": Platform Y=" + currentPlatformPos.y + ", Falling Y=" + currentFallingPos.y
+                + ", Distance=" + distance);
             }
 
             List<CollisionSystem.ProcessedCollision<LongEntityID>> collisions = collisionSystem.processAllCollisions();
@@ -338,7 +339,7 @@ public class TetreeCollisionIntegrationTest {
                 assertTrue(fallingVel.y > -10, "Falling object should be pushed up by kinematic platform");
             }
         }
-        
+
         if (!collisionDetected) {
             currentPlatformPos = tetree.getEntityPosition(platformId);
             currentFallingPos = tetree.getEntityPosition(fallingId);
@@ -382,7 +383,8 @@ public class TetreeCollisionIntegrationTest {
 
         // Should detect collisions at each level
         System.out.println("Detected " + processed.size() + " collisions");
-        assertTrue(processed.size() >= 2, "Should detect collisions at multiple levels, but found only " + processed.size());
+        assertTrue(processed.size() >= 2,
+                   "Should detect collisions at multiple levels, but found only " + processed.size());
     }
 
     @Test

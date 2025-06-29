@@ -61,6 +61,36 @@ public class StackBasedTreeBuilderTest {
     }
 
     @Test
+    void testBottomUpConstruction() {
+        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+
+        // Configure for bottom-up construction
+        var config = StackBasedTreeBuilder.defaultConfig().withStrategy(StackBasedTreeBuilder.BuildStrategy.BOTTOM_UP);
+        octree.configureTreeBuilder(config);
+
+        // Create test data
+        List<Point3f> positions = new ArrayList<>();
+        List<String> contents = new ArrayList<>();
+
+        for (int i = 0; i < 100; i++) {
+            positions.add(
+            new Point3f((float) Math.random() * 1000, (float) Math.random() * 1000, (float) Math.random() * 1000));
+            contents.add("Entity" + i);
+        }
+
+        // Build the tree
+        var result = octree.buildTreeStackBased(positions, contents, (byte) 10);
+
+        // Verify results
+        assertEquals(100, result.entitiesProcessed);
+        assertTrue(result.nodesCreated > 0);
+
+        // Verify tree was built
+        assertTrue(octree.nodeCount() > 0, "Tree should have nodes");
+        assertEquals(100, octree.entityCount(), "All entities should be inserted");
+    }
+
+    @Test
     void testDifferentBuildStrategies() {
         List<Point3f> positions = new ArrayList<>();
         List<String> contents = new ArrayList<>();
@@ -121,6 +151,36 @@ public class StackBasedTreeBuilderTest {
         // Verify all entities are in the same node
         var found = octree.entitiesInRegion(new Spatial.Cube(499, 499, 499, 2));
         assertEquals(50, found.size());
+    }
+
+    @Test
+    void testHybridConstruction() {
+        Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator());
+
+        // Configure for hybrid construction
+        var config = StackBasedTreeBuilder.defaultConfig().withStrategy(StackBasedTreeBuilder.BuildStrategy.HYBRID);
+        octree.configureTreeBuilder(config);
+
+        // Create test data
+        List<Point3f> positions = new ArrayList<>();
+        List<String> contents = new ArrayList<>();
+
+        for (int i = 0; i < 500; i++) {
+            positions.add(
+            new Point3f((float) Math.random() * 1000, (float) Math.random() * 1000, (float) Math.random() * 1000));
+            contents.add("Entity" + i);
+        }
+
+        // Build the tree
+        var result = octree.buildTreeStackBased(positions, contents, (byte) 10);
+
+        // Verify results
+        assertEquals(500, result.entitiesProcessed);
+        assertTrue(result.nodesCreated > 0);
+
+        // Verify tree was built
+        assertTrue(octree.nodeCount() > 0, "Tree should have nodes");
+        assertEquals(500, octree.entityCount(), "All entities should be inserted");
     }
 
     @Test

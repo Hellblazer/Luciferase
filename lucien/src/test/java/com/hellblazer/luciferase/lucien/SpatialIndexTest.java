@@ -2,10 +2,10 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.hellblazer.luciferase.lucien.octree.MortonKey;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;

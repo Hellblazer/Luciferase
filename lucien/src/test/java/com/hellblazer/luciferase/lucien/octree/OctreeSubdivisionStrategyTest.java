@@ -59,8 +59,9 @@ public class OctreeSubdivisionStrategyTest {
             existingEntities.add(new LongEntityID(i));
         }
 
-        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 5, 5, 10, false, smallBounds,
-                                                                               existingEntities, (byte) 21);
+        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 5,
+                                                                                          5, 10, false, smallBounds,
+                                                                                          existingEntities, (byte) 21);
 
         var result = strategy.determineStrategy(context);
 
@@ -72,9 +73,9 @@ public class OctreeSubdivisionStrategyTest {
     @Test
     void testDeferSubdivisionDecision() {
         // Test during bulk operation
-        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10, 12, 10,
-                                                                                          true, null, new ArrayList<>(),
-                                                                                          (byte) 21);
+        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
+                                                                                          (byte) 10, 12, 10, true, null,
+                                                                                          new ArrayList<>(), (byte) 21);
 
         var result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.DEFER_SUBDIVISION, result.decision);
@@ -84,8 +85,10 @@ public class OctreeSubdivisionStrategyTest {
     @Test
     void testForceSubdivisionDecision() {
         // Test critically overloaded
-        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10, 25, 10, false, null,
-                                                                               new ArrayList<>(), (byte) 21);
+        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
+                                                                                          (byte) 10, 25, 10, false,
+                                                                                          null, new ArrayList<>(),
+                                                                                          (byte) 21);
 
         var result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.FORCE_SUBDIVISION, result.decision);
@@ -95,16 +98,18 @@ public class OctreeSubdivisionStrategyTest {
     @Test
     void testInsertInParentDecision() {
         // Test at max depth
-        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 21, 5, 10, false, null,
-                                                                               new ArrayList<>(), (byte) 21);
+        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
+                                                                                          (byte) 21, 5, 10, false, null,
+                                                                                          new ArrayList<>(), (byte) 21);
 
         var result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.INSERT_IN_PARENT, result.decision);
         assertTrue(result.reason.contains("maximum depth"));
 
         // Test with too few entities
-        context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10, 2, 10, false, null, new ArrayList<>(),
-                                                               (byte) 21);
+        context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10,
+                                                                                      2, 10, false, null,
+                                                                                      new ArrayList<>(), (byte) 21);
 
         result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.INSERT_IN_PARENT, result.decision);
@@ -137,8 +142,9 @@ public class OctreeSubdivisionStrategyTest {
         // Very large entity that spans multiple octants at a finer level
         EntityBounds largeBounds = new EntityBounds(new Point3f(0, 0, 0), new Point3f(5000, 5000, 5000));
 
-        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 10, 8, 10, false, largeBounds,
-                                                                               new ArrayList<>(), (byte) 21);
+        var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 10,
+                                                                                          8, 10, false, largeBounds,
+                                                                                          new ArrayList<>(), (byte) 21);
 
         var result = strategy.determineStrategy(context);
         // The strategy makes intelligent decisions - it might choose CREATE_SINGLE_CHILD
@@ -147,9 +153,11 @@ public class OctreeSubdivisionStrategyTest {
         assertNotNull(result.reason);
 
         // For truly spanning entities, test at a level where it must span
-        var spanningContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 15, 8, 10, false,
-                                                                                       largeBounds, new ArrayList<>(),
-                                                                                       (byte) 21);
+        var spanningContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L),
+                                                                                                  (byte) 15, 8, 10,
+                                                                                                  false, largeBounds,
+                                                                                                  new ArrayList<>(),
+                                                                                                  (byte) 21);
 
         var spanningResult = strategy.determineStrategy(spanningContext);
         if (spanningResult.decision == SubdivisionStrategy.ControlFlow.SPLIT_TO_CHILDREN) {
@@ -162,17 +170,16 @@ public class OctreeSubdivisionStrategyTest {
     @Test
     void testSubdivisionBenefitEstimation() {
         // Test various scenarios
-        var smallContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10, 5, 10, false,
-                                                                                    null, new ArrayList<>(), (byte) 21);
+        var smallContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
+                                                                                               (byte) 10, 5, 10, false,
+                                                                                               null, new ArrayList<>(),
+                                                                                               (byte) 21);
 
-        var overloadedContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10, 15, 10,
-                                                                                         false, null, new ArrayList<>(),
-                                                                                         (byte) 21);
+        var overloadedContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(
+        new MortonKey(12345L), (byte) 10, 15, 10, false, null, new ArrayList<>(), (byte) 21);
 
-        var nearMaxDepthContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 20, 10, 10,
-                                                                                           false, null,
-                                                                                           new ArrayList<>(),
-                                                                                           (byte) 21);
+        var nearMaxDepthContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(
+        new MortonKey(12345L), (byte) 20, 10, 10, false, null, new ArrayList<>(), (byte) 21);
 
         // Different contexts should produce different decisions
         var smallResult = strategy.determineStrategy(smallContext);

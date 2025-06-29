@@ -43,7 +43,9 @@ public class DeferredSubdivisionManagerTest {
         List<DeferredSubdivisionManager.SubdivisionResult> results = manager.processBatches(
         new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
             @Override
-            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex, OctreeNode<LongEntityID> node, byte level) {
+            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex,
+                                                                                        OctreeNode<LongEntityID> node,
+                                                                                        byte level) {
                 // Subdivide nodes with >8 entities
                 if (node.getEntityCount() > 8) {
                     return new DeferredSubdivisionManager.SubdivisionProcessor.Result(true, 8, node.getEntityCount());
@@ -123,7 +125,9 @@ public class DeferredSubdivisionManagerTest {
         DeferredSubdivisionManager.SubdivisionResult<MortonKey> result = manager.processAll(
         new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
             @Override
-            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex, OctreeNode<LongEntityID> node, byte level) {
+            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex,
+                                                                                        OctreeNode<LongEntityID> node,
+                                                                                        byte level) {
                 subdivisionCount.incrementAndGet();
                 // Simulate subdivision - only subdivide nodes with >10 entities
                 if (node.getEntityCount() > 10) {
@@ -158,7 +162,9 @@ public class DeferredSubdivisionManagerTest {
         DeferredSubdivisionManager.SubdivisionResult<MortonKey> result = manager.processAll(
         new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
             @Override
-            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex, OctreeNode<LongEntityID> node, byte level) {
+            public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex,
+                                                                                        OctreeNode<LongEntityID> node,
+                                                                                        byte level) {
                 return new DeferredSubdivisionManager.SubdivisionProcessor.Result(false, 0, 0);
             }
         });

@@ -50,21 +50,21 @@ public static byte tetLevelFromIndex(long index) {
 public Tet child(int childIndex) {
     // Get Bey child ID from Morton index
     byte beyChildId = TetreeConnectivity.getBeyChildId(type, childIndex);
-    
+
     // Child 0 (interior) uses parent anchor directly
     if (beyChildId == 0) {
         return new Tet(x, y, z, childLevel, childType);
     }
-    
+
     // Other children: midpoint between parent anchor and vertex
     byte vertex = TetreeConnectivity.getBeyVertex(beyChildId);
     Point3i vertexCoords = computeVertexCoordinates(vertex);
-    
+
     // Child anchor = (parent anchor + parent vertex) / 2
     int childX = (x + vertexCoords.x) >> 1;
     int childY = (y + vertexCoords.y) >> 1;
     int childZ = (z + vertexCoords.z) >> 1;
-    
+
     return new Tet(childX, childY, childZ, childLevel, childType);
 }
 ```
@@ -181,10 +181,16 @@ Point3f centroid = new Point3f(
 
 ```java
 // Print tetrahedron details
-System.out.println("Tet: " + tet);
-System.out.println("  Index: " + tet.index());
-System.out.println("  Vertices: " + Arrays.toString(tet.computeVertices()));
-System.out.println("  Centroid: " + tet.centroid());
+System.out.println("Tet: "+tet);
+System.out.
+
+println("  Index: "+tet.index());
+System.out.
+
+println("  Vertices: "+Arrays.toString(tet.computeVertices()));
+System.out.
+
+println("  Centroid: "+tet.centroid());
 
 // Validate subdivision
 List<Tet> children = tet.children();
@@ -220,6 +226,7 @@ boolean valid = TetreeValidator.isValidSubdivisionFamily(children, tet);
 ### Duplicate Code Elimination
 
 The following duplications have been removed:
+
 - **Geometric Methods**: Moved to static methods in `Tet.java` for sharing
 - **Validation Methods**: Centralized in `TetreeValidationUtils.java`
 - **Family Checks**: Using `TetreeFamily.isFamily()` instead of duplicates
@@ -228,9 +235,9 @@ The following duplications have been removed:
 ### Remaining Items for Future Enhancement
 
 - `TetreeBits.computeCubeLevel()`: Additional t8code parity for type checking (line 264)
-  - Note: Current implementation is functional for all production use cases
-  - Full t8code parity would require implementing additional connectivity tables
-  - Deferred as low priority given ~90% t8code parity already achieved
+    - Note: Current implementation is functional for all production use cases
+    - Full t8code parity would require implementing additional connectivity tables
+    - Deferred as low priority given ~90% t8code parity already achieved
 
 ## Summary
 

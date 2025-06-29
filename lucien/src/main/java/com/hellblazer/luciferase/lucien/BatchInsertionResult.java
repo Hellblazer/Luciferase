@@ -28,16 +28,16 @@ import java.util.Map;
  * @author hal.hildebrand
  */
 public class BatchInsertionResult<ID extends EntityID> {
-    
-    private final List<ID> insertedIds;
-    private final int successCount;
-    private final int failureCount;
+
+    private final List<ID>             insertedIds;
+    private final int                  successCount;
+    private final int                  failureCount;
     private final Map<Integer, String> failures;
-    private final long elapsedTimeNanos;
-    private final int nodesCreated;
-    private final int nodesModified;
-    private final boolean subdivisionDeferred;
-    
+    private final long                 elapsedTimeNanos;
+    private final int                  nodesCreated;
+    private final int                  nodesModified;
+    private final boolean              subdivisionDeferred;
+
     private BatchInsertionResult(Builder<ID> builder) {
         this.insertedIds = builder.insertedIds;
         this.successCount = builder.successCount;
@@ -48,70 +48,42 @@ public class BatchInsertionResult<ID extends EntityID> {
         this.nodesModified = builder.nodesModified;
         this.subdivisionDeferred = builder.subdivisionDeferred;
     }
-    
-    /**
-     * Get the list of successfully inserted entity IDs in order.
-     */
-    public List<ID> getInsertedIds() {
-        return insertedIds;
-    }
-    
-    /**
-     * Get the number of successful insertions.
-     */
-    public int getSuccessCount() {
-        return successCount;
-    }
-    
-    /**
-     * Get the number of failed insertions.
-     */
-    public int getFailureCount() {
-        return failureCount;
-    }
-    
-    /**
-     * Get details about failures, mapping input index to error message.
-     */
-    public Map<Integer, String> getFailures() {
-        return failures;
-    }
-    
-    /**
-     * Get the total elapsed time in nanoseconds.
-     */
-    public long getElapsedTimeNanos() {
-        return elapsedTimeNanos;
-    }
-    
+
     /**
      * Get the elapsed time in milliseconds.
      */
     public double getElapsedTimeMillis() {
         return elapsedTimeNanos / 1_000_000.0;
     }
-    
+
     /**
-     * Get the number of new nodes created during insertion.
+     * Get the total elapsed time in nanoseconds.
      */
-    public int getNodesCreated() {
-        return nodesCreated;
+    public long getElapsedTimeNanos() {
+        return elapsedTimeNanos;
     }
-    
+
     /**
-     * Get the number of existing nodes modified during insertion.
+     * Get the number of failed insertions.
      */
-    public int getNodesModified() {
-        return nodesModified;
+    public int getFailureCount() {
+        return failureCount;
     }
-    
+
     /**
-     * Check if subdivision was deferred during this operation.
+     * Get details about failures, mapping input index to error message.
      */
-    public boolean isSubdivisionDeferred() {
-        return subdivisionDeferred;
+    public Map<Integer, String> getFailures() {
+        return failures;
     }
-    
+
+    /**
+     * Get the list of successfully inserted entity IDs in order.
+     */
+    public List<ID> getInsertedIds() {
+        return insertedIds;
+    }
+
     /**
      * Calculate the insertion rate in entities per second.
      */
@@ -121,85 +93,111 @@ public class BatchInsertionResult<ID extends EntityID> {
         }
         return successCount * 1_000_000_000.0 / elapsedTimeNanos;
     }
-    
+
+    /**
+     * Get the number of new nodes created during insertion.
+     */
+    public int getNodesCreated() {
+        return nodesCreated;
+    }
+
+    /**
+     * Get the number of existing nodes modified during insertion.
+     */
+    public int getNodesModified() {
+        return nodesModified;
+    }
+
+    /**
+     * Get the number of successful insertions.
+     */
+    public int getSuccessCount() {
+        return successCount;
+    }
+
+    /**
+     * Get a summary string of the operation results.
+     */
+    public String getSummary() {
+        return String.format(
+        "BatchInsertionResult[success=%d, failed=%d, nodes created=%d, modified=%d, time=%.2fms, rate=%.0f/sec]",
+        successCount, failureCount, nodesCreated, nodesModified, getElapsedTimeMillis(), getInsertionRate());
+    }
+
     /**
      * Check if all insertions were successful.
      */
     public boolean isCompleteSuccess() {
         return failureCount == 0;
     }
-    
+
     /**
-     * Get a summary string of the operation results.
+     * Check if subdivision was deferred during this operation.
      */
-    public String getSummary() {
-        return String.format(
-            "BatchInsertionResult[success=%d, failed=%d, nodes created=%d, modified=%d, time=%.2fms, rate=%.0f/sec]",
-            successCount, failureCount, nodesCreated, nodesModified, 
-            getElapsedTimeMillis(), getInsertionRate()
-        );
+    public boolean isSubdivisionDeferred() {
+        return subdivisionDeferred;
     }
-    
+
     @Override
     public String toString() {
         return getSummary();
     }
-    
+
     /**
      * Builder for BatchInsertionResult.
      */
     public static class Builder<ID extends EntityID> {
-        private List<ID> insertedIds;
-        private int successCount;
-        private int failureCount;
+        private List<ID>             insertedIds;
+        private int                  successCount;
+        private int                  failureCount;
         private Map<Integer, String> failures = Map.of();
-        private long elapsedTimeNanos;
-        private int nodesCreated;
-        private int nodesModified;
-        private boolean subdivisionDeferred;
-        
-        public Builder<ID> withInsertedIds(List<ID> ids) {
-            this.insertedIds = ids;
-            return this;
+        private long                 elapsedTimeNanos;
+        private int                  nodesCreated;
+        private int                  nodesModified;
+        private boolean              subdivisionDeferred;
+
+        public BatchInsertionResult<ID> build() {
+            return new BatchInsertionResult<>(this);
         }
-        
-        public Builder<ID> withSuccessCount(int count) {
-            this.successCount = count;
-            return this;
-        }
-        
-        public Builder<ID> withFailureCount(int count) {
-            this.failureCount = count;
-            return this;
-        }
-        
-        public Builder<ID> withFailures(Map<Integer, String> failures) {
-            this.failures = failures;
-            return this;
-        }
-        
+
         public Builder<ID> withElapsedTimeNanos(long nanos) {
             this.elapsedTimeNanos = nanos;
             return this;
         }
-        
+
+        public Builder<ID> withFailureCount(int count) {
+            this.failureCount = count;
+            return this;
+        }
+
+        public Builder<ID> withFailures(Map<Integer, String> failures) {
+            this.failures = failures;
+            return this;
+        }
+
+        public Builder<ID> withInsertedIds(List<ID> ids) {
+            this.insertedIds = ids;
+            return this;
+        }
+
         public Builder<ID> withNodesCreated(int count) {
             this.nodesCreated = count;
             return this;
         }
-        
+
         public Builder<ID> withNodesModified(int count) {
             this.nodesModified = count;
             return this;
         }
-        
+
         public Builder<ID> withSubdivisionDeferred(boolean deferred) {
             this.subdivisionDeferred = deferred;
             return this;
         }
-        
-        public BatchInsertionResult<ID> build() {
-            return new BatchInsertionResult<>(this);
+
+        public Builder<ID> withSuccessCount(int count) {
+            this.successCount = count;
+            return this;
         }
     }
 }

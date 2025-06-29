@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
-import com.hellblazer.luciferase.lucien.Spatial.Sphere;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,13 +23,12 @@ import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
 import java.util.Set;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for convenience methods in Tetree.
- * Tests findNeighborsWithinDistance, findCommonAncestor, and other helper methods.
+ * Unit tests for convenience methods in Tetree. Tests findNeighborsWithinDistance, findCommonAncestor, and other helper
+ * methods.
  *
  * @author hal.hildebrand
  */
@@ -44,66 +42,46 @@ public class TetreeConvenienceMethodsTest {
     }
 
     @Test
-    void testFindNeighborsWithinDistance() {
-        // Create a cluster of entities
-        Point3f center = new Point3f(500, 500, 500);
-        tetree.insert(center, (byte) 3, "center");
+    void testConvenienceMethodsIntegration() {
+        // Test integration of multiple convenience methods
+        // Create a structured layout
+        Point3f[] centers = { new Point3f(200, 200, 200), new Point3f(800, 200, 200), new Point3f(200, 800, 200),
+                              new Point3f(800, 800, 200) };
 
-        // Add nearby entities at various distances
-        float[] distances = {50, 100, 150, 200, 250};
-        long id = 10;
-        for (float dist : distances) {
-            for (int angle = 0; angle < 4; angle++) {
-                float x = center.x + dist * (float)Math.cos(angle * Math.PI / 2);
-                float y = center.y + dist * (float)Math.sin(angle * Math.PI / 2);
-                Point3f p = new Point3f(x, y, center.z);
-                tetree.insert(p, (byte) 3, "dist" + dist + "_angle" + angle);
+        // Create clusters around each center
+        long id = 1;
+        for (int c = 0; c < centers.length; c++) {
+            Point3f center = centers[c];
+            for (int i = 0; i < 5; i++) {
+                float offset = i * 30;
+                Point3f p = new Point3f(center.x + offset, center.y + offset, center.z);
+                tetree.insert(p, (byte) 3, "cluster" + c + "_entity" + i);
+                id++;
             }
         }
 
-        // Find the center tetrahedron
-        Tet centerTet = tetree.locateTetrahedron(center, (byte) 3);
-        TetreeKey centerKey = centerTet.tmIndex();
+        // Find common ancestor of opposite corners
+        var corner1 = tetree.locateTetrahedron(centers[0], (byte) 3);
+        var corner2 = tetree.locateTetrahedron(centers[3], (byte) 3);
+        var commonAncestor = tetree.findCommonAncestor(corner1.tmIndex(), corner2.tmIndex());
 
-        // Test finding neighbors within different distances
-        Set<TetreeNodeImpl<LongEntityID>> within100 = tetree.findNeighborsWithinDistance(centerKey, 100f);
-        Set<TetreeNodeImpl<LongEntityID>> within200 = tetree.findNeighborsWithinDistance(centerKey, 200f);
-        Set<TetreeNodeImpl<LongEntityID>> within300 = tetree.findNeighborsWithinDistance(centerKey, 300f);
+        // Find neighbors within distance from one corner
+        Set<TetreeNodeImpl<LongEntityID>> nearbyNodes = tetree.findNeighborsWithinDistance(corner1.tmIndex(), 200f);
 
-        // Should find more nodes as distance increases
-        assertTrue(within100.size() <= within200.size(), 
-            "Larger radius should find at least as many neighbors");
-        assertTrue(within200.size() <= within300.size(), 
-            "Even larger radius should find at least as many neighbors");
+        // Use stream API to count entities in nearby nodes
+        long nearbyEntityCount = nearbyNodes.stream().mapToLong(node -> node.getEntityIdsAsSet().size()).sum();
 
-        // Verify we found some nodes
-        assertFalse(within100.isEmpty(), "Should find at least some nodes within distance");
-    }
+        assertTrue(nearbyEntityCount >= 5, "Should find at least the entities in the corner cluster");
 
-    @Test
-    void testFindNeighborsWithinDistanceEmpty() {
-        // Test with empty tree
-        Tet rootTet = new Tet(0, 0, 0, (byte)0, (byte)0);
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100f);
-        
-        assertNotNull(neighbors);
-        assertTrue(neighbors.isEmpty(), "Empty tree should return empty neighbor set");
-    }
+        // Verify common ancestor is at a reasonable level
+        byte ancestorLevel = commonAncestor.getLevel();
+        System.out.println("Corner 1 at: " + centers[0]);
+        System.out.println("Corner 2 at: " + centers[3]);
+        System.out.println("Common ancestor level: " + ancestorLevel);
 
-    @Test
-    void testFindNeighborsWithinDistanceZeroRadius() {
-        // Create some entities
-        Point3f p1 = new Point3f(300, 300, 300);
-        tetree.insert(p1, (byte) 2, "entity1");
-
-        Tet tet = tetree.locateTetrahedron(p1, (byte) 2);
-        TetreeKey tetKey = tet.tmIndex();
-        
-        // Zero radius should only find the node itself (if it exists)
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(tetKey, 0f);
-        
-        // Should find at most the node itself
-        assertTrue(neighbors.size() <= 1, "Zero radius should find at most the node itself");
+        // In a sparse tree, the common ancestor might be at a higher level
+        // if the intermediate nodes don't exist
+        assertTrue(ancestorLevel <= 3, "Common ancestor should be at level 3 or lower");
     }
 
     @Test
@@ -126,37 +104,31 @@ public class TetreeConvenienceMethodsTest {
         Tet tet4 = tetree.locateTetrahedron(p4, (byte) 3);
 
         // Test common ancestor of nearby tets
-        TetreeKey ancestor12 = tetree.findCommonAncestor(tet1.tmIndex(), tet2.tmIndex());
-        TetreeKey ancestor13 = tetree.findCommonAncestor(tet1.tmIndex(), tet3.tmIndex());
-        TetreeKey ancestor14 = tetree.findCommonAncestor(tet1.tmIndex(), tet4.tmIndex());
+        var ancestor12 = tetree.findCommonAncestor(tet1.tmIndex(), tet2.tmIndex());
+        var ancestor13 = tetree.findCommonAncestor(tet1.tmIndex(), tet3.tmIndex());
+        var ancestor14 = tetree.findCommonAncestor(tet1.tmIndex(), tet4.tmIndex());
 
         // Nearby tets should have a closer common ancestor than distant ones
         byte level12 = ancestor12.getLevel();
         byte level14 = ancestor14.getLevel();
-        
-        assertTrue(level12 >= level14, 
-            "Nearby tets should have a common ancestor at same or higher level than distant tets");
+
+        assertTrue(level12 >= level14,
+                   "Nearby tets should have a common ancestor at same or higher level than distant tets");
 
         // Test with single tet
-        TetreeKey selfAncestor = tetree.findCommonAncestor(tet1.tmIndex());
-        assertEquals(tet1.tmIndex(), selfAncestor, 
-            "Common ancestor of single tet should be itself");
+        var selfAncestor = tetree.findCommonAncestor(tet1.tmIndex());
+        assertEquals(tet1.tmIndex(), selfAncestor, "Common ancestor of single tet should be itself");
 
         // Test with empty array
-        TetreeKey emptyAncestor = tetree.findCommonAncestor();
-        assertEquals(TetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
+        var emptyAncestor = tetree.findCommonAncestor();
+        assertEquals(BaseTetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
     }
 
     @Test
     void testFindCommonAncestorMultiple() {
         // Create a configuration where we know the structure
-        Point3f[] points = {
-            new Point3f(100, 100, 100),
-            new Point3f(150, 100, 100),
-            new Point3f(100, 150, 100),
-            new Point3f(150, 150, 100),
-            new Point3f(800, 800, 800)
-        };
+        Point3f[] points = { new Point3f(100, 100, 100), new Point3f(150, 100, 100), new Point3f(100, 150, 100),
+                             new Point3f(150, 150, 100), new Point3f(800, 800, 800) };
 
         for (int i = 0; i < points.length; i++) {
             tetree.insert(points[i], (byte) 4, "entity" + i);
@@ -169,25 +141,53 @@ public class TetreeConvenienceMethodsTest {
         }
 
         // First 4 tets are close together, should have nearby common ancestor
-        TetreeKey ancestor0123 = tetree.findCommonAncestor(
-            tets[0].tmIndex(), 
-            tets[1].tmIndex(), 
-            tets[2].tmIndex(), 
-            tets[3].tmIndex());
+        var ancestor0123 = tetree.findCommonAncestor(tets[0].tmIndex(), tets[1].tmIndex(), tets[2].tmIndex(),
+                                                     tets[3].tmIndex());
 
         // All 5 tets include a distant one, should have lower level ancestor
-        TetreeKey ancestorAll = tetree.findCommonAncestor(
-            tets[0].tmIndex(), 
-            tets[1].tmIndex(), 
-            tets[2].tmIndex(), 
-            tets[3].tmIndex(), 
-            tets[4].tmIndex());
+        var ancestorAll = tetree.findCommonAncestor(tets[0].tmIndex(), tets[1].tmIndex(), tets[2].tmIndex(),
+                                                    tets[3].tmIndex(), tets[4].tmIndex());
 
         byte level0123 = ancestor0123.getLevel();
         byte levelAll = ancestorAll.getLevel();
 
-        assertTrue(level0123 >= levelAll, 
-            "Clustered tets should have higher level common ancestor than mixed with distant tet");
+        assertTrue(level0123 >= levelAll,
+                   "Clustered tets should have higher level common ancestor than mixed with distant tet");
+    }
+
+    @Test
+    void testFindNeighborsWithinDistance() {
+        // Create a cluster of entities
+        Point3f center = new Point3f(500, 500, 500);
+        tetree.insert(center, (byte) 3, "center");
+
+        // Add nearby entities at various distances
+        float[] distances = { 50, 100, 150, 200, 250 };
+        long id = 10;
+        for (float dist : distances) {
+            for (int angle = 0; angle < 4; angle++) {
+                float x = center.x + dist * (float) Math.cos(angle * Math.PI / 2);
+                float y = center.y + dist * (float) Math.sin(angle * Math.PI / 2);
+                Point3f p = new Point3f(x, y, center.z);
+                tetree.insert(p, (byte) 3, "dist" + dist + "_angle" + angle);
+            }
+        }
+
+        // Find the center tetrahedron
+        var centerTet = tetree.locateTetrahedron(center, (byte) 3);
+        var centerKey = centerTet.tmIndex();
+
+        // Test finding neighbors within different distances
+        var within100 = tetree.findNeighborsWithinDistance(centerKey, 100f);
+        var within200 = tetree.findNeighborsWithinDistance(centerKey, 200f);
+        var within300 = tetree.findNeighborsWithinDistance(centerKey, 300f);
+
+        // Should find more nodes as distance increases
+        assertTrue(within100.size() <= within200.size(), "Larger radius should find at least as many neighbors");
+        assertTrue(within200.size() <= within300.size(), "Even larger radius should find at least as many neighbors");
+
+        // Verify we found some nodes
+        assertFalse(within100.isEmpty(), "Should find at least some nodes within distance");
     }
 
     @Test
@@ -201,11 +201,7 @@ public class TetreeConvenienceMethodsTest {
 
         // Add some nearby entities
         for (int i = 0; i < 5; i++) {
-            Point3f p = new Point3f(
-                boundary.x + i * 20,
-                boundary.y + i * 20,
-                boundary.z + i * 20
-            );
+            Point3f p = new Point3f(boundary.x + i * 20, boundary.y + i * 20, boundary.z + i * 20);
             tetree.insert(p, (byte) 2, "near" + i);
         }
 
@@ -220,55 +216,28 @@ public class TetreeConvenienceMethodsTest {
     }
 
     @Test
-    void testConvenienceMethodsIntegration() {
-        // Test integration of multiple convenience methods
-        // Create a structured layout
-        Point3f[] centers = {
-            new Point3f(200, 200, 200),
-            new Point3f(800, 200, 200),
-            new Point3f(200, 800, 200),
-            new Point3f(800, 800, 200)
-        };
+    void testFindNeighborsWithinDistanceEmpty() {
+        // Test with empty tree
+        Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100f);
 
-        // Create clusters around each center
-        long id = 1;
-        for (int c = 0; c < centers.length; c++) {
-            Point3f center = centers[c];
-            for (int i = 0; i < 5; i++) {
-                float offset = i * 30;
-                Point3f p = new Point3f(
-                    center.x + offset,
-                    center.y + offset,
-                    center.z
-                );
-                tetree.insert(p, (byte) 3, "cluster" + c + "_entity" + i);
-                id++;
-            }
-        }
+        assertNotNull(neighbors);
+        assertTrue(neighbors.isEmpty(), "Empty tree should return empty neighbor set");
+    }
 
-        // Find common ancestor of opposite corners
-        Tet corner1 = tetree.locateTetrahedron(centers[0], (byte) 3);
-        Tet corner2 = tetree.locateTetrahedron(centers[3], (byte) 3);
-        TetreeKey commonAncestor = tetree.findCommonAncestor(corner1.tmIndex(), corner2.tmIndex());
+    @Test
+    void testFindNeighborsWithinDistanceZeroRadius() {
+        // Create some entities
+        Point3f p1 = new Point3f(300, 300, 300);
+        tetree.insert(p1, (byte) 2, "entity1");
 
-        // Find neighbors within distance from one corner
-        Set<TetreeNodeImpl<LongEntityID>> nearbyNodes = tetree.findNeighborsWithinDistance(corner1.tmIndex(), 200f);
+        var tet = tetree.locateTetrahedron(p1, (byte) 2);
+        var tetKey = tet.tmIndex();
 
-        // Use stream API to count entities in nearby nodes
-        long nearbyEntityCount = nearbyNodes.stream()
-            .mapToLong(node -> node.getEntityIdsAsSet().size())
-            .sum();
+        // Zero radius should only find the node itself (if it exists)
+        var neighbors = tetree.findNeighborsWithinDistance(tetKey, 0f);
 
-        assertTrue(nearbyEntityCount >= 5, "Should find at least the entities in the corner cluster");
-
-        // Verify common ancestor is at a reasonable level
-        byte ancestorLevel = commonAncestor.getLevel();
-        System.out.println("Corner 1 at: " + centers[0]);
-        System.out.println("Corner 2 at: " + centers[3]);
-        System.out.println("Common ancestor level: " + ancestorLevel);
-        
-        // In a sparse tree, the common ancestor might be at a higher level
-        // if the intermediate nodes don't exist
-        assertTrue(ancestorLevel <= 3, "Common ancestor should be at level 3 or lower");
+        // Should find at most the node itself
+        assertTrue(neighbors.size() <= 1, "Zero radius should find at most the node itself");
     }
 }

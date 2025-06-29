@@ -58,10 +58,10 @@ public final class TetreeValidator {
      * @param nodeIndices the node indices to analyze
      * @return tree statistics
      */
-    public static TreeStats analyzeTreeIndices(Collection<TetreeKey> nodeIndices) {
+    public static TreeStats analyzeTreeIndices(Collection<BaseTetreeKey<?>> nodeIndices) {
         // Collect level statistics
         Map<Byte, Long> levelCounts = new HashMap<>();
-        Map<Byte, List<TetreeKey>> levelNodes = new HashMap<>();
+        Map<Byte, List<BaseTetreeKey<?>>> levelNodes = new HashMap<>();
 
         for (var index : nodeIndices) {
             Tet tet = Tet.tetrahedron(index);
@@ -133,7 +133,7 @@ public final class TetreeValidator {
     /**
      * Calculate balance factor for the tree. Lower values indicate better balance.
      */
-    private static double calculateBalanceFactor(Map<Byte, List<TetreeKey>> levelNodes, byte maxDepth) {
+    private static double calculateBalanceFactor(Map<Byte, List<BaseTetreeKey<?>>> levelNodes, byte maxDepth) {
         if (maxDepth == 0) {
             return 0.0;
         }
@@ -308,10 +308,12 @@ public final class TetreeValidator {
         }
 
         // Check that indices are in ascending order
-        TetreeKey prevIndex = tets.get(0).tmIndex();
+        var prevIndex = tets.get(0).tmIndex();
         for (int i = 1; i < tets.size(); i++) {
-            TetreeKey currentIndex = tets.get(i).tmIndex();
-            if (currentIndex.compareTo(prevIndex) <= 0) {
+            var currentIndex = tets.get(i).tmIndex();
+            @SuppressWarnings({ "unchecked", "rawtypes" })
+            int comparison = ((Comparable) currentIndex).compareTo(prevIndex);
+            if (comparison <= 0) {
                 return false;
             }
             prevIndex = currentIndex;
@@ -404,7 +406,8 @@ public final class TetreeValidator {
      * @param nodeIndices the node indices to validate
      * @return validation result with any errors found
      */
-    public static ValidationResult validateTreeStructure(Collection<TetreeKey> nodeIndices) {
+    public static ValidationResult validateTreeStructure(
+    Collection<BaseTetreeKey<? extends BaseTetreeKey>> nodeIndices) {
         if (!validationEnabled) {
             return ValidationResult.valid();
         }
