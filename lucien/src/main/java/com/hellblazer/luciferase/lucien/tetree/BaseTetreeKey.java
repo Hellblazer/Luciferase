@@ -50,9 +50,8 @@ implements SpatialKey<BaseTetreeKey<? extends BaseTetreeKey>> {
      * @param level the hierarchical level
      */
     protected BaseTetreeKey(byte level) {
-        if (level < 0 || level > Constants.getMaxRefinementLevel()) {
-            throw new IllegalArgumentException(
-            "Level must be between 0 and " + Constants.getMaxRefinementLevel() + ", got: " + level);
+        if (level < 0 || level > 21) {
+            throw new IllegalArgumentException("Level must be between 0 and " + 21 + ", got: " + level);
         }
         this.level = level;
     }

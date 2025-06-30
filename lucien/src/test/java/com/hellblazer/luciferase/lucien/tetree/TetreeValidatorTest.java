@@ -44,7 +44,7 @@ class TetreeValidatorTest {
         assertDoesNotThrow(() -> TetreeValidator.assertValidTet(validTet));
 
         // Cannot create invalid tet with negative coordinates anymore
-        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
 
         // Parent-child assertion
         Tet parent = new Tet(0, 0, 0, (byte) 1, (byte) 0);
@@ -75,7 +75,8 @@ class TetreeValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> new Tet(maxCoord, 0, 0, (byte) 0, (byte) 0));
 
         // Well beyond boundary should also fail in constructor
-        assertThrows(IllegalArgumentException.class, () -> new Tet(maxCoord * 2, maxCoord * 2, maxCoord * 2, (byte) 0, (byte) 0));
+        assertThrows(IllegalArgumentException.class,
+                     () -> new Tet(maxCoord * 2, maxCoord * 2, maxCoord * 2, (byte) 0, (byte) 0));
     }
 
     @Test
@@ -157,22 +158,22 @@ class TetreeValidatorTest {
     @Test
     void testInvalidCoordinates() {
         // The Tet constructor now validates coordinates, so negative coordinates throw exceptions
-        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, -10, 0, (byte) 0, (byte) 0));
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, -100, (byte) 0, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(-1, 0, 0, (byte) 0, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(0, -10, 0, (byte) 0, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, -100, (byte) 0, (byte) 0));
     }
 
     @Test
     void testInvalidLevel() {
         // Since Tet constructor validates, we need to test differently
         // Test that constructor throws for invalid levels
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(AssertionError.class, () -> {
             new Tet(0, 0, 0, (byte) -1, (byte) 0);
         });
 
         // Level exceeding maximum
         byte maxLevel = Constants.getMaxRefinementLevel();
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(AssertionError.class, () -> {
             new Tet(0, 0, 0, (byte) (maxLevel + 1), (byte) 0);
         });
     }
@@ -180,17 +181,17 @@ class TetreeValidatorTest {
     @Test
     void testInvalidType() {
         // Since Tet constructor validates, test that it throws for invalid types
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(AssertionError.class, () -> {
             new Tet(0, 0, 0, (byte) 0, (byte) -1);
         });
 
         // Type >= 6
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(AssertionError.class, () -> {
             new Tet(0, 0, 0, (byte) 0, (byte) 6);
         });
 
         // Type way out of bounds
-        assertThrows(IllegalArgumentException.class, () -> {
+        assertThrows(AssertionError.class, () -> {
             new Tet(0, 0, 0, (byte) 0, (byte) 100);
         });
     }

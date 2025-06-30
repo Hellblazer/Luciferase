@@ -63,25 +63,18 @@ public class Tet {
 
     public Tet(int x, int y, int z, byte l, byte type) {
         // Validate level range first
-        if (l < 0 || l > Constants.getMaxRefinementLevel()) {
-            throw new IllegalArgumentException("Level " + l + " must be between 0 and " + Constants.getMaxRefinementLevel());
-        }
+        assert l >= 0 && l < 21 : "Level " + l + " must be between 0 and " + 21;
         // Validate type range
-        if (type < 0 || type > 5) {
-            throw new IllegalArgumentException("Type " + type + " must be between 0 and 5");
-        }
+        assert type >= 0 && type <= 5 : "Type " + type + " must be between 0 and 5";
         // Validate coordinates
-        if (x < 0 || y < 0 || z < 0) {
-            throw new IllegalArgumentException("Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")");
-        }
-        
+        assert x >= 0 && y >= 0 && z >= 0 : "Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")";
+        // Validate that coordinates are correct anchor coordinates for the level and type
+        assert validateAnchorCoordinates(x, y, z, l, type);
         this.x = x;
         this.y = y;
         this.z = z;
         this.l = l;
         this.type = type;
-        // Validate that coordinates are correct anchor coordinates for the level and type
-        validateAnchorCoordinates(x, y, z, l, type);
     }
 
     /**
@@ -474,7 +467,7 @@ public class Tet {
         // At level L, coordinates must be multiples of cellSize = 1 << (21 - L)
         // This means the lower (21 - L) bits must be zero
         int cellSize = Constants.lengthAtLevel(level);
-        
+
         // Convert from bit-level coordinates to actual grid coordinates
         // The extracted bits represent the path from root, so we need to scale them appropriately
         x = (x >> (Constants.getMaxRefinementLevel() - level)) * cellSize;

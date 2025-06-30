@@ -103,7 +103,7 @@ public class Constants {
     public static final Tet ROOT_SIMPLEX = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
-    public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, getMaxRefinementLevel(), (byte) 0);
+    public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, (byte) 20, (byte) 0);
     public static final int MAX_COORD    = (1 << 21) - 1;
 
     /**

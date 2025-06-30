@@ -13,18 +13,18 @@ class TetValidationTest {
     @Test
     void testInvalidCoordinates() {
         // Negative coordinates should fail
-        assertThrows(IllegalArgumentException.class, () -> new Tet(-1, 0, 0, (byte) 1, (byte) 0));
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, -1, 0, (byte) 1, (byte) 0));
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, -1, (byte) 1, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(-1, 0, 0, (byte) 1, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(0, -1, 0, (byte) 1, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, -1, (byte) 1, (byte) 0));
     }
 
     @Test
     void testInvalidLevel() {
         // Negative level
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, 0, (byte) -1, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, 0, (byte) -1, (byte) 0));
 
         // Level too high
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, 0, (byte) 22, (byte) 0));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, 0, (byte) 22, (byte) 0));
     }
 
     @Test
@@ -39,10 +39,15 @@ class TetValidationTest {
     @Test
     void testInvalidType() {
         // Type too low
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) -1));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) -1));
 
-        // Type too high
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) 6));
+        try {
+            // Type too high
+            new Tet(0, 0, 0, (byte) 1, (byte) 6);
+            fail("Expected AssertionError");
+        } catch (AssertionError e) {
+            // expected
+        }
     }
 
     @Test
@@ -106,7 +111,7 @@ class TetValidationTest {
         }
 
         // Invalid types should still be rejected
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) -1));
-        assertThrows(IllegalArgumentException.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) 6));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) -1));
+        assertThrows(AssertionError.class, () -> new Tet(0, 0, 0, (byte) 1, (byte) 6));
     }
 }
