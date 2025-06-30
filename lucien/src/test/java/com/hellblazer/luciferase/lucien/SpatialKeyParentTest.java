@@ -121,7 +121,8 @@ public class SpatialKeyParentTest {
         assertNull(root.parent(), "Root should have no parent");
 
         // Test with a specific tetrahedron at level 3
-        Tet tet = new Tet(100, 100, 100, (byte) 3, (byte) 0);
+        var cellSize = Constants.lengthAtLevel((byte) 3);
+        Tet tet = new Tet(cellSize, cellSize, cellSize, (byte) 3, (byte) 0);
         var level3Key = tet.tmIndex();
 
         // Get parent

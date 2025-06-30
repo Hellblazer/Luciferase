@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Ray3D;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testBoundaryPrecision() {
         // Test numerical precision at boundaries
-        var tet = new Tet(900, 900, 900, (byte) 10, (byte) 0);
+        var cellSize = Constants.lengthAtLevel((byte) 10);
+        var tet = new Tet(cellSize, cellSize, cellSize, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         var coords = tet.coordinates();
 
@@ -58,7 +60,8 @@ public class TetrahedralGeometryEdgeCaseTest {
 
     @Test
     void testDegenerateRay() {
-        var tet = new Tet(700, 700, 700, (byte) 10, (byte) 0);
+        var cellSize2 = Constants.lengthAtLevel((byte) 10);
+        var tet = new Tet(cellSize2, cellSize2, cellSize2, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
 
         // Zero direction vector (should be rejected by Ray3D constructor)
@@ -78,7 +81,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testEnhancedVsStandardConsistency() {
         // Verify enhanced implementation gives same results as standard
-        var tet = new Tet(1000, 1000, 1000, (byte) 10, (byte) 0);
+        var cellSize3 = Constants.lengthAtLevel((byte) 10);
+        var tet = new Tet(cellSize3, cellSize3, cellSize3, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
 
         // Test various ray configurations
@@ -120,7 +124,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testGrazingRay() {
         // Create tetrahedron
-        Tet tet = new Tet(600, 600, 600, (byte) 10, (byte) 0);
+        var cellSize4 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize4, cellSize4, cellSize4, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
@@ -152,7 +157,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testMultipleFaceIntersections() {
         // Create tetrahedron
-        Tet tet = new Tet(800, 800, 800, (byte) 10, (byte) 0);
+        var cellSize5 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize5, cellSize5, cellSize5, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
@@ -179,7 +185,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testParallelRayNearFace() {
         // Create tetrahedron
-        Tet tet = new Tet(500, 500, 500, (byte) 10, (byte) 0);
+        var cellSize6 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize6, cellSize6, cellSize6, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
@@ -219,7 +226,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testRayAlongEdge() {
         // Create tetrahedron
-        Tet tet = new Tet(300, 300, 300, (byte) 10, (byte) 0);
+        var cellSize7 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize7, cellSize7, cellSize7, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
@@ -244,7 +252,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testRayFromFarDistance() {
         // Create small tetrahedron
-        Tet tet = new Tet(100, 100, 100, (byte) 15, (byte) 0); // High level = small tet
+        var cellSize8 = Constants.lengthAtLevel((byte) 15);
+        Tet tet = new Tet(cellSize8, cellSize8, cellSize8, (byte) 15, (byte) 0); // High level = small tet
         var tetKey = tet.tmIndex(); // Use TM-index, not SFC index
 
         // Ray from very far away
@@ -262,7 +271,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testRayInFacePlane() {
         // Create tetrahedron
-        Tet tet = new Tet(400, 400, 400, (byte) 10, (byte) 0);
+        var cellSize9 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize9, cellSize9, cellSize9, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 
@@ -293,7 +303,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testRayOriginInsideTetrahedron() {
         // Create a simple tetrahedron
-        Tet tet = new Tet(100, 100, 100, (byte) 10, (byte) 0);
+        var cellSize10 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize10, cellSize10, cellSize10, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
 
         // Get tetrahedron centroid
@@ -313,7 +324,8 @@ public class TetrahedralGeometryEdgeCaseTest {
     @Test
     void testRayThroughVertex() {
         // Create tetrahedron and get its vertices
-        Tet tet = new Tet(200, 200, 200, (byte) 10, (byte) 0);
+        var cellSize11 = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize11, cellSize11, cellSize11, (byte) 10, (byte) 0);
         var tetKey = tet.tmIndex();
         Point3i[] coords = tet.coordinates();
 

@@ -60,16 +60,16 @@ class TetreeKeyTest {
         Tet absoluteCoordTet = new Tet(cellSize, 0, 0, level, (byte) 0);
         var absoluteKey = absoluteCoordTet.tmIndex();
 
-        // Create a Tet with grid coordinates
-        Tet gridCoordTet = new Tet(1, 0, 0, level, (byte) 0);
+        // Create a Tet with grid coordinates (use valid grid coord that matches cellSize)
+        Tet gridCoordTet = new Tet(cellSize, 0, 0, level, (byte) 0);
         var gridKey = gridCoordTet.tmIndex();
 
-        // Both encode to the same TM-index because grid coord 1 shifted by 20 = absolute coord 1048576
-        assertEquals(absoluteKey, gridKey, "Different coordinate systems can produce same TM-index");
+        // Now both use the same coordinates, so they encode to the same TM-index
+        assertEquals(absoluteKey, gridKey, "Same coordinates produce same TM-index");
 
-        // But they decode to grid coordinates (the detection assumes small values are grid coords)
+        // They decode back to the same coordinates
         Tet decoded = Tet.tetrahedron(absoluteKey);
-        assertEquals(1, decoded.x(), "Ambiguous value decodes to grid coordinate");
+        assertEquals(cellSize, decoded.x(), "Coordinate decodes to grid-aligned value");
 
         // This is a known limitation - see TETREE_COORDINATE_SYSTEM_ANALYSIS.md
     }
@@ -106,8 +106,9 @@ class TetreeKeyTest {
 
     @Test
     void testFromTet() {
-        // Create a Tet with coordinates, level and type
-        Tet tet = new Tet(100, 200, 300, (byte) 5, (byte) 0);
+        // Create a Tet with grid-aligned coordinates, level and type
+        int cellSize = Constants.lengthAtLevel((byte) 5);
+        Tet tet = new Tet(cellSize, 2 * cellSize, 3 * cellSize, (byte) 5, (byte) 0);
         var key = tet.tmIndex();
 
         assertEquals(tet.l(), key.getLevel());
@@ -252,7 +253,8 @@ class TetreeKeyTest {
             if (level >= 2 && maxGridCoord > 0) {
                 // Use coordinates that are clearly grid coordinates (small values)
                 int testCoord = Math.min(10, maxGridCoord);
-                Tet original2 = new Tet(testCoord, testCoord, testCoord, level, (byte) 0);
+                int cellSize = Constants.lengthAtLevel(level);
+                Tet original2 = new Tet(testCoord * cellSize, testCoord * cellSize, testCoord * cellSize, level, (byte) 0);
                 var key2 = original2.tmIndex();
                 Tet decoded2 = Tet.tetrahedron(key2);
 
@@ -271,8 +273,9 @@ class TetreeKeyTest {
             // Use small multiples of grid size that will be detected as grid coordinates
             int gridSize = (1 << level) - 1;
             if (gridSize >= 100) {
+                int cellSize = Constants.lengthAtLevel(level);
                 int testCoord = 50; // Safe value that works at these levels
-                Tet original = new Tet(testCoord, testCoord + 10, testCoord + 20, level, (byte) 0);
+                Tet original = new Tet(testCoord * cellSize, (testCoord + 10) * cellSize, (testCoord + 20) * cellSize, level, (byte) 0);
                 var key = original.tmIndex();
                 Tet decoded = Tet.tetrahedron(key);
 
@@ -287,8 +290,9 @@ class TetreeKeyTest {
         // Test 3: Different tetrahedron types with safe coordinates
         byte[] types = { 0, 1, 2, 3, 4, 5 };
         for (byte type : types) {
-            // Use small grid coordinates that won't be ambiguous
-            Tet original = new Tet(4, 4, 4, (byte) 5, type);
+            // Use grid-aligned coordinates that won't be ambiguous
+            int cellSize = Constants.lengthAtLevel((byte) 5);
+            Tet original = new Tet(0, 0, 0, (byte) 5, type);
             var key = original.tmIndex();
             Tet decoded = Tet.tetrahedron(key);
 

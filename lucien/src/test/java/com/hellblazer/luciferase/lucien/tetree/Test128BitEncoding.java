@@ -52,12 +52,13 @@ public class Test128BitEncoding {
         System.out.println("=== Testing 128-bit Encoding Consistency ===\n");
 
         // Test a simple case at level 2
-        int x = 1, y = 2, z = 4;
+        int x = 1, y = 2, z = 1;  // Reduce z to stay within bounds
         byte level = 2;
         byte type = 3;
 
-        // Create a Tet and get its TM-index
-        Tet tet = new Tet(x * (1 << 19), y * (1 << 19), z * (1 << 19), level, type);
+        // Create a Tet and get its TM-index using proper grid alignment
+        int cellSize = 1 << (21 - level);  // Cell size at level 2
+        Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
         var key = tet.tmIndex();
 
         System.out.println("Test Tet: " + tet);

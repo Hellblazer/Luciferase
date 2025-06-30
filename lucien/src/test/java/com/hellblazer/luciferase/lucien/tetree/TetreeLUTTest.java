@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -80,8 +81,9 @@ public class TetreeLUTTest {
         // Compare performance of LUT vs standard approach
         int iterations = 100000;
 
-        // Prepare test data
-        Tet tet = new Tet(1000, 2000, 3000, (byte) 10, (byte) 4);
+        // Prepare test data with grid-aligned coordinates
+        int cellSize = Constants.lengthAtLevel((byte) 10);
+        Tet tet = new Tet(cellSize, 2 * cellSize, 3 * cellSize, (byte) 10, (byte) 4);
 
         // Warm up JIT
         for (int i = 0; i < 1000; i++) {
@@ -101,9 +103,9 @@ public class TetreeLUTTest {
             typeArray[i] = i < 9 ? 0 : 4;
         }
         int shiftAmount = 21 - 10;
-        int shiftedX = 1000 << shiftAmount;
-        int shiftedY = 2000 << shiftAmount;
-        int shiftedZ = 3000 << shiftAmount;
+        int shiftedX = cellSize << shiftAmount;
+        int shiftedY = (2 * cellSize) << shiftAmount;
+        int shiftedZ = (3 * cellSize) << shiftAmount;
 
         // Time LUT approach
         long lutStart = System.nanoTime();
@@ -139,7 +141,8 @@ public class TetreeLUTTest {
     @Test
     void testTmIndexLUTVsStandard() {
         // Compare LUT-based encoding with the standard approach
-        Tet tet = new Tet(100, 200, 300, (byte) 5, (byte) 3);
+        int cellSize = Constants.lengthAtLevel((byte) 5);
+        Tet tet = new Tet(cellSize, 2 * cellSize, 3 * cellSize, (byte) 5, (byte) 3);
 
         // Get the standard tm-index
         var standardKey = tet.tmIndex();

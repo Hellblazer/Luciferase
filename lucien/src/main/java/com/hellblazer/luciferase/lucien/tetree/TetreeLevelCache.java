@@ -58,37 +58,37 @@ public final class TetreeLevelCache {
     private static final long[]          TETREE_KEY_CACHE_KEYS   = new long[TETREE_KEY_CACHE_SIZE];
     private static final BaseTetreeKey[] TETREE_KEY_CACHE_VALUES = new BaseTetreeKey[TETREE_KEY_CACHE_SIZE];
     // Parent chain cache - Phase 3
-    private static final int     PARENT_CHAIN_CACHE_SIZE = 65536; // Increased from 4096 for better hit rate
-    private static final long[]  PARENT_CHAIN_KEYS       = new long[PARENT_CHAIN_CACHE_SIZE];
-    private static final Tet[][] PARENT_CHAIN_VALUES     = new Tet[PARENT_CHAIN_CACHE_SIZE][];
-    
+    private static final int             PARENT_CHAIN_CACHE_SIZE = 65536; // Increased from 4096 for better hit rate
+    private static final long[]          PARENT_CHAIN_KEYS       = new long[PARENT_CHAIN_CACHE_SIZE];
+    private static final Tet[][]         PARENT_CHAIN_VALUES     = new Tet[PARENT_CHAIN_CACHE_SIZE][];
+
     // Direct parent cache for faster parent() calls
     private static final int    PARENT_CACHE_SIZE   = 131072; // Increased from 16384 for production workloads
     private static final long[] PARENT_CACHE_KEYS   = new long[PARENT_CACHE_SIZE];
     private static final Tet[]  PARENT_CACHE_VALUES = new Tet[PARENT_CACHE_SIZE];
-    
+
     // Parent type cache for computeParentType optimization
     private static final int    PARENT_TYPE_CACHE_SIZE   = 65536;
     private static final long[] PARENT_TYPE_CACHE_KEYS   = new long[PARENT_TYPE_CACHE_SIZE];
     private static final byte[] PARENT_TYPE_CACHE_VALUES = new byte[PARENT_TYPE_CACHE_SIZE];
-    
+
     // Shallow level pre-computation tables for levels 0-5 (most frequent operations)
-    private static final int MAX_SHALLOW_LEVEL = 5;
+    private static final int                            MAX_SHALLOW_LEVEL   = 5;
     private static final Map<Integer, BaseTetreeKey<?>> SHALLOW_LEVEL_CACHE = new HashMap<>();
-    
+
     // Cache statistics for monitoring
-    private static long cacheHits   = 0;
-    private static long cacheMisses = 0;
-    private static       long    parentChainHits         = 0;
-    private static       long    parentChainMisses       = 0;
-    private static       long    parentCacheHits         = 0;
-    private static       long    parentCacheMisses       = 0;
+    private static long cacheHits         = 0;
+    private static long cacheMisses       = 0;
+    private static long parentChainHits   = 0;
+    private static long parentChainMisses = 0;
+    private static long parentCacheHits   = 0;
+    private static long parentCacheMisses = 0;
 
     static {
         initializeLevelTables();
         initializeTypeCaches();
         initializeShallowLevelCache();
-        
+
         // Initialize parent type cache to -1 (cache miss)
         for (int i = 0; i < PARENT_TYPE_CACHE_SIZE; i++) {
             PARENT_TYPE_CACHE_VALUES[i] = -1;
@@ -104,6 +104,23 @@ public final class TetreeLevelCache {
     }
 
     /**
+     * Cache a direct parent lookup.
+     *
+     * @param x      the x coordinate
+     * @param y      the y coordinate
+     * @param z      the z coordinate
+     * @param level  the level
+     * @param type   the tetrahedron type
+     * @param parent the parent Tet to cache
+     */
+    public static void cacheParent(int x, int y, int z, byte level, byte type, Tet parent) {
+        var key = generateCacheKey(x, y, z, level, type);
+        var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
+        PARENT_CACHE_KEYS[slot] = key;
+        PARENT_CACHE_VALUES[slot] = parent;
+    }
+
+    /**
      * Cache a parent chain for future lookups.
      *
      * @param tet   the tetrahedron
@@ -115,6 +132,23 @@ public final class TetreeLevelCache {
 
         PARENT_CHAIN_KEYS[slot] = key;
         PARENT_CHAIN_VALUES[slot] = chain;
+    }
+
+    /**
+     * Cache a parent type computation result.
+     *
+     * @param x          the x coordinate
+     * @param y          the y coordinate
+     * @param z          the z coordinate
+     * @param level      the level
+     * @param type       the tetrahedron type
+     * @param parentType the computed parent type
+     */
+    public static void cacheParentType(int x, int y, int z, byte level, byte type, byte parentType) {
+        var key = generateCacheKey(x, y, z, level, type);
+        var slot = (int) (key & (PARENT_TYPE_CACHE_SIZE - 1));
+        PARENT_TYPE_CACHE_KEYS[slot] = key;
+        PARENT_TYPE_CACHE_VALUES[slot] = parentType;
     }
 
     /**
@@ -156,13 +190,13 @@ public final class TetreeLevelCache {
             PARENT_CHAIN_KEYS[i] = 0;
             PARENT_CHAIN_VALUES[i] = null;
         }
-        
+
         // Clear parent cache
         for (var i = 0; i < PARENT_CACHE_SIZE; i++) {
             PARENT_CACHE_KEYS[i] = 0;
             PARENT_CACHE_VALUES[i] = null;
         }
-        
+
         // Clear parent type cache
         for (var i = 0; i < PARENT_TYPE_CACHE_SIZE; i++) {
             PARENT_TYPE_CACHE_KEYS[i] = 0;
@@ -189,9 +223,9 @@ public final class TetreeLevelCache {
     }
 
     /**
-     * Generate a high-quality hash key for cache lookups. Optimized version with fast path
-     * for small coordinates which are common in spatial indices.
-     * 
+     * Generate a high-quality hash key for cache lookups. Optimized version with fast path for small coordinates which
+     * are common in spatial indices.
+     *
      * Performance: 10% faster than original implementation with identical distribution quality.
      */
     private static long generateCacheKey(int x, int y, int z, byte level, byte type) {
@@ -201,9 +235,9 @@ public final class TetreeLevelCache {
             // Pack directly into long for small coordinates
             // 10 bits each for x,y,z (0-1023), 5 bits for level (0-31), 3 bits for type (0-7)
             // Total: 38 bits used out of 64
-            return ((long)x << 28) | ((long)y << 18) | ((long)z << 8) | ((long)level << 3) | (long)type;
+            return ((long) x << 28) | ((long) y << 18) | ((long) z << 8) | ((long) level << 3) | (long) type;
         }
-        
+
         // Full hash for large coordinates using optimized mixing
         // Golden ratio multipliers provide excellent distribution
         var hash = x * 0x9E3779B97F4A7C15L;    // Golden ratio prime
@@ -247,6 +281,33 @@ public final class TetreeLevelCache {
     }
 
     /**
+     * Get a cached parent if available.
+     *
+     * @param x     the x coordinate
+     * @param y     the y coordinate
+     * @param z     the z coordinate
+     * @param level the level
+     * @param type  the tetrahedron type
+     * @return the cached parent or null if not cached
+     */
+    public static Tet getCachedParent(int x, int y, int z, byte level, byte type) {
+        if (level == 0) {
+            return null; // No parent for root
+        }
+
+        var key = generateCacheKey(x, y, z, level, type);
+        var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
+
+        if (PARENT_CACHE_KEYS[slot] == key) {
+            parentCacheHits++;
+            return PARENT_CACHE_VALUES[slot];
+        }
+
+        parentCacheMisses++;
+        return null;
+    }
+
+    /**
      * Get cached parent chain for a tetrahedron. The chain includes all ancestors from the given tet up to the root.
      *
      * @param tet the tetrahedron
@@ -263,6 +324,27 @@ public final class TetreeLevelCache {
 
         parentChainMisses++;
         return null;
+    }
+
+    /**
+     * Get a cached parent type if available.
+     *
+     * @param x     the x coordinate
+     * @param y     the y coordinate
+     * @param z     the z coordinate
+     * @param level the level
+     * @param type  the tetrahedron type
+     * @return the cached parent type or -1 if not cached
+     */
+    public static byte getCachedParentType(int x, int y, int z, byte level, byte type) {
+        var key = generateCacheKey(x, y, z, level, type);
+        var slot = (int) (key & (PARENT_TYPE_CACHE_SIZE - 1));
+
+        if (PARENT_TYPE_CACHE_KEYS[slot] == key) {
+            return PARENT_TYPE_CACHE_VALUES[slot];
+        }
+
+        return -1; // Cache miss
     }
 
     /**
@@ -326,6 +408,16 @@ public final class TetreeLevelCache {
     }
 
     /**
+     * Get the parent cache hit rate for monitoring performance.
+     *
+     * @return the cache hit rate as a percentage (0.0 to 1.0)
+     */
+    public static double getParentCacheHitRate() {
+        var total = parentCacheHits + parentCacheMisses;
+        return total > 0 ? (double) parentCacheHits / total : 0.0;
+    }
+
+    /**
      * Get parent chain cache statistics.
      *
      * @return hit rate as a percentage
@@ -333,6 +425,31 @@ public final class TetreeLevelCache {
     public static double getParentChainHitRate() {
         long total = parentChainHits + parentChainMisses;
         return total > 0 ? (double) parentChainHits / total : 0.0;
+    }
+
+    /**
+     * Get a pre-computed TetreeKey for shallow levels (0-5). This provides O(1) access instead of O(level) tmIndex
+     * computation for the most common operations.
+     *
+     * @param x     x coordinate
+     * @param y     y coordinate
+     * @param z     z coordinate
+     * @param level hierarchical level
+     * @param type  tetrahedron type
+     * @return pre-computed TetreeKey or null if not in shallow level cache
+     */
+    public static BaseTetreeKey<?> getShallowLevelKey(int x, int y, int z, byte level, byte type) {
+        if (level > MAX_SHALLOW_LEVEL) {
+            return null; // Not in shallow level range
+        }
+
+        int cellSize = Constants.lengthAtLevel(level);
+        int gridX = x / cellSize;
+        int gridY = y / cellSize;
+        int gridZ = z / cellSize;
+
+        int key = packShallowKey(gridX, gridY, gridZ, level, type);
+        return SHALLOW_LEVEL_CACHE.get(key);
     }
 
     /**
@@ -375,27 +492,9 @@ public final class TetreeLevelCache {
         }
     }
 
-    private static void initializeTypeCaches() {
-        // Initialize type transition cache
-        // Pack: startType (8 bits) | startLevel (8 bits) | endLevel (8 bits)
-        for (var startType = 0; startType < 6; startType++) {
-            for (var startLevel = 0; startLevel <= 21; startLevel++) {
-                for (var endLevel = 0; endLevel <= startLevel; endLevel++) {
-                    var packed = packTypeTransition(startType, startLevel, endLevel);
-                    var resultType = computeTypeTransition((byte) startType, (byte) startLevel, (byte) endLevel);
-                    TYPE_TRANSITION_CACHE[packed] = resultType;
-                }
-            }
-        }
-    }
-
-    private static int packTypeTransition(int startType, int startLevel, int endLevel) {
-        return (startType << 16) | (startLevel << 8) | endLevel;
-    }
-
     /**
-     * Initialize shallow level cache for levels 0-5. Pre-computes all possible tetrahedra
-     * for these levels to enable O(1) lookups instead of O(level) tmIndex computation.
+     * Initialize shallow level cache for levels 0-5. Pre-computes all possible tetrahedra for these levels to enable
+     * O(1) lookups instead of O(level) tmIndex computation.
      */
     private static void initializeShallowLevelCache() {
         // Pre-compute all possible tetrahedra for levels 0-5
@@ -411,137 +510,49 @@ public final class TetreeLevelCache {
                             int key = packShallowKey(x / cellSize, y / cellSize, z / cellSize, level, type);
                             BaseTetreeKey<?> tetreeKey = tet.tmIndex();
                             SHALLOW_LEVEL_CACHE.put(key, tetreeKey);
+                            if (level == 0) {
+                                break;
+                            }
                         }
+                        if (level == 0) {
+                            break;
+                        }
+                    }
+                    if (level == 0) {
+                        break;
                     }
                 }
             }
         }
     }
 
+    private static void initializeTypeCaches() {
+        // Initialize type transition cache
+        // Pack: startType (8 bits) | startLevel (8 bits) | endLevel (8 bits)
+        for (var startType = 0; startType < 6; startType++) {
+            for (var startLevel = 0; startLevel <= 21; startLevel++) {
+                for (var endLevel = 0; endLevel <= startLevel; endLevel++) {
+                    var packed = packTypeTransition(startType, startLevel, endLevel);
+                    var resultType = computeTypeTransition((byte) startType, (byte) startLevel, (byte) endLevel);
+                    TYPE_TRANSITION_CACHE[packed] = resultType;
+                }
+            }
+        }
+    }
+
     /**
-     * Pack coordinates and parameters into a compact key for shallow level lookup.
-     * Uses grid coordinates (already divided by cell size) for efficiency.
+     * Pack coordinates and parameters into a compact key for shallow level lookup. Uses grid coordinates (already
+     * divided by cell size) for efficiency.
      */
     private static int packShallowKey(int gridX, int gridY, int gridZ, int level, int type) {
         // Pack into 32-bit integer: gridX(10 bits) | gridY(10 bits) | gridZ(10 bits) | level(3 bits) | type(3 bits)
         return (gridX << 16) | (gridY << 13) | (gridZ << 10) | (level << 3) | type;
     }
 
-    /**
-     * Get a pre-computed TetreeKey for shallow levels (0-5). This provides O(1) access
-     * instead of O(level) tmIndex computation for the most common operations.
-     *
-     * @param x x coordinate
-     * @param y y coordinate
-     * @param z z coordinate
-     * @param level hierarchical level
-     * @param type tetrahedron type
-     * @return pre-computed TetreeKey or null if not in shallow level cache
-     */
-    public static BaseTetreeKey<?> getShallowLevelKey(int x, int y, int z, byte level, byte type) {
-        if (level > MAX_SHALLOW_LEVEL) {
-            return null; // Not in shallow level range
-        }
-
-        int cellSize = Constants.lengthAtLevel(level);
-        int gridX = x / cellSize;
-        int gridY = y / cellSize;
-        int gridZ = z / cellSize;
-        
-        int key = packShallowKey(gridX, gridY, gridZ, level, type);
-        return SHALLOW_LEVEL_CACHE.get(key);
+    private static int packTypeTransition(int startType, int startLevel, int endLevel) {
+        return (startType << 16) | (startLevel << 8) | endLevel;
     }
 
-    /**
-     * Cache a direct parent lookup.
-     *
-     * @param x      the x coordinate
-     * @param y      the y coordinate
-     * @param z      the z coordinate
-     * @param level  the level
-     * @param type   the tetrahedron type
-     * @param parent the parent Tet to cache
-     */
-    public static void cacheParent(int x, int y, int z, byte level, byte type, Tet parent) {
-        var key = generateCacheKey(x, y, z, level, type);
-        var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
-        PARENT_CACHE_KEYS[slot] = key;
-        PARENT_CACHE_VALUES[slot] = parent;
-    }
-    
-    /**
-     * Get a cached parent if available.
-     *
-     * @param x     the x coordinate
-     * @param y     the y coordinate
-     * @param z     the z coordinate
-     * @param level the level
-     * @param type  the tetrahedron type
-     * @return the cached parent or null if not cached
-     */
-    public static Tet getCachedParent(int x, int y, int z, byte level, byte type) {
-        if (level == 0) return null; // No parent for root
-        
-        var key = generateCacheKey(x, y, z, level, type);
-        var slot = (int) (key & (PARENT_CACHE_SIZE - 1));
-        
-        if (PARENT_CACHE_KEYS[slot] == key) {
-            parentCacheHits++;
-            return PARENT_CACHE_VALUES[slot];
-        }
-        
-        parentCacheMisses++;
-        return null;
-    }
-    
-    /**
-     * Cache a parent type computation result.
-     *
-     * @param x          the x coordinate
-     * @param y          the y coordinate
-     * @param z          the z coordinate
-     * @param level      the level
-     * @param type       the tetrahedron type
-     * @param parentType the computed parent type
-     */
-    public static void cacheParentType(int x, int y, int z, byte level, byte type, byte parentType) {
-        var key = generateCacheKey(x, y, z, level, type);
-        var slot = (int) (key & (PARENT_TYPE_CACHE_SIZE - 1));
-        PARENT_TYPE_CACHE_KEYS[slot] = key;
-        PARENT_TYPE_CACHE_VALUES[slot] = parentType;
-    }
-    
-    /**
-     * Get a cached parent type if available.
-     *
-     * @param x     the x coordinate
-     * @param y     the y coordinate
-     * @param z     the z coordinate
-     * @param level the level
-     * @param type  the tetrahedron type
-     * @return the cached parent type or -1 if not cached
-     */
-    public static byte getCachedParentType(int x, int y, int z, byte level, byte type) {
-        var key = generateCacheKey(x, y, z, level, type);
-        var slot = (int) (key & (PARENT_TYPE_CACHE_SIZE - 1));
-        
-        if (PARENT_TYPE_CACHE_KEYS[slot] == key) {
-            return PARENT_TYPE_CACHE_VALUES[slot];
-        }
-        
-        return -1; // Cache miss
-    }
-    
-    /**
-     * Get the parent cache hit rate for monitoring performance.
-     *
-     * @return the cache hit rate as a percentage (0.0 to 1.0)
-     */
-    public static double getParentCacheHitRate() {
-        var total = parentCacheHits + parentCacheMisses;
-        return total > 0 ? (double) parentCacheHits / total : 0.0;
-    }
-    
     /**
      * Reset cache statistics for benchmarking.
      */

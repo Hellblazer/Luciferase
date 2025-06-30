@@ -42,18 +42,9 @@ import static java.util.stream.Collectors.toList;
  *   <li>Children are generated using Bey's vertex midpoint refinement</li>
  * </ul>
  *
- * <p><b>Implementation Notes:</b></p>
- * <ul>
- *   <li>SFC indices use NO level offset (unlike Morton codes)</li>
- *   <li>Level 0: index 0, Level 1: indices 1-7, Level 2: indices 8-63, etc.</li>
- *   <li>Many-to-one mappings in connectivity tables are EXPECTED</li>
- *   <li>Child positions use vertex midpoints, NOT cube-based offsets</li>
- * </ul>
- *
  * @author hal.hildebrand
  **/
-public record Tet(int x, int y, int z, byte l, byte type) {
-
+public class Tet {
     public static final  BaseTetreeKey<?> ROOT_TET      = BaseTetreeKey.getRoot();
     // Table 2: Local indices - Iloc(parent_type, bey_child_index)
     // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
@@ -64,36 +55,33 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                                                             { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
                                                             { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
     };
+    private final        int              x;
+    private final        int              y;
+    private final        int              z;
+    private final        byte             l;
+    private final        byte             type;
 
-    // Compact constructor for validation
-    public Tet {
-        if (l < 0 || l > getMaxRefinementLevel()) {
-            throw new IllegalArgumentException("Level must be in range [0, " + getMaxRefinementLevel() + "]: " + l);
+    public Tet(int x, int y, int z, byte l, byte type) {
+        // Validate level range first
+        if (l < 0 || l > Constants.getMaxRefinementLevel()) {
+            throw new IllegalArgumentException("Level " + l + " must be between 0 and " + Constants.getMaxRefinementLevel());
         }
+        // Validate type range
         if (type < 0 || type > 5) {
-            throw new IllegalArgumentException("Type must be in range [0, 5]: " + type);
+            throw new IllegalArgumentException("Type " + type + " must be between 0 and 5");
         }
-
-        // Validate coordinates are non-negative (required for tetrahedral SFC)
+        // Validate coordinates
         if (x < 0 || y < 0 || z < 0) {
             throw new IllegalArgumentException("Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")");
         }
-    }
-
-    public Tet(int level, int type) {
-        this((byte) level, (byte) type);
-    }
-
-    public Tet(byte level, byte type) {
-        this(ROOT_SIMPLEX.x, ROOT_SIMPLEX.y, ROOT_SIMPLEX.z, level, type);
-    }
-
-    public Tet(Point3i cubeId, int level, int type) {
-        this(cubeId, (byte) level, (byte) type);
-    }
-
-    public Tet(Point3i cubeId, byte level, byte type) {
-        this(cubeId.x, cubeId.y, cubeId.z, level, type);
+        
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.l = l;
+        this.type = type;
+        // Validate that coordinates are correct anchor coordinates for the level and type
+        validateAnchorCoordinates(x, y, z, l, type);
     }
 
     /**
@@ -482,22 +470,16 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Current type is at the last position
         byte type = (byte) types[maxBits - 1];
 
-        // Check if the decoded coordinates need to be shifted back to grid space
-        // If the coordinates are large (absolute), leave them as-is
-        // If they're in the shifted range, shift them back
-        int shiftAmount = Constants.getMaxRefinementLevel() - level;
-        int maxGridCoord = (1 << level) - 1;
-
-        // If coordinates are much larger than max grid coord when shifted back,
-        // they were probably absolute coordinates to begin with
-        int testX = x >> shiftAmount;
-        if (testX <= maxGridCoord) {
-            // These were grid coordinates that were shifted
-            x >>= shiftAmount;
-            y >>= shiftAmount;
-            z >>= shiftAmount;
-        }
-        // Otherwise leave as absolute coordinates
+        // Ensure coordinates are properly aligned to the grid for this level
+        // At level L, coordinates must be multiples of cellSize = 1 << (21 - L)
+        // This means the lower (21 - L) bits must be zero
+        int cellSize = Constants.lengthAtLevel(level);
+        
+        // Convert from bit-level coordinates to actual grid coordinates
+        // The extracted bits represent the path from root, so we need to scale them appropriately
+        x = (x >> (Constants.getMaxRefinementLevel() - level)) * cellSize;
+        y = (y >> (Constants.getMaxRefinementLevel() - level)) * cellSize;
+        z = (z >> (Constants.getMaxRefinementLevel() - level)) * cellSize;
 
         return new Tet(x, y, z, level, type);
     }
@@ -617,6 +599,65 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         // If we've gotten this far, the volumes might still intersect along faces
         // For now, use conservative approximation
+        return true;
+    }
+
+    /**
+     * Validates that the given coordinates represent correct anchor coordinates for the specified level and type.
+     *
+     * @param x     X coordinate
+     * @param y     Y coordinate
+     * @param z     Z coordinate
+     * @param level refinement level
+     * @param type  tetrahedron type
+     * @throws IllegalArgumentException if coordinates are not valid anchor coordinates
+     */
+    private static boolean validateAnchorCoordinates(int x, int y, int z, byte level, byte type) {
+        // Special case: root tetrahedron must be at origin with type 0
+        if (level == 0) {
+            if (x != 0 || y != 0 || z != 0) {
+                throw new IllegalArgumentException(
+                "Root tetrahedron (level 0) must be at origin (0,0,0), got: (" + x + ", " + y + ", " + z + ")");
+            }
+            if (type != 0) {
+                throw new IllegalArgumentException("Root tetrahedron (level 0) must have type 0, got: " + type);
+            }
+            return true;
+        }
+
+        // Check coordinates are aligned to the grid at this level
+        int cellSize = Constants.lengthAtLevel(level);
+        if (x % cellSize != 0) {
+            throw new IllegalArgumentException(
+            "X coordinate " + x + " is not aligned to grid at level " + level + " (cell size " + cellSize + ")");
+        }
+        if (y % cellSize != 0) {
+            throw new IllegalArgumentException(
+            "Y coordinate " + y + " is not aligned to grid at level " + level + " (cell size " + cellSize + ")");
+        }
+        if (z % cellSize != 0) {
+            throw new IllegalArgumentException(
+            "Z coordinate " + z + " is not aligned to grid at level " + level + " (cell size " + cellSize + ")");
+        }
+
+        // Validate coordinates are within bounds for this level
+        int maxCoord = Constants.lengthAtLevel((byte) 0); // Maximum extent of the root tetrahedron
+        if (x >= maxCoord) {
+            throw new IllegalArgumentException(
+            "X coordinate " + x + " exceeds maximum extent " + maxCoord + " for level " + level);
+        }
+        if (y >= maxCoord) {
+            throw new IllegalArgumentException(
+            "Y coordinate " + y + " exceeds maximum extent " + maxCoord + " for level " + level);
+        }
+        if (z >= maxCoord) {
+            throw new IllegalArgumentException(
+            "Z coordinate " + z + " exceeds maximum extent " + maxCoord + " for level " + level);
+        }
+
+        // For deeper validation, we could verify that the type is consistent with the coordinate path
+        // from the root, but this would be computationally expensive and is better left to
+        // the createValidated() factory method when full validation is needed.
         return true;
     }
 
@@ -1071,10 +1112,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         if (this == obj) {
             return true;
         }
-        if (!(obj instanceof Tet(int x1, int y1, int z1, byte l1, byte type1))) {
+        if (!(obj instanceof Tet t)) {
             return false;
         }
-        return x == x1 && y == y1 && z == z1 && l == l1 && type == type1;
+        return x == t.x && y == t.y && z == t.z && l == t.l && type == t.type;
     }
 
     public FaceNeighbor faceNeighbor(int face) {
@@ -1124,23 +1165,6 @@ public record Tet(int x, int y, int z, byte l, byte type) {
 
         return new FaceNeighbor((byte) ret, new Tet(coords[0], coords[1], coords[2], l, (byte) typeNew));
     }
-
-    // TODO: This method needs to be updated for 128-bit tm-index
-    // Commenting out for now as it uses long-based spatial range queries
-    /*
-    public long intersecting(Spatial volume) {
-        // Simple implementation: find first intersecting tetrahedron
-        var bounds = VolumeBounds.from(volume);
-        if (bounds == null) {
-            return 0L;
-        }
-
-        return spatialRangeQuery(bounds, true).filter(index -> {
-            var tet = Tet.tetrahedron(index);
-            return tetrahedronIntersectsVolume(tet, volume);
-        }).findFirst().orElse(0L);
-    }
-    */
 
     /**
      * Get the first descendant at the given level
@@ -1207,6 +1231,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return x < maxCoord && y < maxCoord && z < maxCoord;
     }
 
+    public byte l() {
+        return l;
+    }
+
     /**
      * Get the last descendant at the given level
      *
@@ -1229,6 +1257,23 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
         return current.tmIndex();
     }
+
+    // TODO: This method needs to be updated for 128-bit tm-index
+    // Commenting out for now as it uses long-based spatial range queries
+    /*
+    public long intersecting(Spatial volume) {
+        // Simple implementation: find first intersecting tetrahedron
+        var bounds = VolumeBounds.from(volume);
+        if (bounds == null) {
+            return 0L;
+        }
+
+        return spatialRangeQuery(bounds, true).filter(index -> {
+            var tet = Tet.tetrahedron(index);
+            return tetrahedronIntersectsVolume(tet, volume);
+        }).findFirst().orElse(0L);
+    }
+    */
 
     /**
      * @return the length of an edge at the given level, in integer coordinates
@@ -1274,10 +1319,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         }
 
         Tet parent = new Tet(parentX, parentY, parentZ, parentLevel, parentType);
-        
+
         // Cache the complete parent for future lookups
         TetreeLevelCache.cacheParent(x, y, z, l, type, parent);
-        
+
         return parent;
     }
 
@@ -1344,10 +1389,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         // Stack to hold types as we walk up
         byte[] types = new byte[l];
         Tet current = this;
-        
-        // Walk up to collect types efficiently  
+
+        // Walk up to collect types efficiently
         for (int i = l - 1; i >= 0; i--) {
-            types[i] = current.type();
+            types[i] = current.type;
             if (i > 0) {
                 current = current.parent();
             }
@@ -1369,10 +1414,10 @@ public record Tet(int x, int y, int z, byte l, byte type) {
             int xBit = (shiftedX >> bitPos) & 1;
             int yBit = (shiftedY >> bitPos) & 1;
             int zBit = (shiftedZ >> bitPos) & 1;
-            
+
             int coordBits = (zBit << 2) | (yBit << 1) | xBit;
             int sixBits = (coordBits << 3) | types[i];
-            
+
             if (i < 10) {
                 lowBits |= ((long) sixBits) << (6 * i);
             } else {
@@ -1394,16 +1439,32 @@ public record Tet(int x, int y, int z, byte l, byte type) {
         return result;
     }
 
+    public byte type() {
+        return type;
+    }
+
     public Point3i[] vertices() {
         var origin = new Point3i(x, y, z);
         var vertices = new Point3i[4];
         int i = 0;
-        for (var vertex : Constants.SIMPLEX_STANDARD[type()]) {
+        for (var vertex : Constants.SIMPLEX_STANDARD[type]) {
             vertices[i] = new Point3i(vertex.x, vertex.y, vertex.z);
             vertices[i].scaleAdd(length(), origin);
             i++;
         }
         return vertices;
+    }
+
+    public int x() {
+        return x;
+    }
+
+    public int y() {
+        return y;
+    }
+
+    public int z() {
+        return z;
     }
 
     private void addToDimension(Point3i point, int dimension, int h) {
@@ -1893,8 +1954,8 @@ public record Tet(int x, int y, int z, byte l, byte type) {
                 // Verify this tetrahedron could be a child of its parent
                 for (int i = 0; i < 8; i++) {
                     var possibleChild = parent.child(i);
-                    if (possibleChild.x() == x && possibleChild.y() == y && possibleChild.z() == z
-                    && possibleChild.type() == type) {
+                    if (possibleChild.x == x && possibleChild.y == y && possibleChild.z == z
+                    && possibleChild.type == type) {
                         return true;
                     }
                 }

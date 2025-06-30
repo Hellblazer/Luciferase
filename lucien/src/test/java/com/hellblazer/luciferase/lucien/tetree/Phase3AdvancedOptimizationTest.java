@@ -105,9 +105,12 @@ public class Phase3AdvancedOptimizationTest {
         var tets = new ArrayList<Tet>();
         for (int level = 5; level <= 15; level++) {
             for (int i = 0; i < 100; i++) {
-                var x = i * Constants.lengthAtLevel((byte) level);
-                var y = i * Constants.lengthAtLevel((byte) level);
-                var z = i * Constants.lengthAtLevel((byte) level);
+                var cellSize = Constants.lengthAtLevel((byte) level);
+                // Reduce multiplier to stay within bounds for higher levels
+                var maxMultiplier = Math.min(99, (1 << 21) / cellSize - 1);
+                var x = (i % maxMultiplier) * cellSize;
+                var y = (i % maxMultiplier) * cellSize;  
+                var z = (i % maxMultiplier) * cellSize;
                 tets.add(new Tet(x, y, z, (byte) level, (byte) 0));
             }
         }

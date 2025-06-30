@@ -40,7 +40,9 @@ class SpatialKeyLocalityTest {
     void testKeyTypeIsolation() {
         // Verify that different key types cannot be mixed
         MortonKey mortonKey = new MortonKey(12345L);
-        Tet tet = new Tet(100, 200, 300, (byte) 5, (byte) 0);
+        byte level = 5;
+        int cellSize = Constants.lengthAtLevel(level);
+        Tet tet = new Tet(0, cellSize, 2 * cellSize, level, (byte) 0);
         var tetreeKey = tet.tmIndex();
 
         // These should be completely different types
@@ -113,8 +115,10 @@ class SpatialKeyLocalityTest {
 
         // Tetree key performance
         long tetreeStart = System.nanoTime();
-        Tet tet1 = new Tet(100, 200, 300, (byte) 5, (byte) 0);
-        Tet tet2 = new Tet(200, 300, 400, (byte) 5, (byte) 0);
+        byte level = 5;
+        int cellSize = Constants.lengthAtLevel(level);
+        Tet tet1 = new Tet(0, cellSize, 2 * cellSize, level, (byte) 0);
+        Tet tet2 = new Tet(cellSize, 2 * cellSize, 3 * cellSize, level, (byte) 0);
         var tKey1 = tet1.tmIndex();
         var tKey2 = tet2.tmIndex();
 
@@ -146,10 +150,16 @@ class SpatialKeyLocalityTest {
         // Use different coordinates to ensure variety in tm-indices
         for (byte level = 1; level <= 5; level++) {
             int cellSize = Constants.lengthAtLevel(level);
-            for (int i = 0; i < 10; i++) {
-                // Vary x and y coordinates to get different tm-indices
-                int x = (i % 3) * cellSize;
-                int y = (i / 3) * cellSize;
+            // Calculate maximum valid coordinate for this level
+            int maxCoord = Constants.lengthAtLevel((byte) 0); // Root extent
+            int maxCells = maxCoord / cellSize; // Maximum number of cells that fit
+            
+            for (int i = 0; i < Math.min(10, maxCells * maxCells); i++) {
+                // Vary x and y coordinates within valid bounds
+                int cellX = i % Math.min(maxCells, 3); // Limit to valid range
+                int cellY = (i / 3) % Math.min(maxCells, 3); // Limit to valid range
+                int x = cellX * cellSize;
+                int y = cellY * cellSize;
                 Tet tet = new Tet(x, y, 0, level, (byte) 0);
                 var key = tet.tmIndex();
                 TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(
@@ -179,10 +189,15 @@ class SpatialKeyLocalityTest {
         List<TetreeKey> keys = new ArrayList<>();
         int cellSize = Constants.lengthAtLevel(level);
 
+        // Calculate maximum valid coordinate for this level
+        int maxCoord = Constants.lengthAtLevel((byte) 0); // Root extent
+        int maxCells = maxCoord / cellSize; // Maximum number of cells that fit
+        int gridSize = Math.min(10, maxCells); // Limit grid size to valid range
+        
         // Generate keys from spatially adjacent tetrahedra
-        for (int x = 0; x < 10; x++) {
-            for (int y = 0; y < 10; y++) {
-                for (int z = 0; z < 10; z++) {
+        for (int x = 0; x < gridSize; x++) {
+            for (int y = 0; y < gridSize; y++) {
+                for (int z = 0; z < gridSize; z++) {
                     Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, (byte) 0);
                     var key = tet.tmIndex();
                     TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(

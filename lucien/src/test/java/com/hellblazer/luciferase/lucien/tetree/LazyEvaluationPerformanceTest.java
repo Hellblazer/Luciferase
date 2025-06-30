@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -132,7 +133,8 @@ public class LazyEvaluationPerformanceTest {
     @Test
     void testLazyKeyCreation() {
         // Test that lazy keys work correctly
-        var tet = new Tet(1000, 2000, 3000, (byte) 10, (byte) 0);
+        var cellSize = Constants.lengthAtLevel((byte) 10);
+        var tet = new Tet(cellSize, cellSize, cellSize, (byte) 10, (byte) 0);
         var lazyKey = new LazyTetreeKey(tet);
 
         // Should not be resolved initially
@@ -152,9 +154,10 @@ public class LazyEvaluationPerformanceTest {
 
     @Test
     void testLazyKeyEquality() {
-        var tet1 = new Tet(1000, 2000, 3000, (byte) 10, (byte) 0);
-        var tet2 = new Tet(1000, 2000, 3000, (byte) 10, (byte) 0);
-        var tet3 = new Tet(2000, 2000, 3000, (byte) 10, (byte) 0);
+        var cellSize2 = Constants.lengthAtLevel((byte) 10);
+        var tet1 = new Tet(cellSize2, cellSize2, cellSize2, (byte) 10, (byte) 0);
+        var tet2 = new Tet(cellSize2, cellSize2, cellSize2, (byte) 10, (byte) 0);
+        var tet3 = new Tet(cellSize2 * 2, cellSize2, cellSize2, (byte) 10, (byte) 0);
 
         var lazy1 = new LazyTetreeKey(tet1);
         var lazy2 = new LazyTetreeKey(tet2);

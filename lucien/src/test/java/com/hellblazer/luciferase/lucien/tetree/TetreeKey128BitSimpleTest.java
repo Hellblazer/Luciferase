@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,7 +37,8 @@ public class TetreeKey128BitSimpleTest {
     @Test
     public void testTetTmIndexCreation() {
         // Test that a Tet can create a TetreeKey
-        Tet tet = new Tet(100, 200, 300, (byte) 3, (byte) 2);
+        int cellSize = Constants.lengthAtLevel((byte) 3);
+        Tet tet = new Tet(cellSize, cellSize * 2, cellSize * 3, (byte) 3, (byte) 2);
         var key = tet.tmIndex();
 
         assertNotNull(key);
@@ -64,16 +66,13 @@ public class TetreeKey128BitSimpleTest {
 
     @Test
     public void testTetreeKeyRoundTrip() {
-        // Create a Tet with coordinates that have bits in the correct positions
-        // For level 5, the tmIndex encodes bits from positions 20 down to 16
-        // So we need coordinates with bits set in those positions
-        // Let's use coordinates that represent grid positions 1,2,3 at level 5
-        // shifted to the correct bit positions
-        int x = 1 << 16; // Represents grid x=1 at level 5
-        int y = 2 << 16; // Represents grid y=2 at level 5  
-        int z = 3 << 16; // Represents grid z=3 at level 5
+        // Create a Tet with grid-aligned coordinates
         byte level = 5;
         byte type = 3;
+        int cellSize = Constants.lengthAtLevel(level);
+        int x = cellSize; // Grid position 1
+        int y = cellSize * 2; // Grid position 2
+        int z = cellSize * 3; // Grid position 3
 
         Tet original = new Tet(x, y, z, level, type);
 

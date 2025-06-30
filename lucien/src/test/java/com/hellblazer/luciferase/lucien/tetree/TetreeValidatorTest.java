@@ -51,7 +51,9 @@ class TetreeValidatorTest {
         Tet child = parent.child(0);
         assertDoesNotThrow(() -> TetreeValidator.assertValidParentChild(parent, child));
 
-        Tet notChild = new Tet(1000, 1000, 1000, (byte) 2, (byte) 0);
+        int cellSize2 = Constants.lengthAtLevel((byte) 2);
+        // Use smaller multiplier to stay within bounds
+        Tet notChild = new Tet(cellSize2 * 2, cellSize2 * 2, cellSize2 * 2, (byte) 2, (byte) 0);
         assertThrows(AssertionError.class, () -> TetreeValidator.assertValidParentChild(parent, notChild));
 
         // Family assertion
@@ -70,12 +72,10 @@ class TetreeValidatorTest {
         int maxCoord = Constants.lengthAtLevel((byte) 0);
 
         // At boundary should be invalid (coordinates must be < maxCoord)
-        Tet atBoundary = new Tet(maxCoord, 0, 0, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(atBoundary));
+        assertThrows(IllegalArgumentException.class, () -> new Tet(maxCoord, 0, 0, (byte) 0, (byte) 0));
 
-        // Well beyond boundary
-        Tet beyondBoundary = new Tet(maxCoord * 2, maxCoord * 2, maxCoord * 2, (byte) 0, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(beyondBoundary));
+        // Well beyond boundary should also fail in constructor
+        assertThrows(IllegalArgumentException.class, () -> new Tet(maxCoord * 2, maxCoord * 2, maxCoord * 2, (byte) 0, (byte) 0));
     }
 
     @Test
@@ -109,12 +109,13 @@ class TetreeValidatorTest {
 
     @Test
     void testDescribeTet() {
-        Tet tet = new Tet(128, 256, 512, (byte) 5, (byte) 3);
+        int cellSize5 = Constants.lengthAtLevel((byte) 5);
+        Tet tet = new Tet(cellSize5, cellSize5 * 2, cellSize5 * 3, (byte) 5, (byte) 3);
         String description = TetreeValidator.describeTet(tet);
 
-        assertTrue(description.contains("x=128"));
-        assertTrue(description.contains("y=256"));
-        assertTrue(description.contains("z=512"));
+        assertTrue(description.contains("x=" + cellSize5));
+        assertTrue(description.contains("y=" + (cellSize5 * 2)));
+        assertTrue(description.contains("z=" + (cellSize5 * 3)));
         assertTrue(description.contains("level=5"));
         assertTrue(description.contains("type=3"));
         assertTrue(description.contains("tmIndex="));
@@ -196,10 +197,11 @@ class TetreeValidatorTest {
 
     @Test
     void testMisalignedCoordinates() {
-        // Coordinates not aligned to grid at level 3
+        // Coordinates not aligned to grid at level 3 should throw exception in constructor
         int cellSize = Constants.lengthAtLevel((byte) 3);
-        Tet misaligned = new Tet(cellSize + 1, cellSize * 2, cellSize * 3, (byte) 3, (byte) 0);
-        assertFalse(TetreeValidator.isValidTet(misaligned));
+        assertThrows(IllegalArgumentException.class, () -> {
+            new Tet(cellSize + 1, cellSize * 2, cellSize * 3, (byte) 3, (byte) 0);
+        }, "Misaligned coordinates should throw exception");
 
         // Properly aligned should be valid
         Tet aligned = new Tet(cellSize, cellSize * 2, cellSize * 3, (byte) 3, (byte) 0);
@@ -223,9 +225,9 @@ class TetreeValidatorTest {
         Tet farLevel = new Tet(0, 0, 0, (byte) 6, (byte) 0);
         assertFalse(TetreeValidator.isValidNeighbor(tet1, farLevel));
 
-        // Invalid - spatially distant
+        // Invalid - spatially distant (reduce coordinates to stay within bounds)
         int cellSize = Constants.lengthAtLevel((byte) 3);
-        Tet distant = new Tet(cellSize * 100, cellSize * 100, cellSize * 100, (byte) 3, (byte) 0);
+        Tet distant = new Tet(cellSize * 5, cellSize * 5, cellSize * 5, (byte) 3, (byte) 0);
         assertFalse(TetreeValidator.isValidNeighbor(tet1, distant));
     }
 
@@ -247,9 +249,9 @@ class TetreeValidatorTest {
         Tet wrongLevel = new Tet(0, 0, 0, (byte) 4, (byte) 0);
         assertFalse(TetreeValidator.isValidParentChild(parent, wrongLevel));
 
-        // Invalid - not a child
+        // Invalid - not a child (reduce coordinates to stay within bounds)
         int cellSize = Constants.lengthAtLevel((byte) 3);
-        Tet notChild = new Tet(cellSize * 10, cellSize * 10, cellSize * 10, (byte) 3, (byte) 0);
+        Tet notChild = new Tet(cellSize * 5, cellSize * 5, cellSize * 5, (byte) 3, (byte) 0);
         assertFalse(TetreeValidator.isValidParentChild(parent, notChild));
     }
 
