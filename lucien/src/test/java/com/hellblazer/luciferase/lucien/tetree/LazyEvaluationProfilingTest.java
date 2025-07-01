@@ -42,7 +42,7 @@ public class LazyEvaluationProfilingTest {
 
         // Test 1: Just create a lazy key directly
         System.out.println("1. Creating lazy key...");
-        var tet = Tet.locateStandardRefinement(position.x, position.y, position.z, (byte) 10);
+        var tet = Tet.locatePointBeyRefinementFromRoot(position.x, position.y, position.z, (byte) 10);
         var key = new LazyTetreeKey(tet);
         System.out.println("   Key type: " + key.getClass().getSimpleName());
         System.out.println("   Is resolved: " + key.isResolved());
@@ -78,15 +78,18 @@ public class LazyEvaluationProfilingTest {
 
         var positions = new ArrayList<Point3f>();
         for (int i = 0; i < 10000; i++) {
-            positions.add(new Point3f(i * 10, i * 10, i * 10));
+            // Keep coordinates well within bounds for level 10
+            positions.add(new Point3f(i % 1000, i % 1000, i % 1000));
         }
 
         // Test 1: Direct TetreeKey creation
         long directStart = System.nanoTime();
         var directKeys = new ArrayList<BaseTetreeKey<?>>();
         for (var pos : positions) {
-            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
-            directKeys.add(tet.tmIndex());
+            var tet = Tet.locatePointBeyRefinementFromRoot(pos.x, pos.y, pos.z, (byte) 10);
+            if (tet != null) {
+                directKeys.add(tet.tmIndex());
+            }
         }
         long directTime = System.nanoTime() - directStart;
 
@@ -94,8 +97,10 @@ public class LazyEvaluationProfilingTest {
         long lazyStart = System.nanoTime();
         var lazyKeys = new ArrayList<LazyTetreeKey>();
         for (var pos : positions) {
-            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
-            lazyKeys.add(new LazyTetreeKey(tet));
+            var tet = Tet.locatePointBeyRefinementFromRoot(pos.x, pos.y, pos.z, (byte) 10);
+            if (tet != null) {
+                lazyKeys.add(new LazyTetreeKey(tet));
+            }
         }
         long lazyTime = System.nanoTime() - lazyStart;
 
@@ -103,10 +108,12 @@ public class LazyEvaluationProfilingTest {
         long resolvedStart = System.nanoTime();
         var resolvedKeys = new ArrayList<BaseTetreeKey<?>>();
         for (var pos : positions) {
-            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
-            var lazy = new LazyTetreeKey(tet);
-            lazy.resolve();
-            resolvedKeys.add(lazy);
+            var tet = Tet.locatePointBeyRefinementFromRoot(pos.x, pos.y, pos.z, (byte) 10);
+            if (tet != null) {
+                var lazy = new LazyTetreeKey(tet);
+                lazy.resolve();
+                resolvedKeys.add(lazy);
+            }
         }
         long resolvedTime = System.nanoTime() - resolvedStart;
 
@@ -150,7 +157,7 @@ public class LazyEvaluationProfilingTest {
         var instrumentedTetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator()) {
             @Override
             protected BaseTetreeKey<?> calculateSpatialIndex(Point3f position, byte level) {
-                var tet = Tet.locateStandardRefinement(position.x, position.y, position.z, level);
+                var tet = Tet.locatePointBeyRefinementFromRoot(position.x, position.y, position.z, level);
                 return new InstrumentedLazyTetreeKey(tet, "calculateSpatialIndex");
             }
         };

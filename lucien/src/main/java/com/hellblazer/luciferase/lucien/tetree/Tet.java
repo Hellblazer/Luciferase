@@ -231,75 +231,6 @@ public class Tet {
         }
     }
 
-    /**
-     * @deprecated This method is fundamentally flawed and should not be used.
-     * It assumes children are placed at cubic octant positions, which is incompatible
-     * with proper tetrahedral subdivision. Use a Bey-aware point location algorithm instead.
-     * 
-     * <p><b>Problems with this method:</b></p>
-     * <ul>
-     *   <li>Assumes children are at octant positions (they're not - they're at vertex midpoints)</li>
-     *   <li>Will locate the wrong tetrahedron for points in Bey-refined tetree</li>
-     *   <li>Incompatible with the actual tetrahedral subdivision used by child() method</li>
-     *   <li>Cannot correctly navigate the tetrahedral space-filling curve</li>
-     * </ul>
-     *
-     * @param px          X coordinate of the point
-     * @param py          Y coordinate of the point
-     * @param pz          Z coordinate of the point
-     * @param targetLevel The refinement level
-     * @return The WRONG Tet - this method locates based on invalid cubic subdivision
-     * @see Tetree#locatePoint for proper point location in tetree
-     */
-    @Deprecated(since = "June 2025", forRemoval = true)
-    public static Tet locateStandardRefinement(float px, float py, float pz, byte targetLevel) {
-        // Start at root
-        var current = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-
-        // Descend through the hierarchy
-        while (current.l < targetLevel) {
-            // Find which child contains the point
-            Tet selectedChild = null;
-            Tet closestChild = null;
-            float bestDistance = Float.MAX_VALUE;
-
-            for (int i = 0; i < 8; i++) {
-                var child = current.childStandard(i);
-                if (containsPointInTetrahedron(child, px, py, pz)) {
-                    selectedChild = child;
-                    break; // Found exact match
-                }
-
-                // Track closest child as fallback
-                var vertices = child.coordinates();
-                float cx = (vertices[0].x + vertices[1].x + vertices[2].x + vertices[3].x) / 4.0f;
-                float cy = (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4.0f;
-                float cz = (vertices[0].z + vertices[1].z + vertices[2].z + vertices[3].z) / 4.0f;
-
-                float dx = px - cx;
-                float dy = py - cy;
-                float dz = pz - cz;
-                float distance = dx * dx + dy * dy + dz * dz;
-
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    closestChild = child;
-                }
-            }
-
-            // Use exact match if found, otherwise use closest
-            if (selectedChild != null) {
-                current = selectedChild;
-            } else if (closestChild != null) {
-                current = closestChild;
-            } else {
-                // This should never happen
-                break;
-            }
-        }
-
-        return current;
-    }
 
     public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
         var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
@@ -404,16 +335,6 @@ public class Tet {
         return tetrahedron(key.getLowBits(), key.getHighBits(), key.getLevel());
     }
 
-    /**
-     * @param index - the consecutive index of the tetrahedron
-     * @return the Tet corresponding to the consecutive index
-     * @deprecated This method is fundamentally flawed as it attempts to derive level from index. Use
-     * {@link #tetrahedron(long, byte)} with explicit level instead.
-     */
-    @Deprecated(since = "0.0.1", forRemoval = true)
-    public static Tet tetrahedron(long index) {
-        return tetrahedron(index, tetLevelFromIndex(index));
-    }
 
     /**
      * Convert TM-index back to tetrahedron. This is the inverse of the tmIndex() method and properly decodes the
@@ -753,62 +674,6 @@ public class Tet {
         return new Tet(childX, childY, childZ, childLevel, childType);
     }
 
-    /**
-     * @deprecated This method is fundamentally flawed and should not be used.
-     * Standard (cubic/octant) refinement is geometrically incompatible with tetrahedral subdivision.
-     * You cannot decompose a tetrahedron using a cube. Use {@link #child(int)} for proper 
-     * tetrahedral subdivision using Bey refinement.
-     * 
-     * <p><b>Problems with this method:</b></p>
-     * <ul>
-     *   <li>Places children at cubic octant positions, not tetrahedral subdivision points</li>
-     *   <li>Creates geometrically invalid tetrahedral decomposition</li>
-     *   <li>Type assignment cannot maintain parent-child tm-index consistency</li>
-     *   <li>Incompatible with the tetrahedral space-filling curve</li>
-     * </ul>
-     * 
-     * @param childIndex the child index (0-7) in standard Morton order
-     * @return an incorrectly positioned child tetrahedron
-     * @see #child(int) for the correct Bey refinement method
-     * @see TetreeSubdivisionStrategy for proper subdivision handling
-     */
-    @Deprecated(since = "June 2025", forRemoval = true)
-    public Tet childStandard(int childIndex) {
-        if (childIndex < 0 || childIndex >= 8) {
-            throw new IllegalArgumentException("Child index must be 0-7: " + childIndex);
-        }
-        if (l >= getMaxRefinementLevel()) {
-            throw new IllegalStateException("Cannot create children at max refinement level");
-        }
-
-        byte childLevel = (byte) (l + 1);
-        int cellSize = Constants.lengthAtLevel(childLevel);
-
-        // Calculate child coordinates based on which octant (standard Morton order)
-        int childX = x + ((childIndex & 1) != 0 ? cellSize : 0);
-        int childY = y + ((childIndex & 2) != 0 ? cellSize : 0);
-        int childZ = z + ((childIndex & 4) != 0 ? cellSize : 0);
-
-        // For standard refinement, we need to assign types that ensure parent() works correctly.
-        // The child type must be chosen such that CUBE_ID_TYPE_TO_PARENT_TYPE[childIndex][childType] = parentType
-        // We need to find a childType that satisfies this constraint.
-        
-        // Find the correct child type by checking which type would produce this parent
-        byte childType = -1;
-        for (byte candidateType = 0; candidateType < 6; candidateType++) {
-            if (CUBE_ID_TYPE_TO_PARENT_TYPE[childIndex][candidateType] == type) {
-                childType = candidateType;
-                break;
-            }
-        }
-        
-        // If no valid type found (shouldn't happen), fall back to type 0
-        if (childType == -1) {
-            childType = 0;
-        }
-
-        return new Tet(childX, childY, childZ, childLevel, childType);
-    }
 
     /**
      * @param i - the Tet Morton child id
@@ -1126,7 +991,7 @@ public class Tet {
         var centerPoint = new Point3f((bounds.minX() + bounds.maxX()) / 2, (bounds.minY() + bounds.maxY()) / 2,
                                       (bounds.minZ() + bounds.maxZ()) / 2);
 
-        var tet = locate(centerPoint, level);
+        var tet = locatePointBeyRefinementFromRoot(centerPoint.x, centerPoint.y, centerPoint.z, level);
         return tet.tmIndex();
     }
 
@@ -1136,7 +1001,7 @@ public class Tet {
      * @return the simplex at the provided
      */
     public BaseTetreeKey<? extends BaseTetreeKey> enclosing(Tuple3f point, byte level) {
-        var tet = locate(new Point3f(point.x, point.y, point.z), level);
+        var tet = locatePointBeyRefinementFromRoot(point.x, point.y, point.z, level);
         return tet.tmIndex();
     }
 
@@ -1315,15 +1180,149 @@ public class Tet {
         return 1 << (getMaxRefinementLevel() - l);
     }
 
+    
     /**
-     * @deprecated Use Tetree.locate() or implement Bey-aware point location.
-     * This method previously used the flawed locateStandardRefinement.
-     * @see Tetree#locate for proper Bey-aware point location
+     * Locate a tetrahedron containing a point at a specific level using Bey refinement traversal.
+     * 
+     * This method starts from the current tetrahedron and descends through Bey-refined children
+     * until reaching the target level. It finds the child tetrahedron that contains the point
+     * at each step.
+     * 
+     * NOTE: This is different from Tetree.locate() which uses direct quantization.
+     * This method performs actual tree traversal through Bey refinement.
+     * 
+     * @param px x-coordinate of the point
+     * @param py y-coordinate of the point  
+     * @param pz z-coordinate of the point
+     * @param targetLevel the target level to reach (must be >= this.l)
+     * @return the tetrahedron at targetLevel containing the point, or null if not found
      */
-    @Deprecated(since = "June 2025", forRemoval = true)
-    public Tet locate(Point3f point, byte level) {
-        throw new UnsupportedOperationException(
-            "This method used flawed standard refinement. Use Tetree.locate() for proper Bey-aware point location.");
+    public Tet locatePointBeyRefinement(float px, float py, float pz, byte targetLevel) {
+        if (targetLevel < this.l) {
+            throw new IllegalArgumentException("Target level must be >= current level");
+        }
+        
+        // Start with current tetrahedron
+        Tet current = this;
+        
+        // Check if current contains the point
+        if (!current.containsUltraFast(px, py, pz)) {
+            return null; // Point not in this tetrahedron's subtree
+        }
+        
+        // Descend through Bey-refined children
+        while (current.l < targetLevel) {
+            boolean found = false;
+            
+            // Check all 8 Bey children
+            for (int i = 0; i < 8; i++) {
+                Tet child = current.child(i);
+                if (child.containsUltraFast(px, py, pz)) {
+                    current = child;
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                // Point not contained in any child - this can happen with Bey refinement
+                // due to gaps between children. Return the deepest containing tetrahedron.
+                return current;
+            }
+        }
+        
+        return current;
+    }
+    
+    /**
+     * Static method to locate a tetrahedron containing a point using Bey refinement
+     * traversal from a containing ancestor.
+     * 
+     * This method first uses quantization to find an initial tetrahedron at a coarse
+     * level, then uses Bey refinement traversal to descend to the target level.
+     * 
+     * This combines the benefits of:
+     * - Quantization: to quickly find an initial containing tetrahedron
+     * - Bey traversal: to navigate through the actual tree structure
+     * 
+     * @param px x-coordinate of the point (must be non-negative)
+     * @param py y-coordinate of the point (must be non-negative)
+     * @param pz z-coordinate of the point (must be non-negative)
+     * @param targetLevel the target level (0-20)
+     * @return the tetrahedron at targetLevel containing the point, or null if not found
+     */
+    public static Tet locatePointBeyRefinementFromRoot(float px, float py, float pz, byte targetLevel) {
+        // Validate inputs
+        if (px < 0 || py < 0 || pz < 0) {
+            throw new IllegalArgumentException("Coordinates must be non-negative");
+        }
+        if (targetLevel < 0 || targetLevel > Constants.getMaxRefinementLevel()) {
+            throw new IllegalArgumentException("Target level must be between 0 and " + Constants.getMaxRefinementLevel());
+        }
+        
+        // Special case for level 0 - only type 0 exists
+        if (targetLevel == 0) {
+            Tet root = new Tet(0, 0, 0, (byte)0, (byte)0);
+            return root.containsUltraFast(px, py, pz) ? root : null;
+        }
+        
+        // Start at a coarse level where we can reliably find a containing tetrahedron
+        // Level 5 gives us a reasonable granularity for initial search
+        byte startLevel = (byte)Math.min(5, targetLevel);
+        
+        // Check if point is within valid domain
+        int maxCoord = Constants.lengthAtLevel((byte)0);
+        if (px >= maxCoord || py >= maxCoord || pz >= maxCoord) {
+            return null; // Point outside valid domain
+        }
+        
+        // Use quantization to find initial containing tetrahedron
+        int cellSize = Constants.lengthAtLevel(startLevel);
+        int anchorX = (int)(Math.floor(px / cellSize) * cellSize);
+        int anchorY = (int)(Math.floor(py / cellSize) * cellSize);
+        int anchorZ = (int)(Math.floor(pz / cellSize) * cellSize);
+        
+        // Determine which of the 6 characteristic tetrahedra contains the point
+        float relX = px - anchorX;
+        float relY = py - anchorY;
+        float relZ = pz - anchorZ;
+        
+        // Scale to unit cube
+        float ux = relX / cellSize;
+        float uy = relY / cellSize;
+        float uz = relZ / cellSize;
+        
+        // Determine tetrahedron type based on position
+        byte type;
+        if (ux <= uy) {
+            if (uy <= uz) {
+                type = 3; // x <= y <= z
+            } else if (ux <= uz) {
+                type = 2; // x <= z < y
+            } else {
+                type = 4; // z < x <= y
+            }
+        } else {
+            // ux > uy
+            if (ux <= uz) {
+                type = 5; // y < x <= z
+            } else if (uy <= uz) {
+                type = 0; // y <= z < x
+            } else {
+                type = 1; // z < y < x
+            }
+        }
+        
+        // Create starting tetrahedron
+        Tet current = new Tet(anchorX, anchorY, anchorZ, startLevel, type);
+        
+        // If target level is same as start level, we're done
+        if (targetLevel == startLevel) {
+            return current;
+        }
+        
+        // Use Bey refinement traversal to reach target level
+        return current.locatePointBeyRefinement(px, py, pz, targetLevel);
     }
 
     /**
@@ -2115,30 +2114,6 @@ public class Tet {
         return volumeSize > 1000.0f && maxExtent > 10.0f;
     }
 
-    // TODO: Remove this method once all callers have been migrated to use TetreeKey
-    // This method uses consecutiveIndex() which is only unique within a level
-    @Deprecated
-    private Stream<Long> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
-        // Choose optimization strategy based on volume characteristics
-        var rangeStream = selectOptimalRangeStrategy(bounds, includeIntersecting);
-
-        // Apply optimized range merging and streaming
-        return rangeStream.collect(collectingAndThen(toList(), this::mergeRangesOptimized)).stream().flatMap(
-        range -> LongStream.rangeClosed(range.start(), range.end()).boxed()).filter(index -> {
-            // Final precise filtering for elements that passed SFC range test
-            try {
-                var tet = Tet.tetrahedron(index);
-                if (includeIntersecting) {
-                    return tetrahedronIntersectsVolume(tet, createSpatialFromBounds(bounds));
-                } else {
-                    return tetrahedronContainedInVolume(tet, createSpatialFromBounds(bounds));
-                }
-            } catch (Exception e) {
-                // Skip invalid indices
-                return false;
-            }
-        });
-    }
 
     // Efficient spatial range query using tetrahedral space-filling curve properties - optimized version
     private Stream<BaseTetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean includeIntersecting) {
