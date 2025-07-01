@@ -232,15 +232,26 @@ public class Tet {
     }
 
     /**
-     * Locate a tetrahedron containing a point using standard refinement hierarchy. This method follows the refinement
-     * path from root to find the correct tetrahedron that would be produced by standard refinement from a type 0 root.
+     * @deprecated This method is fundamentally flawed and should not be used.
+     * It assumes children are placed at cubic octant positions, which is incompatible
+     * with proper tetrahedral subdivision. Use a Bey-aware point location algorithm instead.
+     * 
+     * <p><b>Problems with this method:</b></p>
+     * <ul>
+     *   <li>Assumes children are at octant positions (they're not - they're at vertex midpoints)</li>
+     *   <li>Will locate the wrong tetrahedron for points in Bey-refined tetree</li>
+     *   <li>Incompatible with the actual tetrahedral subdivision used by child() method</li>
+     *   <li>Cannot correctly navigate the tetrahedral space-filling curve</li>
+     * </ul>
      *
      * @param px          X coordinate of the point
      * @param py          Y coordinate of the point
      * @param pz          Z coordinate of the point
      * @param targetLevel The refinement level
-     * @return The Tet containing the point following standard refinement
+     * @return The WRONG Tet - this method locates based on invalid cubic subdivision
+     * @see Tetree#locatePoint for proper point location in tetree
      */
+    @Deprecated(since = "June 2025", forRemoval = true)
     public static Tet locateStandardRefinement(float px, float py, float pz, byte targetLevel) {
         // Start at root
         var current = new Tet(0, 0, 0, (byte) 0, (byte) 0);
@@ -743,12 +754,25 @@ public class Tet {
     }
 
     /**
-     * Get child at the specified index using standard refinement rules. This method creates children that will pass the
-     * valid() check by ensuring they follow the standard refinement from type 0 root.
-     *
+     * @deprecated This method is fundamentally flawed and should not be used.
+     * Standard (cubic/octant) refinement is geometrically incompatible with tetrahedral subdivision.
+     * You cannot decompose a tetrahedron using a cube. Use {@link #child(int)} for proper 
+     * tetrahedral subdivision using Bey refinement.
+     * 
+     * <p><b>Problems with this method:</b></p>
+     * <ul>
+     *   <li>Places children at cubic octant positions, not tetrahedral subdivision points</li>
+     *   <li>Creates geometrically invalid tetrahedral decomposition</li>
+     *   <li>Type assignment cannot maintain parent-child tm-index consistency</li>
+     *   <li>Incompatible with the tetrahedral space-filling curve</li>
+     * </ul>
+     * 
      * @param childIndex the child index (0-7) in standard Morton order
-     * @return the child tetrahedron with correct type for standard refinement
+     * @return an incorrectly positioned child tetrahedron
+     * @see #child(int) for the correct Bey refinement method
+     * @see TetreeSubdivisionStrategy for proper subdivision handling
      */
+    @Deprecated(since = "June 2025", forRemoval = true)
     public Tet childStandard(int childIndex) {
         if (childIndex < 0 || childIndex >= 8) {
             throw new IllegalArgumentException("Child index must be 0-7: " + childIndex);
@@ -765,8 +789,23 @@ public class Tet {
         int childY = y + ((childIndex & 2) != 0 ? cellSize : 0);
         int childZ = z + ((childIndex & 4) != 0 ? cellSize : 0);
 
-        // Determine child type using standard refinement rules
-        byte childType = TYPE_TO_TYPE_OF_CHILD[type][childIndex];
+        // For standard refinement, we need to assign types that ensure parent() works correctly.
+        // The child type must be chosen such that CUBE_ID_TYPE_TO_PARENT_TYPE[childIndex][childType] = parentType
+        // We need to find a childType that satisfies this constraint.
+        
+        // Find the correct child type by checking which type would produce this parent
+        byte childType = -1;
+        for (byte candidateType = 0; candidateType < 6; candidateType++) {
+            if (CUBE_ID_TYPE_TO_PARENT_TYPE[childIndex][candidateType] == type) {
+                childType = candidateType;
+                break;
+            }
+        }
+        
+        // If no valid type found (shouldn't happen), fall back to type 0
+        if (childType == -1) {
+            childType = 0;
+        }
 
         return new Tet(childX, childY, childZ, childLevel, childType);
     }
@@ -915,6 +954,7 @@ public class Tet {
         final int ej = (ei + ((type & 1) == 0 ? 2 : 1)) % 3;
 
         // Precompute all vertex coordinates
+        float v0x = x, v0y = y, v0z = z;  // v0 is the anchor point
         float v1x = x, v1y = y, v1z = z;
         float v2x = x, v2y = y, v2z = z;
         float v3x = x, v3y = y, v3z = z;
@@ -953,63 +993,63 @@ public class Tet {
         }
 
         // Inline the plane equation calculations directly
-        // Face CDB (v2, v3, v1) vs point
-        float adx = v2x - px;
-        float bdx = v3x - px;
-        float cdx = v1x - px;
-        float ady = v2y - py;
-        float bdy = v3y - py;
-        float cdy = v1y - py;
-        float adz = v2z - pz;
-        float bdz = v3z - pz;
-        float cdz = v1z - pz;
+        // Face 1: v1, v2, v3 (opposite v0)
+        float adx = v1x - px;
+        float bdx = v2x - px;
+        float cdx = v3x - px;
+        float ady = v1y - py;
+        float bdy = v2y - py;
+        float cdy = v3y - py;
+        float adz = v1z - pz;
+        float bdz = v2z - pz;
+        float cdz = v3z - pz;
 
-        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) > 0) {
+        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) < 0) {
             return false;
         }
 
-        // Face DCA (v3, v2, v0) vs point
-        adx = v3x - px;
-        bdx = v2x - px;
-        cdx = x - px;
-        ady = v3y - py;
-        bdy = v2y - py;
-        cdy = y - py;
-        adz = v3z - pz;
-        bdz = v2z - pz;
-        cdz = z - pz;
-
-        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) > 0) {
-            return false;
-        }
-
-        // Face BDA (v1, v3, v0) vs point
-        adx = v1x - px;
+        // Face 2: v0, v3, v2 (opposite v1)
+        adx = v0x - px;
         bdx = v3x - px;
-        cdx = x - px;
-        ady = v1y - py;
-        bdy = v3y - py;
-        cdy = y - py;
-        adz = v1z - pz;
-        bdz = v3z - pz;
-        cdz = z - pz;
-
-        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) > 0) {
-            return false;
-        }
-
-        // Face BAC (v1, v0, v2) vs point
-        adx = v1x - px;
-        bdx = x - px;
         cdx = v2x - px;
-        ady = v1y - py;
-        bdy = y - py;
+        ady = v0y - py;
+        bdy = v3y - py;
         cdy = v2y - py;
-        adz = v1z - pz;
-        bdz = z - pz;
+        adz = v0z - pz;
+        bdz = v3z - pz;
         cdz = v2z - pz;
 
-        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) <= 0;
+        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) < 0) {
+            return false;
+        }
+
+        // Face 3: v0, v1, v3 (opposite v2)
+        adx = v0x - px;
+        bdx = v1x - px;
+        cdx = v3x - px;
+        ady = v0y - py;
+        bdy = v1y - py;
+        cdy = v3y - py;
+        adz = v0z - pz;
+        bdz = v1z - pz;
+        cdz = v3z - pz;
+
+        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) < 0) {
+            return false;
+        }
+
+        // Face 4: v0, v2, v1 (opposite v3)
+        adx = v0x - px;
+        bdx = v2x - px;
+        cdx = v1x - px;
+        ady = v0y - py;
+        bdy = v2y - py;
+        cdy = v1y - py;
+        adz = v0z - pz;
+        bdz = v2z - pz;
+        cdz = v1z - pz;
+
+        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) >= 0;
     }
 
     /**
@@ -1275,9 +1315,15 @@ public class Tet {
         return 1 << (getMaxRefinementLevel() - l);
     }
 
-    // Helper method - locate tetrahedron containing a point using standard refinement
+    /**
+     * @deprecated Use Tetree.locate() or implement Bey-aware point location.
+     * This method previously used the flawed locateStandardRefinement.
+     * @see Tetree#locate for proper Bey-aware point location
+     */
+    @Deprecated(since = "June 2025", forRemoval = true)
     public Tet locate(Point3f point, byte level) {
-        return locateStandardRefinement(point.x, point.y, point.z, level);
+        throw new UnsupportedOperationException(
+            "This method used flawed standard refinement. Use Tetree.locate() for proper Bey-aware point location.");
     }
 
     /**
@@ -1642,6 +1688,11 @@ public class Tet {
      * algorithm.
      */
     private byte computeParentType(int parentX, int parentY, int parentZ, byte parentLevel) {
+        // Special case: root tetrahedron must always have type 0
+        if (parentLevel == 0) {
+            return 0;
+        }
+        
         // Calculate the cube ID of this child within its parent
         // This is which octant of the parent cube contains this child
         int h = length(); // Cell size at current level

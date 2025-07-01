@@ -912,6 +912,89 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         }
     }
 
+    // ===== Collision Detection Override =====
+    
+    /**
+     * Override findAllCollisions to handle tetrahedral cells correctly.
+     * 
+     * The base implementation only checks entities within the same node and
+     * in neighboring grid cells. For Tetree, we also need to check all 6
+     * tetrahedra within the same grid cell, as entities very close together
+     * can end up in different tetrahedra of the same cell.
+     */
+    @Override
+    public List<CollisionPair<ID, Content>> findAllCollisions() {
+        // Use the base class implementation but with additional logic
+        // for checking other tetrahedra in the same grid cell
+        var baseCollisions = super.findAllCollisions();
+        
+        lock.readLock().lock();
+        try {
+            var collisions = new ArrayList<>(baseCollisions);
+            var checkedPairs = new HashSet<String>(); // Use String for pair keys
+            
+            // Add all base collision pairs to checked set
+            for (var collision : baseCollisions) {
+                var key = createPairKey(collision.entityId1(), collision.entityId2());
+                checkedPairs.add(key);
+            }
+            
+            // Check entities in different tetrahedra of the same grid cell
+            for (var nodeIndex : sortedSpatialIndices) {
+                var node = spatialIndex.get(nodeIndex);
+                if (node == null || node.isEmpty()) {
+                    continue;
+                }
+                
+                var currentTet = Tet.tetrahedron(nodeIndex);
+                
+                // For each entity in this tetrahedron
+                for (ID entityId : node.getEntityIds()) {
+                    // Check other tetrahedra in the same grid cell
+                    for (byte type = 0; type < 6; type++) {
+                        if (type == currentTet.type()) {
+                            continue; // Skip self
+                        }
+                        
+                        var sameCellTet = new Tet(currentTet.x(), currentTet.y(), currentTet.z(), 
+                                                  currentTet.l(), type);
+                        var sameCellIndex = sameCellTet.tmIndex();
+                        var sameCellNode = spatialIndex.get(sameCellIndex);
+                        
+                        if (sameCellNode != null && !sameCellNode.isEmpty()) {
+                            for (ID otherId : sameCellNode.getEntityIds()) {
+                                var key = createPairKey(entityId, otherId);
+                                if (checkedPairs.add(key)) {
+                                    // Check if these entities actually collide
+                                    var collision = checkCollision(entityId, otherId);
+                                    if (collision.isPresent()) {
+                                        collisions.add(collision.get());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return collisions;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Create a unique key for an entity pair (order-independent).
+     */
+    private String createPairKey(ID id1, ID id2) {
+        // Create order-independent key
+        if (id1.hashCode() < id2.hashCode()) {
+            return id1 + ":" + id2;
+        } else {
+            return id2 + ":" + id1;
+        }
+    }
+
     // ===== Enhanced Iterator API =====
 
     /**
@@ -2594,10 +2677,114 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     /**
-     * Locate the tetrahedron containing a point at a given level
+     * Locate the tetrahedron containing a point at a given level.
+     * 
+     * This uses the correct approach:
+     * 1. Quantize the point to find the anchor cube at the target level
+     * 2. Determine which of the 6 characteristic tetrahedra (S0-S5) contains the point
+     * 
+     * This is NOT a traversal through subdivisions - it's a direct calculation.
      */
     private Tet locate(Tuple3f point, byte level) {
-        return Tet.locateStandardRefinement(point.x, point.y, point.z, level);
+        // Validate inputs
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException("Coordinates must be non-negative: " + point);
+        }
+        if (level < 0 || level > 20) {
+            throw new IllegalArgumentException("Level must be between 0 and 20: " + level);
+        }
+        
+        // Step 1: Quantize to find the anchor cube (same as octree)
+        var cellSize = Constants.lengthAtLevel(level);
+        var anchorX = (int) (Math.floor(point.x / cellSize) * cellSize);
+        var anchorY = (int) (Math.floor(point.y / cellSize) * cellSize);
+        var anchorZ = (int) (Math.floor(point.z / cellSize) * cellSize);
+        
+        // Step 2: Determine which of the 6 tetrahedra contains the point
+        // The cube at (anchorX, anchorY, anchorZ) contains 6 tetrahedra (types 0-5)
+        // We need to use orientation tests to determine which one contains our point
+        
+        // Calculate the relative position within the cube
+        var relX = point.x - anchorX;
+        var relY = point.y - anchorY;
+        var relZ = point.z - anchorZ;
+        
+        // Use orientation tests to determine the tetrahedron type
+        // This is based on which side of certain planes the point falls on
+        byte type;
+        if (level == 0) {
+            // At level 0, there's only the root tetrahedron of type 0
+            type = 0;
+        } else {
+            type = determineTetrahedronType(relX, relY, relZ, cellSize);
+        }
+        
+        return new Tet(anchorX, anchorY, anchorZ, level, type);
+    }
+    
+    /**
+     * Determine which of the 6 characteristic tetrahedra contains a point within a cube.
+     * 
+     * A cube is divided into 6 tetrahedra (S0-S5) that share the main diagonal from
+     * (0,0,0) to (cellSize,cellSize,cellSize). We test which tetrahedron contains the
+     * point by checking on which side of the dividing planes the point falls.
+     * 
+     * Based on the SIMPLEX definitions in Constants:
+     * - S0: c0(0,0,0), c1(1,0,0), c5(1,0,1), c7(1,1,1)
+     * - S1: c0(0,0,0), c1(1,0,0), c3(1,1,0), c7(1,1,1)
+     * - S2: c0(0,0,0), c2(0,1,0), c3(1,1,0), c7(1,1,1)
+     * - S3: c0(0,0,0), c2(0,1,0), c6(0,1,1), c7(1,1,1)
+     * - S4: c0(0,0,0), c4(0,0,1), c6(0,1,1), c7(1,1,1)
+     * - S5: c0(0,0,0), c4(0,0,1), c5(1,0,1), c7(1,1,1)
+     */
+    private byte determineTetrahedronType(float relX, float relY, float relZ, float cellSize) {
+        // We need to determine which of the 6 tetrahedra contains the point
+        // by testing it against each tetrahedron explicitly
+        
+        // Scale to unit cube coordinates for easier testing
+        var px = relX / cellSize;
+        var py = relY / cellSize;
+        var pz = relZ / cellSize;
+        
+        // For each tetrahedron, check if the point is inside using the
+        // orientation test approach. A point is inside a tetrahedron if it's
+        // on the correct side of all 4 faces.
+        
+        // Rather than test all 6 explicitly, we can use the fact that they
+        // partition the cube and use a decision tree based on key planes:
+        
+        // The main diagonal from (0,0,0) to (1,1,1) is shared by all tetrahedra
+        // The 6 tetrahedra are arranged around this diagonal
+        
+        // Use the three coordinate planes through the diagonal to classify:
+        // Plane 1: x = y (divides S0,S4,S5 from S1,S2,S3)
+        // Plane 2: y = z (divides S0,S1,S2 from S3,S4,S5)
+        // Plane 3: x = z (divides S0,S2,S3 from S1,S4,S5)
+        
+        if (px <= py) {
+            if (py <= pz) {
+                // x <= y <= z
+                return 3; // S3: c0, c2, c6, c7
+            } else if (px <= pz) {
+                // x <= z < y
+                return 2; // S2: c0, c2, c3, c7
+            } else {
+                // z < x <= y
+                return 4; // S4: c0, c4, c6, c7
+            }
+        } else {
+            // px > py
+            if (px <= pz) {
+                // y < x <= z
+                return 5; // S5: c0, c4, c5, c7
+            } else if (py <= pz) {
+                // y <= z < x
+                return 0; // S0: c0, c1, c5, c7
+            } else {
+                // z < y < x
+                return 1; // S1: c0, c1, c3, c7
+            }
+        }
     }
 
 

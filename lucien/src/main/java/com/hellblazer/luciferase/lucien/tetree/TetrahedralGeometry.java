@@ -353,7 +353,14 @@ public class TetrahedralGeometry {
         // Only check if ray origin has positive coordinates (tetrahedra only exist in positive space)
         boolean rayStartsInside = false;
         if (ray.origin().x >= 0 && ray.origin().y >= 0 && ray.origin().z >= 0) {
-            rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
+            // Don't use the potentially broken Tet.contains method
+            // Instead, convert vertices to float and use proper geometric test
+            Point3f[] floatVertices = new Point3f[4];
+            for (int i = 0; i < 4; i++) {
+                floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
+            }
+            rayStartsInside = isPointInTetrahedronByVertices(ray.origin(), 
+                floatVertices[0], floatVertices[1], floatVertices[2], floatVertices[3]);
         }
 
         // If ray starts inside, return distance 0 immediately
