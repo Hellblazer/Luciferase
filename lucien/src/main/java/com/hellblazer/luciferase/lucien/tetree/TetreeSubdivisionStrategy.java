@@ -90,8 +90,8 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
             Point3i[] intVertices = childTet.coordinates();
             Point3f[] vertices = convertToFloat(intVertices);
 
-            // Check if entity bounds intersect this tetrahedron
-            if (entityBoundsIntersectsTetrahedron(entityBounds, vertices)) {
+            // Check if entity bounds intersect this tetrahedron using proper geometric test
+            if (TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, vertices)) {
                 targetNodes.add(childTet.tmIndex());
             }
         }
@@ -255,27 +255,6 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
         return true;
     }
 
-    /**
-     * Check if entity bounds intersect with a tetrahedron
-     */
-    private boolean entityBoundsIntersectsTetrahedron(EntityBounds bounds, Point3f[] tetVertices) {
-        // First check AABB vs tetrahedron AABB
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (Point3f vertex : tetVertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        // Quick AABB intersection test
-        return bounds.getMaxX() >= minX && bounds.getMinX() <= maxX && bounds.getMaxY() >= minY
-        && bounds.getMinY() <= maxY && bounds.getMaxZ() >= minZ && bounds.getMinZ() <= maxZ;
-    }
 
     /**
      * Estimate the size of a tetrahedron (length of longest edge)
@@ -300,24 +279,7 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
      * Check if a point is inside a tetrahedron using barycentric coordinates
      */
     private boolean pointInTetrahedron(Point3f point, Point3f[] vertices) {
-        // Use barycentric coordinates to check if point is inside tetrahedron
-        // This is a simplified check - actual implementation would use
-        // the TetrahedralGeometry class for precise calculations
-
-        // For now, use a bounding box approximation
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (Point3f vertex : vertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY && point.z >= minZ
-        && point.z <= maxZ;
+        // Use the proper geometric test from TetrahedralGeometry
+        return TetrahedralGeometry.containsPoint(point, vertices);
     }
 }
