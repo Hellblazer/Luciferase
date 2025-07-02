@@ -19,14 +19,14 @@ package com.hellblazer.luciferase.lucien.tetree;
 import java.util.Objects;
 
 /**
- * Full spatial key implementation for Tetree structures using 128-bit representation for all levels 0-21. This extends
+ * Full spatial key implementation for Tetree structures using 128-bit representation for all levels 0-20. This extends
  * CompactTetreeKey to add the high bits needed for levels > 10.
  *
  * Unlike Morton codes used in Octrees, Tetree SFC indices are NOT unique across levels. The same index value can
  * represent different tetrahedra at different levels. This key implementation combines both the level and the SFC index
  * to ensure uniqueness.
  *
- * The TM-index is represented using two longs (128 bits total), which is sufficient for levels 0-21. The comparison
+ * The TM-index is represented using two longs (128 bits total), which is sufficient for levels 0-20. The comparison
  * ordering ensures spatial locality within each level.
  *
  * @author hal.hildebrand
@@ -98,7 +98,7 @@ public class TetreeKey extends CompactTetreeKey {
     @Override
     public boolean isValid() {
         // Check basic level validity
-        if (level < 0 || level > 21) {
+        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
             return false;
         }
 
@@ -117,7 +117,7 @@ public class TetreeKey extends CompactTetreeKey {
             return (getLowBits() & ~maxBitsForLevel) == 0;
         }
 
-        // For levels 11-21, both low and high bits may be used
+        // For levels 11-20, both low and high bits may be used
         // Low bits can use up to 60 bits (10 levels * 6 bits per level)
         // High bits usage depends on the level
         int highLevels = level - 10;
@@ -125,8 +125,8 @@ public class TetreeKey extends CompactTetreeKey {
 
         // Handle case where we need all 64 bits or more
         if (bitsNeeded >= 64) {
-            // For level 21: highLevels=11, bitsNeeded=66
-            // We can use all 64 bits in highBits, so no validation needed
+            // For level 20: highLevels=10, bitsNeeded=60
+            // We can use up to 60 bits in highBits
             return true;
         }
 

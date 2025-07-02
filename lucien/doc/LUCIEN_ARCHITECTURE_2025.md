@@ -11,7 +11,9 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 96 Java files organized across 8 packages, providing a comprehensive spatial indexing system with advanced features including collision detection, tree balancing, and visitor patterns. As of June 2025, all planned enhancements have been implemented.
+The module consists of 98 Java files organized across 8 packages, providing a comprehensive spatial indexing system with
+advanced features including collision detection, tree balancing, and visitor patterns. As of June 2025, all planned
+enhancements have been implemented.
 
 ## Package Structure
 
@@ -39,15 +41,16 @@ com.hellblazer.luciferase.lucien/
 │   ├── MortonKey - Space-filling curve key
 │   ├── Octant - Octant enumeration
 │   └── OctreeSubdivisionStrategy - Subdivision policy
-├── tetree/ (30 classes)
+├── tetree/ (32 classes)
 │   ├── Core: Tetree, TetreeNodeImpl, Tet, TetrahedralGeometry, TetrahedralSearchBase
 │   ├── Keys: TetreeKey, BaseTetreeKey, CompactTetreeKey, LazyTetreeKey
 │   ├── Indexing: TmIndex, SimpleTMIndex, TMIndex128Clean
 │   ├── Caching: TetreeLevelCache, TetreeRegionCache, SpatialLocalityCache, ThreadLocalTetreeCache
 │   ├── Utilities: TetreeBits, TetreeConnectivity, TetreeFamily, TetreeHelper, 
 │   │              TetreeIterator, TetreeLUT, TetreeMetrics, TetreeNeighborFinder
-│   └── Advanced: TetreeSFCRayTraversal, TetreeSubdivisionStrategy, TetreeValidator,
-│                 TetreeValidationUtils, PluckerCoordinate, TetOptimized
+│   ├── Subdivision: TetrahedralSubdivision, BeySubdivision, TetreeSubdivisionStrategy
+│   └── Advanced: TetreeSFCRayTraversal, TetreeValidator, TetreeValidationUtils, 
+│                 PluckerCoordinate, TetOptimized
 ├── balancing/ (3 classes)
 │   ├── TreeBalancer - Main balancing interface
 │   ├── TreeBalancingStrategy - Strategy pattern
@@ -220,9 +223,10 @@ The `EntityManager` class provides centralized entity lifecycle:
 - **Octant** - Octant enumeration and utilities
 - **OctreeSubdivisionStrategy** - Subdivision policy for octree nodes
 
-### Tetree Package (30)
+### Tetree Package (32)
 
 Core classes:
+
 - **Tetree** - Tetrahedral tree with positive coordinate constraints
 - **TetreeNodeImpl** - Set-based entity storage per node
 - **Tet** - Tetrahedron representation with SFC indexing
@@ -230,21 +234,29 @@ Core classes:
 - **TetrahedralSearchBase** - Base class for tetrahedral queries
 
 Key implementations (4):
+
 - **TetreeKey** - Main space-filling curve key
 - **BaseTetreeKey**, **CompactTetreeKey**, **LazyTetreeKey** - Optimized key variants
 
 Performance optimizations (7):
+
 - **TetreeLevelCache** - O(1) level extraction and parent caching
 - **TetreeRegionCache** - Regional caching for queries
 - **SpatialLocalityCache**, **ThreadLocalTetreeCache** - Thread-local optimizations
 - **TetreeMetrics** - Performance monitoring
 - **TetOptimized** - Optimized tetrahedron operations
 
+Subdivision classes (3):
+
+- **TetrahedralSubdivision**, **BeySubdivision** - Tetrahedral subdivision algorithms
+- **TetreeSubdivisionStrategy** - Subdivision policy
+
 Additional utilities (14):
+
 - **TetreeBits**, **TetreeConnectivity**, **TetreeFamily** - Bit operations and connectivity
 - **TetreeHelper**, **TetreeIterator**, **TetreeLUT** - Helper utilities
 - **TetreeNeighborFinder**, **TetreeSFCRayTraversal** - Advanced search
-- **TetreeSubdivisionStrategy**, **TetreeValidator**, **TetreeValidationUtils**
+- **TetreeValidator**, **TetreeValidationUtils** - Validation utilities
 - **TmIndex**, **SimpleTMIndex**, **TMIndex128Clean** - Index implementations
 - **PluckerCoordinate** - Ray intersection optimization
 
@@ -353,8 +365,6 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 
 ### What This Architecture Does NOT Include
 
-Unlike earlier documentation that described 60+ classes, the actual implementation contains 34 classes:
-
 - **No specialized search classes** - Search algorithms integrated into core classes
 - **No optimizer classes** - Optimization is left to implementations
 - **No spatial engine layer** - Direct use of spatial indices
@@ -380,7 +390,9 @@ Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator
 
 // Insert entities
 LongEntityID id = new LongEntityID(1);
-octree.insert(id, new Point3f(100, 200, 300), (byte)10, "Entity data");
+octree.
+
+insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");
 
 // k-NN search
 List<LongEntityID> nearest = octree.kNearestNeighbors(new Point3f(110, 210, 310), 5,  // find 5 nearest
@@ -421,19 +433,23 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 
 ## Performance Characteristics (June 28, 2025)
 
-**BREAKTHROUGH**: With V2 tmIndex optimization and parent cache, Tetree now outperforms Octree for bulk loading at large scales!
+**BREAKTHROUGH**: With V2 tmIndex optimization and parent cache, Tetree now outperforms Octree for bulk loading at large
+scales!
 
 ### Individual Operations
+
 - **Insertion**: Octree 3-5x faster due to O(1) Morton encoding
 - **k-NN Search**: Tetree 2.9x faster due to better spatial locality
 - **Range Query**: Octree 7.7x faster
 - **Memory**: Tetree uses 74-76% less memory
 
 ### Bulk Loading (The Game Changer)
+
 - **50K entities**: Tetree 35% faster than Octree
 - **100K entities**: Tetree 38% faster than Octree
 
 Key optimizations implemented:
+
 - V2 tmIndex: 4x speedup in tmIndex computation
 - Parent cache: 17-67x speedup for parent operations
 - Bulk operations: Deferred subdivision provides massive benefits

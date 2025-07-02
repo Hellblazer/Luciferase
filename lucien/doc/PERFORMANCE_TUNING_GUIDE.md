@@ -430,5 +430,12 @@ The key to optimal performance is understanding your data distribution and opera
    - V2 tmIndex: 4x speedup for Tetree operations
    - Parent cache: Up to 67x improvement for deep trees
    - Bulk loading: Tetree now performs better than Octree at large scales
+   - Geometric subdivision: 5.5x faster than grid-based child() operations
+
+5. **Geometric Subdivision Performance** (June 28, 2025):
+   - Operation time: ~0.04 μs per subdivision
+   - Throughput: ~25 million subdivisions/second
+   - Comparison: 5.5x faster than 8 individual child() calls
+   - Use case: When you need all 8 children with geometric containment guarantees
 
 Start with your dominant operation pattern (individual vs bulk, insertion vs query) to choose the right spatial index.

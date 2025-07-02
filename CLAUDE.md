@@ -28,12 +28,16 @@ The project uses SLF4J for logging with Logback as the implementation:
 
 Luciferase is a 3D spatial data structure and visualization library with these core modules:
 
-### Lucien Module - Spatial Indexing (34 classes total)
+### Lucien Module - Spatial Indexing (98 Java files total)
 
-- **Core** (13 classes): `AbstractSpatialIndex`, `SpatialIndex`, `SpatialNodeStorage`, etc.
+- **Core** (27 classes): `AbstractSpatialIndex`, `SpatialIndex`, `SpatialNodeStorage`, etc.
 - **Entity Management** (12 classes): `EntityManager`, `EntityBounds`, ID generators, etc.
-- **Octree** (3 classes): Morton curve-based cubic decomposition
-- **Tetree** (6 classes): Tetrahedral space-filling curve decomposition
+- **Octree** (5 classes): Morton curve-based cubic decomposition
+- **Tetree** (32 classes): Tetrahedral space-filling curve decomposition
+- **Collision** (12 classes): Collision detection system with shapes and physics
+- **Balancing** (3 classes): Tree balancing strategies
+- **Visitor** (6 classes): Tree traversal visitor pattern
+- **Index** (1 class): TM-index implementation
 
 ### Other Modules
 
@@ -96,7 +100,7 @@ Historical documents (describe unimplemented features):
 - Constants.toLevel is correct. do not change it
 - TetrahedralGeometry is fully integrated with TetrahedralSearchBase methods
 - All documentation has been cleaned up to reflect current state (June 2025)
-- The lucien module contains 34 classes total (not 60+ as originally planned)
+- The lucien module contains 98 Java files total (organized across 8 packages)
 - run OctreeVsTetreeBenchmark for benchmarking documentation
 - AbstractSpatialIndex provides common functionality through generics:
     - Contains the spatialIndex Map<Key, NodeType> field with type-safe spatial keys
@@ -182,5 +186,13 @@ Historical documents (describe unimplemented features):
     - **Integration**: Full production integration completed June 28, 2025
 - **Performance Testing Configuration:**
     - Disable Java assertions when running performance testing to reduce overhead
+- **TETRAHEDRAL SUBDIVISION SOLUTION (June 28, 2025):**
+    - **Problem**: Tetrahedral subdivision only achieved 37.5% containment due to vertex system mismatch
+    - **Root Cause**: Our Tet used type-dependent V3 computation vs Subdivision.md's V3 = anchor + (h,h,h)
+    - **Solution**: Created subdivisionCoordinates() method that uses V3 = anchor + (h,h,h) specifically for subdivision
+    - **Impact**: Achieved 100% geometric containment without changing the global coordinate system
+    - **Location**: Tet.java subdivisionCoordinates() method, BeySubdivision uses this for subdivision operations
+    - **Note**: This is a localized solution - existing coordinate system remains unchanged
+    - **Result**: geometricSubdivide() produces 8 children geometrically contained within parent in subdivision space
 
 [... rest of the file remains unchanged ...]

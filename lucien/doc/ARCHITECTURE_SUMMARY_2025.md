@@ -11,7 +11,7 @@ The lucien module provides spatial indexing through a unified architecture suppo
 decomposition. Following major consolidation in January 2025, the module uses inheritance to maximize code reuse while
 maintaining the unique characteristics of each approach. As of June 2025, all planned enhancements have been completed.
 
-**Total Classes: 96 Java files** organized across 8 packages
+**Total Classes: 98 Java files** organized across 8 packages
 
 ## Package Overview
 
@@ -20,7 +20,7 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_
 - **Root Package (27 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
 - **Octree Package (5 classes)**: Morton curve-based cubic spatial decomposition
-- **Tetree Package (30 classes)**: Tetrahedral spatial decomposition with extensive optimizations
+- **Tetree Package (32 classes)**: Tetrahedral spatial decomposition with extensive optimizations
 - **Balancing Package (3 classes)**: Tree balancing strategies
 - **Collision Package (12 classes)**: Comprehensive collision detection system
 - **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
@@ -170,7 +170,17 @@ For detailed performance analysis, see [PERFORMANCE_REALITY_JUNE_2025.md](./PERF
 For usage examples and detailed implementation guidance, refer to the specific API documentation files listed above and
 the comprehensive architecture guide.
 
-## Recent Bug Fixes (June 24, 2025)
+## Recent Updates
+
+### Geometric Subdivision Implementation (June 28, 2025)
+
+- **Feature**: Added `geometricSubdivide()` method to Tet class for true geometric subdivision
+- **Solution**: Created `subdivisionCoordinates()` method using V3 = anchor + (h,h,h) for compatibility
+- **Performance**: ~0.04 μs per operation, 5.5x faster than 8 individual child() calls
+- **Benefit**: 100% geometric containment of children within parent in subdivision space
+- **Impact**: No breaking changes to existing coordinate system
+
+### Bug Fixes (June 24, 2025)
 
 1. **Collision Detection**: Fixed control flow in forEach loops (return → continue)
 2. **Neighbor Finding**: Fixed distance calculations (centroids → entity positions)

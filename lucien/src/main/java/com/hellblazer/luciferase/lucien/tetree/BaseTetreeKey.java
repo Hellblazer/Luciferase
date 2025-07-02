@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
-import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
 import java.util.Objects;
@@ -34,9 +33,10 @@ import java.util.Objects;
 public abstract class BaseTetreeKey<K extends BaseTetreeKey<K>>
 implements SpatialKey<BaseTetreeKey<? extends BaseTetreeKey>> {
 
+    public static final    byte MAX_REFINEMENT_LEVEL = 21;
     // Bit layout constants
-    protected static final int BITS_PER_LEVEL    = 6;
-    protected static final int MAX_COMPACT_LEVEL = 10;
+    protected static final int  BITS_PER_LEVEL       = 6;
+    protected static final int  MAX_COMPACT_LEVEL    = 10;
 
     // Cached root instance - root is always compact
     private static final CompactTetreeKey ROOT = new CompactTetreeKey((byte) 0, 0L);
@@ -50,8 +50,9 @@ implements SpatialKey<BaseTetreeKey<? extends BaseTetreeKey>> {
      * @param level the hierarchical level
      */
     protected BaseTetreeKey(byte level) {
-        if (level < 0 || level > 21) {
-            throw new IllegalArgumentException("Level must be between 0 and " + 21 + ", got: " + level);
+        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
+            throw new IllegalArgumentException(
+            "Level must be between 0 and " + MAX_REFINEMENT_LEVEL + ", got: " + level);
         }
         this.level = level;
     }
@@ -150,7 +151,7 @@ implements SpatialKey<BaseTetreeKey<? extends BaseTetreeKey>> {
     @Override
     public boolean isValid() {
         // Check basic constraints
-        if (level < 0 || level > Constants.getMaxRefinementLevel()) {
+        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
             return false;
         }
 
