@@ -158,7 +158,7 @@ public class TetrahedralSubdivision {
      */
     public static void main(String[] args) {
         // Create a root tetrahedron of type 0 at level 0
-        Tet root = new Tet(0, 0, 0, 0, 0);
+        Tet root = new Tet(15, 0, 0, 0, 5);
 
         System.out.println("Parent tetrahedron: " + root);
         System.out.println("Is valid: " + isValidTet(root));

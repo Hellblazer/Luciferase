@@ -52,16 +52,16 @@ public class Tet {
                                                             { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
                                                             { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
     };
-    private final        int              x;
-    private final        int              y;
-    private final        int              z;
-    private final        byte             l;
-    private final        byte             type;
+    public final         int              x;
+    public final         int              y;
+    public final         int              z;
+    public final         byte             l;
+    public final         byte             type;
 
     public Tet(int x, int y, int z, byte l, byte type) {
         // Validate level range first
         assert l >= 0 && l <= 21 : "Level " + l + " must be between 0 and " + 21;
-        // Validate type range
+
         assert type >= 0 && type <= 5 : "Type " + type + " must be between 0 and 5";
         // Validate coordinates
         assert x >= 0 && y >= 0 && z >= 0 : "Coordinates must be non-negative: (" + x + ", " + y + ", " + z + ")";
