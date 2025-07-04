@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.portal.mesh.explorer;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.lucien.tetree.BaseTetreeKey;
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Point3D;
@@ -67,6 +68,7 @@ public class TetreeVisualizationDemo extends Application {
     private final Translate translate = new Translate(0, 0, 0);
 
     private TetreeVisualization<LongEntityID, String> visualization;
+    private TransformBasedTetreeVisualization<LongEntityID, String> transformBasedViz;
     private Tetree<LongEntityID, String> tetree;
     private SubScene scene3D;
     private double mouseX, mouseY;
@@ -104,8 +106,8 @@ public class TetreeVisualizationDemo extends Application {
 
         // Setup camera with appropriate clipping planes for scaled coordinates
         PerspectiveCamera camera = new PerspectiveCamera(true);
-        camera.setNearClip(0.1);
-        camera.setFarClip(10000.0);
+        camera.setNearClip(0.01);
+        camera.setFarClip(100000.0);
         camera.setTranslateZ(-CAMERA_DISTANCE);
         scene3D.setCamera(camera);
 
@@ -139,6 +141,9 @@ public class TetreeVisualizationDemo extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
 
+        // Add some initial entities for demonstration
+        addRandomEntities(20);
+        
         // Initial visualization
         visualization.updateVisualization();
         
@@ -193,6 +198,60 @@ public class TetreeVisualizationDemo extends Application {
         showFilledFaces.selectedProperty().bindBidirectional(visualization.showFilledFacesProperty());
 
         controls.getChildren().addAll(showEmptyNodes, showEntityPositions, showNodeBounds, showLevelColors, showFilledFaces);
+        
+        // Transform-based rendering option
+        CheckBox useTransformBased = new CheckBox("Transform-Based Rendering");
+        useTransformBased.setTooltip(new Tooltip("Uses 6 reference meshes with transforms\ninstead of creating individual meshes"));
+        useTransformBased.setOnAction(e -> {
+            if (useTransformBased.isSelected()) {
+                showTransformBasedVisualization();
+                // Verify it's working - need to count from the transform root specifically
+                if (transformBasedViz != null) {
+                    TransformBasedVerification.printVerificationStats(
+                        transformBasedViz.getSceneRoot(), "Transform-Based");
+                }
+            } else {
+                // Switch back to traditional rendering
+                Group root3D = visualization.getSceneRoot();
+                
+                // Remove transform-based visualization if present
+                if (transformBasedViz != null) {
+                    root3D.getChildren().remove(transformBasedViz.getSceneRoot());
+                }
+                
+                // Show all traditional meshes again
+                root3D.getChildren().forEach(child -> {
+                    if (child instanceof Group || child instanceof MeshView) {
+                        child.setVisible(true);
+                    }
+                });
+                
+                visualization.updateVisualization();
+                // Show traditional stats for comparison
+                TransformBasedVerification.printVerificationStats(
+                    visualization.getSceneRoot(), "Traditional");
+            }
+        });
+        controls.getChildren().add(useTransformBased);
+        
+        // Add verification button
+        Button verifyBtn = new Button("Verify Rendering Mode");
+        verifyBtn.setTooltip(new Tooltip("Print statistics about current rendering mode"));
+        verifyBtn.setOnAction(e -> {
+            // Run later to ensure scene graph is updated
+            javafx.application.Platform.runLater(() -> {
+                if (useTransformBased.isSelected() && transformBasedViz != null) {
+                    System.out.println("\nDEBUG: Verifying transform-based scene root:");
+                    System.out.println("  Root children: " + transformBasedViz.getSceneRoot().getChildren().size());
+                    TransformBasedVerification.printVerificationStats(
+                        transformBasedViz.getSceneRoot(), "Transform-Based");
+                } else {
+                    TransformBasedVerification.printVerificationStats(
+                        visualization.getSceneRoot(), "Traditional");
+                }
+            });
+        });
+        controls.getChildren().add(verifyBtn);
 
         // Level controls
         controls.getChildren().add(new Separator());
@@ -555,10 +614,15 @@ public class TetreeVisualizationDemo extends Application {
 
     private void addRandomEntities(int count) {
         Random random = new Random();
+        // At level 10, cell size is 2^10 = 1024
+        // Spread entities across multiple cells
+        float cellSize = 1024f;
+        float spread = cellSize * 10; // Spread across 10x10x10 cells
+        
         for (int i = 0; i < count; i++) {
-            float x = random.nextFloat() * 800 + 100;
-            float y = random.nextFloat() * 800 + 100;
-            float z = random.nextFloat() * 800 + 100;
+            float x = random.nextFloat() * spread;
+            float y = random.nextFloat() * spread;
+            float z = random.nextFloat() * spread;
             tetree.insert(new Point3f(x, y, z), (byte) 10, "Entity " + i);
         }
         visualization.updateVisualization();
@@ -746,6 +810,63 @@ public class TetreeVisualizationDemo extends Application {
                     dz1 * (dx2 * dy3 - dy2 * dx3);
         
         return det / 6.0;
+    }
+    
+    private boolean containsMeshViews(Node node) {
+        if (node instanceof MeshView) {
+            return true;
+        }
+        if (node instanceof Parent) {
+            Parent parent = (Parent) node;
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                if (containsMeshViews(child)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    private void showTransformBasedVisualization() {
+        // Initialize transform-based visualization if needed
+        if (transformBasedViz == null) {
+            transformBasedViz = new TransformBasedTetreeVisualization<>();
+        }
+        
+        // Get the scene root
+        Group root3D = visualization.getSceneRoot();
+        
+        // Hide only the tetrahedral meshes, not axes or other elements
+        root3D.getChildren().forEach(child -> {
+            if (child instanceof Group && child.getUserData() instanceof BaseTetreeKey) {
+                // This is a tet group
+                child.setVisible(false);
+            } else if (child instanceof MeshView) {
+                // Individual mesh views
+                child.setVisible(false);
+            }
+            // Keep axes, lights, and special groups visible
+        });
+        
+        // Clear and populate transform-based visualization
+        transformBasedViz.clear();
+        transformBasedViz.demonstrateUsage(tetree);
+        
+        // Add transform-based visualization to the main root
+        Group transformRoot = transformBasedViz.getSceneRoot();
+        
+        // The transform root should be added to the already-scaled scene root
+        if (!root3D.getChildren().contains(transformRoot)) {
+            root3D.getChildren().add(transformRoot);
+        }
+        
+        // Make it visible
+        transformRoot.setVisible(true);
+        
+        System.out.println("DEBUG: Transform-based visualization active");
+        System.out.println("  Transform root children: " + transformRoot.getChildren().size());
+        System.out.println("  Root3D children: " + root3D.getChildren().size());
+        System.out.println("  Root3D transforms: " + root3D.getTransforms());
     }
     
     public static void main(String[] args) {
