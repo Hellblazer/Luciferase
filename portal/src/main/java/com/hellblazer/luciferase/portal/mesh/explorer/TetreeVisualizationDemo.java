@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
@@ -56,7 +57,7 @@ public class TetreeVisualizationDemo extends Application {
 
     private static final double SCENE_WIDTH     = 1200;
     private static final double SCENE_HEIGHT    = 800;
-    private static final double CAMERA_DISTANCE = 2000;  // Distance for viewing scaled scene
+    private static final double CAMERA_DISTANCE = 5000;  // Distance for viewing scaled scene at 0.001 scale
 
     private final Rotate    rotateX   = new Rotate(0, Rotate.X_AXIS);
     private final Rotate    rotateY   = new Rotate(0, Rotate.Y_AXIS);
@@ -71,7 +72,6 @@ public class TetreeVisualizationDemo extends Application {
     // Additional visualization groups
     private Group      cubeDecompositionGroup;
     private Group      characteristicTypesGroup;
-    private CheckBox[] childVisibilityControls;
 
     public static void main(String[] args) {
         launch(args);
@@ -110,13 +110,21 @@ public class TetreeVisualizationDemo extends Application {
         camera.setTranslateZ(-CAMERA_DISTANCE);
         scene3D.setCamera(camera);
 
-        // Setup lighting
-        AmbientLight ambientLight = new AmbientLight(Color.WHITE.deriveColor(0, 1, 0.3, 1));
-        PointLight pointLight = new PointLight(Color.WHITE);
-        pointLight.setTranslateX(500);
-        pointLight.setTranslateY(-500);
-        pointLight.setTranslateZ(-1000);
-        root3D.getChildren().addAll(ambientLight, pointLight);
+        // Setup lighting with softer, more diffuse lighting
+        AmbientLight ambientLight = new AmbientLight(Color.WHITE.deriveColor(0, 1, 0.6, 1)); // Increased ambient
+        
+        // Add multiple point lights for better coverage
+        PointLight pointLight1 = new PointLight(Color.WHITE.deriveColor(0, 1, 0.7, 1));
+        pointLight1.setTranslateX(2000);
+        pointLight1.setTranslateY(-2000);
+        pointLight1.setTranslateZ(-3000);
+        
+        PointLight pointLight2 = new PointLight(Color.WHITE.deriveColor(0, 1, 0.5, 1));
+        pointLight2.setTranslateX(-2000);
+        pointLight2.setTranslateY(1000);
+        pointLight2.setTranslateZ(-2000);
+        
+        root3D.getChildren().addAll(ambientLight, pointLight1, pointLight2);
 
         // Setup mouse controls
         setupMouseControls();
@@ -145,6 +153,13 @@ public class TetreeVisualizationDemo extends Application {
 
         // Initial visualization
         visualization.updateVisualization();
+        
+        // Center view on entities after initial load
+        javafx.application.Platform.runLater(() -> {
+            if (tetree.size() > 0) {
+                centerViewOnEntities();
+            }
+        });
 
         // Focus the scene
         scene3D.requestFocus();
@@ -152,16 +167,23 @@ public class TetreeVisualizationDemo extends Application {
 
     private void addRandomEntities(int count) {
         Random random = new Random();
-        // At level 10, cell size is 2^10 = 1024
-        // Spread entities across multiple cells
-        float cellSize = 1024f;
-        float spread = cellSize * 10; // Spread across 10x10x10 cells
+        // Insert entities at a coarser level (5) for better visibility
+        // At level 5, cell size is 2^15 = 32768
+        // This gives us much larger, more visible tetrahedra
+        byte level = 5;
+        float maxCoord = (float) Math.pow(2, MortonCurve.MAX_REFINEMENT_LEVEL);
+        
+        // Spread entities across the middle portion of the space
+        // This ensures they're visible and not at the edges
+        float minRange = maxCoord * 0.2f;  // Start at 20% of max
+        float maxRange = maxCoord * 0.8f;  // End at 80% of max
+        float range = maxRange - minRange;
 
         for (int i = 0; i < count; i++) {
-            float x = random.nextFloat() * spread;
-            float y = random.nextFloat() * spread;
-            float z = random.nextFloat() * spread;
-            tetree.insert(new Point3f(x, y, z), (byte) 10, "Entity " + i);
+            float x = minRange + random.nextFloat() * range;
+            float y = minRange + random.nextFloat() * range;
+            float z = minRange + random.nextFloat() * range;
+            tetree.insert(new Point3f(x, y, z), level, "Entity " + i);
         }
         visualization.updateVisualization();
     }
@@ -184,19 +206,6 @@ public class TetreeVisualizationDemo extends Application {
         return det / 6.0;
     }
 
-    private boolean containsMeshViews(Node node) {
-        if (node instanceof MeshView) {
-            return true;
-        }
-        if (node instanceof final Parent parent) {
-            for (Node child : parent.getChildrenUnmodifiable()) {
-                if (containsMeshViews(child)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 
     private Group createAxes() {
         Group axesGroup = new Group();
@@ -237,10 +246,10 @@ public class TetreeVisualizationDemo extends Application {
         // Entity controls
         controls.getChildren().add(new Label("Entity Controls"));
         Button addRandomEntities = new Button("Add 10 Random Entities");
-        addRandomEntities.setOnAction(e -> addRandomEntities(10));
+        addRandomEntities.setOnAction(_ -> addRandomEntities(10));
 
         Button clearEntities = new Button("Clear All Entities");
-        clearEntities.setOnAction(e -> {
+        clearEntities.setOnAction(_ -> {
             // Collect all entity IDs from nodes and remove them
             var entityIds = tetree.nodes().flatMap(node -> node.entityIds().stream()).distinct().toList();
             entityIds.forEach(tetree::removeEntity);
@@ -269,17 +278,29 @@ public class TetreeVisualizationDemo extends Application {
         showLevelColors.selectedProperty().bindBidirectional(visualization.showLevelColorsProperty());
 
         CheckBox showFilledFaces = new CheckBox("Show Filled Faces");
-        showFilledFaces.setSelected(true);
+        showFilledFaces.setSelected(false);  // Start with wireframe only
         showFilledFaces.selectedProperty().bindBidirectional(visualization.showFilledFacesProperty());
 
         controls.getChildren().addAll(showEmptyNodes, showEntityPositions, showNodeBounds, showLevelColors,
                                       showFilledFaces);
+        
+        // Camera control
+        controls.getChildren().add(new Separator());
+        controls.getChildren().add(new Label("Camera Controls"));
+        
+        Button centerOnEntities = new Button("Center View on Entities");
+        centerOnEntities.setOnAction(_ -> centerViewOnEntities());
+        
+        Button resetView = new Button("Reset View");
+        resetView.setOnAction(_ -> resetView());
+        
+        controls.getChildren().addAll(centerOnEntities, resetView);
 
         // Transform-based rendering option
         CheckBox useTransformBased = new CheckBox("Transform-Based Rendering");
         useTransformBased.setTooltip(
         new Tooltip("Uses 6 reference meshes with transforms\ninstead of creating individual meshes"));
-        useTransformBased.setOnAction(e -> {
+        useTransformBased.setOnAction(_ -> {
             if (useTransformBased.isSelected()) {
                 showTransformBasedVisualization();
                 // Verify it's working - need to count from the transform root specifically
@@ -313,7 +334,7 @@ public class TetreeVisualizationDemo extends Application {
         // Add verification button
         Button verifyBtn = new Button("Verify Rendering Mode");
         verifyBtn.setTooltip(new Tooltip("Print statistics about current rendering mode"));
-        verifyBtn.setOnAction(e -> {
+        verifyBtn.setOnAction(_ -> {
             // Run later to ensure scene graph is updated
             javafx.application.Platform.runLater(() -> {
                 if (useTransformBased.isSelected() && transformBasedViz != null) {
@@ -336,12 +357,14 @@ public class TetreeVisualizationDemo extends Application {
         minLevel.setShowTickLabels(true);
         minLevel.setShowTickMarks(true);
         minLevel.setMajorTickUnit(5);
+        minLevel.setValue(3); // Show from level 3 to capture larger tets
         minLevel.valueProperty().bindBidirectional(visualization.minLevelProperty());
 
         Slider maxLevel = new Slider(0, 20, 20);
         maxLevel.setShowTickLabels(true);
         maxLevel.setShowTickMarks(true);
         maxLevel.setMajorTickUnit(5);
+        maxLevel.setValue(7); // Show up to level 7 to see entity tets at level 5
         maxLevel.valueProperty().bindBidirectional(visualization.maxLevelProperty());
 
         controls.getChildren().addAll(new Label("Min Level:"), minLevel, new Label("Max Level:"), maxLevel);
@@ -350,8 +373,10 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(new Separator());
         controls.getChildren().add(new Label("Node Opacity"));
 
-        Slider opacity = new Slider(0, 1, 0.3);
+        Slider opacity = new Slider(0, 1, 0.5);
         opacity.setShowTickLabels(true);
+        opacity.setShowTickMarks(true);
+        opacity.setMajorTickUnit(0.2);
         opacity.valueProperty().bindBidirectional(visualization.nodeOpacityProperty());
 
         controls.getChildren().add(opacity);
@@ -362,17 +387,18 @@ public class TetreeVisualizationDemo extends Application {
 
         // Scale range for JavaFX transform
         // Root tet has edge length 2^20 = 1,048,576
-        // Scale 0.0001 (default) brings this to ~105 units for comfortable viewing
-        Slider rootScale = new Slider(0.00001, 0.001, 0.0001);
+        // Scale 0.001 (default) brings this to ~1050 units for comfortable viewing
+        // This makes level 5 cells visible at ~32 unit size
+        Slider rootScale = new Slider(0.0001, 0.01, 0.001);
         rootScale.setShowTickLabels(true);
         rootScale.setShowTickMarks(true);
-        rootScale.setMajorTickUnit(0.0002);
+        rootScale.setMajorTickUnit(0.002);
         rootScale.setMinorTickCount(1);
         rootScale.valueProperty().bindBidirectional(visualization.rootScaleProperty());
 
         Label scaleLabel = new Label(String.format("Scale: %.6f", rootScale.getValue()));
         rootScale.valueProperty().addListener(
-        (obs, oldVal, newVal) -> scaleLabel.setText(String.format("Scale: %.6f", newVal.doubleValue())));
+        (_, _, newVal) -> scaleLabel.setText(String.format("Scale: %.6f", newVal.doubleValue())));
 
         controls.getChildren().addAll(scaleLabel, rootScale);
 
@@ -381,11 +407,11 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(new Label("Special Visualizations"));
 
         Button showSubdivision = new Button("Show Tetrahedral Subdivision");
-        showSubdivision.setOnAction(e -> visualization.showCharacteristicDecomposition());
+        showSubdivision.setOnAction(_ -> visualization.showCharacteristicDecomposition());
         controls.getChildren().add(showSubdivision);
 
         CheckBox showCubeDecomposition = new CheckBox("Show Cube Decomposition");
-        showCubeDecomposition.setOnAction(e -> {
+        showCubeDecomposition.setOnAction(_ -> {
             if (showCubeDecomposition.isSelected()) {
                 showCubeDecompositionVisualization();
             } else {
@@ -395,7 +421,7 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(showCubeDecomposition);
 
         CheckBox showCharacteristicTypes = new CheckBox("Show 6 Characteristic Types");
-        showCharacteristicTypes.setOnAction(e -> {
+        showCharacteristicTypes.setOnAction(_ -> {
             if (showCharacteristicTypes.isSelected()) {
                 showCharacteristicTypesVisualization();
             } else {
@@ -413,7 +439,7 @@ public class TetreeVisualizationDemo extends Application {
         TextField radiusField = new TextField("200");
         radiusField.setPrefWidth(60);
         Button rangeQueryBtn = new Button("Range Query");
-        rangeQueryBtn.setOnAction(e -> {
+        rangeQueryBtn.setOnAction(_ -> {
             try {
                 float radius = Float.parseFloat(radiusField.getText());
                 // Use center of scene as query center
@@ -431,7 +457,7 @@ public class TetreeVisualizationDemo extends Application {
         TextField kField = new TextField("5");
         kField.setPrefWidth(60);
         Button knnQueryBtn = new Button("k-NN Query");
-        knnQueryBtn.setOnAction(e -> {
+        knnQueryBtn.setOnAction(_ -> {
             try {
                 int k = Integer.parseInt(kField.getText());
                 // Use a random point for k-NN query
@@ -448,7 +474,7 @@ public class TetreeVisualizationDemo extends Application {
 
         // Ray query
         Button rayQueryBtn = new Button("Ray Query (Random)");
-        rayQueryBtn.setOnAction(e -> {
+        rayQueryBtn.setOnAction(_ -> {
             Random rand = new Random();
             Point3f origin = new Point3f(rand.nextFloat() * 200, rand.nextFloat() * 200, rand.nextFloat() * 200);
             // Random direction vector (normalized)
@@ -463,7 +489,7 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(rayQueryBtn);
 
         Button clearQueriesBtn = new Button("Clear Queries");
-        clearQueriesBtn.setOnAction(e -> visualization.clearQueryVisualization());
+        clearQueriesBtn.setOnAction(_ -> visualization.clearQueryVisualization());
         controls.getChildren().add(clearQueriesBtn);
 
         // Collision detection
@@ -471,11 +497,11 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(new Label("Collision Detection"));
 
         Button detectCollisionsBtn = new Button("Highlight Collisions");
-        detectCollisionsBtn.setOnAction(e -> visualization.highlightCollisions());
+        detectCollisionsBtn.setOnAction(_ -> visualization.highlightCollisions());
         controls.getChildren().add(detectCollisionsBtn);
 
         Button clearCollisionsBtn = new Button("Clear Collision Highlights");
-        clearCollisionsBtn.setOnAction(e -> visualization.clearCollisionHighlights());
+        clearCollisionsBtn.setOnAction(_ -> visualization.clearCollisionHighlights());
         controls.getChildren().add(clearCollisionsBtn);
 
         // Tree modification animation
@@ -484,13 +510,11 @@ public class TetreeVisualizationDemo extends Application {
 
         CheckBox animateModifications = new CheckBox("Animate Modifications");
         animateModifications.setSelected(false);
-        animateModifications.selectedProperty().addListener((obs, oldVal, newVal) -> {
-            visualization.setAnimateModifications(newVal);
-        });
+        animateModifications.selectedProperty().addListener((_, _, newVal) -> visualization.setAnimateModifications(newVal));
         controls.getChildren().add(animateModifications);
 
         Button animatedAddBtn = new Button("Add Entity (Animated)");
-        animatedAddBtn.setOnAction(e -> {
+        animatedAddBtn.setOnAction(_ -> {
             Random rand = new Random();
             float x = rand.nextFloat() * 800 + 100;
             float y = rand.nextFloat() * 800 + 100;
@@ -512,7 +536,7 @@ public class TetreeVisualizationDemo extends Application {
         CheckBox showPerformance = new CheckBox("Show Performance Overlay");
         showPerformance.setSelected(false);
         showPerformance.selectedProperty().addListener(
-        (obs, oldVal, newVal) -> visualization.setShowPerformanceOverlay(newVal));
+        (_, _, newVal) -> visualization.setShowPerformanceOverlay(newVal));
         controls.getChildren().add(showPerformance);
 
         // Export snapshot
@@ -523,7 +547,7 @@ public class TetreeVisualizationDemo extends Application {
         includeOverlay.setSelected(false);
 
         Button exportSnapshotBtn = new Button("Export Snapshot...");
-        exportSnapshotBtn.setOnAction(e -> {
+        exportSnapshotBtn.setOnAction(_ -> {
             boolean success = visualization.exportSnapshot(includeOverlay.isSelected());
             if (success) {
                 // Briefly show success feedback
@@ -532,7 +556,7 @@ public class TetreeVisualizationDemo extends Application {
                 exportSnapshotBtn.setDisable(true);
 
                 // Reset button after 2 seconds
-                Timeline reset = new Timeline(new KeyFrame(Duration.seconds(2), evt -> {
+                Timeline reset = new Timeline(new KeyFrame(Duration.seconds(2), _ -> {
                     exportSnapshotBtn.setText(originalText);
                     exportSnapshotBtn.setDisable(false);
                 }));
@@ -546,7 +570,7 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(new Separator());
         Label performanceLabel = new Label();
         Button updateButton = new Button("Update Visualization");
-        updateButton.setOnAction(e -> {
+        updateButton.setOnAction(_ -> {
             long start = System.currentTimeMillis();
             visualization.updateVisualization();
             long time = System.currentTimeMillis() - start;
@@ -686,6 +710,62 @@ public class TetreeVisualizationDemo extends Application {
         translate.setY(0);
         translate.setZ(0);
         scene3D.getCamera().setTranslateZ(-CAMERA_DISTANCE);
+    }
+    
+    private void centerViewOnEntities() {
+        if (tetree.size() > 0) {
+            // Calculate center of all entities
+            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+            float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+            
+            int entityCount = 0;
+            for (var node : tetree.nodes().toList()) {
+                for (var entityId : node.entityIds()) {
+                    Point3f pos = tetree.getEntityPosition(entityId);
+                    if (pos != null) {
+                        minX = Math.min(minX, pos.x);
+                        minY = Math.min(minY, pos.y);
+                        minZ = Math.min(minZ, pos.z);
+                        maxX = Math.max(maxX, pos.x);
+                        maxY = Math.max(maxY, pos.y);
+                        maxZ = Math.max(maxZ, pos.z);
+                        entityCount++;
+                    }
+                }
+            }
+            
+            if (entityCount > 0) {
+                // Center the camera on the entity bounding box
+                float centerX = (minX + maxX) / 2;
+                float centerY = (minY + maxY) / 2;
+                float centerZ = (minZ + maxZ) / 2;
+                
+                System.out.printf("Centering on %d entities: bounds [%.1f,%.1f,%.1f] to [%.1f,%.1f,%.1f], center [%.1f,%.1f,%.1f]%n",
+                    entityCount, minX, minY, minZ, maxX, maxY, maxZ, centerX, centerY, centerZ);
+                
+                // Reset rotation to look straight at entities
+                rotateX.setAngle(-20); // Slight downward tilt
+                rotateY.setAngle(0);
+                
+                // Apply scale to convert from Tetree coordinates to scene coordinates
+                double scale = visualization.rootScaleProperty().get();
+                System.out.printf("Scale: %.6f%n", scale);
+                
+                // Center the view by translating in the opposite direction
+                translate.setX(-centerX * scale);
+                translate.setY(-centerY * scale);
+                translate.setZ(0); // Keep Z at 0, camera distance handles depth
+                
+                // Adjust camera distance based on entity spread
+                float spread = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
+                double scaledSpread = spread * scale;
+                double optimalDistance = scaledSpread * 2.5; // View from 2.5x the spread distance
+                scene3D.getCamera().setTranslateZ(-Math.max(optimalDistance, 1000));
+                
+                System.out.printf("Camera position: translate [%.1f,%.1f,%.1f], distance %.1f%n",
+                    translate.getX(), translate.getY(), translate.getZ(), scene3D.getCamera().getTranslateZ());
+            }
+        }
     }
 
     private void setupMouseControls() {

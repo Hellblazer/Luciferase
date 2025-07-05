@@ -81,8 +81,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private final Text                statsText              = new Text();
     private final Group               performanceOverlay     = new Group();
     // Root tetrahedron scale - applied as a transform to the entire scene
-    // Default scale of 0.0001 brings the 2^20 coordinate system down to ~100 unit viewable size
-    private final DoubleProperty      rootScale              = new SimpleDoubleProperty(0.0001);
+    // Default scale of 0.001 brings the 2^20 coordinate system down to ~1000 unit viewable size
+    // This makes level 5 cells (32768 units) visible at ~32 unit size
+    private final DoubleProperty      rootScale              = new SimpleDoubleProperty(0.001);
     // Display mode property
     private final BooleanProperty     showFilledFaces        = new SimpleBooleanProperty(true);
     // Scene scale transform
@@ -131,7 +132,8 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         }
 
         // Create a temporary sphere at the insertion point
-        Sphere insertMarker = new Sphere(10.0);
+        // Make it slightly larger than regular entities for visibility during animation
+        Sphere insertMarker = new Sphere(4000.0);
         insertMarker.setTranslateX(position.x);
         insertMarker.setTranslateY(position.y);
         insertMarker.setTranslateZ(position.z);
@@ -429,7 +431,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                     if (id1.hashCode() < id2.hashCode()) {
                         Point3f pos2 = tetree.getEntityPosition(id2);
                         if (pos2 != null) {
-                            Line collisionLine = new Line(1.0, new Point3D(pos1.x, pos1.y, pos1.z),
+                            Line collisionLine = new Line(1000.0, new Point3D(pos1.x, pos1.y, pos1.z),
                                                           new Point3D(pos2.x, pos2.y, pos2.z));
 
                             PhongMaterial lineMaterial = new PhongMaterial(Color.ORANGE);
@@ -609,7 +611,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         }
 
         // Entity size in natural coordinates (scaled by scene transform)
-        double entityRadius = 32768; // 2^15 for visibility at tetree scale
+        // For level 5, cell size is 2^15 = 32768
+        // Make entity spheres 1/10th of cell size for good visibility without overlapping
+        double entityRadius = 3276.8; // 1/10th of level 5 cell size
         Sphere sphere = new Sphere(entityRadius);
         // Use natural coordinates - JavaFX transform handles scaling
         sphere.setTranslateX(pos.x);
@@ -713,16 +717,18 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         Group tetGroup = new Group();
         tetGroups.put(key, tetGroup);
 
-        // Create wireframe tetrahedron
-        if (showNodeBoundsProperty().get()) {
-            Group wireframe = createWireframeTetrahedron(tet, getLevelForKey(key));
-            tetGroup.getChildren().add(wireframe);
-        }
-
-        // Add semi-transparent face if node has entities and filled faces are enabled
+        // Determine if we should show filled faces for this node
+        boolean showFilled = false;
         if (!node.entityIds().isEmpty() && showFilledFaces.get()) {
+            showFilled = true;
             MeshView face = createTransparentTetrahedron(tet, getLevelForKey(key));
             tetGroup.getChildren().add(face);
+        }
+        
+        // Only show wireframe if we're not showing filled faces (to avoid edge interpenetration)
+        if (showNodeBoundsProperty().get() && !showFilled) {
+            Group wireframe = createWireframeTetrahedron(tet, getLevelForKey(key));
+            tetGroup.getChildren().add(wireframe);
         }
 
         // Set proper rendering order based on level (deeper levels render first)
@@ -775,7 +781,18 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Create triangle mesh for tetrahedron
         TriangleMesh mesh = new TriangleMesh();
 
-        // Add vertices
+        // Calculate centroid for insetting faces
+        float centroidX = 0, centroidY = 0, centroidZ = 0;
+        for (Point3f v : vertices) {
+            centroidX += v.x;
+            centroidY += v.y;
+            centroidZ += v.z;
+        }
+        centroidX /= 4;
+        centroidY /= 4;
+        centroidZ /= 4;
+
+        // Add vertices directly without inset - let's try a different approach
         for (Point3f v : vertices) {
             mesh.getPoints().addAll(v.x, v.y, v.z);
         }
@@ -823,8 +840,8 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Enable depth buffer to reduce z-fighting
         meshView.setDepthTest(javafx.scene.DepthTest.ENABLE);
 
-        // Disable back face culling for transparent objects to ensure all faces are visible
-        meshView.setCullFace(javafx.scene.shape.CullFace.NONE);
+        // Enable back face culling to only show outward-facing sides
+        meshView.setCullFace(javafx.scene.shape.CullFace.BACK);
 
         // Set draw mode
         meshView.setDrawMode(javafx.scene.shape.DrawMode.FILL);
@@ -855,23 +872,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                                       (float) (anchor.z + simplexVertices[i].z * h));
         }
 
-        // Apply slight inset toward centroid to prevent z-fighting
-        float centroidX = 0, centroidY = 0, centroidZ = 0;
-        for (Point3f v : vertices) {
-            centroidX += v.x;
-            centroidY += v.y;
-            centroidZ += v.z;
-        }
-        centroidX /= 4;
-        centroidY /= 4;
-        centroidZ /= 4;
-
-        float insetFactor = 0.999f; // Pull vertices slightly inward
-        for (int i = 0; i < 4; i++) {
-            vertices[i].x = centroidX + (vertices[i].x - centroidX) * insetFactor;
-            vertices[i].y = centroidY + (vertices[i].y - centroidY) * insetFactor;
-            vertices[i].z = centroidZ + (vertices[i].z - centroidZ) * insetFactor;
-        }
+        // No inset for wireframe - we want to show actual boundaries
 
         // Define tetrahedron edges (6 edges)
         int[][] edgeIndices = { { 0, 1 }, { 0, 2 }, { 0, 3 },  // Edges from vertex 0
@@ -885,7 +886,8 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         PhongMaterial edgeMaterial = new PhongMaterial(edgeColor);
 
         // Line thickness in natural coordinates (scales with scene transform)
-        double thickness = Math.max(4096, 16384 - level * 512);  // 2^12 to 2^14 range
+        // Much thinner lines to avoid ugly interpenetration at vertices
+        double thickness = Math.max(500, 2000 - level * 100);  // Much thinner: 500-2000 range
 
         for (int[] edge : edgeIndices) {
             Point3f p1 = vertices[edge[0]];
@@ -928,7 +930,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         Color levelColor = baseColor.deriveColor(0, 1, brightness, 1);
 
         PhongMaterial material = new PhongMaterial(levelColor);
-        material.setSpecularColor(levelColor.brighter());
+        // Reduce specular highlight for less glossy appearance
+        material.setSpecularColor(levelColor.darker());
+        material.setSpecularPower(10); // Lower value = broader, softer highlight
         return material;
     }
 
@@ -1332,7 +1336,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     private void visualizeKNNQuery(TetreeKNNQuery query) {
         // Show query point
-        Sphere queryPoint = new Sphere(5.0);
+        Sphere queryPoint = new Sphere(5000.0);
         queryPoint.setTranslateX(query.point.x);
         queryPoint.setTranslateY(query.point.y);
         queryPoint.setTranslateZ(query.point.z);
@@ -1351,7 +1355,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Point3f entityPos = tetree.getEntityPosition(id);
             if (entityPos != null) {
                 // Draw line to neighbor
-                Line line = new Line(1.0, new Point3D(query.point.x, query.point.y, query.point.z),
+                Line line = new Line(1000.0, new Point3D(query.point.x, query.point.y, query.point.z),
                                      new Point3D(entityPos.x, entityPos.y, entityPos.z));
 
                 // Color gradient from orange (closest) to yellow (farthest)
@@ -1361,7 +1365,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                 queryGroup.getChildren().add(line);
 
                 // Create a numbered sphere at neighbor position
-                Sphere neighborMarker = new Sphere(3.0);
+                Sphere neighborMarker = new Sphere(3000.0);
                 neighborMarker.setTranslateX(entityPos.x);
                 neighborMarker.setTranslateY(entityPos.y);
                 neighborMarker.setTranslateZ(entityPos.z);
@@ -1422,7 +1426,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         queryGroup.getChildren().add(rangeSphere);
 
         // Show query center
-        Sphere centerPoint = new Sphere(5.0);
+        Sphere centerPoint = new Sphere(5000.0);
         centerPoint.setTranslateX(query.center.x);
         centerPoint.setTranslateY(query.center.y);
         centerPoint.setTranslateZ(query.center.z);
@@ -1448,7 +1452,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Point3f entityPos = tetree.getEntityPosition(id);
             if (entityPos != null) {
                 // Draw line from center to entity
-                Line line = new Line(0.5, new Point3D(query.center.x, query.center.y, query.center.z),
+                Line line = new Line(500.0, new Point3D(query.center.x, query.center.y, query.center.z),
                                      new Point3D(entityPos.x, entityPos.y, entityPos.z));
                 line.setMaterial(new PhongMaterial(Color.LIGHTBLUE));
                 queryGroup.getChildren().add(line);
@@ -1487,7 +1491,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     private void visualizeRayQuery(TetreeRayQuery query) {
         // Show ray origin
-        Sphere originPoint = new Sphere(5.0);
+        Sphere originPoint = new Sphere(5000.0);
         originPoint.setTranslateX(query.origin.x);
         originPoint.setTranslateY(query.origin.y);
         originPoint.setTranslateZ(query.origin.z);
@@ -1501,7 +1505,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         Point3f end = new Point3f(query.origin.x + query.direction.x * 1000, query.origin.y + query.direction.y * 1000,
                                   query.origin.z + query.direction.z * 1000);
 
-        Line ray = new Line(2.0, new Point3D(query.origin.x, query.origin.y, query.origin.z),
+        Line ray = new Line(2000.0, new Point3D(query.origin.x, query.origin.y, query.origin.z),
                             new Point3D(end.x, end.y, end.z));
         ray.setMaterial(new PhongMaterial(Color.MAGENTA));
         queryGroup.getChildren().add(ray);
@@ -1512,7 +1516,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                                        query.origin.z + query.direction.z * 100);
 
         // Create arrow head using a cone-like structure
-        Sphere arrowHead = new Sphere(8.0);
+        Sphere arrowHead = new Sphere(8000.0);
         arrowHead.setTranslateX(arrowTip.x);
         arrowHead.setTranslateY(arrowTip.y);
         arrowHead.setTranslateZ(arrowTip.z);
@@ -1544,7 +1548,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                             }
 
                             // Show intersection point
-                            Sphere hitMarker = new Sphere(3.0);
+                            Sphere hitMarker = new Sphere(3000.0);
                             hitMarker.setTranslateX(closest.x);
                             hitMarker.setTranslateY(closest.y);
                             hitMarker.setTranslateZ(closest.z);

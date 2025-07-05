@@ -69,7 +69,7 @@ public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID extends E
     private final   BooleanProperty                           showLevelColors     = new SimpleBooleanProperty(true);
     private final   IntegerProperty                           minLevel            = new SimpleIntegerProperty(0);
     private final   IntegerProperty                           maxLevel            = new SimpleIntegerProperty(20);
-    private final   DoubleProperty                            nodeOpacity         = new SimpleDoubleProperty(0.3);
+    private final   DoubleProperty                            nodeOpacity         = new SimpleDoubleProperty(0.5);
     private final   DoubleProperty                            entitySize          = new SimpleDoubleProperty(1.0);
     protected       int                                       visibleNodeCount    = 0;
     protected       int                                       visibleEntityCount  = 0;
