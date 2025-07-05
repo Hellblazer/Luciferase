@@ -42,21 +42,21 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  * @author hal.hildebrand
  **/
 public class Tet {
-    public static final  BaseTetreeKey<?> ROOT_TET      = BaseTetreeKey.getRoot();
+    public static final  TetreeKey<?> ROOT_TET      = TetreeKey.getRoot();
     // Table 2: Local indices - Iloc(parent_type, bey_child_index)
     // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
-    private static final byte[][]         LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
-                                                            { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
-                                                            { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
-                                                            { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
-                                                            { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
-                                                            { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
+    private static final byte[][]     LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
+                                                        { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
+                                                        { 0, 3, 4, 7, 1, 2, 6, 5 }, // Parent type 2
+                                                        { 0, 1, 6, 7, 2, 3, 4, 5 }, // Parent type 3
+                                                        { 0, 3, 5, 7, 1, 2, 4, 6 }, // Parent type 4
+                                                        { 0, 3, 6, 7, 2, 1, 4, 5 }  // Parent type 5
     };
-    public final         int              x;
-    public final         int              y;
-    public final         int              z;
-    public final         byte             l;
-    public final         byte             type;
+    public final         int          x;
+    public final         int          y;
+    public final         int          z;
+    public final         byte         l;
+    public final         byte         type;
 
     public Tet(int x, int y, int z, byte l, byte type) {
         // Validate level range first
@@ -418,7 +418,7 @@ public class Tet {
         return new Tet(coordinates[0], coordinates[1], coordinates[2], level, type);
     }
 
-    public static Tet tetrahedron(BaseTetreeKey<? extends BaseTetreeKey> key) {
+    public static Tet tetrahedron(TetreeKey<? extends TetreeKey> key) {
         return tetrahedron(key.getLowBits(), key.getHighBits(), key.getLevel());
     }
 
@@ -676,7 +676,7 @@ public class Tet {
      * @param volume - the enclosing volume
      * @return the Stream of TetreeKeys locating the Tets bounded by the volume
      */
-    public Stream<BaseTetreeKey<?>> boundedBy(Spatial volume) {
+    public Stream<TetreeKey<?>> boundedBy(Spatial volume) {
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return Stream.empty();
@@ -692,7 +692,7 @@ public class Tet {
      * @param volume the volume to contain
      * @return the Stream of TetreeKeys locating the Tets that minimally bound the volume
      */
-    public Stream<BaseTetreeKey<?>> bounding(Spatial volume) {
+    public Stream<TetreeKey<?>> bounding(Spatial volume) {
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
             return Stream.empty();
@@ -782,7 +782,7 @@ public class Tet {
         // Compare by SFC index
         var thisKey = this.tmIndex();
         var otherKey = other.tmIndex();
-        // Since we're comparing two BaseTetreeKey instances, we need to handle the wildcard
+        // Since we're comparing two TetreeKey instances, we need to handle the wildcard
         @SuppressWarnings({ "unchecked", "rawtypes" })
         int result = thisKey.compareTo(otherKey);
         return result;
@@ -1062,11 +1062,11 @@ public class Tet {
      * @param volume - the volume to enclose
      * @return - index in the SFC of the minimum Tet enclosing the volume
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> enclosing(Spatial volume) {
+    public TetreeKey<? extends TetreeKey> enclosing(Spatial volume) {
         // Extract bounding box of the volume
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
-            return BaseTetreeKey.getRoot();
+            return TetreeKey.getRoot();
         }
 
         // Find the minimum level that can contain the volume
@@ -1085,7 +1085,7 @@ public class Tet {
      * @param level - refinement level for enclosure
      * @return the simplex at the provided
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> enclosing(Tuple3f point, byte level) {
+    public TetreeKey<? extends TetreeKey> enclosing(Tuple3f point, byte level) {
         var tet = locatePointBeyRefinementFromRoot(point.x, point.y, point.z, level);
         return tet.tmIndex();
     }
@@ -1155,7 +1155,7 @@ public class Tet {
      * @param level the target level (must be >= this.l)
      * @return SFC index of first descendant
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> firstDescendant(byte level) {
+    public TetreeKey<? extends TetreeKey> firstDescendant(byte level) {
         if (level < this.l) {
             throw new IllegalArgumentException("Target level must be >= current level");
         }
@@ -1183,7 +1183,7 @@ public class Tet {
      * @throws IllegalStateException if at max refinement level
      */
     public Tet[] geometricSubdivide() {
-        if (l >= BaseTetreeKey.MAX_REFINEMENT_LEVEL) {
+        if (l >= TetreeKey.MAX_REFINEMENT_LEVEL) {
             throw new IllegalStateException("Cannot subdivide at max refinement level");
         }
 
@@ -1244,7 +1244,7 @@ public class Tet {
      * @param level the target level (must be >= this.l)
      * @return SFC index of last descendant
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> lastDescendant(byte level) {
+    public TetreeKey<? extends TetreeKey> lastDescendant(byte level) {
         if (level < this.l) {
             throw new IllegalArgumentException("Target level must be >= current level");
         }
@@ -1434,7 +1434,7 @@ public class Tet {
      * The TM-index interleaves coordinate bits with tetrahedral type information, creating a space-filling curve index
      * that includes both spatial position and the complete ancestor type hierarchy for global uniqueness.
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> tmIndex() {
+    public TetreeKey<? extends TetreeKey> tmIndex() {
         // PERFORMANCE: Check cache first
         var cached = TetreeLevelCache.getCachedTetreeKey(x, y, z, l, type);
         if (cached != null) {
@@ -1508,11 +1508,11 @@ public class Tet {
         }
 
         // Use compact key for levels <= 10 for better performance
-        BaseTetreeKey<? extends BaseTetreeKey> result;
+        TetreeKey<? extends TetreeKey> result;
         if (l <= 10) {
             result = new CompactTetreeKey(l, lowBits);
         } else {
-            result = new TetreeKey(l, lowBits, highBits);
+            result = new ExtendedTetreeKey(l, lowBits, highBits);
         }
 
         // PERFORMANCE: Cache result before returning
@@ -1596,7 +1596,7 @@ public class Tet {
             var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, (byte) type);
             // TODO: These range methods need to be updated for 128-bit tm-index
             // For now, using lowBits as a simplified representation which will lose precision
-            // for very deep levels. The entire SFC range system needs refactoring to use TetreeKey.
+            // for very deep levels. The entire SFC range system needs refactoring to use ExtendedTetreeKey.
             long index = tet.tmIndex().getLowBits();
             return new SFCRange(index, index);
         });
@@ -2159,7 +2159,7 @@ public class Tet {
     }
 
     // Efficient spatial range query using tetrahedral space-filling curve properties - optimized version
-    private Stream<BaseTetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean includeIntersecting) {
+    private Stream<TetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean includeIntersecting) {
         // For now, implement a simple grid-based search at the level of this Tet
         // This is a temporary implementation until we can refactor the entire SFC range system
         byte level = this.l;
@@ -2174,7 +2174,7 @@ public class Tet {
         int maxZ = (int) Math.ceil(bounds.maxZ() / cellSize);
 
         // Generate TetreeKeys for all grid cells that might intersect
-        List<BaseTetreeKey<?>> keys = new ArrayList<>();
+        List<TetreeKey<?>> keys = new ArrayList<>();
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {

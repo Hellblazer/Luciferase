@@ -88,7 +88,7 @@ public class Phase3AdvancedOptimizationTest {
         System.out.println("\nCombined Optimization Results:");
         System.out.printf("Total insertion time: %.2f ms%n", insertTime / 1_000_000.0);
         System.out.printf("Average per entity: %.2f μs%n", insertTime / 1000.0 / ids.size());
-        System.out.printf("TetreeKey cache hit rate: %.2f%%%n", tetreeKeyHitRate * 100);
+        System.out.printf("ExtendedTetreeKey cache hit rate: %.2f%%%n", tetreeKeyHitRate * 100);
         System.out.printf("Parent chain cache hit rate: %.2f%%%n", parentChainHitRate * 100);
         System.out.println(threadLocalStats);
 
@@ -109,7 +109,7 @@ public class Phase3AdvancedOptimizationTest {
                 // Reduce multiplier to stay within bounds for higher levels
                 var maxMultiplier = Math.min(99, (1 << 21) / cellSize - 1);
                 var x = (i % maxMultiplier) * cellSize;
-                var y = (i % maxMultiplier) * cellSize;  
+                var y = (i % maxMultiplier) * cellSize;
                 var z = (i % maxMultiplier) * cellSize;
                 tets.add(new Tet(x, y, z, (byte) level, (byte) 0));
             }
@@ -206,7 +206,7 @@ public class Phase3AdvancedOptimizationTest {
         // Enable thread-local caching
         tetree.setThreadLocalCaching(true);
         assertTrue(tetree.isThreadLocalCachingEnabled());
-        
+
         // Disable auto-balancing to avoid concurrent subdivision issues
         tetree.setAutoBalancingEnabled(false);
 

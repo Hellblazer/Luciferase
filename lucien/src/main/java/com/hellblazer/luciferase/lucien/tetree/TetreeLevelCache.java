@@ -51,16 +51,16 @@ public final class TetreeLevelCache {
     private static final long[] INDEX_CACHE_VALUES    = new long[INDEX_CACHE_SIZE];
 
     /**
-     * Cache complete TetreeKey objects to convert O(level) tmIndex() operations to O(1). This is critical for
+     * Cache complete ExtendedTetreeKey objects to convert O(level) tmIndex() operations to O(1). This is critical for
      * performance as tmIndex() requires parent chain traversal.
      */
-    private static final int             TETREE_KEY_CACHE_SIZE   = 1048576; // 1M entries (~32MB) for production workloads
-    private static final long[]          TETREE_KEY_CACHE_KEYS   = new long[TETREE_KEY_CACHE_SIZE];
-    private static final BaseTetreeKey[] TETREE_KEY_CACHE_VALUES = new BaseTetreeKey[TETREE_KEY_CACHE_SIZE];
+    private static final int         TETREE_KEY_CACHE_SIZE   = 1048576; // 1M entries (~32MB) for production workloads
+    private static final long[]      TETREE_KEY_CACHE_KEYS   = new long[TETREE_KEY_CACHE_SIZE];
+    private static final TetreeKey[] TETREE_KEY_CACHE_VALUES = new TetreeKey[TETREE_KEY_CACHE_SIZE];
     // Parent chain cache - Phase 3
-    private static final int             PARENT_CHAIN_CACHE_SIZE = 65536; // Increased from 4096 for better hit rate
-    private static final long[]          PARENT_CHAIN_KEYS       = new long[PARENT_CHAIN_CACHE_SIZE];
-    private static final Tet[][]         PARENT_CHAIN_VALUES     = new Tet[PARENT_CHAIN_CACHE_SIZE][];
+    private static final int         PARENT_CHAIN_CACHE_SIZE = 65536; // Increased from 4096 for better hit rate
+    private static final long[]      PARENT_CHAIN_KEYS       = new long[PARENT_CHAIN_CACHE_SIZE];
+    private static final Tet[][]     PARENT_CHAIN_VALUES     = new Tet[PARENT_CHAIN_CACHE_SIZE][];
 
     // Direct parent cache for faster parent() calls
     private static final int    PARENT_CACHE_SIZE   = 131072; // Increased from 16384 for production workloads
@@ -73,8 +73,8 @@ public final class TetreeLevelCache {
     private static final byte[] PARENT_TYPE_CACHE_VALUES = new byte[PARENT_TYPE_CACHE_SIZE];
 
     // Shallow level pre-computation tables for levels 0-5 (most frequent operations)
-    private static final int                            MAX_SHALLOW_LEVEL   = 5;
-    private static final Map<Integer, BaseTetreeKey<?>> SHALLOW_LEVEL_CACHE = new HashMap<>();
+    private static final int                        MAX_SHALLOW_LEVEL   = 5;
+    private static final Map<Integer, TetreeKey<?>> SHALLOW_LEVEL_CACHE = new HashMap<>();
 
     // Cache statistics for monitoring
     private static long cacheHits         = 0;
@@ -152,16 +152,16 @@ public final class TetreeLevelCache {
     }
 
     /**
-     * Cache a TetreeKey for fast retrieval. This converts O(level) tmIndex() operations to O(1).
+     * Cache a ExtendedTetreeKey for fast retrieval. This converts O(level) tmIndex() operations to O(1).
      *
      * @param x         the x coordinate
      * @param y         the y coordinate
      * @param z         the z coordinate
      * @param level     the level
      * @param type      the tetrahedron type
-     * @param tetreeKey the TetreeKey to cache
+     * @param tetreeKey the ExtendedTetreeKey to cache
      */
-    public static void cacheTetreeKey(int x, int y, int z, byte level, byte type, BaseTetreeKey tetreeKey) {
+    public static void cacheTetreeKey(int x, int y, int z, byte level, byte type, TetreeKey tetreeKey) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
         TETREE_KEY_CACHE_KEYS[slot] = key;
@@ -179,7 +179,7 @@ public final class TetreeLevelCache {
             INDEX_CACHE_VALUES[i] = 0;
         }
 
-        // Clear TetreeKey cache
+        // Clear ExtendedTetreeKey cache
         for (var i = 0; i < TETREE_KEY_CACHE_SIZE; i++) {
             TETREE_KEY_CACHE_KEYS[i] = 0;
             TETREE_KEY_CACHE_VALUES[i] = null;
@@ -348,16 +348,16 @@ public final class TetreeLevelCache {
     }
 
     /**
-     * Get a cached TetreeKey if available. This is the primary optimization for tmIndex() performance.
+     * Get a cached ExtendedTetreeKey if available. This is the primary optimization for tmIndex() performance.
      *
      * @param x     the x coordinate
      * @param y     the y coordinate
      * @param z     the z coordinate
      * @param level the level
      * @param type  the tetrahedron type
-     * @return the cached TetreeKey or null if not cached
+     * @return the cached ExtendedTetreeKey or null if not cached
      */
-    public static BaseTetreeKey getCachedTetreeKey(int x, int y, int z, byte level, byte type) {
+    public static TetreeKey getCachedTetreeKey(int x, int y, int z, byte level, byte type) {
         var key = generateCacheKey(x, y, z, level, type);
         var slot = (int) (key & (TETREE_KEY_CACHE_SIZE - 1));
 
@@ -428,17 +428,17 @@ public final class TetreeLevelCache {
     }
 
     /**
-     * Get a pre-computed TetreeKey for shallow levels (0-5). This provides O(1) access instead of O(level) tmIndex
-     * computation for the most common operations.
+     * Get a pre-computed ExtendedTetreeKey for shallow levels (0-5). This provides O(1) access instead of O(level)
+     * tmIndex computation for the most common operations.
      *
      * @param x     x coordinate
      * @param y     y coordinate
      * @param z     z coordinate
      * @param level hierarchical level
      * @param type  tetrahedron type
-     * @return pre-computed TetreeKey or null if not in shallow level cache
+     * @return pre-computed ExtendedTetreeKey or null if not in shallow level cache
      */
-    public static BaseTetreeKey<?> getShallowLevelKey(int x, int y, int z, byte level, byte type) {
+    public static TetreeKey<?> getShallowLevelKey(int x, int y, int z, byte level, byte type) {
         if (level > MAX_SHALLOW_LEVEL) {
             return null; // Not in shallow level range
         }
@@ -508,7 +508,7 @@ public final class TetreeLevelCache {
                         for (byte type = 0; type <= 5; type++) {
                             Tet tet = new Tet(x, y, z, level, type);
                             int key = packShallowKey(x / cellSize, y / cellSize, z / cellSize, level, type);
-                            BaseTetreeKey<?> tetreeKey = tet.tmIndex();
+                            TetreeKey<?> tetreeKey = tet.tmIndex();
                             SHALLOW_LEVEL_CACHE.put(key, tetreeKey);
                             if (level == 0) {
                                 break;

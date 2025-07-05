@@ -16,8 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien;
 
-import com.hellblazer.luciferase.lucien.tetree.BaseTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 
 import javax.vecmath.Vector3d;
 
@@ -28,7 +28,7 @@ import javax.vecmath.Vector3d;
  * @param <Data> the type of data associated with this simplex
  * @author hal.hildebrand
  */
-public record Simplex<Data>(BaseTetreeKey<? extends BaseTetreeKey> index, Data cell) implements Spatial {
+public record Simplex<Data>(TetreeKey<? extends TetreeKey> index, Data cell) implements Spatial {
     @Override
     public boolean containedBy(aabt aabt) {
         return false;

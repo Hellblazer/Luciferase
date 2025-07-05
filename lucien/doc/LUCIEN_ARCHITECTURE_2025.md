@@ -300,7 +300,7 @@ All spatial classes use consistent generics with type-safe keys:
 
 ```java
 public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
-    // Key: Type-safe spatial key (MortonKey or TetreeKey)
+    // Key: Type-safe spatial key (MortonKey or ExtendedTetreeKey)
     // ID: Entity identifier type
     // Content: User-defined content type
 }

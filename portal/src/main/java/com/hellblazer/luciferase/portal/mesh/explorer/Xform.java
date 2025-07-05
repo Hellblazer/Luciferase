@@ -39,10 +39,6 @@ import javafx.scene.transform.Translate;
 
 public class Xform extends Group {
 
-    public enum RotateOrder {
-        XYZ, XZY, YXZ, YZX, ZXY, ZYX
-    }
-
     public Translate ip = new Translate();
     public Translate p  = new Translate();
     public Rotate    rx = new Rotate();
@@ -50,12 +46,15 @@ public class Xform extends Group {
     public Rotate    rz = new Rotate();
     public Scale     s  = new Scale();
     public Translate t  = new Translate();
+
     {
         rx.setAxis(Rotate.X_AXIS);
     }
+
     {
         ry.setAxis(Rotate.Y_AXIS);
     }
+
     {
         rz.setAxis(Rotate.Z_AXIS);
     }
@@ -69,24 +68,24 @@ public class Xform extends Group {
         super();
         // choose the order of rotations based on the rotateOrder
         switch (rotateOrder) {
-        case XYZ:
-            getTransforms().addAll(t, p, rz, ry, rx, s, ip);
-            break;
-        case XZY:
-            getTransforms().addAll(t, p, ry, rz, rx, s, ip);
-            break;
-        case YXZ:
-            getTransforms().addAll(t, p, rz, rx, ry, s, ip);
-            break;
-        case YZX:
-            getTransforms().addAll(t, p, rx, rz, ry, s, ip); // For Camera
-            break;
-        case ZXY:
-            getTransforms().addAll(t, p, ry, rx, rz, s, ip);
-            break;
-        case ZYX:
-            getTransforms().addAll(t, p, rx, ry, rz, s, ip);
-            break;
+            case XYZ:
+                getTransforms().addAll(t, p, rz, ry, rx, s, ip);
+                break;
+            case XZY:
+                getTransforms().addAll(t, p, ry, rz, rx, s, ip);
+                break;
+            case YXZ:
+                getTransforms().addAll(t, p, rz, rx, ry, s, ip);
+                break;
+            case YZX:
+                getTransforms().addAll(t, p, rx, rz, ry, s, ip); // For Camera
+                break;
+            case ZXY:
+                getTransforms().addAll(t, p, ry, rx, rz, s, ip);
+                break;
+            case ZYX:
+                getTransforms().addAll(t, p, rx, ry, rz, s, ip);
+                break;
         }
     }
 
@@ -225,5 +224,9 @@ public class Xform extends Group {
         + ry.getAngle() + ", " + rz.getAngle() + ")  " + "s = (" + s.getX() + ", " + s.getY() + ", " + s.getZ() + ")  "
         + "p = (" + p.getX() + ", " + p.getY() + ", " + p.getZ() + ")  " + "ip = (" + ip.getX() + ", " + ip.getY()
         + ", " + ip.getZ() + ")]";
+    }
+
+    public enum RotateOrder {
+        XYZ, XZY, YXZ, YZX, ZXY, ZYX
     }
 }

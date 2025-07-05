@@ -18,8 +18,8 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.tetree.CompactTetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.ExtendedTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
-import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -144,7 +144,7 @@ class SpatialKeyLocalityTest {
     @Test
     void testTetreeKeyLevelSeparation() {
         // Verify that keys from different levels don't interfere
-        List<TetreeKey> mixedLevelKeys = new ArrayList<>();
+        List<ExtendedTetreeKey> mixedLevelKeys = new ArrayList<>();
 
         // Add keys from multiple levels with tm-indices from actual Tets
         // Use different coordinates to ensure variety in tm-indices
@@ -153,7 +153,7 @@ class SpatialKeyLocalityTest {
             // Calculate maximum valid coordinate for this level
             int maxCoord = Constants.lengthAtLevel((byte) 0); // Root extent
             int maxCells = maxCoord / cellSize; // Maximum number of cells that fit
-            
+
             for (int i = 0; i < Math.min(10, maxCells * maxCells); i++) {
                 // Vary x and y coordinates within valid bounds
                 int cellX = i % Math.min(maxCells, 3); // Limit to valid range
@@ -162,8 +162,9 @@ class SpatialKeyLocalityTest {
                 int y = cellY * cellSize;
                 Tet tet = new Tet(x, y, 0, level, (byte) 0);
                 var key = tet.tmIndex();
-                TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(
-                (CompactTetreeKey) key);
+                ExtendedTetreeKey tetreeKey = key instanceof ExtendedTetreeKey ? (ExtendedTetreeKey) key
+                                                                               : ExtendedTetreeKey.fromCompactKey(
+                                                                               (CompactTetreeKey) key);
                 mixedLevelKeys.add(tetreeKey);
             }
         }
@@ -172,7 +173,7 @@ class SpatialKeyLocalityTest {
         Collections.sort(mixedLevelKeys);
 
         // Verify that keys are sorted by tm-index value (not by level)
-        // TetreeKey comparison is based solely on tm-index
+        // ExtendedTetreeKey comparison is based solely on tm-index
         for (int i = 0; i < mixedLevelKeys.size() - 1; i++) {
             var current = mixedLevelKeys.get(i);
             var next = mixedLevelKeys.get(i + 1);
@@ -186,29 +187,30 @@ class SpatialKeyLocalityTest {
     void testTetreeKeySpatialLocalityWithinLevel() {
         // For Tetree, spatial locality is preserved within each level
         byte level = 5;
-        List<TetreeKey> keys = new ArrayList<>();
+        List<ExtendedTetreeKey> keys = new ArrayList<>();
         int cellSize = Constants.lengthAtLevel(level);
 
         // Calculate maximum valid coordinate for this level
         int maxCoord = Constants.lengthAtLevel((byte) 0); // Root extent
         int maxCells = maxCoord / cellSize; // Maximum number of cells that fit
         int gridSize = Math.min(10, maxCells); // Limit grid size to valid range
-        
+
         // Generate keys from spatially adjacent tetrahedra
         for (int x = 0; x < gridSize; x++) {
             for (int y = 0; y < gridSize; y++) {
                 for (int z = 0; z < gridSize; z++) {
                     Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, (byte) 0);
                     var key = tet.tmIndex();
-                    TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(
-                    (CompactTetreeKey) key);
+                    ExtendedTetreeKey tetreeKey = key instanceof ExtendedTetreeKey ? (ExtendedTetreeKey) key
+                                                                                   : ExtendedTetreeKey.fromCompactKey(
+                                                                                   (CompactTetreeKey) key);
                     keys.add(tetreeKey);
                 }
             }
         }
 
         // Shuffle to simulate random insertion
-        List<TetreeKey> shuffled = new ArrayList<>(keys);
+        List<ExtendedTetreeKey> shuffled = new ArrayList<>(keys);
         Collections.shuffle(shuffled);
 
         // Sort back
@@ -217,7 +219,7 @@ class SpatialKeyLocalityTest {
         // Verify that sorting produces consistent ordering
         // The exact order depends on tm-index values which are complex
         // Just verify that sorting is consistent
-        List<TetreeKey> sorted = new ArrayList<>(shuffled);
+        List<ExtendedTetreeKey> sorted = new ArrayList<>(shuffled);
         Collections.sort(sorted);
 
         // Verify the list is actually sorted

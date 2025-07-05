@@ -20,14 +20,14 @@ import java.util.Objects;
 
 /**
  * Compact spatial key implementation for Tetree structures using single 64-bit representation for levels 0-10. This is
- * more memory efficient and faster than the full 128-bit TetreeKey for the common case where level <= 10.
+ * more memory efficient and faster than the full 128-bit ExtendedTetreeKey for the common case where level <= 10.
  *
  * Memory layout: 64 bits total - 60 bits for TM-index (6 bits per level × 10 levels) - Level is stored in the parent
  * class
  *
  * @author hal.hildebrand
  */
-public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
+public class CompactTetreeKey extends TetreeKey<CompactTetreeKey> {
 
     // The TM-index data (up to 60 bits used)
     private final long tmIndex;
@@ -48,7 +48,7 @@ public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
     }
 
     /**
-     * Protected constructor for subclasses that need to support higher levels. Used by TetreeKey to extend
+     * Protected constructor for subclasses that need to support higher levels. Used by ExtendedTetreeKey to extend
      * CompactTetreeKey for levels > 10.
      *
      * @param level          the hierarchical level (no validation)
@@ -61,8 +61,8 @@ public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
     }
 
     @Override
-    public int compareTo(BaseTetreeKey other) {
-        Objects.requireNonNull(other, "Cannot compare to null TetreeKey");
+    public int compareTo(TetreeKey other) {
+        Objects.requireNonNull(other, "Cannot compare to null ExtendedTetreeKey");
 
         // If levels differ, compare by level first (shallower nodes come first)
         if (level != other.getLevel()) {
@@ -131,7 +131,7 @@ public class CompactTetreeKey extends BaseTetreeKey<CompactTetreeKey> {
     }
 
     @Override
-    public BaseTetreeKey<? extends BaseTetreeKey> parent() {
+    public TetreeKey<? extends TetreeKey> parent() {
         if (level == 0) {
             return null; // Root has no parent
         }

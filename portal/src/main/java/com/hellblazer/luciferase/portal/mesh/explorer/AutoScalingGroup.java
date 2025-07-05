@@ -31,8 +31,6 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import java.util.List;
-
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Bounds;
 import javafx.scene.Group;
@@ -40,31 +38,31 @@ import javafx.scene.Node;
 import javafx.scene.transform.Scale;
 import javafx.scene.transform.Translate;
 
+import java.util.List;
+
 /**
  * A Group that auto scales its self to fit its content in a given size box.
  */
 public class AutoScalingGroup extends Group {
-    private boolean               autoScale = false;
-    private SimpleBooleanProperty enabled   = new SimpleBooleanProperty(false) {
-                                                @Override
-                                                protected void invalidated() {
-                                                    if (get()) {
-                                                        getTransforms().setAll(scale,
-                                                                               translate);
-                                                    } else {
-                                                        getTransforms().clear();
-                                                    }
-                                                }
-                                            };
-    private Scale                 scale     = new Scale(1, 1, 1, 0, 0, 0);
-    private Translate             translate = new Translate(0, 0, 0);
-    private double                twoSize;
+    private final boolean autoScale = false;
+    private final Scale   scale     = new Scale(1, 1, 1, 0, 0, 0);
+    private final Translate translate = new Translate(0, 0, 0);
+    private final SimpleBooleanProperty enabled   = new SimpleBooleanProperty(false) {
+        @Override
+        protected void invalidated() {
+            if (get()) {
+                getTransforms().setAll(scale, translate);
+            } else {
+                getTransforms().clear();
+            }
+        }
+    };
+    private final double                twoSize;
 
     /**
      * Create AutoScalingGroup
      *
-     * @param size
-     *            half of width/height/depth of box to fit content into
+     * @param size half of width/height/depth of box to fit content into
      */
     public AutoScalingGroup(double size) {
         this.twoSize = size * 2;
@@ -92,8 +90,7 @@ public class AutoScalingGroup extends Group {
     /**
      * Set is auto scaling enabled
      *
-     * @param enabled
-     *            true if auto scaling is enabled
+     * @param enabled true if auto scaling is enabled
      */
     public void setEnabled(boolean enabled) {
         this.enabled.set(enabled);
@@ -103,10 +100,8 @@ public class AutoScalingGroup extends Group {
     protected void layoutChildren() {
         if (autoScale) {
             List<Node> children = getChildren();
-            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE,
-                    minZ = Double.MAX_VALUE;
-            double maxX = Double.MIN_VALUE, maxY = Double.MIN_VALUE,
-                    maxZ = Double.MIN_VALUE;
+            double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+            double maxX = Double.MIN_VALUE, maxY = Double.MIN_VALUE, maxZ = Double.MIN_VALUE;
             boolean first = true;
             for (int i = 0, max = children.size(); i < max; i++) {
                 final Node node = children.get(i);

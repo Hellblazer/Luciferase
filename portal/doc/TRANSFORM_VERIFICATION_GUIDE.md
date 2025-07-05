@@ -14,6 +14,7 @@ Memory saved: ~87%
 ```
 
 This confirms:
+
 - Number of tetrahedra displayed
 - Only 6 reference meshes are created (one per type S0-S5)
 - Transform caching is working
@@ -24,6 +25,7 @@ This confirms:
 Click the "Verify Rendering Mode" button to see detailed statistics:
 
 ### Traditional Mode Output:
+
 ```
 === Traditional Rendering Statistics ===
 Unique TriangleMesh instances: 47
@@ -33,6 +35,7 @@ Memory efficiency ratio: 1.0:1
 ```
 
 ### Transform-Based Mode Output:
+
 ```
 === Transform-Based Rendering Statistics ===
 Unique TriangleMesh instances: 6
@@ -72,12 +75,14 @@ System.out.println("Distinct meshes: " + meshCount);
 ## 6. What to Look For
 
 ✅ **Working Correctly**:
+
 - Console shows "using only 6 reference meshes"
 - Verification shows 6 unique meshes for transform-based
 - Visual output unchanged when toggling
 - Memory efficiency ratio > 1:1 for transform-based
 
 ❌ **Not Working**:
+
 - More than 6 unique meshes in transform-based mode
 - Visual differences between modes
 - No console output when toggling

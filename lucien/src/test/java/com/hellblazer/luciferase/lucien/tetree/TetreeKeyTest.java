@@ -24,7 +24,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for TetreeKey implementation.
+ * Unit tests for ExtendedTetreeKey implementation.
  *
  * @author hal.hildebrand
  */
@@ -32,12 +32,12 @@ class TetreeKeyTest {
 
     @Test
     void testBasicConstruction() {
-        // Create a TetreeKey directly with low and high bits
+        // Create a ExtendedTetreeKey directly with low and high bits
         byte level = 5;
         long lowBits = 0x123456789ABCDEFL;
         long highBits = 0L;
 
-        var key = new TetreeKey(level, lowBits, highBits);
+        var key = new ExtendedTetreeKey(level, lowBits, highBits);
 
         assertEquals(level, key.getLevel());
         assertEquals(lowBits, key.getLowBits());
@@ -77,10 +77,10 @@ class TetreeKeyTest {
     @Test
     void testEquality() {
         // Create TetreeKeys with specific bit patterns
-        var key1 = new TetreeKey((byte) 5, 100L, 0L);
-        var key2 = new TetreeKey((byte) 5, 100L, 0L);
-        var key3 = new TetreeKey((byte) 5, 200L, 0L);
-        var key4 = new TetreeKey((byte) 6, 100L, 0L);
+        var key1 = new ExtendedTetreeKey((byte) 5, 100L, 0L);
+        var key2 = new ExtendedTetreeKey((byte) 5, 100L, 0L);
+        var key3 = new ExtendedTetreeKey((byte) 5, 200L, 0L);
+        var key4 = new ExtendedTetreeKey((byte) 6, 100L, 0L);
 
         // Reflexive
         assertEquals(key1, key1);
@@ -122,10 +122,10 @@ class TetreeKeyTest {
     @Test
     void testInvalidConstruction() {
         // Negative level
-        assertThrows(IllegalArgumentException.class, () -> new TetreeKey((byte) -1, 0L, 0L));
+        assertThrows(IllegalArgumentException.class, () -> new ExtendedTetreeKey((byte) -1, 0L, 0L));
 
         // Level too high
-        assertThrows(IllegalArgumentException.class, () -> new TetreeKey((byte) 22, 0L, 0L));
+        assertThrows(IllegalArgumentException.class, () -> new ExtendedTetreeKey((byte) 22, 0L, 0L));
     }
 
     @Test
@@ -185,12 +185,15 @@ class TetreeKeyTest {
         var key1 = tet1.tmIndex();
         var key2 = tet2.tmIndex();
         var key3 = tet3.tmIndex();
-        var level1 = key1 instanceof TetreeKey ? (TetreeKey) key1 : TetreeKey.fromCompactKey((CompactTetreeKey) key1);
-        var level2 = key2 instanceof TetreeKey ? (TetreeKey) key2 : TetreeKey.fromCompactKey((CompactTetreeKey) key2);
-        var level3 = key3 instanceof TetreeKey ? (TetreeKey) key3 : TetreeKey.fromCompactKey((CompactTetreeKey) key3);
+        var level1 = key1 instanceof ExtendedTetreeKey ? (ExtendedTetreeKey) key1 : ExtendedTetreeKey.fromCompactKey(
+        (CompactTetreeKey) key1);
+        var level2 = key2 instanceof ExtendedTetreeKey ? (ExtendedTetreeKey) key2 : ExtendedTetreeKey.fromCompactKey(
+        (CompactTetreeKey) key2);
+        var level3 = key3 instanceof ExtendedTetreeKey ? (ExtendedTetreeKey) key3 : ExtendedTetreeKey.fromCompactKey(
+        (CompactTetreeKey) key3);
 
         // Different levels may have different tm-indices (but not guaranteed)
-        // The key point is that the TetreeKey objects are different
+        // The key point is that the ExtendedTetreeKey objects are different
         assertNotEquals(level1, level2);
         assertNotEquals(level2, level3);
         assertNotEquals(level1, level3);
@@ -209,7 +212,7 @@ class TetreeKeyTest {
 
         // They sort by tm-index value, not by level
         // All three keys have tm-index 1, so the order is based on their compareTo implementation
-        List<TetreeKey> keys = Arrays.asList(level3, level1, level2);
+        List<ExtendedTetreeKey> keys = Arrays.asList(level3, level1, level2);
         Collections.sort(keys);
         // Just verify they're all present
         assertTrue(keys.contains(level1));
@@ -219,7 +222,7 @@ class TetreeKeyTest {
 
     @Test
     void testRootFactory() {
-        var root = BaseTetreeKey.getRoot();
+        var root = TetreeKey.getRoot();
 
         assertEquals(0, root.getLevel());
         assertEquals(0L, root.getLowBits());
@@ -254,7 +257,8 @@ class TetreeKeyTest {
                 // Use coordinates that are clearly grid coordinates (small values)
                 int testCoord = Math.min(10, maxGridCoord);
                 int cellSize = Constants.lengthAtLevel(level);
-                Tet original2 = new Tet(testCoord * cellSize, testCoord * cellSize, testCoord * cellSize, level, (byte) 0);
+                Tet original2 = new Tet(testCoord * cellSize, testCoord * cellSize, testCoord * cellSize, level,
+                                        (byte) 0);
                 var key2 = original2.tmIndex();
                 Tet decoded2 = Tet.tetrahedron(key2);
 
@@ -275,7 +279,8 @@ class TetreeKeyTest {
             if (gridSize >= 100) {
                 int cellSize = Constants.lengthAtLevel(level);
                 int testCoord = 50; // Safe value that works at these levels
-                Tet original = new Tet(testCoord * cellSize, (testCoord + 10) * cellSize, (testCoord + 20) * cellSize, level, (byte) 0);
+                Tet original = new Tet(testCoord * cellSize, (testCoord + 10) * cellSize, (testCoord + 20) * cellSize,
+                                       level, (byte) 0);
                 var key = original.tmIndex();
                 Tet decoded = Tet.tetrahedron(key);
 
@@ -307,7 +312,7 @@ class TetreeKeyTest {
     @Test
     void testSpatialLocalityWithinLevel() {
         // Within a level, spatial locality is preserved by tm-index ordering
-        List<TetreeKey> keys = new ArrayList<>();
+        List<ExtendedTetreeKey> keys = new ArrayList<>();
         byte level = 5;
         int cellSize = Constants.lengthAtLevel(level);
 
@@ -316,8 +321,9 @@ class TetreeKeyTest {
             for (int y = 0; y < 10; y++) {
                 Tet tet = new Tet(x * cellSize, y * cellSize, 0, level, (byte) 0);
                 var key = tet.tmIndex();
-                TetreeKey tetreeKey = key instanceof TetreeKey ? (TetreeKey) key : TetreeKey.fromCompactKey(
-                (CompactTetreeKey) key);
+                ExtendedTetreeKey tetreeKey = key instanceof ExtendedTetreeKey ? (ExtendedTetreeKey) key
+                                                                               : ExtendedTetreeKey.fromCompactKey(
+                                                                               (CompactTetreeKey) key);
                 keys.add(tetreeKey);
             }
         }
@@ -335,8 +341,8 @@ class TetreeKeyTest {
     @Test
     void testValidation() {
         // Root level - only all zeros is valid
-        assertTrue(new TetreeKey((byte) 0, 0L, 0L).isValid());
-        assertFalse(new TetreeKey((byte) 0, 1L, 0L).isValid());
+        assertTrue(new ExtendedTetreeKey((byte) 0, 0L, 0L).isValid());
+        assertFalse(new ExtendedTetreeKey((byte) 0, 1L, 0L).isValid());
 
         // Create valid Tets at different levels and verify their tm-indices are valid
         for (byte level = 1; level <= 3; level++) {

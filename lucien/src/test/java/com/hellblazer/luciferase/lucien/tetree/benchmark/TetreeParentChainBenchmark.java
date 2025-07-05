@@ -17,7 +17,7 @@
 package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
-import com.hellblazer.luciferase.lucien.tetree.BaseTetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
@@ -46,9 +46,9 @@ public class TetreeParentChainBenchmark {
     /**
      * Original parent chain computation - O(level)
      */
-    private static BaseTetreeKey[] computeParentChainOriginal(Tet tet) {
+    private static TetreeKey[] computeParentChainOriginal(Tet tet) {
         byte level = tet.l();
-        var chain = new BaseTetreeKey[level + 1];
+        var chain = new TetreeKey[level + 1];
 
         // Start with current tmIndex
         chain[0] = tet.tmIndex();

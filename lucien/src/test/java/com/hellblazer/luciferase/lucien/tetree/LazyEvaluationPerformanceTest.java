@@ -30,7 +30,7 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test the performance impact of lazy TetreeKey evaluation.
+ * Test the performance impact of lazy ExtendedTetreeKey evaluation.
  */
 public class LazyEvaluationPerformanceTest {
 
@@ -167,7 +167,7 @@ public class LazyEvaluationPerformanceTest {
         assertEquals(lazy1, lazy2);
         assertNotEquals(lazy1, lazy3);
 
-        // Should work with regular TetreeKey
+        // Should work with regular ExtendedTetreeKey
         var regular = tet1.tmIndex();
         assertEquals(lazy1, regular);
         assertTrue(lazy1.isResolved()); // Comparison forced resolution

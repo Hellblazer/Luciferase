@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Performance test for TetreeKey caching in TetreeLevelCache. This test validates that the caching significantly
- * improves tmIndex() performance.
+ * Performance test for ExtendedTetreeKey caching in TetreeLevelCache. This test validates that the caching
+ * significantly improves tmIndex() performance.
  */
 public class TetreeKeyCachePerformanceTest {
 
@@ -117,7 +117,9 @@ public class TetreeKeyCachePerformanceTest {
         // At level 20, cache should provide significant speedup
         // Note: Relaxed expectations due to variations in cache performance
         if (speedup < 10) {
-            System.out.printf("⚠️  Cache speedup %.1fx is less than expected 10x - this may be due to JVM warmup or small data size%n", speedup);
+            System.out.printf(
+            "⚠️  Cache speedup %.1fx is less than expected 10x - this may be due to JVM warmup or small data size%n",
+            speedup);
         }
         assertTrue(speedup > 2, "Cache should provide at least 2x speedup for level 20 tetrahedra");
         assertTrue(hitRate > 0.8, "Cache hit rate should be >80% for repeated access");
@@ -143,7 +145,7 @@ public class TetreeKeyCachePerformanceTest {
                 var key2 = tet.tmIndex();
 
                 // Values should be identical
-                assertEquals(key1, key2, "Cached TetreeKey should equal computed TetreeKey");
+                assertEquals(key1, key2, "Cached ExtendedTetreeKey should equal computed ExtendedTetreeKey");
                 assertEquals(key1.getLevel(), key2.getLevel());
                 assertEquals(key1.getLowBits(), key2.getLowBits());
                 assertEquals(key1.getHighBits(), key2.getHighBits());

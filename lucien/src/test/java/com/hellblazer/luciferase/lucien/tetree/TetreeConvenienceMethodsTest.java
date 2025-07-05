@@ -45,8 +45,8 @@ public class TetreeConvenienceMethodsTest {
     void testConvenienceMethodsIntegration() {
         // Test integration of multiple convenience methods
         // Create a structured layout with grid-aligned coordinates
-        Point3f[] centers = { new Point3f(200.0f, 200.0f, 200.0f), new Point3f(800.0f, 200.0f, 200.0f), new Point3f(200.0f, 800.0f, 200.0f),
-                              new Point3f(800.0f, 800.0f, 200.0f) };
+        Point3f[] centers = { new Point3f(200.0f, 200.0f, 200.0f), new Point3f(800.0f, 200.0f, 200.0f), new Point3f(
+        200.0f, 800.0f, 200.0f), new Point3f(800.0f, 800.0f, 200.0f) };
 
         // Create clusters around each center
         long id = 1;
@@ -121,14 +121,14 @@ public class TetreeConvenienceMethodsTest {
 
         // Test with empty array
         var emptyAncestor = tetree.findCommonAncestor();
-        assertEquals(BaseTetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
+        assertEquals(TetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
     }
 
     @Test
     void testFindCommonAncestorMultiple() {
         // Create a configuration where we know the structure
-        Point3f[] points = { new Point3f(100.0f, 100.0f, 100.0f), new Point3f(150.0f, 100.0f, 100.0f), new Point3f(100.0f, 150.0f, 100.0f),
-                             new Point3f(150.0f, 150.0f, 100.0f), new Point3f(800.0f, 800.0f, 800.0f) };
+        Point3f[] points = { new Point3f(100.0f, 100.0f, 100.0f), new Point3f(150.0f, 100.0f, 100.0f), new Point3f(
+        100.0f, 150.0f, 100.0f), new Point3f(150.0f, 150.0f, 100.0f), new Point3f(800.0f, 800.0f, 800.0f) };
 
         for (int i = 0; i < points.length; i++) {
             tetree.insert(points[i], (byte) 4, "entity" + i);

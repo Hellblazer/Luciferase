@@ -2,9 +2,12 @@
 
 ## Overview
 
-The `TransformBasedTetreeVisualization` class implements an efficient approach to rendering tetrahedra using JavaFX transforms. Instead of creating individual mesh instances for each tetrahedron, it uses only 6 reference meshes (one for each characteristic tetrahedron type S0-S5) and applies transforms to position, scale, and orient them as needed.
+The `TransformBasedTetreeVisualization` class implements an efficient approach to rendering tetrahedra using JavaFX
+transforms. Instead of creating individual mesh instances for each tetrahedron, it uses only 6 reference meshes (one for
+each characteristic tetrahedron type S0-S5) and applies transforms to position, scale, and orient them as needed.
 
-**Important**: This visualization requires proper integration with the existing scene graph transforms to work correctly.
+**Important**: This visualization requires proper integration with the existing scene graph transforms to work
+correctly.
 
 ## Key Benefits
 
@@ -17,11 +20,12 @@ The `TransformBasedTetreeVisualization` class implements an efficient approach t
 
 ### Reference Meshes
 
-The system creates 6 reference meshes during initialization, one for each tetrahedron type. These are created as unit-sized tetrahedra using the vertices from `Constants.SIMPLEX_STANDARD`:
+The system creates 6 reference meshes during initialization, one for each tetrahedron type. These are created as
+unit-sized tetrahedra using the vertices from `Constants.SIMPLEX_STANDARD`:
 
 - S0: Reference tetrahedron (vertices: (0,0,0), (1,0,0), (1,0,1), (1,1,1))
 - S1: Type 1 tetrahedron with 120° rotation around (1,1,1) axis
-- S2: Type 2 tetrahedron with 90° rotation around Z axis  
+- S2: Type 2 tetrahedron with 90° rotation around Z axis
 - S3: Type 3 tetrahedron with 240° rotation around (1,1,1) axis
 - S4: Type 4 tetrahedron with 90° rotation around X axis
 - S5: Type 5 tetrahedron with -120° rotation around (1,1,1) axis
@@ -31,6 +35,7 @@ Note: The rotations are applied around the center point (0.5, 0.5, 0.5) of the u
 ### Transform Calculation
 
 For each tetrahedron instance:
+
 1. Apply type-specific rotation (if not S0)
 2. Scale from unit size to actual tetrahedron size (edge length from `tet.length()`)
 3. Translate to actual position in 3D space (anchor from `tet.coordinates()[0]`)
@@ -52,7 +57,8 @@ transform.appendScale(edgeLength, edgeLength, edgeLength);
 transform.appendTranslation(anchor.x, anchor.y, anchor.z);
 ```
 
-**Critical**: The tetrahedra use the Tetree's natural coordinate system where positions can be very large (millions of units). The scene-level scale transform must be applied to make them visible.
+**Critical**: The tetrahedra use the Tetree's natural coordinate system where positions can be very large (millions of
+units). The scene-level scale transform must be applied to make them visible.
 
 ### Usage Pattern
 
@@ -70,11 +76,13 @@ tetree.nodes().forEach(node -> {
 ## Comparison with Traditional Approach
 
 Traditional approach (creating individual meshes):
+
 - Memory: O(n) where n = number of tetrahedra
 - Mesh objects: One per tetrahedron
 - GC pressure: High with many tetrahedra
 
 Transform-based approach:
+
 - Memory: O(1) - constant regardless of tetrahedra count
 - Mesh objects: Always 6 (one per type)
 - GC pressure: Minimal
@@ -88,7 +96,9 @@ Transform-based approach:
 
 ## Integration
 
-The transform-based approach has been integrated into `TetreeVisualizationDemo` as an optional rendering mode. Users can toggle between traditional mesh creation and transform-based rendering using the "Transform-Based Rendering" checkbox in the UI.
+The transform-based approach has been integrated into `TetreeVisualizationDemo` as an optional rendering mode. Users can
+toggle between traditional mesh creation and transform-based rendering using the "Transform-Based Rendering" checkbox in
+the UI.
 
 ### How to Use
 
@@ -98,6 +108,7 @@ The transform-based approach has been integrated into `TetreeVisualizationDemo` 
 4. Uncheck to return to traditional rendering
 
 The transform-based mode will:
+
 - Use only 6 reference meshes regardless of tetrahedra count
 - Apply JavaFX transforms for positioning and scaling
 - Significantly reduce memory usage with large datasets
@@ -144,6 +155,7 @@ private void showTransformBasedVisualization() {
 ```
 
 **Key Insights from Implementation**:
+
 1. The transform-based meshes must be added to the same scene root that has the scale transform
 2. Only tetrahedral meshes should be hidden when switching modes, not axes or lights
 3. The scene root already has transforms (translate, rotate, scale) that the transform-based meshes inherit

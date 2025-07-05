@@ -16,170 +16,158 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.SpatialKey;
+
 import java.util.Objects;
 
 /**
- * Full spatial key implementation for Tetree structures using 128-bit representation for all levels 0-20. This extends
- * CompactTetreeKey to add the high bits needed for levels > 10.
+ * Abstract base class for Tetree spatial keys. Provides common functionality for both compact (single-long) and full
+ * (two-long) representations.
  *
- * Unlike Morton codes used in Octrees, Tetree SFC indices are NOT unique across levels. The same index value can
- * represent different tetrahedra at different levels. This key implementation combines both the level and the SFC index
- * to ensure uniqueness.
+ * This class handles the common case where level <= 10 efficiently with a single long. Subclasses extend this for
+ * levels > 10.
  *
- * The TM-index is represented using two longs (128 bits total), which is sufficient for levels 0-20. The comparison
- * ordering ensures spatial locality within each level.
- *
+ * @param <K> The concrete key type
  * @author hal.hildebrand
  */
-public class TetreeKey extends CompactTetreeKey {
+public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<TetreeKey<? extends TetreeKey>> {
 
-    private final long highBits; // Upper 64 bits (levels 10-20, 6 bits per level)
+    public static final    byte MAX_REFINEMENT_LEVEL = 21;
+    // Bit layout constants
+    protected static final int  BITS_PER_LEVEL       = 6;
+    protected static final int  MAX_COMPACT_LEVEL    = 10;
 
-    /**
-     * Create a new TetreeKey using 128-bit representation.
-     *
-     * @param level    the hierarchical level (0-based)
-     * @param lowBits  the lower 64 bits of the TM-index (levels 0-9)
-     * @param highBits the upper 64 bits of the TM-index (levels 10-20)
-     */
-    public TetreeKey(byte level, long lowBits, long highBits) {
-        super(level, lowBits, true); // Use protected constructor to skip level validation
-        this.highBits = highBits;
-    }
+    // Cached root instance - root is always compact
+    private static final CompactTetreeKey ROOT = new CompactTetreeKey((byte) 0, 0L);
+
+    // The level stored separately for all key types
+    protected final byte level;
 
     /**
-     * Create a TetreeKey from a CompactTetreeKey.
+     * Create a new TetreeKey.
      *
-     * @param compactKey the compact key to convert
-     * @return equivalent TetreeKey
+     * @param level the hierarchical level
      */
-    public static TetreeKey fromCompactKey(CompactTetreeKey compactKey) {
-        return new TetreeKey(compactKey.getLevel(), compactKey.getLowBits(), 0L);
+    protected TetreeKey(byte level) {
+        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
+            throw new IllegalArgumentException(
+            "Level must be between 0 and " + MAX_REFINEMENT_LEVEL + ", got: " + level);
+        }
+        this.level = level;
+    }
+
+    /**
+     * Create an appropriate ExtendedTetreeKey based on the level.
+     *
+     * @param level    the level
+     * @param lowBits  the low 64 bits
+     * @param highBits the high 64 bits (ignored for levels <= 10)
+     * @return CompactTetreeKey for levels <= 10, ExtendedTetreeKey for levels > 10
+     */
+    public static TetreeKey<? extends TetreeKey> create(byte level, long lowBits, long highBits) {
+        if (level <= MAX_COMPACT_LEVEL) {
+            return new CompactTetreeKey(level, lowBits);
+        } else {
+            return new ExtendedTetreeKey(level, lowBits, highBits);
+        }
+    }
+
+    public static TetreeKey<? extends TetreeKey> getRoot() {
+        return ROOT;
+    }
+
+    /**
+     * Extract the coordinate bits for a specific level from the tm-index.
+     *
+     * @param targetLevel the level to extract coordinates for (0 to current level)
+     * @return the 3-bit coordinate value at that level
+     */
+    public byte getCoordBitsAtLevel(int targetLevel) {
+        if (targetLevel < 0 || targetLevel > level) {
+            throw new IllegalArgumentException("Target level must be between 0 and " + level);
+        }
+
+        // Determine which long contains this level's data
+        if (targetLevel < 10) {
+            // In low bits
+            int shift = targetLevel * BITS_PER_LEVEL + 3;
+            return (byte) ((getLowBits() >> shift) & 0x7);
+        } else {
+            // In high bits
+            int shift = (targetLevel - 10) * BITS_PER_LEVEL + 3;
+            return (byte) ((getHighBits() >> shift) & 0x7);
+        }
+    }
+
+    /**
+     * Get the high bits of the TM-index. For levels <= 10, this returns 0. For levels > 10, this contains levels 10+.
+     *
+     * @return the high bits of the TM-index
+     */
+    public abstract long getHighBits();
+
+    @Override
+    public byte getLevel() {
+        return level;
+    }
+
+    /**
+     * Get the low bits of the TM-index. For levels <= 10, this contains the entire TM-index. For levels > 10, this
+     * contains levels 0-9.
+     *
+     * @return the low bits of the TM-index
+     */
+    public abstract long getLowBits();
+
+    /**
+     * Extract the type bits for a specific level from the tm-index.
+     *
+     * @param targetLevel the level to extract type for (0 to current level)
+     * @return the 3-bit type value at that level
+     */
+    public byte getTypeAtLevel(int targetLevel) {
+        if (targetLevel < 0 || targetLevel > level) {
+            throw new IllegalArgumentException("Target level must be between 0 and " + level);
+        }
+
+        // Determine which long contains this level's data
+        if (targetLevel < 10) {
+            // In low bits
+            int shift = targetLevel * BITS_PER_LEVEL;
+            return (byte) ((getLowBits() >> shift) & 0x7);
+        } else {
+            // In high bits
+            int shift = (targetLevel - 10) * BITS_PER_LEVEL;
+            return (byte) ((getHighBits() >> shift) & 0x7);
+        }
     }
 
     @Override
-    public int compareTo(BaseTetreeKey other) {
-        Objects.requireNonNull(other, "Cannot compare to null TetreeKey");
-
-        // If levels differ, compare by level first (shallower nodes come first)
-        if (getLevel() != other.getLevel()) {
-            return Byte.compare(getLevel(), other.getLevel());
-        }
-
-        // Same level, compare high bits first
-        int highComparison = Long.compareUnsigned(this.highBits, other.getHighBits());
-        if (highComparison != 0) {
-            return highComparison;
-        }
-
-        // High bits equal, compare low bits
-        return Long.compareUnsigned(getLowBits(), other.getLowBits());
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (!(o instanceof TetreeKey tetreeKey)) {
-            return false;
-        }
-        if (!super.equals(o)) {
-            return false;
-        }
-        return highBits == tetreeKey.highBits;
-    }
-
-    @Override
-    public long getHighBits() {
-        return highBits;
+    public int hashCode() {
+        return Objects.hash(level, getLowBits(), getHighBits());
     }
 
     @Override
     public boolean isValid() {
-        // Check basic level validity
+        // Check basic constraints
         if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
             return false;
         }
 
-        // For level 0 (root), should have no bits set
+        // Special case: root tetrahedron
         if (level == 0) {
-            return getLowBits() == 0 && highBits == 0;
+            return getLowBits() == 0L && getHighBits() == 0L;
         }
 
-        // For levels 1-10, only low bits should be used (high bits should be 0)
-        if (level <= 10) {
-            if (highBits != 0) {
-                return false;
-            }
-            // Check that we don't have bits set beyond what's needed
-            long maxBitsForLevel = (1L << (level * BITS_PER_LEVEL)) - 1;
-            return (getLowBits() & ~maxBitsForLevel) == 0;
-        }
-
-        // For levels 11-20, both low and high bits may be used
-        // Low bits can use up to 60 bits (10 levels * 6 bits per level)
-        // High bits usage depends on the level
-        int highLevels = level - 10;
-        int bitsNeeded = highLevels * BITS_PER_LEVEL;
-
-        // Handle case where we need all 64 bits or more
-        if (bitsNeeded >= 64) {
-            // For level 20: highLevels=10, bitsNeeded=60
-            // We can use up to 60 bits in highBits
-            return true;
-        }
-
-        long maxHighBitsForLevel = (1L << bitsNeeded) - 1;
-        return (highBits & ~maxHighBitsForLevel) == 0;
+        // Subclasses may add additional validation
+        return true;
     }
 
     @Override
-    public BaseTetreeKey<? extends BaseTetreeKey> parent() {
-        if (level == 0) {
-            return null; // Root has no parent
-        }
-
-        // Calculate parent by removing the last 6-bit tuple
-        byte parentLevel = (byte) (level - 1);
-
-        // The tm-index structure stores levels 0-9 in lowBits (60 bits used)
-        // and levels 10-20 in highBits (66 bits used)
-        long parentLowBits;
-        long parentHighBits;
-
-        if (level <= 10) {
-            // Current key uses only lowBits, parent also uses only lowBits
-            parentLowBits = getLowBits() >>> BITS_PER_LEVEL;
-            parentHighBits = 0L;
-        } else {
-            // Current key uses both lowBits and highBits
-            // When level > 10, the encoding changes:
-            // - lowBits contains levels 0-9 (unchanged)
-            // - highBits contains levels 10 and up
-
-            // For parent, we need to remove 6 bits from the highBits
-            parentHighBits = highBits >>> BITS_PER_LEVEL;
-            // lowBits remains the same for levels 0-9
-            parentLowBits = getLowBits();
-        }
-
-        return new TetreeKey(parentLevel, parentLowBits, parentHighBits);
+    @SuppressWarnings("unchecked")
+    public final K root() {
+        // Root is always level 0 and always fits in compact representation
+        // This cast is safe because all implementations must accept CompactTetreeKey as a valid key
+        return (K) ROOT;
     }
-
-    @Override
-    public String toString() {
-        // For display, show the 128-bit value in a readable format
-        if (level == 0) {
-            return "TetreeKey[level=0, tm-index=0]";
-        }
-
-        // For debugging, show hex representation
-        if (highBits == 0L) {
-            return String.format("TetreeKey[level=%d, tm-index=0x%X]", level, getLowBits());
-        } else {
-            return String.format("TetreeKey[level=%d, tm-index=0x%X%016X]", level, highBits, getLowBits());
-        }
-    }
-
 }

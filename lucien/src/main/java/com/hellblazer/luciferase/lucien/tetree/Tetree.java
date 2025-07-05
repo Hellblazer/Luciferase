@@ -88,7 +88,7 @@ import java.util.stream.Stream;
  * @author hal.hildebrand
  */
 public class Tetree<ID extends EntityID, Content>
-extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content, TetreeNodeImpl<ID>> {
+extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, TetreeNodeImpl<ID>> {
 
     // Neighbor finder instance (lazily initialized)
     private TetreeNeighborFinder neighborFinder;
@@ -139,7 +139,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     // k-NN search is now provided by AbstractSpatialIndex
 
     @Override
-    public SpatialNode<BaseTetreeKey<? extends BaseTetreeKey>, ID> enclosing(Spatial volume) {
+    public SpatialNode<TetreeKey<? extends TetreeKey>, ID> enclosing(Spatial volume) {
         TetreeValidationUtils.validatePositiveCoordinates(volume);
 
         // Extract bounding box of the volume
@@ -165,7 +165,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    public SpatialNode<BaseTetreeKey<? extends BaseTetreeKey>, ID> enclosing(Tuple3i point, byte level) {
+    public SpatialNode<TetreeKey<? extends TetreeKey>, ID> enclosing(Tuple3i point, byte level) {
         TetreeValidationUtils.validatePositiveCoordinates(point);
 
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
@@ -254,13 +254,12 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param tetIndex the tetrahedral index
      * @return array of neighbor indices (length 4), -1 for no neighbor
      */
-    public BaseTetreeKey<? extends BaseTetreeKey>[] findAllFaceNeighbors(
-    BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    public TetreeKey<? extends TetreeKey>[] findAllFaceNeighbors(TetreeKey<? extends TetreeKey> tetIndex) {
         long startTime = performanceMonitoringEnabled ? System.nanoTime() : 0;
 
         // Get level from the SFC index
         Tet tet = Tet.tetrahedron(tetIndex);
-        var neighbors = new BaseTetreeKey[4];
+        var neighbors = new TetreeKey[4];
         for (int i = 0; i < 4; i++) {
             Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, i);
             neighbors[i] = neighbor != null ? neighbor.tmIndex() : null;
@@ -279,7 +278,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param tetIndex the tetrahedral index
      * @return list of neighbor indices within the same grid cell
      */
-    public List<BaseTetreeKey<?>> findCellNeighbors(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    public List<TetreeKey<?>> findCellNeighbors(TetreeKey<? extends TetreeKey> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         // For tetrahedral decomposition, find all neighbors (face-adjacent)
         List<Tet> neighborTets = getNeighborFinder().findAllNeighbors(tet);
@@ -336,7 +335,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                 checkedEntities.add(entityId);
 
                 spatialRangeQuery(searchBounds, true).forEach(entry -> {
-                    BaseTetreeKey<? extends BaseTetreeKey> nodeIndex = entry.getKey();
+                    TetreeKey<? extends TetreeKey> nodeIndex = entry.getKey();
                     TetreeNodeImpl<ID> node = entry.getValue();
                     if (node == null || node.isEmpty()) {
                         return;
@@ -365,10 +364,9 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param tetIndices The indices to find common ancestor for
      * @return The common ancestor index, or 0 if none
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> findCommonAncestor(
-    BaseTetreeKey<? extends BaseTetreeKey>... tetIndices) {
+    public TetreeKey<? extends TetreeKey> findCommonAncestor(TetreeKey<? extends TetreeKey>... tetIndices) {
         if (tetIndices.length == 0) {
-            return BaseTetreeKey.getRoot();
+            return TetreeKey.getRoot();
         }
         if (tetIndices.length == 1) {
             return tetIndices[0];
@@ -401,15 +399,15 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param edgeIndex The edge index (0-5)
      * @return List of neighbor tetrahedron indices sharing the specified edge
      */
-    public List<BaseTetreeKey<? extends BaseTetreeKey>> findEdgeNeighbors(
-    BaseTetreeKey<? extends BaseTetreeKey> tetIndex, int edgeIndex) {
+    public List<TetreeKey<? extends TetreeKey>> findEdgeNeighbors(TetreeKey<? extends TetreeKey> tetIndex,
+                                                                  int edgeIndex) {
         // Get theoretical neighbors from the neighbor finder
-        List<BaseTetreeKey<? extends BaseTetreeKey>> theoreticalNeighbors = getNeighborFinder().findEdgeNeighbors(
-        tetIndex, edgeIndex);
+        List<TetreeKey<? extends TetreeKey>> theoreticalNeighbors = getNeighborFinder().findEdgeNeighbors(tetIndex,
+                                                                                                          edgeIndex);
 
         // Filter to only include neighbors that actually exist in the sparse tree
-        List<BaseTetreeKey<? extends BaseTetreeKey>> existingNeighbors = new ArrayList<>();
-        for (BaseTetreeKey<? extends BaseTetreeKey> neighbor : theoreticalNeighbors) {
+        List<TetreeKey<? extends TetreeKey>> existingNeighbors = new ArrayList<>();
+        for (TetreeKey<? extends TetreeKey> neighbor : theoreticalNeighbors) {
             if (hasNode(neighbor)) {
                 existingNeighbors.add(neighbor);
             }
@@ -472,12 +470,11 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param faceIndex which face (0-3)
      * @return the neighbor index, or null if no neighbor exists
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> findFaceNeighbor(BaseTetreeKey<? extends BaseTetreeKey> tetIndex,
-                                                                   int faceIndex) {
+    public TetreeKey<? extends TetreeKey> findFaceNeighbor(TetreeKey<? extends TetreeKey> tetIndex, int faceIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         Tet neighbor = getNeighborFinder().findFaceNeighbor(tet, faceIndex);
         if (neighbor != null) {
-            BaseTetreeKey<? extends BaseTetreeKey> neighborKey = neighbor.tmIndex();
+            TetreeKey<? extends TetreeKey> neighborKey = neighbor.tmIndex();
             // Only return the neighbor if it actually exists in the sparse tree
             return hasNode(neighborKey) ? neighborKey : null;
         }
@@ -491,7 +488,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param distance The maximum Euclidean distance
      * @return Set of neighbor node indices within the distance
      */
-    public Set<TetreeNodeImpl<ID>> findNeighborsWithinDistance(BaseTetreeKey<? extends BaseTetreeKey> tetIndex,
+    public Set<TetreeNodeImpl<ID>> findNeighborsWithinDistance(TetreeKey<? extends TetreeKey> tetIndex,
                                                                float distance) {
         Set<TetreeNodeImpl<ID>> neighbors = new HashSet<>();
 
@@ -581,15 +578,15 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param vertexIndex The vertex index (0-3)
      * @return List of neighbor tetrahedron indices sharing the specified vertex
      */
-    public List<BaseTetreeKey<? extends BaseTetreeKey>> findVertexNeighbors(
-    BaseTetreeKey<? extends BaseTetreeKey> tetIndex, int vertexIndex) {
+    public List<TetreeKey<? extends TetreeKey>> findVertexNeighbors(TetreeKey<? extends TetreeKey> tetIndex,
+                                                                    int vertexIndex) {
         // Get theoretical neighbors from the neighbor finder
-        List<BaseTetreeKey<? extends BaseTetreeKey>> theoreticalNeighbors = getNeighborFinder().findVertexNeighbors(
-        tetIndex, vertexIndex);
+        List<TetreeKey<? extends TetreeKey>> theoreticalNeighbors = getNeighborFinder().findVertexNeighbors(tetIndex,
+                                                                                                            vertexIndex);
 
         // Filter to only include neighbors that actually exist in the sparse tree
-        List<BaseTetreeKey<? extends BaseTetreeKey>> existingNeighbors = new ArrayList<>();
-        for (BaseTetreeKey<? extends BaseTetreeKey> neighbor : theoreticalNeighbors) {
+        List<TetreeKey<? extends TetreeKey>> existingNeighbors = new ArrayList<>();
+        for (TetreeKey<? extends TetreeKey> neighbor : theoreticalNeighbors) {
             if (hasNode(neighbor)) {
                 existingNeighbors.add(neighbor);
             }
@@ -604,7 +601,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param tetIndex the tetrahedral index
      * @return list of content at the index, or empty list if no entities
      */
-    public List<Content> get(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    public List<Content> get(TetreeKey<? extends TetreeKey> tetIndex) {
         TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
         if (node != null && !node.isEmpty()) {
             // Get all entity IDs at this location
@@ -680,7 +677,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      *
      * @return NavigableSet of spatial indices
      */
-    public NavigableSet<BaseTetreeKey<?>> getSortedSpatialIndices() {
+    public NavigableSet<TetreeKey<?>> getSortedSpatialIndices() {
         lock.readLock().lock();
         try {
             return new TreeSet<>(sortedSpatialIndices);
@@ -718,7 +715,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param tetIndex the tetrahedral SFC index
      * @return true if a node exists at this index
      */
-    public boolean hasNode(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    public boolean hasNode(TetreeKey<? extends TetreeKey> tetIndex) {
         lock.readLock().lock();
         try {
             return spatialIndex.containsKey(tetIndex);
@@ -806,11 +803,11 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         // Phase 1: Parallel pre-computation of TetreeKeys
         List<TetEntry<ID, Content>> entries = entities.parallelStream().map(data -> {
             Tet tet = locate(data.position(), data.level());
-            BaseTetreeKey<? extends BaseTetreeKey> key = tet.tmIndex();
+            TetreeKey<? extends TetreeKey> key = tet.tmIndex();
             return new TetEntry<>(data, tet, key);
         }).collect(java.util.stream.Collectors.toList());
 
-        // Phase 2: Sort by TetreeKey for better cache locality
+        // Phase 2: Sort by ExtendedTetreeKey for better cache locality
         entries.sort(Comparator.comparing(e -> e.key));
 
         // Phase 3: Sequential insertion (required due to shared state)
@@ -867,11 +864,11 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
         for (EntityData<ID, Content> data : entities) {
             Tet tet = locate(data.position(), data.level());
-            BaseTetreeKey<? extends BaseTetreeKey> key = tet.tmIndex(); // Compute once
+            TetreeKey<? extends TetreeKey> key = tet.tmIndex(); // Compute once
             entries.add(new TetEntry<>(data, tet, key));
         }
 
-        // Phase 2: Sort by TetreeKey for better cache locality (using natural ordering)
+        // Phase 2: Sort by ExtendedTetreeKey for better cache locality (using natural ordering)
         entries.sort(Comparator.comparing(e -> e.key));
 
         // Phase 3: Enable bulk loading mode
@@ -941,7 +938,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param volume the volume to test
      * @return a single intersecting node, or null if none found
      */
-    public SpatialNode<BaseTetreeKey<? extends BaseTetreeKey>, ID> intersecting(Spatial volume) {
+    public SpatialNode<TetreeKey<? extends TetreeKey>, ID> intersecting(Spatial volume) {
         TetreeValidationUtils.validatePositiveCoordinates(volume);
 
         // Find the first intersecting node
@@ -1075,7 +1072,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
         // Find the containing tetrahedron
         Tet tet = locate(position, level);
-        BaseTetreeKey<? extends BaseTetreeKey> tetIndex = tet.tmIndex();
+        TetreeKey<? extends TetreeKey> tetIndex = tet.tmIndex();
 
         TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
         if (node == null) {
@@ -1104,7 +1101,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     public Iterator<TetreeNodeImpl<ID>> nonEmptyIterator(TraversalOrder order) {
         return new Iterator<TetreeNodeImpl<ID>>() {
             private final Iterator<TetreeNodeImpl<ID>> baseIterator = new TetreeIterator<>(Tetree.this, order, (byte) 0,
-                                                                                           BaseTetreeKey.MAX_REFINEMENT_LEVEL,
+                                                                                           TetreeKey.MAX_REFINEMENT_LEVEL,
                                                                                            false);
             private       TetreeNodeImpl<ID>           nextNode     = null;
 
@@ -1148,14 +1145,14 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @return An iterator that traverses parents first (up to root), then all descendants
      * @throws IllegalArgumentException if startIndex is invalid
      */
-    public Iterator<TetreeNodeImpl<ID>> parentChildIterator(BaseTetreeKey<? extends BaseTetreeKey> startIndex) {
+    public Iterator<TetreeNodeImpl<ID>> parentChildIterator(TetreeKey<? extends TetreeKey> startIndex) {
         return new Iterator<TetreeNodeImpl<ID>>() {
-            private final List<BaseTetreeKey<? extends BaseTetreeKey>> path         = new ArrayList<>();
-            private       int                                          currentIndex = 0;
+            private final List<TetreeKey<? extends TetreeKey>> path         = new ArrayList<>();
+            private       int                                  currentIndex = 0;
 
             {
                 // Build path from start to root, but only include nodes that exist
-                BaseTetreeKey<? extends BaseTetreeKey> current = startIndex;
+                TetreeKey<? extends TetreeKey> current = startIndex;
                 while (current != null && (current.getLevel() > 0 || (current.getLowBits() == 0L
                                                                       && current.getHighBits() == 0L))) {
                     if (spatialIndex.containsKey(current)) {
@@ -1189,18 +1186,18 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                 if (!hasNext()) {
                     throw new java.util.NoSuchElementException();
                 }
-                BaseTetreeKey<? extends BaseTetreeKey> nodeIndex = path.get(currentIndex++);
+                TetreeKey<? extends TetreeKey> nodeIndex = path.get(currentIndex++);
                 return spatialIndex.get(nodeIndex);
             }
 
-            private void addDescendants(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex) {
+            private void addDescendants(TetreeKey<? extends TetreeKey> nodeIndex) {
                 if (hasChildren(nodeIndex)) {
                     Tet parent = Tet.tetrahedron(nodeIndex);
                     if (parent.l() < maxDepth) {
                         for (int i = 0; i < 8; i++) {
                             try {
                                 Tet child = parent.child(i);
-                                BaseTetreeKey<? extends BaseTetreeKey> childIndex = child.tmIndex();
+                                TetreeKey<? extends TetreeKey> childIndex = child.tmIndex();
                                 if (spatialIndex.containsKey(childIndex)) {
                                     path.add(childIndex);
                                     addDescendants(childIndex);
@@ -1265,7 +1262,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     /**
-     * Enable or disable lazy evaluation for BaseTetreeKey<? extends BaseTetreeKey> computation. When enabled, tmIndex()
+     * Enable or disable lazy evaluation for TetreeKey<? extends TetreeKey> computation. When enabled, tmIndex()
      * computation is deferred until the key is actually needed for comparison or ordering operations.
      *
      * @param enabled true to enable lazy evaluation, false to compute immediately
@@ -1295,8 +1292,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     /**
-     * Enable or disable thread-local caching for BaseTetreeKey<? extends BaseTetreeKey> computation. Thread-local
-     * caches reduce contention in heavily concurrent workloads.
+     * Enable or disable thread-local caching for TetreeKey<? extends TetreeKey> computation. Thread-local caches reduce
+     * contention in heavily concurrent workloads.
      *
      * @param enabled true to enable thread-local caching, false to use global cache
      */
@@ -1312,7 +1309,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @return An iterator over sibling nodes (excluding the input tetrahedron itself)
      * @throws IllegalArgumentException if tetIndex is invalid
      */
-    public Iterator<TetreeNodeImpl<ID>> siblingIterator(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    public Iterator<TetreeNodeImpl<ID>> siblingIterator(TetreeKey<? extends TetreeKey> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         if (tet.l() == 0) {
             // Root has no siblings
@@ -1324,7 +1321,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
         for (Tet sibling : siblings) {
             if (sibling != null) {
-                BaseTetreeKey<? extends BaseTetreeKey> siblingIndex = sibling.tmIndex();
+                TetreeKey<? extends TetreeKey> siblingIndex = sibling.tmIndex();
                 TetreeNodeImpl<ID> node = spatialIndex.get(siblingIndex);
                 if (node != null) {
                     siblingNodes.add(node);
@@ -1365,7 +1362,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param rootIndex The root tetrahedral index of the subtree to validate
      * @return ValidationResult containing any issues found
      */
-    public TetreeValidator.ValidationResult validateSubtree(BaseTetreeKey<? extends BaseTetreeKey> rootIndex) {
+    public TetreeValidator.ValidationResult validateSubtree(TetreeKey<? extends TetreeKey> rootIndex) {
         // For now, just validate that the node exists
         // A full subtree validation would require traversing the entire subtree
         if (!spatialIndex.containsKey(rootIndex)) {
@@ -1374,12 +1371,12 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         }
 
         // Get all nodes in the subtree
-        Set<BaseTetreeKey<? extends BaseTetreeKey>> subtreeNodes = new HashSet<>();
-        Queue<BaseTetreeKey<? extends BaseTetreeKey>> toVisit = new LinkedList<>();
+        Set<TetreeKey<? extends TetreeKey>> subtreeNodes = new HashSet<>();
+        Queue<TetreeKey<? extends TetreeKey>> toVisit = new LinkedList<>();
         toVisit.add(rootIndex);
 
         while (!toVisit.isEmpty()) {
-            BaseTetreeKey<? extends BaseTetreeKey> current = toVisit.poll();
+            TetreeKey<? extends TetreeKey> current = toVisit.poll();
             if (subtreeNodes.contains(current)) {
                 continue;
             }
@@ -1391,7 +1388,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                 for (int i = 0; i < 8; i++) {
                     try {
                         Tet child = currentTet.child(i);
-                        BaseTetreeKey<? extends BaseTetreeKey> childIndex = child.tmIndex();
+                        TetreeKey<? extends TetreeKey> childIndex = child.tmIndex();
                         if (spatialIndex.containsKey(childIndex)) {
                             toVisit.add(childIndex);
                         }
@@ -1419,9 +1416,9 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
 
     @Override
-    protected void addNeighboringNodes(BaseTetreeKey<? extends BaseTetreeKey> tetIndex,
-                                       Queue<BaseTetreeKey<? extends BaseTetreeKey>> toVisit,
-                                       Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedNodes) {
+    protected void addNeighboringNodes(TetreeKey<? extends TetreeKey> tetIndex,
+                                       Queue<TetreeKey<? extends TetreeKey>> toVisit,
+                                       Set<TetreeKey<? extends TetreeKey>> visitedNodes) {
         // For tetree, use spatial coordinate-based neighbor search for k-NN queries
         Tet currentTet = Tet.tetrahedron(tetIndex);
         byte level = currentTet.l();
@@ -1467,12 +1464,12 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected BaseTetreeKey<? extends BaseTetreeKey> calculateSpatialIndex(Point3f position, byte level) {
+    protected TetreeKey<? extends TetreeKey> calculateSpatialIndex(Point3f position, byte level) {
         var tet = locate(position, level);
 
         // Fast path for shallow levels (0-5) using pre-computed lookup tables
         if (level <= 5) {
-            BaseTetreeKey<?> cached = TetreeLevelCache.getShallowLevelKey(tet.x(), tet.y(), tet.z(), level, tet.type());
+            TetreeKey<?> cached = TetreeLevelCache.getShallowLevelKey(tet.x(), tet.y(), tet.z(), level, tet.type());
             if (cached != null) {
                 return cached;
             }
@@ -1509,7 +1506,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected boolean doesFrustumIntersectNode(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Frustum3D frustum) {
+    protected boolean doesFrustumIntersectNode(TetreeKey<? extends TetreeKey> nodeIndex, Frustum3D frustum) {
         // Get the tetrahedron from the node index
         Tet tet = Tet.tetrahedron(nodeIndex);
 
@@ -1536,7 +1533,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected boolean doesNodeIntersectVolume(BaseTetreeKey<? extends BaseTetreeKey> tetIndex, Spatial volume) {
+    protected boolean doesNodeIntersectVolume(TetreeKey<? extends TetreeKey> tetIndex, Spatial volume) {
         Tet tet = Tet.tetrahedron(tetIndex);
         // Use the same logic as the SFC range computation for consistency
         var bounds = getVolumeBounds(volume);
@@ -1559,21 +1556,21 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     // ===== Frustum Intersection Implementation =====
 
     @Override
-    protected boolean doesPlaneIntersectNode(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Plane3D plane) {
+    protected boolean doesPlaneIntersectNode(TetreeKey<? extends TetreeKey> nodeIndex, Plane3D plane) {
         // Check if plane intersects with the tetrahedron
         Tet tet = Tet.tetrahedron(nodeIndex);
         return planeIntersectsTetrahedron(plane, tet);
     }
 
     @Override
-    protected boolean doesRayIntersectNode(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Ray3D ray) {
+    protected boolean doesRayIntersectNode(TetreeKey<? extends TetreeKey> nodeIndex, Ray3D ray) {
         // Use TetrahedralGeometry for ray-tetrahedron intersection
         var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
         return intersection.intersects;
     }
 
     @Override
-    protected float estimateNodeDistance(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Point3f queryPoint) {
+    protected float estimateNodeDistance(TetreeKey<? extends TetreeKey> nodeIndex, Point3f queryPoint) {
         // Get tetrahedron from index
         Tet tet = Tet.tetrahedron(nodeIndex);
 
@@ -1619,8 +1616,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @return set of tetree node keys that intersect with the bounds
      */
     @Override
-    protected Set<BaseTetreeKey<? extends BaseTetreeKey>> findNodesIntersectingBounds(VolumeBounds bounds) {
-        var intersectingNodes = new HashSet<BaseTetreeKey<? extends BaseTetreeKey>>();
+    protected Set<TetreeKey<? extends TetreeKey>> findNodesIntersectingBounds(VolumeBounds bounds) {
+        var intersectingNodes = new HashSet<TetreeKey<? extends TetreeKey>>();
 
         // SFC OPTIMIZATION: Calculate spatial range to reduce search space from O(n) to O(log n + k)
         var candidateRange = getSpatialIndexRangeOptimized(bounds);
@@ -1686,9 +1683,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected List<BaseTetreeKey<? extends BaseTetreeKey>> getChildNodes(
-    BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
-        List<BaseTetreeKey<? extends BaseTetreeKey>> children = new ArrayList<>();
+    protected List<TetreeKey<? extends TetreeKey>> getChildNodes(TetreeKey<? extends TetreeKey> tetIndex) {
+        List<TetreeKey<? extends TetreeKey>> children = new ArrayList<>();
         Tet parentTet = Tet.tetrahedron(tetIndex);
         byte level = parentTet.l();
 
@@ -1700,7 +1696,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         // This ensures proper Bey refinement scheme and correct connectivity
         for (int childIndex = 0; childIndex < TetreeConnectivity.CHILDREN_PER_TET; childIndex++) {
             Tet childTet = parentTet.child(childIndex);
-            BaseTetreeKey<? extends BaseTetreeKey> childSFCIndex = childTet.tmIndex();
+            TetreeKey<? extends TetreeKey> childSFCIndex = childTet.tmIndex();
 
             // Only add if child exists in spatial index
             if (spatialIndex.containsKey(childSFCIndex)) {
@@ -1714,8 +1710,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     // These methods are now handled by AbstractSpatialIndex
 
     @Override
-    protected Stream<BaseTetreeKey<? extends BaseTetreeKey>> getFrustumTraversalOrder(Frustum3D frustum,
-                                                                                      Point3f cameraPosition) {
+    protected Stream<TetreeKey<? extends TetreeKey>> getFrustumTraversalOrder(Frustum3D frustum,
+                                                                              Point3f cameraPosition) {
         // For tetree, use spatial ordering to traverse nodes that could intersect with the frustum
         // Order by distance from camera to tetrahedron centroid for optimal culling traversal
         return sortedSpatialIndices.stream().filter(nodeIndex -> {
@@ -1728,13 +1724,13 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         });
     }
 
-    protected byte getLevelFromIndex(BaseTetreeKey<? extends BaseTetreeKey> index) {
-        // BaseTetreeKey<? extends BaseTetreeKey> already has the level
+    protected byte getLevelFromIndex(TetreeKey<? extends TetreeKey> index) {
+        // TetreeKey<? extends TetreeKey> already has the level
         return index.getLevel();
     }
 
     @Override
-    protected Spatial getNodeBounds(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    protected Spatial getNodeBounds(TetreeKey<? extends TetreeKey> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         // Return the bounding cube of the tetrahedron
         int cellSize = Constants.lengthAtLevel(tet.l());
@@ -1742,7 +1738,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected Stream<BaseTetreeKey<? extends BaseTetreeKey>> getPlaneTraversalOrder(Plane3D plane) {
+    protected Stream<TetreeKey<? extends TetreeKey>> getPlaneTraversalOrder(Plane3D plane) {
         // For tetree, use spatial ordering to traverse nodes that could intersect with the plane
         // Order by distance from plane to tetrahedron centroid for better early termination
         return sortedSpatialIndices.stream().filter(nodeIndex -> {
@@ -1756,14 +1752,14 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected float getRayNodeIntersectionDistance(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Ray3D ray) {
+    protected float getRayNodeIntersectionDistance(TetreeKey<? extends TetreeKey> nodeIndex, Ray3D ray) {
         // Get ray-tetrahedron intersection distance
         var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
         return intersection.intersects ? intersection.distance : Float.MAX_VALUE;
     }
 
     @Override
-    protected Stream<BaseTetreeKey<? extends BaseTetreeKey>> getRayTraversalOrder(Ray3D ray) {
+    protected Stream<TetreeKey<? extends TetreeKey>> getRayTraversalOrder(Ray3D ray) {
         // Use the optimized TetreeSFCRayTraversal implementation
         return getRayTraversal().traverseRay(ray);
     }
@@ -1773,18 +1769,18 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      *
      * @return the spatial index map
      */
-    protected Map<BaseTetreeKey<? extends BaseTetreeKey>, TetreeNodeImpl<ID>> getSpatialIndex() {
+    protected Map<TetreeKey<? extends TetreeKey>, TetreeNodeImpl<ID>> getSpatialIndex() {
         return spatialIndex;
     }
 
     @Override
-    protected NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> getSpatialIndexRange(VolumeBounds bounds) {
+    protected NavigableSet<TetreeKey<? extends TetreeKey>> getSpatialIndexRange(VolumeBounds bounds) {
         // For now, use a simpler approach that iterates through existing nodes
         // The full optimization would require more careful handling of level ranges
-        NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> candidates = new TreeSet<>();
+        NavigableSet<TetreeKey<? extends TetreeKey>> candidates = new TreeSet<>();
 
         // Check each existing node to see if it intersects the bounds
-        for (BaseTetreeKey<? extends BaseTetreeKey> key : sortedSpatialIndices) {
+        for (TetreeKey<? extends TetreeKey> key : sortedSpatialIndices) {
             if (doesNodeIntersectVolume(key, createSpatialFromBounds(bounds))) {
                 candidates.add(key);
             }
@@ -1821,7 +1817,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param bounds the volume bounds to compute range for
      * @return NavigableSet containing candidate keys within the SFC range
      */
-    protected NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> getSpatialIndexRangeOptimized(VolumeBounds bounds) {
+    protected NavigableSet<TetreeKey<? extends TetreeKey>> getSpatialIndexRangeOptimized(VolumeBounds bounds) {
         // FAST PATH: For small datasets, linear scan is faster than any optimization
         if (sortedSpatialIndices.size() <= 5000) {
             return getSpatialIndexRange(bounds);
@@ -1832,7 +1828,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected void handleNodeSubdivision(BaseTetreeKey<? extends BaseTetreeKey> parentTetIndex, byte parentLevel,
+    protected void handleNodeSubdivision(TetreeKey<? extends TetreeKey> parentTetIndex, byte parentLevel,
                                          TetreeNodeImpl<ID> parentNode) {
         // Can't subdivide beyond max depth
         if (parentLevel >= maxDepth) {
@@ -1862,7 +1858,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
             children[i] = parentTet.child(i);
         }
 
-        var childIndices = new BaseTetreeKey[8];
+        var childIndices = new TetreeKey[8];
         for (int i = 0; i < 8; i++) {
             childIndices[i] = children[i].tmIndex();
         }
@@ -1873,7 +1869,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         // 3. The Octree implementation doesn't have similar validation and works fine
 
         // Create map to group entities by their child tetrahedron
-        Map<BaseTetreeKey<? extends BaseTetreeKey>, List<ID>> childEntityMap = new HashMap<>();
+        Map<TetreeKey<? extends TetreeKey>, List<ID>> childEntityMap = new HashMap<>();
 
         // Determine which child tetrahedron each entity belongs to
         for (ID entityId : parentEntities) {
@@ -1884,7 +1880,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                 for (int childIndex = 0; childIndex < children.length; childIndex++) {
                     Tet child = children[childIndex];
                     if (child.contains(entityPos)) {
-                        BaseTetreeKey<? extends BaseTetreeKey> childTetIndex = childIndices[childIndex];
+                        TetreeKey<? extends TetreeKey> childTetIndex = childIndices[childIndex];
                         childEntityMap.computeIfAbsent(childTetIndex, k -> new ArrayList<>()).add(entityId);
                         assigned = true;
                         break;
@@ -1917,7 +1913,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
         // Create all child nodes (even empty ones for proper tree structure)
         for (Tet child : children) {
-            BaseTetreeKey<? extends BaseTetreeKey> childTetIndex = child.tmIndex();
+            TetreeKey<? extends TetreeKey> childTetIndex = child.tmIndex();
             List<ID> childEntities = childEntityMap.getOrDefault(childTetIndex, new ArrayList<>());
 
             if (!childEntities.isEmpty()) {
@@ -1944,7 +1940,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
         // Also set the specific child bits for the children that were created
         for (int i = 0; i < children.length; i++) {
-            BaseTetreeKey<? extends BaseTetreeKey> childTetIndex = children[i].tmIndex();
+            TetreeKey<? extends TetreeKey> childTetIndex = children[i].tmIndex();
             if (spatialIndex.containsKey(childTetIndex)) {
                 parentNode.setChildBit(i);
             }
@@ -1952,7 +1948,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected boolean hasChildren(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    protected boolean hasChildren(TetreeKey<? extends TetreeKey> tetIndex) {
         TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
         return node != null && node.hasChildren();
     }
@@ -2010,10 +2006,10 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                                      (bounds.getMinY() + bounds.getMaxY()) / 2,
                                      (bounds.getMinZ() + bounds.getMaxZ()) / 2);
         var centerTetIndex = calculateSpatialIndex(center, level);
-        Set<BaseTetreeKey<? extends BaseTetreeKey>> intersectingTets = Set.of(centerTetIndex);
+        Set<TetreeKey<? extends TetreeKey>> intersectingTets = Set.of(centerTetIndex);
 
         // Add entity to all intersecting tetrahedra
-        for (BaseTetreeKey<? extends BaseTetreeKey> tetIndex : intersectingTets) {
+        for (TetreeKey<? extends TetreeKey> tetIndex : intersectingTets) {
             TetreeNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
                 sortedSpatialIndices.add(tetIndex);
                 return createNodeWithCachedBounds(tetIndex);
@@ -2028,13 +2024,13 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     }
 
     @Override
-    protected boolean isNodeContainedInVolume(BaseTetreeKey<? extends BaseTetreeKey> tetIndex, Spatial volume) {
+    protected boolean isNodeContainedInVolume(TetreeKey<? extends TetreeKey> tetIndex, Spatial volume) {
         Tet tet = Tet.tetrahedron(tetIndex);
         return Tet.tetrahedronContainedInVolume(tet, volume);
     }
 
     @Override
-    protected boolean shouldContinueKNNSearch(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Point3f queryPoint,
+    protected boolean shouldContinueKNNSearch(TetreeKey<? extends TetreeKey> nodeIndex, Point3f queryPoint,
                                               PriorityQueue<EntityDistance<ID>> candidates) {
         if (candidates.isEmpty()) {
             return true;
@@ -2071,16 +2067,16 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Add child tetrahedra that intersect the ray
      */
     private void addChildTetrahedra(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
-                                    Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedTets) {
+                                    Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         byte childLevel = (byte) (currentTet.l() + 1);
-        int childCellSize = 1 << (BaseTetreeKey.MAX_REFINEMENT_LEVEL - childLevel);
+        int childCellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - childLevel);
 
         // Each tetrahedron can be subdivided into smaller tetrahedra
         // This is a simplified approach - check child cells that overlap current tet
         int minX = currentTet.x();
         int minY = currentTet.y();
         int minZ = currentTet.z();
-        int currentCellSize = 1 << (BaseTetreeKey.MAX_REFINEMENT_LEVEL - currentTet.l());
+        int currentCellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - currentTet.l());
 
         for (int x = minX; x < minX + currentCellSize; x += childCellSize) {
             for (int y = minY; y < minY + currentCellSize; y += childCellSize) {
@@ -2088,7 +2084,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                     // Check all 6 tetrahedron types in child cell
                     for (byte type = 0; type < 6; type++) {
                         Tet child = new Tet(x, y, z, childLevel, type);
-                        BaseTetreeKey<? extends BaseTetreeKey> childIndex = child.tmIndex();
+                        TetreeKey<? extends TetreeKey> childIndex = child.tmIndex();
 
                         if (!visitedTets.contains(childIndex)) {
                             var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
@@ -2106,7 +2102,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Add intersected children for ray traversal
      */
     private void addIntersectedChildren(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
-                                        Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedTets) {
+                                        Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         byte childLevel = (byte) (currentTet.l() + 1);
         if (childLevel > Constants.getMaxRefinementLevel()) {
             return;
@@ -2116,7 +2112,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         try {
             for (int i = 0; i < 8; i++) {
                 Tet child = currentTet.child(i);
-                BaseTetreeKey<? extends BaseTetreeKey> childIndex = child.tmIndex();
+                TetreeKey<? extends TetreeKey> childIndex = child.tmIndex();
 
                 if (!visitedTets.contains(childIndex)) {
                     var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
@@ -2134,7 +2130,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Add intersected face neighbors for ray traversal
      */
     private void addIntersectedFaceNeighbors(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
-                                             Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedTets) {
+                                             Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         // Check all 4 face neighbors
         for (int face = 0; face < 4; face++) {
             try {
@@ -2146,7 +2142,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                 }
 
                 Tet neighborTet = neighbor.tet();
-                BaseTetreeKey<? extends BaseTetreeKey> neighborIndex = neighborTet.tmIndex();
+                TetreeKey<? extends TetreeKey> neighborIndex = neighborTet.tmIndex();
 
                 if (!visitedTets.contains(neighborIndex)) {
                     var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, neighborIndex);
@@ -2163,9 +2159,9 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Add intersecting child tetrahedra to the ray traversal queue
      */
-    private void addIntersectingChildren(BaseTetreeKey<? extends BaseTetreeKey> parentIndex, byte parentLevel,
-                                         Ray3D ray, PriorityQueue<TetDistance> tetQueue,
-                                         Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedTets) {
+    private void addIntersectingChildren(TetreeKey<? extends TetreeKey> parentIndex, byte parentLevel, Ray3D ray,
+                                         PriorityQueue<TetDistance> tetQueue,
+                                         Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         Tet parentTet = Tet.tetrahedron(parentIndex);
         byte childLevel = (byte) (parentLevel + 1);
         int parentCellSize = Constants.lengthAtLevel(parentLevel);
@@ -2178,7 +2174,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                     // Check all 6 tetrahedron types in each child cell
                     for (byte type = 0; type < 6; type++) {
                         Tet childTet = new Tet(x, y, z, childLevel, type);
-                        BaseTetreeKey<? extends BaseTetreeKey> childIndex = childTet.tmIndex();
+                        TetreeKey<? extends TetreeKey> childIndex = childTet.tmIndex();
 
                         if (!visitedTets.contains(childIndex)) {
                             var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, childIndex);
@@ -2195,13 +2191,13 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Helper method to add neighboring tetrahedra that intersect the ray
      */
-    private void addIntersectingNeighbors(BaseTetreeKey<? extends BaseTetreeKey> tetIndex, Ray3D ray,
+    private void addIntersectingNeighbors(TetreeKey<? extends TetreeKey> tetIndex, Ray3D ray,
                                           PriorityQueue<TetDistance> tetQueue,
-                                          Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedTets) {
+                                          Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         Tet currentTet = Tet.tetrahedron(tetIndex);
 
         // Check neighboring tetrahedra at the same level
-        int cellSize = 1 << (BaseTetreeKey.MAX_REFINEMENT_LEVEL - currentTet.l());
+        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - currentTet.l());
 
         // For tetrahedral mesh, neighbors are more complex than cubic
         // Check tetrahedra in adjacent grid cells
@@ -2221,7 +2217,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
                         // Check all 6 tetrahedron types in the neighboring cell
                         for (byte type = 0; type < 6; type++) {
                             Tet neighbor = new Tet(nx, ny, nz, currentTet.l(), type);
-                            BaseTetreeKey<? extends BaseTetreeKey> neighborIndex = neighbor.tmIndex();
+                            TetreeKey<? extends TetreeKey> neighborIndex = neighbor.tmIndex();
 
                             if (!visitedTets.contains(neighborIndex)) {
                                 var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, neighborIndex);
@@ -2251,9 +2247,9 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Add parent tetrahedra that intersect the ray
      */
     private void addParentTetrahedra(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
-                                     Set<BaseTetreeKey<? extends BaseTetreeKey>> visitedTets) {
+                                     Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         byte parentLevel = (byte) (currentTet.l() - 1);
-        int parentCellSize = 1 << (BaseTetreeKey.MAX_REFINEMENT_LEVEL - parentLevel);
+        int parentCellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - parentLevel);
 
         // Calculate parent cell coordinates
         int px = (currentTet.x() / parentCellSize) * parentCellSize;
@@ -2263,7 +2259,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         // Check all 6 tetrahedron types in parent cell
         for (byte type = 0; type < 6; type++) {
             Tet parent = new Tet(px, py, pz, parentLevel, type);
-            BaseTetreeKey<? extends BaseTetreeKey> parentIndex = parent.tmIndex();
+            TetreeKey<? extends TetreeKey> parentIndex = parent.tmIndex();
 
             if (!visitedTets.contains(parentIndex)) {
                 var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, parentIndex);
@@ -2278,14 +2274,14 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Ultra-efficient SFC range calculation that avoids ALL tmIndex() computations. Instead of computing new
      * TM-indices, this method samples existing keys to find spatially relevant ranges using AABB intersection tests.
      */
-    private NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> calculateExistingKeySFCRange(VolumeBounds bounds) {
+    private NavigableSet<TetreeKey<? extends TetreeKey>> calculateExistingKeySFCRange(VolumeBounds bounds) {
         // Strategy: Use binary search on sorted keys to find approximate bounds
         // This leverages spatial locality without expensive tmIndex() calls
 
-        var candidates = new TreeSet<BaseTetreeKey<? extends BaseTetreeKey>>();
+        var candidates = new TreeSet<TetreeKey<? extends TetreeKey>>();
 
         // Convert to array for efficient binary search access
-        var keyArray = sortedSpatialIndices.toArray(new BaseTetreeKey<?>[0]);
+        var keyArray = sortedSpatialIndices.toArray(new TetreeKey<?>[0]);
         int size = keyArray.length;
 
         // Binary search strategy: find keys that are "likely" to intersect
@@ -2325,7 +2321,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * @param tetIndex the spatial index key for this tetrahedron
      * @return a new node with cached bounds
      */
-    private TetreeNodeImpl<ID> createNodeWithCachedBounds(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    private TetreeNodeImpl<ID> createNodeWithCachedBounds(TetreeKey<? extends TetreeKey> tetIndex) {
         TetreeNodeImpl<ID> node = new TetreeNodeImpl<>(maxEntitiesPerNode);
 
         // Compute tetrahedron vertices and cache the AABB bounds
@@ -2418,9 +2414,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Expand search around a known intersection point to find nearby candidates.
      */
-    private void expandAroundIntersection(BaseTetreeKey<?>[] keyArray, int centerIndex, VolumeBounds bounds,
-                                          TreeSet<BaseTetreeKey<? extends BaseTetreeKey>> candidates,
-                                          int sampleInterval) {
+    private void expandAroundIntersection(TetreeKey<?>[] keyArray, int centerIndex, VolumeBounds bounds,
+                                          TreeSet<TetreeKey<? extends TetreeKey>> candidates, int sampleInterval) {
 
         int size = keyArray.length;
         int expansionRadius = Math.max(10, sampleInterval * 2);
@@ -2443,8 +2438,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Calculate distance from camera position to tetrahedron centroid for frustum culling traversal order
      */
-    private float getFrustumTetrahedronDistance(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex,
-                                                Point3f cameraPosition) {
+    private float getFrustumTetrahedronDistance(TetreeKey<? extends TetreeKey> nodeIndex, Point3f cameraPosition) {
         Tet tet = Tet.tetrahedron(nodeIndex);
 
         // Calculate tetrahedron centroid using actual vertices
@@ -2464,8 +2458,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Memory-efficient spatial index range computation - simplified approach
      */
-    private NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> getMemoryEfficientSpatialIndexRange(
-    VolumeBounds bounds, boolean includeIntersecting) {
+    private NavigableSet<TetreeKey<? extends TetreeKey>> getMemoryEfficientSpatialIndexRange(VolumeBounds bounds,
+                                                                                             boolean includeIntersecting) {
         // Use the simple standard approach for all entities
         return getStandardEntitySpatialRange(bounds, includeIntersecting);
     }
@@ -2485,7 +2479,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Calculate distance from plane to tetrahedron centroid
      */
-    private float getPlaneTetrahedronDistance(BaseTetreeKey<? extends BaseTetreeKey> nodeIndex, Plane3D plane) {
+    private float getPlaneTetrahedronDistance(TetreeKey<? extends TetreeKey> nodeIndex, Plane3D plane) {
         Tet tet = Tet.tetrahedron(nodeIndex);
 
         // Calculate tetrahedron centroid using actual vertices
@@ -2516,9 +2510,9 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Standard range computation for normal-sized entities FIXED: Use actual spatial indices instead of incorrect SFC
      * computation
      */
-    private NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> getStandardEntitySpatialRange(VolumeBounds bounds,
-                                                                                               boolean includeIntersecting) {
-        NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> result = new TreeSet<>();
+    private NavigableSet<TetreeKey<? extends TetreeKey>> getStandardEntitySpatialRange(VolumeBounds bounds,
+                                                                                       boolean includeIntersecting) {
+        NavigableSet<TetreeKey<? extends TetreeKey>> result = new TreeSet<>();
 
         // CRITICAL FIX: The fundamental issue is that computeSFCRanges() is broken.
         // Instead of using computed SFC ranges that don't match reality, we need to
@@ -2527,7 +2521,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         // This is less efficient but correct. The SFC range computation logic
         // would need a complete rewrite to work properly with the Tet.tmIndex() algorithm.
 
-        for (BaseTetreeKey<? extends BaseTetreeKey> spatialIndex : sortedSpatialIndices) {
+        for (TetreeKey<? extends TetreeKey> spatialIndex : sortedSpatialIndices) {
             try {
                 Tet tet = Tet.tetrahedron(spatialIndex);
 
@@ -2555,9 +2549,9 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Get SFC successor index for tetrahedral traversal
      */
-    private BaseTetreeKey<? extends BaseTetreeKey> getSuccessor(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    private TetreeKey<? extends TetreeKey> getSuccessor(TetreeKey<? extends TetreeKey> tetIndex) {
         // Use the NavigableSet to find the next key
-        BaseTetreeKey<? extends BaseTetreeKey> higher = sortedSpatialIndices.higher(tetIndex);
+        TetreeKey<? extends TetreeKey> higher = sortedSpatialIndices.higher(tetIndex);
         return higher != null ? higher : tetIndex; // Return same if no successor
     }
 
@@ -2569,9 +2563,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * careful handling of level ranges to avoid excessive memory usage.
      */
     @SuppressWarnings("unused")
-    private NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> getTetrahedraInBoundsAtLevel(VolumeBounds bounds,
-                                                                                              byte level) {
-        NavigableSet<BaseTetreeKey<? extends BaseTetreeKey>> results = new TreeSet<>();
+    private NavigableSet<TetreeKey<? extends TetreeKey>> getTetrahedraInBoundsAtLevel(VolumeBounds bounds, byte level) {
+        NavigableSet<TetreeKey<? extends TetreeKey>> results = new TreeSet<>();
 
         // Calculate the grid resolution at this level
         int gridSize = 1 << level; // 2^level
@@ -2898,7 +2891,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Internal record for batch processing with pre-computed spatial data.
      */
     private record TetEntry<ID extends EntityID, Content>(EntityData<ID, Content> data, Tet tet,
-                                                          BaseTetreeKey<? extends BaseTetreeKey> key) {
+                                                          TetreeKey<? extends TetreeKey> key) {
     }
 
     /**
@@ -2910,8 +2903,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     /**
      * Represents a range of space-filling curve indices for efficient range queries.
      */
-    private record SFCRange(BaseTetreeKey<? extends BaseTetreeKey> minKey,
-                            BaseTetreeKey<? extends BaseTetreeKey> maxKey) {
+    private record SFCRange(TetreeKey<? extends TetreeKey> minKey, TetreeKey<? extends TetreeKey> maxKey) {
         public boolean isEmpty() {
             return minKey == null || maxKey == null;
         }
@@ -2921,10 +2913,10 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
      * Helper class to store tetrahedron index with distance for priority queue ordering
      */
     private static class TetDistance implements Comparable<TetDistance> {
-        final BaseTetreeKey<? extends BaseTetreeKey> tetIndex;
-        final float                                  distance;
+        final TetreeKey<? extends TetreeKey> tetIndex;
+        final float                          distance;
 
-        TetDistance(BaseTetreeKey<? extends BaseTetreeKey> tetIndex, float distance) {
+        TetDistance(TetreeKey<? extends TetreeKey> tetIndex, float distance) {
             this.tetIndex = tetIndex;
             this.distance = distance;
         }
@@ -2941,15 +2933,15 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
     protected class TetreeBalancer extends DefaultTreeBalancer {
 
         @Override
-        public boolean mergeNodes(Set<BaseTetreeKey<? extends BaseTetreeKey>> tetIndices,
-                                  BaseTetreeKey<? extends BaseTetreeKey> parentIndex) {
+        public boolean mergeNodes(Set<TetreeKey<? extends TetreeKey>> tetIndices,
+                                  TetreeKey<? extends TetreeKey> parentIndex) {
             if (tetIndices.isEmpty()) {
                 return false;
             }
 
             // Collect all entities from nodes to be merged
             Set<ID> allEntities = new HashSet<>();
-            for (BaseTetreeKey<? extends BaseTetreeKey> tetIndex : tetIndices) {
+            for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
                 TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
                 if (node != null && !node.isEmpty()) {
                     allEntities.addAll(node.getEntityIds());
@@ -2958,7 +2950,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
             if (allEntities.isEmpty()) {
                 // Just remove empty nodes
-                for (BaseTetreeKey<? extends BaseTetreeKey> tetIndex : tetIndices) {
+                for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
                     spatialIndex.remove(tetIndex);
                     sortedSpatialIndices.remove(tetIndex);
                 }
@@ -2974,7 +2966,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
             // Move all entities to parent
             for (ID entityId : allEntities) {
                 // Remove from child locations
-                for (BaseTetreeKey<? extends BaseTetreeKey> tetIndex : tetIndices) {
+                for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
                     entityManager.removeEntityLocation(entityId, tetIndex);
                 }
 
@@ -2984,7 +2976,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
             }
 
             // Remove child nodes
-            for (BaseTetreeKey<? extends BaseTetreeKey> tetIndex : tetIndices) {
+            for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
                 spatialIndex.remove(tetIndex);
                 sortedSpatialIndices.remove(tetIndex);
             }
@@ -2996,8 +2988,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         }
 
         @Override
-        public List<BaseTetreeKey<? extends BaseTetreeKey>> splitNode(BaseTetreeKey<? extends BaseTetreeKey> tetIndex,
-                                                                      byte tetLevel) {
+        public List<TetreeKey<? extends TetreeKey>> splitNode(TetreeKey<? extends TetreeKey> tetIndex, byte tetLevel) {
             if (tetLevel >= maxDepth) {
                 return Collections.emptyList();
             }
@@ -3017,8 +3008,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
             int childCellSize = Constants.lengthAtLevel(childLevel);
 
             // Create child nodes
-            List<BaseTetreeKey<? extends BaseTetreeKey>> createdChildren = new ArrayList<>();
-            Map<BaseTetreeKey<? extends BaseTetreeKey>, Set<ID>> childEntityMap = new HashMap<>();
+            List<TetreeKey<? extends TetreeKey>> createdChildren = new ArrayList<>();
+            Map<TetreeKey<? extends TetreeKey>, Set<ID>> childEntityMap = new HashMap<>();
 
             // Distribute entities to children based on their positions
             for (ID entityId : entities) {
@@ -3029,7 +3020,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
                 // Find the containing tetrahedron at the child level
                 Tet childTet = locate(pos, childLevel);
-                BaseTetreeKey<? extends BaseTetreeKey> childTetIndex = childTet.tmIndex();
+                TetreeKey<? extends TetreeKey> childTetIndex = childTet.tmIndex();
                 childEntityMap.computeIfAbsent(childTetIndex, k -> new HashSet<>()).add(entityId);
             }
 
@@ -3040,8 +3031,8 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
             }
 
             // Create child nodes and add entities
-            for (Map.Entry<BaseTetreeKey<? extends BaseTetreeKey>, Set<ID>> entry : childEntityMap.entrySet()) {
-                BaseTetreeKey<? extends BaseTetreeKey> childTetIndex = entry.getKey();
+            for (Map.Entry<TetreeKey<? extends TetreeKey>, Set<ID>> entry : childEntityMap.entrySet()) {
+                TetreeKey<? extends TetreeKey> childTetIndex = entry.getKey();
                 Set<ID> childEntities = entry.getValue();
 
                 if (!childEntities.isEmpty()) {
@@ -3065,7 +3056,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
             // Set the specific child bits for the children that were created
             // We need to determine which child indices these represent
-            for (BaseTetreeKey<? extends BaseTetreeKey> childTetIndex : createdChildren) {
+            for (TetreeKey<? extends TetreeKey> childTetIndex : createdChildren) {
                 Tet childTet = Tet.tetrahedron(childTetIndex);
                 // Find which child index this represents (0-7)
                 for (int i = 0; i < 8; i++) {
@@ -3089,8 +3080,7 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
         }
 
         @Override
-        protected Set<BaseTetreeKey<? extends BaseTetreeKey>> findSiblings(
-        BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+        protected Set<TetreeKey<? extends TetreeKey>> findSiblings(TetreeKey<? extends TetreeKey> tetIndex) {
             Tet tet = Tet.tetrahedron(tetIndex);
             if (tet.l() == 0) {
                 return Collections.emptySet(); // Root has no siblings
@@ -3098,10 +3088,10 @@ extends AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content
 
             // Use the t8code-compliant TetreeFamily algorithm for finding siblings
             Tet[] siblings = TetreeFamily.getSiblings(tet);
-            Set<BaseTetreeKey<? extends BaseTetreeKey>> result = new HashSet<>();
+            Set<TetreeKey<? extends TetreeKey>> result = new HashSet<>();
 
             for (Tet sibling : siblings) {
-                BaseTetreeKey<? extends BaseTetreeKey> siblingIndex = sibling.tmIndex();
+                TetreeKey<? extends TetreeKey> siblingIndex = sibling.tmIndex();
                 // Add if it's not the current node and exists in the spatial index
                 if (siblingIndex != tetIndex && spatialIndex.containsKey(siblingIndex)) {
                     result.add(siblingIndex);

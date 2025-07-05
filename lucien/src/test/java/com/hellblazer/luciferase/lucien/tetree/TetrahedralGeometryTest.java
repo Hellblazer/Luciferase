@@ -32,7 +32,7 @@ public class TetrahedralGeometryTest {
     void testDistancePointToTetrahedron() {
         int cellSize = Constants.lengthAtLevel((byte) 5);
         var tet = new Tet(100 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey = (TetreeKey) tet.tmIndex();
+        var tetKey = (ExtendedTetreeKey) tet.tmIndex();
 
         // Debug: Show tetrahedron info
         var vertices = tet.coordinates();
@@ -69,14 +69,14 @@ public class TetrahedralGeometryTest {
         // Test distance from tetrahedron to itself
         int cellSize = Constants.lengthAtLevel((byte) 5);
         var tet = new Tet(100 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey = (TetreeKey) tet.tmIndex();
+        var tetKey = (ExtendedTetreeKey) tet.tmIndex();
 
         float selfDistance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(tetKey, tetKey);
         assertEquals(0.0f, selfDistance, TOLERANCE, "Distance from tetrahedron to itself should be 0");
 
         // Test distance to different tetrahedron
         var tet2 = new Tet(1000 * cellSize, 1000 * cellSize, 1000 * cellSize, (byte) 5, (byte) 2);
-        var tetKey2 = (TetreeKey) tet2.tmIndex();
+        var tetKey2 = (ExtendedTetreeKey) tet2.tmIndex();
 
         float distance = TetrahedralGeometry.distanceTetrahedronToTetrahedron(tetKey, tetKey2);
         assertTrue(distance >= 0, "Distance between tetrahedra should be non-negative");
@@ -93,7 +93,7 @@ public class TetrahedralGeometryTest {
         try {
             // Root tetrahedron must be at origin
             var smallTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-            var smallKey = (TetreeKey) smallTet.tmIndex();
+            var smallKey = (ExtendedTetreeKey) smallTet.tmIndex();
 
             // These should handle small tetrahedra gracefully
             assertDoesNotThrow(() -> {
@@ -147,7 +147,7 @@ public class TetrahedralGeometryTest {
         // Create a tetrahedron
         int cellSize = Constants.lengthAtLevel((byte) 5);
         var tet = new Tet(100 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey = (TetreeKey) tet.tmIndex();
+        var tetKey = (ExtendedTetreeKey) tet.tmIndex();
 
         // Create frustum pointing towards tetrahedron
         Point3f tetCenter = tetrahedronCenter(tetKey);
@@ -195,7 +195,7 @@ public class TetrahedralGeometryTest {
         // Create a tetrahedron
         int cellSize = Constants.lengthAtLevel((byte) 5);
         var tet = new Tet(100 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey = (TetreeKey) tet.tmIndex();
+        var tetKey = (ExtendedTetreeKey) tet.tmIndex();
 
         // Create plane that might intersect tetrahedron
         Point3f tetCenter = tetrahedronCenter(tetKey);
@@ -270,7 +270,7 @@ public class TetrahedralGeometryTest {
         // Create a tetrahedron
         int cellSize = Constants.lengthAtLevel((byte) 5);
         var tet = new Tet(100 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey = (TetreeKey) tet.tmIndex();
+        var tetKey = (ExtendedTetreeKey) tet.tmIndex();
 
         // Test ray from far away pointing towards tetrahedron center
         Point3f tetCenter = tetrahedronCenter(tetKey);
@@ -300,7 +300,7 @@ public class TetrahedralGeometryTest {
         // Test intersection of tetrahedron with itself
         int cellSize = Constants.lengthAtLevel((byte) 5);
         var tet = new Tet(100 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey = (TetreeKey) tet.tmIndex();
+        var tetKey = (ExtendedTetreeKey) tet.tmIndex();
 
         var selfIntersection = TetrahedralGeometry.tetrahedronIntersection(tetKey, tetKey);
         assertEquals(TetrahedralGeometry.IntersectionResult.IDENTICAL, selfIntersection,
@@ -308,7 +308,7 @@ public class TetrahedralGeometryTest {
 
         // Test with different tetrahedra - create a slightly different tet to ensure different TM-index
         var tet2 = new Tet(101 * cellSize, 100 * cellSize, 100 * cellSize, (byte) 5, (byte) 2);
-        var tetKey2 = (TetreeKey) tet2.tmIndex();
+        var tetKey2 = (ExtendedTetreeKey) tet2.tmIndex();
 
         var intersection = TetrahedralGeometry.tetrahedronIntersection(tetKey, tetKey2);
         assertNotNull(intersection, "Intersection result should not be null");

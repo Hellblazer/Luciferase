@@ -85,7 +85,7 @@ public class TMIndexPerformanceComparison {
 
     private static int estimateObjectSize(Object obj) {
         // Rough estimates based on JVM object layout
-        if (obj instanceof TetreeKey) {
+        if (obj instanceof ExtendedTetreeKey) {
             // Object header (16) + byte level (1+padding=4) + 2 longs (16)
             return 36;
         } else if (obj instanceof TMIndex128Bit) {

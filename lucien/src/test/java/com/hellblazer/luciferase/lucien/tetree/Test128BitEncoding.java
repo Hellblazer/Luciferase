@@ -62,7 +62,7 @@ public class Test128BitEncoding {
         var key = tet.tmIndex();
 
         System.out.println("Test Tet: " + tet);
-        System.out.println("TetreeKey: " + key);
+        System.out.println("ExtendedTetreeKey: " + key);
 
         // Manual calculation to verify
         // Level 0: x=0, y=0, z=0, type=0

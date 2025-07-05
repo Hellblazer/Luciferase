@@ -17,16 +17,17 @@
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
+import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
+import com.hellblazer.luciferase.portal.mesh.explorer.GraphicsView;
 import com.hellblazer.sentry.Grid;
 import com.hellblazer.sentry.MutableGrid;
 import com.hellblazer.sentry.Tetrahedron;
 import com.hellblazer.sentry.Vertex;
-import com.hellblazer.luciferase.portal.mesh.explorer.Colors;
-import com.hellblazer.luciferase.portal.mesh.explorer.GraphicsView;
 import javafx.scene.Group;
 import javafx.scene.paint.PhongMaterial;
 
 import javax.vecmath.Tuple3f;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -55,9 +56,7 @@ public class GridView extends GraphicsView {
     public GridView(MutableGrid t) {
         super();
         grid = t;
-        for (Vertex v : grid.extent()) {
-            fourCorners.add(v);
-        }
+        Collections.addAll(fourCorners, grid.extent());
         updateDiagram();
     }
 

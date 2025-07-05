@@ -64,29 +64,29 @@ public class CompactTetreeKeyTest {
     @Test
     void testFactoryMethods() {
         // Test root creation
-        BaseTetreeKey<?> root = BaseTetreeKey.getRoot();
+        TetreeKey<?> root = TetreeKey.getRoot();
         assertInstanceOf(CompactTetreeKey.class, root);
         assertEquals(0, root.getLevel());
 
         // Test factory create method
-        BaseTetreeKey<?> compact = BaseTetreeKey.create((byte) 8, 0x12345L, 0L);
+        TetreeKey<?> compact = TetreeKey.create((byte) 8, 0x12345L, 0L);
         assertInstanceOf(CompactTetreeKey.class, compact);
 
-        BaseTetreeKey<?> full = BaseTetreeKey.create((byte) 15, 0x12345L, 0x67890L);
-        assertInstanceOf(TetreeKey.class, full);
+        TetreeKey<?> full = TetreeKey.create((byte) 15, 0x12345L, 0x67890L);
+        assertInstanceOf(ExtendedTetreeKey.class, full);
     }
 
     @Test
     void testMemoryEfficiency() {
-        // Verify that CompactTetreeKey uses less memory than TetreeKey
+        // Verify that CompactTetreeKey uses less memory than ExtendedTetreeKey
         // This is more of a documentation test
 
         // CompactTetreeKey: 1 byte + 1 long = 9 bytes (plus object overhead)
-        // TetreeKey: 1 byte + 2 longs = 17 bytes (plus object overhead)
+        // ExtendedTetreeKey: 1 byte + 2 longs = 17 bytes (plus object overhead)
 
         // For level 10 key:
         CompactTetreeKey compact = new CompactTetreeKey((byte) 10, 0x123456789ABCDEFL);
-        TetreeKey full = new TetreeKey((byte) 10, 0x123456789ABCDEFL, 0L);
+        ExtendedTetreeKey full = new ExtendedTetreeKey((byte) 10, 0x123456789ABCDEFL, 0L);
 
         // Both represent the same key
         assertEquals(compact.getLevel(), full.getLevel());

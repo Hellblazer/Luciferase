@@ -21,8 +21,8 @@ import com.hellblazer.luciferase.lucien.Constants;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Thread-local cache for TetreeKey values to reduce contention in heavily concurrent workloads. Each thread gets its
- * own cache instance, eliminating synchronization overhead.
+ * Thread-local cache for ExtendedTetreeKey values to reduce contention in heavily concurrent workloads. Each thread
+ * gets its own cache instance, eliminating synchronization overhead.
  *
  * @author hal.hildebrand
  */
@@ -53,17 +53,17 @@ public class ThreadLocalTetreeCache {
         long total = hits + misses;
         double hitRate = total > 0 ? (double) hits / total : 0.0;
 
-        return String.format("ThreadLocal TetreeKey Cache - Hits: %d, Misses: %d, Hit Rate: %.2f%%", hits, misses,
-                             hitRate * 100);
+        return String.format("ThreadLocal ExtendedTetreeKey Cache - Hits: %d, Misses: %d, Hit Rate: %.2f%%", hits,
+                             misses, hitRate * 100);
     }
 
     /**
-     * Get or compute TetreeKey for the given Tet using thread-local cache.
+     * Get or compute ExtendedTetreeKey for the given Tet using thread-local cache.
      *
      * @param tet the tetrahedron
-     * @return the TetreeKey
+     * @return the ExtendedTetreeKey
      */
-    public static BaseTetreeKey getTetreeKey(Tet tet) {
+    public static TetreeKey getTetreeKey(Tet tet) {
         return tlCache.get().get(tet);
     }
 
@@ -86,16 +86,16 @@ public class ThreadLocalTetreeCache {
      * Per-thread cache implementation.
      */
     private static class TetreeKeyCache {
-        private final int                cacheSize;
-        private final long[]             cacheKeys;
-        private final BaseTetreeKey<?>[] cacheValues;
-        private       long               hits   = 0;
-        private       long               misses = 0;
+        private final int            cacheSize;
+        private final long[]         cacheKeys;
+        private final TetreeKey<?>[] cacheValues;
+        private       long           hits   = 0;
+        private       long           misses = 0;
 
         TetreeKeyCache(int size) {
             this.cacheSize = size;
             this.cacheKeys = new long[size];
-            this.cacheValues = new TetreeKey[size];
+            this.cacheValues = new ExtendedTetreeKey[size];
         }
 
         void clear() {
@@ -107,7 +107,7 @@ public class ThreadLocalTetreeCache {
             misses = 0;
         }
 
-        BaseTetreeKey<? extends BaseTetreeKey<?>> get(Tet tet) {
+        TetreeKey<? extends TetreeKey<?>> get(Tet tet) {
             long key = generateCacheKey(tet);
             int slot = (int) (key & (cacheSize - 1));
 
@@ -132,12 +132,12 @@ public class ThreadLocalTetreeCache {
             return result;
         }
 
-        private BaseTetreeKey<?> computeTetreeKey(Tet tet) {
+        private TetreeKey<?> computeTetreeKey(Tet tet) {
             // Direct computation of tmIndex without using global cache
             // This duplicates the logic from Tet.tmIndex() to avoid cache contention
 
             if (tet.l() == 0) {
-                return BaseTetreeKey.getRoot();
+                return TetreeKey.getRoot();
             }
 
             // Build parent chain
@@ -191,7 +191,7 @@ public class ThreadLocalTetreeCache {
                 }
             }
 
-            return new TetreeKey(tet.l(), lowBits, highBits);
+            return new ExtendedTetreeKey(tet.l(), lowBits, highBits);
         }
 
         private long generateCacheKey(Tet tet) {
