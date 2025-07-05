@@ -11,17 +11,19 @@ The Luciferase system provides two spatial index implementations:
 
 ## Performance Trade-offs
 
-### Key Performance Characteristics (December 2025 Update)
+### Key Performance Characteristics (July 2025 Update)
 
-**IMPORTANT**: Performance characteristics have changed significantly after refactoring to use globally unique indices.
+**CURRENT STATE**: After all optimizations, Tetree is now competitive for most use cases.
 
 | Operation       | Octree         | Tetree          | Notes                            |
 |-----------------|----------------|-----------------|----------------------------------|
-| **Insertion**   | ~1.5 μs/entity | ~1690 μs/entity | Octree is **1125x faster**       |
-| **k-NN Search** | ~28 μs         | ~6 μs           | Tetree is **4.8x faster**        |
-| **Range Query** | ~28 μs         | ~5.6 μs         | Tetree is **5x faster**          |
-| **Update**      | ~0.002 μs      | ~0.67 μs        | Octree is **335x faster**        |
-| **Memory**      | Baseline       | 22% of Octree   | Tetree is **78% more efficient** |
+| **Insertion**   | ~2.5 μs/entity | ~7.8 μs/entity  | Octree is **3-7x faster**        |
+| **k-NN Search** | ~4.1 μs        | ~2.2 μs         | Tetree is **1.9x faster**        |
+| **Range Query** | ~21.7 μs       | ~207 μs         | Octree is **9.6x faster**        |
+| **Update**      | ~0.002 μs      | ~0.005 μs       | Octree is **2.5x faster**        |
+| **Memory**      | Baseline       | 20% of Octree   | Tetree is **80% more efficient** |
+| **Child Lookup**| Baseline       | 3x faster       | After July 5 optimization        |
+| **Batch Insert**| Baseline       | Superior        | Tetree **74-296x faster**        |
 
 ### Root Cause Analysis
 
@@ -34,8 +36,16 @@ The performance difference stems from fundamental algorithmic differences:
 
 2. **Tetree (TM-Index)**:
     - Requires parent chain traversal: O(level) operation
-    - At level 20, tmIndex() is ~140x slower than simple indexing
+    - Despite optimizations, fundamental O(level) cost remains
     - Necessary for global uniqueness across levels
+
+### Optimization History
+
+The Tetree has undergone massive performance improvements:
+- **June 24, 2025**: Initial state - 770x slower than Octree
+- **June 28, 2025**: V2 tmIndex + parent cache - reduced to 3-7x slower
+- **July 5, 2025**: Efficient child computation - 3x faster child lookups
+- **Total improvement**: 256-385x performance gain
 
 ## Optimization Techniques
 

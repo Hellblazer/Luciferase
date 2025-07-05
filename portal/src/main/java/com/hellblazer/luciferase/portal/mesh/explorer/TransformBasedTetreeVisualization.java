@@ -217,8 +217,7 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
         mesh.getTexCoords().addAll(0, 0, 1, 0, 0.5f, 1, 0.5f, 0.5f);
 
         // Add faces with correct winding for outward normals
-        // Since these are reference tetrahedra from SIMPLEX_STANDARD,
-        // they should have consistent winding
+        // These reference tetrahedra use the t8code vertex ordering
         mesh.getFaces().addAll(0, 0, 2, 2, 1, 1,  // Face 0-2-1
                                0, 0, 1, 1, 3, 3,  // Face 0-1-3
                                0, 0, 3, 3, 2, 2,  // Face 0-3-2
@@ -237,11 +236,10 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
     }
 
     /**
-     * Get type-specific rotation if needed. This handles the different orientations of S1-S5 relative to S0.
+     * Get type-specific rotation if needed. This handles the different orientations of types 1-5 relative to type 0.
      *
-     * Based on analysis of Constants.SIMPLEX_STANDARD: - S0: Reference orientation - S1: 120° rotation around (1,1,1)
-     * axis - S2: 90° rotation around Z axis - S3: 240° rotation around (1,1,1) axis - S4: 90° rotation around X axis -
-     * S5: -120° rotation around (1,1,1) axis
+     * Note: With t8code vertex ordering, the rotational relationships between types may be different
+     * than with SIMPLEX_STANDARD. These rotations may need adjustment based on actual geometry.
      */
     private Affine getTypeSpecificRotation(int type) {
         Affine rotation = new Affine();
@@ -298,9 +296,11 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
      * transformed as needed.
      */
     private void initializeReferenceMeshes() {
-        // Create reference mesh for each tetrahedron type
+        // Create reference mesh for each tetrahedron type using t8code algorithm
         for (int type = 0; type < 6; type++) {
-            Point3i[] vertices = Constants.SIMPLEX_STANDARD[type];
+            // Create a unit tetrahedron at level 0 (size 1) to get the vertex pattern
+            Tet unitTet = new Tet(0, 0, 0, (byte) 21, (byte) type); // Level 21 gives size 1
+            Point3i[] vertices = unitTet.coordinates();
 
             // Create unit-sized reference mesh at origin
             TriangleMesh mesh = createUnitTetrahedronMesh(vertices);

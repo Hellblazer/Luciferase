@@ -1,5 +1,9 @@
 # Benchmark Results - June 2025
 
+> **Note**: These benchmarks were conducted in June 2025. For the latest performance improvements including:
+> - July 5, 2025: Efficient child computation (3x speedup)
+> - See [PERFORMANCE_OPTIMIZATION_HISTORY.md](./PERFORMANCE_OPTIMIZATION_HISTORY.md) for complete timeline
+
 ## Executive Summary
 
 This document tracks the performance benchmarks for the Lucien spatial indexing system, including recent improvements and the new geometric subdivision feature.

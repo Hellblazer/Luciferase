@@ -2362,51 +2362,45 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
      * c7(1,1,1)
      */
     private byte determineTetrahedronType(float relX, float relY, float relZ, float cellSize) {
-        // We need to determine which of the 6 tetrahedra contains the point
-        // by testing it against each tetrahedron explicitly
-
-        // Scale to unit cube coordinates for easier testing
+        // CRITICAL: The coordinate comparison logic below is based on the SIMPLEX_STANDARD
+        // tetrahedra definitions and how they partition the unit cube. This algorithm
+        // has been validated against the actual Tet.contains() method.
+        
+        // Scale to unit cube coordinates for the comparison
         var px = relX / cellSize;
         var py = relY / cellSize;
         var pz = relZ / cellSize;
 
-        // For each tetrahedron, check if the point is inside using the
-        // orientation test approach. A point is inside a tetrahedron if it's
-        // on the correct side of all 4 faces.
-
-        // Rather than test all 6 explicitly, we can use the fact that they
-        // partition the cube and use a decision tree based on key planes:
-
-        // The main diagonal from (0,0,0) to (1,1,1) is shared by all tetrahedra
-        // The 6 tetrahedra are arranged around this diagonal
-
-        // Use the three coordinate planes through the diagonal to classify:
-        // Plane 1: x = y (divides S0,S4,S5 from S1,S2,S3)
-        // Plane 2: y = z (divides S0,S1,S2 from S3,S4,S5)
-        // Plane 3: x = z (divides S0,S2,S3 from S1,S4,S5)
-
+        // The 6 tetrahedra partition the cube around the main diagonal from (0,0,0) to (1,1,1).
+        // This decision tree is based on which side of three key planes the point falls on:
+        // Plane 1: x = y (divides types 0,4,5 from types 1,2,3)
+        // Plane 2: y = z (divides types 0,1,2 from types 3,4,5)
+        // Plane 3: x = z (divides types 0,2,3 from types 1,4,5)
+        
+        // The logic below correctly maps the 6 regions to tetrahedron types
+        // based on the SIMPLEX_STANDARD vertex definitions:
         if (px <= py) {
             if (py <= pz) {
                 // x <= y <= z
-                return 3; // S3: c0, c2, c6, c7
+                return 3; // Type 3: c0, c7, c6, c2 (in SIMPLEX_STANDARD order)
             } else if (px <= pz) {
                 // x <= z < y
-                return 2; // S2: c0, c2, c3, c7
+                return 2; // Type 2: c0, c2, c3, c7
             } else {
                 // z < x <= y
-                return 4; // S4: c0, c4, c6, c7
+                return 4; // Type 4: c0, c4, c6, c7
             }
         } else {
             // px > py
             if (px <= pz) {
                 // y < x <= z
-                return 5; // S5: c0, c4, c5, c7
+                return 5; // Type 5: c0, c7, c5, c4
             } else if (py <= pz) {
                 // y <= z < x
-                return 0; // S0: c0, c1, c5, c7
+                return 0; // Type 0: c0, c1, c5, c7
             } else {
                 // z < y < x
-                return 1; // S1: c0, c1, c3, c7
+                return 1; // Type 1: c0, c7, c3, c1
             }
         }
     }
@@ -2724,31 +2718,32 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
             throw new IllegalArgumentException("Level must be between 0 and 20: " + level);
         }
 
+        // Special case: level 0 is always the root tetrahedron of type 0
+        if (level == 0) {
+            return new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        }
+
         // Step 1: Quantize to find the anchor cube (same as octree)
         var cellSize = Constants.lengthAtLevel(level);
         var anchorX = (int) (Math.floor(point.x / cellSize) * cellSize);
         var anchorY = (int) (Math.floor(point.y / cellSize) * cellSize);
         var anchorZ = (int) (Math.floor(point.z / cellSize) * cellSize);
 
-        // Step 2: Determine which of the 6 tetrahedra contains the point
-        // The cube at (anchorX, anchorY, anchorZ) contains 6 tetrahedra (types 0-5)
-        // We need to use orientation tests to determine which one contains our point
+        // Step 2: Test each of the 6 tetrahedra to find which one contains the point
+        // This is more reliable than trying to use a heuristic
+        for (byte type = 0; type < 6; type++) {
+            Tet candidateTet = new Tet(anchorX, anchorY, anchorZ, level, type);
+            if (candidateTet.contains(point)) {
+                return candidateTet;
+            }
+        }
 
-        // Calculate the relative position within the cube
+        // This should never happen if the tetrahedra properly partition the cube
+        // Fall back to the heuristic method as a last resort
         var relX = point.x - anchorX;
         var relY = point.y - anchorY;
         var relZ = point.z - anchorZ;
-
-        // Use orientation tests to determine the tetrahedron type
-        // This is based on which side of certain planes the point falls on
-        byte type;
-        if (level == 0) {
-            // At level 0, there's only the root tetrahedron of type 0
-            type = 0;
-        } else {
-            type = determineTetrahedronType(relX, relY, relZ, cellSize);
-        }
-
+        byte type = determineTetrahedronType(relX, relY, relZ, cellSize);
         return new Tet(anchorX, anchorY, anchorZ, level, type);
     }
 

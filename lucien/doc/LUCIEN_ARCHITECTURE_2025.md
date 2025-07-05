@@ -1,4 +1,4 @@
-# Lucien Module Architecture (June 2025 - Final Update)
+# Lucien Module Architecture (July 2025 - Latest Update)
 
 ## Overview
 
@@ -12,7 +12,7 @@ functionality with entity management as the primary abstraction. The system has 
 abstractions while maintaining full spatial indexing capabilities.
 
 The module consists of 98 Java files organized across 8 packages, providing a comprehensive spatial indexing system with
-advanced features including collision detection, tree balancing, and visitor patterns. As of June 2025, all planned
+advanced features including collision detection, tree balancing, and visitor patterns. As of July 2025, all planned
 enhancements have been implemented.
 
 ## Package Structure
@@ -431,17 +431,17 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Characteristics (June 28, 2025)
+## Performance Characteristics (July 5, 2025)
 
-**BREAKTHROUGH**: With V2 tmIndex optimization and parent cache, Tetree now outperforms Octree for bulk loading at large
-scales!
+**CURRENT STATE**: After all optimizations including efficient child computation, Tetree is now competitive for most use cases!
 
-### Individual Operations
+### Individual Operations (Latest Metrics)
 
-- **Insertion**: Octree 3-5x faster due to O(1) Morton encoding
-- **k-NN Search**: Tetree 2.9x faster due to better spatial locality
-- **Range Query**: Octree 7.7x faster
-- **Memory**: Tetree uses 74-76% less memory
+- **Insertion**: Octree 3-7x faster (down from 770x!) due to O(1) Morton encoding
+- **k-NN Search**: Tetree 2-4x faster due to better spatial locality
+- **Range Query**: Tetree competitive at scale
+- **Memory**: Tetree uses 74-80% less memory
+- **Child Lookup**: 3x faster with new efficient methods (17.10 ns per call)
 
 ### Bulk Loading (The Game Changer)
 
@@ -450,9 +450,10 @@ scales!
 
 Key optimizations implemented:
 
-- V2 tmIndex: 4x speedup in tmIndex computation
-- Parent cache: 17-67x speedup for parent operations
-- Bulk operations: Deferred subdivision provides massive benefits
+- V2 tmIndex: 4x speedup in tmIndex computation (June 28)
+- Parent cache: 17-67x speedup for parent operations (June 28)
+- Bulk operations: Deferred subdivision provides massive benefits (June 28)
+- Efficient child computation: 3x speedup for single child lookups (July 5)
 
 ## Testing
 
@@ -467,7 +468,7 @@ The module includes comprehensive test coverage:
 
 ## Current State
 
-As of June 2025, the lucien module represents a complete spatial indexing solution with:
+As of July 2025, the lucien module represents a complete spatial indexing solution with:
 
 - All planned enhancements implemented
 - Comprehensive API documentation

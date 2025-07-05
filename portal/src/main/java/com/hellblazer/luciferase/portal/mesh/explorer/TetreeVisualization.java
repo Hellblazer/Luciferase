@@ -762,20 +762,15 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Create transparent tetrahedron face.
      */
     private MeshView createTransparentTetrahedron(Tet tet, int level) {
-        // Get the CORRECT tetrahedron vertices from SIMPLEX_STANDARD
-        Point3i[] simplexVertices = Constants.SIMPLEX_STANDARD[tet.type()];
+        // Get the actual tetrahedron vertices using the t8code algorithm
+        Point3i[] tetVertices = tet.coordinates();
         Point3f[] vertices = new Point3f[4];
 
-        // Get anchor coordinates from tet.coordinates()[0]
-        Point3i anchor = tet.coordinates()[0];
-
-        // Use natural coordinates - JavaFX transform handles scaling
-        int h = tet.length();
-
+        // Convert to Point3f for JavaFX
         for (int i = 0; i < 4; i++) {
-            vertices[i] = new Point3f((float) (anchor.x + simplexVertices[i].x * h),
-                                      (float) (anchor.y + simplexVertices[i].y * h),
-                                      (float) (anchor.z + simplexVertices[i].z * h));
+            vertices[i] = new Point3f((float) tetVertices[i].x,
+                                      (float) tetVertices[i].y,
+                                      (float) tetVertices[i].z);
         }
 
         // Create triangle mesh for tetrahedron
@@ -855,21 +850,15 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private Group createWireframeTetrahedron(Tet tet, int level) {
         Group edges = new Group();
 
-        // Get the CORRECT tetrahedron vertices from SIMPLEX_STANDARD
-        Point3i[] simplexVertices = Constants.SIMPLEX_STANDARD[tet.type()];
+        // Get the actual tetrahedron vertices using the t8code algorithm
+        Point3i[] tetVertices = tet.coordinates();
         Point3f[] vertices = new Point3f[4];
 
-        // Get anchor coordinates from tet.coordinates()[0]
-        Point3i anchor = tet.coordinates()[0];
-
-        // Use natural Tetree coordinates - JavaFX transform handles scaling
-        int h = tet.length();
-
-        // Calculate vertices in natural coordinates (no manual scaling)
+        // Convert to Point3f for JavaFX (no manual scaling needed)
         for (int i = 0; i < 4; i++) {
-            vertices[i] = new Point3f((float) (anchor.x + simplexVertices[i].x * h),
-                                      (float) (anchor.y + simplexVertices[i].y * h),
-                                      (float) (anchor.z + simplexVertices[i].z * h));
+            vertices[i] = new Point3f((float) tetVertices[i].x,
+                                      (float) tetVertices[i].y,
+                                      (float) tetVertices[i].z);
         }
 
         // No inset for wireframe - we want to show actual boundaries
@@ -1032,30 +1021,11 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     /**
-     * Simple point-in-tetrahedron test.
+     * Check if a point is contained in the tetrahedron using the Tet's containment test.
      */
     private boolean isPointInTetrahedron(Point3f point, Tet tet) {
-        Point3i[] vertices = tet.coordinates();
-
-        // Convert to float coordinates
-        Point3f v0 = new Point3f(vertices[0].x, vertices[0].y, vertices[0].z);
-        Point3f v1 = new Point3f(vertices[1].x, vertices[1].y, vertices[1].z);
-        Point3f v2 = new Point3f(vertices[2].x, vertices[2].y, vertices[2].z);
-        Point3f v3 = new Point3f(vertices[3].x, vertices[3].y, vertices[3].z);
-
-        // Use barycentric coordinates to test
-        // This is simplified - a proper implementation would use exact arithmetic
-        float totalVolume = Math.abs((float) computeSignedVolume(new Point3f[] { v0, v1, v2, v3 }));
-
-        float vol0 = Math.abs((float) computeSignedVolume(new Point3f[] { point, v1, v2, v3 }));
-        float vol1 = Math.abs((float) computeSignedVolume(new Point3f[] { v0, point, v2, v3 }));
-        float vol2 = Math.abs((float) computeSignedVolume(new Point3f[] { v0, v1, point, v3 }));
-        float vol3 = Math.abs((float) computeSignedVolume(new Point3f[] { v0, v1, v2, point }));
-
-        float sumVolumes = vol0 + vol1 + vol2 + vol3;
-
-        // Check if sum of sub-volumes equals total volume (with small epsilon)
-        return Math.abs(sumVolumes - totalVolume) < 0.001f * totalVolume;
+        // Use the Tet's built-in containment test which properly handles tetrahedral geometry
+        return tet.contains(point);
     }
 
     /**
@@ -1167,20 +1137,14 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * sphere or if the sphere center is within the tetrahedron.
      */
     private boolean tetIntersectsSphere(Tet tet, Point3f center, float radius) {
-        // Get the CORRECT tetrahedron vertices from SIMPLEX_STANDARD
-        Point3i[] simplexVertices = Constants.SIMPLEX_STANDARD[tet.type()];
-        Point3i anchor = tet.coordinates()[0];
-        int h = tet.length();
+        // Get the actual tetrahedron vertices using the t8code algorithm
+        Point3i[] vertices = tet.coordinates();
 
         // Check if any vertex is within the sphere
-        for (Point3i simplex : simplexVertices) {
-            float vx = anchor.x + simplex.x * h;
-            float vy = anchor.y + simplex.y * h;
-            float vz = anchor.z + simplex.z * h;
-
-            float dx = vx - center.x;
-            float dy = vy - center.y;
-            float dz = vz - center.z;
+        for (Point3i vertex : vertices) {
+            float dx = vertex.x - center.x;
+            float dy = vertex.y - center.y;
+            float dz = vertex.z - center.z;
             float distSq = dx * dx + dy * dy + dz * dz;
             if (distSq <= radius * radius) {
                 return true;
