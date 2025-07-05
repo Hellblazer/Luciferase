@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,7 @@ public class TetreeKeyCachePerformanceTest {
             byte level = (byte) ((i % 15) + 5);
             int cellSize = Constants.lengthAtLevel(level);
             // Reduce multiplier to stay within bounds for all levels  
-            var maxMultiplier = Math.min(99, (1 << 21) / cellSize - 1);
+            var maxMultiplier = Math.min(99, (1 << MortonCurve.MAX_REFINEMENT_LEVEL) / cellSize - 1);
             int x = ((i * 7919) % maxMultiplier) * cellSize;  // Grid-aligned distribution
             int y = ((i * 7927) % maxMultiplier) * cellSize;
             int z = ((i * 7933) % maxMultiplier) * cellSize;
@@ -62,7 +63,7 @@ public class TetreeKeyCachePerformanceTest {
             int idx = i * 10;  // Access every 10th tetrahedron
             byte level = (byte) ((idx % 15) + 5);
             int cellSize = Constants.lengthAtLevel(level);
-            var maxMultiplier = Math.min(99, (1 << 21) / cellSize - 1);
+            var maxMultiplier = Math.min(99, (1 << MortonCurve.MAX_REFINEMENT_LEVEL) / cellSize - 1);
             int x = ((idx * 7919) % maxMultiplier) * cellSize;
             int y = ((idx * 7927) % maxMultiplier) * cellSize;
             int z = ((idx * 7933) % maxMultiplier) * cellSize;
@@ -132,7 +133,7 @@ public class TetreeKeyCachePerformanceTest {
             for (byte type = 0; type < 6; type++) {
                 int cellSize = Constants.lengthAtLevel(level);
                 // Ensure coordinates stay within bounds
-                var maxAllowed = (1 << 21) / cellSize;  // Max multiplier for this level
+                var maxAllowed = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) / cellSize;  // Max multiplier for this level
                 var x = cellSize;
                 var y = Math.min(cellSize * 2, (maxAllowed - 1) * cellSize);
                 var z = Math.min(cellSize * 3, (maxAllowed - 1) * cellSize);

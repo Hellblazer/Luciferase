@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
 import java.util.Objects;
@@ -32,7 +33,7 @@ import java.util.Objects;
  */
 public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<TetreeKey<? extends TetreeKey>> {
 
-    public static final    byte MAX_REFINEMENT_LEVEL = 21;
+    public static final    byte MAX_REFINEMENT_LEVEL = MortonCurve.MAX_REFINEMENT_LEVEL;
     // Bit layout constants
     protected static final int  BITS_PER_LEVEL       = 6;
     protected static final int  MAX_COMPACT_LEVEL    = 10;

@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -107,7 +108,7 @@ public class Phase3AdvancedOptimizationTest {
             for (int i = 0; i < 100; i++) {
                 var cellSize = Constants.lengthAtLevel((byte) level);
                 // Reduce multiplier to stay within bounds for higher levels
-                var maxMultiplier = Math.min(99, (1 << 21) / cellSize - 1);
+                var maxMultiplier = Math.min(99, (1 << MortonCurve.MAX_REFINEMENT_LEVEL) / cellSize - 1);
                 var x = (i % maxMultiplier) * cellSize;
                 var y = (i % maxMultiplier) * cellSize;
                 var z = (i % maxMultiplier) * cellSize;

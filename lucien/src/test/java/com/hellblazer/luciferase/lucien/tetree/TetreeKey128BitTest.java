@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -70,9 +71,9 @@ public class TetreeKey128BitTest {
         // Test level 21 - maximum level
         long lowBits = 0xFFFFFFFFFFFFFFFFL;
         long highBits = 0x3FFFFFFFFFFFFFFFL; // All bits used
-        ExtendedTetreeKey key128 = new ExtendedTetreeKey((byte) 21, lowBits, highBits);
+        ExtendedTetreeKey key128 = new ExtendedTetreeKey(MortonCurve.MAX_REFINEMENT_LEVEL, lowBits, highBits);
 
-        assertEquals(21, key128.getLevel());
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, key128.getLevel());
         assertEquals(lowBits, key128.getLowBits());
         assertEquals(highBits, key128.getHighBits());
         assertTrue(key128.isValid());

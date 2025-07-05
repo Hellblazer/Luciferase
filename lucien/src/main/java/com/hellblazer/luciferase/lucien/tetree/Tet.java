@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
@@ -60,7 +61,8 @@ public class Tet {
 
     public Tet(int x, int y, int z, byte l, byte type) {
         // Validate level range first
-        assert l >= 0 && l <= 21 : "Level " + l + " must be between 0 and " + 21;
+        assert l >= 0 && l <= MortonCurve.MAX_REFINEMENT_LEVEL : "Level " + l + " must be between 0 and "
+        + MortonCurve.MAX_REFINEMENT_LEVEL;
 
         assert type >= 0 && type <= 5 : "Type " + type + " must be between 0 and 5";
         // Validate coordinates
@@ -441,7 +443,7 @@ public class Tet {
         int[] types = new int[maxBits];
 
         // We support up to level 21 with 128-bit representation
-        if (level > 21) {
+        if (level > MortonCurve.MAX_REFINEMENT_LEVEL) {
             throw new IllegalArgumentException("Level " + level + " exceeds maximum supported level 21");
         }
 
@@ -1482,7 +1484,7 @@ public class Tet {
 
         // Now build bits with types in correct order
         // We support up to level 21 with 128-bit representation
-        if (l > 21) {
+        if (l > MortonCurve.MAX_REFINEMENT_LEVEL) {
             throw new IllegalStateException("Level " + l + " exceeds maximum supported level 21 for 128-bit TM-index");
         }
 

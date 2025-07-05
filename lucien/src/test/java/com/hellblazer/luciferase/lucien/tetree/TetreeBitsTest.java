@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +35,8 @@ class TetreeBitsTest {
         // Test where all three coordinates differ
         int cellSize = Constants.lengthAtLevel((byte) 5);
         Tet tet1 = new Tet(10 * cellSize, 20 * cellSize, 30 * cellSize, (byte) 5, (byte) 2);
-        Tet tet2 = new Tet(11 * cellSize, 21 * cellSize, 31 * cellSize, (byte) 5, (byte) 3);
+        Tet tet2 = new Tet(11 * cellSize, MortonCurve.MAX_REFINEMENT_LEVEL * cellSize, 31 * cellSize, (byte) 5,
+                           (byte) 3);
 
         byte ncaLevel = TetreeBits.lowestCommonAncestorLevel(tet1, tet2);
         assertTrue(ncaLevel <= 5);

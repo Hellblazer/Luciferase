@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 
 import java.util.HashMap;
@@ -530,7 +531,7 @@ public final class TetreeLevelCache {
         // Initialize type transition cache
         // Pack: startType (8 bits) | startLevel (8 bits) | endLevel (8 bits)
         for (var startType = 0; startType < 6; startType++) {
-            for (var startLevel = 0; startLevel <= 21; startLevel++) {
+            for (var startLevel = 0; startLevel <= MortonCurve.MAX_REFINEMENT_LEVEL; startLevel++) {
                 for (var endLevel = 0; endLevel <= startLevel; endLevel++) {
                     var packed = packTypeTransition(startType, startLevel, endLevel);
                     var resultType = computeTypeTransition((byte) startType, (byte) startLevel, (byte) endLevel);

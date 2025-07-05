@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.benchmark;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import org.junit.jupiter.api.Test;
 
@@ -40,7 +41,7 @@ public class GeometricSubdivisionBenchmark {
         Tet[] testTets = new Tet[6];
         int cellSize = 1 << (20 - level);
         // Use smaller multiplier to stay within bounds
-        int coord = Math.min(cellSize * 10, (1 << 21) - cellSize);
+        int coord = Math.min(cellSize * 10, (1 << MortonCurve.MAX_REFINEMENT_LEVEL) - cellSize);
         for (byte type = 0; type < 6; type++) {
             testTets[type] = new Tet(coord, coord, coord, level, type);
         }

@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 /**
  * Estimates the number of nodes that will be created for a given entity count and distribution. Based on the C++
  * implementation's EstimateNodeNumber algorithm.
@@ -27,7 +29,7 @@ public class NodeEstimator {
     private static int calculateMaxNodes(byte maxDepth) {
         // For octree: sum of 8^i for i from 0 to maxDepth
         // This is (8^(maxDepth+1) - 1) / 7
-        if (maxDepth >= 21) {
+        if (maxDepth >= MortonCurve.MAX_REFINEMENT_LEVEL) {
             return Integer.MAX_VALUE; // Avoid overflow
         }
 
@@ -41,7 +43,8 @@ public class NodeEstimator {
     public static int estimateFromSamples(int totalEntityCount, int sampleSize, int uniqueCellsInSample,
                                           int maxEntitiesPerNode) {
         if (sampleSize <= 0 || uniqueCellsInSample <= 0) {
-            return estimateNodeCount(totalEntityCount, maxEntitiesPerNode, (byte) 21, SpatialDistribution.UNIFORM);
+            return estimateNodeCount(totalEntityCount, maxEntitiesPerNode, MortonCurve.MAX_REFINEMENT_LEVEL,
+                                     SpatialDistribution.UNIFORM);
         }
 
         // Extrapolate from sample

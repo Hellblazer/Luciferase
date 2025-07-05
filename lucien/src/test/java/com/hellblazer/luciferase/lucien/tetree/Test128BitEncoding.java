@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,7 +18,7 @@ public class Test128BitEncoding {
         // We want x=1, y=2, z=4 at grid level (before scaling)
         int gridX = 1, gridY = 2, gridZ = 4;
         byte level = 3;
-        int scale = 1 << (21 - level);
+        int scale = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
 
         var tet = new Tet(gridX * scale, gridY * scale, gridZ * scale, level, (byte) 0);
         var key = tet.tmIndex();
@@ -57,7 +58,7 @@ public class Test128BitEncoding {
         byte type = 3;
 
         // Create a Tet and get its TM-index using proper grid alignment
-        int cellSize = 1 << (21 - level);  // Cell size at level 2
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);  // Cell size at level 2
         Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
         var key = tet.tmIndex();
 
@@ -102,7 +103,7 @@ public class Test128BitEncoding {
         };
 
         for (int[] tc : testCases) {
-            int scale = 1 << (21 - tc[3]); // scale to actual coordinates
+            int scale = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - tc[3]); // scale to actual coordinates
             Tet tet = new Tet(tc[0] * scale, tc[1] * scale, tc[2] * scale, (byte) tc[3], (byte) tc[4]);
             var key = tet.tmIndex();
 

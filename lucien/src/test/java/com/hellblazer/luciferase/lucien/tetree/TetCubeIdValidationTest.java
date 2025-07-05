@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,7 @@ public class TetCubeIdValidationTest {
         // for a simple subdivision at level 1
 
         byte level = 15; // Mid-level for reasonable cell sizes
-        int cellSize = 1 << (21 - level); // Size of cells at this level
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // Size of cells at this level
 
         System.out.printf("\nExpected octant assignment at level %d (cell size = %d):\n", level, cellSize);
 
@@ -52,7 +53,7 @@ public class TetCubeIdValidationTest {
 
         // Test coordinates that will cause issues with > 0 check
         // When h is large (high bits), x & h can be negative in Java
-        int maxLevel = 21;
+        int maxLevel = MortonCurve.MAX_REFINEMENT_LEVEL;
 
         for (byte level = 0; level < 5; level++) {
             System.out.printf("Level %d:\n", level);
@@ -89,7 +90,7 @@ public class TetCubeIdValidationTest {
         System.out.println("------|-----------|--------|-------");
 
         for (byte level = 0; level < 10; level++) {
-            int h = 1 << (21 - level);
+            int h = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
             byte cubeId = tet.cubeId(level);
 
             System.out.printf("%5d | %9d | %6d | %s\n", level, h, cubeId,
@@ -100,7 +101,7 @@ public class TetCubeIdValidationTest {
     @Test
     void testSpecificProblematicCase() {
         // This test shows a specific case where > 0 fails but != 0 works
-        int maxLevel = 21;
+        int maxLevel = MortonCurve.MAX_REFINEMENT_LEVEL;
         byte level = 1;
         int h = 1 << (maxLevel - level); // h = 2^20 = 1048576 = 0x100000
 
@@ -130,7 +131,7 @@ public class TetCubeIdValidationTest {
         // Test that cubeId works correctly for coordinates that span different octants
         byte level = 10;
         int cellSize = Constants.lengthAtLevel(level);
-        int h = 1 << (21 - level); // h = 2048 for level 10
+        int h = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // h = 2048 for level 10
 
         // These coordinates all have bit 11 = 0, so they correctly belong to same octant
         Tet tet1 = new Tet(cellSize, cellSize, cellSize, level, (byte) 0);
@@ -152,19 +153,24 @@ public class TetCubeIdValidationTest {
         System.out.printf("Tet(%d,%d,%d): cubeId = %d (bit 11 = 1)\n", h + cellSize, h + cellSize, h + cellSize, id4);
 
         // Debug: Check the actual bit patterns being tested
-        System.out.printf("Checking bit %d for level %d (h = %d):\n", 21 - level, level, h);
-        System.out.printf("tet1 coordinate %d & %d = %d -> bit set: %b\n", cellSize, h, cellSize & h, (cellSize & h) != 0);
-        System.out.printf("tet2 coordinate %d & %d = %d -> bit set: %b\n", cellSize * 2, h, (cellSize * 2) & h, ((cellSize * 2) & h) != 0);
-        System.out.printf("tet3 coordinate %d & %d = %d -> bit set: %b\n", cellSize * 3, h, (cellSize * 3) & h, ((cellSize * 3) & h) != 0);
-        System.out.printf("tet4 coordinate %d & %d = %d -> bit set: %b\n", h + cellSize, h, (h + cellSize) & h, ((h + cellSize) & h) != 0);
-        
+        System.out.printf("Checking bit %d for level %d (h = %d):\n", MortonCurve.MAX_REFINEMENT_LEVEL - level, level,
+                          h);
+        System.out.printf("tet1 coordinate %d & %d = %d -> bit set: %b\n", cellSize, h, cellSize & h,
+                          (cellSize & h) != 0);
+        System.out.printf("tet2 coordinate %d & %d = %d -> bit set: %b\n", cellSize * 2, h, (cellSize * 2) & h,
+                          ((cellSize * 2) & h) != 0);
+        System.out.printf("tet3 coordinate %d & %d = %d -> bit set: %b\n", cellSize * 3, h, (cellSize * 3) & h,
+                          ((cellSize * 3) & h) != 0);
+        System.out.printf("tet4 coordinate %d & %d = %d -> bit set: %b\n", h + cellSize, h, (h + cellSize) & h,
+                          ((h + cellSize) & h) != 0);
+
         // Compare each pair based on their actual bit patterns
         if ((cellSize & h) == ((cellSize * 2) & h)) {
             assertEquals(id1, id2, "Coordinates with same bit pattern should have same cube ID");
         } else {
             assertNotEquals(id1, id2, "Coordinates with different bit patterns should have different cube IDs");
         }
-        
+
         if (((cellSize * 2) & h) == ((cellSize * 3) & h)) {
             assertEquals(id2, id3, "Coordinates with same bit pattern should have same cube ID");
         } else {

@@ -104,7 +104,7 @@ public class Constants {
 
     /** Tet ID of the unit simplex - the representative simplex of unit length, type 0, corner coordinates {0,0,0} **/
     public static final Tet UNIT_SIMPLEX = new Tet(0, 0, 0, (byte) 20, (byte) 0);
-    public static final int MAX_COORD    = (1 << 21) - 1;
+    public static final int MAX_COORD    = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) - 1;
 
     /**
      * Calculate the Morton index for a given point and level

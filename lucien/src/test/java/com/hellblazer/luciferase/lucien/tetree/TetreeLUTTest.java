@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
@@ -102,7 +103,7 @@ public class TetreeLUTTest {
         for (int i = 0; i < 10; i++) {
             typeArray[i] = i < 9 ? 0 : 4;
         }
-        int shiftAmount = 21 - 10;
+        int shiftAmount = MortonCurve.MAX_REFINEMENT_LEVEL - 10;
         int shiftedX = cellSize << shiftAmount;
         int shiftedY = (2 * cellSize) << shiftAmount;
         int shiftedZ = (3 * cellSize) << shiftAmount;
@@ -166,7 +167,7 @@ public class TetreeLUTTest {
 
         int shiftedX, shiftedY, shiftedZ;
         if (isGridCoordinates) {
-            int shiftAmount = 21 - level; // Constants.getMaxRefinementLevel() - level
+            int shiftAmount = MortonCurve.MAX_REFINEMENT_LEVEL - level; // Constants.getMaxRefinementLevel() - level
             shiftedX = x << shiftAmount;
             shiftedY = y << shiftAmount;
             shiftedZ = z << shiftAmount;
