@@ -1,20 +1,18 @@
 package com.hellblazer.luciferase.portal.mesh.util;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 
+import javax.vecmath.Vector3d;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * A Java implementation of precisely the iterative algorithm for computing
- * canonical polyhedra designed by George W. Hart. All the code in this class is
- * based directly off of his work.
+ * A Java implementation of precisely the iterative algorithm for computing canonical polyhedra designed by George W.
+ * Hart. All the code in this class is based directly off of his work.
  *
- * Further information on this algorithm and what it does is on Hart's website.
- * See this link: http://www.georgehart.com/canonical/canonical-supplement.html
+ * Further information on this algorithm and what it does is on Hart's website. See this link:
+ * http://www.georgehart.com/canonical/canonical-supplement.html
  *
  * @author Brian Yao
  */
@@ -23,8 +21,8 @@ public class Canonicalize {
     private static final double MAX_VERTEX_CHANGE = 1.0;
 
     /**
-     * Canonicalizes a polyhedron by adjusting its vertices iteratively. When no
-     * vertex moves more than the given threshold, the algorithm terminates.
+     * Canonicalizes a polyhedron by adjusting its vertices iteratively. When no vertex moves more than the given
+     * threshold, the algorithm terminates.
      *
      * @param poly      The polyhedron whose vertices to adjust.
      * @param threshold The threshold of vertex movement after an iteration.
@@ -52,56 +50,9 @@ public class Canonicalize {
     }
 
     /**
-     * Modifies a polyhedron's vertices such that faces are closer to planar. When
-     * no vertex moves more than the given threshold, the algorithm terminates.
-     *
-     * @param poly      The polyhedron to canonicalize.
-     * @param threshold The threshold of vertex movement after an iteration.
-     * @return The number of iterations that were executed.
-     */
-    public static int planarize(Polyhedron poly, double threshold) {
-        return canonicalize(poly, threshold, true);
-    }
-
-    /**
-     * Modifies a polyhedron's vertices such that faces are closer to planar. The
-     * more iterations, the closer the faces are to planar. If a vertex moves by an
-     * unexpectedly large amount, or if the new vertex position has an NaN
-     * component, the algorithm automatically terminates.
-     *
-     * @param poly          The polyhedron whose faces to planarize.
-     * @param numIterations The number of iterations to planarize for.
-     */
-    public static void planarize(Polyhedron poly, int numIterations) {
-        Polyhedron dual = poly.dual();
-        for (int i = 0; i < numIterations; i++) {
-            List<Vector3d> newDualPositions = reciprocalVertices(poly);
-            dual.setVertexPositions(newDualPositions);
-            List<Vector3d> newPositions = reciprocalVertices(dual);
-
-            double maxChange = 0.;
-            for (Vector3d newPos : poly.getVertexPositions()) {
-                Vector3d diff = VectorMath.diff(newPos, newPos);
-                maxChange = Math.max(maxChange, diff.length());
-            }
-
-            // Check if an error occurred in computation. If so, terminate
-            // immediately. This likely occurs when faces are already planar.
-            // Check if the position changed by a significant amount so as to
-            // be erroneous. If so, terminate immediately
-            if (VectorMath.isNaN(newPositions.get(0)) || (maxChange > MAX_VERTEX_CHANGE)) {
-                break;
-            }
-
-            poly.setVertexPositions(newPositions);
-        }
-        poly.setVertexNormalsToFaceNormals();
-    }
-
-    /**
-     * A helper method for threshold-based termination in both planarizing and
-     * adjusting. If a vertex moves by an unexpectedly large amount, or if the new
-     * vertex position has an NaN component, the algorithm automatically terminates.
+     * A helper method for threshold-based termination in both planarizing and adjusting. If a vertex moves by an
+     * unexpectedly large amount, or if the new vertex position has an NaN component, the algorithm automatically
+     * terminates.
      *
      * @param poly      The polyhedron to canonicalize.
      * @param threshold The threshold of vertex movement after an iteration.
@@ -148,8 +99,54 @@ public class Canonicalize {
     }
 
     /**
-     * A port of the "reciprocalC" function written by George Hart. Reflects the
-     * centers of faces across the unit sphere.
+     * Modifies a polyhedron's vertices such that faces are closer to planar. The more iterations, the closer the faces
+     * are to planar. If a vertex moves by an unexpectedly large amount, or if the new vertex position has an NaN
+     * component, the algorithm automatically terminates.
+     *
+     * @param poly          The polyhedron whose faces to planarize.
+     * @param numIterations The number of iterations to planarize for.
+     */
+    public static void planarize(Polyhedron poly, int numIterations) {
+        Polyhedron dual = poly.dual();
+        for (int i = 0; i < numIterations; i++) {
+            List<Vector3d> newDualPositions = reciprocalVertices(poly);
+            dual.setVertexPositions(newDualPositions);
+            List<Vector3d> newPositions = reciprocalVertices(dual);
+
+            double maxChange = 0.;
+            for (Vector3d newPos : poly.getVertexPositions()) {
+                Vector3d diff = VectorMath.diff(newPos, newPos);
+                maxChange = Math.max(maxChange, diff.length());
+            }
+
+            // Check if an error occurred in computation. If so, terminate
+            // immediately. This likely occurs when faces are already planar.
+            // Check if the position changed by a significant amount so as to
+            // be erroneous. If so, terminate immediately
+            if (VectorMath.isNaN(newPositions.get(0)) || (maxChange > MAX_VERTEX_CHANGE)) {
+                break;
+            }
+
+            poly.setVertexPositions(newPositions);
+        }
+        poly.setVertexNormalsToFaceNormals();
+    }
+
+    /**
+     * Modifies a polyhedron's vertices such that faces are closer to planar. When no vertex moves more than the given
+     * threshold, the algorithm terminates.
+     *
+     * @param poly      The polyhedron to canonicalize.
+     * @param threshold The threshold of vertex movement after an iteration.
+     * @return The number of iterations that were executed.
+     */
+    public static int planarize(Polyhedron poly, double threshold) {
+        return canonicalize(poly, threshold, true);
+    }
+
+    /**
+     * A port of the "reciprocalC" function written by George Hart. Reflects the centers of faces across the unit
+     * sphere.
      *
      * @param poly The polyhedron whose centers to invert.
      * @return The list of inverted face centers.

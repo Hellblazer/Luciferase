@@ -23,9 +23,9 @@ public class TetrahedralGeometryPerformanceTest {
     private static final int RAY_COUNT         = 1000;
     private static final int TET_COUNT         = 100;
 
-    private List<Ray3D>     testRays;
-    private List<TetreeKey> testTetIndices;
-    private Random          random;
+    private List<Ray3D>             testRays;
+    private List<ExtendedTetreeKey> testTetIndices;
+    private Random                  random;
 
     @Test
     void compareRayIntersectionPerformance() {
@@ -127,8 +127,8 @@ public class TetrahedralGeometryPerformanceTest {
         return rays;
     }
 
-    private List<TetreeKey> generateTestTetIndices(int count) {
-        var indices = new ArrayList<TetreeKey>(count);
+    private List<ExtendedTetreeKey> generateTestTetIndices(int count) {
+        var indices = new ArrayList<ExtendedTetreeKey>(count);
 
         // Generate tetrahedra at various levels
         for (int i = 0; i < count; i++) {
@@ -139,7 +139,7 @@ public class TetrahedralGeometryPerformanceTest {
             byte type = (byte) random.nextInt(6); // Types 0-5
 
             Tet tet = new Tet(x, y, z, level, type);
-            indices.add((TetreeKey) tet.tmIndex());
+            indices.add((ExtendedTetreeKey) tet.tmIndex());
         }
 
         return indices;
@@ -180,7 +180,7 @@ public class TetrahedralGeometryPerformanceTest {
 
     private void testCacheEffectiveness() {
         // Test cache hit rate by using same tetrahedra repeatedly
-        TetreeKey[] frequentTets = new TetreeKey[10];
+        ExtendedTetreeKey[] frequentTets = new ExtendedTetreeKey[10];
         for (int i = 0; i < 10; i++) {
             frequentTets[i] = testTetIndices.get(i);
         }

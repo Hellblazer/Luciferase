@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Region-based caching for bulk Tetree operations. Pre-computes TetreeKey values for all tetrahedra in a spatial region
- * to amortize the cost of tmIndex() calls across multiple operations.
+ * Region-based caching for bulk Tetree operations. Pre-computes ExtendedTetreeKey values for all tetrahedra in a
+ * spatial region to amortize the cost of tmIndex() calls across multiple operations.
  *
  * @author hal.hildebrand
  */
@@ -34,7 +34,7 @@ public class TetreeRegionCache {
     private static final AtomicInteger totalRegionsPrecomputed    = new AtomicInteger(0);
     private static final AtomicInteger totalTetrahedraPrecomputed = new AtomicInteger(0);
 
-    private final ConcurrentHashMap<Long, BaseTetreeKey<? extends BaseTetreeKey>> regionCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, TetreeKey<? extends TetreeKey>> regionCache = new ConcurrentHashMap<>();
 
     /**
      * Get global statistics for monitoring.
@@ -72,16 +72,16 @@ public class TetreeRegionCache {
     }
 
     /**
-     * Get a cached TetreeKey from the region cache.
+     * Get a cached ExtendedTetreeKey from the region cache.
      *
      * @param x     x coordinate
      * @param y     y coordinate
      * @param z     z coordinate
      * @param level decomposition level
      * @param type  tetrahedron type
-     * @return the cached TetreeKey or null if not in cache
+     * @return the cached ExtendedTetreeKey or null if not in cache
      */
-    public BaseTetreeKey<? extends BaseTetreeKey> getCachedKey(int x, int y, int z, byte level, byte type) {
+    public TetreeKey<? extends TetreeKey> getCachedKey(int x, int y, int z, byte level, byte type) {
         var cacheKey = packCacheKey(x, y, z, level, type);
         return regionCache.get(cacheKey);
     }
@@ -133,7 +133,7 @@ public class TetreeRegionCache {
                     for (byte type = 0; type < 6; type++) {
                         var tet = new Tet(x, y, z, level, type);
 
-                        // This will compute and cache the BaseTetreeKey<? extends BaseTetreeKey>
+                        // This will compute and cache the TetreeKey<? extends TetreeKey>
                         var key = tet.tmIndex();
 
                         // Also store in our local cache for quick lookup

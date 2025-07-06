@@ -1,12 +1,5 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
@@ -17,15 +10,18 @@ import com.hellblazer.luciferase.portal.mesh.util.Canonicalize;
 import com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils;
 import com.hellblazer.luciferase.portal.mesh.util.VectorMath;
 
+import javax.vecmath.Vector3d;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
- * A class for generic closed polyhedra meshes. The class contains several
- * operations for creating new polyhedra from existing ones. The operation names
- * and behaviors are based on Conway's polyhedron notation. Each such operation
- * creates an entirely new mesh (the original remains unchanged by the
- * operations).
+ * A class for generic closed polyhedra meshes. The class contains several operations for creating new polyhedra from
+ * existing ones. The operation names and behaviors are based on Conway's polyhedron notation. Each such operation
+ * creates an entirely new mesh (the original remains unchanged by the operations).
  *
- * These operations rely heavily on the convention that faces' vertices are all
- * specified in counter-clockwise order.
+ * These operations rely heavily on the convention that faces' vertices are all specified in counter-clockwise order.
  *
  * @author Brian Yao
  */
@@ -57,10 +53,9 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the rectification of this polyhedron. This involves creating new
-     * vertices at the midpoints of the edges of the original polyhedron, and
-     * discarding the vertices of the original (they become faces). "Ambo" refers to
-     * the name of the operation under Conway's notation.
+     * Computes the rectification of this polyhedron. This involves creating new vertices at the midpoints of the edges
+     * of the original polyhedron, and discarding the vertices of the original (they become faces). "Ambo" refers to the
+     * name of the operation under Conway's notation.
      *
      * @return The ambo polyhedron.
      */
@@ -102,9 +97,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "bevel" polyhedron of this polyhedron. Behaves similarly to
-     * expand in that there is one new face for each vertex and edge. Also known as
-     * cantitruncation.
+     * Computes the "bevel" polyhedron of this polyhedron. Behaves similarly to expand in that there is one new face for
+     * each vertex and edge. Also known as cantitruncation.
      *
      * @return The bevel polyhedron.
      */
@@ -113,13 +107,11 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Canonicalizes this polyhedron until the change in position does not exceed
-     * the given threshold. That is, the algorithm terminates when no vertex moves
-     * more than the threshold after one iteration.
+     * Canonicalizes this polyhedron until the change in position does not exceed the given threshold. That is, the
+     * algorithm terminates when no vertex moves more than the threshold after one iteration.
      *
      * @param thresholdAdjust    The threshold for change in one "adjust" iteration.
-     * @param thresholdPlanarize The threshold for change in one "planarize"
-     *                           iteration.
+     * @param thresholdPlanarize The threshold for change in one "planarize" iteration.
      * @return The canonicalized version of this polyhedron.
      */
     public Polyhedron canonicalize(double thresholdAdjust, double thresholdPlanarize) {
@@ -130,9 +122,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Canonicalizes this polyhedron for the given number of iterations. See
-     * util.Canonicalize for more details. Performs "adjust" followed by
-     * "planarize".
+     * Canonicalizes this polyhedron for the given number of iterations. See util.Canonicalize for more details.
+     * Performs "adjust" followed by "planarize".
      *
      * @param iterationsAdjust    The number of iterations to "adjust" for.
      * @param iterationsPlanarize The number of iterations to "planarize" for.
@@ -146,8 +137,7 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "chamfer" polyhedron of this polyhedron. Truncates edges and
-     * replaces them with hexagonal faces.
+     * Computes the "chamfer" polyhedron of this polyhedron. Truncates edges and replaces them with hexagonal faces.
      *
      * @return The chamfer polyhedron.
      */
@@ -156,8 +146,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Clones a polyhedron. Equivalent to the copy constructor. Modifications made
-     * to the clone are separate from those made to the original.
+     * Clones a polyhedron. Equivalent to the copy constructor. Modifications made to the clone are separate from those
+     * made to the original.
      *
      * @return A clone of this polyhedron.
      */
@@ -177,9 +167,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the dual polyhedron of this polyhedron. The dual polyhedron has the
-     * "opposite" topology, in that it has one vertex for each face of the original
-     * polyhedron, and one face for each vertex of the original polyhedron.
+     * Computes the dual polyhedron of this polyhedron. The dual polyhedron has the "opposite" topology, in that it has
+     * one vertex for each face of the original polyhedron, and one face for each vertex of the original polyhedron.
      *
      * @return The dual polyhedron.
      */
@@ -216,9 +205,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "edge-medial" polyhedron of this polyhedron. Places a vertex at
-     * the centroid of every face, and subdivides each edge into n segments, with
-     * edges from these subdivision points to the centroid.
+     * Computes the "edge-medial" polyhedron of this polyhedron. Places a vertex at the centroid of every face, and
+     * subdivides each edge into n segments, with edges from these subdivision points to the centroid.
      *
      * For example, the "edge-medial-3" operator corresponds to n = 3.
      *
@@ -230,8 +218,7 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "exalt" polyhedron of this polyhedron. Equivalent to applying
-     * needle twice.
+     * Computes the "exalt" polyhedron of this polyhedron. Equivalent to applying needle twice.
      *
      * @return The exalt polyhedron.
      */
@@ -240,10 +227,9 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the expanded polyhedron of this polyhedron. Each vertex becomes a
-     * face, and each edge becomes a quadrilateral face. The appearance of the
-     * returned polyhedron looks as if the original polyhedron's faces had been
-     * "pulled apart", and additional faces filled the gaps.
+     * Computes the expanded polyhedron of this polyhedron. Each vertex becomes a face, and each edge becomes a
+     * quadrilateral face. The appearance of the returned polyhedron looks as if the original polyhedron's faces had
+     * been "pulled apart", and additional faces filled the gaps.
      *
      * @return The expanded polyhedron.
      */
@@ -252,8 +238,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "gyro" polyhedron of this polyhedron. Each face is divided into
-     * n pentagonal faces, where n is the number of vertices in the face.
+     * Computes the "gyro" polyhedron of this polyhedron. Each face is divided into n pentagonal faces, where n is the
+     * number of vertices in the face.
      *
      * @return The gyro polyhedron.
      */
@@ -301,9 +287,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "join" polyhedron of this polyhedron. Each face of the original
-     * polyhedron becomes a raised pyramid, such that for two adjacent pyramids, the
-     * faces of the pyramids which share an edge are coplanar. In this way, we
+     * Computes the "join" polyhedron of this polyhedron. Each face of the original polyhedron becomes a raised pyramid,
+     * such that for two adjacent pyramids, the faces of the pyramids which share an edge are coplanar. In this way, we
      * obtain a polyhedron made entirely of quadrilateral faces.
      *
      * @return The join polyhedron.
@@ -313,8 +298,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "joined-lace" polyhedron of this polyhedron. Like lace, but old
-     * edges are replaced by quadrilateral faces instead of two triangular faces.
+     * Computes the "joined-lace" polyhedron of this polyhedron. Like lace, but old edges are replaced by quadrilateral
+     * faces instead of two triangular faces.
      *
      * @return The joined-lace polyhedron.
      */
@@ -323,8 +308,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "joined-medial" polyhedron of this polyhedron. The same as
-     * medial, but with rhombic faces im place of original edges.
+     * Computes the "joined-medial" polyhedron of this polyhedron. The same as medial, but with rhombic faces im place
+     * of original edges.
      *
      * @return The joined-medial polyhedron.
      */
@@ -370,9 +355,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "kis" polyhedron of this polyhedron. Each face of the original
-     * polyhedron becomes a raised pyramid; the returned polyhedron is not
-     * necessarily convex.
+     * Computes the "kis" polyhedron of this polyhedron. Each face of the original polyhedron becomes a raised pyramid;
+     * the returned polyhedron is not necessarily convex.
      *
      * @return The kis polyhedron
      */
@@ -381,8 +365,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Same as kis, but only divides faces with exactly n sides. All other faces in
-     * the original polyhedron are preserved.
+     * Same as kis, but only divides faces with exactly n sides. All other faces in the original polyhedron are
+     * preserved.
      *
      * @param n The number of sides on the faces we want to kis.
      * @return The polyhedron with kis applied to faces with n sides.
@@ -421,8 +405,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "lace" polyhedron of this polyhedron. Like loft, but has on each
-     * face an antiprism of the original face instead of a prism.
+     * Computes the "lace" polyhedron of this polyhedron. Like loft, but has on each face an antiprism of the original
+     * face instead of a prism.
      *
      * @return The lace polyhedron.
      */
@@ -431,8 +415,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "lace" polyhedron of this polyhedron, except the operation is
-     * only applied to faces with the specified number of sides.
+     * Computes the "lace" polyhedron of this polyhedron, except the operation is only applied to faces with the
+     * specified number of sides.
      *
      * @param n The number of sides a face needs to have lace applied to it.
      * @return The polyhedron with lace applied to faces with n sides.
@@ -442,9 +426,9 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "loft" polyhedron of this polyhedron. Adds a smaller version of
-     * this face, with n trapezoidal faces connecting the inner smaller version and
-     * the outer original version, where n is the number of vertices the face has.
+     * Computes the "loft" polyhedron of this polyhedron. Adds a smaller version of this face, with n trapezoidal faces
+     * connecting the inner smaller version and the outer original version, where n is the number of vertices the face
+     * has.
      *
      * @return The loft polyhedron.
      */
@@ -453,8 +437,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "loft" polyhedron of this polyhedron, except only faces with the
-     * specified number of sides are lofted.
+     * Computes the "loft" polyhedron of this polyhedron, except only faces with the specified number of sides are
+     * lofted.
      *
      * @param n The number of sides a face needs to have loft applied to it.
      * @return The polyhedron with loft applied to faces with n sides.
@@ -464,10 +448,9 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "medial" polyhedron of this polyhedron. Adds vertices at the
-     * face centroids and edge midpoints. Each face is split into 2n triangles,
-     * where n is the number of vertices in the face. These triangles share a vertex
-     * at the face's centroid.
+     * Computes the "medial" polyhedron of this polyhedron. Adds vertices at the face centroids and edge midpoints. Each
+     * face is split into 2n triangles, where n is the number of vertices in the face. These triangles share a vertex at
+     * the face's centroid.
      *
      * @return The medial polyhedron.
      */
@@ -476,8 +459,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Generalized medial, parametrized on the number of subdivisions on each edge.
-     * The regular medial operation corresponds to n = 2 subdivisions.
+     * Generalized medial, parametrized on the number of subdivisions on each edge. The regular medial operation
+     * corresponds to n = 2 subdivisions.
      *
      * @param n The number of subdivisions on each edge.
      * @return The medial polyhedron with n subdivisions per edge.
@@ -495,11 +478,9 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "needle" polyhedron of this polyhedron. The centroid of each
-     * face becomes a vertex, and for each edge, there are two triangular faces
-     * which cross the original edge; the edge shared by these two triangular faces
-     * goes between the centroids of the two original faces. The returned polyhedron
-     * is not necessarily convex.
+     * Computes the "needle" polyhedron of this polyhedron. The centroid of each face becomes a vertex, and for each
+     * edge, there are two triangular faces which cross the original edge; the edge shared by these two triangular faces
+     * goes between the centroids of the two original faces. The returned polyhedron is not necessarily convex.
      *
      * @return The needle polyhedron.
      */
@@ -552,8 +533,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "ortho" polyhedron of this polyhedron. Each face is divided into
-     * n quadrilateral faces, where n is the number of vertices in the face.
+     * Computes the "ortho" polyhedron of this polyhedron. Each face is divided into n quadrilateral faces, where n is
+     * the number of vertices in the face.
      *
      * @return The ortho polyhedron.
      */
@@ -562,9 +543,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "propellor" polyhedron of this polyhedron. It is like gyro, but
-     * instead of having a central vertex we have a central face. This creates
-     * quadrilateral faces instead of pentagonal faces.
+     * Computes the "propellor" polyhedron of this polyhedron. It is like gyro, but instead of having a central vertex
+     * we have a central face. This creates quadrilateral faces instead of pentagonal faces.
      *
      * @return The propellor polyhedron.
      */
@@ -606,9 +586,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Compute the "quinto" polyhedron of this polyhedron. Equivalent to an ortho
-     * but truncating the vertex at the center of original faces. This creates a
-     * small copy of the original face (but rotated).
+     * Compute the "quinto" polyhedron of this polyhedron. Equivalent to an ortho but truncating the vertex at the
+     * center of original faces. This creates a small copy of the original face (but rotated).
      *
      * @return The quinto polyhedron.
      */
@@ -662,9 +641,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "snub" polyhedron of this polyhedron. Essentially, each face is
-     * twisted, and each edge is replaced with two equilateral triangles. Each
-     * vertex also becomes a new face.
+     * Computes the "snub" polyhedron of this polyhedron. Essentially, each face is twisted, and each edge is replaced
+     * with two equilateral triangles. Each vertex also becomes a new face.
      *
      * @return The snub polyhedron.
      */
@@ -673,9 +651,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "stake" polyhedron of this polyhedron. Like lace, but instead of
-     * having a central face, there is a central vertex and quadrilaterals around
-     * the center.
+     * Computes the "stake" polyhedron of this polyhedron. Like lace, but instead of having a central face, there is a
+     * central vertex and quadrilaterals around the center.
      *
      * @return The stake polyhedron.
      */
@@ -684,8 +661,7 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "stake" polyhedron of this polyhedron, but only performs the
-     * operation on faces with n sides.
+     * Computes the "stake" polyhedron of this polyhedron, but only performs the operation on faces with n sides.
      *
      * @param n The number of sides a face needs to have stake applied to it.
      * @return The polyhedron with stake applied to faces with n sides.
@@ -695,9 +671,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "subdivide" polyhedron of this polyhedron. Adds vertices at the
-     * midpoints of edges, and creates new triangular faces around original
-     * vertices. Equivalent to ambo without removing the original vertices.
+     * Computes the "subdivide" polyhedron of this polyhedron. Adds vertices at the midpoints of edges, and creates new
+     * triangular faces around original vertices. Equivalent to ambo without removing the original vertices.
      *
      * @return The subdivide polyhedron.
      */
@@ -750,8 +725,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the truncated polyhedron of this polyhedron. Each vertex is
-     * truncated, leaving behind a polygon face instead.
+     * Computes the truncated polyhedron of this polyhedron. Each vertex is truncated, leaving behind a polygon face
+     * instead.
      *
      * @return The truncated polyhedron.
      */
@@ -760,8 +735,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Same as truncate, but only truncates vertices with exactly n incident faces.
-     * All other vertices in the original polyhedron are preserved.
+     * Same as truncate, but only truncates vertices with exactly n incident faces. All other vertices in the original
+     * polyhedron are preserved.
      *
      * @param n The order of vertices to truncate.
      * @return The polyhedron with order n vertices truncated.
@@ -784,7 +759,7 @@ public class Polyhedron extends Mesh {
                 for (Edge edge : adjEdges) {
                     Vector3d otherPos = edge.getOtherLocation(i);
                     Vector3d newVert = VectorMath.interpolate(vertPos, otherPos, 0.3); // 0 < arbitrary scale factor <
-                                                                                       // 0.5
+                    // 0.5
 
                     truncatePolyhedron.addVertexPosition(newVert);
                     edgeVertices.computeIfAbsent(i, a -> new HashMap<>());
@@ -832,8 +807,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "volute" polyhedron of this polyhedron. Equivalent to a snub
-     * operation followed by kis on the original faces. This is the dual of whirl.
+     * Computes the "volute" polyhedron of this polyhedron. Equivalent to a snub operation followed by kis on the
+     * original faces. This is the dual of whirl.
      *
      * @return The volute polyhedron.
      */
@@ -842,9 +817,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "whirl" polyhedron of this polyhedron. Forms hexagon faces at
-     * each edge, with a small copy of the original face at the center of the
-     * original face.
+     * Computes the "whirl" polyhedron of this polyhedron. Forms hexagon faces at each edge, with a small copy of the
+     * original face at the center of the original face.
      *
      * @return The whirl polyhedron.
      */
@@ -915,8 +889,7 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "yank" polyhedron of this polyhedron. Equivalent to applying zip
-     * twice.
+     * Computes the "yank" polyhedron of this polyhedron. Equivalent to applying zip twice.
      *
      * @return The yank polyhedron.
      */
@@ -925,9 +898,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * Computes the "zip" polyhedron of this polyhedron. Also known as a
-     * bitruncation operation, this is equivalent to the truncation of the dual
-     * polyhedron and the dual of kis.
+     * Computes the "zip" polyhedron of this polyhedron. Also known as a bitruncation operation, this is equivalent to
+     * the truncation of the dual polyhedron and the dual of kis.
      *
      * @return The zip polyhedron.
      */
@@ -1005,9 +977,8 @@ public class Polyhedron extends Mesh {
     }
 
     /**
-     * A helper method which implements the loft operation, both the version
-     * parametrized on the number of sides of affected faces and the one without the
-     * parameter. If the "ignore" flag is set to true, every face is modified.
+     * A helper method which implements the loft operation, both the version parametrized on the number of sides of
+     * affected faces and the one without the parameter. If the "ignore" flag is set to true, every face is modified.
      *
      * @param n      The number of sides a face needs to have loft applied to it.
      * @param ignore True if we want to ignore the parameter n.

@@ -37,7 +37,7 @@ import java.util.Set;
  * @author hal.hildebrand
  */
 public class TetreeSubdivisionStrategy<ID extends EntityID, Content>
-extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content> {
+extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
 
     private static final int TETREE_CHILDREN = 8;
 
@@ -69,10 +69,10 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
     }
 
     @Override
-    public Set<BaseTetreeKey<?>> calculateTargetNodes(BaseTetreeKey<? extends BaseTetreeKey> parentIndex,
-                                                      byte parentLevel, EntityBounds entityBounds,
-                                                      AbstractSpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content, ?> spatialIndex) {
-        Set<BaseTetreeKey<?>> targetNodes = new HashSet<>();
+    public Set<TetreeKey<?>> calculateTargetNodes(TetreeKey<? extends TetreeKey> parentIndex, byte parentLevel,
+                                                  EntityBounds entityBounds,
+                                                  AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, ?> spatialIndex) {
+        Set<TetreeKey<?>> targetNodes = new HashSet<>();
 
         if (entityBounds == null) {
             return targetNodes;
@@ -90,8 +90,8 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
             Point3i[] intVertices = childTet.coordinates();
             Point3f[] vertices = convertToFloat(intVertices);
 
-            // Check if entity bounds intersect this tetrahedron
-            if (entityBoundsIntersectsTetrahedron(entityBounds, vertices)) {
+            // Check if entity bounds intersect this tetrahedron using proper geometric test
+            if (TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, vertices)) {
                 targetNodes.add(childTet.tmIndex());
             }
         }
@@ -100,7 +100,7 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
     }
 
     @Override
-    public SubdivisionResult determineStrategy(SubdivisionContext<BaseTetreeKey<? extends BaseTetreeKey>, ID> context) {
+    public SubdivisionResult determineStrategy(SubdivisionContext<TetreeKey<? extends TetreeKey>, ID> context) {
         // Check if we're at maximum depth
         if (context.isAtMaxDepth()) {
             return SubdivisionResult.insertInParent("At maximum depth");
@@ -162,7 +162,7 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
     }
 
     @Override
-    protected double estimateEntitySizeFactor(SubdivisionContext<BaseTetreeKey<? extends BaseTetreeKey>, ID> context) {
+    protected double estimateEntitySizeFactor(SubdivisionContext<TetreeKey<? extends TetreeKey>, ID> context) {
         if (context.newEntityBounds == null) {
             return 0.5; // Default for point entities
         }
@@ -187,8 +187,8 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
      *
      * @return Tet index of the target child, or null if entity spans multiple children
      */
-    private BaseTetreeKey<? extends BaseTetreeKey> calculateSingleTargetChild(
-    SubdivisionContext<BaseTetreeKey<? extends BaseTetreeKey>, ID> context) {
+    private TetreeKey<? extends TetreeKey> calculateSingleTargetChild(
+    SubdivisionContext<TetreeKey<? extends TetreeKey>, ID> context) {
         if (context.newEntityBounds == null) {
             return null;
         }
@@ -256,28 +256,6 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
     }
 
     /**
-     * Check if entity bounds intersect with a tetrahedron
-     */
-    private boolean entityBoundsIntersectsTetrahedron(EntityBounds bounds, Point3f[] tetVertices) {
-        // First check AABB vs tetrahedron AABB
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (Point3f vertex : tetVertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        // Quick AABB intersection test
-        return bounds.getMaxX() >= minX && bounds.getMinX() <= maxX && bounds.getMaxY() >= minY
-        && bounds.getMinY() <= maxY && bounds.getMaxZ() >= minZ && bounds.getMinZ() <= maxZ;
-    }
-
-    /**
      * Estimate the size of a tetrahedron (length of longest edge)
      */
     private double estimateTetSize(Tet tet) {
@@ -300,24 +278,7 @@ extends SubdivisionStrategy<BaseTetreeKey<? extends BaseTetreeKey>, ID, Content>
      * Check if a point is inside a tetrahedron using barycentric coordinates
      */
     private boolean pointInTetrahedron(Point3f point, Point3f[] vertices) {
-        // Use barycentric coordinates to check if point is inside tetrahedron
-        // This is a simplified check - actual implementation would use
-        // the TetrahedralGeometry class for precise calculations
-
-        // For now, use a bounding box approximation
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (Point3f vertex : vertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY && point.z >= minZ
-        && point.z <= maxZ;
+        // Use the proper geometric test from TetrahedralGeometry
+        return TetrahedralGeometry.containsPoint(point, vertices);
     }
 }

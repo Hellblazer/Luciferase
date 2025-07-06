@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,13 +40,13 @@ public class OctreeSubdivisionTest {
     @BeforeEach
     void setUp() {
         // Create octree with low threshold to trigger subdivision
-        octree = new Octree<>(new SequentialLongIDGenerator(), 3, (byte) 21);
+        octree = new Octree<>(new SequentialLongIDGenerator(), 3, MortonCurve.MAX_REFINEMENT_LEVEL);
     }
 
     @Test
     void testEntityRedistribution() {
         byte level = 15;
-        int cellSize = 1 << (21 - level); // 64
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // 64
 
         // Create a base position in a specific cell
         Point3f basePos = new Point3f(1000, 1000, 1000);
@@ -136,7 +137,7 @@ public class OctreeSubdivisionTest {
 
     @Test
     void testNoSubdivisionAtMaxDepth() {
-        byte maxLevel = 21;
+        byte maxLevel = MortonCurve.MAX_REFINEMENT_LEVEL;
 
         // Insert many entities at max depth - should not subdivide
         Point3f pos = new Point3f(100, 100, 100);

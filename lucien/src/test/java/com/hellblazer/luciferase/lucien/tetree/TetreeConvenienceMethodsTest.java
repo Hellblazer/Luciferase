@@ -44,9 +44,9 @@ public class TetreeConvenienceMethodsTest {
     @Test
     void testConvenienceMethodsIntegration() {
         // Test integration of multiple convenience methods
-        // Create a structured layout
-        Point3f[] centers = { new Point3f(200, 200, 200), new Point3f(800, 200, 200), new Point3f(200, 800, 200),
-                              new Point3f(800, 800, 200) };
+        // Create a structured layout with grid-aligned coordinates
+        Point3f[] centers = { new Point3f(200.0f, 200.0f, 200.0f), new Point3f(800.0f, 200.0f, 200.0f), new Point3f(
+        200.0f, 800.0f, 200.0f), new Point3f(800.0f, 800.0f, 200.0f) };
 
         // Create clusters around each center
         long id = 1;
@@ -87,10 +87,10 @@ public class TetreeConvenienceMethodsTest {
     @Test
     void testFindCommonAncestor() {
         // Create entities to build a tree structure
-        Point3f p1 = new Point3f(100, 100, 100);
-        Point3f p2 = new Point3f(200, 100, 100);
-        Point3f p3 = new Point3f(100, 200, 100);
-        Point3f p4 = new Point3f(900, 900, 900);
+        Point3f p1 = new Point3f(100.0f, 100.0f, 100.0f);
+        Point3f p2 = new Point3f(200.0f, 100.0f, 100.0f);
+        Point3f p3 = new Point3f(100.0f, 200.0f, 100.0f);
+        Point3f p4 = new Point3f(900.0f, 900.0f, 900.0f);
 
         tetree.insert(p1, (byte) 3, "tet1");
         tetree.insert(p2, (byte) 3, "tet2");
@@ -121,14 +121,14 @@ public class TetreeConvenienceMethodsTest {
 
         // Test with empty array
         var emptyAncestor = tetree.findCommonAncestor();
-        assertEquals(BaseTetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
+        assertEquals(TetreeKey.getRoot(), emptyAncestor, "Empty array should return root");
     }
 
     @Test
     void testFindCommonAncestorMultiple() {
         // Create a configuration where we know the structure
-        Point3f[] points = { new Point3f(100, 100, 100), new Point3f(150, 100, 100), new Point3f(100, 150, 100),
-                             new Point3f(150, 150, 100), new Point3f(800, 800, 800) };
+        Point3f[] points = { new Point3f(100.0f, 100.0f, 100.0f), new Point3f(150.0f, 100.0f, 100.0f), new Point3f(
+        100.0f, 150.0f, 100.0f), new Point3f(150.0f, 150.0f, 100.0f), new Point3f(800.0f, 800.0f, 800.0f) };
 
         for (int i = 0; i < points.length; i++) {
             tetree.insert(points[i], (byte) 4, "entity" + i);
@@ -158,7 +158,7 @@ public class TetreeConvenienceMethodsTest {
     @Test
     void testFindNeighborsWithinDistance() {
         // Create a cluster of entities
-        Point3f center = new Point3f(500, 500, 500);
+        Point3f center = new Point3f(500.0f, 500.0f, 500.0f);
         tetree.insert(center, (byte) 3, "center");
 
         // Add nearby entities at various distances
@@ -193,8 +193,8 @@ public class TetreeConvenienceMethodsTest {
     @Test
     void testFindNeighborsWithinDistanceBoundary() {
         // Test behavior at domain boundaries
-        Point3f boundary = new Point3f(50, 50, 50);  // Near origin
-        Point3f farBoundary = new Point3f(950, 950, 950);  // Near max
+        Point3f boundary = new Point3f(50.0f, 50.0f, 50.0f);  // Near origin
+        Point3f farBoundary = new Point3f(950.0f, 950.0f, 950.0f);  // Near max
 
         tetree.insert(boundary, (byte) 2, "boundary");
         tetree.insert(farBoundary, (byte) 2, "farBoundary");
@@ -219,7 +219,7 @@ public class TetreeConvenienceMethodsTest {
     void testFindNeighborsWithinDistanceEmpty() {
         // Test with empty tree
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100f);
+        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100.0f);
 
         assertNotNull(neighbors);
         assertTrue(neighbors.isEmpty(), "Empty tree should return empty neighbor set");
@@ -228,7 +228,7 @@ public class TetreeConvenienceMethodsTest {
     @Test
     void testFindNeighborsWithinDistanceZeroRadius() {
         // Create some entities
-        Point3f p1 = new Point3f(300, 300, 300);
+        Point3f p1 = new Point3f(300.0f, 300.0f, 300.0f);
         tetree.insert(p1, (byte) 2, "entity1");
 
         var tet = tetree.locateTetrahedron(p1, (byte) 2);

@@ -1,36 +1,27 @@
 /**
  * CameraView.java
  *
- * Copyright (c) 2013-2016, F(X)yz
- * All rights reserved.
+ * Copyright (c) 2013-2016, F(X)yz All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *     * Neither the name of F(X)yz, any associated website, nor the
- * names of its contributors may be used to endorse or promote products
- * derived from this software without specific prior written permission.
+ * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+ * following conditions are met: * Redistributions of source code must retain the above copyright notice, this list of
+ * conditions and the following disclaimer. * Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation and/or other materials provided with the
+ * distribution. * Neither the name of F(X)yz, any associated website, nor the names of its contributors may be used to
+ * endorse or promote products derived from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL F(X)yz BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL F(X)yz BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 package com.hellblazer.luciferase.portal;
 
 import com.hellblazer.luciferase.portal.mesh.explorer.Xform;
-
 import javafx.animation.AnimationTimer;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Group;
@@ -49,43 +40,40 @@ import javafx.scene.transform.Translate;
  * This class is based on "AnotherView.java" provided by:
  *
  * Date: 2013/10/31
- * 
- * Author: August Lammersdorf, InteractiveMesh e.K. Hauptstraï¿½e 28d, 85737
- * Ismaning Germany / Munich Area www.InteractiveMesh.com/org
  *
- * Please create your own implementation. This source code is provided "AS IS",
- * without warranty of any kind. You are allowed to copy and use all lines you
- * like of this source code without any copyright notice, but you may not
- * modify, compile, or distribute this 'AnotherView.java'.
- * 
- * 
- * Following changes were made: replaced Affine with standard Rotate transforms
- * for Camera rx, ry, rz with first person controls. extended ImageView directly
- * (rather than nested node). changed constructors to accept a SubScene, or
- * Group, and/or specified PerspectiveCamera ***ToDo
- * 
- * 
+ * Author: August Lammersdorf, InteractiveMesh e.K. Hauptstraï¿½e 28d, 85737 Ismaning Germany / Munich Area
+ * www.InteractiveMesh.com/org
+ *
+ * Please create your own implementation. This source code is provided "AS IS", without warranty of any kind. You are
+ * allowed to copy and use all lines you like of this source code without any copyright notice, but you may not modify,
+ * compile, or distribute this 'AnotherView.java'.
+ *
+ *
+ * Following changes were made: replaced Affine with standard Rotate transforms for Camera rx, ry, rz with first person
+ * controls. extended ImageView directly (rather than nested node). changed constructors to accept a SubScene, or Group,
+ * and/or specified PerspectiveCamera ***ToDo
+ *
  * @author Dub
  */
 public final class CameraView extends ImageView {
-    private PerspectiveCamera        camera;
-    private Xform                    cameraTransform = new Xform();
-    private WritableImage            image           = null;
-    private double                   mouseDeltaX;
-    private double                   mouseDeltaY;
-    private double                   mouseOldX;
-    private double                   mouseOldY;
-    private double                   mousePosX;
-    private double                   mousePosY;
     private final SnapshotParameters params          = new SnapshotParameters();
-    private Rotate                   rx              = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
-    private Rotate                   ry              = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
-    private Rotate                   rz              = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
-    private double                   startX          = 0;
-    private double                   startY          = 0;
-    private Translate                t               = new Translate(0, 0, 0);
-    private AnimationTimer           viewTimer       = null;
-    private Group                    worldToView;
+    private final PerspectiveCamera  camera;
+    private final Xform              cameraTransform = new Xform();
+    private       WritableImage     image           = null;
+    private       double             mouseDeltaX;
+    private       double             mouseDeltaY;
+    private       double             mouseOldX;
+    private       double             mouseOldY;
+    private       double             mousePosX;
+    private       double mousePosY;
+    private final Rotate rx = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
+    private final Rotate ry = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
+    private final Rotate rz = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
+    private final double startX = 0;
+    private final double startY = 0;
+    private final Translate t      = new Translate(0, 0, 0);
+    private       AnimationTimer viewTimer = null;
+    private final Group          worldToView;
 
     public CameraView(SubScene scene) {
         // Make sure "world" is a group
@@ -94,13 +82,13 @@ public final class CameraView extends ImageView {
         worldToView = (Group) scene.getRoot();
 
         camera = new PerspectiveCamera(true);
-//        cameraTransform.setTranslate(0, 0, -500);
+        //        cameraTransform.setTranslate(0, 0, -500);
         cameraTransform.getChildren().add(camera);
         camera.setNearClip(0.1);
         camera.setFarClip(15000.0);
         camera.setTranslateZ(-1500);
-//        cameraTransform.ry.setAngle(-45.0);
-//        cameraTransform.rx.setAngle(-10.0);
+        //        cameraTransform.ry.setAngle(-45.0);
+        //        cameraTransform.rx.setAngle(-10.0);
 
         params.setCamera(camera);
 
@@ -194,18 +182,22 @@ public final class CameraView extends ImageView {
                     modifier = 50.0;
                 }
                 if (me.isPrimaryButtonDown()) {
-                    cameraTransform.ry.setAngle(((cameraTransform.ry.getAngle()
-                    + mouseDeltaX * modifierFactor * modifier * 2.0) % 360 + 540) % 360 - 180); // +
+                    cameraTransform.ry.setAngle(
+                    ((cameraTransform.ry.getAngle() + mouseDeltaX * modifierFactor * modifier * 2.0) % 360 + 540) % 360
+                    - 180); // +
 
-                    cameraTransform.rx.setAngle(((cameraTransform.rx.getAngle()
-                    - mouseDeltaY * modifierFactor * modifier * 2.0) % 360 + 540) % 360 - 180); // -
+                    cameraTransform.rx.setAngle(
+                    ((cameraTransform.rx.getAngle() - mouseDeltaY * modifierFactor * modifier * 2.0) % 360 + 540) % 360
+                    - 180); // -
                 } else if (me.isSecondaryButtonDown()) {
                     double z = camera.getTranslateZ();
                     double newZ = z + mouseDeltaX * modifierFactor * modifier;
                     camera.setTranslateZ(newZ);
                 } else if (me.isMiddleButtonDown()) {
-                    cameraTransform.t.setX(cameraTransform.t.getX() + mouseDeltaX * modifierFactor * modifier * 0.3); // -
-                    cameraTransform.t.setY(cameraTransform.t.getY() + mouseDeltaY * modifierFactor * modifier * 0.3); // -
+                    cameraTransform.t.setX(
+                    cameraTransform.t.getX() + mouseDeltaX * modifierFactor * modifier * 0.3); // -
+                    cameraTransform.t.setY(
+                    cameraTransform.t.getY() + mouseDeltaY * modifierFactor * modifier * 0.3); // -
 
                 }
             });

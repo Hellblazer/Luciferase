@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra.plato;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
+
+import javax.vecmath.Vector3d;
 
 /**
  * An implementation of a regular dodecahedron mesh.
@@ -14,8 +14,7 @@ public class Dodecahedron extends PlatonicSolid {
     private static final double RADIUS_FACTOR = Math.sqrt(3.0) / 4.0 * (1.0 + Math.sqrt(5));
 
     /**
-     * Construct a dodecahedron mesh centered at the origin with the specified edge
-     * length.
+     * Construct a dodecahedron mesh centered at the origin with the specified edge length.
      *
      * @param edgeLength The length of each edge of this mesh.
      */

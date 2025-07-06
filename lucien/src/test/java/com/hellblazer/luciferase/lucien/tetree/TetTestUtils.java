@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 
 import java.util.ArrayList;
@@ -134,7 +135,7 @@ public class TetTestUtils {
         // Compute the correct type based on standard refinement from type 0 root
         int currentType = 0;
         for (int i = 0; i < level; i++) {
-            int bitPos = 21 - 1 - i;
+            int bitPos = MortonCurve.MAX_REFINEMENT_LEVEL - 1 - i;
             int xBit = (x >> bitPos) & 1;
             int yBit = (y >> bitPos) & 1;
             int zBit = (z >> bitPos) & 1;

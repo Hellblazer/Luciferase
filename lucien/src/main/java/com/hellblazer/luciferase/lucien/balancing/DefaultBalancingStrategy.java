@@ -151,11 +151,8 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
 
         // Too many empty nodes
         double emptyPercentage = stats.totalNodes() > 0 ? (double) stats.emptyNodes() / stats.totalNodes() : 0;
-        if (emptyPercentage > 0.3) { // More than 30% empty
-            return true;
-        }
-
-        return false;
+        // More than 30% empty
+        return emptyPercentage > 0.3;
     }
 
     @Override

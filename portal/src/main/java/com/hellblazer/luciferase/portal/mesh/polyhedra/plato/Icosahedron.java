@@ -1,10 +1,10 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra.plato;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
+
+import javax.vecmath.Vector3d;
 
 /**
  * An implementation of a regular icosahedron mesh.
@@ -16,8 +16,7 @@ public class Icosahedron extends PlatonicSolid {
     private static final double RADIUS_FACTOR = Math.sin(2.0 * Math.PI / 5.0);
 
     /**
-     * Construct an icosahedron mesh centered at the origin with the specified edge
-     * length.
+     * Construct an icosahedron mesh centered at the origin with the specified edge length.
      *
      * @param edgeLength The length of each edge of this mesh.
      */

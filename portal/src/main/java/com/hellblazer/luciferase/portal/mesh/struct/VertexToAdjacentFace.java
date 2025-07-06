@@ -1,22 +1,22 @@
 package com.hellblazer.luciferase.portal.mesh.struct;
 
+import com.hellblazer.luciferase.portal.mesh.Face;
+import com.hellblazer.luciferase.portal.mesh.Mesh;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import com.hellblazer.luciferase.portal.mesh.Face;
-import com.hellblazer.luciferase.portal.mesh.Mesh;
-
 /**
- * A data structure which, given a mesh, maps each vertex to the set of faces
- * which contain that vertex. The faces are not in any particular order.
+ * A data structure which, given a mesh, maps each vertex to the set of faces which contain that vertex. The faces are
+ * not in any particular order.
  *
  * @author Brian Yao
  */
 public class VertexToAdjacentFace {
 
-    private Map<Integer, Set<Face>> vertexToFace;
+    private final Map<Integer, Set<Face>> vertexToFace;
 
     /**
      * Construct a mapping using the geometry in the specified mesh.
@@ -36,8 +36,8 @@ public class VertexToAdjacentFace {
     }
 
     /**
-     * Get the set of faces adjacent to the vertex specified by the given index. The
-     * index is dependent on the mesh provided to the constructor.
+     * Get the set of faces adjacent to the vertex specified by the given index. The index is dependent on the mesh
+     * provided to the constructor.
      *
      * @param vertexIndex The index of the vertex whose adjacent faces to return.
      * @return A set of faces adjacent to the vertex at the specified index.
@@ -47,8 +47,7 @@ public class VertexToAdjacentFace {
     }
 
     /**
-     * Get the set of vertices (or rather, vertex indices) this structure maps to
-     * sets of adjacent faces.
+     * Get the set of vertices (or rather, vertex indices) this structure maps to sets of adjacent faces.
      *
      * @return The set of vertices which this structure maps to adjacent faces.
      */

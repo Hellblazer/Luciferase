@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra.plato;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
+
+import javax.vecmath.Vector3d;
 
 /**
  * An implementation of a regular cube mesh.
@@ -10,20 +10,6 @@ import com.hellblazer.luciferase.portal.mesh.Face;
  * @author Brian Yao
  */
 public class Cube extends PlatonicSolid {
-
-    public static Vector3d[] standardPositions(double edgeLength) {
-        // Generate vertex positions
-        double halfEdgeLength = edgeLength / 2.0;
-        Vector3d[] vs = new Vector3d[8];
-        for (int i = 0; i < 8; i++) {
-            Vector3d current = new Vector3d();
-            current.x = (i & 1) == 1 ? halfEdgeLength : -halfEdgeLength;
-            current.y = ((i >> 1) & 1) == 1 ? halfEdgeLength : -halfEdgeLength;
-            current.z = ((i >> 2) & 1) == 1 ? halfEdgeLength : -halfEdgeLength;
-            vs[i] = current;
-        }
-        return vs;
-    }
 
     /**
      * Construct a cube mesh centered at the origin with the specified edge length.
@@ -81,5 +67,19 @@ public class Cube extends PlatonicSolid {
 
         addFaces(f0, f1, f2, f3, f4, f5);
         setVertexNormalsToFaceNormals();
+    }
+
+    public static Vector3d[] standardPositions(double edgeLength) {
+        // Generate vertex positions
+        double halfEdgeLength = edgeLength / 2.0;
+        Vector3d[] vs = new Vector3d[8];
+        for (int i = 0; i < 8; i++) {
+            Vector3d current = new Vector3d();
+            current.x = (i & 1) == 1 ? halfEdgeLength : -halfEdgeLength;
+            current.y = ((i >> 1) & 1) == 1 ? halfEdgeLength : -halfEdgeLength;
+            current.z = ((i >> 2) & 1) == 1 ? halfEdgeLength : -halfEdgeLength;
+            vs[i] = current;
+        }
+        return vs;
     }
 }

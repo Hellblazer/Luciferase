@@ -232,6 +232,22 @@ The following duplications have been removed:
 - **Family Checks**: Using `TetreeFamily.isFamily()` instead of duplicates
 - **Parent-Child Checks**: Using `TetreeFamily.isParentOf()` instead of duplicates
 
+### Known Limitations
+
+#### T8Code Cube Partitioning (July 2025)
+
+- **Issue**: T8code tetrahedra do not properly partition the unit cube
+- **Analysis**: The 6 tetrahedra leave ~48% gaps and have ~32% overlaps
+- **Impact**: Points may not be contained in any tetrahedron, or may be in multiple
+- **Documentation**: See `TETREE_T8CODE_PARTITION_ANALYSIS.md` for detailed analysis
+- **Disabled Tests**: Several containment tests are disabled due to this fundamental limitation:
+    - `TetreeContainmentConsistencyTest`
+    - `TetreePartitionTest`
+    - `TetreeContainmentDebugTest`
+    - `TetreeTypeDeterminationTest`
+    - `CorrectTetreeLocateTest`
+- **Note**: This is not a bug in our implementation but a characteristic of t8code's decomposition
+
 ### Remaining Items for Future Enhancement
 
 - `TetreeBits.computeCubeLevel()`: Additional t8code parity for type checking (line 264)

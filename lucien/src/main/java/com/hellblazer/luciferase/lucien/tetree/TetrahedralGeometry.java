@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Ray3D;
+import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -35,6 +36,73 @@ public class TetrahedralGeometry {
     }
 
     /**
+     * Test if an axis-aligned bounding box intersects a tetrahedron. Uses the Separating Axis Theorem (SAT) for
+     * accurate intersection testing.
+     *
+     * @param bounds   The entity bounds (AABB)
+     * @param vertices The tetrahedron vertices (must be 4 points)
+     * @return true if the AABB intersects the tetrahedron
+     */
+    public static boolean aabbIntersectsTetrahedron(EntityBounds bounds, Point3f[] vertices) {
+        if (vertices.length != 4) {
+            throw new IllegalArgumentException("Tetrahedron must have exactly 4 vertices");
+        }
+
+        // First do a quick AABB vs AABB test
+        float tetMinX = Float.MAX_VALUE, tetMinY = Float.MAX_VALUE, tetMinZ = Float.MAX_VALUE;
+        float tetMaxX = Float.MIN_VALUE, tetMaxY = Float.MIN_VALUE, tetMaxZ = Float.MIN_VALUE;
+
+        for (Point3f v : vertices) {
+            tetMinX = Math.min(tetMinX, v.x);
+            tetMinY = Math.min(tetMinY, v.y);
+            tetMinZ = Math.min(tetMinZ, v.z);
+            tetMaxX = Math.max(tetMaxX, v.x);
+            tetMaxY = Math.max(tetMaxY, v.y);
+            tetMaxZ = Math.max(tetMaxZ, v.z);
+        }
+
+        // Quick rejection test
+        if (bounds.getMaxX() < tetMinX || bounds.getMinX() > tetMaxX || bounds.getMaxY() < tetMinY
+        || bounds.getMinY() > tetMaxY || bounds.getMaxZ() < tetMinZ || bounds.getMinZ() > tetMaxZ) {
+            return false;
+        }
+
+        // If AABB contains all tetrahedron vertices, they intersect
+        boolean allInside = true;
+        for (Point3f v : vertices) {
+            if (v.x < bounds.getMinX() || v.x > bounds.getMaxX() || v.y < bounds.getMinY() || v.y > bounds.getMaxY()
+            || v.z < bounds.getMinZ() || v.z > bounds.getMaxZ()) {
+                allInside = false;
+                break;
+            }
+        }
+        if (allInside) {
+            return true;
+        }
+
+        // Check if any AABB corner is inside the tetrahedron
+        Point3f[] corners = new Point3f[8];
+        corners[0] = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ());
+        corners[1] = new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMinZ());
+        corners[2] = new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMinZ());
+        corners[3] = new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMinZ());
+        corners[4] = new Point3f(bounds.getMinX(), bounds.getMinY(), bounds.getMaxZ());
+        corners[5] = new Point3f(bounds.getMaxX(), bounds.getMinY(), bounds.getMaxZ());
+        corners[6] = new Point3f(bounds.getMinX(), bounds.getMaxY(), bounds.getMaxZ());
+        corners[7] = new Point3f(bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
+
+        for (Point3f corner : corners) {
+            if (pointInTetrahedronForAABB(corner, vertices)) {
+                return true;
+            }
+        }
+
+        // Use SAT for edge-face intersections
+        // Test AABB edges against tetrahedron faces
+        return satTestAABBTetrahedron(bounds, vertices);
+    }
+
+    /**
      * Batch ray-tetrahedron intersection test for multiple rays against the same tetrahedron. Optimized for testing
      * many rays against a single tetrahedron.
      *
@@ -43,7 +111,7 @@ public class TetrahedralGeometry {
      * @return Array of intersection results
      */
     public static RayTetrahedronIntersection[] batchRayIntersectsTetrahedron(Ray3D[] rays,
-                                                                             BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+                                                                             TetreeKey<? extends TetreeKey> tetKey) {
         // Get vertices once
         Tet tet = Tet.tetrahedron(tetKey);
         Point3i[] coords = tet.coordinates();
@@ -65,7 +133,7 @@ public class TetrahedralGeometry {
         return results;
     }
 
-    private static void cacheVertices(BaseTetreeKey<? extends BaseTetreeKey> tetKey, Point3f v0, Point3f v1, Point3f v2,
+    private static void cacheVertices(TetreeKey<? extends TetreeKey> tetKey, Point3f v0, Point3f v1, Point3f v2,
                                       Point3f v3) {
         // Use the low bits for cache indexing
         int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
@@ -79,13 +147,102 @@ public class TetrahedralGeometry {
     }
 
     /**
+     * Helper method to check if edges of tet1 intersect faces of tet2
+     */
+    private static boolean checkEdgeFaceIntersections(Point3f[] tet1, Point3f[] tet2) {
+        // Define the 6 edges of a tetrahedron
+        int[][] edges = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
+
+        // Define the 4 faces of a tetrahedron
+        int[][] faces = { { 0, 1, 2 }, { 0, 1, 3 }, { 0, 2, 3 }, { 1, 2, 3 } };
+
+        // Check each edge of tet1 against each face of tet2
+        for (int[] edge : edges) {
+            Point3f p1 = tet1[edge[0]];
+            Point3f p2 = tet1[edge[1]];
+
+            for (int[] face : faces) {
+                Point3f f0 = tet2[face[0]];
+                Point3f f1 = tet2[face[1]];
+                Point3f f2 = tet2[face[2]];
+
+                if (segmentIntersectsTriangle(p1, p2, f0, f1, f2)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Test if a point is inside a tetrahedron using barycentric coordinates. This provides an exact geometric test for
+     * point containment.
+     *
+     * @param point    The point to test
+     * @param vertices The tetrahedron vertices (must be 4 points)
+     * @return true if the point is inside the tetrahedron
+     */
+    public static boolean containsPoint(Point3f point, Point3f[] vertices) {
+        if (vertices.length != 4) {
+            throw new IllegalArgumentException("Tetrahedron must have exactly 4 vertices");
+        }
+
+        // Compute barycentric coordinates
+        // For a tetrahedron with vertices v0, v1, v2, v3 and point p,
+        // p = u*v0 + v*v1 + w*v2 + t*v3 where u+v+w+t = 1
+        // Point is inside if all coordinates are in [0,1]
+
+        Point3f v0 = vertices[0];
+        Point3f v1 = vertices[1];
+        Point3f v2 = vertices[2];
+        Point3f v3 = vertices[3];
+
+        // Build the matrix for the barycentric coordinate system
+        // [v1-v0, v2-v0, v3-v0] * [v, w, t]^T = p-v0
+        // u = 1 - v - w - t
+
+        Vector3f v10 = new Vector3f(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+        Vector3f v20 = new Vector3f(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
+        Vector3f v30 = new Vector3f(v3.x - v0.x, v3.y - v0.y, v3.z - v0.z);
+        Vector3f vp0 = new Vector3f(point.x - v0.x, point.y - v0.y, point.z - v0.z);
+
+        // Compute the determinant of the matrix [v10, v20, v30]
+        float det = v10.x * (v20.y * v30.z - v20.z * v30.y) - v10.y * (v20.x * v30.z - v20.z * v30.x) + v10.z * (
+        v20.x * v30.y - v20.y * v30.x);
+
+        if (Math.abs(det) < EPSILON) {
+            // Degenerate tetrahedron
+            return false;
+        }
+
+        float invDet = 1.0f / det;
+
+        // Solve for barycentric coordinates using Cramer's rule
+        float v = invDet * (vp0.x * (v20.y * v30.z - v20.z * v30.y) - vp0.y * (v20.x * v30.z - v20.z * v30.x)
+                            + vp0.z * (v20.x * v30.y - v20.y * v30.x));
+
+        float w = invDet * (v10.x * (vp0.y * v30.z - vp0.z * v30.y) - v10.y * (vp0.x * v30.z - vp0.z * v30.x)
+                            + v10.z * (vp0.x * v30.y - vp0.y * v30.x));
+
+        float t = invDet * (v10.x * (v20.y * vp0.z - v20.z * vp0.y) - v10.y * (v20.x * vp0.z - v20.z * vp0.x)
+                            + v10.z * (v20.x * vp0.y - v20.y * vp0.x));
+
+        float u = 1.0f - v - w - t;
+
+        // Point is inside if all barycentric coordinates are in [0,1]
+        return u >= -EPSILON && u <= 1.0f + EPSILON && v >= -EPSILON && v <= 1.0f + EPSILON && w >= -EPSILON
+        && w <= 1.0f + EPSILON && t >= -EPSILON && t <= 1.0f + EPSILON;
+    }
+
+    /**
      * Compute distance from a point to a tetrahedron (delegates to TetrahedralSearchBase)
      *
      * @param point    the query point (must have positive coordinates)
      * @param tetIndex the tetrahedral SFC index
      * @return minimum distance to tetrahedron
      */
-    public static float distancePointToTetrahedron(Point3f point, TetreeKey tetIndex) {
+    public static float distancePointToTetrahedron(Point3f point, ExtendedTetreeKey tetIndex) {
         return TetrahedralSearchBase.distanceToTetrahedron(point, tetIndex);
     }
 
@@ -96,7 +253,7 @@ public class TetrahedralGeometry {
      * @param tetIndex2 second tetrahedral SFC index
      * @return minimum distance between the tetrahedra
      */
-    public static float distanceTetrahedronToTetrahedron(TetreeKey tetIndex1, TetreeKey tetIndex2) {
+    public static float distanceTetrahedronToTetrahedron(ExtendedTetreeKey tetIndex1, ExtendedTetreeKey tetIndex2) {
         if (tetIndex1 == tetIndex2) {
             return 0.0f;
         }
@@ -132,7 +289,7 @@ public class TetrahedralGeometry {
      * @param tetIndex the tetrahedral SFC index
      * @return true if frustum intersects tetrahedron
      */
-    public static boolean frustumIntersectsTetrahedron(Frustum3D frustum, TetreeKey tetIndex) {
+    public static boolean frustumIntersectsTetrahedron(Frustum3D frustum, ExtendedTetreeKey tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -156,7 +313,7 @@ public class TetrahedralGeometry {
         return true; // Tetrahedron intersects or is inside frustum
     }
 
-    private static Point3f[] getCachedVertices(BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+    private static Point3f[] getCachedVertices(TetreeKey<? extends TetreeKey> tetKey) {
         // Use the low bits for cache indexing
         int cacheIndex = (int) (tetKey.getLowBits() % CACHE_SIZE);
         synchronized (cacheLocks[cacheIndex]) {
@@ -183,7 +340,7 @@ public class TetrahedralGeometry {
      * @param tetKey The tetrahedron key
      * @return Array containing [centerX, centerY, centerZ, radius]
      */
-    public static float[] getTetrahedronBoundingSphere(BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+    public static float[] getTetrahedronBoundingSphere(TetreeKey<? extends TetreeKey> tetKey) {
         Tet tet = Tet.tetrahedron(tetKey);
         Point3i[] coords = tet.coordinates();
 
@@ -248,7 +405,7 @@ public class TetrahedralGeometry {
      * @param tetIndex the tetrahedral SFC index
      * @return true if plane intersects tetrahedron
      */
-    public static boolean planeIntersectsTetrahedron(Plane3D plane, TetreeKey tetIndex) {
+    public static boolean planeIntersectsTetrahedron(Plane3D plane, ExtendedTetreeKey tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -273,6 +430,24 @@ public class TetrahedralGeometry {
 
         // Plane intersects if vertices are on both sides, or touches if all on plane
         return hasPositive && hasNegative;
+    }
+
+    /**
+     * Test if a point is inside a tetrahedron using barycentric coordinates (for AABB test)
+     */
+    private static boolean pointInTetrahedronForAABB(Point3f p, Point3f[] vertices) {
+        // Use the same orientation test as Tet.containsUltraFast
+        Point3f v0 = vertices[0];
+        Point3f v1 = vertices[1];
+        Point3f v2 = vertices[2];
+        Point3f v3 = vertices[3];
+
+        // Check if point is on the correct side of all four faces
+        return sameSide(p, v0, v1, v2, v3) && sameSide(p, v1, v0, v2, v3) && sameSide(p, v2, v0, v1, v3) && sameSide(p,
+                                                                                                                     v3,
+                                                                                                                     v0,
+                                                                                                                     v1,
+                                                                                                                     v2);
     }
 
     /**
@@ -345,7 +520,7 @@ public class TetrahedralGeometry {
      * @return intersection result with detailed information
      */
     public static RayTetrahedronIntersection rayIntersectsTetrahedron(Ray3D ray,
-                                                                      BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+                                                                      TetreeKey<? extends TetreeKey> tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         var vertices = tet.coordinates();
 
@@ -353,7 +528,14 @@ public class TetrahedralGeometry {
         // Only check if ray origin has positive coordinates (tetrahedra only exist in positive space)
         boolean rayStartsInside = false;
         if (ray.origin().x >= 0 && ray.origin().y >= 0 && ray.origin().z >= 0) {
-            rayStartsInside = TetrahedralSearchBase.pointInTetrahedron(ray.origin(), tetIndex);
+            // Don't use the potentially broken Tet.contains method
+            // Instead, convert vertices to float and use proper geometric test
+            Point3f[] floatVertices = new Point3f[4];
+            for (int i = 0; i < 4; i++) {
+                floatVertices[i] = new Point3f(vertices[i].x, vertices[i].y, vertices[i].z);
+            }
+            rayStartsInside = isPointInTetrahedronByVertices(ray.origin(), floatVertices[0], floatVertices[1],
+                                                             floatVertices[2], floatVertices[3]);
         }
 
         // If ray starts inside, return distance 0 immediately
@@ -420,7 +602,7 @@ public class TetrahedralGeometry {
      * @return Intersection result with detailed information
      */
     public static RayTetrahedronIntersection rayIntersectsTetrahedronCached(Ray3D ray,
-                                                                            BaseTetreeKey<? extends BaseTetreeKey> tetKey) {
+                                                                            TetreeKey<? extends TetreeKey> tetKey) {
         // Get cached vertices if available
         Point3f[] vertices = getCachedVertices(tetKey);
         if (vertices == null) {
@@ -440,7 +622,7 @@ public class TetrahedralGeometry {
      * @param tetIndex The tetrahedron index
      * @return true if ray intersects tetrahedron, false otherwise
      */
-    public static boolean rayIntersectsTetrahedronFast(Ray3D ray, BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    public static boolean rayIntersectsTetrahedronFast(Ray3D ray, TetreeKey<? extends TetreeKey> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
         Point3i[] coords = tet.coordinates();
 
@@ -642,6 +824,166 @@ public class TetrahedralGeometry {
         return RayTetrahedronIntersection.noIntersection();
     }
 
+    /**
+     * Check if two points are on the same side of a plane defined by three points
+     */
+    private static boolean sameSide(Point3f p1, Point3f p2, Point3f a, Point3f b, Point3f c) {
+        Vector3f ab = new Vector3f(b.x - a.x, b.y - a.y, b.z - a.z);
+        Vector3f ac = new Vector3f(c.x - a.x, c.y - a.y, c.z - a.z);
+        Vector3f normal = new Vector3f();
+        normal.cross(ab, ac);
+
+        Vector3f ap1 = new Vector3f(p1.x - a.x, p1.y - a.y, p1.z - a.z);
+        Vector3f ap2 = new Vector3f(p2.x - a.x, p2.y - a.y, p2.z - a.z);
+
+        float dot1 = normal.dot(ap1);
+        float dot2 = normal.dot(ap2);
+
+        return dot1 * dot2 >= 0;
+    }
+
+    /**
+     * Separating Axis Theorem test for AABB-tetrahedron intersection
+     */
+    private static boolean satTestAABBTetrahedron(EntityBounds bounds, Point3f[] vertices) {
+        // For a complete SAT test, we would need to check:
+        // 1. The 3 AABB face normals (axis-aligned)
+        // 2. The 4 tetrahedron face normals
+        // 3. The 9 cross products of AABB edges with tetrahedron edges
+
+        // For now, we'll do a simplified test checking tetrahedron faces
+        // against AABB edges, which catches most cases
+
+        // Check each tetrahedron face
+        int[][] faces = { { 0, 1, 2 }, { 0, 1, 3 }, { 0, 2, 3 }, { 1, 2, 3 } };
+
+        for (int[] face : faces) {
+            Vector3f v1 = new Vector3f(vertices[face[1]].x - vertices[face[0]].x,
+                                       vertices[face[1]].y - vertices[face[0]].y,
+                                       vertices[face[1]].z - vertices[face[0]].z);
+            Vector3f v2 = new Vector3f(vertices[face[2]].x - vertices[face[0]].x,
+                                       vertices[face[2]].y - vertices[face[0]].y,
+                                       vertices[face[2]].z - vertices[face[0]].z);
+            Vector3f normal = new Vector3f();
+            normal.cross(v1, v2);
+            normal.normalize();
+
+            // Project AABB onto this normal
+            float r = Math.abs(normal.x) * (bounds.getMaxX() - bounds.getMinX()) * 0.5f + Math.abs(normal.y) * (
+            bounds.getMaxY() - bounds.getMinY()) * 0.5f + Math.abs(normal.z) * (bounds.getMaxZ() - bounds.getMinZ())
+            * 0.5f;
+
+            Point3f center = new Point3f((bounds.getMinX() + bounds.getMaxX()) * 0.5f,
+                                         (bounds.getMinY() + bounds.getMaxY()) * 0.5f,
+                                         (bounds.getMinZ() + bounds.getMaxZ()) * 0.5f);
+
+            float s = normal.x * (center.x - vertices[face[0]].x) + normal.y * (center.y - vertices[face[0]].y)
+            + normal.z * (center.z - vertices[face[0]].z);
+
+            // Check separation
+            if (Math.abs(s) > r) {
+                // Check if we're on the outside of this face
+                boolean outside = true;
+                for (int i = 0; i < 4; i++) {
+                    if (i == face[0] || i == face[1] || i == face[2]) {
+                        continue;
+                    }
+                    float d = normal.x * (vertices[i].x - vertices[face[0]].x) + normal.y * (vertices[i].y
+                                                                                             - vertices[face[0]].y)
+                    + normal.z * (vertices[i].z - vertices[face[0]].z);
+                    if (s * d > 0) {
+                        outside = false;
+                        break;
+                    }
+                }
+                if (outside) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Test if a line segment intersects a triangle
+     */
+    private static boolean segmentIntersectsTriangle(Point3f p1, Point3f p2, Point3f t0, Point3f t1, Point3f t2) {
+        // Use ray-triangle intersection with segment bounds check
+        Vector3f dir = new Vector3f(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+        float segmentLength = dir.length();
+        if (segmentLength < EPSILON) {
+            return false;
+        }
+
+        dir.scale(1.0f / segmentLength);
+        Ray3D ray = new Ray3D(p1, dir);
+
+        // Möller–Trumbore intersection algorithm
+        Vector3f edge1 = new Vector3f(t1.x - t0.x, t1.y - t0.y, t1.z - t0.z);
+        Vector3f edge2 = new Vector3f(t2.x - t0.x, t2.y - t0.y, t2.z - t0.z);
+        Vector3f h = new Vector3f();
+        h.cross(dir, edge2);
+        float a = edge1.dot(h);
+
+        if (Math.abs(a) < EPSILON) {
+            return false;
+        }
+
+        float f = 1.0f / a;
+        Vector3f s = new Vector3f(p1.x - t0.x, p1.y - t0.y, p1.z - t0.z);
+        float u = f * s.dot(h);
+
+        if (u < 0.0f || u > 1.0f) {
+            return false;
+        }
+
+        Vector3f q = new Vector3f();
+        q.cross(s, edge1);
+        float v = f * dir.dot(q);
+
+        if (v < 0.0f || u + v > 1.0f) {
+            return false;
+        }
+
+        float t = f * edge2.dot(q);
+        return t >= EPSILON && t <= segmentLength;
+    }
+
+    /**
+     * Test if two tetrahedra intersect each other. Returns true if the tetrahedra share any volume.
+     *
+     * @param vertices1 First tetrahedron vertices (must be 4 points)
+     * @param vertices2 Second tetrahedron vertices (must be 4 points)
+     * @return true if the tetrahedra intersect
+     */
+    public static boolean tetrahedraIntersect(Point3f[] vertices1, Point3f[] vertices2) {
+        if (vertices1.length != 4 || vertices2.length != 4) {
+            throw new IllegalArgumentException("Both tetrahedra must have exactly 4 vertices");
+        }
+
+        // First check if any vertex of one tetrahedron is inside the other
+        for (Point3f v : vertices1) {
+            if (containsPoint(v, vertices2)) {
+                return true;
+            }
+        }
+
+        for (Point3f v : vertices2) {
+            if (containsPoint(v, vertices1)) {
+                return true;
+            }
+        }
+
+        // Check for edge-face intersections using SAT
+        // This is a simplified version - a complete implementation would check
+        // all 15 potential separating axes (4 face normals from each tet +
+        // 6 cross products between edges)
+
+        // For now, check if edges of one tet intersect faces of the other
+        return checkEdgeFaceIntersections(vertices1, vertices2) || checkEdgeFaceIntersections(vertices2, vertices1);
+    }
+
     private static boolean tetrahedraShareSpace(Point3i[] vertices1, Point3i[] vertices2) {
         // Simplified spatial overlap test - could be made more sophisticated
         // Check if bounding boxes overlap
@@ -681,8 +1023,8 @@ public class TetrahedralGeometry {
      * @param tetIndex2 second tetrahedral SFC index
      * @return type of intersection between the tetrahedra
      */
-    public static IntersectionResult tetrahedronIntersection(BaseTetreeKey<? extends BaseTetreeKey> tetIndex1,
-                                                             BaseTetreeKey<? extends BaseTetreeKey> tetIndex2) {
+    public static IntersectionResult tetrahedronIntersection(TetreeKey<? extends TetreeKey> tetIndex1,
+                                                             TetreeKey<? extends TetreeKey> tetIndex2) {
         if (tetIndex1 == tetIndex2) {
             return IntersectionResult.IDENTICAL;
         }

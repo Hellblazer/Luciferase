@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -88,7 +89,7 @@ public class Phase3AdvancedOptimizationTest {
         System.out.println("\nCombined Optimization Results:");
         System.out.printf("Total insertion time: %.2f ms%n", insertTime / 1_000_000.0);
         System.out.printf("Average per entity: %.2f μs%n", insertTime / 1000.0 / ids.size());
-        System.out.printf("TetreeKey cache hit rate: %.2f%%%n", tetreeKeyHitRate * 100);
+        System.out.printf("ExtendedTetreeKey cache hit rate: %.2f%%%n", tetreeKeyHitRate * 100);
         System.out.printf("Parent chain cache hit rate: %.2f%%%n", parentChainHitRate * 100);
         System.out.println(threadLocalStats);
 
@@ -105,9 +106,12 @@ public class Phase3AdvancedOptimizationTest {
         var tets = new ArrayList<Tet>();
         for (int level = 5; level <= 15; level++) {
             for (int i = 0; i < 100; i++) {
-                var x = i * Constants.lengthAtLevel((byte) level);
-                var y = i * Constants.lengthAtLevel((byte) level);
-                var z = i * Constants.lengthAtLevel((byte) level);
+                var cellSize = Constants.lengthAtLevel((byte) level);
+                // Reduce multiplier to stay within bounds for higher levels
+                var maxMultiplier = Math.min(99, (1 << MortonCurve.MAX_REFINEMENT_LEVEL) / cellSize - 1);
+                var x = (i % maxMultiplier) * cellSize;
+                var y = (i % maxMultiplier) * cellSize;
+                var z = (i % maxMultiplier) * cellSize;
                 tets.add(new Tet(x, y, z, (byte) level, (byte) 0));
             }
         }
@@ -166,7 +170,7 @@ public class Phase3AdvancedOptimizationTest {
         TetreeLevelCache.resetCacheStats();
 
         // Pre-cache the ray path
-        var startTet = Tet.locateStandardRefinement(origin.x, origin.y, origin.z, (byte) 10);
+        var startTet = Tet.locatePointBeyRefinementFromRoot(origin.x, origin.y, origin.z, (byte) 10);
         var localityCache = new SpatialLocalityCache(2);
 
         long preCacheStart = System.nanoTime();
@@ -179,9 +183,11 @@ public class Phase3AdvancedOptimizationTest {
         for (int i = 0; i < 100; i++) {
             var pos = new Point3f(origin.x + direction.x * i * 100, origin.y + direction.y * i * 100,
                                   origin.z + direction.z * i * 100);
-            var tet = Tet.locateStandardRefinement(pos.x, pos.y, pos.z, (byte) 10);
-            tet.tmIndex(); // This should hit the cache
-            hitCount++;
+            var tet = Tet.locatePointBeyRefinementFromRoot(pos.x, pos.y, pos.z, (byte) 10);
+            if (tet != null) {
+                tet.tmIndex(); // This should hit the cache
+                hitCount++;
+            }
         }
         long traversalTime = System.nanoTime() - traversalStart;
 
@@ -201,7 +207,7 @@ public class Phase3AdvancedOptimizationTest {
         // Enable thread-local caching
         tetree.setThreadLocalCaching(true);
         assertTrue(tetree.isThreadLocalCachingEnabled());
-        
+
         // Disable auto-balancing to avoid concurrent subdivision issues
         tetree.setAutoBalancingEnabled(false);
 

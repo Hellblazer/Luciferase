@@ -20,7 +20,7 @@ public class MortonValidationTest {
     @DisplayName("Validate 21-bit coordinate limits")
     void test21BitCoordinateLimits() {
         // Maximum 21-bit value is 2^21 - 1 = 2097151
-        int maxCoord = (1 << 21) - 1; // 2097151
+        int maxCoord = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) - 1; // 2097151
 
         // Test maximum valid coordinate
         assertDoesNotThrow(() -> {
@@ -129,7 +129,7 @@ public class MortonValidationTest {
 
         // Specific test cases based on implementation
         assertEquals(0, Constants.toLevel(0), "Morton 0 should be level 0 (root)");
-        assertEquals(21, Constants.toLevel(MortonCurve.encode(1, 1, 1)),
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, Constants.toLevel(MortonCurve.encode(1, 1, 1)),
                      "Small coordinates should map to finest level");
     }
 

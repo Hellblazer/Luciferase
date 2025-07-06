@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -18,8 +19,9 @@ public class TetIndexPerformanceTest {
         for (int level : levels) {
             System.out.printf("Level %d:\n", level);
 
-            // Create test Tet at this level
-            int coord = 1 << (level * 2); // Ensure valid coordinate for level
+            // Create test Tet at this level with grid-aligned coordinates
+            int cellSize = Constants.lengthAtLevel((byte) level);
+            int coord = cellSize; // Use cellSize as a valid grid-aligned coordinate
             Tet tet = new Tet(coord, coord, coord, (byte) level, (byte) 0);
 
             // Warm up

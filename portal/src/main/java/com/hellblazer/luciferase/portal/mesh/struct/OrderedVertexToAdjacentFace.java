@@ -1,30 +1,23 @@
 package com.hellblazer.luciferase.portal.mesh.struct;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
 
+import java.util.*;
+
 /**
- * A data structure which, given a mesh, maps each vertex to a list of faces
- * which contain that vertex. This is different from VertexToAdjacentFace in
- * that the faces are arranged in the same winding order as the vertices of
- * faces. All faces of the mesh must follow the same winding order for this to
- * succeed.
+ * A data structure which, given a mesh, maps each vertex to a list of faces which contain that vertex. This is
+ * different from VertexToAdjacentFace in that the faces are arranged in the same winding order as the vertices of
+ * faces. All faces of the mesh must follow the same winding order for this to succeed.
  *
- * For example, by convention, each face has its vertex positions specified in
- * counterclockwise order; then, for each vertex, its adjacent faces are listed
- * in counterclockwise order as well.
+ * For example, by convention, each face has its vertex positions specified in counterclockwise order; then, for each
+ * vertex, its adjacent faces are listed in counterclockwise order as well.
  *
  * @author Brian Yao
  */
 public class OrderedVertexToAdjacentFace {
 
-    private Map<Integer, List<Face>> vertexToFace;
+    private final Map<Integer, List<Face>> vertexToFace;
 
     /**
      * Construct a mapping using the geometry in the specified mesh.
@@ -45,10 +38,11 @@ public class OrderedVertexToAdjacentFace {
                 for (Face adjFace : adjacentFaces) {
                     int ind = -1;
 
-                    findIndexOfI: for (int j = 0; j < adjFace.numVertices(); j++) {
+                    findIndexOfI:
+                    for (int j = 0; j < adjFace.numVertices(); j++) {
                         if (adjFace.getVertexIndex(j) == i) {
                             ind = j;
-                            break findIndexOfI;
+                            break;
                         }
                     }
 
@@ -71,13 +65,14 @@ public class OrderedVertexToAdjacentFace {
                     int vertexBeforeI = lastFace.getVertexIndex(indexBeforeI);
 
                     // Find next face in order
-                    findNextFace: for (Face adjFace : adjacentFaces) {
+                    findNextFace:
+                    for (Face adjFace : adjacentFaces) {
                         if (adjFace != lastFace) {
                             int indexAfterI = (indexOfI.get(adjFace) + 1) % adjFace.numVertices();
                             int vertexAfterI = adjFace.getVertexIndex(indexAfterI);
                             if (vertexAfterI == vertexBeforeI) {
                                 orderedAdjacentFaces.add(adjFace);
-                                break findNextFace;
+                                break;
                             }
                         }
                     }
@@ -89,8 +84,8 @@ public class OrderedVertexToAdjacentFace {
     }
 
     /**
-     * Get the list of faces adjacent to the specified vertex. The faces will be
-     * listed in the same order as the face vertices.
+     * Get the list of faces adjacent to the specified vertex. The faces will be listed in the same order as the face
+     * vertices.
      *
      * @param vertexIndex The index of the vertex whose adjacent faces to return.
      * @return A list of faces adjacent to the vertex at the specified index.
@@ -100,8 +95,7 @@ public class OrderedVertexToAdjacentFace {
     }
 
     /**
-     * Get the set of vertices (or rather, vertex indices) this structure maps to
-     * lists of adjacent faces.
+     * Get the set of vertices (or rather, vertex indices) this structure maps to lists of adjacent faces.
      *
      * @return The set of vertices which this structure maps to adjacent faces.
      */

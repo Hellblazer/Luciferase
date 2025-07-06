@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.simulation;
 
-import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.sentry.Cursor;
@@ -18,7 +18,7 @@ public class SmokeTest {
     @Test
     public void smokin() throws Exception {
         var sites = new java.util.ArrayList<Vertex>();
-        var animator = new VolumeAnimator("foo", Constants.ROOT_SIMPLEX, new java.util.Random(0x666));
+        var animator = new VolumeAnimator("foo", new Tet(0, 0, 0, (byte) 0, (byte) 0), new java.util.Random(0x666));
 
         var radius = 16000.0f;
         var center = new Point3f(radius + 100, radius + 100, radius + 100);

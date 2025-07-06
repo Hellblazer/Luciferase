@@ -6,6 +6,10 @@ Standard refinement in the Tetree implementation refers to the hierarchical subd
 tetrahedral refinement scheme**. This is a specific, deterministic way of subdividing tetrahedra that maintains certain
 geometric and topological properties.
 
+**Important Note**: The `child()` method in Tet.java implements **grid-based navigation**, not true geometric subdivision.
+For actual geometric subdivision where all children are contained within the parent tetrahedron, use the 
+`geometricSubdivide()` method (when implemented).
+
 ## Key Concepts
 
 ### 1. Root Tetrahedron

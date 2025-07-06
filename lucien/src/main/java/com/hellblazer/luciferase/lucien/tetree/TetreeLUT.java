@@ -17,11 +17,11 @@ package com.hellblazer.luciferase.lucien.tetree;
 /**
  * Lookup tables for fast Tetree tm-index encoding/decoding.
  *
- * Similar to MortonCurve's LUT approach, but adapted for Tetree's 6-bit groups
- * (3 bits coordinate + 3 bits type per level).
+ * Similar to MortonCurve's LUT approach, but adapted for Tetree's 6-bit groups (3 bits coordinate + 3 bits type per
+ * level).
  *
- * This class provides precomputed lookup tables to accelerate the bit interleaving
- * operations required for tm-index computation.
+ * This class provides precomputed lookup tables to accelerate the bit interleaving operations required for tm-index
+ * computation.
  *
  * @author hal.hildebrand
  */
@@ -102,20 +102,20 @@ public class TetreeLUT {
     }
 
     /**
-     * Optimized tm-index computation using lookup tables and bit manipulation.
-     * This method should be significantly faster than the bit-by-bit approach.
+     * Optimized tm-index computation using lookup tables and bit manipulation. This method should be significantly
+     * faster than the bit-by-bit approach.
      *
-     * @param x X coordinate (already shifted/aligned)
-     * @param y Y coordinate (already shifted/aligned)
-     * @param z Z coordinate (already shifted/aligned)
+     * @param x         X coordinate (already shifted/aligned)
+     * @param y         Y coordinate (already shifted/aligned)
+     * @param z         Z coordinate (already shifted/aligned)
      * @param typeArray Type values for each level
-     * @param level The tetrahedron level
-     * @return TetreeKey with computed tm-index
+     * @param level     The tetrahedron level
+     * @return ExtendedTetreeKey with computed tm-index
      */
-    public static TetreeKey computeTmIndexOptimized(int x, int y, int z, int[] typeArray, byte level) {
+    public static ExtendedTetreeKey computeTmIndexOptimized(int x, int y, int z, int[] typeArray, byte level) {
         // Use LUT for fast encoding
         long[] result = encodeTmIndexLUT(x, y, z, typeArray, level);
-        return new TetreeKey(level, result[0], result[1]);
+        return new ExtendedTetreeKey(level, result[0], result[1]);
     }
 
     /**
@@ -141,11 +141,11 @@ public class TetreeLUT {
     /**
      * Encode coordinates and type information into tm-index components using LUT.
      *
-     * @param x X coordinate (shifted and aligned)
-     * @param y Y coordinate (shifted and aligned)
-     * @param z Z coordinate (shifted and aligned)
+     * @param x         X coordinate (shifted and aligned)
+     * @param y         Y coordinate (shifted and aligned)
+     * @param z         Z coordinate (shifted and aligned)
      * @param typeArray Array of type values for each level
-     * @param level The level of this tetrahedron
+     * @param level     The level of this tetrahedron
      * @return Array of [lowBits, highBits] for 128-bit tm-index
      */
     public static long[] encodeTmIndexLUT(int x, int y, int z, int[] typeArray, byte level) {
@@ -197,8 +197,8 @@ public class TetreeLUT {
     }
 
     /**
-     * Fast interleaving of coordinate bits using precomputed tables.
-     * Processes 8 bits at a time for better performance.
+     * Fast interleaving of coordinate bits using precomputed tables. Processes 8 bits at a time for better
+     * performance.
      *
      * @param x X coordinate
      * @param y Y coordinate

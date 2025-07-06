@@ -154,10 +154,10 @@ public class TetreeEdgeNeighborTest {
         // Edge 5 (v2-v3): faces 2, 3
 
         // Get face neighbors
-        List<BaseTetreeKey<? extends BaseTetreeKey>> face0Neighbors = new ArrayList<>();
-        List<BaseTetreeKey<? extends BaseTetreeKey>> face1Neighbors = new ArrayList<>();
-        List<BaseTetreeKey<? extends BaseTetreeKey>> face2Neighbors = new ArrayList<>();
-        List<BaseTetreeKey<? extends BaseTetreeKey>> face3Neighbors = new ArrayList<>();
+        List<TetreeKey<? extends TetreeKey>> face0Neighbors = new ArrayList<>();
+        List<TetreeKey<? extends TetreeKey>> face1Neighbors = new ArrayList<>();
+        List<TetreeKey<? extends TetreeKey>> face2Neighbors = new ArrayList<>();
+        List<TetreeKey<? extends TetreeKey>> face3Neighbors = new ArrayList<>();
 
         var face0 = tetree.findFaceNeighbor(tetKey, 0);
         if (face0 != null) {
@@ -184,11 +184,11 @@ public class TetreeEdgeNeighborTest {
         var edge3Neighbors = tetree.findEdgeNeighbors(tetKey, 3); // shares faces 0,1
 
         // Edge neighbors should include at least the face neighbors of the faces that share the edge
-        Set<BaseTetreeKey<? extends BaseTetreeKey>> edge0Expected = new HashSet<>();
+        Set<TetreeKey<? extends TetreeKey>> edge0Expected = new HashSet<>();
         edge0Expected.addAll(face0Neighbors);
         edge0Expected.addAll(face2Neighbors);
 
-        Set<BaseTetreeKey<? extends BaseTetreeKey>> edge3Expected = new HashSet<>();
+        Set<TetreeKey<? extends TetreeKey>> edge3Expected = new HashSet<>();
         edge3Expected.addAll(face0Neighbors);
         edge3Expected.addAll(face1Neighbors);
 

@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra.plato;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
+
+import javax.vecmath.Vector3d;
 
 /**
  * An implementation of a regular octahedron mesh.
@@ -13,20 +13,8 @@ public class Octahedron extends PlatonicSolid {
 
     private static final double RADIUS_FACTOR = 1.0 / Math.sqrt(2.0);
 
-    public static Vector3d[] standardPositions(double edgeLength) {
-        // Generate vertices
-        double distOrigin = edgeLength / Math.sqrt(2.0);
-        return new Vector3d[] { // The square
-                                new Vector3d(distOrigin, 0.0, 0.0), new Vector3d(0.0, 0.0, distOrigin),
-                                new Vector3d(-distOrigin, 0.0, 0.0), new Vector3d(0.0, 0.0, -distOrigin),
-
-                                // poles
-                                new Vector3d(0.0, distOrigin, 0.0), new Vector3d(0.0, -distOrigin, 0.0) };
-    }
-
     /**
-     * Construct a octahedron mesh centered at the origin with the specified edge
-     * length.
+     * Construct a octahedron mesh centered at the origin with the specified edge length.
      *
      * @param edgeLength The length of each edge of this mesh.
      */
@@ -87,5 +75,16 @@ public class Octahedron extends PlatonicSolid {
 
         addFaces(f0, f1, f2, f3, f4, f5, f6, f7);
         setVertexNormalsToFaceNormals();
+    }
+
+    public static Vector3d[] standardPositions(double edgeLength) {
+        // Generate vertices
+        double distOrigin = edgeLength / Math.sqrt(2.0);
+        return new Vector3d[] { // The square
+                                new Vector3d(distOrigin, 0.0, 0.0), new Vector3d(0.0, 0.0, distOrigin), new Vector3d(
+        -distOrigin, 0.0, 0.0), new Vector3d(0.0, 0.0, -distOrigin),
+
+                                // poles
+                                new Vector3d(0.0, distOrigin, 0.0), new Vector3d(0.0, -distOrigin, 0.0) };
     }
 }

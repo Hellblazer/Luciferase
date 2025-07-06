@@ -17,7 +17,7 @@
 package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
-import com.hellblazer.luciferase.lucien.tetree.BaseTetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
@@ -46,9 +46,9 @@ public class TetreeParentChainBenchmark {
     /**
      * Original parent chain computation - O(level)
      */
-    private static BaseTetreeKey[] computeParentChainOriginal(Tet tet) {
+    private static TetreeKey[] computeParentChainOriginal(Tet tet) {
         byte level = tet.l();
-        var chain = new BaseTetreeKey[level + 1];
+        var chain = new TetreeKey[level + 1];
 
         // Start with current tmIndex
         chain[0] = tet.tmIndex();
@@ -188,8 +188,9 @@ public class TetreeParentChainBenchmark {
 
     @Benchmark
     public long originalWorstCase() {
-        // Create a very deep tetrahedron (level 21)
-        var deepTet = new Tet(1048576, 1048576, 1048576, (byte) 21, (byte) 0);
+        // Create a very deep tetrahedron (level 20 - max level)
+        // At level 20 with max refinement 20, cellSize = 1
+        var deepTet = new Tet(1, 1, 1, (byte) 20, (byte) 0);
         var chain = computeParentChainOriginal(deepTet);
         return chain[chain.length - 1].getLowBits();
     }
@@ -201,7 +202,7 @@ public class TetreeParentChainBenchmark {
         // Test tetrahedra at different levels
         Tet[] shallowTets = new Tet[100];  // Levels 1-5
         Tet[] mediumTets  = new Tet[100];   // Levels 6-12
-        Tet[] deepTets    = new Tet[100];     // Levels 13-21
+        Tet[] deepTets    = new Tet[100];     // Levels 13-20
 
         @Setup(Level.Trial)
         public void setup() {
@@ -210,7 +211,7 @@ public class TetreeParentChainBenchmark {
             // Generate test tetrahedra at different depth levels
             generateTetsAtLevels(shallowTets, 1, 5, random);
             generateTetsAtLevels(mediumTets, 6, 12, random);
-            generateTetsAtLevels(deepTets, 13, 21, random);
+            generateTetsAtLevels(deepTets, 13, 20, random);
 
             // Pre-warm the cache with some entries
             warmupCache();

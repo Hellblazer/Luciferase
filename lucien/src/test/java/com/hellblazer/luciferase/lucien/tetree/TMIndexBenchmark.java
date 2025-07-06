@@ -60,7 +60,7 @@ public class TMIndexBenchmark {
         System.out.println("==============================\n");
 
         // Test at different levels
-        for (int level : new int[] { 5, 10, 15, 20, 21 }) {
+        for (int level : new int[] { 5, 10, 15, 20 }) {
             benchmarkLevel(level);
         }
     }

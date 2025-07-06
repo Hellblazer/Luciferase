@@ -18,8 +18,8 @@ package com.hellblazer.luciferase.lucien.tetree.benchmark;
 
 import com.hellblazer.luciferase.lucien.SpatialIndexSet;
 import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
-import com.hellblazer.luciferase.lucien.tetree.BaseTetreeKey;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.lucien.tetree.ExtendedTetreeKey;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
@@ -253,7 +253,7 @@ public class SpatialIndexSetBenchmark {
         // Simulate level query on TreeSet (O(n) operation)
         int count = 0;
         byte targetLevel = 10;
-        for (BaseTetreeKey<?> index : state.treeSet) {
+        for (TetreeKey<?> index : state.treeSet) {
             if (index.getLevel() == targetLevel) {
                 count++;
             }
@@ -272,7 +272,7 @@ public class SpatialIndexSetBenchmark {
         int count = 0;
         byte minLevel = 5;
         byte maxLevel = 15;
-        for (BaseTetreeKey<?> index : state.treeSet) {
+        for (TetreeKey<?> index : state.treeSet) {
             byte level = index.getLevel();
             if (level >= minLevel && level <= maxLevel) {
                 count++;
@@ -351,11 +351,11 @@ public class SpatialIndexSetBenchmark {
         static final int MEDIUM_SIZE = 10_000;
         static final int LARGE_SIZE  = 100_000;
         // Test data
-        List<BaseTetreeKey<?>>            indices   = new ArrayList<>();
-        Set<BaseTetreeKey<?>>             lookupSet = new HashSet<>();
+        List<TetreeKey<?>>            indices   = new ArrayList<>();
+        Set<TetreeKey<?>>             lookupSet = new HashSet<>();
         // Collections to benchmark
-        NavigableSet<BaseTetreeKey<?>>    treeSet;
-        SpatialIndexSet<BaseTetreeKey<?>> spatialSet;
+        NavigableSet<TetreeKey<?>>    treeSet;
+        SpatialIndexSet<TetreeKey<?>> spatialSet;
 
         @Setup(Level.Invocation)
         public void setup() {
@@ -378,19 +378,19 @@ public class SpatialIndexSetBenchmark {
             spatialSet = new SpatialIndexSet<>();
         }
 
-        private BaseTetreeKey<?> generateRandomIndex(Random random) {
+        private TetreeKey<?> generateRandomIndex(Random random) {
             byte level = (byte) random.nextInt(22); // 0-21
             if (level == 0) {
-                return BaseTetreeKey.getRoot();
+                return TetreeKey.getRoot();
             }
 
             // Generate index that would be at the specified level
             long minBit = 3 * (level - 1);
             long maxBit = 3 * level - 1;
             long index = 1L << (minBit + random.nextInt((int) (maxBit - minBit + 1)));
-            // Create a TetreeKey with the generated index in lowBits
+            // Create a ExtendedTetreeKey with the generated index in lowBits
             long lowBits = index + random.nextInt(1000); // Add some variation
-            return new TetreeKey(level, lowBits, 0L);
+            return new ExtendedTetreeKey(level, lowBits, 0L);
         }
     }
 }

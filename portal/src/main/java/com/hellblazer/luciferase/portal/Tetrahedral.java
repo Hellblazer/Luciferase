@@ -1,18 +1,16 @@
 /**
  * Copyright (C) 2023 Hal Hildebrand. All rights reserved.
  * <p>
- * This program is free software: you can redistribute it and/or modify it under
- * the terms of the GNU Affero General Public License as published by the Free
- * Software Foundation, either version 3 of the License, or (at your option) any
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
  * later version.
  * <p>
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
  * details.
  * <p>
- * You should have received a copy of the GNU Affero General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
  */
 package com.hellblazer.luciferase.portal;
 
@@ -21,24 +19,19 @@ import javafx.util.Pair;
 
 import javax.vecmath.*;
 
-;
-
 /**
- * This lattice is equivalent to tetrahedral / octahedral packing, but without the
- * headache of having to manage two separate primitives or interlaced grid
- * structures as with the face-centered cubic lattice, which produces an
+ * This lattice is equivalent to tetrahedral / octahedral packing, but without the headache of having to manage two
+ * separate primitives or interlaced grid structures as with the face-centered cubic lattice, which produces an
  * equivalent structure.
  * <p>
  * This implementation is based off the
  * <a href="https://gist.github.com/paniq/3afdb420b5d94bf99e36">python gist by
  * Leonard Ritter</a>
  * <p>
- * There is another good grid mapping that uses a non-orthogonal basis described
- * in the paper <a href=
+ * There is another good grid mapping that uses a non-orthogonal basis described in the paper <a href=
  * "https://www.researchgate.net/publication/347616453_Digital_Objects_in_Rhombic_Dodecahedron_Grid/fulltext/609b5f7a458515d31513fb0a/Digital-Objects-in-Rhombic-Dodecahedron-Grid.pdf">Rhombic
- * Dodecahedron Grid—Coordinate System and 3D Digital Object Definitions</a>. I
- * like the simplicity of the Tetrahedral coordinates, although having 2 basis
- * vectors be orthogonal would be pretty sweet.
+ * Dodecahedron Grid—Coordinate System and 3D Digital Object Definitions</a>. I like the simplicity of the Tetrahedral
+ * coordinates, although having 2 basis vectors be orthogonal would be pretty sweet.
  *
  * @author hal.hildebrand
  */
@@ -51,11 +44,13 @@ public class Tetrahedral extends RDGCS {
         super(edgeLength, extent);
     }
 
-    public Tetrahedral(double edgeLength, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
+    public Tetrahedral(double edgeLength, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent,
+                       Pair<Integer, Integer> zExtent) {
         super(edgeLength, xExtent, yExtent, zExtent);
     }
 
-    public Tetrahedral(Point3D origin, Pair<Integer, Integer> xExtent, double intervalX, Pair<Integer, Integer> yExtent, double intervalY, Pair<Integer, Integer> zExtent, double intervalZ) {
+    public Tetrahedral(Point3D origin, Pair<Integer, Integer> xExtent, double intervalX, Pair<Integer, Integer> yExtent,
+                       double intervalY, Pair<Integer, Integer> zExtent, double intervalZ) {
         super(origin, xExtent, intervalX, yExtent, intervalY, zExtent, intervalZ);
     }
 
@@ -89,6 +84,14 @@ public class Tetrahedral extends RDGCS {
         var vy = cos * u.y + sin * cross.y + t * w.y;
         var vz = cos * u.z + sin * cross.z + t * w.z;
         return new Point3f(vx, vy, vz);
+    }
+
+    @Override
+    public Point3f cross(Tuple3f u, Tuple3f v) {
+        return new Point3f(
+        (-u.x * (v.y - v.z) + u.y * (3 * v.z + v.x) - u.z * (v.x + 3 * v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2),
+        (-u.x * (v.y + 3 * v.z) - u.y * (v.z - v.x) + u.z * (3 * v.x + v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2),
+        (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2));
     }
 
     @Override
@@ -129,25 +132,32 @@ public class Tetrahedral extends RDGCS {
         v = axis.getY();
         w = axis.getZ();
         float C = u * x + v * y + w * z;
-        float xPrime = (float) (u * C * (1d - Math.cos(theta)) + x * Math.cos(theta) + (-w * y + v * z) * Math.sin(theta));
-        float yPrime = (float) (v * C * (1d - Math.cos(theta)) + y * Math.cos(theta) + (w * x - u * z) * Math.sin(theta));
-        float zPrime = (float) (w * C * (1d - Math.cos(theta)) + z * Math.cos(theta) + (-v * x + u * y) * Math.sin(theta));
+        float xPrime = (float) (u * C * (1d - Math.cos(theta)) + x * Math.cos(theta) + (-w * y + v * z) * Math.sin(
+        theta));
+        float yPrime = (float) (v * C * (1d - Math.cos(theta)) + y * Math.cos(theta) + (w * x - u * z) * Math.sin(
+        theta));
+        float zPrime = (float) (w * C * (1d - Math.cos(theta)) + z * Math.cos(theta) + (-v * x + u * y) * Math.sin(
+        theta));
         return new Vector3f(xPrime, yPrime, zPrime);
     }
 
     @Override
-    public Point3D toCartesian(Point3D rdg) {
-        return new Point3D((rdg.getY() + rdg.getZ()) * DIVIDE_ROOT_2, (rdg.getZ() + rdg.getX()) * DIVIDE_ROOT_2, (rdg.getX() + rdg.getY()) * DIVIDE_ROOT_2);
+    public Point3D toCartesian(Tuple3i rdg) {
+        return new Point3D((rdg.y + rdg.z) * DIVIDE_ROOT_2, (rdg.z + rdg.x) * DIVIDE_ROOT_2,
+                           (rdg.x + rdg.y) * DIVIDE_ROOT_2);
     }
 
     @Override
-    public Point3D toCartesian(Tuple3i rdg) {
-        return new Point3D((rdg.y + rdg.z) * DIVIDE_ROOT_2, (rdg.z + rdg.x) * DIVIDE_ROOT_2, (rdg.x + rdg.y) * DIVIDE_ROOT_2);
+    public Point3D toCartesian(Point3D rdg) {
+        return new Point3D((rdg.getY() + rdg.getZ()) * DIVIDE_ROOT_2, (rdg.getZ() + rdg.getX()) * DIVIDE_ROOT_2,
+                           (rdg.getX() + rdg.getY()) * DIVIDE_ROOT_2);
     }
 
     @Override
     public Point3i toRDG(Tuple3f cartesian) {
-        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2), (int) ((cartesian.x - cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2), (int) ((cartesian.x + cartesian.y - cartesian.z) * MULTIPLICATIVE_ROOT_2));
+        return new Point3i((int) ((-cartesian.x + cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2),
+                           (int) ((cartesian.x - cartesian.y + cartesian.z) * MULTIPLICATIVE_ROOT_2),
+                           (int) ((cartesian.x + cartesian.y - cartesian.z) * MULTIPLICATIVE_ROOT_2));
     }
 
     @Override
@@ -163,10 +173,5 @@ public class Tetrahedral extends RDGCS {
         neighbors[4] = new Point3i(x, y - 1, z + 1);
         neighbors[5] = new Point3i(x, y + 1, z - 1);
         return neighbors;
-    }
-
-    @Override
-    public Point3f cross(Tuple3f u, Tuple3f v) {
-        return new Point3f((-u.x * (v.y - v.z) + u.y * (3 * v.z + v.x) - u.z * (v.x + 3 * v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2), (-u.x * (v.y + 3 * v.z) - u.y * (v.z - v.x) + u.z * (3 * v.x + v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2), (u.x * (3 * v.y + v.z) - u.y * (v.z + 3 * v.x) - u.z * (v.x - v.y)) * (RDGCS.DIVIDE_ROOT_2 / 2));
     }
 }

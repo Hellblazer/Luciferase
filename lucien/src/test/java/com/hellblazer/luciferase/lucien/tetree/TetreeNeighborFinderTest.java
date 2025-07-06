@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -40,7 +41,8 @@ public class TetreeNeighborFinderTest {
     @Test
     public void testAreNeighbors() {
         // Create two tetrahedra
-        Tet tet1 = new Tet(100, 100, 100, (byte) 2, (byte) 0);
+        int cellSize = Constants.lengthAtLevel((byte) 2);
+        Tet tet1 = new Tet(cellSize, cellSize, cellSize, (byte) 2, (byte) 0);
 
         // Find a neighbor
         Tet neighbor = neighborFinder.findFaceNeighbor(tet1, 0);
@@ -53,8 +55,8 @@ public class TetreeNeighborFinderTest {
             assertTrue(neighborFinder.areNeighbors(neighbor, tet1), "Neighbor relationship should be symmetric");
         }
 
-        // Non-adjacent tetrahedra should not be neighbors
-        Tet farTet = new Tet(900, 900, 900, (byte) 2, (byte) 0);
+        // Non-adjacent tetrahedra should not be neighbors  
+        Tet farTet = new Tet(cellSize * 2, cellSize * 2, cellSize * 2, (byte) 2, (byte) 0);
         assertFalse(neighborFinder.areNeighbors(tet1, farTet), "Far tetrahedra should not be neighbors");
     }
 
@@ -74,7 +76,8 @@ public class TetreeNeighborFinderTest {
     @Test
     public void testFindAllNeighbors() {
         // Create a tetrahedron truly in the interior of the domain (far from boundaries)
-        Tet tet = new Tet(1048576, 1048576, 1048576, (byte) 3, (byte) 0);
+        int cellSize3 = Constants.lengthAtLevel((byte) 3);
+        Tet tet = new Tet(cellSize3 * 2, cellSize3 * 2, cellSize3 * 2, (byte) 3, (byte) 0);
 
         // Find all neighbors
         List<Tet> neighbors = neighborFinder.findAllNeighbors(tet);
@@ -94,7 +97,8 @@ public class TetreeNeighborFinderTest {
     @Test
     public void testFindFaceNeighbor() {
         // Create a tetrahedron
-        Tet tet = new Tet(100, 100, 100, (byte) 2, (byte) 0);
+        int cellSize2 = Constants.lengthAtLevel((byte) 2);
+        Tet tet = new Tet(cellSize2, cellSize2, cellSize2, (byte) 2, (byte) 0);
 
         // Find neighbors across all faces
         for (int face = 0; face < 4; face++) {
@@ -116,7 +120,8 @@ public class TetreeNeighborFinderTest {
     @Test
     public void testFindNeighborsAtLevel() {
         // Create a tetrahedron at level 3
-        Tet tet = new Tet(256, 256, 256, (byte) 3, (byte) 0);
+        int cellSize3 = Constants.lengthAtLevel((byte) 3);
+        Tet tet = new Tet(cellSize3, cellSize3, cellSize3, (byte) 3, (byte) 0);
 
         // Find neighbors at same level
         List<Tet> sameLevelNeighbors = neighborFinder.findNeighborsAtLevel(tet, (byte) 3);
@@ -134,7 +139,8 @@ public class TetreeNeighborFinderTest {
     @Test
     public void testFindNeighborsWithinDistance() {
         // Create a tetrahedron
-        Tet tet = new Tet(512, 512, 512, (byte) 4, (byte) 0);
+        int cellSize4 = Constants.lengthAtLevel((byte) 4);
+        Tet tet = new Tet(cellSize4, cellSize4, cellSize4, (byte) 4, (byte) 0);
 
         // Distance 0 should return only the tetrahedron itself
         List<Tet> distance0 = neighborFinder.findNeighborsWithinDistance(tet, 0);
@@ -159,7 +165,8 @@ public class TetreeNeighborFinderTest {
     @Test
     public void testFindSharedFace() {
         // Create a tetrahedron
-        Tet tet = new Tet(256, 256, 256, (byte) 3, (byte) 0);
+        int cellSize3_2 = Constants.lengthAtLevel((byte) 3);
+        Tet tet = new Tet(cellSize3_2, cellSize3_2, cellSize3_2, (byte) 3, (byte) 0);
 
         // For each face, find neighbor and verify shared face
         for (int face = 0; face < 4; face++) {
@@ -179,7 +186,8 @@ public class TetreeNeighborFinderTest {
 
     @Test
     public void testInvalidFaceIndex() {
-        Tet tet = new Tet(100, 100, 100, (byte) 2, (byte) 0);
+        int cellSize2_2 = Constants.lengthAtLevel((byte) 2);
+        Tet tet = new Tet(cellSize2_2, cellSize2_2, cellSize2_2, (byte) 2, (byte) 0);
 
         // Test invalid face indices
         assertThrows(IllegalArgumentException.class, () -> neighborFinder.findFaceNeighbor(tet, -1),
@@ -193,7 +201,8 @@ public class TetreeNeighborFinderTest {
     public void testNeighborTypeTransitions() {
         // Test that neighbor types follow connectivity tables
         for (byte type = 0; type < 6; type++) {
-            Tet tet = new Tet(512, 512, 512, (byte) 4, type);
+            int cellSize4_2 = Constants.lengthAtLevel((byte) 4);
+            Tet tet = new Tet(cellSize4_2, cellSize4_2, cellSize4_2, (byte) 4, type);
 
             for (int face = 0; face < 4; face++) {
                 Tet neighbor = neighborFinder.findFaceNeighbor(tet, face);

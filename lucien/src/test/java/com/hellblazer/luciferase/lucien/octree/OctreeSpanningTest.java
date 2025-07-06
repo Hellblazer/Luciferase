@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
@@ -42,7 +43,7 @@ public class OctreeSpanningTest {
     void setUp() {
         // Create octree with spanning enabled
         spanningPolicy = EntitySpanningPolicy.withSpanning();
-        octree = new Octree<>(new SequentialLongIDGenerator(), 10, (byte) 21, spanningPolicy);
+        octree = new Octree<>(new SequentialLongIDGenerator(), 10, MortonCurve.MAX_REFINEMENT_LEVEL, spanningPolicy);
     }
 
     @Test
@@ -50,7 +51,7 @@ public class OctreeSpanningTest {
         byte level = 15;
 
         // Test entity exactly on cell boundary
-        int cellSize = 1 << (21 - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         Point3f boundaryPoint = new Point3f(cellSize, cellSize, cellSize);
 
         // Entity with zero extent (point)
@@ -66,7 +67,7 @@ public class OctreeSpanningTest {
     @Test
     void testEntityRemovalFromSpannedNodes() {
         byte level = 15;
-        int cellSize = 1 << (21 - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
 
         // Create spanning entity
         Point3f center = new Point3f(cellSize, 100, 100);
@@ -98,7 +99,7 @@ public class OctreeSpanningTest {
     @Test
     void testEntitySpanningEightNodes() {
         byte level = 15;
-        int cellSize = 1 << (21 - level); // 64
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // 64
 
         // Create entity centered at corner of 8 cells
         Point3f center = new Point3f(cellSize, cellSize, cellSize);
@@ -114,7 +115,7 @@ public class OctreeSpanningTest {
     @Test
     void testEntitySpanningTwoNodes() {
         byte level = 15;
-        int cellSize = 1 << (21 - level); // 64
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // 64
 
         // Create entity that spans exactly two nodes
         // Position it at the boundary between two cells
@@ -143,7 +144,7 @@ public class OctreeSpanningTest {
     @Test
     void testMultipleSpanningEntities() {
         byte level = 15;
-        int cellSize = 1 << (21 - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
 
         // Create multiple overlapping spanning entities
         Point3f center = new Point3f(cellSize, cellSize, cellSize);
@@ -179,10 +180,11 @@ public class OctreeSpanningTest {
     @Test
     void testNoSpanningWhenDisabled() {
         // Create octree with spanning disabled
-        Octree<LongEntityID, String> noSpanOctree = new Octree<>(new SequentialLongIDGenerator(), 10, (byte) 21);
+        Octree<LongEntityID, String> noSpanOctree = new Octree<>(new SequentialLongIDGenerator(), 10,
+                                                                 MortonCurve.MAX_REFINEMENT_LEVEL);
 
         byte level = 15;
-        int cellSize = 1 << (21 - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
 
         // Create large entity
         Point3f center = new Point3f(cellSize, cellSize, cellSize);
@@ -218,7 +220,7 @@ public class OctreeSpanningTest {
     void testSpanningAcrossLevels() {
         // Insert large entity at coarse level
         byte coarseLevel = 10;
-        int coarseCellSize = 1 << (21 - coarseLevel);
+        int coarseCellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - coarseLevel);
 
         Point3f center = new Point3f(coarseCellSize / 2, coarseCellSize / 2, coarseCellSize / 2);
         EntityBounds bounds = new EntityBounds(center, coarseCellSize / 3.0f);

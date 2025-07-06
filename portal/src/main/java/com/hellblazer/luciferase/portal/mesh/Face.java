@@ -1,41 +1,37 @@
 package com.hellblazer.luciferase.portal.mesh;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-import javax.vecmath.Vector3d;
-
 import javafx.scene.shape.CullFace;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.Sphere;
 import javafx.scene.shape.TriangleMesh;
 
+import javax.vecmath.Vector3d;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 /**
- * A class for polygon faces. These faces store vertex data in the form of
- * indices; these indices are defined by a mesh, so an instance of Face is not
- * meaningful without a mesh for it to belong to. The design of this class is
- * suited for the OBJ file format, just as the Mesh class is.
+ * A class for polygon faces. These faces store vertex data in the form of indices; these indices are defined by a mesh,
+ * so an instance of Face is not meaningful without a mesh for it to belong to. The design of this class is suited for
+ * the OBJ file format, just as the Mesh class is.
  *
- * The face stores a pointer to the mesh it belongs to, but this is null until
- * this face is added to a mesh using one of the methods in Mesh.
+ * The face stores a pointer to the mesh it belongs to, but this is null until this face is added to a mesh using one of
+ * the methods in Mesh.
  *
- * By convention, the indexes of the vertex positions and normals are assumed to
- * be specified in counterclockwise order if we are looking at the face from the
- * "outside". Thus, several of the methods will rely on this convention.
+ * By convention, the indexes of the vertex positions and normals are assumed to be specified in counterclockwise order
+ * if we are looking at the face from the "outside". Thus, several of the methods will rely on this convention.
  *
- * Currently, the only "data" stored by the faces are the per-vertex position
- * and normal. Both are stored as integer indices, where the index refers to the
- * index of the actual value in the Mesh this face belongs to.
+ * Currently, the only "data" stored by the faces are the per-vertex position and normal. Both are stored as integer
+ * indices, where the index refers to the index of the actual value in the Mesh this face belongs to.
  *
  * @author Brian Yao
  */
 public class Face {
 
-    private Mesh  mesh;
-    private int[] normalIndices;
-    private int   numVertices;
-    private int[] vertexIndices;
+    private       Mesh  mesh;
+    private final int[] normalIndices;
+    private final int   numVertices;
+    private final int[] vertexIndices;
 
     /**
      * Copy constructor.
@@ -49,8 +45,7 @@ public class Face {
     }
 
     /**
-     * Create a face with enough space to store data for the specified number of
-     * vertices.
+     * Create a face with enough space to store data for the specified number of vertices.
      *
      * @param numVertices The number of vertices this face has.
      */
@@ -64,9 +59,8 @@ public class Face {
     }
 
     /**
-     * Compute the centroid of this face. This method will not succeed unless
-     * setMesh() has been called on this face; this can be done implicitly by adding
-     * this face to a mesh (see addFace() in Mesh).
+     * Compute the centroid of this face. This method will not succeed unless setMesh() has been called on this face;
+     * this can be done implicitly by adding this face to a mesh (see addFace() in Mesh).
      *
      * @return The centroid location.
      */
@@ -138,9 +132,8 @@ public class Face {
     }
 
     /**
-     * Converts this polygon face into an array of triangular faces whose union has
-     * the same geometry as this face. If this face is a triangle, the array will
-     * only have one face. In general, the number of triangular faces in the
+     * Converts this polygon face into an array of triangular faces whose union has the same geometry as this face. If
+     * this face is a triangle, the array will only have one face. In general, the number of triangular faces in the
      * returned array is numVertices - 2.
      *
      * @return The triangular faces whose union is this one.
@@ -161,13 +154,12 @@ public class Face {
     }
 
     /**
-     * Compute the edges which bound this face. The edges will be specified in the
-     * order that the vertices are specified. If convention is followed, such that
-     * the face's vertices are specified in counterclockwise order, then the edges
-     * will also be in counterclockwise order.
+     * Compute the edges which bound this face. The edges will be specified in the order that the vertices are
+     * specified. If convention is followed, such that the face's vertices are specified in counterclockwise order, then
+     * the edges will also be in counterclockwise order.
      *
-     * Each returned edge will have setMesh() called on it, with the same mesh this
-     * face points to (which could be null).
+     * Each returned edge will have setMesh() called on it, with the same mesh this face points to (which could be
+     * null).
      *
      * @return An array of edges bounding this face.
      */
@@ -183,10 +175,9 @@ public class Face {
     }
 
     /**
-     * Compute the unit normal vector perpendicular to the plane this face lies in.
-     * This requires this face to be assigned to a mesh (see addFace() in Mesh), and
-     * assumes that the vertices of this face are specified in counterclockwise
-     * order.
+     * Compute the unit normal vector perpendicular to the plane this face lies in. This requires this face to be
+     * assigned to a mesh (see addFace() in Mesh), and assumes that the vertices of this face are specified in
+     * counterclockwise order.
      *
      * @return The 3D vector containing the normal to the face.
      */
@@ -204,8 +195,7 @@ public class Face {
     }
 
     /**
-     * @param vertex The index 0 <= vertex < numVertices of the vertex whose normal
-     *               (index) to retrieve.
+     * @param vertex The index 0 <= vertex < numVertices of the vertex whose normal (index) to retrieve.
      * @return The index of the specified vertex's normal.
      */
     public int getNormalIndex(int vertex) {
@@ -220,8 +210,7 @@ public class Face {
     }
 
     /**
-     * @param vertex The index 0 <= vertex < numVertices of the vertex whose
-     *               position (index) to retrieve.
+     * @param vertex The index 0 <= vertex < numVertices of the vertex whose position (index) to retrieve.
      * @return The index of the specified vertex's position.
      */
     public int getVertexIndex(int vertex) {
@@ -265,12 +254,10 @@ public class Face {
     }
 
     /**
-     * Sets the vertex normal indices for this face, in the order given. The first
-     * normal specified corresponds to the vertex at the first position stored in
-     * this face.
+     * Sets the vertex normal indices for this face, in the order given. The first normal specified corresponds to the
+     * vertex at the first position stored in this face.
      *
-     * @param normalIndices Set the normal indices to the contents of the provided
-     *                      array.
+     * @param normalIndices Set the normal indices to the contents of the provided array.
      */
     public Face setAllNormalIndices(int... normalIndices) {
         System.arraycopy(normalIndices, 0, normalIndices, 0, normalIndices.length);
@@ -280,8 +267,7 @@ public class Face {
     /**
      * Sets the vertex position indices for this face, in the order given.
      *
-     * @param positionIndices Set the position indices to the contents of the
-     *                        provided array.
+     * @param positionIndices Set the position indices to the contents of the provided array.
      */
     public Face setAllVertexIndices(int... positionIndices) {
         System.arraycopy(positionIndices, 0, vertexIndices, 0, vertexIndices.length);
@@ -301,12 +287,11 @@ public class Face {
     }
 
     /**
-     * Set the mesh that this face points to. By default, this is called when this
-     * face is added to a mesh using one of addFace() or similar methods in Mesh.
+     * Set the mesh that this face points to. By default, this is called when this face is added to a mesh using one of
+     * addFace() or similar methods in Mesh.
      *
-     * This method needs to be called at some point for certain methods in this
-     * class and others to work properly, since Face objects do not store any
-     * geometry; all geometry is stored in the Mesh.
+     * This method needs to be called at some point for certain methods in this class and others to work properly, since
+     * Face objects do not store any geometry; all geometry is stored in the Mesh.
      *
      * @param mesh The mesh this face will now point to.
      */
@@ -315,9 +300,8 @@ public class Face {
     }
 
     /**
-     * Set the position and normal for the vertex of this face stored at index
-     * "vertex" (the data of this Face is stored in arrays; the index corresponds to
-     * the index of the vertex in these arrays).
+     * Set the position and normal for the vertex of this face stored at index "vertex" (the data of this Face is stored
+     * in arrays; the index corresponds to the index of the vertex in these arrays).
      *
      * @param vertex        The vertex whose data we want to set.
      * @param positionIndex The index of the vertex's position in the mesh.
@@ -329,9 +313,8 @@ public class Face {
     }
 
     /**
-     * Set the position for the vertex of this face stored at index "vertex" (the
-     * data of this Face is stored in arrays; the "vertex" corresponds to the index
-     * of the vertex in these arrays).
+     * Set the position for the vertex of this face stored at index "vertex" (the data of this Face is stored in arrays;
+     * the "vertex" corresponds to the index of the vertex in these arrays).
      *
      * @param vertex        The vertex whose position we want to set.
      * @param positionIndex The index of the vertex's position in the mesh.
@@ -341,9 +324,8 @@ public class Face {
     }
 
     /**
-     * Set the normal for the vertex of this face stored at index "vertex" (the data
-     * of this Face is stored in arrays; the index corresponds to the index of the
-     * vertex in these arrays).
+     * Set the normal for the vertex of this face stored at index "vertex" (the data of this Face is stored in arrays;
+     * the index corresponds to the index of the vertex in these arrays).
      *
      * @param vertex      The vertex whose normal we want to set.
      * @param normalIndex The index of the vertex's normal in the mesh.

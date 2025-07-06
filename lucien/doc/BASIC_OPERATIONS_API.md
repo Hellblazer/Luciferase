@@ -364,7 +364,7 @@ if (spatialIndex.hasNode(key)) {
     // Node exists at this location
 }
 
-// For Tetree, create a TetreeKey
+// For Tetree, create a ExtendedTetreeKey
 TetreeKey key = TetreeKey.fromCoordinates(x, y, z, level);
 if (spatialIndex.hasNode(key)) {
     // Node exists at this location

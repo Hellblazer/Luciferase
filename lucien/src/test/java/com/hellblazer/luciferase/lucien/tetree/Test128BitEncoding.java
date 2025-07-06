@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,7 +18,7 @@ public class Test128BitEncoding {
         // We want x=1, y=2, z=4 at grid level (before scaling)
         int gridX = 1, gridY = 2, gridZ = 4;
         byte level = 3;
-        int scale = 1 << (21 - level);
+        int scale = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
 
         var tet = new Tet(gridX * scale, gridY * scale, gridZ * scale, level, (byte) 0);
         var key = tet.tmIndex();
@@ -52,16 +53,17 @@ public class Test128BitEncoding {
         System.out.println("=== Testing 128-bit Encoding Consistency ===\n");
 
         // Test a simple case at level 2
-        int x = 1, y = 2, z = 4;
+        int x = 1, y = 2, z = 1;  // Reduce z to stay within bounds
         byte level = 2;
         byte type = 3;
 
-        // Create a Tet and get its TM-index
-        Tet tet = new Tet(x * (1 << 19), y * (1 << 19), z * (1 << 19), level, type);
+        // Create a Tet and get its TM-index using proper grid alignment
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);  // Cell size at level 2
+        Tet tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
         var key = tet.tmIndex();
 
         System.out.println("Test Tet: " + tet);
-        System.out.println("TetreeKey: " + key);
+        System.out.println("ExtendedTetreeKey: " + key);
 
         // Manual calculation to verify
         // Level 0: x=0, y=0, z=0, type=0
@@ -101,7 +103,7 @@ public class Test128BitEncoding {
         };
 
         for (int[] tc : testCases) {
-            int scale = 1 << (21 - tc[3]); // scale to actual coordinates
+            int scale = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - tc[3]); // scale to actual coordinates
             Tet tet = new Tet(tc[0] * scale, tc[1] * scale, tc[2] * scale, (byte) tc[3], (byte) tc[4]);
             var key = tet.tmIndex();
 

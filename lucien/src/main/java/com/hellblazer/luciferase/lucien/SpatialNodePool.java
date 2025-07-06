@@ -37,19 +37,20 @@ import java.util.function.Supplier;
 public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
 
     // Estimated memory per node (bytes)
-    private static final long ESTIMATED_NODE_MEMORY = 64; // Base object + collection overhead
+    private static final long               ESTIMATED_NODE_MEMORY = 64; // Base object + collection overhead
     // Pool storage
-    private final Queue<NodeType>    pool = new ConcurrentLinkedQueue<>();
-    private final Supplier<NodeType> nodeFactory;
-    private final PoolConfig         config;
+    private final        Queue<NodeType>    pool                  = new ConcurrentLinkedQueue<>();
+    private final        Supplier<NodeType> nodeFactory;
+    private final        PoolConfig         config;
     // Statistics
-    private final AtomicLong    allocations   = new AtomicLong(0);
-    private final AtomicLong    deallocations = new AtomicLong(0);
-    private final AtomicLong    hits          = new AtomicLong(0);
-    private final AtomicLong    misses        = new AtomicLong(0);
-    private final AtomicInteger currentSize   = new AtomicInteger(0);
-    private final AtomicInteger peakSize      = new AtomicInteger(0);
-    private final AtomicLong    memorySaved   = new AtomicLong(0);
+    private final        AtomicLong         allocations           = new AtomicLong(0);
+    private final        AtomicLong         deallocations         = new AtomicLong(0);
+    private final        AtomicLong         hits                  = new AtomicLong(0);
+    private final        AtomicLong         misses                = new AtomicLong(0);
+    private final        AtomicInteger      currentSize           = new AtomicInteger(0);
+    private final        AtomicInteger      peakSize              = new AtomicInteger(0);
+    private final        AtomicLong         memorySaved           = new AtomicLong(0);
+
     public SpatialNodePool(Supplier<NodeType> nodeFactory) {
         this(nodeFactory, new PoolConfig());
     }

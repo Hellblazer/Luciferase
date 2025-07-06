@@ -48,7 +48,7 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
      * @param ray The ray to traverse
      * @return Stream of tetrahedral indices in traversal order
      */
-    public Stream<BaseTetreeKey<? extends BaseTetreeKey>> traverseRay(Ray3D ray) {
+    public Stream<TetreeKey<? extends TetreeKey>> traverseRay(Ray3D ray) {
         // For sparse trees, we need to check actual nodes in the tree
         // Since nodes can exist at different levels, we need to check all existing nodes
 
@@ -56,10 +56,10 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
         var allNodes = tree.getSortedSpatialIndices();
 
         // Filter to only nodes that the ray intersects
-        List<BaseTetreeKey<? extends BaseTetreeKey>> intersectedNodes = new ArrayList<>();
+        List<TetreeKey<? extends TetreeKey>> intersectedNodes = new ArrayList<>();
 
-        for (BaseTetreeKey<? extends BaseTetreeKey> nodeIndex : allNodes) {
-            // The TetreeKey already contains the level information
+        for (TetreeKey<? extends TetreeKey> nodeIndex : allNodes) {
+            // The ExtendedTetreeKey already contains the level information
             // Check if ray intersects this tetrahedron at its specific level
             var intersection = TetrahedralGeometry.rayIntersectsTetrahedron(ray, nodeIndex);
             if (intersection.intersects) {
@@ -75,7 +75,7 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
      * Add child tetrahedra that could be intersected by the ray.
      */
     private void addIntersectedChildren(Tet current, Ray3D ray, Queue<Tet> toProcess,
-                                        Set<BaseTetreeKey<? extends BaseTetreeKey>> visited) {
+                                        Set<TetreeKey<? extends TetreeKey>> visited) {
         for (int i = 0; i < 8; i++) {
             try {
                 Tet child = current.child(i);
@@ -94,7 +94,7 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
      * Add neighboring tetrahedra that could be intersected by the ray.
      */
     private void addIntersectedNeighbors(Tet current, Ray3D ray, Queue<Tet> toProcess,
-                                         Set<BaseTetreeKey<? extends BaseTetreeKey>> visited) {
+                                         Set<TetreeKey<? extends TetreeKey>> visited) {
         // Check all 4 faces
         for (int face = 0; face < 4; face++) {
             Tet.FaceNeighbor neighbor = current.faceNeighbor(face);
@@ -375,11 +375,11 @@ public class TetreeSFCRayTraversal<ID extends EntityID, Content> {
     /**
      * Sort tetrahedra by distance along ray for correct traversal order.
      */
-    private List<BaseTetreeKey<? extends BaseTetreeKey>> sortByRayDistance(
-    List<BaseTetreeKey<? extends BaseTetreeKey>> indices, Ray3D ray) {
-        Map<BaseTetreeKey<? extends BaseTetreeKey>, Float> distances = new HashMap<>();
+    private List<TetreeKey<? extends TetreeKey>> sortByRayDistance(List<TetreeKey<? extends TetreeKey>> indices,
+                                                                   Ray3D ray) {
+        Map<TetreeKey<? extends TetreeKey>, Float> distances = new HashMap<>();
 
-        for (BaseTetreeKey<? extends BaseTetreeKey> index : indices) {
+        for (TetreeKey<? extends TetreeKey> index : indices) {
             Tet tet = Tet.tetrahedron(index);
             Point3i[] vertices = tet.coordinates();
 

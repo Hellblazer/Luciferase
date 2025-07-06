@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
@@ -123,7 +124,8 @@ public class TetreeTest {
         assertTrue(contents.contains("Entity3"));
 
         // Test empty index returns empty list
-        var emptyContents = tetree.get(new Tet(50, 50, 50, (byte) 15, (byte) 0).tmIndex()); // Different index
+        var cellSize = Constants.lengthAtLevel((byte) 15);
+        var emptyContents = tetree.get(new Tet(cellSize, cellSize, cellSize, (byte) 15, (byte) 0).tmIndex()); // Different index
         assertTrue(emptyContents.isEmpty());
     }
 

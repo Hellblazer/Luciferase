@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,7 +51,8 @@ public class BulkOperationOptimizationTest {
         for (int x = 0; x < 10; x++) {
             for (int y = 0; y < 10; y++) {
                 for (int z = 0; z < 10; z++) {
-                    positions.add(new Point3f(x * 100 + 1000, y * 100 + 2000, z * 100 + 3000));
+                    // Use smaller, valid coordinates for spatial indexing
+                    positions.add(new Point3f(x * 50 + 100, y * 50 + 200, z * 50 + 300));
                     contents.add(String.format("Entity_%d_%d_%d", x, y, z));
                 }
             }
@@ -161,7 +163,8 @@ public class BulkOperationOptimizationTest {
     void testSpatialLocalityCache() {
         // Test spatial locality caching
         var localityCache = new SpatialLocalityCache(2); // 2-cell radius
-        var center = new Tet(5000, 5000, 5000, (byte) 10, (byte) 0);
+        var gridSize = Constants.lengthAtLevel((byte) 10);
+        var center = new Tet(gridSize, gridSize, gridSize, (byte) 10, (byte) 0);
 
         // Reset stats
         TetreeLevelCache.resetCacheStats();

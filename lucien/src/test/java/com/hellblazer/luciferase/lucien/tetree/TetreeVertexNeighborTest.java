@@ -66,10 +66,10 @@ public class TetreeVertexNeighborTest {
         // Vertex 3: faces 0, 1, 2
 
         // Get face neighbors
-        var face0 = new ArrayList<BaseTetreeKey<?>>();
-        var face1 = new ArrayList<BaseTetreeKey<?>>();
-        var face2 = new ArrayList<BaseTetreeKey<?>>();
-        var face3 = new ArrayList<BaseTetreeKey<?>>();
+        var face0 = new ArrayList<TetreeKey<?>>();
+        var face1 = new ArrayList<TetreeKey<?>>();
+        var face2 = new ArrayList<TetreeKey<?>>();
+        var face3 = new ArrayList<TetreeKey<?>>();
 
         var face0Neighbor = tetree.findFaceNeighbor(centerKey, 0);
         if (face0Neighbor != null) {
@@ -98,12 +98,12 @@ public class TetreeVertexNeighborTest {
         var vertex3Neighbors = tetree.findVertexNeighbors(centerKey, 3); // faces 0,1,2
 
         // Vertex neighbors should include at least the face neighbors
-        var vertex0Expected = new HashSet<BaseTetreeKey<?>>();
+        var vertex0Expected = new HashSet<TetreeKey<?>>();
         vertex0Expected.addAll(face1);
         vertex0Expected.addAll(face2);
         vertex0Expected.addAll(face3);
 
-        var vertex1Expected = new HashSet<BaseTetreeKey<?>>();
+        var vertex1Expected = new HashSet<TetreeKey<?>>();
         vertex1Expected.addAll(face0);
         vertex1Expected.addAll(face2);
         vertex1Expected.addAll(face3);
@@ -265,7 +265,7 @@ public class TetreeVertexNeighborTest {
         var vertex0Neighbors = tetree.findVertexNeighbors(tetKey, 0);
 
         // Vertex neighbors should include all edge neighbors for edges connected to that vertex
-        Set<BaseTetreeKey<? extends BaseTetreeKey>> expectedFromEdges = new HashSet<>();
+        Set<TetreeKey<? extends TetreeKey>> expectedFromEdges = new HashSet<>();
         expectedFromEdges.addAll(edge0Neighbors);
         expectedFromEdges.addAll(edge1Neighbors);
         expectedFromEdges.addAll(edge2Neighbors);

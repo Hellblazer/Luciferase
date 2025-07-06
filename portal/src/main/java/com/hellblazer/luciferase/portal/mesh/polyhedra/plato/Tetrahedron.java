@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra.plato;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
+
+import javax.vecmath.Vector3d;
 
 /**
  * An implementation of a regular tetrahedron mesh.
@@ -12,19 +12,6 @@ import com.hellblazer.luciferase.portal.mesh.Face;
 public class Tetrahedron extends PlatonicSolid {
 
     private static final double RADIUS_FACTOR = Math.sqrt(6.0) / 4.0;
-
-    public static Vector3d[] stdPositions(double edgeLength) {// Vertex positions
-        double edgeScaleFactor = edgeLength / (2.0 * Math.sqrt(2.0));
-        Vector3d v0 = new Vector3d(1.0, 1.0, 1.0);
-        Vector3d v1 = new Vector3d(1.0, -1.0, -1.0);
-        Vector3d v2 = new Vector3d(-1.0, 1.0, -1.0);
-        Vector3d v3 = new Vector3d(-1.0, -1.0, 1.0);
-        v0.scale(edgeScaleFactor);
-        v1.scale(edgeScaleFactor);
-        v2.scale(edgeScaleFactor);
-        v3.scale(edgeScaleFactor);
-        return new Vector3d[] { v0, v1, v2, v3 };
-    }
 
     public Tetrahedron(boolean inverse, Vector3d... vectors) {
         super(PlatonicSolid.edgeLength(vectors));
@@ -52,8 +39,7 @@ public class Tetrahedron extends PlatonicSolid {
     }
 
     /**
-     * Construct a tetrahedron mesh centered at the origin with the specified edge
-     * length.
+     * Construct a tetrahedron mesh centered at the origin with the specified edge length.
      *
      * @param edgeLength The length of each edge of this mesh.
      */
@@ -69,6 +55,19 @@ public class Tetrahedron extends PlatonicSolid {
      */
     public Tetrahedron(double circumradius, boolean dummy) {
         this(circumradius / RADIUS_FACTOR);
+    }
+
+    public static Vector3d[] stdPositions(double edgeLength) {// Vertex positions
+        double edgeScaleFactor = edgeLength / (2.0 * Math.sqrt(2.0));
+        Vector3d v0 = new Vector3d(1.0, 1.0, 1.0);
+        Vector3d v1 = new Vector3d(1.0, -1.0, -1.0);
+        Vector3d v2 = new Vector3d(-1.0, 1.0, -1.0);
+        Vector3d v3 = new Vector3d(-1.0, -1.0, 1.0);
+        v0.scale(edgeScaleFactor);
+        v1.scale(edgeScaleFactor);
+        v2.scale(edgeScaleFactor);
+        v3.scale(edgeScaleFactor);
+        return new Vector3d[] { v0, v1, v2, v3 };
     }
 
 }

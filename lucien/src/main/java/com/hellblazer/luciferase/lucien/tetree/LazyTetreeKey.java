@@ -19,19 +19,20 @@ package com.hellblazer.luciferase.lucien.tetree;
 import java.util.Objects;
 
 /**
- * A lazy implementation of TetreeKey that defers the expensive tmIndex() computation until absolutely necessary. This
- * significantly improves insertion performance by avoiding the O(level) parent chain walk during initial insertion.
+ * A lazy implementation of ExtendedTetreeKey that defers the expensive tmIndex() computation until absolutely
+ * necessary. This significantly improves insertion performance by avoiding the O(level) parent chain walk during
+ * initial insertion.
  *
  * @author hal.hildebrand
  */
-public class LazyTetreeKey extends TetreeKey {
+public class LazyTetreeKey extends ExtendedTetreeKey {
 
-    private final    Tet                                    tet;
-    private final    int                                    lazyHashCode;
-    private volatile BaseTetreeKey<? extends BaseTetreeKey> resolved;
+    private final    Tet                            tet;
+    private final    int                            lazyHashCode;
+    private volatile TetreeKey<? extends TetreeKey> resolved;
 
     /**
-     * Create a lazy BaseTetreeKey<? extends BaseTetreeKey> from a Tet.
+     * Create a lazy TetreeKey<? extends TetreeKey> from a Tet.
      *
      * @param tet the tetrahedron to lazily compute the key for
      */
@@ -55,7 +56,7 @@ public class LazyTetreeKey extends TetreeKey {
     }
 
     @Override
-    public int compareTo(BaseTetreeKey other) {
+    public int compareTo(TetreeKey other) {
         if (other instanceof LazyTetreeKey lazy) {
             // Both lazy - only resolve when needed
             if (tet.equals(lazy.tet)) {
@@ -67,7 +68,7 @@ public class LazyTetreeKey extends TetreeKey {
             return resolved.compareTo(lazy.resolved);
         }
 
-        // Comparison with regular BaseTetreeKey<? extends BaseTetreeKey> requires resolution
+        // Comparison with regular TetreeKey<? extends TetreeKey> requires resolution
         ensureResolved();
         return resolved.compareTo(other);
     }
@@ -81,8 +82,8 @@ public class LazyTetreeKey extends TetreeKey {
         if (obj instanceof LazyTetreeKey other) {
             // Both lazy - compare Tet directly without resolution
             return tet.equals(other.tet);
-        } else if (obj instanceof BaseTetreeKey<? extends BaseTetreeKey>) {
-            // Must resolve to compare with regular BaseTetreeKey<? extends BaseTetreeKey>
+        } else if (obj instanceof TetreeKey<? extends TetreeKey>) {
+            // Must resolve to compare with regular TetreeKey<? extends TetreeKey>
             ensureResolved();
             return resolved.equals(obj);
         }

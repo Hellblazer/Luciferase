@@ -1,17 +1,14 @@
 /**
  * Copyright (c) 2016 Chiral Behaviors, LLC, all rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
  */
 
 package com.hellblazer.luciferase.portal.mesh;
@@ -24,9 +21,23 @@ import javafx.scene.transform.Translate;
 
 /**
  * @author halhildebrand
- *
  */
 public class Line extends Cylinder {
+
+    public Line(double radius, Point3D a, Point3D b) {
+        super(radius, b.subtract(a).magnitude(), 3);
+        Point3D diff = b.subtract(a);
+
+        Point3D mid = b.midpoint(a);
+        Translate moveToMidpoint = new Translate(mid.getX(), mid.getY(), mid.getZ());
+
+        Point3D yAxis = new Point3D(0, 1, 0);
+        Point3D axisOfRotation = diff.crossProduct(yAxis);
+        double angle = Math.acos(diff.normalize().dotProduct(yAxis));
+        Rotate rotateAroundCenter = new Rotate(-Math.toDegrees(angle), axisOfRotation);
+
+        getTransforms().addAll(moveToMidpoint, rotateAroundCenter);
+    }
 
     public static TriangleMesh createLine(double h, double r) {
         int div = 3;
@@ -40,48 +51,48 @@ public class Line extends Cylinder {
         float dA = 1.f / div;
         h *= .5f;
 
-        float points[] = new float[nPonits * 3];
-        float tPoints[] = new float[tcCount * 2];
-        int faces[] = new int[faceCount * 6];
-        int smoothing[] = new int[faceCount];
+        float[] points = new float[nPonits * 3];
+        float[] tPoints = new float[tcCount * 2];
+        int[] faces = new int[faceCount * 6];
+        int[] smoothing = new int[faceCount];
 
         int pPos = 0, tPos = 0;
 
         for (int i = 0; i < div; ++i) {
             double a = dA * i * 2 * Math.PI;
 
-            points[pPos + 0] = (float) (Math.sin(a) * r);
+            points[pPos] = (float) (Math.sin(a) * r);
             points[pPos + 2] = (float) (Math.cos(a) * r);
             points[pPos + 1] = (float) h;
-            tPoints[tPos + 0] = 1 - dA * i;
+            tPoints[tPos] = 1 - dA * i;
             tPoints[tPos + 1] = 1 - textureDelta;
             pPos += 3;
             tPos += 2;
         }
 
         // top edge
-        tPoints[tPos + 0] = 0;
+        tPoints[tPos] = 0;
         tPoints[tPos + 1] = 1 - textureDelta;
         tPos += 2;
 
         for (int i = 0; i < div; ++i) {
             double a = dA * i * 2 * Math.PI;
-            points[pPos + 0] = (float) (Math.sin(a) * r);
+            points[pPos] = (float) (Math.sin(a) * r);
             points[pPos + 2] = (float) (Math.cos(a) * r);
             points[pPos + 1] = (float) -h;
-            tPoints[tPos + 0] = 1 - dA * i;
+            tPoints[tPos] = 1 - dA * i;
             tPoints[tPos + 1] = textureDelta;
             pPos += 3;
             tPos += 2;
         }
 
         // bottom edge
-        tPoints[tPos + 0] = 0;
+        tPoints[tPos] = 0;
         tPoints[tPos + 1] = textureDelta;
         tPos += 2;
 
         // add cap central points
-        points[pPos + 0] = 0;
+        points[pPos] = 0;
         points[pPos + 1] = (float) h;
         points[pPos + 2] = 0;
         points[pPos + 3] = 0;
@@ -93,7 +104,7 @@ public class Line extends Cylinder {
         // bottom cap
         for (int i = 0; i <= div; ++i) {
             double a = (i < div) ? (dA * i * 2) * Math.PI : 0;
-            tPoints[tPos + 0] = (float) (Math.sin(a) * 0.5f) + 0.5f;
+            tPoints[tPos] = (float) (Math.sin(a) * 0.5f) + 0.5f;
             tPoints[tPos + 1] = (float) (Math.cos(a) * 0.5f) + 0.5f;
             tPos += 2;
         }
@@ -101,12 +112,12 @@ public class Line extends Cylinder {
         // top cap
         for (int i = 0; i <= div; ++i) {
             double a = (i < div) ? (dA * i * 2) * Math.PI : 0;
-            tPoints[tPos + 0] = 0.5f + (float) (Math.sin(a) * 0.5f);
+            tPoints[tPos] = 0.5f + (float) (Math.sin(a) * 0.5f);
             tPoints[tPos + 1] = 0.5f - (float) (Math.cos(a) * 0.5f);
             tPos += 2;
         }
 
-        tPoints[tPos + 0] = .5f;
+        tPoints[tPos] = .5f;
         tPoints[tPos + 1] = .5f;
         tPos += 2;
 
@@ -119,7 +130,7 @@ public class Line extends Cylinder {
             int p3 = p1 + div;
 
             // add p0, p1, p2
-            faces[fIndex + 0] = p0;
+            faces[fIndex] = p0;
             faces[fIndex + 1] = p0;
             faces[fIndex + 2] = p2;
             faces[fIndex + 3] = p2 + 1;
@@ -129,7 +140,7 @@ public class Line extends Cylinder {
 
             // add p3, p2, p1
             // *faces++ = SmFace(p3,p1,p2, p3,p1,p2, 1);
-            faces[fIndex + 0] = p3 % div == 0 ? p3 - div : p3;
+            faces[fIndex] = p3 % div == 0 ? p3 - div : p3;
             faces[fIndex + 1] = p3 + 1;
             faces[fIndex + 2] = p1 == div ? 0 : p1;
             faces[fIndex + 3] = p1;
@@ -150,7 +161,7 @@ public class Line extends Cylinder {
             int t2 = t0 + 1;
 
             // add p0, p1, p2
-            faces[fIndex + 0] = p0;
+            faces[fIndex] = p0;
             faces[fIndex + 1] = t0;
             faces[fIndex + 2] = p2 == div ? 0 : p2;
             faces[fIndex + 3] = t2;
@@ -169,7 +180,7 @@ public class Line extends Cylinder {
             int t2 = t0 + 1;
 
             //*faces++ = SmFace(p0+div+1,p1,p2, t0,t1,t2, 2);
-            faces[fIndex + 0] = p0 + div;
+            faces[fIndex] = p0 + div;
             faces[fIndex + 1] = t0;
             faces[fIndex + 2] = p1;
             faces[fIndex + 3] = t1;
@@ -186,35 +197,11 @@ public class Line extends Cylinder {
         }
 
         TriangleMesh mesh = new TriangleMesh();
-        mesh.getPoints()
-            .setAll(points);
-        mesh.getTexCoords()
-            .setAll(tPoints);
-        mesh.getFaces()
-            .setAll(faces);
-        mesh.getFaceSmoothingGroups()
-            .setAll(smoothing);
+        mesh.getPoints().setAll(points);
+        mesh.getTexCoords().setAll(tPoints);
+        mesh.getFaces().setAll(faces);
+        mesh.getFaceSmoothingGroups().setAll(smoothing);
 
         return mesh;
-    }
-
-    public Line(double radius, Point3D a, Point3D b) {
-        super(radius, b.subtract(a)
-                       .magnitude(),
-              3);
-        Point3D diff = b.subtract(a);
-
-        Point3D mid = b.midpoint(a);
-        Translate moveToMidpoint = new Translate(mid.getX(), mid.getY(),
-                                                 mid.getZ());
-
-        Point3D yAxis = new Point3D(0, 1, 0);
-        Point3D axisOfRotation = diff.crossProduct(yAxis);
-        double angle = Math.acos(diff.normalize()
-                                     .dotProduct(yAxis));
-        Rotate rotateAroundCenter = new Rotate(-Math.toDegrees(angle),
-                                               axisOfRotation);
-
-        getTransforms().addAll(moveToMidpoint, rotateAroundCenter);
     }
 }

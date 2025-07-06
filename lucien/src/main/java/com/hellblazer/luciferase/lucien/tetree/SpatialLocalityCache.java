@@ -74,7 +74,7 @@ public class SpatialLocalityCache {
                     // Pre-compute all 6 tetrahedron types at this position
                     for (byte type = 0; type < 6; type++) {
                         var tet = new Tet(x, y, z, center.l(), type);
-                        // This will compute and cache the TetreeKey
+                        // This will compute and cache the ExtendedTetreeKey
                         tet.tmIndex();
                         cacheCount++;
                     }

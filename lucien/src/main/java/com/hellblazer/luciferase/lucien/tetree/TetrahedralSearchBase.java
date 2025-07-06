@@ -121,7 +121,7 @@ public abstract class TetrahedralSearchBase {
      * @param metric   distance metric to use
      * @return distance according to the specified metric
      */
-    protected static float calculateTetrahedralDistance(Point3f point, TetreeKey tetIndex,
+    protected static float calculateTetrahedralDistance(Point3f point, ExtendedTetreeKey tetIndex,
                                                         TetrahedralDistanceMetric metric) {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException("Point coordinates must be positive");
@@ -148,7 +148,7 @@ public abstract class TetrahedralSearchBase {
      * @param metric    distance metric to use
      * @return distance between tetrahedra according to the specified metric
      */
-    protected static float calculateTetrahedralDistance(TetreeKey tetIndex1, TetreeKey tetIndex2,
+    protected static float calculateTetrahedralDistance(ExtendedTetreeKey tetIndex1, ExtendedTetreeKey tetIndex2,
                                                         TetrahedralDistanceMetric metric) {
         if (tetIndex1 == tetIndex2) {
             return 0.0f;
@@ -247,7 +247,7 @@ public abstract class TetrahedralSearchBase {
      * @param tetIndex the tetrahedral SFC index
      * @return minimum distance to tetrahedron (0 if point is inside)
      */
-    protected static float distanceToTetrahedron(Point3f point, BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    protected static float distanceToTetrahedron(Point3f point, TetreeKey<? extends TetreeKey> tetIndex) {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException("Point coordinates must be positive");
         }
@@ -417,7 +417,7 @@ public abstract class TetrahedralSearchBase {
      * @param tetIndex the tetrahedral SFC index
      * @return true if point is inside the tetrahedron
      */
-    protected static boolean pointInTetrahedron(Point3f point, BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    protected static boolean pointInTetrahedron(Point3f point, TetreeKey<? extends TetreeKey> tetIndex) {
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException("Point coordinates must be positive");
         }
@@ -473,7 +473,7 @@ public abstract class TetrahedralSearchBase {
      * @param tetIndex the tetrahedral SFC index
      * @return center point of the tetrahedron  instead.
      */
-    protected static Point3f tetrahedronCenter(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    protected static Point3f tetrahedronCenter(TetreeKey<? extends TetreeKey> tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         return tetrahedronCenter(tet);
     }
@@ -502,7 +502,7 @@ public abstract class TetrahedralSearchBase {
      * @param tetIndex the tetrahedral SFC index
      * @return volume of the tetrahedron
      */
-    protected static double tetrahedronVolume(BaseTetreeKey<? extends BaseTetreeKey> tetIndex) {
+    protected static double tetrahedronVolume(TetreeKey<? extends TetreeKey> tetIndex) {
         var tet = Tet.tetrahedron(tetIndex);
         return tetrahedronVolume(tet);
     }
@@ -800,10 +800,10 @@ public abstract class TetrahedralSearchBase {
      * decomposition)
      */
     public static class SimplexGroup<Content> {
-        public final List<Simplex<Content>>                 simplicies;
-        public final Point3f                                groupCenter;
-        public final float                                  groupVolume;
-        public final BaseTetreeKey<? extends BaseTetreeKey> representativeIndex;
+        public final List<Simplex<Content>>         simplicies;
+        public final Point3f                        groupCenter;
+        public final float                          groupVolume;
+        public final TetreeKey<? extends TetreeKey> representativeIndex;
 
         public SimplexGroup(List<Simplex<Content>> simplicies) {
             if (simplicies.isEmpty()) {
@@ -832,7 +832,7 @@ public abstract class TetrahedralSearchBase {
             return (float) simplicies.stream().mapToDouble(simplex -> tetrahedronVolume(simplex.index())).sum();
         }
 
-        private static <Content> BaseTetreeKey<? extends BaseTetreeKey> selectRepresentativeIndex(
+        private static <Content> TetreeKey<? extends TetreeKey> selectRepresentativeIndex(
         List<Simplex<Content>> simplicies) {
             // Select the simplex closest to the group center
             Point3f groupCenter = computeGroupCenter(simplicies);

@@ -17,7 +17,7 @@ import org.junit.jupiter.api.DisplayName;
  */
 @DisplayName("Tetree Query Performance Tests")
 public class TetreeQueryPerformanceTest
-extends SpatialIndexQueryPerformanceTest<BaseTetreeKey<? extends BaseTetreeKey>, LongEntityID, String> {
+extends SpatialIndexQueryPerformanceTest<TetreeKey<? extends TetreeKey>, LongEntityID, String> {
 
     @Override
     protected SequentialLongIDGenerator createIDGenerator() {
@@ -25,8 +25,8 @@ extends SpatialIndexQueryPerformanceTest<BaseTetreeKey<? extends BaseTetreeKey>,
     }
 
     @Override
-    protected SpatialIndex<BaseTetreeKey<? extends BaseTetreeKey>, LongEntityID, String> createSpatialIndex(
-    VolumeBounds bounds, int maxDepth) {
+    protected SpatialIndex<TetreeKey<? extends TetreeKey>, LongEntityID, String> createSpatialIndex(VolumeBounds bounds,
+                                                                                                    int maxDepth) {
         return new Tetree<>(createIDGenerator());
     }
 

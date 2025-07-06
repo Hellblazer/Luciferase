@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 /**
  * Estimates the number of nodes that will be created for a given entity count and distribution. Based on the C++
  * implementation's EstimateNodeNumber algorithm.
@@ -27,7 +29,7 @@ public class NodeEstimator {
     private static int calculateMaxNodes(byte maxDepth) {
         // For octree: sum of 8^i for i from 0 to maxDepth
         // This is (8^(maxDepth+1) - 1) / 7
-        if (maxDepth >= 21) {
+        if (maxDepth >= MortonCurve.MAX_REFINEMENT_LEVEL) {
             return Integer.MAX_VALUE; // Avoid overflow
         }
 
@@ -41,7 +43,8 @@ public class NodeEstimator {
     public static int estimateFromSamples(int totalEntityCount, int sampleSize, int uniqueCellsInSample,
                                           int maxEntitiesPerNode) {
         if (sampleSize <= 0 || uniqueCellsInSample <= 0) {
-            return estimateNodeCount(totalEntityCount, maxEntitiesPerNode, (byte) 21, SpatialDistribution.UNIFORM);
+            return estimateNodeCount(totalEntityCount, maxEntitiesPerNode, MortonCurve.MAX_REFINEMENT_LEVEL,
+                                     SpatialDistribution.UNIFORM);
         }
 
         // Extrapolate from sample
@@ -68,7 +71,7 @@ public class NodeEstimator {
         long totalMemory = nodeCount * (baseMemoryPerNode + avgEntitiesPerNode * perEntityMemory);
 
         // Add overhead for sorted indices set
-        long sortedSetOverhead = nodeCount * 24; // TreeSet entry overhead
+        long sortedSetOverhead = nodeCount * 24L; // TreeSet entry overhead
 
         return totalMemory + sortedSetOverhead;
     }
@@ -107,7 +110,7 @@ public class NodeEstimator {
 
     private static float estimateTreeOverhead(int entityCount, int maxEntitiesPerNode, byte maxDepth) {
         // Estimate tree depth utilization
-        float avgEntitiesPerNode = (float) Math.min(entityCount / 10.0f, maxEntitiesPerNode * 0.7f);
+        float avgEntitiesPerNode = Math.min(entityCount / 10.0f, maxEntitiesPerNode * 0.7f);
         float depthUtilization = (float) (Math.log(entityCount / avgEntitiesPerNode) / Math.log(8));
         float normalizedDepth = Math.min(depthUtilization / maxDepth, 1.0f);
 
@@ -171,10 +174,10 @@ public class NodeEstimator {
                                                                                              0.1f);
         public static final SpatialDistribution SURFACE_THIN       = new SpatialDistribution(Type.SURFACE_ALIGNED, 0.3f,
                                                                                              1, 0.01f);
-        private final Type  type;
-        private final float clusteringFactor; // 0.0 = perfectly uniform, 1.0 = highly clustered
-        private final int   clusterCount;       // For CLUSTERED type
-        private final float surfaceThickness; // For SURFACE_ALIGNED type
+        private final       Type                type;
+        private final       float               clusteringFactor; // 0.0 = perfectly uniform, 1.0 = highly clustered
+        private final       int                 clusterCount;       // For CLUSTERED type
+        private final       float               surfaceThickness; // For SURFACE_ALIGNED type
 
         public SpatialDistribution(Type type) {
             this(type, 0.0f, 10, 0.1f);
@@ -202,6 +205,7 @@ public class NodeEstimator {
         public Type getType() {
             return type;
         }
+
         public enum Type {
             UNIFORM,        // Entities randomly distributed throughout space
             CLUSTERED,      // Entities grouped in clusters

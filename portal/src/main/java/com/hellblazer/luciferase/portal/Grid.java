@@ -24,18 +24,18 @@ import static java.lang.Math.*;
  * @author hal.hildebrand
  **/
 public abstract class Grid {
-    protected static final Point3D X_AXIS = new Point3D(1, 0, 0);
-    protected static final Point3D Y_AXIS = new Point3D(0, 1, 0);
-    protected static final Point3D Z_AXIS = new Point3D(0, 0, 1);
-    protected static final float MULTIPLICATIVE_ROOT_2 = (float) pow(2, -0.5);
-    protected static final float DIVIDE_ROOT_2 = (float) (1 / sqrt(2));
-    protected final double intervalX;
-    protected final double intervalY;
-    protected final double intervalZ;
-    protected final Point3D origin;
-    protected final Pair<Integer, Integer> xExtent;
-    protected final Pair<Integer, Integer> yExtent;
-    protected final Pair<Integer, Integer> zExtent;
+    protected static final Point3D                X_AXIS                = new Point3D(1, 0, 0);
+    protected static final Point3D                Y_AXIS                = new Point3D(0, 1, 0);
+    protected static final Point3D                Z_AXIS                = new Point3D(0, 0, 1);
+    protected static final float                  MULTIPLICATIVE_ROOT_2 = (float) pow(2, -0.5);
+    protected static final float                  DIVIDE_ROOT_2         = (float) (1 / sqrt(2));
+    protected final        double                 intervalX;
+    protected final        double                 intervalY;
+    protected final        double                 intervalZ;
+    protected final        Point3D                origin;
+    protected final        Pair<Integer, Integer> xExtent;
+    protected final        Pair<Integer, Integer> yExtent;
+    protected final        Pair<Integer, Integer> zExtent;
 
     public Grid(double intervalX, double intervalY, double intervalZ, Point3D origin, Pair<Integer, Integer> xExtent,
                 Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
@@ -48,7 +48,8 @@ public abstract class Grid {
         this.zExtent = zExtent;
     }
 
-    public static void addConeBaseSegments(Point3D centerBase, int divisions, Point3D top, float radius, ObservableFloatArray mesh) {
+    public static void addConeBaseSegments(Point3D centerBase, int divisions, Point3D top, float radius,
+                                           ObservableFloatArray mesh) {
         var diff = top.subtract(centerBase);
 
         // P1 & P2 represent vectors that form the line.
@@ -64,10 +65,10 @@ public abstract class Grid {
         var v3z = dz / d;
 
         // Store vector elements in an array
-        var p = new double[]{v3x, v3y, v3z};
+        var p = new double[] { v3x, v3y, v3z };
 
         // Store vector elements in second array, this time with absolute value
-        var p_abs = new double[]{abs(v3x), abs(v3y), abs(v3z)};
+        var p_abs = new double[] { abs(v3x), abs(v3y), abs(v3z) };
 
         // Find elements with MAX and MIN magnitudes
         var maxval = max(max(p_abs[0], p_abs[1]), p_abs[2]);
@@ -82,8 +83,11 @@ public abstract class Grid {
         // Loop through p_abs array to find which magnitudes are equal to maxval &
         // minval. Store their indexes for use later.
         for (var i = 0; i < 3; i++) {
-            if (p_abs[i] == maxval) maxindex = i;
-            else if (p_abs[i] == minval) minindex = i;
+            if (p_abs[i] == maxval) {
+                maxindex = i;
+            } else if (p_abs[i] == minval) {
+                minindex = i;
+            }
         }
 
         // Find the remaining index which has the medium magnitude
@@ -126,13 +130,6 @@ public abstract class Grid {
         }
     }
 
-    public static Point3D extend(Point3D from, Point3D to, float additional) {
-        var oldLength = to.distance(from);
-        var diff = to.subtract(from);
-        float lengthFraction = oldLength != 0.0f ? (float) ((additional + oldLength) / oldLength) : 0.0f;
-        return diff.multiply(lengthFraction);
-    }
-
     public static TriangleMesh cone(float radius, Point3D top, Point3D centerBase, int divisions) {
         var mesh = new TriangleMesh();
         // Start with the top of the cone, later we will build our faces from these
@@ -149,15 +146,23 @@ public abstract class Grid {
         // Must loop through each face, not including first and last points
         for (int i = 1; i <= divisions; i++) {
             mesh.getFaces().addAll( // use dummy texCoords, @TODO Upgrade face code to be real
-                    0, 0, i + 1, 0, i, 0, // Vertical Faces "wind" counter clockwise
-                    divisions + 2, 0, i, 0, i + 1, 0 // Base Faces "wind" clockwise
-            );
+                                    0, 0, i + 1, 0, i, 0, // Vertical Faces "wind" counter clockwise
+                                    divisions + 2, 0, i, 0, i + 1, 0 // Base Faces "wind" clockwise
+                                  );
         }
         return mesh;
     }
 
+    public static Point3D extend(Point3D from, Point3D to, float additional) {
+        var oldLength = to.distance(from);
+        var diff = to.subtract(from);
+        float lengthFraction = oldLength != 0.0f ? (float) ((additional + oldLength) / oldLength) : 0.0f;
+        return diff.multiply(lengthFraction);
+    }
+
     /**
      * Add the axis to the group.
+     *
      * @param grid
      * @param radius
      * @param height
@@ -196,11 +201,15 @@ public abstract class Grid {
         grid.getChildren().add(cone);
     }
 
-    abstract public Point3D xAxis();
-
-    abstract public Point3D yAxis();
-
-    abstract public Point3D zAxis();
+    /**
+     * Answer the Group containing the 3 axis representation of the grid's axes
+     *
+     * @param xaxis
+     * @param yaxis
+     * @param zaxis
+     * @return
+     */
+    public abstract Group construct(Material xaxis, Material yaxis, Material zaxis);
 
     /**
      * Answer the face connected neighbors in the Grid
@@ -211,42 +220,8 @@ public abstract class Grid {
     public abstract Point3i[] faceConnectedNeighbors(Point3i cell);
 
     /**
-     * Transform the supplied node to the X,Y,Z position in the native grid coordinates I, J, K
-     * @param i
-     * @param j
-     * @param k
-     * @param node
-     */
-    public abstract void position(int i, int j, int k, Node node);
-
-    /**
-     * Answer the Transform to the X,Y,Z position in the native grid coordinates I, J, K
-     * @param i
-     * @param j
-     * @param k
-     * @return
-     */
-    public abstract Transform positionTransform(int i, int j, int k);
-
-    /**
-     * Answer the 6 vertex connected neighbors in the RDB
-     *
-     * @param cell - the target cell
-     * @return the array of Point3i vertex neighbor coordinates of the cell
-     */
-    public abstract Point3i[] vertexConnectedNeighbors(Point3i cell);
-
-    /**
-     * Answer the Group containing the 3 axis representation of the grid's axes
-     * @param xaxis
-     * @param yaxis
-     * @param zaxis
-     * @return
-     */
-    public abstract Group construct(Material xaxis, Material yaxis, Material zaxis);
-
-    /**
      * Iterate over all cell coordinates in the grid
+     *
      * @param action
      */
     public void forEach(Consumer<? super Point3i> action) {
@@ -275,7 +250,6 @@ public abstract class Grid {
         return origin;
     }
 
-
     public Pair<Integer, Integer> getxExtent() {
         return xExtent;
     }
@@ -287,4 +261,38 @@ public abstract class Grid {
     public Pair<Integer, Integer> getzExtent() {
         return zExtent;
     }
+
+    /**
+     * Transform the supplied node to the X,Y,Z position in the native grid coordinates I, J, K
+     *
+     * @param i
+     * @param j
+     * @param k
+     * @param node
+     */
+    public abstract void position(int i, int j, int k, Node node);
+
+    /**
+     * Answer the Transform to the X,Y,Z position in the native grid coordinates I, J, K
+     *
+     * @param i
+     * @param j
+     * @param k
+     * @return
+     */
+    public abstract Transform positionTransform(int i, int j, int k);
+
+    /**
+     * Answer the 6 vertex connected neighbors in the RDB
+     *
+     * @param cell - the target cell
+     * @return the array of Point3i vertex neighbor coordinates of the cell
+     */
+    public abstract Point3i[] vertexConnectedNeighbors(Point3i cell);
+
+    abstract public Point3D xAxis();
+
+    abstract public Point3D yAxis();
+
+    abstract public Point3D zAxis();
 }
