@@ -169,12 +169,21 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
         TetreeValidationUtils.validatePositiveCoordinates(point);
 
         var tet = locate(new Point3f(point.x, point.y, point.z), level);
+        if (tet == null) {
+            return null; // Point is outside the valid domain
+        }
+        
         var key = tet.tmIndex();
         TetreeNodeImpl<ID> node = spatialIndex.get(key);
+        
+        // Return the enclosing tetrahedron even if no node exists yet
+        // This allows us to find the spatial location before any entities are inserted
         if (node != null && !node.isEmpty()) {
             return new SpatialNode<>(key, new HashSet<>(node.getEntityIds()));
+        } else {
+            // Return an empty node for the enclosing tetrahedron
+            return new SpatialNode<>(key, new HashSet<>());
         }
-        return null;
     }
 
     // entitiesInRegion is now implemented in AbstractSpatialIndex

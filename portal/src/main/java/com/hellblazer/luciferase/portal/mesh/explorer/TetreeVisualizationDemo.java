@@ -174,7 +174,8 @@ public class TetreeVisualizationDemo extends Application {
         // At level 5, cell size is 2^15 = 32768
         // This gives us much larger, more visible tetrahedra
         byte level = 5;
-        float maxCoord = (float) Math.pow(2, MortonCurve.MAX_REFINEMENT_LEVEL);
+        // Use TetreeKey.MAX_REFINEMENT_LEVEL (20) not MortonCurve's (21)
+        float maxCoord = (float) Math.pow(2, TetreeKey.MAX_REFINEMENT_LEVEL);
 
         // Spread entities across the middle portion of the space
         // This ensures they're visible and not at the edges
@@ -288,8 +289,8 @@ public class TetreeVisualizationDemo extends Application {
         Group axesGroup = new Group();
 
         // Axes in natural coordinates (will be scaled by scene transform)
-        // Root tet edge length is 2^20, so make axes 2^21 for visibility
-        double axisLength = 2097152; // 2^21
+        // Root tet edge length is 2^20, so make axes slightly longer for visibility
+        double axisLength = (1 << TetreeKey.MAX_REFINEMENT_LEVEL) * 1.1; // 2^20 * 1.1
         double axisRadius = 8192;    // 2^13
 
         // X axis - Red

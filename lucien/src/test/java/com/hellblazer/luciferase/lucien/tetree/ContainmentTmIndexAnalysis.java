@@ -57,8 +57,10 @@ public class ContainmentTmIndexAnalysis {
         // 2. The type at each level
         
         // Create tets with same coordinates but different types
+        // At level 3, cell size is 2^17 = 262144
+        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - 3);
         for (byte type = 0; type <= 5; type++) {
-            Tet tet = new Tet(32, 32, 32, (byte) 3, type);
+            Tet tet = new Tet(cellSize, cellSize, cellSize, (byte) 3, type);
             TetreeKey<?> tmIndex = tet.tmIndex();
             
             System.out.println("Type " + type + ": tm-index = " + tmIndex);
@@ -79,12 +81,14 @@ public class ContainmentTmIndexAnalysis {
     public void analyzeContainmentImpact() {
         System.out.println("=== Containment Impact Analysis ===\n");
         
-        // Create a parent tet
+        // Create a parent tet at level 2 with proper alignment
+        // At level 2, cell size is 2^18 = 262144
+        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - 2);
         Tet parent = new Tet(0, 0, 0, (byte) 2, (byte) 0);
         
         // Test point near the differing V3 vertex
-        // At level 2, h = 32
-        Point3f testPoint = new Point3f(30, 30, 30);
+        // At level 2, h = cellSize = 262144
+        Point3f testPoint = new Point3f(cellSize * 0.9f, cellSize * 0.9f, cellSize * 0.9f);
         
         System.out.println("Parent: " + parent);
         System.out.println("Test point: " + testPoint);
@@ -127,7 +131,10 @@ public class ContainmentTmIndexAnalysis {
         // 2. The level
         // 3. The type hierarchy
         
-        Tet tet = new Tet(64, 32, 96, (byte) 4, (byte) 3);
+        // At level 4, cell size is 2^16 = 65536
+        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - 4);
+        // Create a properly aligned tet at level 4
+        Tet tet = new Tet(cellSize, cellSize, cellSize, (byte) 4, (byte) 3);
         TetreeKey<?> tmIndex = tet.tmIndex();
         
         System.out.println("Tet: " + tet);
