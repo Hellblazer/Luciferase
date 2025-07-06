@@ -87,6 +87,14 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private final DoubleProperty      rootScale              = new SimpleDoubleProperty(0.001);
     // Display mode property
     private final BooleanProperty     showFilledFaces        = new SimpleBooleanProperty(true);
+    // Face rendering mode
+    public enum FaceRenderMode {
+        ALL_NODES,           // Show faces for all nodes with entities
+        LEAF_NODES_ONLY,     // Only show faces for leaf nodes
+        LARGEST_NODES_ONLY   // Only show faces for the largest node at each spatial location
+    }
+    private FaceRenderMode faceRenderMode = FaceRenderMode.LEAF_NODES_ONLY;
+    private int currentRefinementLevel = 1; // Track current refinement level for decomposition views
     // Scene scale transform
     private final Scale               sceneScale             = new Scale();
     protected     long                lastUpdateTime         = 0;
@@ -100,6 +108,12 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private       boolean             showPerformanceOverlay = false;
     // Snapshot export
     private       File                lastSnapshotDirectory  = null;
+    
+    // Rendering statistics for validation
+    private       int                 transformBasedWireframeCount = 0;
+    private       int                 traditionalWireframeCount = 0;
+    private       int                 transformBasedMeshCount = 0;
+    private       int                 traditionalMeshCount = 0;
 
     /**
      * Creates a new Tetree visualization.
@@ -517,24 +531,20 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * @param refinementLevel The number of levels to refine (0 = root only, 1 = show 8 children, 2 = show 64 grandchildren, etc.)
      */
     public void showS0S5Decomposition(boolean[] childVisibility, int refinementLevel) {
-        // Clear existing visualization
+        // Clear existing visualization and reset stats
         nodeGroup.getChildren().clear();
+        resetRenderingStats();
+        currentRefinementLevel = refinementLevel;
 
         // Create root S0 tetrahedron using standard coordinates
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        
+        // Create reference objects for transform-based rendering
+        TriangleMesh referenceMesh = createS0S5ReferenceMesh();
+        Map<String, Cylinder> referenceEdges = createReferenceEdges();
 
-        // Show the root tetrahedron itself
-        Group rootWireframe = createWireframeTetrahedron(rootTet, 0);  // Uses coordinates()
-        nodeGroup.getChildren().add(rootWireframe);
-
-        if (showFilledFaces.get()) {
-            MeshView rootFace = createTransparentTetrahedron(rootTet, 0);  // Uses coordinates()
-            PhongMaterial rootMaterial = new PhongMaterial(Color.DARKRED.deriveColor(0, 1, 1, 0.3));
-            rootMaterial.setSpecularColor(Color.WHITE);
-            rootFace.setMaterial(rootMaterial);
-            rootFace.setOpacity(0.2);
-            nodeGroup.getChildren().add(rootFace);
-        }
+        // Show the root tetrahedron using transform-based rendering
+        showTransformedS0S5Tetrahedron(rootTet, 0, referenceMesh, referenceEdges);
 
         // Add label
         Text label = new Text(String.format("S0-S5 Decomposition (Level %d)", refinementLevel));
@@ -546,8 +556,11 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         
         // Show refinement
         if (refinementLevel > 0) {
-            showS0S5RefinementRecursive(rootTet, 0, refinementLevel, childVisibility);
+            showS0S5RefinementRecursiveTransformed(rootTet, 0, refinementLevel, childVisibility, referenceMesh, referenceEdges);
         }
+        
+        // Print validation stats
+        printRenderingStats();
     }
     
     /**
@@ -585,8 +598,10 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * @param useTransformBased If true, use transform-based rendering for better performance
      */
     public void showCharacteristicDecomposition(boolean[] childVisibility, int refinementLevel, boolean useTransformBased) {
-        // Clear existing visualization
+        // Clear existing visualization and reset stats
         nodeGroup.getChildren().clear();
+        resetRenderingStats();
+        currentRefinementLevel = refinementLevel;
 
         // Create root tetrahedron and show its subdivision
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
@@ -600,7 +615,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Group rootWireframe = createWireframeTetrahedronWithCoords(rootTet, 0, true);
             nodeGroup.getChildren().add(rootWireframe);
 
-            if (showFilledFaces.get()) {
+            if (showFilledFaces.get() && shouldShowFaceForDecomposition(rootTet, 0, currentRefinementLevel)) {
                 MeshView rootFace = createTransparentTetrahedronWithCoords(rootTet, 0, true);
                 PhongMaterial rootMaterial = new PhongMaterial(Color.DARKGRAY.deriveColor(0, 1, 1, 0.3));
                 rootMaterial.setSpecularColor(Color.WHITE);
@@ -622,6 +637,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                 showSubdivisionRefinementRecursive(rootTet, 0, refinementLevel, childVisibility);
             }
         }
+        
+        // Print validation stats
+        printRenderingStats();
     }
 
     /**
@@ -629,6 +647,21 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     public BooleanProperty showFilledFacesProperty() {
         return showFilledFaces;
+    }
+    
+    /**
+     * Get the current face render mode.
+     */
+    public FaceRenderMode getFaceRenderMode() {
+        return faceRenderMode;
+    }
+    
+    /**
+     * Set the face render mode.
+     */
+    public void setFaceRenderMode(FaceRenderMode mode) {
+        this.faceRenderMode = mode;
+        updateVisualization();
     }
 
     /**
@@ -810,6 +843,76 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     /**
+     * Determine if we should show a face for this node based on the render mode.
+     */
+    private boolean shouldShowFaceForNode(SpatialNode<TetreeKey<? extends TetreeKey>, ID> node) {
+        switch (faceRenderMode) {
+            case ALL_NODES:
+                return true;
+                
+            case LEAF_NODES_ONLY:
+                // Check if this node has any children by looking for nodes at deeper levels
+                TetreeKey<? extends TetreeKey> key = node.sfcIndex();
+                Tet tet = tetreeKeyToTet(key);
+                int currentLevel = getLevelForKey(key);
+                
+                // Check all nodes to see if any are children of this node
+                for (var otherNode : tetree.nodes().toList()) {
+                    TetreeKey<? extends TetreeKey> otherKey = otherNode.sfcIndex();
+                    int otherLevel = getLevelForKey(otherKey);
+                    
+                    // If the other node is at a deeper level and within our bounds, it's a child
+                    if (otherLevel > currentLevel && !otherNode.entityIds().isEmpty()) {
+                        Tet otherTet = tetreeKeyToTet(otherKey);
+                        // Check if otherTet is within our tet's bounds
+                        Point3i[] ourCoords = tet.coordinates();
+                        Point3i otherAnchor = new Point3i(otherTet.x, otherTet.y, otherTet.z);
+                        
+                        // Simple containment check - is the other tet's anchor within our bounds?
+                        if (otherAnchor.x >= ourCoords[0].x && otherAnchor.y >= ourCoords[0].y && 
+                            otherAnchor.z >= ourCoords[0].z &&
+                            otherAnchor.x < ourCoords[3].x && otherAnchor.y < ourCoords[3].y && 
+                            otherAnchor.z < ourCoords[3].z) {
+                            return false; // Has a child with entities, not a leaf
+                        }
+                    }
+                }
+                return true; // No children with entities, this is a leaf
+                
+            case LARGEST_NODES_ONLY:
+                // Check if any parent contains entities by checking all nodes
+                key = node.sfcIndex();
+                tet = tetreeKeyToTet(key);
+                currentLevel = getLevelForKey(key);
+                Point3i myAnchor = new Point3i(tet.x, tet.y, tet.z);
+                
+                // Check all nodes at shallower levels to see if any contain us
+                for (var otherNode : tetree.nodes().toList()) {
+                    TetreeKey<? extends TetreeKey> otherKey = otherNode.sfcIndex();
+                    int otherLevel = getLevelForKey(otherKey);
+                    
+                    // If the other node is at a shallower level and has entities
+                    if (otherLevel < currentLevel && !otherNode.entityIds().isEmpty()) {
+                        Tet otherTet = tetreeKeyToTet(otherKey);
+                        Point3i[] parentCoords = otherTet.coordinates();
+                        
+                        // Check if we're within the parent's bounds
+                        if (myAnchor.x >= parentCoords[0].x && myAnchor.y >= parentCoords[0].y && 
+                            myAnchor.z >= parentCoords[0].z &&
+                            myAnchor.x < parentCoords[3].x && myAnchor.y < parentCoords[3].y && 
+                            myAnchor.z < parentCoords[3].z) {
+                            return false; // Parent has entities, don't show this face
+                        }
+                    }
+                }
+                return true; // No parent with entities, show this face
+                
+            default:
+                return true;
+        }
+    }
+    
+    /**
      * Create visual representation for a tetrahedron.
      */
     private Node createTetVisual(SpatialNode<TetreeKey<? extends TetreeKey>, ID> node) {
@@ -821,7 +924,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
         // Determine if we should show filled faces for this node
         boolean showFilled = false;
-        if (!node.entityIds().isEmpty() && showFilledFaces.get()) {
+        if (!node.entityIds().isEmpty() && showFilledFaces.get() && shouldShowFaceForNode(node)) {
             showFilled = true;
             MeshView face = createTransparentTetrahedron(tet, getLevelForKey(key));
             tetGroup.getChildren().add(face);
@@ -931,7 +1034,11 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Apply material based on type and level
         Material material = getMaterialForTet(tet, level);
         meshView.setMaterial(material);
-        meshView.setOpacity(nodeOpacityProperty().get());
+        
+        // Adjust opacity based on level for better visibility
+        double baseOpacity = nodeOpacityProperty().get();
+        double levelFactor = 1.0 - (level * 0.1); // Reduce opacity by 10% per level
+        meshView.setOpacity(Math.max(0.1, baseOpacity * levelFactor));
 
         // Enable depth buffer to reduce z-fighting
         meshView.setDepthTest(javafx.scene.DepthTest.ENABLE);
@@ -1661,6 +1768,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Shared implementation for both coordinate systems.
      */
     private Group createWireframeTetrahedronFromVertices(Tet tet, Point3i[] tetVertices, int level) {
+        // Increment counter for validation
+        traditionalWireframeCount++;
+        
         Group edges = new Group();
         Point3f[] vertices = new Point3f[4];
 
@@ -1830,7 +1940,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Group wireframe = createWireframeTetrahedron(child, childLevel);
             nodeGroup.getChildren().add(wireframe);
             
-            if (showFilledFaces.get()) {
+            if (showFilledFaces.get() && shouldShowFaceForDecomposition(child, childLevel, currentRefinementLevel)) {
                 MeshView face = createTransparentTetrahedron(child, childLevel);
                 
                 // Apply color based on level and index
@@ -1873,7 +1983,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Group wireframe = createWireframeTetrahedronWithCoords(child, childLevel, true);
             nodeGroup.getChildren().add(wireframe);
             
-            if (showFilledFaces.get()) {
+            if (showFilledFaces.get() && shouldShowFaceForDecomposition(child, childLevel, currentRefinementLevel)) {
                 MeshView face = createTransparentTetrahedronWithCoords(child, childLevel, true);
                 
                 // Apply color based on level and index  
@@ -1931,8 +2041,14 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Show characteristic decomposition using transform-based rendering.
      */
     private void showCharacteristicDecompositionTransformBased(Tet rootTet, boolean[] childVisibility, int refinementLevel) {
+        // Reset stats
+        resetRenderingStats();
+        
         // Create a single reference mesh for subdivision tetrahedra
         TriangleMesh referenceMesh = createSubdivisionReferenceMesh();
+        
+        // Create reference cylinders for edges (one per edge orientation)
+        Map<String, Cylinder> referenceEdges = createReferenceEdges();
         
         // Add label
         Text label = new Text(String.format("Subdivision Geometry - Transform Based (Level %d)", refinementLevel));
@@ -1943,12 +2059,15 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         nodeGroup.getChildren().add(label);
         
         // Show root tetrahedron
-        showTransformedTetrahedron(rootTet, 0, referenceMesh);
+        showTransformedTetrahedron(rootTet, 0, referenceMesh, referenceEdges);
         
         // Add refinement levels
         if (refinementLevel > 0) {
-            showSubdivisionRefinementTransformBased(rootTet, 0, refinementLevel, childVisibility, referenceMesh);
+            showSubdivisionRefinementTransformBased(rootTet, 0, refinementLevel, childVisibility, referenceMesh, referenceEdges);
         }
+        
+        // Print validation stats
+        printRenderingStats();
     }
     
     /**
@@ -2014,7 +2133,8 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Recursively show subdivision refinement using transforms.
      */
     private void showSubdivisionRefinementTransformBased(Tet parent, int currentLevel, int targetLevel, 
-                                                         boolean[] childVisibility, TriangleMesh referenceMesh) {
+                                                         boolean[] childVisibility, TriangleMesh referenceMesh,
+                                                         Map<String, Cylinder> referenceEdges) {
         if (currentLevel >= targetLevel) {
             return;
         }
@@ -2033,29 +2153,30 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Tet child = children[i];
             
             // Show the child tetrahedron (handles both wireframe and filled)
-            showTransformedTetrahedron(child, childLevel, referenceMesh);
+            showTransformedTetrahedron(child, childLevel, referenceMesh, referenceEdges);
             
             // Recurse to next level
-            showSubdivisionRefinementTransformBased(child, childLevel, targetLevel, null, referenceMesh);
+            showSubdivisionRefinementTransformBased(child, childLevel, targetLevel, null, referenceMesh, referenceEdges);
         }
     }
     
     /**
      * Show a tetrahedron with transform-based rendering, handling both wireframe and filled modes.
      */
-    private void showTransformedTetrahedron(Tet tet, int level, TriangleMesh referenceMesh) {
+    private void showTransformedTetrahedron(Tet tet, int level, TriangleMesh referenceMesh, Map<String, Cylinder> referenceEdges) {
         // Get subdivision coordinates
         Point3i[] coords = tet.subdivisionCoordinates();
         
         // Show wireframe if node bounds are enabled
         if (showNodeBoundsProperty().get()) {
-            // Create wireframe using transformed cylinders
-            createTransformedWireframe(coords, level);
+            // Create wireframe using transformed reference cylinders
+            createTransformedWireframe(coords, level, referenceEdges);
         }
         
-        // Show filled face if enabled
-        if (showFilledFaces.get()) {
+        // Show filled face if enabled and should show for this level
+        if (showFilledFaces.get() && shouldShowFaceForDecomposition(tet, level, currentRefinementLevel)) {
             MeshView mesh = new MeshView(referenceMesh);
+            transformBasedMeshCount++;
             
             // Apply color based on level
             Color color = Color.hsb((level * 120) % 360, 0.8, 0.8);
@@ -2072,60 +2193,291 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
     
     /**
-     * Create wireframe edges using transformed cylinders.
+     * Create wireframe edges using transformed reference cylinders.
+     * This is the most efficient approach - creates cylinders as JavaFX shapes that share geometry.
      */
-    private void createTransformedWireframe(Point3i[] tetVertices, int level) {
+    private void createTransformedWireframe(Point3i[] tetVertices, int level, Map<String, Cylinder> referenceEdges) {
+        // Increment counter for validation
+        transformBasedWireframeCount++;
+        
         // Convert to Point3f for easier calculations
         Point3f[] vertices = new Point3f[4];
         for (int i = 0; i < 4; i++) {
             vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
         }
         
-        // Edge indices
+        // Edge indices for a tetrahedron
         int[][] edgeIndices = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
         
-        // Material for edges
+        // Material for edges based on level
         PhongMaterial edgeMaterial = new PhongMaterial(level == 0 ? Color.BLACK : Color.DARKGRAY);
         edgeMaterial.setSpecularColor(Color.WHITE);
         edgeMaterial.setSpecularPower(32);
         
-        // Edge radius based on level
-        double radius = Math.max(500, 2000 - level * 100);
+        // Get the reference cylinder
+        Cylinder refCylinder = referenceEdges.get("edge");
         
-        // Create cylinders for each edge
+        // Create transformed instances for each edge
         for (int[] edge : edgeIndices) {
             Point3f p1 = vertices[edge[0]];
             Point3f p2 = vertices[edge[1]];
             
-            // Calculate edge midpoint and length
-            double dx = p2.x - p1.x;
-            double dy = p2.y - p1.y;
-            double dz = p2.z - p1.z;
-            double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            // Create a new cylinder that shares the same base properties
+            // Note: JavaFX Cylinder doesn't support true geometry sharing like MeshView,
+            // but we still benefit from transform-based approach
+            Cylinder cylinder = new Cylinder(refCylinder.getRadius(), refCylinder.getHeight());
+            cylinder.setMaterial(edgeMaterial);
             
-            if (length > 0) {
-                // Create cylinder for edge
-                Cylinder cylinder = new Cylinder(radius, length);
-                cylinder.setMaterial(edgeMaterial);
+            // Create transform for this edge
+            Affine edgeTransform = createEdgeTransform(p1, p2, level);
+            cylinder.getTransforms().add(edgeTransform);
+            
+            nodeGroup.getChildren().add(cylinder);
+        }
+    }
+    
+    /**
+     * Create reference cylinders for edges.
+     * We use a unit cylinder that can be transformed to any edge.
+     */
+    private Map<String, Cylinder> createReferenceEdges() {
+        Map<String, Cylinder> edges = new HashMap<>();
+        
+        // Create a unit cylinder (height=1, radius will be scaled)
+        Cylinder unitCylinder = new Cylinder(1.0, 1.0);
+        edges.put("edge", unitCylinder);
+        
+        return edges;
+    }
+    
+    /**
+     * Create an affine transform to position and orient a cylinder between two points.
+     */
+    private Affine createEdgeTransform(Point3f p1, Point3f p2, int level) {
+        Affine transform = new Affine();
+        
+        // Calculate edge vector and length
+        double dx = p2.x - p1.x;
+        double dy = p2.y - p1.y;
+        double dz = p2.z - p1.z;
+        double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        
+        if (length == 0) return transform;
+        
+        // Calculate radius based on level
+        double radius = Math.max(500, 2000 - level * 100);
+        
+        // Normalize edge vector
+        double nx = dx / length;
+        double ny = dy / length;
+        double nz = dz / length;
+        
+        // Calculate rotation from Y-axis to edge direction
+        // The cylinder's default orientation is along Y-axis
+        Point3D yAxis = new Point3D(0, 1, 0);
+        Point3D edgeDir = new Point3D(nx, ny, nz);
+        
+        // Handle special case when edge is parallel to Y-axis
+        if (Math.abs(ny) > 0.9999) {
+            // Edge is nearly vertical
+            transform.setTx((p1.x + p2.x) / 2.0);
+            transform.setTy((p1.y + p2.y) / 2.0);
+            transform.setTz((p1.z + p2.z) / 2.0);
+            transform.setMxx(radius);
+            transform.setMyy(length * (ny > 0 ? 1 : -1));
+            transform.setMzz(radius);
+        } else {
+            // General case: create rotation matrix
+            Point3D rotAxis = yAxis.crossProduct(edgeDir).normalize();
+            double angle = Math.acos(yAxis.dotProduct(edgeDir));
+            
+            // Rodrigues' rotation formula components
+            double c = Math.cos(angle);
+            double s = Math.sin(angle);
+            double t = 1 - c;
+            double x = rotAxis.getX();
+            double y = rotAxis.getY();
+            double z = rotAxis.getZ();
+            
+            // Build rotation matrix with scaling
+            transform.setMxx(radius * (t * x * x + c));
+            transform.setMxy(length * (t * x * y - s * z));
+            transform.setMxz(radius * (t * x * z + s * y));
+            
+            transform.setMyx(radius * (t * x * y + s * z));
+            transform.setMyy(length * (t * y * y + c));
+            transform.setMyz(radius * (t * y * z - s * x));
+            
+            transform.setMzx(radius * (t * x * z - s * y));
+            transform.setMzy(length * (t * y * z + s * x));
+            transform.setMzz(radius * (t * z * z + c));
+            
+            // Set translation to midpoint
+            transform.setTx((p1.x + p2.x) / 2.0);
+            transform.setTy((p1.y + p2.y) / 2.0);
+            transform.setTz((p1.z + p2.z) / 2.0);
+        }
+        
+        return transform;
+    }
+    
+    /**
+     * Reset rendering statistics counters.
+     */
+    public void resetRenderingStats() {
+        transformBasedWireframeCount = 0;
+        traditionalWireframeCount = 0;
+        transformBasedMeshCount = 0;
+        traditionalMeshCount = 0;
+    }
+    
+    /**
+     * Get a report of rendering statistics.
+     */
+    public String getRenderingStatsReport() {
+        StringBuilder report = new StringBuilder();
+        report.append("=== Rendering Method Validation ===\n");
+        report.append("Transform-based rendering:\n");
+        report.append(String.format("  - Wireframes: %d\n", transformBasedWireframeCount));
+        report.append(String.format("  - Meshes: %d\n", transformBasedMeshCount));
+        report.append("Traditional rendering:\n");
+        report.append(String.format("  - Wireframes: %d\n", traditionalWireframeCount));
+        report.append(String.format("  - Meshes: %d\n", traditionalMeshCount));
+        
+        // Validation
+        boolean allWireframesTransformBased = traditionalWireframeCount == 0 && transformBasedWireframeCount > 0;
+        report.append("\nValidation:\n");
+        report.append(String.format("  - All wireframes using transforms: %s\n", 
+                                    allWireframesTransformBased ? "YES ✓" : "NO ✗"));
+        
+        return report.toString();
+    }
+    
+    /**
+     * Print rendering statistics to console.
+     */
+    public void printRenderingStats() {
+        System.out.println(getRenderingStatsReport());
+    }
+    
+    
+    /**
+     * Create a reference mesh for S0-S5 tetrahedra.
+     */
+    private TriangleMesh createS0S5ReferenceMesh() {
+        // For now, reuse the same unit tetrahedron
+        return createSubdivisionReferenceMesh();
+    }
+    
+    /**
+     * Check if we should show a face for decomposition visualization based on render mode.
+     */
+    private boolean shouldShowFaceForDecomposition(Tet tet, int level, int maxRefinementLevel) {
+        switch (faceRenderMode) {
+            case ALL_NODES:
+                return true;
                 
-                // Position at midpoint
-                cylinder.setTranslateX((p1.x + p2.x) / 2.0);
-                cylinder.setTranslateY((p1.y + p2.y) / 2.0);
-                cylinder.setTranslateZ((p1.z + p2.z) / 2.0);
+            case LEAF_NODES_ONLY:
+                // For decomposition, a leaf is at the max refinement level
+                return level >= maxRefinementLevel;
                 
-                // Calculate rotation to align cylinder with edge
-                Point3D yAxis = new Point3D(0, 1, 0);
-                Point3D edgeVector = new Point3D(dx, dy, dz).normalize();
-                Point3D rotationAxis = yAxis.crossProduct(edgeVector);
-                double angle = Math.toDegrees(Math.acos(yAxis.dotProduct(edgeVector)));
+            case LARGEST_NODES_ONLY:
+                // Only show faces at level 0 (root)
+                return level == 0;
                 
-                if (rotationAxis.magnitude() > 0) {
-                    cylinder.setRotationAxis(rotationAxis);
-                    cylinder.setRotate(angle);
-                }
-                
-                nodeGroup.getChildren().add(cylinder);
+            default:
+                return true;
+        }
+    }
+    
+    /**
+     * Show an S0-S5 tetrahedron with transform-based rendering.
+     */
+    private void showTransformedS0S5Tetrahedron(Tet tet, int level, TriangleMesh referenceMesh, Map<String, Cylinder> referenceEdges) {
+        // Get S0-S5 coordinates
+        Point3i[] coords = tet.coordinates();
+        
+        // Show wireframe if node bounds are enabled
+        if (showNodeBoundsProperty().get()) {
+            // Create wireframe using transformed reference cylinders
+            createTransformedWireframe(coords, level, referenceEdges);
+        }
+        
+        // Show filled face if enabled and should show for this level
+        if (showFilledFaces.get() && shouldShowFaceForDecomposition(tet, level, currentRefinementLevel)) {
+            MeshView mesh = new MeshView(referenceMesh);
+            transformBasedMeshCount++;
+            
+            // Apply color based on level
+            Color color = level == 0 ? Color.DARKRED : Color.hsb((level * 120) % 360, 0.7, 0.8);
+            PhongMaterial material = new PhongMaterial(color);
+            material.setSpecularColor(color.brighter());
+            mesh.setMaterial(material);
+            mesh.setOpacity(0.3 + level * 0.1);
+            
+            // Apply transform for S0-S5 coordinates
+            Affine transform = calculateS0S5Transform(tet);
+            mesh.getTransforms().add(transform);
+            nodeGroup.getChildren().add(mesh);
+        }
+    }
+    
+    /**
+     * Calculate transform for S0-S5 coordinates.
+     */
+    private Affine calculateS0S5Transform(Tet tet) {
+        Affine transform = new Affine();
+        
+        // Get S0-S5 coordinates
+        Point3i[] coords = tet.coordinates();
+        
+        // Calculate basis vectors from the coordinates
+        double e1x = coords[1].x - coords[0].x;
+        double e1y = coords[1].y - coords[0].y;
+        double e1z = coords[1].z - coords[0].z;
+        
+        double e2x = coords[2].x - coords[0].x;
+        double e2y = coords[2].y - coords[0].y;
+        double e2z = coords[2].z - coords[0].z;
+        
+        double e3x = coords[3].x - coords[0].x;
+        double e3y = coords[3].y - coords[0].y;
+        double e3z = coords[3].z - coords[0].z;
+        
+        // Set transform matrix
+        transform.setMxx(e1x); transform.setMxy(e2x); transform.setMxz(e3x); transform.setTx(coords[0].x);
+        transform.setMyx(e1y); transform.setMyy(e2y); transform.setMyz(e3y); transform.setTy(coords[0].y);
+        transform.setMzx(e1z); transform.setMzy(e2z); transform.setMzz(e3z); transform.setTz(coords[0].z);
+        
+        return transform;
+    }
+    
+    /**
+     * Recursively show S0-S5 refinement using transforms.
+     */
+    private void showS0S5RefinementRecursiveTransformed(Tet parent, int currentLevel, int targetLevel, 
+                                                        boolean[] childVisibility, TriangleMesh referenceMesh,
+                                                        Map<String, Cylinder> referenceEdges) {
+        if (currentLevel >= targetLevel) {
+            return;
+        }
+        
+        // Get children at the next level
+        for (int i = 0; i < 8; i++) {
+            // Check visibility if this is the first level and array provided
+            if (currentLevel == 0 && childVisibility != null && i < childVisibility.length && !childVisibility[i]) {
+                continue;
             }
+            
+            // Create child using standard child() method
+            Tet child = parent.child(i);
+            int childLevel = currentLevel + 1;
+            
+            // Show the child tetrahedron using transforms
+            showTransformedS0S5Tetrahedron(child, childLevel, referenceMesh, referenceEdges);
+            
+            // Recurse to next level
+            showS0S5RefinementRecursiveTransformed(child, childLevel, targetLevel, null, referenceMesh, referenceEdges);
         }
     }
 }

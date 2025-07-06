@@ -44,6 +44,7 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -169,6 +170,8 @@ public class TetreeVisualizationDemo extends Application {
         scene3D.requestFocus();
     }
 
+    private boolean useSubdivisionBounds = true; // Flag to control which bounds to use
+    
     private void addRandomEntities(int count) {
         Random random = new Random();
         // Insert entities at a coarser level (5) for better visibility
@@ -179,17 +182,39 @@ public class TetreeVisualizationDemo extends Application {
 
         System.out.println("\n=== Inserting " + count + " entities at level " + level + " ===");
         
-        // Create root S0 tetrahedron to validate points
-        Tet rootS0 = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        // Create root tetrahedron
+        Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        Point3i[] coords;
+        String boundsType;
+        
+        if (useSubdivisionBounds) {
+            coords = rootTet.subdivisionCoordinates();
+            boundsType = "subdivision";
+        } else {
+            coords = rootTet.coordinates();
+            boundsType = "S0-S5";
+        }
+        
+        // Convert to float for barycentric calculation
+        Point3f v0 = new Point3f(coords[0].x, coords[0].y, coords[0].z);
+        Point3f v1 = new Point3f(coords[1].x, coords[1].y, coords[1].z);
+        Point3f v2 = new Point3f(coords[2].x, coords[2].y, coords[2].z);
+        Point3f v3 = new Point3f(coords[3].x, coords[3].y, coords[3].z);
+        
+        System.out.println("Using " + boundsType + " tetrahedron bounds:");
+        System.out.println("  V0: " + v0);
+        System.out.println("  V1: " + v1);
+        System.out.println("  V2: " + v2);
+        System.out.println("  V3: " + v3);
+        
         int inserted = 0;
         int attempts = 0;
         
-        // Generate points that are guaranteed to be within the S0 tetrahedron
+        // Generate points that are guaranteed to be within the subdivision tetrahedron
         while (inserted < count && attempts < count * 10) {
             attempts++;
             
-            // Use barycentric coordinates to generate points inside S0
-            // S0 vertices: (0,0,0), (L,0,0), (L,L,0), (L,L,L)
+            // Use barycentric coordinates to generate points inside subdivision tetrahedron
             float r1 = random.nextFloat();
             float r2 = random.nextFloat();
             float r3 = random.nextFloat();
@@ -202,17 +227,15 @@ public class TetreeVisualizationDemo extends Application {
             r3 /= sum;
             r4 /= sum;
             
-            // Compute point using barycentric coordinates
-            float x = r2 * L + r3 * L + r4 * L;
-            float y = r3 * L + r4 * L;
-            float z = r4 * L;
+            // Compute point using barycentric coordinates with subdivision vertices
+            float x = r1 * v0.x + r2 * v1.x + r3 * v2.x + r4 * v3.x;
+            float y = r1 * v0.y + r2 * v1.y + r3 * v2.y + r4 * v3.y;
+            float z = r1 * v0.z + r2 * v1.z + r3 * v2.z + r4 * v3.z;
             
             Point3f position = new Point3f(x, y, z);
             
-            // Verify it's actually contained (should always be true)
-            if (!rootS0.contains(position)) {
-                continue;
-            }
+            // For subdivision geometry, we don't need containment check as barycentric 
+            // coordinates guarantee the point is inside the tetrahedron
 
             // Debug: find the enclosing tetrahedron before insertion
             var enclosingNode = tetree.enclosing(new javax.vecmath.Point3i((int) x, (int) y, (int) z), level);
@@ -361,8 +384,16 @@ public class TetreeVisualizationDemo extends Application {
             entityIds.forEach(tetree::removeEntity);
             visualization.updateVisualization();
         });
+        
+        CheckBox useSubdivisionBoundsCheck = new CheckBox("Use Subdivision Bounds");
+        useSubdivisionBoundsCheck.setSelected(useSubdivisionBounds);
+        useSubdivisionBoundsCheck.setTooltip(new Tooltip("When checked, entities are generated within subdivision tetrahedron bounds\nWhen unchecked, entities use S0-S5 tetrahedron bounds"));
+        useSubdivisionBoundsCheck.setOnAction(_ -> {
+            useSubdivisionBounds = useSubdivisionBoundsCheck.isSelected();
+            System.out.println("Entity generation will use " + (useSubdivisionBounds ? "subdivision" : "S0-S5") + " bounds");
+        });
 
-        controls.getChildren().addAll(addRandomEntities, clearEntities);
+        controls.getChildren().addAll(addRandomEntities, clearEntities, useSubdivisionBoundsCheck);
 
         // Visualization controls
         controls.getChildren().add(new Separator());
@@ -389,6 +420,29 @@ public class TetreeVisualizationDemo extends Application {
 
         controls.getChildren().addAll(showEmptyNodes, showEntityPositions, showNodeBounds, showLevelColors,
                                       showFilledFaces);
+                                      
+        // Face render mode
+        controls.getChildren().add(new Label("Face Render Mode:"));
+        ComboBox<TetreeVisualization.FaceRenderMode> faceRenderModeCombo = new ComboBox<>();
+        faceRenderModeCombo.getItems().addAll(TetreeVisualization.FaceRenderMode.values());
+        faceRenderModeCombo.setValue(TetreeVisualization.FaceRenderMode.LEAF_NODES_ONLY);
+        faceRenderModeCombo.setTooltip(new Tooltip("Controls which tetrahedra show filled faces:\n" +
+                                                   "ALL_NODES: Show faces for all nodes with entities\n" +
+                                                   "LEAF_NODES_ONLY: Only show faces for nodes without children\n" +
+                                                   "LARGEST_NODES_ONLY: Only show faces for largest nodes at each location"));
+        faceRenderModeCombo.setOnAction(_ -> {
+            visualization.setFaceRenderMode(faceRenderModeCombo.getValue());
+        });
+        controls.getChildren().add(faceRenderModeCombo);
+        
+        // Opacity control
+        controls.getChildren().add(new Label("Face Opacity:"));
+        Slider opacitySlider = new Slider(0.1, 1.0, visualization.nodeOpacityProperty().get());
+        opacitySlider.setShowTickLabels(true);
+        opacitySlider.setShowTickMarks(true);
+        opacitySlider.setMajorTickUnit(0.2);
+        opacitySlider.valueProperty().bindBidirectional(visualization.nodeOpacityProperty());
+        controls.getChildren().add(opacitySlider);
 
         // Camera control
         controls.getChildren().add(new Separator());
