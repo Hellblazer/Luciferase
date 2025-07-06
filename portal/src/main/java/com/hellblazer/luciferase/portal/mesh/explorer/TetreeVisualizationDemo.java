@@ -537,10 +537,10 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(showS0Decomposition);
         
         Button showSubdivision = new Button("Show Subdivision Geometry");
-        showSubdivision.setTooltip(new Tooltip("Shows subdivision-compatible tetrahedra (different from S0-S5)"));
+        showSubdivision.setTooltip(new Tooltip("Shows subdivision-compatible tetrahedra using transform-based rendering"));
         showSubdivision.setOnAction(_ -> {
             int level = refinementSpinner.getValue();
-            visualization.showCharacteristicDecomposition(null, level);
+            visualization.showCharacteristicDecomposition(null, level, true); // Always use transform-based
         });
         controls.getChildren().add(showSubdivision);
         
