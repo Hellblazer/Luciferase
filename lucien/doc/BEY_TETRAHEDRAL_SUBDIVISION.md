@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The Bey tetrahedral subdivision algorithm divides a tetrahedron into 8 smaller tetrahedra that perfectly tile the parent volume. This document consolidates the complete understanding, implementation, and optimization of Bey subdivision in the Luciferase project.
+The Bey tetrahedral subdivision algorithm divides a tetrahedron into 8 smaller tetrahedra that completely tile the parent volume. This document consolidates the complete understanding, implementation, and optimization of Bey subdivision in the Luciferase project.
 
 **Key Achievement**: 100% geometric containment with 3x performance improvement through efficient single-child computation.
 
@@ -18,7 +18,7 @@ Bey refinement is NOT about subdividing a tetrahedron at cube positions. It's a 
 4. **8 Children Total**:
    - 4 corner tetrahedra (one at each original vertex)
    - 4 tetrahedra from the split octahedron
-5. **Perfect Tiling**: Children exactly partition the parent volume (no gaps, no overlaps)
+5. **Complete Tiling**: Children exactly partition the parent volume (no gaps, no overlaps)
 
 ### The Geometric Construction
 
@@ -197,9 +197,9 @@ public static Tet getMortonChild(Tet parent, int mortonIndex) {
 | Operation | Time (ns) | Throughput (calls/sec) | Notes |
 |-----------|-----------|------------------------|-------|
 | Full subdivision (8 children) | 233 | 4.3M | Baseline |
-| Efficient single child | 17.1 | 58.5M | **13.6x faster** |
+| Efficient single child | 17.1 | 58.5M | 13.6x faster |
 | Old Tet.child() | 51.9 | 19.3M | Before optimization |
-| New Tet.child() | 17.1 | 58.5M | **3x improvement** |
+| New Tet.child() | 17.1 | 58.5M | 3x improvement |
 
 ### Real-World Impact
 
@@ -229,12 +229,12 @@ Created `subdivisionCoordinates()` method that provides Bey-compatible vertices 
 | Geometric Containment | 37.5% | **100%** |
 | Volume Conservation | 100% | 100% |
 | Algorithm Complexity | High (corrected version) | Low (original Bey) |
-| Performance | ~0.22 μs | ~0.04 μs (**5.5x faster**) |
+| Performance | ~0.22 μs | ~0.04 μs (5.5x faster) |
 
 ### Key Lessons Learned
 
 1. **Coordinate systems matter**: Different tetrahedral decompositions cannot share subdivision rules
-2. **The algorithm was correct**: BeySubdivision worked perfectly once coordinates aligned
+2. **The algorithm was correct**: BeySubdivision worked correctly once coordinates aligned
 3. **Simple is better**: Uniform V3 rule is cleaner than type-dependent positions
 4. **Localized solutions work**: Can maintain different coordinate systems for different purposes
 

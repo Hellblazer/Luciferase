@@ -25,7 +25,7 @@ V7 = (h, h, h)
 
 ## The 6 Tetrahedra (S0-S5)
 
-All tetrahedra share vertices V0 and V7!
+All tetrahedra share vertices V0 and V7.
 
 ### Type 0 (S0): Tetrahedron with vertices {0, 1, 3, 7}
 - V0 = (0, 0, 0) = anchor

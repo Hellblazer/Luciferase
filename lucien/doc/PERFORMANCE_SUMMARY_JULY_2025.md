@@ -21,10 +21,10 @@ Implemented three new efficient methods in `BeySubdivision`:
 
 | Operation | Old Implementation | New Implementation | Improvement |
 |-----------|-------------------|-------------------|-------------|
-| Single child computation | ~51.91 ns | ~17.10 ns | **3.03x faster** |
-| Throughput | 19.3M calls/sec | 58.5M calls/sec | **3.03x improvement** |
+| Single child computation | ~51.91 ns | ~17.10 ns | 3.03x faster |
+| Throughput | 19.3M calls/sec | 58.5M calls/sec | 3.03x improvement |
 
-#### Key Benefits
+#### Benefits
 1. **Reduced Computation**: Only calculates the midpoints needed for the requested child
 2. **Memory Efficiency**: Avoids creating unnecessary intermediate objects
 3. **Cache Friendly**: Better locality of reference for single-child operations

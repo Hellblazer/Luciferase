@@ -358,7 +358,7 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 | k-NN intensive apps | Tetree | 2.9x faster searches |
 | Range query heavy | Octree | 7.7x faster range queries |
 | Memory constrained | Tetree | 74-76% less memory usage |
-| Mixed workload | Profile! | Depends on read/write ratio |
+| Mixed workload | Profile first | Depends on read/write ratio |
 
 ## Conclusion
 

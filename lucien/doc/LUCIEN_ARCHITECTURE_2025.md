@@ -151,7 +151,7 @@ The `Tetree` class provides tetrahedral spatial decomposition:
 
 ### S0-S5 Tetrahedral Decomposition (July 2025)
 
-The Tetree uses the standard S0-S5 decomposition where 6 tetrahedra perfectly tile a cube:
+The Tetree uses the standard S0-S5 decomposition where 6 tetrahedra completely tile a cube:
 
 - **S0**: Vertices {0, 1, 3, 7} - X-dominant, upper diagonal
 - **S1**: Vertices {0, 2, 3, 7} - Y-dominant, upper diagonal
@@ -450,17 +450,17 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 
 ## Performance Characteristics (July 5, 2025)
 
-**CURRENT STATE**: After all optimizations including efficient child computation, Tetree is now competitive for most use cases!
+**Current State**: Following optimization efforts, Tetree performance has improved significantly from initial implementation.
 
 ### Individual Operations (Latest Metrics)
 
-- **Insertion**: Octree 3-7x faster (down from 770x!) due to O(1) Morton encoding
-- **k-NN Search**: Tetree 2-4x faster due to better spatial locality
-- **Range Query**: Tetree competitive at scale
+- **Insertion**: Octree 3-7x faster due to O(1) Morton encoding vs O(level) tmIndex
+- **k-NN Search**: Tetree 2-4x faster due to spatial locality characteristics
+- **Range Query**: Tetree shows comparable performance at scale
 - **Memory**: Tetree uses 74-80% less memory
 - **Child Lookup**: 3x faster with new efficient methods (17.10 ns per call)
 
-### Bulk Loading (The Game Changer)
+### Bulk Loading Performance
 
 - **50K entities**: Tetree 35% faster than Octree
 - **100K entities**: Tetree 38% faster than Octree

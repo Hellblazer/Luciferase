@@ -2,7 +2,7 @@
 
 ## Overview
 
-The S0-S5 decomposition divides a cube into 6 tetrahedra that perfectly tile the space with no gaps or overlaps. This decomposition is fundamental to the Tetree spatial index implementation and was fixed in July 2025 to achieve 100% geometric containment.
+The S0-S5 decomposition divides a cube into 6 tetrahedra that completely tile the space with no gaps or overlaps. This decomposition is fundamental to the Tetree spatial index implementation and was fixed in July 2025 to achieve 100% geometric containment.
 
 ## Cube Vertex Numbering
 

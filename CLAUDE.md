@@ -248,5 +248,14 @@ Historical documents (describe unimplemented features):
     - **Clarified**: T8code partition issues are fundamental, not fixable
     - **Performance**: Created new benchmark report with latest results
     - **S0-S5 Docs**: Moved reference doc from archived/ to doc/ as it's current
+- **DOCUMENTATION TONE GUIDELINES (July 6, 2025):**
+    - **Use professional, matter-of-fact tone**: Avoid promotional or triumphant language
+    - **Avoid exclamation marks**: Only use in code examples (e.g., != operator)
+    - **Replace superlatives**: Use "complete" not "perfect", "faster" not "superior"
+    - **No bold emphasis on performance**: Present metrics plainly (e.g., "3x faster" not "**3x faster**")
+    - **Neutral headings**: Use descriptive titles, not promotional ones (e.g., "Bulk Loading Performance" not "The Game Changer")
+    - **Factual descriptions**: Focus on technical accuracy without enthusiasm or marketing language
+    - **Professional phrasing**: State improvements factually without celebration
+    - **Measured claims**: Avoid absolute terms unless technically accurate
 
 [... rest of the file remains unchanged ...]

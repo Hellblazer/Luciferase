@@ -144,7 +144,7 @@ After V2 tmIndex, parent cache, and efficient child computation:
 | 10K     | Insertion | 1.27 μs | 4.75 μs | Octree (3.7x) | **slower** |
 | 1K      | k-NN      | 4.10 μs | 2.15 μs | Tetree (1.9x) | Tetree faster |
 | 10K     | k-NN      | 42.6 μs | 10.3 μs | Tetree (4.1x) | Tetree faster |
-| 50K+    | Batch     | Baseline| Superior| Tetree        | 74-296x faster|
+| 50K+    | Batch     | Baseline| Faster  | Tetree        | 74-296x faster|
 
 ### Optimization Timeline
 
@@ -209,8 +209,8 @@ the comprehensive architecture guide.
 
 1. **Problem**: Entity visualization showed spheres outside tetrahedra (35% containment rate)
 2. **Root Cause**: `Tet.coordinates()` using legacy ei/ej algorithm instead of standard S0-S5
-3. **Solution**: Implemented correct S0-S5 decomposition where 6 tetrahedra perfectly tile a cube
-4. **Results**: 100% containment rate, perfect cube tiling with no gaps/overlaps
+3. **Solution**: Implemented correct S0-S5 decomposition where 6 tetrahedra completely tile a cube
+4. **Results**: 100% containment rate, complete cube tiling with no gaps/overlaps
 5. **Impact**: Visualization now correctly shows entities within their containing tetrahedra
 
 ---
