@@ -795,9 +795,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Create transparent tetrahedron face.
      */
     private MeshView createTransparentTetrahedron(Tet tet, int level) {
-        // Use subdivision coordinates for better visual containment
-        // This addresses t8code gaps where entities appear outside their tetrahedra
-        Point3i[] tetVertices = tet.subdivisionCoordinates();
+        // Use standard S0-S5 coordinates for accurate visualization
+        // This ensures entities appear within their containing tetrahedra
+        Point3i[] tetVertices = tet.coordinates();
         Point3f[] vertices = new Point3f[4];
 
         // Convert to Point3f for JavaFX
@@ -882,9 +882,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private Group createWireframeTetrahedron(Tet tet, int level) {
         Group edges = new Group();
 
-        // Use subdivision coordinates for better visual containment
-        // This addresses t8code gaps where entities appear outside their tetrahedra
-        Point3i[] tetVertices = tet.subdivisionCoordinates();
+        // Use standard S0-S5 coordinates for accurate visualization
+        // This ensures entities appear within their containing tetrahedra
+        Point3i[] tetVertices = tet.coordinates();
         Point3f[] vertices = new Point3f[4];
 
         // Convert to Point3f for JavaFX (no manual scaling needed)
@@ -1168,8 +1168,8 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * sphere or if the sphere center is within the tetrahedron.
      */
     private boolean tetIntersectsSphere(Tet tet, Point3f center, float radius) {
-        // Use subdivision coordinates for consistent visualization
-        Point3i[] vertices = tet.subdivisionCoordinates();
+        // Use standard S0-S5 coordinates for accurate intersection testing
+        Point3i[] vertices = tet.coordinates();
 
         // Check if any vertex is within the sphere
         for (Point3i vertex : vertices) {

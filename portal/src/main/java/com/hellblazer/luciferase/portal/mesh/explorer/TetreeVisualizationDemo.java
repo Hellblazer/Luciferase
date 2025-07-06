@@ -19,9 +19,9 @@ package com.hellblazer.luciferase.portal.mesh.explorer;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
-// KuhnTetree import removed - using base Tetree with positive volume correction
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
@@ -174,33 +174,60 @@ public class TetreeVisualizationDemo extends Application {
         // At level 5, cell size is 2^15 = 32768
         // This gives us much larger, more visible tetrahedra
         byte level = 5;
-        // Use TetreeKey.MAX_REFINEMENT_LEVEL (20) not MortonCurve's (21)
-        float maxCoord = (float) Math.pow(2, TetreeKey.MAX_REFINEMENT_LEVEL);
-
-        // Spread entities across the middle portion of the space
-        // This ensures they're visible and not at the edges
-        float minRange = maxCoord * 0.2f;  // Start at 20% of max
-        float maxRange = maxCoord * 0.8f;  // End at 80% of max
-        float range = maxRange - minRange;
+        float L = (float) Math.pow(2, TetreeKey.MAX_REFINEMENT_LEVEL);
 
         System.out.println("\n=== Inserting " + count + " entities at level " + level + " ===");
-
-        for (int i = 0; i < count; i++) {
-            float x = minRange + random.nextFloat() * range;
-            float y = minRange + random.nextFloat() * range;
-            float z = minRange + random.nextFloat() * range;
+        
+        // Create root S0 tetrahedron to validate points
+        Tet rootS0 = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        int inserted = 0;
+        int attempts = 0;
+        
+        // Generate points that are guaranteed to be within the S0 tetrahedron
+        while (inserted < count && attempts < count * 10) {
+            attempts++;
+            
+            // Use barycentric coordinates to generate points inside S0
+            // S0 vertices: (0,0,0), (L,0,0), (L,L,0), (L,L,L)
+            float r1 = random.nextFloat();
+            float r2 = random.nextFloat();
+            float r3 = random.nextFloat();
+            float r4 = random.nextFloat();
+            
+            // Normalize to sum to 1
+            float sum = r1 + r2 + r3 + r4;
+            r1 /= sum;
+            r2 /= sum;
+            r3 /= sum;
+            r4 /= sum;
+            
+            // Compute point using barycentric coordinates
+            float x = r2 * L + r3 * L + r4 * L;
+            float y = r3 * L + r4 * L;
+            float z = r4 * L;
+            
             Point3f position = new Point3f(x, y, z);
+            
+            // Verify it's actually contained (should always be true)
+            if (!rootS0.contains(position)) {
+                continue;
+            }
 
             // Debug: find the enclosing tetrahedron before insertion
             var enclosingNode = tetree.enclosing(new javax.vecmath.Point3i((int) x, (int) y, (int) z), level);
             if (enclosingNode != null) {
-                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", i, x, y, z,
+                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", inserted, x, y, z,
                                   level);
             } else {
-                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> No enclosing node found%n", i, x, y, z);
+                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> No enclosing node found%n", inserted, x, y, z);
             }
 
-            tetree.insert(position, level, "Entity " + i);
+            tetree.insert(position, level, "Entity " + inserted);
+            inserted++;
+        }
+        
+        if (inserted < count) {
+            System.out.printf("Warning: Only inserted %d/%d entities after %d attempts%n", inserted, count, attempts);
         }
 
         // Verify all entities are in nodes
