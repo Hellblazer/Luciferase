@@ -18,7 +18,15 @@
 - `StackBasedTreeBuilder.java:132` - Implement bottom-up construction
 - `StackBasedTreeBuilder.java:142` - Implement hybrid construction
 
-## Cleanup Tasks Completed (June 24, 2025)
+## Cleanup Tasks Completed (July 6, 2025)
+
+- ✅ Updated performance benchmarks and documentation
+- ✅ Archived 9 completed/outdated documents
+- ✅ Fixed references to legacy ei/ej algorithm
+- ✅ Updated CLAUDE.md with latest fixes and performance results
+- ✅ Created OCTREE_VS_TETREE_PERFORMANCE_JULY_2025.md
+
+## Previous Cleanup Tasks (June 24, 2025)
 
 - ✅ Removed unused classes: PluckerCoordinate.java, SimpleTMIndex.java, TmIndex.java
 - ✅ Removed debug test files: TetreeRegionQueryDebugTest.java, TetreeSpatialRangeDebugTest.java

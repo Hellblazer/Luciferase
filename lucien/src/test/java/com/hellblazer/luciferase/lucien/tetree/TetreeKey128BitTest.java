@@ -1,20 +1,21 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test the 128-bit TetreeKey implementation
+ * Test the 128-bit ExtendedTetreeKey implementation
  */
 public class TetreeKey128BitTest {
- 
+
     @Test
     public void testComparison() {
         // Test that comparison works correctly
-        TetreeKey key1 = new TetreeKey((byte) 10, 100L, 0L);
-        TetreeKey key2 = new TetreeKey((byte) 10, 200L, 0L);
-        TetreeKey key3 = new TetreeKey((byte) 15, 100L, 1L);
+        ExtendedTetreeKey key1 = new ExtendedTetreeKey((byte) 10, 100L, 0L);
+        ExtendedTetreeKey key2 = new ExtendedTetreeKey((byte) 10, 200L, 0L);
+        ExtendedTetreeKey key3 = new ExtendedTetreeKey((byte) 15, 100L, 1L);
 
         assertTrue(key1.compareTo(key2) < 0);
         assertTrue(key2.compareTo(key1) > 0);
@@ -27,9 +28,9 @@ public class TetreeKey128BitTest {
         long lowBits = 0x123456789ABCDEFL;
         long highBits = 0x0000000000000FFFL;
 
-        TetreeKey key1 = new TetreeKey((byte) 20, lowBits, highBits);
-        TetreeKey key2 = new TetreeKey((byte) 20, lowBits, highBits);
-        TetreeKey key3 = new TetreeKey((byte) 20, lowBits + 1, highBits);
+        ExtendedTetreeKey key1 = new ExtendedTetreeKey((byte) 20, lowBits, highBits);
+        ExtendedTetreeKey key2 = new ExtendedTetreeKey((byte) 20, lowBits, highBits);
+        ExtendedTetreeKey key3 = new ExtendedTetreeKey((byte) 20, lowBits + 1, highBits);
 
         assertEquals(key1, key2);
         assertEquals(key1.hashCode(), key2.hashCode());
@@ -45,7 +46,7 @@ public class TetreeKey128BitTest {
         // Test level 15 - requires both low and high bits
         long lowBits = 0xFFFFFFFFFFFFFFFFL;
         long highBits = 0x000000000000003FL; // 6 bits for 5 additional levels
-        TetreeKey key128 = new TetreeKey((byte) 15, lowBits, highBits);
+        ExtendedTetreeKey key128 = new ExtendedTetreeKey((byte) 15, lowBits, highBits);
 
         assertEquals(15, key128.getLevel());
         assertEquals(lowBits, key128.getLowBits());
@@ -57,7 +58,7 @@ public class TetreeKey128BitTest {
     public void testLowLevelKeys() {
         // Test level 5 - fits entirely in low bits
         long lowBits = 0x0000000000123456L;
-        TetreeKey key128 = new TetreeKey((byte) 5, lowBits, 0L);
+        ExtendedTetreeKey key128 = new ExtendedTetreeKey((byte) 5, lowBits, 0L);
 
         assertEquals(5, key128.getLevel());
         assertEquals(lowBits, key128.getLowBits());
@@ -70,9 +71,9 @@ public class TetreeKey128BitTest {
         // Test level 21 - maximum level
         long lowBits = 0xFFFFFFFFFFFFFFFFL;
         long highBits = 0x3FFFFFFFFFFFFFFFL; // All bits used
-        TetreeKey key128 = new TetreeKey((byte) 21, lowBits, highBits);
+        ExtendedTetreeKey key128 = new ExtendedTetreeKey(MortonCurve.MAX_REFINEMENT_LEVEL, lowBits, highBits);
 
-        assertEquals(21, key128.getLevel());
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, key128.getLevel());
         assertEquals(lowBits, key128.getLowBits());
         assertEquals(highBits, key128.getHighBits());
         assertTrue(key128.isValid());
@@ -82,7 +83,7 @@ public class TetreeKey128BitTest {
     public void testMidLevelKeys() {
         // Test level 10 - maximum that fits in low bits
         long lowBits = 0x0FFFFFFFFFFFFFFFL; // 60 bits set
-        TetreeKey key128 = new TetreeKey((byte) 10, lowBits, 0L);
+        ExtendedTetreeKey key128 = new ExtendedTetreeKey((byte) 10, lowBits, 0L);
 
         assertEquals(10, key128.getLevel());
         assertEquals(lowBits, key128.getLowBits());
@@ -93,11 +94,11 @@ public class TetreeKey128BitTest {
     @Test
     public void testValidation() {
         // Test that validation still works
-        TetreeKey validKey = new TetreeKey((byte) 10, 0x123456L, 0L);
+        ExtendedTetreeKey validKey = new ExtendedTetreeKey((byte) 10, 0x123456L, 0L);
         assertTrue(validKey.isValid());
 
         // Root key
-        TetreeKey rootKey = new TetreeKey((byte) 0, 0L, 0L);
+        ExtendedTetreeKey rootKey = new ExtendedTetreeKey((byte) 0, 0L, 0L);
         assertTrue(rootKey.isValid());
     }
 }

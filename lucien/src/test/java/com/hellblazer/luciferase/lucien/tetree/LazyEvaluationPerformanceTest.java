@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +30,7 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test the performance impact of lazy TetreeKey evaluation.
+ * Test the performance impact of lazy ExtendedTetreeKey evaluation.
  */
 public class LazyEvaluationPerformanceTest {
 
@@ -132,7 +133,8 @@ public class LazyEvaluationPerformanceTest {
     @Test
     void testLazyKeyCreation() {
         // Test that lazy keys work correctly
-        var tet = new Tet(1000, 2000, 3000, (byte) 10, (byte) 0);
+        var cellSize = Constants.lengthAtLevel((byte) 10);
+        var tet = new Tet(cellSize, cellSize, cellSize, (byte) 10, (byte) 0);
         var lazyKey = new LazyTetreeKey(tet);
 
         // Should not be resolved initially
@@ -152,9 +154,10 @@ public class LazyEvaluationPerformanceTest {
 
     @Test
     void testLazyKeyEquality() {
-        var tet1 = new Tet(1000, 2000, 3000, (byte) 10, (byte) 0);
-        var tet2 = new Tet(1000, 2000, 3000, (byte) 10, (byte) 0);
-        var tet3 = new Tet(2000, 2000, 3000, (byte) 10, (byte) 0);
+        var cellSize2 = Constants.lengthAtLevel((byte) 10);
+        var tet1 = new Tet(cellSize2, cellSize2, cellSize2, (byte) 10, (byte) 0);
+        var tet2 = new Tet(cellSize2, cellSize2, cellSize2, (byte) 10, (byte) 0);
+        var tet3 = new Tet(cellSize2 * 2, cellSize2, cellSize2, (byte) 10, (byte) 0);
 
         var lazy1 = new LazyTetreeKey(tet1);
         var lazy2 = new LazyTetreeKey(tet2);
@@ -164,7 +167,7 @@ public class LazyEvaluationPerformanceTest {
         assertEquals(lazy1, lazy2);
         assertNotEquals(lazy1, lazy3);
 
-        // Should work with regular TetreeKey
+        // Should work with regular ExtendedTetreeKey
         var regular = tet1.tmIndex();
         assertEquals(lazy1, regular);
         assertTrue(lazy1.isResolved()); // Comparison forced resolution

@@ -85,7 +85,7 @@ public class TMIndexPerformanceComparison {
 
     private static int estimateObjectSize(Object obj) {
         // Rough estimates based on JVM object layout
-        if (obj instanceof TetreeKey) {
+        if (obj instanceof ExtendedTetreeKey) {
             // Object header (16) + byte level (1+padding=4) + 2 longs (16)
             return 36;
         } else if (obj instanceof TMIndex128Bit) {
@@ -100,7 +100,7 @@ public class TMIndexPerformanceComparison {
         Random rand = new Random(42); // Fixed seed for reproducibility
 
         for (int i = 0; i < count; i++) {
-            int level = 5 + (i % 17); // Levels 5-21
+            int level = 5 + (i % 16); // Levels 5-21
             int maxCoord = Math.min(1000, (1 << level) - 1);
             int x = rand.nextInt(maxCoord);
             int y = rand.nextInt(maxCoord);
@@ -132,7 +132,7 @@ public class TMIndexPerformanceComparison {
         System.out.println("Benchmark Results (average of " + TEST_ITERATIONS + " operations):");
         System.out.println("----------------------------------------------------------------");
 
-        for (int level : new int[] { 5, 10, 15, 20, 21 }) {
+        for (int level : new int[] { 5, 10, 15, 20 }) {
             benchmarkLevel(testCases, level);
         }
 

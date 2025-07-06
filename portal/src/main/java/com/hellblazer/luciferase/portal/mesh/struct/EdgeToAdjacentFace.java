@@ -1,23 +1,22 @@
 package com.hellblazer.luciferase.portal.mesh.struct;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
 /**
- * A data structure which computes a mapping from each edge to the two unique
- * faces of the mesh which share that edge. The two faces are stored in an array
- * of length 2.
+ * A data structure which computes a mapping from each edge to the two unique faces of the mesh which share that edge.
+ * The two faces are stored in an array of length 2.
  *
  * @author Brian Yao
  */
 public class EdgeToAdjacentFace {
 
-    private Map<Edge, Face[]> edgeToFace;
+    private final Map<Edge, Face[]> edgeToFace;
 
     /**
      * Construct a mapping using the geometry in the specified mesh.
@@ -44,8 +43,7 @@ public class EdgeToAdjacentFace {
     }
 
     /**
-     * Get the unordered pair of faces which share the specified edge. Returns null
-     * if no such edge exists in the mesh.
+     * Get the unordered pair of faces which share the specified edge. Returns null if no such edge exists in the mesh.
      *
      * @param edge The edge to find adjacent faces of.
      * @return An array of two faces which share the specified edge.
@@ -55,8 +53,8 @@ public class EdgeToAdjacentFace {
     }
 
     /**
-     * Get the set of edges we have mapped to adjacent faces. (For a closed mesh,
-     * this equates to obtaining a set of all edges in the mesh.)
+     * Get the set of edges we have mapped to adjacent faces. (For a closed mesh, this equates to obtaining a set of all
+     * edges in the mesh.)
      *
      * @return The set of mapped edges.
      */

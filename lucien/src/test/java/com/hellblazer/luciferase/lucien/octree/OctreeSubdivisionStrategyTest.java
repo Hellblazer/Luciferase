@@ -3,6 +3,7 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.SubdivisionStrategy;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
@@ -61,7 +62,8 @@ public class OctreeSubdivisionStrategyTest {
 
         var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 5,
                                                                                           5, 10, false, smallBounds,
-                                                                                          existingEntities, (byte) 21);
+                                                                                          existingEntities,
+                                                                                          MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var result = strategy.determineStrategy(context);
 
@@ -75,7 +77,8 @@ public class OctreeSubdivisionStrategyTest {
         // Test during bulk operation
         var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
                                                                                           (byte) 10, 12, 10, true, null,
-                                                                                          new ArrayList<>(), (byte) 21);
+                                                                                          new ArrayList<>(),
+                                                                                          MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.DEFER_SUBDIVISION, result.decision);
@@ -88,7 +91,7 @@ public class OctreeSubdivisionStrategyTest {
         var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
                                                                                           (byte) 10, 25, 10, false,
                                                                                           null, new ArrayList<>(),
-                                                                                          (byte) 21);
+                                                                                          MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.FORCE_SUBDIVISION, result.decision);
@@ -99,8 +102,10 @@ public class OctreeSubdivisionStrategyTest {
     void testInsertInParentDecision() {
         // Test at max depth
         var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
-                                                                                          (byte) 21, 5, 10, false, null,
-                                                                                          new ArrayList<>(), (byte) 21);
+                                                                                          MortonCurve.MAX_REFINEMENT_LEVEL,
+                                                                                          5, 10, false, null,
+                                                                                          new ArrayList<>(),
+                                                                                          MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.INSERT_IN_PARENT, result.decision);
@@ -109,7 +114,8 @@ public class OctreeSubdivisionStrategyTest {
         // Test with too few entities
         context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L), (byte) 10,
                                                                                       2, 10, false, null,
-                                                                                      new ArrayList<>(), (byte) 21);
+                                                                                      new ArrayList<>(),
+                                                                                      MortonCurve.MAX_REFINEMENT_LEVEL);
 
         result = strategy.determineStrategy(context);
         assertEquals(SubdivisionStrategy.ControlFlow.INSERT_IN_PARENT, result.decision);
@@ -144,7 +150,8 @@ public class OctreeSubdivisionStrategyTest {
 
         var context = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(0L), (byte) 10,
                                                                                           8, 10, false, largeBounds,
-                                                                                          new ArrayList<>(), (byte) 21);
+                                                                                          new ArrayList<>(),
+                                                                                          MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var result = strategy.determineStrategy(context);
         // The strategy makes intelligent decisions - it might choose CREATE_SINGLE_CHILD
@@ -157,7 +164,7 @@ public class OctreeSubdivisionStrategyTest {
                                                                                                   (byte) 15, 8, 10,
                                                                                                   false, largeBounds,
                                                                                                   new ArrayList<>(),
-                                                                                                  (byte) 21);
+                                                                                                  MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var spanningResult = strategy.determineStrategy(spanningContext);
         if (spanningResult.decision == SubdivisionStrategy.ControlFlow.SPLIT_TO_CHILDREN) {
@@ -173,13 +180,13 @@ public class OctreeSubdivisionStrategyTest {
         var smallContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(new MortonKey(12345L),
                                                                                                (byte) 10, 5, 10, false,
                                                                                                null, new ArrayList<>(),
-                                                                                               (byte) 21);
+                                                                                               MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var overloadedContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(
-        new MortonKey(12345L), (byte) 10, 15, 10, false, null, new ArrayList<>(), (byte) 21);
+        new MortonKey(12345L), (byte) 10, 15, 10, false, null, new ArrayList<>(), MortonCurve.MAX_REFINEMENT_LEVEL);
 
         var nearMaxDepthContext = new SubdivisionStrategy.SubdivisionContext<MortonKey, LongEntityID>(
-        new MortonKey(12345L), (byte) 20, 10, 10, false, null, new ArrayList<>(), (byte) 21);
+        new MortonKey(12345L), (byte) 20, 10, 10, false, null, new ArrayList<>(), MortonCurve.MAX_REFINEMENT_LEVEL);
 
         // Different contexts should produce different decisions
         var smallResult = strategy.determineStrategy(smallContext);

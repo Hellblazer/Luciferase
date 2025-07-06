@@ -21,7 +21,7 @@ public class MortonCurveRoundTripTest {
     @DisplayName("Test calculateMortonIndex round trip")
     void testCalculateMortonIndexRoundTrip() {
         // Test that calculateMortonIndex produces consistent results
-        for (byte level = 0; level <= 21; level++) {
+        for (byte level = 0; level <= MortonCurve.MAX_REFINEMENT_LEVEL; level++) {
             var length = Constants.lengthAtLevel(level);
 
             // Test points at grid boundaries
@@ -36,7 +36,7 @@ public class MortonCurveRoundTripTest {
             } else {
                 // For other levels, use points based on cell length
                 // but ensure we don't exceed 21-bit max when quantized
-                var maxCoord = (1 << 21) - 1;
+                var maxCoord = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) - 1;
                 var maxMultiplier = maxCoord / length;
 
                 testPoints = new Point3f[] { new Point3f(0, 0, 0), new Point3f(length, 0, 0), new Point3f(0, length, 0),
@@ -65,7 +65,7 @@ public class MortonCurveRoundTripTest {
 
                 // Calculate expected values, handling potential overflow
                 // MortonCurve.encode masks to 21 bits, so we need to match that behavior
-                var mask = (1 << 21) - 1;
+                var mask = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) - 1;
                 var expectedWorldX = (int) (Math.floor(point.x / scale) * scale) & mask;
                 var expectedWorldY = (int) (Math.floor(point.y / scale) * scale) & mask;
                 var expectedWorldZ = (int) (Math.floor(point.z / scale) * scale) & mask;
@@ -88,7 +88,8 @@ public class MortonCurveRoundTripTest {
     @DisplayName("Test edge cases and boundary conditions")
     void testEdgeCases() {
         // Test maximum coordinates
-        var maxCoord = (1 << 21) - 1; // Maximum coordinate for 21-bit precision (2,097,151)
+        var maxCoord = (1 << MortonCurve.MAX_REFINEMENT_LEVEL)
+        - 1; // Maximum coordinate for 21-bit precision (2,097,151)
 
         // Test that coordinates at max value work correctly
         assertDoesNotThrow(() -> {
@@ -127,15 +128,15 @@ public class MortonCurveRoundTripTest {
         testCases.add(new TestCase(0, 0, 0, 0));
 
         // Small coordinates produce finest level
-        testCases.add(new TestCase(1, 0, 0, 21));
-        testCases.add(new TestCase(0, 1, 0, 21));
-        testCases.add(new TestCase(0, 0, 1, 21));
-        testCases.add(new TestCase(1, 1, 1, 21));
+        testCases.add(new TestCase(1, 0, 0, MortonCurve.MAX_REFINEMENT_LEVEL));
+        testCases.add(new TestCase(0, 1, 0, MortonCurve.MAX_REFINEMENT_LEVEL));
+        testCases.add(new TestCase(0, 0, 1, MortonCurve.MAX_REFINEMENT_LEVEL));
+        testCases.add(new TestCase(1, 1, 1, MortonCurve.MAX_REFINEMENT_LEVEL));
 
         // Test the level determination for various coordinate ranges
         // The toLevel method uses bit analysis of the Morton code
         // These expected values are based on actual toLevel behavior
-        testCases.add(new TestCase(7, 7, 7, 21));
+        testCases.add(new TestCase(7, 7, 7, MortonCurve.MAX_REFINEMENT_LEVEL));
         testCases.add(new TestCase(8, 8, 8, 20));
         testCases.add(new TestCase(15, 15, 15, 20));
         testCases.add(new TestCase(16, 16, 16, 19));
@@ -274,15 +275,15 @@ public class MortonCurveRoundTripTest {
         assertEquals(0, Constants.toLevel(0), "Morton 0 should be level 0");
 
         // Small Morton codes should map to finest level (21)
-        assertEquals(21, Constants.toLevel(1), "Morton 1 should be level 21");
-        assertEquals(21, Constants.toLevel(7), "Morton 7 should be level 21");
-        assertEquals(21, Constants.toLevel(56), "Morton 56 should be level 21");
-        assertEquals(21, Constants.toLevel(63), "Morton 63 should be level 21");
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, Constants.toLevel(1), "Morton 1 should be level 21");
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, Constants.toLevel(7), "Morton 7 should be level 21");
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, Constants.toLevel(56), "Morton 56 should be level 21");
+        assertEquals(MortonCurve.MAX_REFINEMENT_LEVEL, Constants.toLevel(63), "Morton 63 should be level 21");
 
         // Test some larger values
         var largeMorton = MortonCurve.encode(1000, 1000, 1000);
         var largeLevel = Constants.toLevel(largeMorton);
-        assertTrue(largeLevel >= 0 && largeLevel <= 21, "Level should be in valid range");
+        assertTrue(largeLevel >= 0 && largeLevel <= MortonCurve.MAX_REFINEMENT_LEVEL, "Level should be in valid range");
     }
 
     /**

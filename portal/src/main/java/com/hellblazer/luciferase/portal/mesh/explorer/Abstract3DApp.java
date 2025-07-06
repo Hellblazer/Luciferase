@@ -108,10 +108,6 @@ public abstract class Abstract3DApp extends Application {
         });
     }
 
-    protected Node getLight() {
-        return new AmbientLight();
-    }
-
     protected abstract Group build();
 
     protected void buildAxes() {
@@ -133,6 +129,10 @@ public abstract class Abstract3DApp extends Application {
         camera.setTranslateZ(CAMERA_INITIAL_DISTANCE);
         cameraXform.ry.setAngle(CAMERA_INITIAL_Y_ANGLE);
         cameraXform.rx.setAngle(CAMERA_INITIAL_X_ANGLE);
+    }
+
+    protected Node getLight() {
+        return new AmbientLight();
     }
 
     protected void handleKeyboard(Scene scene, final Node root) {

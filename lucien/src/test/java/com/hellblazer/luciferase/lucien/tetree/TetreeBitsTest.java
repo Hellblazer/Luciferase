@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
@@ -32,8 +33,10 @@ class TetreeBitsTest {
     @Test
     void testLowestCommonAncestorLevel_AllAxesDifferent() {
         // Test where all three coordinates differ
-        Tet tet1 = new Tet(10, 20, 30, (byte) 5, (byte) 2);
-        Tet tet2 = new Tet(11, 21, 31, (byte) 5, (byte) 3);
+        int cellSize = Constants.lengthAtLevel((byte) 5);
+        Tet tet1 = new Tet(10 * cellSize, 20 * cellSize, 30 * cellSize, (byte) 5, (byte) 2);
+        Tet tet2 = new Tet(11 * cellSize, MortonCurve.MAX_REFINEMENT_LEVEL * cellSize, 31 * cellSize, (byte) 5,
+                           (byte) 3);
 
         byte ncaLevel = TetreeBits.lowestCommonAncestorLevel(tet1, tet2);
         assertTrue(ncaLevel <= 5);
@@ -46,8 +49,9 @@ class TetreeBitsTest {
     void testLowestCommonAncestorLevel_DifferentCoordinates() {
         // Test with coordinates that differ at a specific bit position
         // Binary: 4 = 100, 5 = 101 (differ at bit 0)
-        Tet tet1 = new Tet(4, 4, 4, (byte) 3, (byte) 0);
-        Tet tet2 = new Tet(5, 4, 4, (byte) 3, (byte) 0);
+        int cellSize3 = Constants.lengthAtLevel((byte) 3);
+        Tet tet1 = new Tet(4 * cellSize3, 4 * cellSize3, 4 * cellSize3, (byte) 3, (byte) 0);
+        Tet tet2 = new Tet(5 * cellSize3, 4 * cellSize3, 4 * cellSize3, (byte) 3, (byte) 0);
 
         byte ncaLevel = TetreeBits.lowestCommonAncestorLevel(tet1, tet2);
         assertTrue(ncaLevel <= 3);
@@ -60,8 +64,9 @@ class TetreeBitsTest {
     @Test
     void testLowestCommonAncestorLevel_LargeDifference() {
         // Test with coordinates that have a large difference
+        int cellSize10 = Constants.lengthAtLevel((byte) 10);
         Tet tet1 = new Tet(0, 0, 0, (byte) 10, (byte) 0);
-        Tet tet2 = new Tet(Integer.MAX_VALUE >> 11, 0, 0, (byte) 10, (byte) 0);
+        Tet tet2 = new Tet((Integer.MAX_VALUE >> 11) / cellSize10 * cellSize10, 0, 0, (byte) 10, (byte) 0);
 
         byte ncaLevel = TetreeBits.lowestCommonAncestorLevel(tet1, tet2);
         assertTrue(ncaLevel < 10, "Large coordinate differences should result in low NCA level");
@@ -79,12 +84,13 @@ class TetreeBitsTest {
 
     @Test
     void testLowestCommonAncestorLevel_SameCoordinates() {
-        // Two tetrahedra at same coordinates should have NCA at minimum level
-        Tet tet1 = new Tet(100, 100, 100, (byte) 5, (byte) 0);
-        Tet tet2 = new Tet(100, 100, 100, (byte) 7, (byte) 2);
+        // Two tetrahedra at same logical position should have NCA at minimum level
+        int cellSize5 = Constants.lengthAtLevel((byte) 5);
+        Tet tet1 = new Tet(cellSize5, cellSize5, cellSize5, (byte) 5, (byte) 0);
+        Tet tet2 = new Tet(cellSize5, cellSize5, cellSize5, (byte) 5, (byte) 2);
 
         byte ncaLevel = TetreeBits.lowestCommonAncestorLevel(tet1, tet2);
-        assertEquals(5, ncaLevel); // min(5, 7)
+        assertEquals(5, ncaLevel); // Same position, so NCA is at their level
     }
 
     @Test
@@ -106,7 +112,7 @@ class TetreeBitsTest {
         // More complex case with actual coordinate differences
         int cellSize = Constants.lengthAtLevel((byte) 8);
         Tet tet3 = new Tet(cellSize * 2, cellSize * 2, cellSize * 2, (byte) 8, (byte) 1);
-        Tet tet4 = new Tet(cellSize * 2 + 1, cellSize * 2, cellSize * 2, (byte) 8, (byte) 4);
+        Tet tet4 = new Tet(cellSize * 3, cellSize * 2, cellSize * 2, (byte) 8, (byte) 4);
 
         byte ncaLevel2 = TetreeBits.lowestCommonAncestorLevel(tet3, tet4);
         assertTrue(ncaLevel2 <= 8, "NCA level should be at most the minimum input level");
@@ -121,8 +127,9 @@ class TetreeBitsTest {
         // at the initial c_level but same values at a lower level
 
         // Using coordinates that put them in adjacent cells
-        Tet tet1 = new Tet(7, 0, 0, (byte) 4, (byte) 0);
-        Tet tet2 = new Tet(8, 0, 0, (byte) 4, (byte) 1);
+        int cellSize4 = Constants.lengthAtLevel((byte) 4);
+        Tet tet1 = new Tet(7 * cellSize4, 0, 0, (byte) 4, (byte) 0);
+        Tet tet2 = new Tet(8 * cellSize4, 0, 0, (byte) 4, (byte) 1);
 
         byte ncaLevel = TetreeBits.lowestCommonAncestorLevel(tet1, tet2);
 
