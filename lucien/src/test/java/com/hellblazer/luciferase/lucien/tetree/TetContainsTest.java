@@ -91,31 +91,32 @@ public class TetContainsTest {
 
     @Test
     void testType3SpecificCase() {
-        // Verify type 3 tetrahedron has expected vertices  
+        // Verify type 3 tetrahedron has expected S0-S5 vertices  
         var tet = new Tet(0, 0, 0, (byte) 10, (byte) 3);
         var vertices = tet.coordinates();
 
-        // For type 3: vertices should form the expected pattern
+        // For type 3 (S3): vertices 0, 4, 6, 7 of cube
+        // V0: (0, 0, 0), V1: (0, 0, h), V2: (0, h, h), V3: (h, h, h)
         assertEquals(0, vertices[0].x);
         assertEquals(0, vertices[0].y);
         assertEquals(0, vertices[0].z);
 
         assertEquals(0, vertices[1].x);
-        assertEquals(2048, vertices[1].y);
-        assertEquals(0, vertices[1].z);
+        assertEquals(0, vertices[1].y);
+        assertEquals(2048, vertices[1].z);
 
         assertEquals(0, vertices[2].x);
         assertEquals(2048, vertices[2].y);
         assertEquals(2048, vertices[2].z);
 
         assertEquals(2048, vertices[3].x);
-        assertEquals(0, vertices[3].y);
+        assertEquals(2048, vertices[3].y);
         assertEquals(2048, vertices[3].z);
 
         // Test specific points for type 3
         assertTrue(tet.contains(new Point3f(150, 150, 150)), "Should contain interior point");
         assertTrue(tet.contains(new Point3f(0, 0, 0)), "Should contain vertex 0");
-        assertFalse(tet.contains(new Point3f(2000, 2000, 2000)), "Should not contain outside point");
+        assertFalse(tet.contains(new Point3f(5000, 5000, 5000)), "Should not contain outside point");
     }
 
     private Point3f computeCentroid(Point3i[] vertices) {

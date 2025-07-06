@@ -29,20 +29,31 @@ public class ContainmentTmIndexAnalysis {
             // Create a tet at level 3 for clear visualization
             Tet tet = new Tet(0, 0, 0, (byte) 3, type);
             
-            // Get both coordinate systems
-            Point3i[] t8Coords = tet.coordinates();
-            Point3i[] subCoords = tet.subdivisionCoordinates();
+            // Get coordinate systems
+            Point3i[] s0s5Coords = tet.coordinates();        // S0-S5 decomposition
+            Point3i[] legacyCoords = tet.coordinatesLegacy(); // Old ei/ej system
+            Point3i[] subCoords = tet.subdivisionCoordinates(); // Subdivision system
             
-            // Compare V3 (the fourth vertex)
-            System.out.println("  t8code V3: " + t8Coords[3]);
-            System.out.println("  subdiv V3: " + subCoords[3]);
-            System.out.println("  Match: " + t8Coords[3].equals(subCoords[3]));
-            
-            // V0, V1, V2 should always match
-            for (int i = 0; i < 3; i++) {
-                assertEquals(t8Coords[i], subCoords[i], 
-                    "V" + i + " should match between coordinate systems");
+            System.out.println("  S0-S5 coordinates:");
+            for (int i = 0; i < 4; i++) {
+                System.out.println("    V" + i + ": " + s0s5Coords[i]);
             }
+            
+            System.out.println("  Legacy coordinates:");
+            for (int i = 0; i < 4; i++) {
+                System.out.println("    V" + i + ": " + legacyCoords[i]);
+            }
+            
+            System.out.println("  Subdivision coordinates:");
+            for (int i = 0; i < 4; i++) {
+                System.out.println("    V" + i + ": " + subCoords[i]);
+            }
+            
+            // Key insight: All three systems share V0 (anchor) and V3 (opposite corner)
+            assertEquals(s0s5Coords[0], legacyCoords[0], "V0 should be the same (anchor)");
+            assertEquals(s0s5Coords[0], subCoords[0], "V0 should be the same (anchor)");
+            
+            assertEquals(s0s5Coords[3], subCoords[3], "V3 should be (anchor + (h,h,h))");
             
             System.out.println();
         }

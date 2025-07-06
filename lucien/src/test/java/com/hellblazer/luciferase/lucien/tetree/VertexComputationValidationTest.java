@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Validates the vertex computation algorithm in Tet.coordinates()
+ * Validates the S0-S5 tetrahedral decomposition in Tet.coordinates()
+ * Tests that the 6 tetrahedra correctly tile a cube using standard cube vertices.
  *
  * @author hal.hildebrand
  */
@@ -90,8 +91,8 @@ public class VertexComputationValidationTest {
         int y = 3 * cellSize; // 6144 - aligned to grid
         int z = 4 * cellSize; // 8192 - aligned to grid
 
-        System.out.println("Vertex Computation Analysis for All Types");
-        System.out.println("=========================================");
+        System.out.println("S0-S5 Tetrahedral Decomposition Analysis");
+        System.out.println("========================================");
         System.out.println("Anchor: (" + x + ", " + y + ", " + z + ")");
         System.out.println("Level: " + level);
 
@@ -100,21 +101,27 @@ public class VertexComputationValidationTest {
             Point3i[] vertices = tet.coordinates();
             int h = tet.length();
 
-            System.out.println("\nType " + type + ":");
+            System.out.println("\nType " + type + " (S" + type + "):");
             System.out.println("  Cell size (h): " + h);
 
-            // Compute ei and ej
-            int ei = type / 2;
-            int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
-            System.out.println(
-            "  ei=" + ei + " (" + dimensionName(ei) + "), ej=" + ej + " (" + dimensionName(ej) + ")");
+            // Print which cube vertices this tet uses
+            String cubeVertices = switch (type) {
+                case 0 -> "0,1,3,7";
+                case 1 -> "0,2,3,7";
+                case 2 -> "0,4,5,7";
+                case 3 -> "0,4,6,7";
+                case 4 -> "0,1,5,7";
+                case 5 -> "0,2,6,7";
+                default -> "unknown";
+            };
+            System.out.println("  Cube vertices: " + cubeVertices);
 
             // Print vertices
             for (int i = 0; i < 4; i++) {
                 System.out.println("  V" + i + ": " + pointToString(vertices[i]));
             }
 
-            // Validate vertex positions match expected pattern
+            // Validate vertex positions match S0-S5 pattern
             validateVertexPattern(vertices, x, y, z, h, type);
 
             // Calculate and validate volume
@@ -196,25 +203,46 @@ public class VertexComputationValidationTest {
         assertEquals(y, vertices[0].y);
         assertEquals(z, vertices[0].z);
 
-        // Compute expected positions based on type
-        int ei = type / 2;
-        int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
+        // S0-S5 decomposition: Expected vertices for each type
+        Point3i expectedV1, expectedV2, expectedV3;
+        
+        switch (type) {
+            case 0: // S0: vertices 0, 1, 3, 7
+                expectedV1 = new Point3i(x + h, y, z);          // V1
+                expectedV2 = new Point3i(x + h, y + h, z);      // V3
+                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 1: // S1: vertices 0, 2, 3, 7
+                expectedV1 = new Point3i(x, y + h, z);          // V2
+                expectedV2 = new Point3i(x + h, y + h, z);      // V3
+                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 2: // S2: vertices 0, 4, 5, 7
+                expectedV1 = new Point3i(x, y, z + h);          // V4
+                expectedV2 = new Point3i(x + h, y, z + h);      // V5
+                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 3: // S3: vertices 0, 4, 6, 7
+                expectedV1 = new Point3i(x, y, z + h);          // V4
+                expectedV2 = new Point3i(x, y + h, z + h);      // V6
+                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 4: // S4: vertices 0, 1, 5, 7
+                expectedV1 = new Point3i(x + h, y, z);          // V1
+                expectedV2 = new Point3i(x + h, y, z + h);      // V5
+                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 5: // S5: vertices 0, 2, 6, 7
+                expectedV1 = new Point3i(x, y + h, z);          // V2
+                expectedV2 = new Point3i(x, y + h, z + h);      // V6
+                expectedV3 = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid type: " + type);
+        }
 
-        // V1 should be anchor + h in dimension ei
-        Point3i expectedV1 = new Point3i(x, y, z);
-        addToDimension(expectedV1, ei, h);
         assertEquals(expectedV1, vertices[1], "V1 mismatch for type " + type);
-
-        // V2 should be anchor + h in ei + h in ej
-        Point3i expectedV2 = new Point3i(x, y, z);
-        addToDimension(expectedV2, ei, h);
-        addToDimension(expectedV2, ej, h);
         assertEquals(expectedV2, vertices[2], "V2 mismatch for type " + type);
-
-        // V3 should be anchor + h in (ei+1)%3 and (ei+2)%3
-        Point3i expectedV3 = new Point3i(x, y, z);
-        addToDimension(expectedV3, (ei + 1) % 3, h);
-        addToDimension(expectedV3, (ei + 2) % 3, h);
         assertEquals(expectedV3, vertices[3], "V3 mismatch for type " + type);
     }
 }
