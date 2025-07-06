@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+// KuhnTetree import removed - using base Tetree with positive volume correction
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
@@ -42,6 +43,8 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 
 import javax.vecmath.Point3f;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -70,8 +73,8 @@ public class TetreeVisualizationDemo extends Application {
     private double                                                  mouseX, mouseY;
 
     // Additional visualization groups
-    private Group      cubeDecompositionGroup;
-    private Group      characteristicTypesGroup;
+    private Group cubeDecompositionGroup;
+    private Group characteristicTypesGroup;
 
     public static void main(String[] args) {
         launch(args);
@@ -81,7 +84,7 @@ public class TetreeVisualizationDemo extends Application {
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Tetree Visualization Demo");
 
-        // Create the Tetree
+        // Create the Tetree - now with built-in positive volume correction
         tetree = new Tetree<>(new SequentialLongIDGenerator());
 
         // Create visualization
@@ -112,18 +115,18 @@ public class TetreeVisualizationDemo extends Application {
 
         // Setup lighting with softer, more diffuse lighting
         AmbientLight ambientLight = new AmbientLight(Color.WHITE.deriveColor(0, 1, 0.6, 1)); // Increased ambient
-        
+
         // Add multiple point lights for better coverage
         PointLight pointLight1 = new PointLight(Color.WHITE.deriveColor(0, 1, 0.7, 1));
         pointLight1.setTranslateX(2000);
         pointLight1.setTranslateY(-2000);
         pointLight1.setTranslateZ(-3000);
-        
+
         PointLight pointLight2 = new PointLight(Color.WHITE.deriveColor(0, 1, 0.5, 1));
         pointLight2.setTranslateX(-2000);
         pointLight2.setTranslateY(1000);
         pointLight2.setTranslateZ(-2000);
-        
+
         root3D.getChildren().addAll(ambientLight, pointLight1, pointLight2);
 
         // Setup mouse controls
@@ -153,7 +156,7 @@ public class TetreeVisualizationDemo extends Application {
 
         // Initial visualization
         visualization.updateVisualization();
-        
+
         // Center view on entities after initial load
         javafx.application.Platform.runLater(() -> {
             if (tetree.size() > 0) {
@@ -172,20 +175,95 @@ public class TetreeVisualizationDemo extends Application {
         // This gives us much larger, more visible tetrahedra
         byte level = 5;
         float maxCoord = (float) Math.pow(2, MortonCurve.MAX_REFINEMENT_LEVEL);
-        
+
         // Spread entities across the middle portion of the space
         // This ensures they're visible and not at the edges
         float minRange = maxCoord * 0.2f;  // Start at 20% of max
         float maxRange = maxCoord * 0.8f;  // End at 80% of max
         float range = maxRange - minRange;
 
+        System.out.println("\n=== Inserting " + count + " entities at level " + level + " ===");
+
         for (int i = 0; i < count; i++) {
             float x = minRange + random.nextFloat() * range;
             float y = minRange + random.nextFloat() * range;
             float z = minRange + random.nextFloat() * range;
-            tetree.insert(new Point3f(x, y, z), level, "Entity " + i);
+            Point3f position = new Point3f(x, y, z);
+
+            // Debug: find the enclosing tetrahedron before insertion
+            var enclosingNode = tetree.enclosing(new javax.vecmath.Point3i((int) x, (int) y, (int) z), level);
+            if (enclosingNode != null) {
+                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", i, x, y, z,
+                                  level);
+            } else {
+                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> No enclosing node found%n", i, x, y, z);
+            }
+
+            tetree.insert(position, level, "Entity " + i);
         }
+
+        // Verify all entities are in nodes
+        System.out.println("\n=== Verifying entity containment ===");
+        verifyEntityContainment();
+
         visualization.updateVisualization();
+    }
+
+    private void centerViewOnEntities() {
+        if (tetree.size() > 0) {
+            // Calculate center of all entities
+            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+            float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+
+            int entityCount = 0;
+            for (var node : tetree.nodes().toList()) {
+                for (var entityId : node.entityIds()) {
+                    Point3f pos = tetree.getEntityPosition(entityId);
+                    if (pos != null) {
+                        minX = Math.min(minX, pos.x);
+                        minY = Math.min(minY, pos.y);
+                        minZ = Math.min(minZ, pos.z);
+                        maxX = Math.max(maxX, pos.x);
+                        maxY = Math.max(maxY, pos.y);
+                        maxZ = Math.max(maxZ, pos.z);
+                        entityCount++;
+                    }
+                }
+            }
+
+            if (entityCount > 0) {
+                // Center the camera on the entity bounding box
+                float centerX = (minX + maxX) / 2;
+                float centerY = (minY + maxY) / 2;
+                float centerZ = (minZ + maxZ) / 2;
+
+                System.out.printf(
+                "Centering on %d entities: bounds [%.1f,%.1f,%.1f] to [%.1f,%.1f,%.1f], center [%.1f,%.1f,%.1f]%n",
+                entityCount, minX, minY, minZ, maxX, maxY, maxZ, centerX, centerY, centerZ);
+
+                // Reset rotation to look straight at entities
+                rotateX.setAngle(-20); // Slight downward tilt
+                rotateY.setAngle(0);
+
+                // Apply scale to convert from Tetree coordinates to scene coordinates
+                double scale = visualization.rootScaleProperty().get();
+                System.out.printf("Scale: %.6f%n", scale);
+
+                // Center the view by translating in the opposite direction
+                translate.setX(-centerX * scale);
+                translate.setY(-centerY * scale);
+                translate.setZ(0); // Keep Z at 0, camera distance handles depth
+
+                // Adjust camera distance based on entity spread
+                float spread = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
+                double scaledSpread = spread * scale;
+                double optimalDistance = scaledSpread * 2.5; // View from 2.5x the spread distance
+                scene3D.getCamera().setTranslateZ(-Math.max(optimalDistance, 1000));
+
+                System.out.printf("Camera position: translate [%.1f,%.1f,%.1f], distance %.1f%n", translate.getX(),
+                                  translate.getY(), translate.getZ(), scene3D.getCamera().getTranslateZ());
+            }
+        }
     }
 
     private double computeSignedVolume(Point3f v0, Point3f v1, Point3f v2, Point3f v3) {
@@ -205,7 +283,6 @@ public class TetreeVisualizationDemo extends Application {
 
         return det / 6.0;
     }
-
 
     private Group createAxes() {
         Group axesGroup = new Group();
@@ -283,18 +360,24 @@ public class TetreeVisualizationDemo extends Application {
 
         controls.getChildren().addAll(showEmptyNodes, showEntityPositions, showNodeBounds, showLevelColors,
                                       showFilledFaces);
-        
+
         // Camera control
         controls.getChildren().add(new Separator());
         controls.getChildren().add(new Label("Camera Controls"));
-        
+
         Button centerOnEntities = new Button("Center View on Entities");
         centerOnEntities.setOnAction(_ -> centerViewOnEntities());
-        
+
         Button resetView = new Button("Reset View");
         resetView.setOnAction(_ -> resetView());
-        
+
         controls.getChildren().addAll(centerOnEntities, resetView);
+
+        // Add containment verification button
+        Button verifyContainment = new Button("Verify Entity Containment");
+        verifyContainment.setTooltip(new Tooltip("Check if all entities have visible containing tetrahedra"));
+        verifyContainment.setOnAction(_ -> verifyEntityContainment());
+        controls.getChildren().add(verifyContainment);
 
         // Transform-based rendering option
         CheckBox useTransformBased = new CheckBox("Transform-Based Rendering");
@@ -510,7 +593,8 @@ public class TetreeVisualizationDemo extends Application {
 
         CheckBox animateModifications = new CheckBox("Animate Modifications");
         animateModifications.setSelected(false);
-        animateModifications.selectedProperty().addListener((_, _, newVal) -> visualization.setAnimateModifications(newVal));
+        animateModifications.selectedProperty().addListener(
+        (_, _, newVal) -> visualization.setAnimateModifications(newVal));
         controls.getChildren().add(animateModifications);
 
         Button animatedAddBtn = new Button("Add Entity (Animated)");
@@ -711,62 +795,6 @@ public class TetreeVisualizationDemo extends Application {
         translate.setZ(0);
         scene3D.getCamera().setTranslateZ(-CAMERA_DISTANCE);
     }
-    
-    private void centerViewOnEntities() {
-        if (tetree.size() > 0) {
-            // Calculate center of all entities
-            float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-            float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-            
-            int entityCount = 0;
-            for (var node : tetree.nodes().toList()) {
-                for (var entityId : node.entityIds()) {
-                    Point3f pos = tetree.getEntityPosition(entityId);
-                    if (pos != null) {
-                        minX = Math.min(minX, pos.x);
-                        minY = Math.min(minY, pos.y);
-                        minZ = Math.min(minZ, pos.z);
-                        maxX = Math.max(maxX, pos.x);
-                        maxY = Math.max(maxY, pos.y);
-                        maxZ = Math.max(maxZ, pos.z);
-                        entityCount++;
-                    }
-                }
-            }
-            
-            if (entityCount > 0) {
-                // Center the camera on the entity bounding box
-                float centerX = (minX + maxX) / 2;
-                float centerY = (minY + maxY) / 2;
-                float centerZ = (minZ + maxZ) / 2;
-                
-                System.out.printf("Centering on %d entities: bounds [%.1f,%.1f,%.1f] to [%.1f,%.1f,%.1f], center [%.1f,%.1f,%.1f]%n",
-                    entityCount, minX, minY, minZ, maxX, maxY, maxZ, centerX, centerY, centerZ);
-                
-                // Reset rotation to look straight at entities
-                rotateX.setAngle(-20); // Slight downward tilt
-                rotateY.setAngle(0);
-                
-                // Apply scale to convert from Tetree coordinates to scene coordinates
-                double scale = visualization.rootScaleProperty().get();
-                System.out.printf("Scale: %.6f%n", scale);
-                
-                // Center the view by translating in the opposite direction
-                translate.setX(-centerX * scale);
-                translate.setY(-centerY * scale);
-                translate.setZ(0); // Keep Z at 0, camera distance handles depth
-                
-                // Adjust camera distance based on entity spread
-                float spread = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
-                double scaledSpread = spread * scale;
-                double optimalDistance = scaledSpread * 2.5; // View from 2.5x the spread distance
-                scene3D.getCamera().setTranslateZ(-Math.max(optimalDistance, 1000));
-                
-                System.out.printf("Camera position: translate [%.1f,%.1f,%.1f], distance %.1f%n",
-                    translate.getX(), translate.getY(), translate.getZ(), scene3D.getCamera().getTranslateZ());
-            }
-        }
-    }
 
     private void setupMouseControls() {
         scene3D.setOnMousePressed(event -> {
@@ -875,12 +903,13 @@ public class TetreeVisualizationDemo extends Application {
                                       (float) (offset + cubeSize)); // c7 = (1,1,1)
 
         // Create the 6 characteristic tetrahedra
-        int[][] tetIndices = { { 0, 1, 5, 7 },  // S0
-                               { 0, 7, 3, 1 },  // S1
-                               { 0, 2, 3, 7 },  // S2
-                               { 0, 7, 6, 2 },  // S3
-                               { 0, 4, 6, 7 },  // S4
-                               { 0, 7, 5, 4 }   // S5
+        // Using correct vertex ordering for positive volume tetrahedra
+        int[][] tetIndices = { { 0, 1, 3, 7 },  // S0 (RED)
+                               { 0, 5, 1, 7 },  // S1 (GREEN) - fixed winding order
+                               { 0, 3, 2, 7 },  // S2 (BLUE) - fixed winding order
+                               { 0, 2, 6, 7 },  // S3 (YELLOW)
+                               { 0, 4, 5, 7 },  // S4 (MAGENTA)
+                               { 0, 6, 4, 7 }   // S5 (CYAN) - fixed winding order
         };
 
         Color[] colors = { Color.RED.deriveColor(0, 1, 1, 0.3), Color.GREEN.deriveColor(0, 1, 1, 0.3),
@@ -935,6 +964,91 @@ public class TetreeVisualizationDemo extends Application {
         System.out.println("  Transform root children: " + transformRoot.getChildren().size());
         System.out.println("  Root3D children: " + root3D.getChildren().size());
         System.out.println("  Root3D transforms: " + root3D.getTransforms());
+    }
+
+    private void verifyEntityContainment() {
+        int totalEntities = 0;
+        int entitiesInVisibleNodes = 0;
+        int entitiesWithoutVisibleContainer = 0;
+
+        // Get current visibility settings
+        int minLevel = visualization.minLevelProperty().get();
+        int maxLevel = visualization.maxLevelProperty().get();
+        boolean showEmpty = visualization.showEmptyNodesProperty().get();
+
+        System.out.println("\n=== Entity Containment Verification ===");
+        System.out.println("Visibility settings: levels " + minLevel + "-" + maxLevel + ", showEmpty=" + showEmpty);
+
+        // Track entities outside visible range
+        Map<Integer, Integer> entitiesByLevel = new HashMap<>();
+
+        // Check all entities by iterating through nodes
+        for (var node : tetree.nodes().toList()) {
+            for (var entityId : node.entityIds()) {
+                var position = tetree.getEntityPosition(entityId);
+                if (position == null) {
+                    continue;
+                }
+                totalEntities++;
+
+                // Find which node contains this entity
+                boolean foundInVisibleNode = false;
+                for (var nodeCheck : tetree.nodes().toList()) {
+                    if (nodeCheck.entityIds().contains(entityId)) {
+                        var key = nodeCheck.sfcIndex();
+                        int level = visualization.getLevelForKey(key);
+                        entitiesByLevel.merge(level, 1, Integer::sum);
+
+                        boolean isVisible = level >= minLevel && level <= maxLevel && (showEmpty
+                                                                                       || !nodeCheck.entityIds()
+                                                                                                    .isEmpty());
+
+                        if (isVisible) {
+                            entitiesInVisibleNodes++;
+                            foundInVisibleNode = true;
+                        } else {
+                            // Debug: show why not visible
+                            if (level < minLevel || level > maxLevel) {
+                                System.out.printf(
+                                "Entity %s at (%.0f,%.0f,%.0f) in node at level %d (outside visible range)%n", entityId,
+                                position.x, position.y, position.z, level);
+                            } else if (!showEmpty && nodeCheck.entityIds().size() == 1) {
+                                System.out.printf("Entity %s at (%.0f,%.0f,%.0f) in 'empty' node (only 1 entity)%n",
+                                                  entityId, position.x, position.y, position.z);
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                if (!foundInVisibleNode) {
+                    entitiesWithoutVisibleContainer++;
+                    System.out.printf("WARNING: Entity %s at (%.0f,%.0f,%.0f) has no visible container!%n", entityId,
+                                      position.x, position.y, position.z);
+
+                    // Try to find enclosing node to understand why
+                    try {
+                        var enclosingNode = tetree.enclosing(
+                        new javax.vecmath.Point3i((int) position.x, (int) position.y, (int) position.z), (byte) 10);
+                        if (enclosingNode != null) {
+                            System.out.printf("  -> Found enclosing node at level 10%n");
+                        } else {
+                            System.out.printf("  -> No enclosing node found at level 10%n");
+                        }
+                    } catch (Exception e) {
+                        System.out.printf("  -> Failed to find enclosing node: %s%n", e.getMessage());
+                    }
+                }
+            }
+        }
+
+        System.out.println("\nEntity distribution by level:");
+        entitiesByLevel.forEach((level, count) -> System.out.printf("  Level %d: %d entities%s%n", level, count,
+                                                                    (level < minLevel || level > maxLevel)
+                                                                    ? " (not visible)" : ""));
+
+        System.out.printf("\nSummary: %d total entities, %d in visible nodes, %d without visible container%n",
+                          totalEntities, entitiesInVisibleNodes, entitiesWithoutVisibleContainer);
     }
 
     /**

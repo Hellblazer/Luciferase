@@ -123,8 +123,14 @@ public class CompactTetreeKey extends TetreeKey<CompactTetreeKey> {
 
         // For non-root levels, check that we don't have bits set beyond what's needed
         if (level > 0) {
-            long maxBitsForLevel = (1L << (level * BITS_PER_LEVEL)) - 1;
-            return (tmIndex & ~maxBitsForLevel) == 0;
+            // Each level uses 6 bits, so for level n we need n*6 bits
+            int bitsNeeded = level * BITS_PER_LEVEL;
+            if (bitsNeeded >= 64) {
+                // All bits could be valid
+                return true;
+            }
+            long maxValue = (1L << bitsNeeded) - 1;
+            return tmIndex <= maxValue;
         }
 
         return true;

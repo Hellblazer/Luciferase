@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
@@ -512,11 +511,11 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
         // First, show the root tetrahedron itself with scaling
-        Group rootWireframe = createWireframeTetrahedron(rootTet, 0);  // Level 0 for root
+        Group rootWireframe = createWireframeTetrahedronForSubdivision(rootTet, 0);  // Level 0 for root
         nodeGroup.getChildren().add(rootWireframe);
 
         if (showFilledFaces.get()) {
-            MeshView rootFace = createTransparentTetrahedron(rootTet, 0);  // Level 0 for root
+            MeshView rootFace = createTransparentTetrahedronForSubdivision(rootTet, 0);  // Level 0 for root
             PhongMaterial rootMaterial = new PhongMaterial(Color.DARKGRAY.deriveColor(0, 1, 1, 0.3));
             rootMaterial.setSpecularColor(Color.WHITE);
             rootFace.setMaterial(rootMaterial);
@@ -536,13 +535,13 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
             Tet child = children[i];
 
-            // Create wireframe for each child
-            Group wireframe = createWireframeTetrahedron(child, 1);
+            // Create wireframe for each child - use subdivision coordinates
+            Group wireframe = createWireframeTetrahedronForSubdivision(child, 1);
             nodeGroup.getChildren().add(wireframe);
 
             if (showFilledFaces.get()) {
-                // Create semi-transparent face with unique color
-                MeshView face = createTransparentTetrahedron(child, 1);
+                // Create semi-transparent face with unique color - use subdivision coordinates
+                MeshView face = createTransparentTetrahedronForSubdivision(child, 1);
 
                 // Apply unique color based on child index
                 Color childColor = Color.hsb(i * 45, 0.8, 0.8); // 8 distinct hues
@@ -620,11 +619,24 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         sphere.setTranslateY(pos.y);
         sphere.setTranslateZ(pos.z);
 
-        // Color based on selection state
+        // Check if this entity has a visible container
+        boolean hasVisibleContainer = false;
+        for (var node : tetree.nodes().toList()) {
+            if (node.entityIds().contains(id) && nodeVisuals.containsKey(node.sfcIndex())) {
+                hasVisibleContainer = true;
+                break;
+            }
+        }
+
+        // Color based on selection state and containment
         PhongMaterial material = new PhongMaterial();
         if (getSelectedEntities().contains(id)) {
             material.setDiffuseColor(Color.YELLOW);
             material.setSpecularColor(Color.WHITE);
+        } else if (!hasVisibleContainer) {
+            // Red for entities without visible containers
+            material.setDiffuseColor(Color.RED);
+            material.setSpecularColor(Color.DARKRED);
         } else {
             material.setDiffuseColor(Color.LIME);
             material.setSpecularColor(Color.LIGHTGREEN);
@@ -668,19 +680,40 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
     @Override
     protected void renderNodes() {
+        boolean debug = Boolean.getBoolean("tetree.debug.render");
+        int totalNodes = 0;
+        int nodesWithEntities = 0;
+        int renderedNodes = 0;
+
         // Get all nodes from the tetree
-        tetree.nodes().forEach(node -> {
+        for (var node : tetree.nodes().toList()) {
+            totalNodes++;
             SpatialNode<TetreeKey<? extends TetreeKey>, ID> typedNode = new SpatialNode<>(node.sfcIndex(),
                                                                                           node.entityIds());
+            if (!node.entityIds().isEmpty()) {
+                nodesWithEntities++;
+            }
+
             if (shouldRenderNode(typedNode)) {
                 Node tetVisual = createTetVisual(typedNode);
                 if (tetVisual != null) {
                     nodeGroup.getChildren().add(tetVisual);
                     nodeVisuals.put(typedNode.sfcIndex(), tetVisual);
                     visibleNodeCount++;
+                    renderedNodes++;
                 }
+            } else if (debug && !node.entityIds().isEmpty()) {
+                // Debug: log why nodes with entities aren't being rendered
+                int level = getLevelForKey(node.sfcIndex());
+                System.out.printf("Node with %d entities at level %d not rendered (visible range: %d-%d)%n",
+                                  node.entityIds().size(), level, minLevelProperty().get(), maxLevelProperty().get());
             }
-        });
+        }
+
+        if (debug) {
+            System.out.printf("Render stats: %d total nodes, %d with entities, %d rendered%n", totalNodes,
+                              nodesWithEntities, renderedNodes);
+        }
     }
 
     /**
@@ -724,7 +757,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             MeshView face = createTransparentTetrahedron(tet, getLevelForKey(key));
             tetGroup.getChildren().add(face);
         }
-        
+
         // Only show wireframe if we're not showing filled faces (to avoid edge interpenetration)
         if (showNodeBoundsProperty().get() && !showFilled) {
             Group wireframe = createWireframeTetrahedron(tet, getLevelForKey(key));
@@ -768,9 +801,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
         // Convert to Point3f for JavaFX
         for (int i = 0; i < 4; i++) {
-            vertices[i] = new Point3f((float) tetVertices[i].x,
-                                      (float) tetVertices[i].y,
-                                      (float) tetVertices[i].z);
+            vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
         }
 
         // Create triangle mesh for tetrahedron
@@ -856,9 +887,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
         // Convert to Point3f for JavaFX (no manual scaling needed)
         for (int i = 0; i < 4; i++) {
-            vertices[i] = new Point3f((float) tetVertices[i].x,
-                                      (float) tetVertices[i].y,
-                                      (float) tetVertices[i].z);
+            vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
         }
 
         // No inset for wireframe - we want to show actual boundaries
@@ -1161,8 +1190,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Convert ExtendedTetreeKey to Tet for visualization.
      */
     private Tet tetreeKeyToTet(TetreeKey<? extends TetreeKey> key) {
-        // Use the static method from Tet to properly decode the ExtendedTetreeKey
-        return Tet.tetrahedron(key);
+        // Use the tetree's method to properly decode the key
+        // This allows subclasses to provide their own Tet implementations if needed
+        return tetree.tetrahedronFromKey(key);
     }
 
     /**
@@ -1575,5 +1605,85 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             this.origin = origin;
             this.direction = direction;
         }
+    }
+    
+    /**
+     * Create wireframe tetrahedron for subdivision visualization.
+     * Uses subdivisionCoordinates() instead of coordinates().
+     */
+    private Group createWireframeTetrahedronForSubdivision(Tet tet, int level) {
+        Group edges = new Group();
+
+        // Get the subdivision coordinates
+        Point3i[] tetVertices = tet.subdivisionCoordinates();
+        Point3f[] vertices = new Point3f[4];
+
+        // Convert to Point3f for JavaFX (no manual scaling needed)
+        for (int i = 0; i < 4; i++) {
+            vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
+        }
+
+        // Create all 6 edges of the tetrahedron
+        int[][] edgeIndices = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
+
+        // Material for edges based on level
+        PhongMaterial edgeMaterial = level == 0 ? new PhongMaterial(Color.BLACK) 
+                                                : new PhongMaterial(Color.DARKGRAY);
+        
+        // Edge thickness based on level (thicker at root, thinner at deeper levels)
+        double thickness = Math.max(500, 2000 - level * 100);  // Much thinner: 500-2000 range
+        
+        for (int[] edge : edgeIndices) {
+            Point3f p1 = vertices[edge[0]];
+            Point3f p2 = vertices[edge[1]];
+            Line line = new Line(thickness, new Point3D(p1.x, p1.y, p1.z), new Point3D(p2.x, p2.y, p2.z));
+            line.setMaterial(edgeMaterial);
+            edges.getChildren().add(line);
+        }
+
+        return edges;
+    }
+
+    /**
+     * Create transparent tetrahedron face for subdivision visualization.
+     * Uses subdivisionCoordinates() instead of coordinates().
+     */
+    private MeshView createTransparentTetrahedronForSubdivision(Tet tet, int level) {
+        // Get the subdivision coordinates
+        Point3i[] tetVertices = tet.subdivisionCoordinates();
+        Point3f[] vertices = new Point3f[4];
+
+        // Convert to Point3f for JavaFX
+        for (int i = 0; i < 4; i++) {
+            vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
+        }
+
+        // Create triangle mesh for tetrahedron
+        TriangleMesh mesh = new TriangleMesh();
+
+        // Add vertices
+        for (Point3f v : vertices) {
+            mesh.getPoints().addAll(v.x, v.y, v.z);
+        }
+
+        // Add texture coordinates (simple mapping)
+        mesh.getTexCoords().addAll(0, 0, 1, 0, 0.5f, 1, 0.5f, 0.5f);
+
+        // Define faces with correct winding order
+        // We need to ensure counter-clockwise winding when viewed from outside
+        mesh.getFaces().addAll(0, 0, 2, 2, 1, 1,  // Face opposite to vertex 3
+                               0, 0, 1, 1, 3, 3,  // Face opposite to vertex 2
+                               0, 0, 3, 3, 2, 2,  // Face opposite to vertex 1
+                               1, 1, 2, 2, 3, 3   // Face opposite to vertex 0
+                              );
+
+        MeshView meshView = new MeshView(mesh);
+        meshView.setCullFace(javafx.scene.shape.CullFace.BACK);
+
+        // Apply material based on level
+        Material material = getMaterialForTet(tet, level);
+        meshView.setMaterial(material);
+
+        return meshView;
     }
 }

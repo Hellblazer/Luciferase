@@ -2215,6 +2215,7 @@ public class Tet {
         }
     }
 
+
     public record FaceNeighbor(byte face, Tet tet) {
     }
 

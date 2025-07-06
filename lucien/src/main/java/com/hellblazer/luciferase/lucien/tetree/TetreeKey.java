@@ -148,6 +148,10 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return Objects.hash(level, getLowBits(), getHighBits());
     }
 
+    public boolean isKuhn() {
+        return false;
+    }
+
     @Override
     public boolean isValid() {
         // Check basic constraints

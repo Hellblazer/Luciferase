@@ -1065,6 +1065,18 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
         TetreeValidationUtils.validatePositiveCoordinates(point);
         return locate(point, level);
     }
+    
+    /**
+     * Convert a TetreeKey back to a Tet instance.
+     * This method allows subclasses to provide their own Tet implementations.
+     * 
+     * @param key The TetreeKey to convert
+     * @return A Tet instance (or subclass) representing the tetrahedron
+     */
+    public Tet tetrahedronFromKey(TetreeKey<? extends TetreeKey> key) {
+        // Default implementation uses regular Tet
+        return Tet.tetrahedron(key);
+    }
 
     @Override
     public List<ID> lookup(Point3f position, byte level) {
@@ -1310,7 +1322,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
      * @throws IllegalArgumentException if tetIndex is invalid
      */
     public Iterator<TetreeNodeImpl<ID>> siblingIterator(TetreeKey<? extends TetreeKey> tetIndex) {
-        Tet tet = Tet.tetrahedron(tetIndex);
+        Tet tet = tetrahedronFromKey(tetIndex);
         if (tet.l() == 0) {
             // Root has no siblings
             return Collections.emptyIterator();
@@ -2361,7 +2373,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
      * c6(0,1,1), c7(1,1,1) - S4: c0(0,0,0), c4(0,0,1), c6(0,1,1), c7(1,1,1) - S5: c0(0,0,0), c4(0,0,1), c5(1,0,1),
      * c7(1,1,1)
      */
-    private byte determineTetrahedronType(float relX, float relY, float relZ, float cellSize) {
+    protected byte determineTetrahedronType(float relX, float relY, float relZ, float cellSize) {
         // CRITICAL: The coordinate comparison logic below is based on the SIMPLEX_STANDARD
         // tetrahedra definitions and how they partition the unit cube. This algorithm
         // has been validated against the actual Tet.contains() method.
@@ -2709,7 +2721,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
      *
      * This is NOT a traversal through subdivisions - it's a direct calculation.
      */
-    private Tet locate(Tuple3f point, byte level) {
+    protected Tet locate(Tuple3f point, byte level) {
         // Validate inputs
         if (point.x < 0 || point.y < 0 || point.z < 0) {
             throw new IllegalArgumentException("Coordinates must be non-negative: " + point);

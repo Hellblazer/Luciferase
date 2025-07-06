@@ -218,5 +218,11 @@ Historical documents (describe unimplemented features):
         - CorrectTetreeLocateTest
     - **Documentation**: See TETREE_T8CODE_PARTITION_ANALYSIS.md for details
     - **Note**: This is a fundamental limitation of t8code, not a bug in our implementation
+- **VISUALIZATION FIXES (July 2025):**
+    - **SimpleT8CodeGapDemo**: Fixed to use actual Tet.coordinates() instead of hardcoded unit cube vertices
+    - **SimpleBeyRefinementDemo**: Fixed edge rendering using Cylinder shapes with proper 3D rotation
+    - **Parent Wireframe**: Now correctly shows S0 tetrahedron edges using actual t8code coordinates
+    - **Edge Rotation**: Switched from Box to Cylinder for edges, using cross product for proper alignment
+    - **Coordinate Accuracy**: Visualizations now use real Tet class coordinates, not approximations
 
 [... rest of the file remains unchanged ...]
