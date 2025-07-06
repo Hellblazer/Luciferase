@@ -39,6 +39,7 @@ import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
+import javafx.scene.shape.Cylinder;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.Sphere;
 import javafx.scene.shape.TriangleMesh;
@@ -492,7 +493,65 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     /**
+     * Show the S0-S5 decomposition using standard coordinates.
+     * This shows the actual tetrahedra used for spatial indexing.
+     */
+    public void showS0S5Decomposition() {
+        showS0S5Decomposition(null);
+    }
+    
+    /**
+     * Show the S0-S5 decomposition with optional child visibility.
+     *
+     * @param childVisibility Optional array of 8 booleans indicating which children to show (null = show all)
+     */
+    public void showS0S5Decomposition(boolean[] childVisibility) {
+        showS0S5Decomposition(childVisibility, 1);
+    }
+    
+    /**
+     * Show the S0-S5 decomposition with optional child visibility and refinement level.
+     *
+     * @param childVisibility Optional array of 8 booleans indicating which children to show (null = show all)
+     * @param refinementLevel The number of levels to refine (0 = root only, 1 = show 8 children, 2 = show 64 grandchildren, etc.)
+     */
+    public void showS0S5Decomposition(boolean[] childVisibility, int refinementLevel) {
+        // Clear existing visualization
+        nodeGroup.getChildren().clear();
+
+        // Create root S0 tetrahedron using standard coordinates
+        Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
+
+        // Show the root tetrahedron itself
+        Group rootWireframe = createWireframeTetrahedron(rootTet, 0);  // Uses coordinates()
+        nodeGroup.getChildren().add(rootWireframe);
+
+        if (showFilledFaces.get()) {
+            MeshView rootFace = createTransparentTetrahedron(rootTet, 0);  // Uses coordinates()
+            PhongMaterial rootMaterial = new PhongMaterial(Color.DARKRED.deriveColor(0, 1, 1, 0.3));
+            rootMaterial.setSpecularColor(Color.WHITE);
+            rootFace.setMaterial(rootMaterial);
+            rootFace.setOpacity(0.2);
+            nodeGroup.getChildren().add(rootFace);
+        }
+
+        // Add label
+        Text label = new Text(String.format("S0-S5 Decomposition (Level %d)", refinementLevel));
+        label.setFont(Font.font("Arial", 24));
+        label.setFill(Color.WHITE);
+        label.setTranslateX(500000);
+        label.setTranslateY(-100000);
+        nodeGroup.getChildren().add(label);
+        
+        // Show refinement
+        if (refinementLevel > 0) {
+            showS0S5RefinementRecursive(rootTet, 0, refinementLevel, childVisibility);
+        }
+    }
+    
+    /**
      * Show the characteristic tetrahedron decomposition.
+     * This shows subdivision-compatible geometry (different from S0-S5).
      */
     public void showCharacteristicDecomposition() {
         showCharacteristicDecomposition(null);
@@ -504,18 +563,28 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * @param childVisibility Optional array of 8 booleans indicating which children to show (null = show all)
      */
     public void showCharacteristicDecomposition(boolean[] childVisibility) {
+        showCharacteristicDecomposition(childVisibility, 1);
+    }
+    
+    /**
+     * Show the characteristic tetrahedron decomposition with optional child visibility and refinement level.
+     *
+     * @param childVisibility Optional array of 8 booleans indicating which children to show (null = show all)
+     * @param refinementLevel The number of levels to refine (0 = root only, 1 = show 8 children, 2 = show 64 grandchildren, etc.)
+     */
+    public void showCharacteristicDecomposition(boolean[] childVisibility, int refinementLevel) {
         // Clear existing visualization
         nodeGroup.getChildren().clear();
 
         // Create root tetrahedron and show its subdivision
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
 
-        // First, show the root tetrahedron itself with scaling
-        Group rootWireframe = createWireframeTetrahedronForSubdivision(rootTet, 0);  // Level 0 for root
+        // Show root using subdivision coordinates but with clean rendering
+        Group rootWireframe = createWireframeTetrahedronWithCoords(rootTet, 0, true);
         nodeGroup.getChildren().add(rootWireframe);
 
         if (showFilledFaces.get()) {
-            MeshView rootFace = createTransparentTetrahedronForSubdivision(rootTet, 0);  // Level 0 for root
+            MeshView rootFace = createTransparentTetrahedronWithCoords(rootTet, 0, true);
             PhongMaterial rootMaterial = new PhongMaterial(Color.DARKGRAY.deriveColor(0, 1, 1, 0.3));
             rootMaterial.setSpecularColor(Color.WHITE);
             rootFace.setMaterial(rootMaterial);
@@ -523,35 +592,17 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             nodeGroup.getChildren().add(rootFace);
         }
 
-        // Get the 8 child tetrahedra from geometric subdivision
-        Tet[] children = rootTet.geometricSubdivide();
-
-        // Render each child with different colors
-        for (int i = 0; i < children.length; i++) {
-            // Check visibility if array provided
-            if (childVisibility != null && i < childVisibility.length && !childVisibility[i]) {
-                continue;
-            }
-
-            Tet child = children[i];
-
-            // Create wireframe for each child - use subdivision coordinates
-            Group wireframe = createWireframeTetrahedronForSubdivision(child, 1);
-            nodeGroup.getChildren().add(wireframe);
-
-            if (showFilledFaces.get()) {
-                // Create semi-transparent face with unique color - use subdivision coordinates
-                MeshView face = createTransparentTetrahedronForSubdivision(child, 1);
-
-                // Apply unique color based on child index
-                Color childColor = Color.hsb(i * 45, 0.8, 0.8); // 8 distinct hues
-                PhongMaterial material = new PhongMaterial(childColor);
-                material.setSpecularColor(childColor.brighter());
-                face.setMaterial(material);
-                face.setOpacity(0.5);
-
-                nodeGroup.getChildren().add(face);
-            }
+        // Add label
+        Text label = new Text(String.format("Subdivision Geometry (Level %d)", refinementLevel));
+        label.setFont(Font.font("Arial", 24));
+        label.setFill(Color.YELLOW);
+        label.setTranslateX(500000);
+        label.setTranslateY(-100000);
+        nodeGroup.getChildren().add(label);
+        
+        // Show refinement
+        if (refinementLevel > 0) {
+            showSubdivisionRefinementRecursive(rootTet, 0, refinementLevel, childVisibility);
         }
     }
 
@@ -880,44 +931,8 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Create wireframe tetrahedron for tet bounds.
      */
     private Group createWireframeTetrahedron(Tet tet, int level) {
-        Group edges = new Group();
-
-        // Use standard S0-S5 coordinates for accurate visualization
-        // This ensures entities appear within their containing tetrahedra
-        Point3i[] tetVertices = tet.coordinates();
-        Point3f[] vertices = new Point3f[4];
-
-        // Convert to Point3f for JavaFX (no manual scaling needed)
-        for (int i = 0; i < 4; i++) {
-            vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
-        }
-
-        // No inset for wireframe - we want to show actual boundaries
-
-        // Define tetrahedron edges (6 edges)
-        int[][] edgeIndices = { { 0, 1 }, { 0, 2 }, { 0, 3 },  // Edges from vertex 0
-                                { 1, 2 }, { 1, 3 },          // Edges from vertex 1
-                                { 2, 3 }                   // Edge from vertex 2
-        };
-
-        // Create edge lines with type-based coloring
-        Color edgeColor = showLevelColorsProperty().get() ? typeColors.getOrDefault(tet.type(), Color.GRAY).darker()
-                                                          : Color.DARKGRAY;
-        PhongMaterial edgeMaterial = new PhongMaterial(edgeColor);
-
-        // Line thickness in natural coordinates (scales with scene transform)
-        // Much thinner lines to avoid ugly interpenetration at vertices
-        double thickness = Math.max(500, 2000 - level * 100);  // Much thinner: 500-2000 range
-
-        for (int[] edge : edgeIndices) {
-            Point3f p1 = vertices[edge[0]];
-            Point3f p2 = vertices[edge[1]];
-            Line line = new Line(thickness, new Point3D(p1.x, p1.y, p1.z), new Point3D(p2.x, p2.y, p2.z));
-            line.setMaterial(edgeMaterial);
-            edges.getChildren().add(line);
-        }
-
-        return edges;
+        // Use the shared implementation with standard coordinates
+        return createWireframeTetrahedronWithCoords(tet, level, false);
     }
 
     /**
@@ -1610,49 +1625,101 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
     
     /**
-     * Create wireframe tetrahedron for subdivision visualization.
-     * Uses subdivisionCoordinates() instead of coordinates().
+     * Create wireframe tetrahedron with choice of coordinate system.
+     * @param tet The tetrahedron to render
+     * @param level The level for coloring
+     * @param useSubdivisionCoords If true, use subdivisionCoordinates(), otherwise use coordinates()
      */
-    private Group createWireframeTetrahedronForSubdivision(Tet tet, int level) {
-        Group edges = new Group();
+    private Group createWireframeTetrahedronWithCoords(Tet tet, int level, boolean useSubdivisionCoords) {
+        // Get coordinates based on the flag
+        Point3i[] tetVertices = useSubdivisionCoords ? tet.subdivisionCoordinates() : tet.coordinates();
+        
+        // Use the existing clean rendering method
+        return createWireframeTetrahedronFromVertices(tet, tetVertices, level);
+    }
 
-        // Get the subdivision coordinates
-        Point3i[] tetVertices = tet.subdivisionCoordinates();
+    /**
+     * Create wireframe tetrahedron from vertex coordinates.
+     * Shared implementation for both coordinate systems.
+     */
+    private Group createWireframeTetrahedronFromVertices(Tet tet, Point3i[] tetVertices, int level) {
+        Group edges = new Group();
         Point3f[] vertices = new Point3f[4];
 
-        // Convert to Point3f for JavaFX (no manual scaling needed)
+        // Convert to Point3f for JavaFX
         for (int i = 0; i < 4; i++) {
             vertices[i] = new Point3f((float) tetVertices[i].x, (float) tetVertices[i].y, (float) tetVertices[i].z);
         }
 
-        // Create all 6 edges of the tetrahedron
+        // Create all 6 edges of the tetrahedron using cylinders for clean rendering
         int[][] edgeIndices = { { 0, 1 }, { 0, 2 }, { 0, 3 }, { 1, 2 }, { 1, 3 }, { 2, 3 } };
 
-        // Material for edges based on level
-        PhongMaterial edgeMaterial = level == 0 ? new PhongMaterial(Color.BLACK) 
-                                                : new PhongMaterial(Color.DARKGRAY);
+        // Create edge lines with type-based coloring
+        Color edgeColor = showLevelColorsProperty().get() && tet != null 
+                         ? typeColors.getOrDefault(tet.type(), Color.GRAY).darker()
+                         : Color.DARKGRAY;
+        PhongMaterial edgeMaterial = new PhongMaterial(edgeColor);
+        edgeMaterial.setSpecularColor(Color.WHITE);
+        edgeMaterial.setSpecularPower(32);
         
-        // Edge thickness based on level (thicker at root, thinner at deeper levels)
-        double thickness = Math.max(500, 2000 - level * 100);  // Much thinner: 500-2000 range
-        
+        // Edge radius based on level (thicker at root, thinner at deeper levels)
+        double radius = Math.max(500, 2000 - level * 100);
+
         for (int[] edge : edgeIndices) {
             Point3f p1 = vertices[edge[0]];
             Point3f p2 = vertices[edge[1]];
-            Line line = new Line(thickness, new Point3D(p1.x, p1.y, p1.z), new Point3D(p2.x, p2.y, p2.z));
-            line.setMaterial(edgeMaterial);
-            edges.getChildren().add(line);
+            
+            // Calculate edge midpoint and length
+            double dx = p2.x - p1.x;
+            double dy = p2.y - p1.y;
+            double dz = p2.z - p1.z;
+            double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            
+            if (length > 0) {
+                // Create cylinder for edge
+                Cylinder cylinder = new Cylinder(radius, length);
+                cylinder.setMaterial(edgeMaterial);
+                
+                // Position at midpoint
+                cylinder.setTranslateX((p1.x + p2.x) / 2.0);
+                cylinder.setTranslateY((p1.y + p2.y) / 2.0);
+                cylinder.setTranslateZ((p1.z + p2.z) / 2.0);
+                
+                // Calculate rotation to align cylinder with edge
+                Point3D yAxis = new Point3D(0, 1, 0);
+                Point3D edgeVector = new Point3D(dx, dy, dz).normalize();
+                Point3D rotationAxis = yAxis.crossProduct(edgeVector);
+                double angle = Math.toDegrees(Math.acos(yAxis.dotProduct(edgeVector)));
+                
+                if (rotationAxis.magnitude() > 0) {
+                    cylinder.setRotationAxis(rotationAxis);
+                    cylinder.setRotate(angle);
+                }
+                
+                edges.getChildren().add(cylinder);
+            }
         }
 
         return edges;
     }
 
     /**
-     * Create transparent tetrahedron face for subdivision visualization.
+     * Create wireframe tetrahedron for subdivision visualization.
      * Uses subdivisionCoordinates() instead of coordinates().
      */
-    private MeshView createTransparentTetrahedronForSubdivision(Tet tet, int level) {
-        // Get the subdivision coordinates
-        Point3i[] tetVertices = tet.subdivisionCoordinates();
+    private Group createWireframeTetrahedronForSubdivision(Tet tet, int level) {
+        return createWireframeTetrahedronWithCoords(tet, level, true);
+    }
+
+    /**
+     * Create transparent tetrahedron with choice of coordinate system.
+     * @param tet The tetrahedron to render
+     * @param level The level for coloring
+     * @param useSubdivisionCoords If true, use subdivisionCoordinates(), otherwise use coordinates()
+     */
+    private MeshView createTransparentTetrahedronWithCoords(Tet tet, int level, boolean useSubdivisionCoords) {
+        // Get coordinates based on the flag
+        Point3i[] tetVertices = useSubdivisionCoords ? tet.subdivisionCoordinates() : tet.coordinates();
         Point3f[] vertices = new Point3f[4];
 
         // Convert to Point3f for JavaFX
@@ -1663,29 +1730,182 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Create triangle mesh for tetrahedron
         TriangleMesh mesh = new TriangleMesh();
 
-        // Add vertices
+        // Add vertices directly without inset
         for (Point3f v : vertices) {
             mesh.getPoints().addAll(v.x, v.y, v.z);
         }
 
         // Add texture coordinates (simple mapping)
-        mesh.getTexCoords().addAll(0, 0, 1, 0, 0.5f, 1, 0.5f, 0.5f);
+        mesh.getTexCoords().addAll(0, 0,  // Vertex 0
+                                   1, 0,  // Vertex 1
+                                   0.5f, 1,  // Vertex 2
+                                   0.5f, 0.5f  // Vertex 3
+                                  );
 
-        // Define faces with correct winding order
-        // We need to ensure counter-clockwise winding when viewed from outside
-        mesh.getFaces().addAll(0, 0, 2, 2, 1, 1,  // Face opposite to vertex 3
-                               0, 0, 1, 1, 3, 3,  // Face opposite to vertex 2
-                               0, 0, 3, 3, 2, 2,  // Face opposite to vertex 1
-                               1, 1, 2, 2, 3, 3   // Face opposite to vertex 0
-                              );
+        // Define faces with correct winding order for outward-facing normals
+        // Check if tetrahedron has positive volume (correct orientation)
+        double volume = computeSignedVolume(vertices);
+
+        if (volume > 0) {
+            // Standard winding for positive volume
+            mesh.getFaces().addAll(0, 0, 2, 2, 1, 1,  // Face 0-2-1 (base, viewed from below)
+                                   0, 0, 1, 1, 3, 3,  // Face 0-1-3 (front right)
+                                   0, 0, 3, 3, 2, 2,  // Face 0-3-2 (back left)
+                                   1, 1, 2, 2, 3, 3   // Face 1-2-3 (top, viewed from above)
+                                  );
+        } else {
+            // Inverted winding for negative volume
+            mesh.getFaces().addAll(0, 0, 1, 1, 2, 2,  // Face 0-1-2 (base, viewed from below) - reversed
+                                   0, 0, 3, 3, 1, 1,  // Face 0-3-1 (front right) - reversed
+                                   0, 0, 2, 2, 3, 3,  // Face 0-2-3 (back left) - reversed
+                                   1, 1, 3, 3, 2, 2   // Face 1-3-2 (top, viewed from above) - reversed
+                                  );
+        }
 
         MeshView meshView = new MeshView(mesh);
-        meshView.setCullFace(javafx.scene.shape.CullFace.BACK);
 
-        // Apply material based on level
+        // Apply material based on type and level
         Material material = getMaterialForTet(tet, level);
         meshView.setMaterial(material);
+        meshView.setOpacity(nodeOpacityProperty().get());
+
+        // Enable depth buffer to reduce z-fighting
+        meshView.setDepthTest(javafx.scene.DepthTest.ENABLE);
+
+        // Enable back face culling to only show outward-facing sides
+        meshView.setCullFace(javafx.scene.shape.CullFace.BACK);
+
+        // Set draw mode
+        meshView.setDrawMode(javafx.scene.shape.DrawMode.FILL);
 
         return meshView;
+    }
+
+    /**
+     * Create transparent tetrahedron face for subdivision visualization.
+     * Uses subdivisionCoordinates() instead of coordinates().
+     */
+    private MeshView createTransparentTetrahedronForSubdivision(Tet tet, int level) {
+        return createTransparentTetrahedronWithCoords(tet, level, true);
+    }
+    
+    /**
+     * Recursively show S0-S5 refinement levels.
+     */
+    private void showS0S5RefinementRecursive(Tet parent, int currentLevel, int targetLevel, boolean[] childVisibility) {
+        if (currentLevel >= targetLevel) {
+            return;
+        }
+        
+        // Get children at the next level
+        for (int i = 0; i < 8; i++) {
+            // Check visibility if this is the first level and array provided
+            if (currentLevel == 0 && childVisibility != null && i < childVisibility.length && !childVisibility[i]) {
+                continue;
+            }
+            
+            // Create child using standard child() method
+            Tet child = parent.child(i);
+            int childLevel = currentLevel + 1;
+            
+            // Show wireframe
+            Group wireframe = createWireframeTetrahedron(child, childLevel);
+            nodeGroup.getChildren().add(wireframe);
+            
+            if (showFilledFaces.get()) {
+                MeshView face = createTransparentTetrahedron(child, childLevel);
+                
+                // Apply color based on level and index
+                Color childColor = Color.hsb((childLevel * 120 + i * 45) % 360, 0.7, 0.8);
+                PhongMaterial material = new PhongMaterial(childColor);
+                material.setSpecularColor(childColor.brighter());
+                face.setMaterial(material);
+                face.setOpacity(0.3 + childLevel * 0.1); // More opaque at deeper levels
+                
+                nodeGroup.getChildren().add(face);
+            }
+            
+            // Recurse to next level
+            showS0S5RefinementRecursive(child, childLevel, targetLevel, null);
+        }
+    }
+    
+    /**
+     * Recursively show subdivision refinement levels.
+     */
+    private void showSubdivisionRefinementRecursive(Tet parent, int currentLevel, int targetLevel, boolean[] childVisibility) {
+        if (currentLevel >= targetLevel) {
+            return;
+        }
+        
+        // Get children using geometric subdivision
+        Tet[] children = parent.geometricSubdivide();
+        int childLevel = currentLevel + 1;
+        
+        // Render each child
+        for (int i = 0; i < children.length; i++) {
+            // Check visibility if this is the first level and array provided
+            if (currentLevel == 0 && childVisibility != null && i < childVisibility.length && !childVisibility[i]) {
+                continue;
+            }
+            
+            Tet child = children[i];
+            
+            // Use clean rendering with subdivision coordinates
+            Group wireframe = createWireframeTetrahedronWithCoords(child, childLevel, true);
+            nodeGroup.getChildren().add(wireframe);
+            
+            if (showFilledFaces.get()) {
+                MeshView face = createTransparentTetrahedronWithCoords(child, childLevel, true);
+                
+                // Apply color based on level and index  
+                Color childColor = Color.hsb((childLevel * 120 + i * 45) % 360, 0.8, 0.8);
+                PhongMaterial material = new PhongMaterial(childColor);
+                material.setSpecularColor(childColor.brighter());
+                face.setMaterial(material);
+                face.setOpacity(0.5);
+                
+                nodeGroup.getChildren().add(face);
+            }
+            
+            // Recurse to next level
+            showSubdivisionRefinementRecursive(child, childLevel, targetLevel, null);
+        }
+    }
+    
+    /**
+     * Show animated refinement transition.
+     * Gradually reveals tetrahedra level by level.
+     *
+     * @param useSubdivision If true, use subdivision geometry; if false, use S0-S5
+     * @param maxLevel Maximum refinement level to show
+     * @param delayMs Delay between levels in milliseconds
+     */
+    public void showAnimatedRefinement(boolean useSubdivision, int maxLevel, int delayMs) {
+        // Stop any existing animations
+        stopAllAnimations();
+        
+        // Create timeline for animation
+        Timeline timeline = new Timeline();
+        
+        // Add keyframes for each level
+        for (int level = 0; level <= maxLevel; level++) {
+            final int currentLevel = level;
+            KeyFrame keyFrame = new KeyFrame(
+                Duration.millis(level * delayMs),
+                _ -> {
+                    if (useSubdivision) {
+                        showCharacteristicDecomposition(null, currentLevel);
+                    } else {
+                        showS0S5Decomposition(null, currentLevel);
+                    }
+                }
+            );
+            timeline.getKeyFrames().add(keyFrame);
+        }
+        
+        // Track and play animation
+        activeAnimations.add(timeline);
+        timeline.play();
     }
 }

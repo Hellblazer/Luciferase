@@ -28,6 +28,7 @@ import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.scene.*;
 import javafx.scene.control.*;
+import javafx.geometry.Pos;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -517,9 +518,41 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(new Separator());
         controls.getChildren().add(new Label("Special Visualizations"));
 
-        Button showSubdivision = new Button("Show Tetrahedral Subdivision");
-        showSubdivision.setOnAction(_ -> visualization.showCharacteristicDecomposition());
+        // Refinement level control for special visualizations
+        HBox refinementBox = new HBox(5);
+        refinementBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        Label refinementLabel = new Label("Refinement Level:");
+        Spinner<Integer> refinementSpinner = new Spinner<>(0, 5, 1);
+        refinementSpinner.setPrefWidth(60);
+        refinementSpinner.setTooltip(new Tooltip("Control refinement depth (0=root only, 1=8 children, 2=64 grandchildren, etc.)"));
+        refinementBox.getChildren().addAll(refinementLabel, refinementSpinner);
+        controls.getChildren().add(refinementBox);
+        
+        Button showS0Decomposition = new Button("Show S0-S5 Decomposition");
+        showS0Decomposition.setTooltip(new Tooltip("Shows the actual S0 tetrahedron used for entity bounds"));
+        showS0Decomposition.setOnAction(_ -> {
+            int level = refinementSpinner.getValue();
+            visualization.showS0S5Decomposition(null, level);
+        });
+        controls.getChildren().add(showS0Decomposition);
+        
+        Button showSubdivision = new Button("Show Subdivision Geometry");
+        showSubdivision.setTooltip(new Tooltip("Shows subdivision-compatible tetrahedra (different from S0-S5)"));
+        showSubdivision.setOnAction(_ -> {
+            int level = refinementSpinner.getValue();
+            visualization.showCharacteristicDecomposition(null, level);
+        });
         controls.getChildren().add(showSubdivision);
+        
+        // Animated refinement button
+        Button animateRefinement = new Button("Animate Refinement");
+        animateRefinement.setTooltip(new Tooltip("Shows animated level-by-level refinement"));
+        animateRefinement.setOnAction(_ -> {
+            int refinementLevel = refinementSpinner.getValue();
+            boolean useSubdivision = showSubdivision.getText().contains("Subdivision");
+            visualization.showAnimatedRefinement(useSubdivision, refinementLevel, 500); // 500ms between levels
+        });
+        controls.getChildren().add(animateRefinement);
 
         CheckBox showCubeDecomposition = new CheckBox("Show Cube Decomposition");
         showCubeDecomposition.setOnAction(_ -> {
