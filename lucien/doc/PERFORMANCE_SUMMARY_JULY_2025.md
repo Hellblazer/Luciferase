@@ -49,10 +49,12 @@ With these optimizations, the Tetree-Octree performance gap for basic operations
 
 ## Known Limitations
 
-### T8Code Partition Issue (July 2025)
-- T8code tetrahedra do not properly partition the unit cube
-- ~48% gaps and ~32% overlaps in the decomposition
-- Several containment tests have been disabled due to this fundamental limitation
+### T8Code Partition Issue (Ongoing)
+- T8code's tetrahedral connectivity tables do not properly partition the unit cube
+- ~48% gaps and ~32% overlaps remain in the decomposition
+- This is a fundamental limitation of t8code's approach, not fixed by our S0-S5 coordinate update
+- Several containment tests remain disabled due to this limitation
+- The S0-S5 fix improved our vertex coordinates but didn't change t8code's subdivision rules
 - See `TETREE_T8CODE_PARTITION_ANALYSIS.md` for detailed analysis
 
 ## Future Optimization Opportunities

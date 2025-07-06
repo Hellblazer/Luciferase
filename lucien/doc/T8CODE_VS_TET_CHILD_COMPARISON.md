@@ -66,7 +66,10 @@ void t8_dtet_child (const t8_dtet_t * t, int childid, t8_dtet_t * child)
 ```c
 void t8_dtet_compute_coords(const t8_dtet_t *t, int vertex, int coords[3])
 {
-  // Type-based coordinate system
+  // NOTE: t8code still uses ei/ej internally for child positioning
+  // Our implementation now uses S0-S5 decomposition for vertex coordinates
+  
+  // Type-based coordinate system (t8code approach)
   int ei = t->type / 2;
   int ej = (ei + ((t->type % 2 == 0) ? 2 : 1)) % 3;
   
@@ -104,6 +107,8 @@ public Tet child(int childIndex) {
     byte vertex = TetreeConnectivity.getBeyVertex(beyChildId);
     
     // Step 4: Compute vertex coords (MATCHES t8code algorithm)
+    // NOTE: While our Tet.coordinates() method now returns S0-S5 vertices,
+    // the child positioning still uses t8code's grid-based approach
     Point3i vertexCoords = computeVertexCoordinates(vertex);
     
     // Step 5: Child anchor = midpoint (MATCHES t8code)
@@ -112,6 +117,12 @@ public Tet child(int childIndex) {
     int childZ = (z + vertexCoords.z) >> 1;
     
     return new Tet(childX, childY, childZ, (byte)(l + 1), childType);
+}
+
+// For actual tetrahedron vertices, we use S0-S5 decomposition
+public Point3i[] coordinates() {
+    // Returns S0-S5 tetrahedral decomposition vertices
+    // This provides 100% geometric containment and proper cube tiling
 }
 ```
 

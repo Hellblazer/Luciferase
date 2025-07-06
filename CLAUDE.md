@@ -235,5 +235,18 @@ Historical documents (describe unimplemented features):
     - **Test Updates**: Fixed all test failures by updating expectations to match S0-S5 geometry
     - **Location**: Tet.java coordinates() method, TetS0S5DecompositionTest validates implementation
     - **Impact**: Visualization now correctly shows entities contained within their tetrahedra
+- **PERFORMANCE BENCHMARKS (July 6, 2025):**
+    - **Insertion**: Octree is 2.3x to 11.4x faster (gap increases with entity count)
+    - **K-NN Search**: Tetree is 1.6x to 5.9x faster 
+    - **Range Queries**: Tetree is 1.4x to 3.5x faster
+    - **Memory**: Tetree uses only 20-25% of Octree's memory
+    - **Root Cause**: tmIndex() O(level) parent chain walk vs Morton O(1) encoding
+    - **See**: lucien/doc/OCTREE_VS_TETREE_PERFORMANCE_JULY_2025.md for details
+- **DOCUMENTATION CLEANUP (July 6, 2025):**
+    - **Archived**: 9 completed/outdated documents moved to lucien/archived/
+    - **Updated**: Fixed references to legacy ei/ej algorithm in active docs
+    - **Clarified**: T8code partition issues are fundamental, not fixable
+    - **Performance**: Created new benchmark report with latest results
+    - **S0-S5 Docs**: Moved reference doc from archived/ to doc/ as it's current
 
 [... rest of the file remains unchanged ...]

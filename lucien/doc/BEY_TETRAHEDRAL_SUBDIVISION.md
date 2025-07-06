@@ -54,25 +54,28 @@ public class Tet {
     byte l;         // Level (0-20)
     byte type;      // Type (0-5)
     
-    // Critical for subdivision compatibility
-    public Point3i[] subdivisionCoordinates() {
+    // Returns S0-S5 tetrahedral decomposition coordinates
+    public Point3i[] coordinates() {
         var coords = new Point3i[4];
         var h = length();
         
-        // ei/ej determine tetrahedron orientation
-        int ei = type / 2;
-        int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
-        
-        // V0, V1, V2 based on type
-        coords[0] = new Point3i(x, y, z);
-        coords[1] = new Point3i(x, y, z);
-        addToDimension(coords[1], ei, h);
-        coords[2] = new Point3i(x, y, z);
-        addToDimension(coords[2], ei, h);
-        addToDimension(coords[2], ej, h);
-        
-        // V3: anchor + (h,h,h) for subdivision compatibility
-        coords[3] = new Point3i(x + h, y + h, z + h);
+        // S0-S5 decomposition: 6 tetrahedra tile a cube
+        // All share vertices V0 (origin) and V7 (opposite corner)
+        switch (type) {
+            case 0: // S0: vertices {0,1,3,7}
+                coords[0] = new Point3i(x, y, z);
+                coords[1] = new Point3i(x + h, y, z);
+                coords[2] = new Point3i(x + h, y + h, z);
+                coords[3] = new Point3i(x + h, y + h, z + h);
+                break;
+            case 1: // S1: vertices {0,2,3,7}
+                coords[0] = new Point3i(x, y, z);
+                coords[1] = new Point3i(x, y + h, z);
+                coords[2] = new Point3i(x + h, y + h, z);
+                coords[3] = new Point3i(x + h, y + h, z + h);
+                break;
+            // ... etc for types 2-5
+        }
         
         return coords;
     }
