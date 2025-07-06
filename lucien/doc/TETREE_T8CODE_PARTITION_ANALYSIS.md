@@ -1,4 +1,6 @@
-# T8Code Tetrahedral Partition Analysis
+# T8Code Tetrahedral Partition Analysis [OUTDATED - JULY 2025]
+
+**NOTE: This analysis was based on the legacy ei/ej algorithm. The current implementation uses S0-S5 decomposition which provides 100% cube coverage with no gaps or overlaps. See S0_S5_DECOMPOSITION_REFERENCE.md for current implementation.**
 
 ## Executive Summary
 

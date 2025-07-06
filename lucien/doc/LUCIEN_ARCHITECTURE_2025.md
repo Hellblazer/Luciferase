@@ -13,7 +13,7 @@ abstractions while maintaining full spatial indexing capabilities.
 
 The module consists of 98 Java files organized across 8 packages, providing a comprehensive spatial indexing system with
 advanced features including collision detection, tree balancing, and visitor patterns. As of July 2025, all planned
-enhancements have been implemented.
+enhancements have been implemented, including the critical S0-S5 tetrahedral decomposition that replaced the legacy ei/ej algorithm.
 
 ## Package Structure
 
@@ -146,8 +146,24 @@ The `Tetree` class provides tetrahedral spatial decomposition:
 
 - Uses tetrahedral space-filling curve
 - Requires positive coordinates only
-- 6 tetrahedra per grid cell
+- 6 tetrahedra per grid cell (S0-S5 decomposition)
 - Complex neighbor relationships
+
+### S0-S5 Tetrahedral Decomposition (July 2025)
+
+The Tetree uses the standard S0-S5 decomposition where 6 tetrahedra perfectly tile a cube:
+
+- **S0**: Vertices {0, 1, 3, 7} - X-dominant, upper diagonal
+- **S1**: Vertices {0, 2, 3, 7} - Y-dominant, upper diagonal
+- **S2**: Vertices {0, 4, 5, 7} - Z-dominant, upper diagonal
+- **S3**: Vertices {0, 4, 6, 7} - Z-dominant, lower diagonal
+- **S4**: Vertices {0, 1, 5, 7} - X-dominant, lower diagonal
+- **S5**: Vertices {0, 2, 6, 7} - Y-dominant, lower diagonal
+
+This replaced the legacy ei/ej algorithm and provides:
+- 100% cube coverage with no gaps or overlaps
+- Correct geometric containment for all entities
+- Standard decomposition matching academic literature
 
 ### Key Methods
 
@@ -155,6 +171,7 @@ The `Tetree` class provides tetrahedral spatial decomposition:
 - `computeSFCRanges()` - Tetrahedral SFC range calculation
 - `addNeighboringNodes()` - Tetrahedral neighbor traversal
 - `validatePositiveCoordinates()` - Enforces positive coordinate constraint
+- `Tet.coordinates()` - Returns actual S0-S5 vertices (not AABB approximation)
 
 ## Entity Management
 

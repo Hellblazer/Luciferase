@@ -59,6 +59,16 @@ This document tracks all major performance optimizations implemented in the Luci
   - Throughput: 19.3M → 58.5M calls/sec
 - **Integration**: `Tet.child()` now uses efficient implementation
 
+### July 6, 2025 - S0-S5 Tetrahedral Decomposition
+- **Problem**: Entity visualization showed spheres outside tetrahedra due to incorrect coordinates
+- **Root Cause**: `Tet.coordinates()` using legacy ei/ej algorithm instead of standard S0-S5 decomposition
+- **Solution**: Implemented correct S0-S5 decomposition where 6 tetrahedra perfectly tile a cube
+- **Results**:
+  - 100% containment rate (up from 35%)
+  - Perfect cube tiling with no gaps/overlaps
+  - Correct geometric containment for all entities
+- **Impact**: Visualization now correctly shows entities within their containing tetrahedra
+
 ## Cumulative Impact
 
 ### Overall Performance Improvement

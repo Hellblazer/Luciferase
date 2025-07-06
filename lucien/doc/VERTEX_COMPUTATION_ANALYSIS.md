@@ -1,4 +1,6 @@
-# Vertex Computation Analysis for Tet.coordinates()
+# Vertex Computation Analysis for Tet.coordinates() [OUTDATED - JULY 2025]
+
+**NOTE: This document describes the legacy ei/ej algorithm that was replaced by the S0-S5 tetrahedral decomposition in July 2025. For current implementation, see S0_S5_DECOMPOSITION_REFERENCE.md**
 
 ## Overview
 

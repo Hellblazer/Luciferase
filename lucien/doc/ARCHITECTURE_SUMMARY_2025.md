@@ -1,4 +1,4 @@
-# Architecture Summary - July 5, 2025 (Updated)
+# Architecture Summary - July 6, 2025 (Updated)
 
 ## Purpose
 
@@ -9,7 +9,8 @@ detailed information, see the comprehensive documentation in this directory.
 
 The lucien module provides spatial indexing through a unified architecture supporting both octree and tetrahedral
 decomposition. Following major consolidation in January 2025, the module uses inheritance to maximize code reuse while
-maintaining the unique characteristics of each approach. As of July 2025, all planned enhancements have been completed.
+maintaining the unique characteristics of each approach. As of July 2025, all planned enhancements have been completed,
+including the critical S0-S5 tetrahedral decomposition that provides 100% geometric containment.
 
 **Total Classes: 98 Java files** organized across 8 packages
 
@@ -204,7 +205,15 @@ the comprehensive architecture guide.
 4. **Integration**: `Tet.child()` now uses the efficient implementation
 5. **Documentation**: Identified t8code partition limitation, disabled affected tests
 
+### S0-S5 Tetrahedral Decomposition (July 6, 2025)
+
+1. **Problem**: Entity visualization showed spheres outside tetrahedra (35% containment rate)
+2. **Root Cause**: `Tet.coordinates()` using legacy ei/ej algorithm instead of standard S0-S5
+3. **Solution**: Implemented correct S0-S5 decomposition where 6 tetrahedra perfectly tile a cube
+4. **Results**: 100% containment rate, perfect cube tiling with no gaps/overlaps
+5. **Impact**: Visualization now correctly shows entities within their containing tetrahedra
+
 ---
 
-*This summary reflects the actual implemented architecture as of July 5, 2025. For historical context about planned but
+*This summary reflects the actual implemented architecture as of July 6, 2025. For historical context about planned but
 unimplemented features, see the archived/ directory.*
