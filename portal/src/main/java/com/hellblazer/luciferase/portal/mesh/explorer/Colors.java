@@ -1,40 +1,24 @@
 /**
  * Copyright (c) 2016 Chiral Behaviors, LLC, all rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
  */
 
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import static javafx.scene.paint.Color.BLACK;
-import static javafx.scene.paint.Color.BLUE;
-import static javafx.scene.paint.Color.CYAN;
-import static javafx.scene.paint.Color.GREEN;
-import static javafx.scene.paint.Color.LAVENDER;
-import static javafx.scene.paint.Color.LIME;
-import static javafx.scene.paint.Color.MAGENTA;
-import static javafx.scene.paint.Color.OLIVE;
-import static javafx.scene.paint.Color.ORANGE;
-import static javafx.scene.paint.Color.PURPLE;
-import static javafx.scene.paint.Color.RED;
-import static javafx.scene.paint.Color.VIOLET;
-import static javafx.scene.paint.Color.YELLOW;
-
 import javafx.scene.paint.PhongMaterial;
+
+import static javafx.scene.paint.Color.*;
 
 /**
  * @author halhildebrand
- *
  */
 public class Colors {
     public static final PhongMaterial   blackMaterial;
@@ -108,21 +92,14 @@ public class Colors {
         blackMaterial.setSpecularColor(BLACK);
         blackMaterial.setDiffuseColor(BLACK);
 
-        materials = new PhongMaterial[] { redMaterial, blueMaterial,
-                                          greenMaterial, yellowMaterial,
-                                          cyanMaterial, purpleMaterial,
-                                          orangeMaterial, violetMaterial,
-                                          magentaMaterial, lavenderMaterial,
-                                          oliveMaterial, limeMaterial };
+        materials = new PhongMaterial[] { redMaterial, blueMaterial, greenMaterial, yellowMaterial, cyanMaterial,
+                                          purpleMaterial, orangeMaterial, violetMaterial, magentaMaterial,
+                                          lavenderMaterial, oliveMaterial, limeMaterial };
         blackMaterials = new PhongMaterial[] { blackMaterial, blackMaterial };
-        eightMaterials = new PhongMaterial[] { redMaterial, blueMaterial,
-                                               greenMaterial, yellowMaterial,
-                                               redMaterial, blueMaterial,
-                                               greenMaterial, yellowMaterial };
-        eight4Materials = new PhongMaterial[] { redMaterial, blueMaterial,
-                                                greenMaterial, yellowMaterial,
-                                                blackMaterial, blackMaterial,
-                                                blackMaterial, blackMaterial };
+        eightMaterials = new PhongMaterial[] { redMaterial, blueMaterial, greenMaterial, yellowMaterial, redMaterial,
+                                               blueMaterial, greenMaterial, yellowMaterial };
+        eight4Materials = new PhongMaterial[] { redMaterial, blueMaterial, greenMaterial, yellowMaterial, blackMaterial,
+                                                blackMaterial, blackMaterial, blackMaterial };
     }
 
 }

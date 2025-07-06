@@ -85,13 +85,13 @@ public class TetreeNeighborFinder {
      * @param edgeIndex The edge index (0-5)
      * @return List of neighbor tetrahedron indices sharing the specified edge
      */
-    public List<BaseTetreeKey<?>> findEdgeNeighbors(BaseTetreeKey<? extends BaseTetreeKey> tetIndex, int edgeIndex) {
+    public List<TetreeKey<?>> findEdgeNeighbors(TetreeKey<? extends TetreeKey> tetIndex, int edgeIndex) {
         if (edgeIndex < 0 || edgeIndex > 5) {
             throw new IllegalArgumentException("Edge index must be between 0 and 5, got: " + edgeIndex);
         }
 
         var tet = Tet.tetrahedron(tetIndex);
-        var edgeNeighbors = new ArrayList<BaseTetreeKey<?>>();
+        var edgeNeighbors = new ArrayList<TetreeKey<?>>();
 
         // Each edge is shared by multiple faces
         // Edge-to-face mapping for tetrahedron:
@@ -110,7 +110,7 @@ public class TetreeNeighborFinder {
         };
 
         // Check neighbors across both faces that share this edge
-        var uniqueNeighbors = new HashSet<BaseTetreeKey<?>>();
+        var uniqueNeighbors = new HashSet<TetreeKey<?>>();
         for (var faceIndex : edgeToFaces[edgeIndex]) {
             var neighbor = findFaceNeighbor(tet, faceIndex);
             if (neighbor != null) {
@@ -271,14 +271,13 @@ public class TetreeNeighborFinder {
      * @param vertexIndex The vertex index (0-3)
      * @return List of neighbor tetrahedron indices sharing the specified vertex
      */
-    public List<BaseTetreeKey<?>> findVertexNeighbors(BaseTetreeKey<? extends BaseTetreeKey> tetIndex,
-                                                      int vertexIndex) {
+    public List<TetreeKey<?>> findVertexNeighbors(TetreeKey<? extends TetreeKey> tetIndex, int vertexIndex) {
         if (vertexIndex < 0 || vertexIndex > 3) {
             throw new IllegalArgumentException("Vertex index must be between 0 and 3, got: " + vertexIndex);
         }
 
         var tet = Tet.tetrahedron(tetIndex);
-        var vertexNeighbors = new HashSet<BaseTetreeKey<?>>();
+        var vertexNeighbors = new HashSet<TetreeKey<?>>();
 
         // Vertex-to-face mapping for tetrahedron:
         // Vertex 0: faces 1, 2, 3
@@ -390,24 +389,24 @@ public class TetreeNeighborFinder {
     }
 
     // Helper method to find edge neighbors at a specific level
-    private List<TetreeKey> findEdgeNeighborsAtLevel(Tet tet, int edgeIndex, byte targetLevel) {
-        var neighbors = new ArrayList<TetreeKey>();
+    private List<ExtendedTetreeKey> findEdgeNeighborsAtLevel(Tet tet, int edgeIndex, byte targetLevel) {
+        var neighbors = new ArrayList<ExtendedTetreeKey>();
         // Implementation would traverse to find all tets at target level sharing the edge
         // This is a placeholder for the complex geometric calculation
         return neighbors;
     }
 
     // Helper method to find vertex neighbors at finer levels
-    private List<TetreeKey> findVertexNeighborsAtFinerLevels(Tet tet, int vertexIndex, byte startLevel) {
-        var neighbors = new ArrayList<TetreeKey>();
+    private List<ExtendedTetreeKey> findVertexNeighborsAtFinerLevels(Tet tet, int vertexIndex, byte startLevel) {
+        var neighbors = new ArrayList<ExtendedTetreeKey>();
         // Implementation would recursively check children that share the vertex
         // This is a placeholder for the complex geometric calculation
         return neighbors;
     }
 
     // Helper method to find vertex neighbors at a specific level
-    private List<TetreeKey> findVertexNeighborsAtLevel(Tet tet, int vertexIndex, byte targetLevel) {
-        var neighbors = new ArrayList<TetreeKey>();
+    private List<ExtendedTetreeKey> findVertexNeighborsAtLevel(Tet tet, int vertexIndex, byte targetLevel) {
+        var neighbors = new ArrayList<ExtendedTetreeKey>();
         // Implementation would traverse to find all tets at target level sharing the vertex
         // This is a placeholder for the complex geometric calculation
         return neighbors;

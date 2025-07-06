@@ -17,8 +17,8 @@
 
 package com.hellblazer.luciferase.portal.mesh.explorer.grid;
 
-import com.hellblazer.sentry.MutableGrid;
 import com.hellblazer.luciferase.portal.mesh.explorer.Abstract3DApp;
+import com.hellblazer.sentry.MutableGrid;
 import javafx.scene.Group;
 
 import javax.vecmath.Point3f;

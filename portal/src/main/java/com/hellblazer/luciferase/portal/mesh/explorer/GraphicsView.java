@@ -1,9 +1,9 @@
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import com.hellblazer.sentry.Vertex;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.Mesh;
 import com.hellblazer.luciferase.portal.mesh.PolyLine;
+import com.hellblazer.sentry.Vertex;
 import javafx.geometry.Point3D;
 import javafx.scene.Group;
 import javafx.scene.paint.Color;

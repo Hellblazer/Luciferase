@@ -1,13 +1,12 @@
 package com.hellblazer.luciferase.portal.mesh.util;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Edge;
 import com.hellblazer.luciferase.portal.mesh.Face;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
+
+import javax.vecmath.Vector3d;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * A utility class for polyhedra.
@@ -17,25 +16,20 @@ import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 public class PolyhedraUtils {
 
     /**
-     * Generates new vertices on each face located midway on the line segment whose
-     * endpoints are the face's centroid and the midpoint of one of the edges
-     * bordering that face. For a face with n sides, n new vertices are generated
+     * Generates new vertices on each face located midway on the line segment whose endpoints are the face's centroid
+     * and the midpoint of one of the edges bordering that face. For a face with n sides, n new vertices are generated
      * for that face.
      *
-     * The new vertices are generated using the faces in the "source" polyhedron,
-     * and added to the "modify" polyhedron (see params). To do this in-place,
-     * ensure that source and modify refer to the same polyhedron.
+     * The new vertices are generated using the faces in the "source" polyhedron, and added to the "modify" polyhedron
+     * (see params). To do this in-place, ensure that source and modify refer to the same polyhedron.
      *
-     * A map is returned to help keep track of the vertex indices of the new
-     * vertices. The map is structured such that it maps an ordered pair (a,b) of
-     * integers to another integer c. The integer c is the index of one of the newly
-     * generated points midway between the midpoint of the edge (a,b) and the
-     * centroid of the face to the left of (a,b). This notion of "left" is defined
-     * by the face for which following the vertices in the order of a -> b -> c -> a
-     * defines a traversal of the perimeter of triangle (a,b,c) in counterclockwise
-     * order (as seen from outside the face). This is why we map ordered pairs, so
-     * that (a,b) is mapped to the new vertex of one face, and (b,a) is mapped to
-     * the new vertex on the other face.
+     * A map is returned to help keep track of the vertex indices of the new vertices. The map is structured such that
+     * it maps an ordered pair (a,b) of integers to another integer c. The integer c is the index of one of the newly
+     * generated points midway between the midpoint of the edge (a,b) and the centroid of the face to the left of (a,b).
+     * This notion of "left" is defined by the face for which following the vertices in the order of a -> b -> c -> a
+     * defines a traversal of the perimeter of triangle (a,b,c) in counterclockwise order (as seen from outside the
+     * face). This is why we map ordered pairs, so that (a,b) is mapped to the new vertex of one face, and (b,a) is
+     * mapped to the new vertex on the other face.
      *
      * @param source The polyhedron whose faces to use as input.
      * @param modify The polyhedron to add the new vertices to.
@@ -70,18 +64,19 @@ public class PolyhedraUtils {
     }
 
     /**
-     * Generates rhombic faces in place of the edges in the source polyhedron. This
-     * requires new vertices on each face. These new vertices are assumed to be
-     * precomputed by
-     * {@link com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron, Polyhedron)}
-     * and are inputs to this method as the third parameter.
+     * Generates rhombic faces in place of the edges in the source polyhedron. This requires new vertices on each face.
+     * These new vertices are assumed to be precomputed by
+     * {@link com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron,
+     * Polyhedron)} and are inputs to this method as the third parameter.
      *
      * The new faces are added to the "modify" polyhedron (see params).
      *
      * @param source       The polyhedron whose edges to use as input.
      * @param modify       The polyhedron to add the new faces to.
      * @param edgeToVertex The map of new vertices, as returned by
-     *                     {@link com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron, Polyhedron)}.
+     *                     {@link
+     *                     com.hellblazer.luciferase.portal.mesh.util.PolyhedraUtils#addEdgeToCentroidVertices(Polyhedron,
+     *                     Polyhedron)}.
      */
     public static void addRhombicFacesAtEdges(Polyhedron source, Polyhedron modify,
                                               Map<Integer, Map<Integer, Integer>> edgeToVertex) {
@@ -98,16 +93,13 @@ public class PolyhedraUtils {
     }
 
     /**
-     * Generates equally spaced vertices along each edge such that each edge is
-     * divided into n equal segments, where n is the "segments" parameter. The
-     * number of vertices added per edge is one less than the "segments" parameter.
+     * Generates equally spaced vertices along each edge such that each edge is divided into n equal segments, where n
+     * is the "segments" parameter. The number of vertices added per edge is one less than the "segments" parameter.
      *
-     * For each edge (a,b) where a and b are vertex indices, an entry of the map
-     * will map a to another map, which maps b to an array containing the indices of
-     * the new vertices along the edge (a,b). The array will be in order, with the
-     * first index being the vertex closest to a, and the last index being the
-     * vertex closest to b. The reverse mapping is also present, with (b,a) being
-     * mapped to the same array, but reversed. The length of each array is one less
+     * For each edge (a,b) where a and b are vertex indices, an entry of the map will map a to another map, which maps b
+     * to an array containing the indices of the new vertices along the edge (a,b). The array will be in order, with the
+     * first index being the vertex closest to a, and the last index being the vertex closest to b. The reverse mapping
+     * is also present, with (b,a) being mapped to the same array, but reversed. The length of each array is one less
      * than the "segments" parameter.
      *
      * @param source   The polyhedron whose edges to use.

@@ -33,7 +33,8 @@ public class RDG extends RDGCS {
     public RDG() {
     }
 
-    public RDG(Point3D origin, Pair<Integer, Integer> xExtent, double intervalX, Pair<Integer, Integer> yExtent, double intervalY, Pair<Integer, Integer> zExtent, double intervalZ) {
+    public RDG(Point3D origin, Pair<Integer, Integer> xExtent, double intervalX, Pair<Integer, Integer> yExtent,
+               double intervalY, Pair<Integer, Integer> zExtent, double intervalZ) {
         super(origin, xExtent, intervalX, yExtent, intervalY, zExtent, intervalZ);
     }
 
@@ -41,8 +42,14 @@ public class RDG extends RDGCS {
         super(edgeLength, extent);
     }
 
-    public RDG(double edgeLength, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent, Pair<Integer, Integer> zExtent) {
+    public RDG(double edgeLength, Pair<Integer, Integer> xExtent, Pair<Integer, Integer> yExtent,
+               Pair<Integer, Integer> zExtent) {
         super(edgeLength, xExtent, yExtent, zExtent);
+    }
+
+    @Override
+    public void addAxes(Group grid, float radius, float height, float lineRadius, int divisions) {
+
     }
 
     @Override
@@ -79,30 +86,6 @@ public class RDG extends RDGCS {
     @Override
     public Vector3f rotateVectorCC(Vector3f vec, Vector3f axis, double theta) {
         return null;
-    }
-
-    @Override
-    public Point3D toCartesian(Point3D rdg) {
-        var x = rdg.getX();
-        var y = rdg.getY();
-        var z = rdg.getZ();
-        return new Point3D(x + y - z, -x + y, z);
-    }
-
-    @Override
-    public Point3D toCartesian(Tuple3i rdg) {
-        var x = rdg.x;
-        var y = rdg.y;
-        var z = rdg.z;
-        return new Point3D(x + y - z, -x + y, z);
-    }
-
-    @Override
-    public Point3i toRDG(Tuple3f cartesian) {
-        var x = cartesian.getX();
-        var y = cartesian.getY();
-        var z = cartesian.getZ();
-        return new Point3i((int) ((x - y + z) / 2), (int) ((x + y + z) / 2), (int) z);
     }
 
     /**
@@ -182,8 +165,7 @@ public class RDG extends RDGCS {
      *
      * @param group - the symmetry group
      * @param u     - the point in orthogonal coordinates
-     * @return the symmetric Point3i of u in the symmetry group in orthogonal
-     * coordinates
+     * @return the symmetric Point3i of u in the symmetry group in orthogonal coordinates
      */
     public Point3i symmetryOrtho(int group, Point3i u) {
         var x = u.x;
@@ -251,6 +233,30 @@ public class RDG extends RDGCS {
     }
 
     @Override
+    public Point3D toCartesian(Point3D rdg) {
+        var x = rdg.getX();
+        var y = rdg.getY();
+        var z = rdg.getZ();
+        return new Point3D(x + y - z, -x + y, z);
+    }
+
+    @Override
+    public Point3D toCartesian(Tuple3i rdg) {
+        var x = rdg.x;
+        var y = rdg.y;
+        var z = rdg.z;
+        return new Point3D(x + y - z, -x + y, z);
+    }
+
+    @Override
+    public Point3i toRDG(Tuple3f cartesian) {
+        var x = cartesian.getX();
+        var y = cartesian.getY();
+        var z = cartesian.getZ();
+        return new Point3i((int) ((x - y + z) / 2), (int) ((x + y + z) / 2), (int) z);
+    }
+
+    @Override
     public Point3i[] vertexConnectedNeighbors(Point3i cell) {
         var x = cell.x;
         var y = cell.y;
@@ -263,10 +269,5 @@ public class RDG extends RDGCS {
         neighbors[4] = new Point3i(x + 1, y + 1, z + 2);
         neighbors[5] = new Point3i(x - 1, y - 1, z - 2);
         return neighbors;
-    }
-
-    @Override
-    public void addAxes(Group grid, float radius, float height, float lineRadius, int divisions) {
-
     }
 }

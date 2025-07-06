@@ -1,14 +1,13 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra.sphere;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.plato.Icosahedron;
 
+import javax.vecmath.Vector3d;
+
 /**
- * An approximate sphere created by using a seed icosahedron and subdividing its
- * faces repeatedly, then projecting all vertices to the sphere of the desired
- * radius. Each subdivision divides each triangular face into four.
+ * An approximate sphere created by using a seed icosahedron and subdividing its faces repeatedly, then projecting all
+ * vertices to the sphere of the desired radius. Each subdivision divides each triangular face into four.
  *
  * The dual of an icosphere is a Goldberg polyhedron.
  *
@@ -19,10 +18,8 @@ public class Icosphere extends Polyhedron {
     /**
      * Construct an icosphere with the desired circumradius.
      *
-     * @param circumradius
-     *            The circumradius of the resulting icosphere.
-     * @param numSubdivisions
-     *            The number of times to subdivide faces.
+     * @param circumradius    The circumradius of the resulting icosphere.
+     * @param numSubdivisions The number of times to subdivide faces.
      */
     public Icosphere(double circumradius, int numSubdivisions) {
         Polyhedron icosphere = new Icosahedron(circumradius, true);

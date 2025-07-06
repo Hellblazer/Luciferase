@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -223,7 +224,7 @@ public class TetreeLevelCacheKeyCollisionTest {
         int x = 0x1234;      // 16-bit value
         int y = 0x5678;      // 16-bit value
         int z = 0x9ABC;      // 16-bit value
-        byte level = 21;     // Max level
+        byte level = MortonCurve.MAX_REFINEMENT_LEVEL;     // Max level
         byte type = 5;       // Type 5
 
         // Correct packing with 16-bit coordinates

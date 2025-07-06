@@ -1,27 +1,25 @@
 package com.hellblazer.luciferase.portal.mesh.struct;
 
+import com.hellblazer.luciferase.portal.mesh.Face;
+import com.hellblazer.luciferase.portal.mesh.Mesh;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.hellblazer.luciferase.portal.mesh.Face;
-import com.hellblazer.luciferase.portal.mesh.Mesh;
-
 /**
- * A data structure which, given a mesh, contains a map from each face in a mesh
- * to adjacent faces in the mesh. The adjacent faces will be arranged in the
- * same order as the vertices of the face (counterclockwise if the faces follow
+ * A data structure which, given a mesh, contains a map from each face in a mesh to adjacent faces in the mesh. The
+ * adjacent faces will be arranged in the same order as the vertices of the face (counterclockwise if the faces follow
  * convention).
  *
- * Two faces are defined to be neighbors if they share an edge (not just one
- * vertex).
+ * Two faces are defined to be neighbors if they share an edge (not just one vertex).
  *
  * @author Brian Yao
  */
 public class FaceToAdjacentFace {
 
-    private Map<Face, List<Face>> neighborMap;
+    private final Map<Face, List<Face>> neighborMap;
 
     /**
      * Construct a mapping using the faces in the specified mesh.
@@ -63,9 +61,8 @@ public class FaceToAdjacentFace {
     }
 
     /**
-     * Get the faces neighboring the specified face in the mesh provided to the
-     * constructor of this instance. The order of the neighbors is the same as the
-     * order of the vertices of the specified face.
+     * Get the faces neighboring the specified face in the mesh provided to the constructor of this instance. The order
+     * of the neighbors is the same as the order of the vertices of the specified face.
      *
      * @param face The face whose neighbors to return.
      * @return A list of the neighboring faces.

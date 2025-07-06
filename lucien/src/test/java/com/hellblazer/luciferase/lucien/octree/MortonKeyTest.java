@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.octree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
@@ -101,7 +102,7 @@ class MortonKeyTest {
 
         // For non-zero coordinates, the level depends on the quantized values
         // The actual level is correctly determined by Constants.toLevel()
-        assertTrue(key.getLevel() >= 0 && key.getLevel() <= 21);
+        assertTrue(key.getLevel() >= 0 && key.getLevel() <= MortonCurve.MAX_REFINEMENT_LEVEL);
     }
 
     @Test
@@ -120,7 +121,7 @@ class MortonKeyTest {
         // Morton codes in this implementation DO encode level
         // The key generalization is needed for Tetree, not Octree
         MortonKey directCode = new MortonKey(123456789L);
-        assertTrue(directCode.getLevel() >= 0 && directCode.getLevel() <= 21);
+        assertTrue(directCode.getLevel() >= 0 && directCode.getLevel() <= MortonCurve.MAX_REFINEMENT_LEVEL);
     }
 
     @Test

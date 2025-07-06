@@ -9,5 +9,6 @@
 **/.claude
 /t8code/
 /Octree/
-/lucien/archived/**.md
 /lucien/fast-ray.pdf
+/lucien/archived/**
+/logs/**

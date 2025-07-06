@@ -1,4 +1,4 @@
-# Lucien Module Architecture (June 2025 - Final Update)
+# Lucien Module Architecture (July 2025 - Latest Update)
 
 ## Overview
 
@@ -11,7 +11,9 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 96 Java files organized across 8 packages, providing a comprehensive spatial indexing system with advanced features including collision detection, tree balancing, and visitor patterns. As of June 2025, all planned enhancements have been implemented.
+The module consists of 98 Java files organized across 8 packages, providing a comprehensive spatial indexing system with
+advanced features including collision detection, tree balancing, and visitor patterns. As of July 2025, all planned
+enhancements have been implemented, including the critical S0-S5 tetrahedral decomposition that replaced the legacy ei/ej algorithm.
 
 ## Package Structure
 
@@ -39,15 +41,16 @@ com.hellblazer.luciferase.lucien/
 │   ├── MortonKey - Space-filling curve key
 │   ├── Octant - Octant enumeration
 │   └── OctreeSubdivisionStrategy - Subdivision policy
-├── tetree/ (30 classes)
+├── tetree/ (32 classes)
 │   ├── Core: Tetree, TetreeNodeImpl, Tet, TetrahedralGeometry, TetrahedralSearchBase
 │   ├── Keys: TetreeKey, BaseTetreeKey, CompactTetreeKey, LazyTetreeKey
 │   ├── Indexing: TmIndex, SimpleTMIndex, TMIndex128Clean
 │   ├── Caching: TetreeLevelCache, TetreeRegionCache, SpatialLocalityCache, ThreadLocalTetreeCache
 │   ├── Utilities: TetreeBits, TetreeConnectivity, TetreeFamily, TetreeHelper, 
 │   │              TetreeIterator, TetreeLUT, TetreeMetrics, TetreeNeighborFinder
-│   └── Advanced: TetreeSFCRayTraversal, TetreeSubdivisionStrategy, TetreeValidator,
-│                 TetreeValidationUtils, PluckerCoordinate, TetOptimized
+│   ├── Subdivision: TetrahedralSubdivision, BeySubdivision, TetreeSubdivisionStrategy
+│   └── Advanced: TetreeSFCRayTraversal, TetreeValidator, TetreeValidationUtils, 
+│                 PluckerCoordinate, TetOptimized
 ├── balancing/ (3 classes)
 │   ├── TreeBalancer - Main balancing interface
 │   ├── TreeBalancingStrategy - Strategy pattern
@@ -143,8 +146,24 @@ The `Tetree` class provides tetrahedral spatial decomposition:
 
 - Uses tetrahedral space-filling curve
 - Requires positive coordinates only
-- 6 tetrahedra per grid cell
+- 6 tetrahedra per grid cell (S0-S5 decomposition)
 - Complex neighbor relationships
+
+### S0-S5 Tetrahedral Decomposition (July 2025)
+
+The Tetree uses the standard S0-S5 decomposition where 6 tetrahedra completely tile a cube:
+
+- **S0**: Vertices {0, 1, 3, 7} - X-dominant, upper diagonal
+- **S1**: Vertices {0, 2, 3, 7} - Y-dominant, upper diagonal
+- **S2**: Vertices {0, 4, 5, 7} - Z-dominant, upper diagonal
+- **S3**: Vertices {0, 4, 6, 7} - Z-dominant, lower diagonal
+- **S4**: Vertices {0, 1, 5, 7} - X-dominant, lower diagonal
+- **S5**: Vertices {0, 2, 6, 7} - Y-dominant, lower diagonal
+
+This replaced the legacy ei/ej algorithm and provides:
+- 100% cube coverage with no gaps or overlaps
+- Correct geometric containment for all entities
+- Standard decomposition matching academic literature
 
 ### Key Methods
 
@@ -152,6 +171,7 @@ The `Tetree` class provides tetrahedral spatial decomposition:
 - `computeSFCRanges()` - Tetrahedral SFC range calculation
 - `addNeighboringNodes()` - Tetrahedral neighbor traversal
 - `validatePositiveCoordinates()` - Enforces positive coordinate constraint
+- `Tet.coordinates()` - Returns actual S0-S5 vertices (not AABB approximation)
 
 ## Entity Management
 
@@ -220,9 +240,10 @@ The `EntityManager` class provides centralized entity lifecycle:
 - **Octant** - Octant enumeration and utilities
 - **OctreeSubdivisionStrategy** - Subdivision policy for octree nodes
 
-### Tetree Package (30)
+### Tetree Package (32)
 
 Core classes:
+
 - **Tetree** - Tetrahedral tree with positive coordinate constraints
 - **TetreeNodeImpl** - Set-based entity storage per node
 - **Tet** - Tetrahedron representation with SFC indexing
@@ -230,21 +251,29 @@ Core classes:
 - **TetrahedralSearchBase** - Base class for tetrahedral queries
 
 Key implementations (4):
+
 - **TetreeKey** - Main space-filling curve key
 - **BaseTetreeKey**, **CompactTetreeKey**, **LazyTetreeKey** - Optimized key variants
 
 Performance optimizations (7):
+
 - **TetreeLevelCache** - O(1) level extraction and parent caching
 - **TetreeRegionCache** - Regional caching for queries
 - **SpatialLocalityCache**, **ThreadLocalTetreeCache** - Thread-local optimizations
 - **TetreeMetrics** - Performance monitoring
 - **TetOptimized** - Optimized tetrahedron operations
 
+Subdivision classes (3):
+
+- **TetrahedralSubdivision**, **BeySubdivision** - Tetrahedral subdivision algorithms
+- **TetreeSubdivisionStrategy** - Subdivision policy
+
 Additional utilities (14):
+
 - **TetreeBits**, **TetreeConnectivity**, **TetreeFamily** - Bit operations and connectivity
 - **TetreeHelper**, **TetreeIterator**, **TetreeLUT** - Helper utilities
 - **TetreeNeighborFinder**, **TetreeSFCRayTraversal** - Advanced search
-- **TetreeSubdivisionStrategy**, **TetreeValidator**, **TetreeValidationUtils**
+- **TetreeValidator**, **TetreeValidationUtils** - Validation utilities
 - **TmIndex**, **SimpleTMIndex**, **TMIndex128Clean** - Index implementations
 - **PluckerCoordinate** - Ray intersection optimization
 
@@ -288,7 +317,7 @@ All spatial classes use consistent generics with type-safe keys:
 
 ```java
 public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
-    // Key: Type-safe spatial key (MortonKey or TetreeKey)
+    // Key: Type-safe spatial key (MortonKey or ExtendedTetreeKey)
     // ID: Entity identifier type
     // Content: User-defined content type
 }
@@ -353,8 +382,6 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 
 ### What This Architecture Does NOT Include
 
-Unlike earlier documentation that described 60+ classes, the actual implementation contains 34 classes:
-
 - **No specialized search classes** - Search algorithms integrated into core classes
 - **No optimizer classes** - Optimization is left to implementations
 - **No spatial engine layer** - Direct use of spatial indices
@@ -380,7 +407,9 @@ Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator
 
 // Insert entities
 LongEntityID id = new LongEntityID(1);
-octree.insert(id, new Point3f(100, 200, 300), (byte)10, "Entity data");
+octree.
+
+insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");
 
 // k-NN search
 List<LongEntityID> nearest = octree.kNearestNeighbors(new Point3f(110, 210, 310), 5,  // find 5 nearest
@@ -419,24 +448,29 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Characteristics (June 28, 2025)
+## Performance Characteristics (July 5, 2025)
 
-**BREAKTHROUGH**: With V2 tmIndex optimization and parent cache, Tetree now outperforms Octree for bulk loading at large scales!
+**Current State**: Following optimization efforts, Tetree performance has improved significantly from initial implementation.
 
-### Individual Operations
-- **Insertion**: Octree 3-5x faster due to O(1) Morton encoding
-- **k-NN Search**: Tetree 2.9x faster due to better spatial locality
-- **Range Query**: Octree 7.7x faster
-- **Memory**: Tetree uses 74-76% less memory
+### Individual Operations (Latest Metrics)
 
-### Bulk Loading (The Game Changer)
+- **Insertion**: Octree 3-7x faster due to O(1) Morton encoding vs O(level) tmIndex
+- **k-NN Search**: Tetree 2-4x faster due to spatial locality characteristics
+- **Range Query**: Tetree shows comparable performance at scale
+- **Memory**: Tetree uses 74-80% less memory
+- **Child Lookup**: 3x faster with new efficient methods (17.10 ns per call)
+
+### Bulk Loading Performance
+
 - **50K entities**: Tetree 35% faster than Octree
 - **100K entities**: Tetree 38% faster than Octree
 
 Key optimizations implemented:
-- V2 tmIndex: 4x speedup in tmIndex computation
-- Parent cache: 17-67x speedup for parent operations
-- Bulk operations: Deferred subdivision provides massive benefits
+
+- V2 tmIndex: 4x speedup in tmIndex computation (June 28)
+- Parent cache: 17-67x speedup for parent operations (June 28)
+- Bulk operations: Deferred subdivision provides massive benefits (June 28)
+- Efficient child computation: 3x speedup for single child lookups (July 5)
 
 ## Testing
 
@@ -451,7 +485,7 @@ The module includes comprehensive test coverage:
 
 ## Current State
 
-As of June 2025, the lucien module represents a complete spatial indexing solution with:
+As of July 2025, the lucien module represents a complete spatial indexing solution with:
 
 - All planned enhancements implemented
 - Comprehensive API documentation

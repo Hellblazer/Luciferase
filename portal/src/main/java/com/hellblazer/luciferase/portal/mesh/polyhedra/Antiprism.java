@@ -1,8 +1,8 @@
 package com.hellblazer.luciferase.portal.mesh.polyhedra;
 
-import javax.vecmath.Vector3d;
-
 import com.hellblazer.luciferase.portal.mesh.Face;
+
+import javax.vecmath.Vector3d;
 
 /**
  * A class for generating right antiprism meshes.
@@ -11,12 +11,12 @@ import com.hellblazer.luciferase.portal.mesh.Face;
  */
 public class Antiprism extends Polyhedron {
 
-    private static double HEIGHT = 1.0;
-    private static double RADIUS = 0.5;
+    private static final double HEIGHT = 1.0;
+    private static final double RADIUS = 0.5;
 
     /**
-     * Constructs an antiprism with a default radius (0.5) and default height (1.0).
-     * The number of sides of the base is the only parameter.
+     * Constructs an antiprism with a default radius (0.5) and default height (1.0). The number of sides of the base is
+     * the only parameter.
      *
      * @param numSides The number of sides the base has.
      */
@@ -25,9 +25,8 @@ public class Antiprism extends Polyhedron {
     }
 
     /**
-     * Constructs an antiprism whose base has the given circumradius and has the
-     * given height. The base is a regular n-gon, where n is given as a parameter.
-     * With high enough n, the geometry is an approximate cylinder.
+     * Constructs an antiprism whose base has the given circumradius and has the given height. The base is a regular
+     * n-gon, where n is given as a parameter. With high enough n, the geometry is an approximate cylinder.
      *
      * @param numSides The number of sides the base has.
      * @param radius   The circumradius of the base.
