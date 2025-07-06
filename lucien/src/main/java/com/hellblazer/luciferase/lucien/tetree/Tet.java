@@ -878,49 +878,50 @@ public class Tet {
     public boolean containsUltraFast(float px, float py, float pz) {
         // Inline all computations for maximum performance
         final int h = 1 << (Constants.getMaxRefinementLevel() - l);
-        final int ei = type >> 1;  // type / 2
-        final int ej = (ei + ((type & 1) == 0 ? 2 : 1)) % 3;
 
-        // Precompute all vertex coordinates
-        float v0x = x, v0y = y, v0z = z;  // v0 is the anchor point
-        float v1x = x, v1y = y, v1z = z;
-        float v2x = x, v2y = y, v2z = z;
-        float v3x = x, v3y = y, v3z = z;
+        // Precompute all vertex coordinates using S0-S5 decomposition
+        float v0x = x, v0y = y, v0z = z;  // v0 is the anchor point (always same for all types)
+        float v1x, v1y, v1z;
+        float v2x, v2y, v2z;
+        float v3x = x + h, v3y = y + h, v3z = z + h; // v3 is always the opposite corner
 
-        // Apply offsets based on ei
-        if (ei == 0) {
-            v1x += h;
-            v2x = v1x;
-        } else if (ei == 1) {
-            v1y += h;
-            v2y = v1y;
-        } else {
-            v1z += h;
-            v2z = v1z;
+        // Apply S0-S5 vertex assignments based on type
+        switch (type) {
+            case 0: // S0: vertices 0, 1, 3, 7
+                v1x = x + h; v1y = y;     v1z = z;     // V1
+                v2x = x + h; v2y = y + h; v2z = z;     // V3
+                break;
+            case 1: // S1: vertices 0, 2, 3, 7
+                v1x = x;     v1y = y + h; v1z = z;     // V2
+                v2x = x + h; v2y = y + h; v2z = z;     // V3
+                break;
+            case 2: // S2: vertices 0, 4, 5, 7
+                v1x = x;     v1y = y;     v1z = z + h; // V4
+                v2x = x + h; v2y = y;     v2z = z + h; // V5
+                break;
+            case 3: // S3: vertices 0, 4, 6, 7
+                v1x = x;     v1y = y;     v1z = z + h; // V4
+                v2x = x;     v2y = y + h; v2z = z + h; // V6
+                break;
+            case 4: // S4: vertices 0, 1, 5, 7
+                v1x = x + h; v1y = y;     v1z = z;     // V1
+                v2x = x + h; v2y = y;     v2z = z + h; // V5
+                break;
+            case 5: // S5: vertices 0, 2, 6, 7
+                v1x = x;     v1y = y + h; v1z = z;     // V2
+                v2x = x;     v2y = y + h; v2z = z + h; // V6
+                break;
+            default:
+                throw new IllegalStateException("Invalid tet type: " + type);
         }
 
-        // Apply offsets based on ej for v2
-        if (ej == 0) {
-            v2x += h;
-        } else if (ej == 1) {
-            v2y += h;
-        } else {
-            v2z += h;
-        }
-
-        // Apply offsets for v3 (always adds to the other two dimensions)
-        if (ei == 0) {
-            v3y += h;
-            v3z += h;
-        } else if (ei == 1) {
-            v3x += h;
-            v3z += h;
-        } else {
-            v3x += h;
-            v3y += h;
-        }
-
+        // Determine if this is a mirrored (left-handed) tetrahedron
+        // Types 1, 3, 4 are mirrors of types 0, 2, 5 respectively
+        boolean isMirrored = (type == 1 || type == 3 || type == 4);
+        
         // Inline the plane equation calculations directly
+        // For mirrored tetrahedra, we need to reverse the inequality tests
+        
         // Face 1: v1, v2, v3 (opposite v0)
         float adx = v1x - px;
         float bdx = v2x - px;
@@ -932,7 +933,8 @@ public class Tet {
         float bdz = v2z - pz;
         float cdz = v3z - pz;
 
-        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) < 0) {
+        float det1 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+        if (isMirrored ? det1 > 0 : det1 < 0) {
             return false;
         }
 
@@ -947,7 +949,8 @@ public class Tet {
         bdz = v3z - pz;
         cdz = v2z - pz;
 
-        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) < 0) {
+        float det2 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+        if (isMirrored ? det2 > 0 : det2 < 0) {
             return false;
         }
 
@@ -962,7 +965,8 @@ public class Tet {
         bdz = v1z - pz;
         cdz = v3z - pz;
 
-        if (adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) < 0) {
+        float det3 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+        if (isMirrored ? det3 > 0 : det3 < 0) {
             return false;
         }
 
@@ -977,7 +981,8 @@ public class Tet {
         bdz = v2z - pz;
         cdz = v1z - pz;
 
-        return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy) >= 0;
+        float det4 = adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
+        return isMirrored ? det4 <= 0 : det4 >= 0;
     }
 
     /**
@@ -987,6 +992,62 @@ public class Tet {
      * @return the 3D coordinates of the tetrahedron described by the receiver
      */
     public Point3i[] coordinates() {
+        var coords = new Point3i[4];
+        var h = length();
+
+        // Correct S0-S5 cube decomposition
+        // All 6 tetrahedra share vertices V0 (origin) and V7 (opposite corner)
+        switch (type) {
+            case 0: // S0: vertices 0, 1, 3, 7 of cube
+                coords[0] = new Point3i(x, y, z);              // V0
+                coords[1] = new Point3i(x + h, y, z);          // V1
+                coords[2] = new Point3i(x + h, y + h, z);      // V3
+                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 1: // S1: vertices 0, 2, 3, 7 of cube
+                coords[0] = new Point3i(x, y, z);              // V0
+                coords[1] = new Point3i(x, y + h, z);          // V2
+                coords[2] = new Point3i(x + h, y + h, z);      // V3
+                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 2: // S2: vertices 0, 4, 5, 7 of cube
+                coords[0] = new Point3i(x, y, z);              // V0
+                coords[1] = new Point3i(x, y, z + h);          // V4
+                coords[2] = new Point3i(x + h, y, z + h);      // V5
+                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 3: // S3: vertices 0, 4, 6, 7 of cube
+                coords[0] = new Point3i(x, y, z);              // V0
+                coords[1] = new Point3i(x, y, z + h);          // V4
+                coords[2] = new Point3i(x, y + h, z + h);      // V6
+                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 4: // S4: vertices 0, 1, 5, 7 of cube
+                coords[0] = new Point3i(x, y, z);              // V0
+                coords[1] = new Point3i(x + h, y, z);          // V1
+                coords[2] = new Point3i(x + h, y, z + h);      // V5
+                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            case 5: // S5: vertices 0, 2, 6, 7 of cube
+                coords[0] = new Point3i(x, y, z);              // V0
+                coords[1] = new Point3i(x, y + h, z);          // V2
+                coords[2] = new Point3i(x, y + h, z + h);      // V6
+                coords[3] = new Point3i(x + h, y + h, z + h);  // V7
+                break;
+            default:
+                throw new IllegalStateException("Invalid tetrahedron type: " + type);
+        }
+
+        return coords;
+    }
+    
+    /**
+     * Legacy coordinate calculation using t8code algorithm.
+     * This method is preserved for reference and testing compatibility.
+     * @deprecated Use {@link #coordinates()} which implements correct S0-S5 decomposition
+     */
+    @Deprecated
+    public Point3i[] coordinatesLegacy() {
         var coords = new Point3i[4];
         var h = length();
 
