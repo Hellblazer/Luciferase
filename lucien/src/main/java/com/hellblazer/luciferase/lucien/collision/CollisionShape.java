@@ -23,12 +23,12 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
 /**
- * Abstract base class for collision shapes used in narrow-phase collision detection. Provides interface for various
- * collision tests between different shape types.
+ * Abstract base class for collision shapes used in narrow-phase collision detection.
  *
  * @author hal.hildebrand
  */
-public abstract class CollisionShape {
+public abstract sealed class CollisionShape 
+    permits SphereShape, BoxShape, OrientedBoxShape, CapsuleShape, MeshShape, ConvexHullShape, HeightmapShape {
 
     protected final Point3f position;
 
@@ -37,29 +37,9 @@ public abstract class CollisionShape {
     }
 
     /**
-     * Test collision with another shape
+     * Test collision with another shape using pattern matching
      */
     public abstract CollisionResult collidesWith(CollisionShape other);
-
-    /**
-     * Test collision with a box
-     */
-    public abstract CollisionResult collidesWithBox(BoxShape box);
-
-    /**
-     * Test collision with a capsule
-     */
-    public abstract CollisionResult collidesWithCapsule(CapsuleShape capsule);
-
-    /**
-     * Test collision with an oriented box
-     */
-    public abstract CollisionResult collidesWithOrientedBox(OrientedBoxShape obb);
-
-    /**
-     * Test collision with a sphere
-     */
-    public abstract CollisionResult collidesWithSphere(SphereShape sphere);
 
     /**
      * Get the axis-aligned bounding box for this shape
@@ -138,5 +118,14 @@ public abstract class CollisionShape {
         public static RayIntersectionResult noIntersection() {
             return new RayIntersectionResult(false, Float.MAX_VALUE, null, null);
         }
+    }
+    
+    /**
+     * Helper method to check if two bounds intersect
+     */
+    protected static boolean boundsIntersect(EntityBounds b1, EntityBounds b2) {
+        return !(b1.getMaxX() < b2.getMinX() || b1.getMinX() > b2.getMaxX() ||
+                b1.getMaxY() < b2.getMinY() || b1.getMinY() > b2.getMaxY() ||
+                b1.getMaxZ() < b2.getMinZ() || b1.getMinZ() > b2.getMaxZ());
     }
 }

@@ -727,7 +727,7 @@ public class Tet {
      * <p><b>WARNING:</b> This is NOT cube-based subdivision!</p>
      * The child positions are determined by vertex midpoints, not cube offsets.
      *
-     * <p><b>Performance Note (July 2025):</b> This method now uses 
+     * <p><b>Performance Note (July 2025):</b> This method now uses
      * {@link BeySubdivision#getMortonChild(Tet, int)} internally, which is ~3x faster
      * than the previous implementation. It only computes the midpoints needed for the
      * requested child, avoiding unnecessary calculations.</p>
@@ -888,28 +888,52 @@ public class Tet {
         // Apply S0-S5 vertex assignments based on type
         switch (type) {
             case 0: // S0: vertices 0, 1, 3, 7
-                v1x = x + h; v1y = y;     v1z = z;     // V1
-                v2x = x + h; v2y = y + h; v2z = z;     // V3
+                v1x = x + h;
+                v1y = y;
+                v1z = z;     // V1
+                v2x = x + h;
+                v2y = y + h;
+                v2z = z;     // V3
                 break;
             case 1: // S1: vertices 0, 2, 3, 7
-                v1x = x;     v1y = y + h; v1z = z;     // V2
-                v2x = x + h; v2y = y + h; v2z = z;     // V3
+                v1x = x;
+                v1y = y + h;
+                v1z = z;     // V2
+                v2x = x + h;
+                v2y = y + h;
+                v2z = z;     // V3
                 break;
             case 2: // S2: vertices 0, 4, 5, 7
-                v1x = x;     v1y = y;     v1z = z + h; // V4
-                v2x = x + h; v2y = y;     v2z = z + h; // V5
+                v1x = x;
+                v1y = y;
+                v1z = z + h; // V4
+                v2x = x + h;
+                v2y = y;
+                v2z = z + h; // V5
                 break;
             case 3: // S3: vertices 0, 4, 6, 7
-                v1x = x;     v1y = y;     v1z = z + h; // V4
-                v2x = x;     v2y = y + h; v2z = z + h; // V6
+                v1x = x;
+                v1y = y;
+                v1z = z + h; // V4
+                v2x = x;
+                v2y = y + h;
+                v2z = z + h; // V6
                 break;
             case 4: // S4: vertices 0, 1, 5, 7
-                v1x = x + h; v1y = y;     v1z = z;     // V1
-                v2x = x + h; v2y = y;     v2z = z + h; // V5
+                v1x = x + h;
+                v1y = y;
+                v1z = z;     // V1
+                v2x = x + h;
+                v2y = y;
+                v2z = z + h; // V5
                 break;
             case 5: // S5: vertices 0, 2, 6, 7
-                v1x = x;     v1y = y + h; v1z = z;     // V2
-                v2x = x;     v2y = y + h; v2z = z + h; // V6
+                v1x = x;
+                v1y = y + h;
+                v1z = z;     // V2
+                v2x = x;
+                v2y = y + h;
+                v2z = z + h; // V6
                 break;
             default:
                 throw new IllegalStateException("Invalid tet type: " + type);
@@ -918,10 +942,10 @@ public class Tet {
         // Determine if this is a mirrored (left-handed) tetrahedron
         // Types 1, 3, 4 are mirrors of types 0, 2, 5 respectively
         boolean isMirrored = (type == 1 || type == 3 || type == 4);
-        
+
         // Inline the plane equation calculations directly
         // For mirrored tetrahedra, we need to reverse the inequality tests
-        
+
         // Face 1: v1, v2, v3 (opposite v0)
         float adx = v1x - px;
         float bdx = v2x - px;
@@ -1040,10 +1064,11 @@ public class Tet {
 
         return coords;
     }
-    
+
     /**
-     * Legacy coordinate calculation using t8code algorithm.
-     * This method is preserved for reference and testing compatibility.
+     * Legacy coordinate calculation using t8code algorithm. This method is preserved for reference and testing
+     * compatibility.
+     *
      * @deprecated Use {@link #coordinates()} which implements correct S0-S5 decomposition
      */
     @Deprecated
@@ -2275,7 +2300,6 @@ public class Tet {
             subBounds -> splitVolumeHierarchically(subBounds, includeIntersecting, depth + 1));
         }
     }
-
 
     public record FaceNeighbor(byte face, Tet tet) {
     }
