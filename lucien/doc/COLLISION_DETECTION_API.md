@@ -27,6 +27,13 @@ Custom collision shapes for narrow-phase detection:
 - Supports complex geometries
 - Automatically updates bounds when translated
 
+Available shape types:
+- **SphereShape**: Simple sphere collision
+- **BoxShape**: Axis-aligned bounding box
+- **OrientedBoxShape**: Arbitrarily rotated box
+- **CapsuleShape**: Cylinder with hemispherical caps
+- **MeshShape**: Triangle mesh for complex geometry (NEW)
+
 ## API Methods
 
 ### 1. Find All Collisions
@@ -179,19 +186,67 @@ if (bounds.contains(point) || bounds.distanceTo(point) <= 0.1f) {
 
 ### 4. Custom Shape Collisions
 
+The collision system uses Java 23 pattern matching for clean, maintainable collision detection:
+
+```java
+public class CollisionDetector {
+    public static CollisionResult detectCollision(CollisionShape shape1, CollisionShape shape2) {
+        return switch (shape1) {
+            case SphereShape sphere1 -> switch (shape2) {
+                case SphereShape sphere2 -> sphereVsSphere(sphere1, sphere2);
+                case BoxShape box -> sphereVsBox(sphere1, box);
+                case OrientedBoxShape obb -> sphereVsOrientedBox(sphere1, obb);
+                case CapsuleShape capsule -> sphereVsCapsule(sphere1, capsule);
+                case MeshShape mesh -> sphereVsMesh(sphere1, mesh);
+            };
+            case BoxShape box1 -> switch (shape2) {
+                // ... handle all box collisions
+            };
+            // ... handle other shape types
+        };
+    }
+}
+```
+
+Each shape simply delegates to the CollisionDetector:
+
 ```java
 public class SphereShape extends CollisionShape {
     @Override
     public CollisionResult collidesWith(CollisionShape other) {
-        if (other instanceof SphereShape) {
-            // Sphere-sphere collision
-            return sphereSphereCollision((SphereShape) other);
-        }
-        // Fallback to AABB
-        return super.collidesWith(other);
+        return CollisionDetector.detectCollision(this, other);
     }
 }
 ```
+
+### 5. Mesh Collisions
+
+```java
+// Create a triangle mesh
+TriangleMeshData meshData = new TriangleMeshData();
+
+// Add vertices
+int v0 = meshData.addVertex(new Point3f(0, 0, 0));
+int v1 = meshData.addVertex(new Point3f(1, 0, 0));
+int v2 = meshData.addVertex(new Point3f(0, 1, 0));
+int v3 = meshData.addVertex(new Point3f(0, 0, 1));
+
+// Add triangles
+meshData.addTriangle(v0, v1, v2);
+meshData.addTriangle(v0, v1, v3);
+meshData.addTriangle(v0, v2, v3);
+meshData.addTriangle(v1, v2, v3);
+
+// Create mesh collision shape
+MeshShape mesh = new MeshShape(position, meshData);
+spatialIndex.setCollisionShape(entityId, mesh);
+```
+
+The mesh collision system features:
+- **BVH Acceleration**: Bounding Volume Hierarchy for efficient triangle queries
+- **Triangle-primitive tests**: Accurate collision detection with all shape types
+- **Ray intersection**: Fast ray-mesh intersection using BVH traversal
+- **Mesh-mesh collision**: Triangle-triangle intersection tests
 
 ## Performance Optimization
 

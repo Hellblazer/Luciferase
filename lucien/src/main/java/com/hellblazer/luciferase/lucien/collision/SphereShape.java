@@ -27,7 +27,7 @@ import javax.vecmath.Vector3f;
  *
  * @author hal.hildebrand
  */
-public class SphereShape extends CollisionShape {
+public final class SphereShape extends CollisionShape {
 
     private final float radius;
 
@@ -41,136 +41,7 @@ public class SphereShape extends CollisionShape {
 
     @Override
     public CollisionResult collidesWith(CollisionShape other) {
-        return other.collidesWithSphere(this);
-    }
-
-    @Override
-    public CollisionResult collidesWithBox(BoxShape box) {
-        // Sphere-Box collision
-        var closestPoint = box.getClosestPoint(this.position);
-
-        var delta = new Vector3f();
-        delta.sub(this.position, closestPoint);
-        var distanceSquared = delta.lengthSquared();
-        var radiusSquared = radius * radius;
-
-        if (distanceSquared > radiusSquared) {
-            return CollisionResult.noCollision();
-        }
-
-        var distance = (float) Math.sqrt(distanceSquared);
-        var normal = new Vector3f(delta);
-
-        if (distance > 0) {
-            normal.scale(1.0f / distance);
-        } else {
-            // Center is inside box, find closest face
-            normal = box.getClosestFaceNormal(this.position);
-        }
-
-        var contactPoint = new Point3f(closestPoint);
-        var penetrationDepth = radius - distance;
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
-    }
-
-    @Override
-    public CollisionResult collidesWithCapsule(CapsuleShape capsule) {
-        // Find closest point on capsule's line segment
-        var closestOnSegment = capsule.getClosestPointOnSegment(this.position);
-
-        // Check sphere-sphere collision
-        var delta = new Vector3f();
-        delta.sub(this.position, closestOnSegment);
-        var distance = delta.length();
-        var radiusSum = this.radius + capsule.getRadius();
-
-        if (distance > radiusSum) {
-            return CollisionResult.noCollision();
-        }
-
-        var normal = new Vector3f(delta);
-        if (distance > 0) {
-            normal.scale(1.0f / distance);
-        } else {
-            // Use perpendicular to capsule axis
-            normal = capsule.getPerpendicularDirection();
-        }
-
-        var contactPoint = new Point3f(normal);
-        contactPoint.scale(this.radius);
-        contactPoint.add(this.position);
-
-        var penetrationDepth = radiusSum - distance;
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
-    }
-
-    @Override
-    public CollisionResult collidesWithOrientedBox(OrientedBoxShape obb) {
-        // Transform sphere center to OBB's local space
-        var localCenter = obb.worldToLocal(this.position);
-
-        // Find closest point in local space
-        var localClosest = obb.getClosestPointLocal(localCenter);
-
-        // Transform back to world space
-        var worldClosest = obb.localToWorld(localClosest);
-
-        // Check distance
-        var delta = new Vector3f();
-        delta.sub(this.position, worldClosest);
-        var distanceSquared = delta.lengthSquared();
-        var radiusSquared = radius * radius;
-
-        if (distanceSquared > radiusSquared) {
-            return CollisionResult.noCollision();
-        }
-
-        var distance = (float) Math.sqrt(distanceSquared);
-        var normal = new Vector3f(delta);
-
-        if (distance > 0) {
-            normal.scale(1.0f / distance);
-        } else {
-            // Center is inside OBB, find closest face normal
-            normal = obb.getClosestFaceNormalWorld(this.position);
-        }
-
-        var contactPoint = new Point3f(worldClosest);
-        var penetrationDepth = radius - distance;
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
-    }
-
-    @Override
-    public CollisionResult collidesWithSphere(SphereShape other) {
-        var delta = new Vector3f();
-        delta.sub(other.position, this.position);
-        var distance = delta.length();
-        var radiusSum = this.radius + other.radius;
-
-        if (distance > radiusSum) {
-            return CollisionResult.noCollision();
-        }
-
-        // Normalize delta for contact normal
-        var normal = new Vector3f(delta);
-        if (distance > 0) {
-            normal.scale(1.0f / distance);
-        } else {
-            // Spheres are at same position, use arbitrary normal
-            normal.set(1, 0, 0);
-        }
-
-        // Contact point is on the surface of this sphere
-        var contactPoint = new Point3f(normal);
-        contactPoint.scale(this.radius);
-        contactPoint.add(this.position);
-
-        var penetrationDepth = radiusSum - distance;
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
+        return CollisionDetector.detectCollision(this, other);
     }
 
     @Override

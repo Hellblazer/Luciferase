@@ -28,7 +28,7 @@ import javax.vecmath.Vector3f;
  *
  * @author hal.hildebrand
  */
-public class CapsuleShape extends CollisionShape {
+public final class CapsuleShape extends CollisionShape {
 
     private final Point3f endpoint1;
     private final Point3f endpoint2;
@@ -68,79 +68,7 @@ public class CapsuleShape extends CollisionShape {
 
     @Override
     public CollisionResult collidesWith(CollisionShape other) {
-        return other.collidesWithCapsule(this);
-    }
-
-    @Override
-    public CollisionResult collidesWithBox(BoxShape box) {
-        // Delegate to box but flip normal
-        CollisionResult result = box.collidesWithCapsule(this);
-        if (result.collides) {
-            Vector3f flippedNormal = new Vector3f(result.contactNormal);
-            flippedNormal.scale(-1);
-            return CollisionResult.collision(result.contactPoint, flippedNormal, result.penetrationDepth);
-        }
-        return result;
-    }
-
-    @Override
-    public CollisionResult collidesWithCapsule(CapsuleShape other) {
-        // Find closest points on both line segments
-        Point3f closestThis = findClosestPointsBetweenSegments(this.endpoint1, this.endpoint2, other.endpoint1,
-                                                               other.endpoint2);
-
-        Point3f closestOther = other.getClosestPointOnSegment(closestThis);
-        closestThis = this.getClosestPointOnSegment(closestOther);
-
-        // Check sphere-sphere collision
-        Vector3f delta = new Vector3f();
-        delta.sub(closestOther, closestThis);
-        float distance = delta.length();
-        float radiusSum = this.radius + other.radius;
-
-        if (distance > radiusSum) {
-            return CollisionResult.noCollision();
-        }
-
-        Vector3f normal = new Vector3f(delta);
-        if (distance > 0) {
-            normal.scale(1.0f / distance);
-        } else {
-            // Use perpendicular to one of the axes
-            normal = this.getPerpendicularDirection();
-        }
-
-        // Contact point between the two capsules
-        Point3f contactPoint = new Point3f();
-        contactPoint.interpolate(closestThis, closestOther, this.radius / radiusSum);
-
-        float penetrationDepth = radiusSum - distance;
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
-    }
-
-    @Override
-    public CollisionResult collidesWithOrientedBox(OrientedBoxShape obb) {
-        // Delegate to OBB but flip normal
-        CollisionResult result = obb.collidesWithCapsule(this);
-        if (result.collides) {
-            Vector3f flippedNormal = new Vector3f(result.contactNormal);
-            flippedNormal.scale(-1);
-            return CollisionResult.collision(result.contactPoint, flippedNormal, result.penetrationDepth);
-        }
-        return result;
-    }
-
-    @Override
-    public CollisionResult collidesWithSphere(SphereShape sphere) {
-        // Delegate to sphere but flip normal
-        CollisionResult result = sphere.collidesWithCapsule(this);
-        if (result.collides) {
-            Vector3f flippedNormal = new Vector3f(result.contactNormal);
-            flippedNormal.scale(-1);
-            return CollisionResult.collision(result.contactPoint, flippedNormal, result.penetrationDepth);
-        }
-        return result;
+        return CollisionDetector.detectCollision(this, other);
     }
 
     @Override
@@ -191,6 +119,10 @@ public class CapsuleShape extends CollisionShape {
     public float getHeight() {
         return height;
     }
+    
+    public float getHalfHeight() {
+        return height / 2;
+    }
 
     /**
      * Get a perpendicular direction to the capsule axis
@@ -202,13 +134,12 @@ public class CapsuleShape extends CollisionShape {
 
         // Find a perpendicular vector
         Vector3f perpendicular = new Vector3f();
-        if (Math.abs(axis.x) < 0.9f) {
+        if (Math.abs(axis.x) < 0.9) {
             perpendicular.set(1, 0, 0);
         } else {
             perpendicular.set(0, 1, 0);
         }
 
-        // Make it truly perpendicular
         Vector3f result = new Vector3f();
         result.cross(axis, perpendicular);
         result.normalize();
@@ -222,168 +153,45 @@ public class CapsuleShape extends CollisionShape {
 
     @Override
     public Point3f getSupport(Vector3f direction) {
-        // Find which endpoint gives better support
-        float dot1 = direction.dot(new Vector3f(endpoint1));
-        float dot2 = direction.dot(new Vector3f(endpoint2));
+        // Project endpoints onto direction
+        float dot1 = endpoint1.x * direction.x + endpoint1.y * direction.y + endpoint1.z * direction.z;
+        float dot2 = endpoint2.x * direction.x + endpoint2.y * direction.y + endpoint2.z * direction.z;
 
+        // Choose endpoint with larger projection
         Point3f basePoint = (dot1 > dot2) ? endpoint1 : endpoint2;
 
-        // Add radius in the direction
+        // Add radius along direction
         Vector3f normalizedDir = new Vector3f(direction);
         normalizedDir.normalize();
 
-        Point3f support = new Point3f(normalizedDir);
-        support.scale(radius);
-        support.add(basePoint);
+        Point3f support = new Point3f(basePoint);
+        support.x += normalizedDir.x * radius;
+        support.y += normalizedDir.y * radius;
+        support.z += normalizedDir.z * radius;
 
         return support;
     }
 
     @Override
     public RayIntersectionResult intersectRay(Ray3D ray) {
-        // Ray-capsule intersection is ray-cylinder + ray-sphere at endpoints
+        // Ray-capsule intersection
+        Vector3f ab = new Vector3f();
+        ab.sub(endpoint2, endpoint1);
+        Vector3f ao = new Vector3f();
+        ao.sub(ray.origin(), endpoint1);
 
-        // First, check ray-cylinder intersection
-        Vector3f axis = new Vector3f();
-        axis.sub(endpoint2, endpoint1);
-        axis.normalize();
+        float ab_dot_ab = ab.dot(ab);
+        float ab_dot_ao = ab.dot(ao);
+        float ab_dot_dir = ab.dot(ray.direction());
+        float ao_dot_ao = ao.dot(ao);
+        float ao_dot_dir = ao.dot(ray.direction());
 
-        // Project ray onto cylinder axis
-        Vector3f toOrigin = new Vector3f();
-        toOrigin.sub(ray.origin(), endpoint1);
+        float m = ab_dot_ao / ab_dot_ab;
+        float n = ab_dot_dir / ab_dot_ab;
 
-        Vector3f perpOrigin = new Vector3f(toOrigin);
-        float dotAxis = toOrigin.dot(axis);
-        perpOrigin.scaleAdd(-dotAxis, axis, perpOrigin);
-
-        Vector3f perpDir = new Vector3f(ray.direction());
-        float dirDotAxis = ray.direction().dot(axis);
-        perpDir.scaleAdd(-dirDotAxis, axis, perpDir);
-
-        // Solve quadratic for cylinder intersection
-        float a = perpDir.dot(perpDir);
-        float b = 2 * perpOrigin.dot(perpDir);
-        float c = perpOrigin.dot(perpOrigin) - radius * radius;
-
-        float discriminant = b * b - 4 * a * c;
-
-        float tMin = Float.MAX_VALUE;
-
-        if (discriminant >= 0 && Math.abs(a) > 1e-6f) {
-            float sqrtDiscriminant = (float) Math.sqrt(discriminant);
-            float t1 = (-b - sqrtDiscriminant) / (2 * a);
-            float t2 = (-b + sqrtDiscriminant) / (2 * a);
-
-            // Check if intersections are within cylinder height
-            for (float t : new float[] { t1, t2 }) {
-                if (t >= 0 && t <= ray.maxDistance()) {
-                    Point3f hitPoint = ray.pointAt(t);
-                    Point3f closestOnSegment = getClosestPointOnSegment(hitPoint);
-
-                    if (hitPoint.distance(closestOnSegment) <= radius + 1e-6f) {
-                        tMin = Math.min(tMin, t);
-                    }
-                }
-            }
-        }
-
-        // Check sphere intersections at endpoints
-        for (Point3f endpoint : new Point3f[] { endpoint1, endpoint2 }) {
-            RayIntersectionResult sphereResult = raySphereIntersection(ray, endpoint, radius);
-            if (sphereResult.intersects && sphereResult.distance < tMin) {
-                tMin = sphereResult.distance;
-            }
-        }
-
-        if (tMin == Float.MAX_VALUE) {
-            return RayIntersectionResult.noIntersection();
-        }
-
-        Point3f intersectionPoint = ray.pointAt(tMin);
-
-        // Calculate normal
-        Point3f closestOnSegment = getClosestPointOnSegment(intersectionPoint);
-        Vector3f normal = new Vector3f();
-        normal.sub(intersectionPoint, closestOnSegment);
-
-        if (normal.length() > 1e-6f) {
-            normal.normalize();
-        } else {
-            // Hit exactly on the axis, use perpendicular
-            normal = getPerpendicularDirection();
-        }
-
-        return RayIntersectionResult.intersection(tMin, intersectionPoint, normal);
-    }
-
-    @Override
-    public void translate(Vector3f delta) {
-        position.add(delta);
-        endpoint1.add(delta);
-        endpoint2.add(delta);
-    }
-
-    private Point3f findClosestPointsBetweenSegments(Point3f p1, Point3f p2, Point3f p3, Point3f p4) {
-        Vector3f d1 = new Vector3f();
-        d1.sub(p2, p1);
-
-        Vector3f d2 = new Vector3f();
-        d2.sub(p4, p3);
-
-        Vector3f r = new Vector3f();
-        r.sub(p1, p3);
-
-        float a = d1.dot(d1);
-        float e = d2.dot(d2);
-        float f = d2.dot(r);
-
-        float s, t;
-
-        if (a <= 1e-6f && e <= 1e-6f) {
-            // Both segments are points
-            s = 0;
-            t = 0;
-        } else if (a <= 1e-6f) {
-            // First segment is a point
-            s = 0;
-            t = Math.max(0, Math.min(1, f / e));
-        } else if (e <= 1e-6f) {
-            // Second segment is a point
-            t = 0;
-            s = Math.max(0, Math.min(1, -d1.dot(r) / a));
-        } else {
-            // General case
-            float b = d1.dot(d2);
-            float c = d1.dot(r);
-            float denom = a * e - b * b;
-
-            if (Math.abs(denom) > 1e-6f) {
-                s = Math.max(0, Math.min(1, (b * f - c * e) / denom));
-            } else {
-                s = 0;
-            }
-
-            t = (b * s + f) / e;
-            t = Math.max(0, Math.min(1, t));
-
-            // Recompute s for this t
-            s = (t * b - c) / a;
-            s = Math.max(0, Math.min(1, s));
-        }
-
-        Point3f result = new Point3f();
-        result.scaleAdd(s, d1, p1);
-
-        return result;
-    }
-
-    private RayIntersectionResult raySphereIntersection(Ray3D ray, Point3f center, float radius) {
-        Vector3f oc = new Vector3f();
-        oc.sub(ray.origin(), center);
-
-        float a = ray.direction().dot(ray.direction());
-        float b = 2.0f * oc.dot(ray.direction());
-        float c = oc.dot(oc) - radius * radius;
+        float a = ray.direction().dot(ray.direction()) - n * n * ab_dot_ab;
+        float b = 2 * (ao_dot_dir - n * (ab_dot_ao - m * ab_dot_ab));
+        float c = ao_dot_ao - 2 * m * ab_dot_ao + m * m * ab_dot_ab - radius * radius;
 
         float discriminant = b * b - 4 * a * c;
         if (discriminant < 0) {
@@ -394,11 +202,23 @@ public class CapsuleShape extends CollisionShape {
         float t1 = (-b - sqrtDiscriminant) / (2 * a);
         float t2 = (-b + sqrtDiscriminant) / (2 * a);
 
+        // Find valid t
         float t = -1;
         if (t1 >= 0 && t1 <= ray.maxDistance()) {
-            t = t1;
-        } else if (t2 >= 0 && t2 <= ray.maxDistance()) {
-            t = t2;
+            float s = m + n * t1;
+            if (s >= 0 && s <= 1) {
+                t = t1;
+            } else {
+                // Check sphere caps
+                t = checkSphereCap(ray, s < 0.5f ? endpoint1 : endpoint2);
+            }
+        }
+
+        if (t < 0 && t2 >= 0 && t2 <= ray.maxDistance()) {
+            float s = m + n * t2;
+            if (s >= 0 && s <= 1) {
+                t = t2;
+            }
         }
 
         if (t < 0) {
@@ -406,10 +226,44 @@ public class CapsuleShape extends CollisionShape {
         }
 
         Point3f intersectionPoint = ray.pointAt(t);
+        Point3f closestOnSegment = getClosestPointOnSegment(intersectionPoint);
         Vector3f normal = new Vector3f();
-        normal.sub(intersectionPoint, center);
+        normal.sub(intersectionPoint, closestOnSegment);
         normal.normalize();
 
         return RayIntersectionResult.intersection(t, intersectionPoint, normal);
+    }
+
+    @Override
+    public void translate(Vector3f delta) {
+        position.add(delta);
+        endpoint1.add(delta);
+        endpoint2.add(delta);
+    }
+
+    private float checkSphereCap(Ray3D ray, Point3f sphereCenter) {
+        Vector3f oc = new Vector3f();
+        oc.sub(ray.origin(), sphereCenter);
+
+        float a = ray.direction().dot(ray.direction());
+        float b = 2.0f * oc.dot(ray.direction());
+        float c = oc.dot(oc) - radius * radius;
+
+        float discriminant = b * b - 4 * a * c;
+        if (discriminant < 0) {
+            return -1;
+        }
+
+        float sqrtDiscriminant = (float) Math.sqrt(discriminant);
+        float t1 = (-b - sqrtDiscriminant) / (2 * a);
+        float t2 = (-b + sqrtDiscriminant) / (2 * a);
+
+        if (t1 >= 0 && t1 <= ray.maxDistance()) {
+            return t1;
+        } else if (t2 >= 0 && t2 <= ray.maxDistance()) {
+            return t2;
+        }
+
+        return -1;
     }
 }

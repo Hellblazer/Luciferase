@@ -29,7 +29,7 @@ import javax.vecmath.Vector3f;
  *
  * @author hal.hildebrand
  */
-public class OrientedBoxShape extends CollisionShape {
+public final class OrientedBoxShape extends CollisionShape {
 
     private final Vector3f halfExtents;
     private final Matrix3f orientation;
@@ -45,100 +45,7 @@ public class OrientedBoxShape extends CollisionShape {
 
     @Override
     public CollisionResult collidesWith(CollisionShape other) {
-        return other.collidesWithOrientedBox(this);
-    }
-
-    @Override
-    public CollisionResult collidesWithBox(BoxShape box) {
-        // Delegate to box implementation (SAT simplified)
-        CollisionResult result = box.collidesWithOrientedBox(this);
-        if (result.collides) {
-            Vector3f flippedNormal = new Vector3f(result.contactNormal);
-            flippedNormal.scale(-1);
-            return CollisionResult.collision(result.contactPoint, flippedNormal, result.penetrationDepth);
-        }
-        return result;
-    }
-
-    @Override
-    public CollisionResult collidesWithCapsule(CapsuleShape capsule) {
-        // Transform capsule endpoints to local space
-        Point3f localP1 = worldToLocal(capsule.getEndpoint1());
-        Point3f localP2 = worldToLocal(capsule.getEndpoint2());
-
-        // Find closest point on box to line segment in local space
-        Point3f closestOnSegment = getClosestPointOnSegment(localP1, localP2, new Point3f(0, 0, 0));
-        Point3f closestOnBox = getClosestPointLocal(closestOnSegment);
-
-        // Transform back to world space
-        Point3f worldClosestOnSegment = localToWorld(closestOnSegment);
-        Point3f worldClosestOnBox = localToWorld(closestOnBox);
-
-        // Check distance
-        Vector3f delta = new Vector3f();
-        delta.sub(worldClosestOnSegment, worldClosestOnBox);
-        float distance = delta.length();
-
-        if (distance > capsule.getRadius()) {
-            return CollisionResult.noCollision();
-        }
-
-        Vector3f normal = new Vector3f(delta);
-        if (distance > 0) {
-            normal.scale(1.0f / distance);
-        } else {
-            normal = getClosestFaceNormalWorld(worldClosestOnSegment);
-        }
-
-        float penetrationDepth = capsule.getRadius() - distance;
-
-        return CollisionResult.collision(worldClosestOnBox, normal, penetrationDepth);
-    }
-
-    @Override
-    public CollisionResult collidesWithOrientedBox(OrientedBoxShape other) {
-        // Simplified OBB-OBB collision using Separating Axis Theorem (SAT)
-        // Check separation along 15 potential axes:
-        // 3 from this OBB, 3 from other OBB, 9 from cross products
-
-        // For now, use AABB approximation
-        EntityBounds thisAABB = getAABB();
-        EntityBounds otherAABB = other.getAABB();
-
-        if (!boundsIntersect(thisAABB, otherAABB)) {
-            return CollisionResult.noCollision();
-        }
-
-        // Simplified collision response
-        Vector3f delta = new Vector3f();
-        delta.sub(other.position, this.position);
-
-        Vector3f normal = new Vector3f(delta);
-        if (normal.length() > 0) {
-            normal.normalize();
-        } else {
-            normal.set(1, 0, 0);
-        }
-
-        // Approximate contact point
-        Point3f contactPoint = new Point3f();
-        contactPoint.interpolate(this.position, other.position, 0.5f);
-
-        float penetrationDepth = 0.1f; // Placeholder
-
-        return CollisionResult.collision(contactPoint, normal, penetrationDepth);
-    }
-
-    @Override
-    public CollisionResult collidesWithSphere(SphereShape sphere) {
-        // Delegate to sphere but flip normal
-        CollisionResult result = sphere.collidesWithOrientedBox(this);
-        if (result.collides) {
-            Vector3f flippedNormal = new Vector3f(result.contactNormal);
-            flippedNormal.scale(-1);
-            return CollisionResult.collision(result.contactPoint, flippedNormal, result.penetrationDepth);
-        }
-        return result;
+        return CollisionDetector.detectCollision(this, other);
     }
 
     @Override
@@ -205,18 +112,28 @@ public class OrientedBoxShape extends CollisionShape {
         // Transform to world space
         Vector3f worldNormal = new Vector3f();
         orientation.transform(localNormal, worldNormal);
+        worldNormal.normalize();
 
         return worldNormal;
     }
 
     /**
-     * Get closest point in local space
+     * Get closest point on OBB in local space
      */
     public Point3f getClosestPointLocal(Point3f localPoint) {
         float x = Math.max(-halfExtents.x, Math.min(localPoint.x, halfExtents.x));
         float y = Math.max(-halfExtents.y, Math.min(localPoint.y, halfExtents.y));
         float z = Math.max(-halfExtents.z, Math.min(localPoint.z, halfExtents.z));
         return new Point3f(x, y, z);
+    }
+
+    /**
+     * Get closest point on OBB in world space
+     */
+    public Point3f getClosestPointWorld(Point3f worldPoint) {
+        Point3f localPoint = worldToLocal(worldPoint);
+        Point3f localClosest = getClosestPointLocal(localPoint);
+        return localToWorld(localClosest);
     }
 
     public Vector3f getHalfExtents() {
@@ -239,7 +156,7 @@ public class OrientedBoxShape extends CollisionShape {
         localSupport.y = (localDir.y >= 0) ? halfExtents.y : -halfExtents.y;
         localSupport.z = (localDir.z >= 0) ? halfExtents.z : -halfExtents.z;
 
-        // Transform to world space
+        // Transform back to world space
         return localToWorld(localSupport);
     }
 
@@ -247,67 +164,38 @@ public class OrientedBoxShape extends CollisionShape {
     public RayIntersectionResult intersectRay(Ray3D ray) {
         // Transform ray to local space
         Point3f localOrigin = worldToLocal(ray.origin());
-        Vector3f localDirection = new Vector3f(ray.direction());
-        inverseOrientation.transform(localDirection);
+        Vector3f localDir = new Vector3f();
+        inverseOrientation.transform(ray.direction(), localDir);
 
-        // Perform AABB ray intersection in local space
-        float tmin = 0.0f;
-        float tmax = ray.maxDistance();
+        Ray3D localRay = new Ray3D(localOrigin, localDir, ray.maxDistance());
 
-        for (int i = 0; i < 3; i++) {
-            float origin = getComponent(localOrigin, i);
-            float direction = getComponent(localDirection, i);
-            float min = -getComponent(halfExtents, i);
-            float max = getComponent(halfExtents, i);
+        // Create local AABB
+        BoxShape localBox = new BoxShape(new Point3f(0, 0, 0), halfExtents);
 
-            if (Math.abs(direction) < 1e-6f) {
-                if (origin < min || origin > max) {
-                    return RayIntersectionResult.noIntersection();
-                }
-            } else {
-                float t1 = (min - origin) / direction;
-                float t2 = (max - origin) / direction;
+        // Intersect with local box
+        RayIntersectionResult localResult = localBox.intersectRay(localRay);
 
-                if (t1 > t2) {
-                    float temp = t1;
-                    t1 = t2;
-                    t2 = temp;
-                }
-
-                tmin = Math.max(tmin, t1);
-                tmax = Math.min(tmax, t2);
-
-                if (tmin > tmax) {
-                    return RayIntersectionResult.noIntersection();
-                }
-            }
+        if (!localResult.intersects) {
+            return RayIntersectionResult.noIntersection();
         }
 
-        // Transform intersection back to world space
-        Point3f localIntersection = new Point3f(localOrigin);
-        localIntersection.scaleAdd(tmin, localDirection, localIntersection);
-        Point3f worldIntersection = localToWorld(localIntersection);
-
-        // Calculate normal
-        Vector3f localNormal = calculateLocalNormal(localIntersection);
+        // Transform result back to world space
+        Point3f worldIntersection = localToWorld(localResult.intersectionPoint);
         Vector3f worldNormal = new Vector3f();
-        orientation.transform(localNormal, worldNormal);
+        orientation.transform(localResult.normal, worldNormal);
         worldNormal.normalize();
 
-        return RayIntersectionResult.intersection(tmin, worldIntersection, worldNormal);
+        return RayIntersectionResult.intersection(localResult.distance, worldIntersection, worldNormal);
     }
 
     /**
-     * Transform a point from local (box) space to world space
+     * Transform point from local to world space
      */
     public Point3f localToWorld(Point3f localPoint) {
-        Vector3f transformed = new Vector3f(localPoint);
-        orientation.transform(transformed);
-
-        Point3f result = new Point3f(transformed);
-        result.add(position);
-
-        return result;
+        Point3f worldPoint = new Point3f();
+        orientation.transform(localPoint, worldPoint);
+        worldPoint.add(position);
+        return worldPoint;
     }
 
     @Override
@@ -316,79 +204,13 @@ public class OrientedBoxShape extends CollisionShape {
     }
 
     /**
-     * Transform a point from world space to local (box) space
+     * Transform point from world to local space
      */
     public Point3f worldToLocal(Point3f worldPoint) {
-        Vector3f relative = new Vector3f();
-        relative.sub(worldPoint, position);
-
-        Vector3f local = new Vector3f();
-        inverseOrientation.transform(relative, local);
-
-        return new Point3f(local);
-    }
-
-    private boolean boundsIntersect(EntityBounds b1, EntityBounds b2) {
-        return b1.getMaxX() >= b2.getMinX() && b1.getMinX() <= b2.getMaxX() && b1.getMaxY() >= b2.getMinY()
-        && b1.getMinY() <= b2.getMaxY() && b1.getMaxZ() >= b2.getMinZ() && b1.getMinZ() <= b2.getMaxZ();
-    }
-
-    private Vector3f calculateLocalNormal(Point3f localPoint) {
-        // Determine which face was hit based on position
-        float epsilon = 0.001f;
-
-        if (Math.abs(localPoint.x + halfExtents.x) < epsilon) {
-            return new Vector3f(-1, 0, 0);
-        } else if (Math.abs(localPoint.x - halfExtents.x) < epsilon) {
-            return new Vector3f(1, 0, 0);
-        } else if (Math.abs(localPoint.y + halfExtents.y) < epsilon) {
-            return new Vector3f(0, -1, 0);
-        } else if (Math.abs(localPoint.y - halfExtents.y) < epsilon) {
-            return new Vector3f(0, 1, 0);
-        } else if (Math.abs(localPoint.z + halfExtents.z) < epsilon) {
-            return new Vector3f(0, 0, -1);
-        } else if (Math.abs(localPoint.z - halfExtents.z) < epsilon) {
-            return new Vector3f(0, 0, 1);
-        }
-
-        return new Vector3f(1, 0, 0);
-    }
-
-    private Point3f getClosestPointOnSegment(Point3f p1, Point3f p2, Point3f point) {
-        Vector3f v = new Vector3f();
-        v.sub(p2, p1);
-
-        if (v.lengthSquared() < 1e-6f) {
-            return new Point3f(p1);
-        }
-
-        Vector3f w = new Vector3f();
-        w.sub(point, p1);
-
-        float t = w.dot(v) / v.dot(v);
-        t = Math.max(0, Math.min(1, t));
-
-        Point3f result = new Point3f();
-        result.scaleAdd(t, v, p1);
-
-        return result;
-    }
-
-    private float getComponent(Point3f point, int axis) {
-        return switch (axis) {
-            case 0 -> point.x;
-            case 1 -> point.y;
-            case 2 -> point.z;
-            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
-        };
-    }
-
-    private float getComponent(Vector3f vector, int axis) {
-        return switch (axis) {
-            case 0 -> vector.x;
-            case 1 -> vector.y;
-            case 2 -> vector.z;
-            default -> throw new IllegalArgumentException("Invalid axis: " + axis);
-        };
+        Point3f relative = new Point3f(worldPoint);
+        relative.sub(position);
+        Point3f localPoint = new Point3f();
+        inverseOrientation.transform(relative, localPoint);
+        return localPoint;
     }
 }
