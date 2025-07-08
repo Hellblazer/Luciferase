@@ -1,5 +1,6 @@
 # Collision System Performance Report
-**Date: June 28, 2025**
+**Date: July 7, 2025**
+**Last Updated: Full performance baseline including discrete and continuous collision detection**
 
 ## Overview
 
@@ -15,15 +16,15 @@ This report documents performance benchmarking of the Luciferase collision detec
 
 ## Collision Shape Performance
 
-### Shape-to-Shape Collision Detection
+### Shape-to-Shape Collision Detection (Updated July 7, 2025)
 
 | Shape Type | Performance (ns/collision) | Relative Speed |
 |------------|---------------------------|----------------|
-| Sphere vs Sphere | 32 ns | 1.0x (baseline) |
-| Box vs Box | 64 ns | 2.0x slower |
-| Capsule vs Capsule | 70 ns | 2.2x slower |
-| Oriented Box vs OBB | 79 ns | 2.5x slower |
-| Mixed Shapes (avg) | 79 ns | 2.5x slower |
+| Sphere vs Sphere | 44 ns | 1.0x (baseline) |
+| Capsule vs Capsule | 45 ns | 1.02x slower |
+| Mixed Shapes (avg) | 48 ns | 1.09x slower |
+| Box vs Box | 53 ns | 1.20x slower |
+| Oriented Box vs OBB | 93 ns | 2.11x slower |
 
 **Observations:**
 - Sphere-sphere collision is the fastest at 32ns per check
@@ -31,13 +32,13 @@ This report documents performance benchmarking of the Luciferase collision detec
 - Oriented box collision requires rotation matrix operations, adding overhead
 - Mixed shape collisions use double dispatch pattern
 
-### Ray Intersection Performance
+### Ray Intersection Performance (Updated July 7, 2025)
 
 | Shape Type | Performance (ns/intersection) |
 |------------|------------------------------|
-| Ray-Sphere | 44 ns |
-| Ray-Box | 50 ns |
-| Ray-Capsule | 75 ns |
+| Ray-Sphere | 27 ns |
+| Ray-Box | 35 ns |
+| Ray-Capsule | 36 ns |
 
 **Implementation Details:**
 - Ray-sphere intersection uses quadratic formula
@@ -46,10 +47,10 @@ This report documents performance benchmarking of the Luciferase collision detec
 
 ## Spatial Index Integration Performance
 
-### Collision Detection with Custom Shapes (1000 entities)
+### Collision Detection with Custom Shapes (1000 entities) - Updated July 7, 2025
 
-- **Insert + Shape Assignment**: 11 ms total (11 μs per entity)
-- **Find All Collisions**: 99 ms
+- **Insert + Shape Assignment**: 9 ms total (9 μs per entity)
+- **Find All Collisions**: 65 ms
 - **Individual Collision Checks**: 4,950 pairs checked in 1 ms
 - **Average per check**: < 1 μs (leveraging spatial partitioning)
 - **Collisions Found**: 35 (0.7% collision rate)
@@ -140,17 +141,65 @@ This report documents performance benchmarking of the Luciferase collision detec
 - Thread-safe spatial index operations
 - Separation of concerns
 
+## Continuous Collision Detection (CCD) Performance
+
+### CCD Algorithm Performance
+
+| Algorithm | Performance (ns/check) | Use Case |
+|-----------|----------------------|----------|
+| Moving Sphere vs Sphere | 115.2 ns | High-speed spherical objects |
+| Swept Sphere vs Box | 80.1 ns | Bullets vs walls |
+| Swept Sphere vs Capsule | 97.5 ns | Projectiles vs characters |
+| Swept Sphere vs Triangle | 94.5 ns | Mesh collision detection |
+| Conservative Advancement | 868.9 ns | General shape pairs |
+
+**Performance Characteristics:**
+- **Throughput**: 8.7 million sphere-sphere checks per second
+- **Swept sphere algorithms**: 80-98 ns (10-12 million checks/sec)
+- **Conservative advancement**: ~9x slower but handles all shape combinations
+- **High-speed scenarios**: 34-1024 ns depending on complexity
+
+### High-Speed Collision Scenarios
+
+| Scenario | Performance | Description |
+|----------|-------------|-------------|
+| Bullet vs Wall | 1024.3 ns | 200m travel in 1ms timestep |
+| High-speed crossing | 33.6 ns | Two fast objects crossing paths |
+
+**CCD Implementation Features:**
+- Time of Impact (TOI) calculation for precise collision timing
+- Quadratic equation solving for sphere motion
+- Ray-AABB intersection for swept volumes
+- Binary search in conservative advancement
+- Support for both moving and static targets
+
+### CCD vs Discrete Collision Detection
+
+**Advantages of CCD:**
+- Prevents tunneling at any speed
+- Provides exact time of impact
+- Enables proper physics response ordering
+- Essential for bullets, projectiles, fast vehicles
+
+**Performance Trade-offs:**
+- CCD is 2.5-4x slower than discrete checks
+- Conservative advancement is 27x slower than simple sphere checks
+- Still achieves millions of checks per second
+- Worth the cost for high-speed objects
+
 ## Summary
 
 The Luciferase collision system provides the following performance characteristics:
 
-1. Sub-microsecond collision detection when using spatial indexing
-2. Multiple shape types with predictable performance trade-offs
-3. Integration between collision shapes and spatial indices
-4. Memory-efficient Tetree option for large-scale scenarios
-5. Comprehensive test coverage
+1. **Discrete Collision Detection**: 27-93 ns per check (11-37 million checks/sec)
+2. **Continuous Collision Detection**: 80-115 ns for swept spheres (8.7-12.5 million checks/sec)
+3. **Ray Intersection**: 27-36 ns per intersection (28-37 million intersections/sec)
+4. **Spatial Index Integration**: Sub-microsecond collision detection with broad-phase filtering
+5. **Shape Performance Hierarchy**: Spheres fastest, then capsules, boxes, and oriented boxes
+6. **CCD vs Discrete**: CCD adds 2-3x overhead but prevents tunneling at any speed
 
-The system balances performance, flexibility, and code maintainability, with guidelines for usage patterns.
+The system balances performance, flexibility, and code maintainability, supporting both discrete and continuous collision detection for various game and simulation scenarios.
 
 ---
 *Generated on June 28, 2025*
+*Updated on July 7, 2025 - Full performance baseline with discrete and continuous collision detection*

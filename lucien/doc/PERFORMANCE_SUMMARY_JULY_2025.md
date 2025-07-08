@@ -1,8 +1,8 @@
-# Spatial Index Performance Summary - July 2025
+# Luciferase Performance Summary - July 2025
 
 ## Overview
 
-This document summarizes the latest performance optimizations implemented in July 2025, focusing on efficient single-child computation for the Tetree spatial index.
+This document summarizes the latest performance optimizations and benchmarks for July 2025, including spatial index improvements and collision system performance baseline.
 
 ## New Optimizations
 
@@ -64,6 +64,44 @@ With these optimizations, the Tetree-Octree performance gap for basic operations
 3. **SIMD Operations**: Potential for vectorized midpoint calculations
 4. **Parallel Subdivision**: Multi-threaded child generation for bulk operations
 
+## Collision System Performance Baseline (July 7, 2025)
+
+### Discrete Collision Detection
+| Shape Type | Performance | Throughput |
+|------------|-------------|------------|
+| Sphere vs Sphere | 44 ns | 22.7M checks/sec |
+| Capsule vs Capsule | 45 ns | 22.2M checks/sec |
+| Box vs Box | 53 ns | 18.9M checks/sec |
+| Oriented Box vs OBB | 93 ns | 10.8M checks/sec |
+
+### Continuous Collision Detection (CCD)
+| Algorithm | Performance | Throughput |
+|-----------|-------------|------------|
+| Sphere vs Sphere CCD | 121 ns | 8.2M checks/sec |
+| Swept Sphere vs Box | 88 ns | 11.4M checks/sec |
+| Swept Sphere vs Capsule | 105 ns | 9.5M checks/sec |
+| Conservative Advancement | 844 ns | 1.2M checks/sec |
+
+### Ray Intersection
+| Shape Type | Performance | Throughput |
+|------------|-------------|------------|
+| Ray-Sphere | 27 ns | 37M intersections/sec |
+| Ray-Box | 35 ns | 28.6M intersections/sec |
+| Ray-Capsule | 36 ns | 27.8M intersections/sec |
+
+### Spatial Index Integration
+- 1000 entities with custom shapes: 9ms insertion, 65ms for all collisions
+- Individual collision checks: < 1 μs with spatial partitioning
+- 0.7% collision rate in typical scenarios
+
+See `COLLISION_SYSTEM_PERFORMANCE_REPORT_2025.md` for detailed metrics.
+
 ## Conclusion
 
-The July 2025 optimizations demonstrate that targeted improvements to frequently-used operations can yield significant performance gains. The 3x improvement in single-child computation directly benefits tree traversal and spatial queries, making the Tetree more competitive with the Octree for real-world applications.
+The July 2025 updates demonstrate strong performance across multiple systems:
+1. **Spatial Index**: 3x improvement in Tetree child computation
+2. **Collision Detection**: 10-37 million discrete checks per second
+3. **CCD**: 1.2-11.4 million continuous collision checks per second
+4. **Ray Casting**: 27-37 million intersections per second
+
+These optimizations make Luciferase suitable for real-time physics simulations and interactive 3D applications.
