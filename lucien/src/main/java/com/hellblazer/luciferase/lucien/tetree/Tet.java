@@ -1325,8 +1325,9 @@ public class Tet {
         return current.tmIndex();
     }
 
-    // TODO: This method needs to be updated for 128-bit tm-index
-    // Commenting out for now as it uses long-based spatial range queries
+    // TODO: This method needs to be redesigned for 128-bit tm-index
+    // The spatial range query system needs to be refactored to support TetreeKey arithmetic
+    // operations for proper range merging and intersection calculations
     /*
     public long intersecting(Spatial volume) {
         // Simple implementation: find first intersecting tetrahedron
@@ -1658,10 +1659,7 @@ public class Tet {
         // Find the SFC indices for all tetrahedron types at this location
         return IntStream.range(0, 6).mapToObj(type -> {
             var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, (byte) type);
-            // TODO: These range methods need to be updated for 128-bit tm-index
-            // For now, using lowBits as a simplified representation which will lose precision
-            // for very deep levels. The entire SFC range system needs refactoring to use ExtendedTetreeKey.
-            long index = tet.tmIndex().getLowBits();
+            var index = tet.tmIndex();
             return new SFCRange(index, index);
         });
     }
@@ -1978,8 +1976,7 @@ public class Tet {
 
         // Create representative tetrahedron and get its SFC location
         var tet = new Tet(centerX, centerY, centerZ, level, (byte) 0);
-        // TODO: Update for 128-bit tm-index - using lowBits as simplified representation
-        long locationID = tet.tmIndex().getLowBits();
+        var locationID = tet.tmIndex();
 
         return new SpatialRangeMetaData(level, locationID, touched);
     }
@@ -2121,6 +2118,8 @@ public class Tet {
     }
 
     // Merge overlapping SFC ranges for efficiency
+    // TODO: Redesign range merging for 128-bit TetreeKey - arithmetic operations not supported
+    /*
     private List<SFCRange> mergeRanges(List<SFCRange> ranges) {
         if (ranges.isEmpty()) {
             return ranges;
@@ -2144,8 +2143,11 @@ public class Tet {
 
         return merged;
     }
+    */
 
     // Enhanced range merging with hierarchical consideration
+    // TODO: Redesign range merging for 128-bit TetreeKey - arithmetic operations not supported
+    /*
     private List<SFCRange> mergeRangesOptimized(List<SFCRange> ranges) {
         if (ranges.isEmpty()) {
             return ranges;
@@ -2174,6 +2176,7 @@ public class Tet {
 
         return merged;
     }
+    */
 
     // Select optimal range computation strategy based on volume characteristics
     private Stream<SFCRange> selectOptimalRangeStrategy(VolumeBounds bounds, boolean includeIntersecting) {
@@ -2320,10 +2323,10 @@ public class Tet {
     }
 
     // Record to represent spatial range metadata
-    private record SpatialRangeMetaData(byte depthID, long locationID, TouchedDimensions touched) {
+    private record SpatialRangeMetaData(byte depthID, TetreeKey<?> locationID, TouchedDimensions touched) {
     }
 
     // Record to represent SFC index ranges
-    private record SFCRange(long start, long end) {
+    private record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
     }
 }
