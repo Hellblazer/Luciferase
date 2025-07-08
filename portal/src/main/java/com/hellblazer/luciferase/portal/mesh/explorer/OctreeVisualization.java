@@ -23,6 +23,9 @@ import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octant;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.portal.mesh.Line;
+import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.Timeline;
 import javafx.geometry.Point3D;
 import javafx.scene.Group;
 import javafx.scene.Node;
@@ -30,6 +33,8 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.Box;
+import javafx.scene.shape.DrawMode;
+import javafx.scene.shape.MeshView;
 import javafx.scene.shape.Sphere;
 import javafx.util.Duration;
 
@@ -67,11 +72,106 @@ public class OctreeVisualization<ID extends EntityID, Content> extends SpatialIn
 
     /**
      * Animate octant subdivision.
-     * TODO: Implement when MortonKey.getChild() method is available
      */
     public void animateSubdivision(MortonKey parentKey) {
-        // Animation disabled - requires getChild method on MortonKey
-        // which is not currently available in the API
+        if (parentKey == null || parentKey.getLevel() >= 20) {
+            return; // Cannot subdivide further
+        }
+        
+        // Get the parent node visual
+        Node parentVisual = nodeVisuals.get(parentKey);
+        if (!(parentVisual instanceof MeshView parentMesh)) {
+            return;
+        }
+        
+        // Get parent bounds by decoding Morton code
+        var coords = MortonCurve.decode(parentKey.getMortonCode());
+        var level = parentKey.getLevel();
+        var cellSize = com.hellblazer.luciferase.lucien.Constants.lengthAtLevel(level);
+        double parentSize = cellSize;
+        double childSize = parentSize / 2.0;
+        
+        // Create timeline for animation
+        Timeline timeline = new Timeline();
+        
+        // Get all 8 children
+        MortonKey[] children = parentKey.getChildren();
+        if (children == null) {
+            return;
+        }
+        
+        // Create child visuals
+        for (int i = 0; i < 8; i++) {
+            MortonKey childKey = children[i];
+            
+            // Calculate child position offset based on octant index
+            // Octant index bits: [z][y][x]
+            double xOffset = ((i & 1) != 0) ? childSize / 2 : -childSize / 2;
+            double yOffset = ((i & 2) != 0) ? childSize / 2 : -childSize / 2;
+            double zOffset = ((i & 4) != 0) ? childSize / 2 : -childSize / 2;
+            
+            // Create child cube
+            Box childCube = new Box(childSize, childSize, childSize);
+            childCube.setTranslateX(parentMesh.getTranslateX() + xOffset);
+            childCube.setTranslateY(parentMesh.getTranslateY() + yOffset);
+            childCube.setTranslateZ(parentMesh.getTranslateZ() + zOffset);
+            
+            // Set material based on octant
+            PhongMaterial childMaterial = new PhongMaterial();
+            Color octantColor = Color.hsb(i * 45.0, 0.7, 0.8); // Different color for each octant
+            childMaterial.setDiffuseColor(octantColor);
+            childMaterial.setSpecularColor(Color.WHITE);
+            childCube.setMaterial(childMaterial);
+            childCube.setDrawMode(DrawMode.LINE);
+            
+            // Initially invisible and scaled to 0
+            childCube.setOpacity(0.0);
+            childCube.setScaleX(0.01);
+            childCube.setScaleY(0.01);
+            childCube.setScaleZ(0.01);
+            
+            // Add to scene
+            nodeGroup.getChildren().add(childCube);
+            nodeVisuals.put(childKey, childCube);
+            
+            // Animate appearance
+            double delay = i * 50; // Stagger the animations
+            
+            KeyFrame fadeIn = new KeyFrame(Duration.millis(delay),
+                new KeyValue(childCube.opacityProperty(), 0.0),
+                new KeyValue(childCube.scaleXProperty(), 0.01),
+                new KeyValue(childCube.scaleYProperty(), 0.01),
+                new KeyValue(childCube.scaleZProperty(), 0.01)
+            );
+            
+            KeyFrame grow = new KeyFrame(Duration.millis(delay + 300),
+                new KeyValue(childCube.opacityProperty(), 0.8),
+                new KeyValue(childCube.scaleXProperty(), 1.0),
+                new KeyValue(childCube.scaleYProperty(), 1.0),
+                new KeyValue(childCube.scaleZProperty(), 1.0)
+            );
+            
+            timeline.getKeyFrames().addAll(fadeIn, grow);
+        }
+        
+        // Fade out parent
+        KeyFrame parentFadeStart = new KeyFrame(Duration.millis(200),
+            new KeyValue(parentMesh.opacityProperty(), parentMesh.getOpacity())
+        );
+        
+        KeyFrame parentFadeEnd = new KeyFrame(Duration.millis(500),
+            new KeyValue(parentMesh.opacityProperty(), 0.0)
+        );
+        
+        timeline.getKeyFrames().addAll(parentFadeStart, parentFadeEnd);
+        
+        // Remove parent from scene after animation
+        timeline.setOnFinished(e -> {
+            nodeGroup.getChildren().remove(parentMesh);
+            nodeVisuals.remove(parentKey);
+        });
+        
+        timeline.play();
     }
 
     @Override

@@ -126,6 +126,44 @@ public final class MortonKey implements SpatialKey<MortonKey> {
         var parentCode = mortonCode >> 3;
         return new MortonKey(parentCode, parentLevel);
     }
+    
+    /**
+     * Get a specific child of this Morton key.
+     * 
+     * @param childIndex the child index (0-7) representing which octant
+     * @return the child MortonKey, or null if at max level
+     */
+    public MortonKey getChild(int childIndex) {
+        if (childIndex < 0 || childIndex > 7) {
+            throw new IllegalArgumentException("Child index must be between 0 and 7, got: " + childIndex);
+        }
+        
+        if (level >= Constants.getMaxRefinementLevel()) {
+            return null; // Cannot subdivide further
+        }
+        
+        // Calculate child Morton code by shifting left by 3 bits and adding the child index
+        var childLevel = (byte) (level + 1);
+        var childCode = (mortonCode << 3) | childIndex;
+        return new MortonKey(childCode, childLevel);
+    }
+    
+    /**
+     * Get all 8 children of this Morton key.
+     * 
+     * @return array of 8 child MortonKeys, or null if at max level
+     */
+    public MortonKey[] getChildren() {
+        if (level >= Constants.getMaxRefinementLevel()) {
+            return null; // Cannot subdivide further
+        }
+        
+        MortonKey[] children = new MortonKey[8];
+        for (int i = 0; i < 8; i++) {
+            children[i] = getChild(i);
+        }
+        return children;
+    }
 
     @Override
     public MortonKey root() {
