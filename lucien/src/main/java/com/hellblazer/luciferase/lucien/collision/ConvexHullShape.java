@@ -162,15 +162,39 @@ public final class ConvexHullShape extends CollisionShape {
     private List<HullFace> buildConvexHull(List<Point3f> vertices) {
         var faces = new ArrayList<HullFace>();
         
-        // Simplified convex hull construction
-        // For a proper implementation, use QuickHull or similar algorithm
-        // This example creates a simple tetrahedron if we have at least 4 vertices
-        if (vertices.size() >= 4) {
-            // Create tetrahedron faces
+        // For a box (8 vertices), create the 12 triangular faces (2 per box face)
+        if (vertices.size() == 8) {
+            // Assume vertices are ordered as a box:
+            // 0: (-x, -y, -z), 1: (+x, -y, -z), 2: (+x, +y, -z), 3: (-x, +y, -z)
+            // 4: (-x, -y, +z), 5: (+x, -y, +z), 6: (+x, +y, +z), 7: (-x, +y, +z)
+            
+            // Bottom face (y = -y) - normal points down
+            faces.add(new HullFace(0, 4, 5, vertices));
+            faces.add(new HullFace(0, 5, 1, vertices));
+            // Top face (y = +y) - normal points up
+            faces.add(new HullFace(2, 6, 7, vertices));
+            faces.add(new HullFace(2, 7, 3, vertices));
+            // Front face (z = -z) - normal points forward
             faces.add(new HullFace(0, 1, 2, vertices));
-            faces.add(new HullFace(0, 1, 3, vertices));
             faces.add(new HullFace(0, 2, 3, vertices));
+            // Back face (z = +z) - normal points backward
+            faces.add(new HullFace(5, 4, 7, vertices));
+            faces.add(new HullFace(5, 7, 6, vertices));
+            // Left face (x = -x) - normal points left
+            faces.add(new HullFace(4, 0, 3, vertices));
+            faces.add(new HullFace(4, 3, 7, vertices));
+            // Right face (x = +x) - normal points right
+            faces.add(new HullFace(1, 5, 6, vertices));
+            faces.add(new HullFace(1, 6, 2, vertices));
+        } else if (vertices.size() >= 4) {
+            // For other cases, create a simple tetrahedron
+            faces.add(new HullFace(0, 2, 1, vertices));
+            faces.add(new HullFace(0, 1, 3, vertices));
+            faces.add(new HullFace(0, 3, 2, vertices));
             faces.add(new HullFace(1, 2, 3, vertices));
+        } else if (vertices.size() == 3) {
+            // Single triangle
+            faces.add(new HullFace(0, 1, 2, vertices));
         }
         
         return faces;
@@ -204,9 +228,33 @@ public final class ConvexHullShape extends CollisionShape {
     }
     
     private boolean isPointInsideFace(Point3f point, HullFace face) {
-        // Use barycentric coordinates or edge tests
-        // Simplified version - would need proper implementation
-        return true;
+        // Check if point lies within the triangle using barycentric coordinates
+        var v0 = vertices.get(face.v0);
+        var v1 = vertices.get(face.v1);
+        var v2 = vertices.get(face.v2);
+        
+        // Compute vectors
+        var v0v1 = new Vector3f();
+        v0v1.sub(v1, v0);
+        var v0v2 = new Vector3f();
+        v0v2.sub(v2, v0);
+        var v0p = new Vector3f();
+        v0p.sub(point, v0);
+        
+        // Compute dot products
+        float dot00 = v0v1.dot(v0v1);
+        float dot01 = v0v1.dot(v0v2);
+        float dot02 = v0v1.dot(v0p);
+        float dot11 = v0v2.dot(v0v2);
+        float dot12 = v0v2.dot(v0p);
+        
+        // Compute barycentric coordinates
+        float invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+        float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+        float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+        
+        // Check if point is in triangle
+        return (u >= 0) && (v >= 0) && (u + v <= 1);
     }
     
     /**
@@ -230,6 +278,28 @@ public final class ConvexHullShape extends CollisionShape {
             this.normal = new Vector3f();
             this.normal.cross(edge1, edge2);
             this.normal.normalize();
+            
+            // Ensure normal points outward (simplified - assumes convex shape centered around origin)
+            var faceCentroid = new Point3f();
+            faceCentroid.add(vertices.get(v0));
+            faceCentroid.add(vertices.get(v1));
+            faceCentroid.add(vertices.get(v2));
+            faceCentroid.scale(1.0f / 3.0f);
+            
+            // Compute hull centroid (approximate)
+            var hullCentroid = new Point3f();
+            for (var v : vertices) {
+                hullCentroid.add(v);
+            }
+            hullCentroid.scale(1.0f / vertices.size());
+            
+            // Check if normal points outward
+            var toFace = new Vector3f();
+            toFace.sub(faceCentroid, hullCentroid);
+            
+            if (toFace.dot(normal) < 0) {
+                normal.scale(-1); // Flip to point outward
+            }
         }
     }
 }

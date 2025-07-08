@@ -82,16 +82,20 @@ public final class HeightmapShape extends CollisionShape {
         var support = new Point3f();
         var maxDot = -Float.MAX_VALUE;
         
-        // Check corners and edges more densely
-        int samples = Math.max(width, depth);
-        for (int i = 0; i <= samples; i++) {
-            float tx = (float)i / samples;
-            
-            // Check edges
-            checkSupportPoint(0, tx, direction, support, maxDot);
-            checkSupportPoint(1, tx, direction, support, maxDot);
-            checkSupportPoint(tx, 0, direction, support, maxDot);
-            checkSupportPoint(tx, 1, direction, support, maxDot);
+        // Check all grid points
+        for (int x = 0; x < width; x++) {
+            for (int z = 0; z < depth; z++) {
+                float worldX = position.x + x * cellSize;
+                float worldZ = position.z + z * cellSize;
+                float worldY = position.y + heights[x][z];
+                
+                float dot = worldX * direction.x + worldY * direction.y + worldZ * direction.z;
+                
+                if (dot > maxDot) {
+                    maxDot = dot;
+                    support.set(worldX, worldY, worldZ);
+                }
+            }
         }
         
         return support;
@@ -190,7 +194,7 @@ public final class HeightmapShape extends CollisionShape {
         var v2 = new Vector3f(0, h01 - h00, cellSize);
         
         var normal = new Vector3f();
-        normal.cross(v1, v2);
+        normal.cross(v2, v1);  // Swapped order to get correct normal direction
         normal.normalize();
         
         return normal;
@@ -218,19 +222,6 @@ public final class HeightmapShape extends CollisionShape {
         return new EntityBounds(min, max);
     }
     
-    private void checkSupportPoint(float tx, float tz, Vector3f direction, Point3f support, float maxDot) {
-        float worldX = position.x + tx * (width - 1) * cellSize;
-        float worldZ = position.z + tz * (depth - 1) * cellSize;
-        float height = getHeightAtPosition(worldX, worldZ);
-        
-        var point = new Point3f(worldX, height, worldZ);
-        float dot = point.x * direction.x + point.y * direction.y + point.z * direction.z;
-        
-        if (dot > maxDot) {
-            maxDot = dot;
-            support.set(point);
-        }
-    }
     
     private int worldToGridX(float worldX) {
         return (int)((worldX - position.x) / cellSize);
@@ -244,18 +235,38 @@ public final class HeightmapShape extends CollisionShape {
         // Simple grid traversal - check each cell the ray passes through
         // This is a simplified version - a production implementation would use DDA
         
-        float stepSize = cellSize * 0.1f; // Small steps along ray
+        float stepSize = cellSize * 0.01f; // Very small steps for accuracy
         float t = 0;
+        float prevHeight = Float.MAX_VALUE;
         
         while (t <= ray.maxDistance()) {
             var point = ray.pointAt(t);
+            float terrainHeight = getHeightAtPosition(point.x, point.z);
             
-            if (point.y <= getHeightAtPosition(point.x, point.z)) {
-                // Found intersection
-                var normal = getNormalAtPosition(point.x, point.z);
-                return RayIntersectionResult.intersection(t, point, normal);
+            // Check if ray crossed the terrain surface
+            if (point.y <= terrainHeight) {
+                // Use binary search to refine the intersection point
+                float tMin = Math.max(0, t - stepSize);
+                float tMax = t;
+                
+                for (int i = 0; i < 10; i++) {
+                    float tMid = (tMin + tMax) / 2;
+                    var midPoint = ray.pointAt(tMid);
+                    float midHeight = getHeightAtPosition(midPoint.x, midPoint.z);
+                    
+                    if (midPoint.y <= midHeight) {
+                        tMax = tMid;
+                    } else {
+                        tMin = tMid;
+                    }
+                }
+                
+                var finalPoint = ray.pointAt(tMax);
+                var normal = getNormalAtPosition(finalPoint.x, finalPoint.z);
+                return RayIntersectionResult.intersection(tMax, finalPoint, normal);
             }
             
+            prevHeight = terrainHeight;
             t += stepSize;
         }
         
