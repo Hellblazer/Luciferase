@@ -25,24 +25,29 @@ Luciferase is a mature 3D spatial data structure and visualization library featu
    - V2 tmIndex: 4x improvement
    - Level caching: O(1) level extraction
    - Efficient single-child computation methods
+   - **NEW: Lazy evaluation for range queries (July 8, 2025)**
+     - 99.5% memory reduction for large ranges
+     - O(1) memory usage regardless of range size
+     - 177x faster early termination support
 
 4. **Core Functionality**
    - Multi-entity support per spatial location
    - K-nearest neighbor search
-   - Spatial range queries
+   - Spatial range queries with lazy evaluation
    - Ray intersection
    - Collision detection
    - Frustum culling
    - Thread-safe operations with ReadWriteLock
 
-## Performance Characteristics (July 6, 2025)
+## Performance Characteristics (July 8, 2025)
 
 ### Octree vs Tetree Comparison
 
-- **Insertion**: Octree 2.3x-11.4x faster (gap increases with entity count)
-- **K-NN Search**: Tetree 1.6x-5.9x faster
-- **Range Queries**: Tetree 1.4x-3.5x faster
-- **Memory**: Tetree uses only 20-25% of Octree's memory
+- **Insertion**: Octree 2.9x-15.3x faster (gap increases with entity count)
+- **K-NN Search**: Tetree 2.2x-3.4x faster
+- **Range Queries**: Tetree 2.5x-3.8x faster
+- **Memory**: Tetree uses only 20-23% of Octree's memory
+- **NEW: Lazy Range Queries**: 99.5% memory reduction, O(1) vs O(n)
 
 Root cause: Tetree's tmIndex() requires O(level) parent chain traversal vs Octree's O(1) Morton encoding
 

@@ -5,6 +5,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Spatial;
+import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -212,14 +213,15 @@ public class TetreeTest {
         // Debug: Check if entities exist before query
         assertEquals(4, tetree.entityCount(), "Should have 4 entities");
 
-        // For now, just verify that we can query without error
-        // The spatial range query for Tetree needs more work
+        // Query the region to find entities
         var inRegion = tetree.entitiesInRegion(region);
-
-        // TODO: Fix spatial range query for Tetree
-        // Currently it returns 0 entities due to issues with tetrahedral spatial indexing
-        // For now, just verify the method doesn't throw
-        assertNotNull(inRegion);
+        
+        // The query should find E1, E2, and E3 (but not E4)
+        assertEquals(3, inRegion.size(), "Should find 3 entities in region");
+        assertTrue(inRegion.contains(id1), "Should find E1 at (100,100,100)");
+        assertTrue(inRegion.contains(id2), "Should find E2 at (150,150,150)");
+        assertTrue(inRegion.contains(id3), "Should find E3 at (200,200,200)");
+        assertFalse(inRegion.contains(id4), "Should not find E4 at (300,300,300)");
     }
 
     @Test

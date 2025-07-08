@@ -135,45 +135,92 @@ public class MeshLoader {
      *
      * Loads an STL file from disk and convert it to a mesh.
      *
-     * NOTE: Textures do not map correctly! This is because STL files do not preserve mapping data.
-     *
-     * Source: https://stackoverflow.com/q/21997622
+     * NOTE: STL files do not contain texture coordinate data, so we generate default UV coordinates.
+     * Normals are preserved from the STL file.
      *
      * @param path The file path to load the STL from.
      * @return The mesh of the selected file.
      **/
     public static MeshView loadStl(String path) {
-        warning("loadStl", "Bad method used to load `" + path + "`");
-        TriangleMesh mesh = new TriangleMesh();
+        TriangleMesh mesh = new TriangleMesh(VertexFormat.POINT_NORMAL_TEXCOORD);
         ArrayList<String> lines = readTextFile(path);
-        int faceCnt = 0;
-        for (int x = 0; x < lines.size(); x++) {
-            String line = lines.get(x);
-            if (!(line == null || line.indexOf("solid") >= 0 || line.indexOf("outer") >= 0 || line.indexOf("end")
-            >= 0)) {
-                if (line.indexOf("facet") >= 0) {
-                    String[] normals = line.replaceFirst("facet normal", "").trim().split(" ");
-                    for (int y = 0; y < 3; y++) {
-                        for (String n : normals) {
-                            /* TODO: This does not and *cannot* work correctly. */
-                            //                            int facets = (int) Math.sqrt((lines.size() - 2) / 7);
-                            mesh.getTexCoords().addAll(((Float.parseFloat(n) + 1) / -2));
-                        }
-                    }
-                } else {
-                    int target = x + 3;
-                    for (; x < target; x++) {
-                        line = lines.get(x);
-                        String[] points = line.replaceFirst("vertex", "").trim().split(" ");
-                        for (int y = 0; y < points.length; y++) {
-                            mesh.getPoints().addAll(Float.parseFloat(points[y]));
-                        }
-                    }
-                    mesh.getFaces().addAll(faceCnt, faceCnt, faceCnt + 1, faceCnt + 1, faceCnt + 2, faceCnt + 2);
-                    faceCnt += 3;
-                }
+        int vertexCount = 0;
+        int normalCount = 0;
+        
+        // First pass: count vertices to allocate texture coordinates
+        for (String line : lines) {
+            if (line != null && line.contains("vertex")) {
+                vertexCount++;
             }
         }
+        
+        // Generate default texture coordinates (0,0) for each vertex
+        // STL files don't contain UV data, so we use a single texture coordinate
+        mesh.getTexCoords().addAll(0.0f, 0.0f);
+        
+        // Parse the file
+        for (int x = 0; x < lines.size(); x++) {
+            String line = lines.get(x);
+            if (line == null) continue;
+            
+            line = line.trim();
+            
+            // Skip empty lines and structural keywords
+            if (line.isEmpty() || line.startsWith("solid") || line.startsWith("endsolid") ||
+                line.startsWith("outer loop") || line.startsWith("endloop") || 
+                line.startsWith("endfacet")) {
+                continue;
+            }
+            
+            if (line.startsWith("facet normal")) {
+                // Parse and store the normal
+                String[] normalParts = line.substring("facet normal".length()).trim().split("\\s+");
+                if (normalParts.length >= 3) {
+                    float nx = Float.parseFloat(normalParts[0]);
+                    float ny = Float.parseFloat(normalParts[1]);
+                    float nz = Float.parseFloat(normalParts[2]);
+                    
+                    // Each face has one normal, but we need to duplicate it for each vertex
+                    // We'll add the normal three times (once for each vertex of the triangle)
+                    for (int i = 0; i < 3; i++) {
+                        mesh.getNormals().addAll(nx, ny, nz);
+                    }
+                }
+                
+                // Read the three vertices of this face
+                int vertexIndex = mesh.getPoints().size() / 3;
+                for (int v = 0; v < 3; v++) {
+                    // Skip lines until we find a vertex
+                    while (x < lines.size() - 1) {
+                        x++;
+                        line = lines.get(x);
+                        if (line != null && line.trim().startsWith("vertex")) {
+                            String[] vertexParts = line.trim().substring("vertex".length()).trim().split("\\s+");
+                            if (vertexParts.length >= 3) {
+                                mesh.getPoints().addAll(
+                                    Float.parseFloat(vertexParts[0]),
+                                    Float.parseFloat(vertexParts[1]),
+                                    Float.parseFloat(vertexParts[2])
+                                );
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                // Add face indices
+                // Format: vertex/normal/texcoord for each of the 3 vertices
+                int normalIndex = normalCount * 3;
+                mesh.getFaces().addAll(
+                    vertexIndex, normalIndex, 0,         // First vertex
+                    vertexIndex + 1, normalIndex + 1, 0, // Second vertex
+                    vertexIndex + 2, normalIndex + 2, 0  // Third vertex
+                );
+                
+                normalCount++;
+            }
+        }
+        
         return new MeshView(mesh);
     }
 

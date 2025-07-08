@@ -138,17 +138,39 @@ public abstract class Grid {
         // Point N: Center of the Cone Base
         mesh.getPoints().addAll((float) centerBase.getX(), (float) centerBase.getY(), (float) centerBase.getZ());
 
-        // @TODO Birdasaur for now we'll just make an empty texCoordinate group
-        // @DUB HELP ME DUBi Wan Kanobi, you are my only hope!
-        // I'm not good at determining Texture Coordinates
-        mesh.getTexCoords().addAll(0, 0);
+        // Generate texture coordinates for the cone
+        // Texture coordinate 0: Center/tip (0.5, 0.0) - used for cone tip
+        mesh.getTexCoords().addAll(0.5f, 0.0f);
+        
+        // Texture coordinates 1 to divisions: Around the base circumference
+        // Map the base vertices to a circle on the texture
+        for (int i = 0; i <= divisions; i++) {
+            float angle = (float) (2.0 * Math.PI * i / divisions);
+            float u = 0.5f + 0.5f * (float) Math.cos(angle);
+            float v = 0.5f + 0.5f * (float) Math.sin(angle);
+            mesh.getTexCoords().addAll(u, v);
+        }
+        
+        // Texture coordinate divisions+2: Center of base (0.5, 0.5)
+        mesh.getTexCoords().addAll(0.5f, 0.5f);
+        
         // Add the faces "winding" the points generally counter clock wise
         // Must loop through each face, not including first and last points
         for (int i = 1; i <= divisions; i++) {
-            mesh.getFaces().addAll( // use dummy texCoords, @TODO Upgrade face code to be real
-                                    0, 0, i + 1, 0, i, 0, // Vertical Faces "wind" counter clockwise
-                                    divisions + 2, 0, i, 0, i + 1, 0 // Base Faces "wind" clockwise
-                                  );
+            int nextIndex = (i % divisions) + 1;
+            mesh.getFaces().addAll(
+                // Vertical Faces "wind" counter clockwise
+                // Each face connects: tip -> base vertex i -> base vertex i+1
+                0, 0,                    // Tip vertex with tip texCoord
+                i + 1, nextIndex + 1,    // Next base vertex with its texCoord
+                i, i + 1,                // Current base vertex with its texCoord
+                
+                // Base Faces "wind" clockwise  
+                // Each face connects: base center -> base vertex i -> base vertex i+1
+                divisions + 2, divisions + 2,  // Base center with center texCoord
+                i, i + 1,                      // Current base vertex with its texCoord
+                i + 1, nextIndex + 1           // Next base vertex with its texCoord
+            );
         }
         return mesh;
     }

@@ -79,14 +79,17 @@ public class TetreeKey128BitSimpleTest {
         // Get its ExtendedTetreeKey
         var key = original.tmIndex();
 
-        // For now, just verify the key is created correctly
-        // The round-trip test needs proper coordinate system understanding
+        // Verify the key is created correctly
         assertNotNull(key);
         assertEquals(level, key.getLevel());
         assertTrue(key.getLowBits() != 0 || key.getHighBits() != 0);
-
-        // TODO: Fix round-trip once coordinate system is properly understood
-        // The current encode/decode assumes a specific bit layout that may not
-        // match the test expectations
+        
+        // Verify round-trip functionality
+        Tet decoded = Tet.tetrahedron(key);
+        assertEquals(original.x(), decoded.x(), "X coordinate should round-trip");
+        assertEquals(original.y(), decoded.y(), "Y coordinate should round-trip");
+        assertEquals(original.z(), decoded.z(), "Z coordinate should round-trip");
+        assertEquals(original.l(), decoded.l(), "Level should round-trip");
+        assertEquals(original.type(), decoded.type(), "Type should round-trip");
     }
 }
