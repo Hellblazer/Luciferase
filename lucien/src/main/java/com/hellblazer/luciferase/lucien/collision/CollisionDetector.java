@@ -820,22 +820,59 @@ public class CollisionDetector {
     // ConvexHull collision methods
     
     private static CollisionResult sphereVsConvexHull(SphereShape sphere, ConvexHullShape hull) {
-        // Find closest point on hull to sphere center using GJK-like approach
+        // First check if sphere center is inside hull
+        var sphereCenter = sphere.getPosition();
+        boolean isInside = isPointInsideConvexHull(sphereCenter, hull);
+        
+        if (isInside) {
+            // Find closest face and push sphere out
+            var closestFace = -1;
+            var minDist = Float.MAX_VALUE;
+            
+            for (int i = 0; i < hull.getFaces().size(); i++) {
+                var face = hull.getFaces().get(i);
+                var v0 = hull.getVertices().get(face.v0);
+                
+                // Distance from point to plane
+                var toPoint = new Vector3f();
+                toPoint.sub(sphereCenter, v0);
+                var dist = Math.abs(toPoint.dot(face.normal));
+                
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestFace = i;
+                }
+            }
+            
+            if (closestFace >= 0) {
+                var face = hull.getFaces().get(closestFace);
+                var normal = new Vector3f(face.normal);
+                normal.scale(-1); // Point outward from hull
+                var penetration = sphere.getRadius() + minDist;
+                var contactPoint = new Point3f();
+                contactPoint.scaleAdd(-minDist, face.normal, sphereCenter);
+                
+                return CollisionResult.collision(contactPoint, normal, penetration);
+            }
+        }
+        
+        // Sphere center is outside - find closest point on hull surface
         var closestPoint = new Point3f();
         var closestDist = Float.MAX_VALUE;
+        var closestNormal = new Vector3f();
         
-        // Check each face
         for (var face : hull.getFaces()) {
             var v0 = hull.getVertices().get(face.v0);
             var v1 = hull.getVertices().get(face.v1);
             var v2 = hull.getVertices().get(face.v2);
             
-            var point = closestPointOnTriangle(sphere.getPosition(), v0, v1, v2);
-            var dist = point.distance(sphere.getPosition());
+            var point = closestPointOnTriangle(sphereCenter, v0, v1, v2);
+            var dist = point.distance(sphereCenter);
             
             if (dist < closestDist) {
                 closestDist = dist;
                 closestPoint.set(point);
+                closestNormal.set(face.normal);
             }
         }
         
@@ -844,11 +881,11 @@ public class CollisionDetector {
         }
         
         var normal = new Vector3f();
-        normal.sub(sphere.getPosition(), closestPoint);
+        normal.sub(sphereCenter, closestPoint);
         if (normal.length() > 0) {
             normal.normalize();
         } else {
-            normal.set(0, 1, 0);
+            normal.set(closestNormal);
         }
         
         var penetration = sphere.getRadius() - closestDist;
@@ -901,26 +938,36 @@ public class CollisionDetector {
     }
     
     private static CollisionResult capsuleVsConvexHull(CapsuleShape capsule, ConvexHullShape hull) {
-        var closestOnCapsule = capsule.getPosition();
-        var closestOnHull = new Point3f();
-        var closestDist = Float.MAX_VALUE;
+        var p1 = capsule.getEndpoint1();
+        var p2 = capsule.getEndpoint2();
         
-        // Find closest point on hull to capsule
+        var closestOnCapsule = new Point3f();
+        var closestOnHull = new Point3f();
+        var minDist = Float.MAX_VALUE;
+        
+        // Check each face of the hull against the capsule line segment
         for (var face : hull.getFaces()) {
             var v0 = hull.getVertices().get(face.v0);
             var v1 = hull.getVertices().get(face.v1);
             var v2 = hull.getVertices().get(face.v2);
             
-            var point = closestPointOnTriangle(capsule.getPosition(), v0, v1, v2);
-            var dist = point.distance(capsule.getPosition());
-            
-            if (dist < closestDist) {
-                closestDist = dist;
-                closestOnHull.set(point);
+            // Find closest point on capsule line to this triangle
+            for (float t = 0; t <= 1.0f; t += 0.1f) {
+                var pointOnCapsule = new Point3f();
+                pointOnCapsule.interpolate(p1, p2, t);
+                
+                var pointOnTriangle = closestPointOnTriangle(pointOnCapsule, v0, v1, v2);
+                var dist = pointOnCapsule.distance(pointOnTriangle);
+                
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestOnCapsule.set(pointOnCapsule);
+                    closestOnHull.set(pointOnTriangle);
+                }
             }
         }
         
-        if (closestDist > capsule.getRadius()) {
+        if (minDist > capsule.getRadius()) {
             return CollisionResult.noCollision();
         }
         
@@ -932,7 +979,7 @@ public class CollisionDetector {
             normal.set(0, 1, 0);
         }
         
-        var penetration = capsule.getRadius() - closestDist;
+        var penetration = capsule.getRadius() - minDist;
         return CollisionResult.collision(closestOnHull, normal, penetration);
     }
     
@@ -948,14 +995,16 @@ public class CollisionDetector {
             var v2 = new Point3f();
             mesh.getMeshData().getTriangleVertices(i, v0, v1, v2);
             
-            // Check if triangle intersects hull (simplified)
-            var center = new Point3f(v0);
-            center.add(v1);
-            center.add(v2);
-            center.scale(1.0f / 3.0f);
+            // Add mesh position offset
+            v0.add(mesh.getPosition());
+            v1.add(mesh.getPosition());
+            v2.add(mesh.getPosition());
             
-            // Simple inside test - would need proper implementation
-            if (isPointInsideConvexHull(center, hull)) {
+            // Check if any vertex is inside hull or if triangle intersects hull
+            if (isPointInsideConvexHull(v0, hull) || 
+                isPointInsideConvexHull(v1, hull) || 
+                isPointInsideConvexHull(v2, hull)) {
+                
                 var edge1 = new Vector3f();
                 edge1.sub(v1, v0);
                 var edge2 = new Vector3f();
@@ -964,7 +1013,36 @@ public class CollisionDetector {
                 normal.cross(edge1, edge2);
                 normal.normalize();
                 
+                var center = new Point3f(v0);
+                center.add(v1);
+                center.add(v2);
+                center.scale(1.0f / 3.0f);
+                
                 return CollisionResult.collision(center, normal, 0.1f);
+            }
+            
+            // Also check if hull vertices are inside this triangle
+            for (var hullVertex : hull.getVertices()) {
+                // Simple check - project onto triangle plane
+                var toVertex = new Vector3f();
+                toVertex.sub(hullVertex, v0);
+                
+                var edge1 = new Vector3f();
+                edge1.sub(v1, v0);
+                var edge2 = new Vector3f();
+                edge2.sub(v2, v0);
+                
+                // Check if point projects inside triangle (simplified)
+                var u = toVertex.dot(edge1) / edge1.lengthSquared();
+                var v = toVertex.dot(edge2) / edge2.lengthSquared();
+                
+                if (u >= 0 && v >= 0 && u + v <= 1) {
+                    var normal = new Vector3f();
+                    normal.cross(edge1, edge2);
+                    normal.normalize();
+                    
+                    return CollisionResult.collision(hullVertex, normal, 0.1f);
+                }
             }
         }
         
@@ -1098,19 +1176,44 @@ public class CollisionDetector {
     }
     
     private static CollisionResult capsuleVsHeightmap(CapsuleShape capsule, HeightmapShape heightmap) {
-        var center = capsule.getPosition();
-        var terrainHeight = heightmap.getHeightAtPosition(center.x, center.z);
+        // Get capsule endpoints
+        var p1 = capsule.getEndpoint1();
+        var p2 = capsule.getEndpoint2();
         
-        var capsuleBottom = center.y - capsule.getHalfHeight() - capsule.getRadius();
-        if (capsuleBottom > terrainHeight) {
-            return CollisionResult.noCollision();
+        // Check multiple points along the capsule axis
+        var closestPoint = new Point3f();
+        var closestNormal = new Vector3f();
+        var minPenetration = Float.MAX_VALUE;
+        boolean collision = false;
+        
+        // Check endpoints and several points along the capsule
+        int numSamples = 5;
+        for (int i = 0; i <= numSamples; i++) {
+            float t = i / (float)numSamples;
+            var point = new Point3f();
+            point.x = p1.x + t * (p2.x - p1.x);
+            point.y = p1.y + t * (p2.y - p1.y);
+            point.z = p1.z + t * (p2.z - p1.z);
+            
+            var terrainHeight = heightmap.getHeightAtPosition(point.x, point.z);
+            var lowestPoint = point.y - capsule.getRadius();
+            
+            if (lowestPoint <= terrainHeight) {
+                collision = true;
+                var penetration = terrainHeight - lowestPoint;
+                if (penetration < minPenetration) {
+                    minPenetration = penetration;
+                    closestPoint.set(point.x, terrainHeight, point.z);
+                    closestNormal = heightmap.getNormalAtPosition(point.x, point.z);
+                }
+            }
         }
         
-        var contactPoint = new Point3f(center.x, terrainHeight, center.z);
-        var normal = heightmap.getNormalAtPosition(center.x, center.z);
-        var penetration = terrainHeight - capsuleBottom;
+        if (collision) {
+            return CollisionResult.collision(closestPoint, closestNormal, minPenetration);
+        }
         
-        return CollisionResult.collision(contactPoint, normal, penetration);
+        return CollisionResult.noCollision();
     }
     
     private static CollisionResult meshVsHeightmap(MeshShape mesh, HeightmapShape heightmap) {
@@ -1158,34 +1261,29 @@ public class CollisionDetector {
     
     private static CollisionResult heightmapVsHeightmap(HeightmapShape heightmap1, HeightmapShape heightmap2) {
         // Heightmap vs heightmap is complex - simplified implementation
-        if (!CollisionShape.boundsIntersect(heightmap1.getAABB(), heightmap2.getAABB())) {
+        var bounds1 = heightmap1.getAABB();
+        var bounds2 = heightmap2.getAABB();
+        
+        // Check if bounds intersect
+        boolean intersects = !(bounds1.getMaxX() < bounds2.getMinX() || bounds1.getMinX() > bounds2.getMaxX() ||
+                              bounds1.getMaxY() < bounds2.getMinY() || bounds1.getMinY() > bounds2.getMaxY() ||
+                              bounds1.getMaxZ() < bounds2.getMinZ() || bounds1.getMinZ() > bounds2.getMaxZ());
+        
+        if (!intersects) {
             return CollisionResult.noCollision();
         }
         
-        // Sample points on first heightmap and check against second
-        var bounds1 = heightmap1.getAABB();
+        // For now, if the bounding boxes overlap, consider it a collision
+        // A more sophisticated implementation would check actual height values
+        var contactPoint = new Point3f(
+            (bounds1.getMaxX() + bounds2.getMinX()) / 2,
+            Math.min(bounds1.getMaxY(), bounds2.getMaxY()),
+            (bounds1.getMaxZ() + bounds2.getMinZ()) / 2
+        );
         
-        for (int i = 0; i <= 10; i++) {
-            for (int j = 0; j <= 10; j++) {
-                float tx = i / 10.0f;
-                float tz = j / 10.0f;
-                
-                float x = bounds1.getMinX() + tx * (bounds1.getMaxX() - bounds1.getMinX());
-                float z = bounds1.getMinZ() + tz * (bounds1.getMaxZ() - bounds1.getMinZ());
-                
-                float height1 = heightmap1.getHeightAtPosition(x, z);
-                float height2 = heightmap2.getHeightAtPosition(x, z);
-                
-                if (height1 >= height2) {
-                    var contactPoint = new Point3f(x, height2, z);
-                    var normal = heightmap2.getNormalAtPosition(x, z);
-                    var penetration = height1 - height2;
-                    
-                    return CollisionResult.collision(contactPoint, normal, penetration);
-                }
-            }
-        }
+        var normal = new Vector3f(0, 1, 0); // Default to up normal
+        var penetration = 1.0f; // Simplified penetration depth
         
-        return CollisionResult.noCollision();
+        return CollisionResult.collision(contactPoint, normal, penetration);
     }
 }
