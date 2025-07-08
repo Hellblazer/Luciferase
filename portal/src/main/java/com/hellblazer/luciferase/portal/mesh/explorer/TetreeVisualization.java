@@ -53,6 +53,9 @@ import javafx.util.Duration;
 import javax.imageio.ImageIO;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
+import javax.vecmath.Vector3f;
+import com.hellblazer.luciferase.lucien.Ray3D;
+import com.hellblazer.luciferase.lucien.SpatialIndex.RayIntersection;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
@@ -1262,22 +1265,6 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         return tMax >= tMin && tMax >= 0;
     }
 
-    /**
-     * Calculate the parameter t where the ray comes closest to a point. Returns the distance along the ray to the
-     * closest point.
-     */
-    private float rayPointDistance(Point3f origin, Point3f direction, Point3f point) {
-        // Vector from ray origin to point
-        float dx = point.x - origin.x;
-        float dy = point.y - origin.y;
-        float dz = point.z - origin.z;
-
-        // Project onto ray direction
-        float t = (dx * direction.x + dy * direction.y + dz * direction.z);
-
-        // Clamp to positive values (ray goes forward)
-        return Math.max(0, t);
-    }
 
     /**
      * Select a node.
@@ -1659,42 +1646,58 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         arrowHead.setMaterial(new PhongMaterial(Color.HOTPINK));
         queryGroup.getChildren().add(arrowHead);
 
-        // Find ray intersections with entities using ray traversal
-        // For now, we'll simulate this by checking all entities
-        // TODO: Use proper ray intersection when Ray3D is integrated
-        tetree.nodes().forEach(node -> {
-            for (ID id : node.entityIds()) {
-                Point3f entityPos = tetree.getEntityPosition(id);
-                if (entityPos != null) {
-                    // Simple ray-sphere intersection test
-                    float t = rayPointDistance(query.origin, query.direction, entityPos);
-                    if (t >= 0 && t <= 1000) { // Within ray length
-                        // Check if close enough to ray
-                        Point3f closest = new Point3f(query.origin.x + t * query.direction.x,
-                                                      query.origin.y + t * query.direction.y,
-                                                      query.origin.z + t * query.direction.z);
-                        float dist = closest.distance(entityPos);
-
-                        if (dist < 10.0f) { // Within 10 units of ray
-                            // Highlight intersected entity
-                            Node entityVisual = entityVisuals.get(id);
-                            if (entityVisual instanceof final Sphere sphere) {
-                                sphere.setMaterial(new PhongMaterial(Color.YELLOW));
-                                sphere.setRadius(sphere.getRadius() * 2.0);
-                            }
-
-                            // Show intersection point
-                            Sphere hitMarker = new Sphere(3000.0);
-                            hitMarker.setTranslateX(closest.x);
-                            hitMarker.setTranslateY(closest.y);
-                            hitMarker.setTranslateZ(closest.z);
-                            hitMarker.setMaterial(new PhongMaterial(Color.ORANGE));
-                            queryGroup.getChildren().add(hitMarker);
-                        }
-                    }
-                }
+        // Use proper Ray3D intersection API
+        Vector3f direction = new Vector3f(query.direction.x, query.direction.y, query.direction.z);
+        Ray3D ray3d = new Ray3D(query.origin, direction, 1000.0f);
+        
+        // Find all ray intersections
+        List<RayIntersection<ID, Content>> intersections = tetree.rayIntersectAll(ray3d);
+        
+        // Sort by distance for proper visualization
+        intersections.sort(Comparator.comparingDouble(RayIntersection::distance));
+        
+        // Visualize each intersection
+        for (RayIntersection<ID, Content> intersection : intersections) {
+            ID entityId = intersection.entityId();
+            Point3f hitPoint = intersection.intersectionPoint();
+            float distance = intersection.distance();
+            
+            // Highlight intersected entity
+            Node entityVisual = entityVisuals.get(entityId);
+            if (entityVisual instanceof final Sphere sphere) {
+                // Create highlighted material
+                PhongMaterial highlightMaterial = new PhongMaterial(Color.YELLOW);
+                highlightMaterial.setSpecularColor(Color.WHITE);
+                sphere.setMaterial(highlightMaterial);
+                
+                // Slightly increase size for emphasis
+                sphere.setRadius(sphere.getRadius() * 1.5);
             }
-        });
+            
+            // Show intersection point
+            Sphere hitMarker = new Sphere(3000.0);
+            hitMarker.setTranslateX(hitPoint.x);
+            hitMarker.setTranslateY(hitPoint.y);
+            hitMarker.setTranslateZ(hitPoint.z);
+            
+            // Color code by distance (closer = brighter)
+            double intensity = 1.0 - (distance / 1000.0);
+            Color markerColor = Color.color(1.0, intensity * 0.5, 0.0);
+            PhongMaterial markerMaterial = new PhongMaterial(markerColor);
+            markerMaterial.setSpecularColor(Color.WHITE);
+            hitMarker.setMaterial(markerMaterial);
+            
+            queryGroup.getChildren().add(hitMarker);
+            
+            // Add distance label
+            Text distanceLabel = new Text(String.format("%.1f", distance));
+            distanceLabel.setFont(Font.font(12));
+            distanceLabel.setFill(Color.WHITE);
+            distanceLabel.setTranslateX(hitPoint.x + 5);
+            distanceLabel.setTranslateY(hitPoint.y);
+            distanceLabel.setTranslateZ(hitPoint.z);
+            queryGroup.getChildren().add(distanceLabel);
+        }
 
         // Highlight tetrahedra that the ray passes through
         tetree.nodes().forEach(node -> {

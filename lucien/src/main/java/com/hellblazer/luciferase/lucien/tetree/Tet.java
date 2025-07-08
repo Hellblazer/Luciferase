@@ -11,7 +11,9 @@ import javax.vecmath.Point3i;
 import javax.vecmath.Tuple3f;
 import javax.vecmath.Tuple3i;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -1325,22 +1327,24 @@ public class Tet {
         return current.tmIndex();
     }
 
-    // TODO: This method needs to be updated for 128-bit tm-index
-    // Commenting out for now as it uses long-based spatial range queries
-    /*
-    public long intersecting(Spatial volume) {
+    /**
+     * Find the first tetrahedron that intersects with the given volume.
+     * 
+     * @param volume the spatial volume to test for intersection
+     * @return the TetreeKey of the first intersecting tetrahedron, or null if none found
+     */
+    public TetreeKey<?> intersecting(Spatial volume) {
         // Simple implementation: find first intersecting tetrahedron
         var bounds = VolumeBounds.from(volume);
         if (bounds == null) {
-            return 0L;
+            return null;
         }
 
-        return spatialRangeQuery(bounds, true).filter(index -> {
-            var tet = Tet.tetrahedron(index);
+        return spatialRangeQueryKeys(bounds, true).filter(key -> {
+            var tet = Tet.tetrahedron(key);
             return tetrahedronIntersectsVolume(tet, volume);
-        }).findFirst().orElse(0L);
+        }).findFirst().orElse(null);
     }
-    */
 
     /**
      * @return the length of an edge at the given level, in integer coordinates
@@ -1658,10 +1662,7 @@ public class Tet {
         // Find the SFC indices for all tetrahedron types at this location
         return IntStream.range(0, 6).mapToObj(type -> {
             var tet = new Tet((int) cellOrigin.x, (int) cellOrigin.y, (int) cellOrigin.z, level, (byte) type);
-            // TODO: These range methods need to be updated for 128-bit tm-index
-            // For now, using lowBits as a simplified representation which will lose precision
-            // for very deep levels. The entire SFC range system needs refactoring to use ExtendedTetreeKey.
-            long index = tet.tmIndex().getLowBits();
+            var index = tet.tmIndex();
             return new SFCRange(index, index);
         });
     }
@@ -1861,6 +1862,12 @@ public class Tet {
 
     // Compute SFC ranges that could contain tetrahedra intersecting the volume - optimized version
     private Stream<SFCRange> computeSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
+        // Use the optimal strategy selector instead of direct computation
+        return selectOptimalRangeStrategy(bounds, includeIntersecting);
+    }
+    
+    // Basic SFC range computation without optimization
+    private Stream<SFCRange> computeBasicSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
         // Find appropriate refinement levels for the query volume
         byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
         byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
@@ -1920,11 +1927,6 @@ public class Tet {
         return new Point3i(coords[0], coords[1], coords[2]);
     }
 
-    // Create a spatial volume from bounds for final filtering
-    private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
-                                bounds.maxZ());
-    }
 
     // Find minimum level that can contain the volume
     private byte findMinimumContainingLevel(VolumeBounds bounds) {
@@ -1958,62 +1960,6 @@ public class Tet {
         return findMinimumContainingLevel(bounds);
     }
 
-    /**
-     * Helper: Get cube-id from local index and parent type Using Table 6 from the paper
-     */
-    private int getCubeIdFromLocal(int parentType, int localIndex) {
-        // Use the system's PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID table
-        return Constants.PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[parentType][localIndex];
-    }
-
-    // Get spatial range metadata for optimized queries
-    private SpatialRangeMetaData getSpatialRangeMetaData(VolumeBounds bounds, byte level) {
-        var touched = calculateTouchedDimensions(bounds, level);
-
-        // Calculate representative location ID
-        int length = Constants.lengthAtLevel(level);
-        int centerX = (int) ((bounds.minX() + bounds.maxX()) / (2 * length)) * length;
-        int centerY = (int) ((bounds.minY() + bounds.maxY()) / (2 * length)) * length;
-        int centerZ = (int) ((bounds.minZ() + bounds.maxZ()) / (2 * length)) * length;
-
-        // Create representative tetrahedron and get its SFC location
-        var tet = new Tet(centerX, centerY, centerZ, level, (byte) 0);
-        // TODO: Update for 128-bit tm-index - using lowBits as simplified representation
-        long locationID = tet.tmIndex().getLowBits();
-
-        return new SpatialRangeMetaData(level, locationID, touched);
-    }
-
-    // Get bounding box of a tetrahedron for quick filtering
-    private VolumeBounds getTetrahedronBounds(Tet tet) {
-        var vertices = tet.coordinates();
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (var vertex : vertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
-    }
-
-    /**
-     * Helper: Get type from local index and parent type Using Table 8 from the paper
-     */
-    private int getTypeFromLocal(int parentType, int localIndex) {
-        // Use the system's PARENT_TYPE_LOCAL_INDEX_TO_TYPE table which is identical
-        return Constants.PARENT_TYPE_LOCAL_INDEX_TO_TYPE[parentType][localIndex];
-    }
-
-    // Extract bounding box from various spatial volume types
-    private VolumeBounds getVolumeBounds(Spatial volume) {
-        return VolumeBounds.from(volume);
-    }
 
     // Hybrid cube/tetrahedral intersection test - preserves SFC cube navigation with tetrahedral geometry
     private boolean hybridCellIntersectsBounds(Point3f cellOrigin, int cellSize, byte level, VolumeBounds bounds,
@@ -2126,15 +2072,16 @@ public class Tet {
             return ranges;
         }
 
-        ranges.sort((a, b) -> Long.compare(a.start, b.start));
+        // Sort ranges by start key
+        ranges.sort((a, b) -> a.start.compareTo(b.start));
         List<SFCRange> merged = new ArrayList<>();
         var current = ranges.get(0);
 
         for (int i = 1; i < ranges.size(); i++) {
             var next = ranges.get(i);
-            if (current.end + 1 >= next.start) {
-                // Merge overlapping ranges
-                current = new SFCRange(current.start, Math.max(current.end, next.end));
+            if (current.canMergeWith(next)) {
+                // Merge overlapping or adjacent ranges
+                current = current.mergeWith(next);
             } else {
                 merged.add(current);
                 current = next;
@@ -2151,8 +2098,8 @@ public class Tet {
             return ranges;
         }
 
-        // Sort ranges by start index
-        ranges.sort((a, b) -> Long.compare(a.start, b.start));
+        // Sort ranges by start key
+        ranges.sort((a, b) -> a.start.compareTo(b.start));
 
         // Use more aggressive merging for better performance
         List<SFCRange> merged = new ArrayList<>();
@@ -2161,10 +2108,12 @@ public class Tet {
         for (int i = 1; i < ranges.size(); i++) {
             var next = ranges.get(i);
 
-            // Merge if ranges overlap or are very close (within a small gap)
-            long gap = next.start - current.end;
-            if (gap <= 8) { // Allow small gaps to reduce fragmentation
-                current = new SFCRange(current.start, Math.max(current.end, next.end));
+            // For optimized merging, we can be more aggressive and merge ranges
+            // that are close but not necessarily adjacent. However, without
+            // arithmetic operations on TetreeKey, we can only merge truly
+            // adjacent or overlapping ranges.
+            if (current.canMergeWith(next)) {
+                current = current.mergeWith(next);
             } else {
                 merged.add(current);
                 current = next;
@@ -2190,8 +2139,8 @@ public class Tet {
             // Medium volumes: use depth-aware optimization
             return computeDepthAwareSFCRanges(bounds, includeIntersecting);
         } else {
-            // Small volumes: use standard computation
-            return computeSFCRanges(bounds, includeIntersecting);
+            // Small volumes: use basic computation
+            return computeBasicSFCRanges(bounds, includeIntersecting);
         }
     }
 
@@ -2224,41 +2173,37 @@ public class Tet {
 
     // Efficient spatial range query using tetrahedral space-filling curve properties - optimized version
     private Stream<TetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean includeIntersecting) {
-        // For now, implement a simple grid-based search at the level of this Tet
-        // This is a temporary implementation until we can refactor the entire SFC range system
-        byte level = this.l;
-        int cellSize = Constants.lengthAtLevel(level);
-
-        // Calculate grid bounds
-        int minX = (int) Math.floor(bounds.minX() / cellSize);
-        int maxX = (int) Math.ceil(bounds.maxX() / cellSize);
-        int minY = (int) Math.floor(bounds.minY() / cellSize);
-        int maxY = (int) Math.ceil(bounds.maxY() / cellSize);
-        int minZ = (int) Math.floor(bounds.minZ() / cellSize);
-        int maxZ = (int) Math.ceil(bounds.maxZ() / cellSize);
-
-        // Generate TetreeKeys for all grid cells that might intersect
-        List<TetreeKey<?>> keys = new ArrayList<>();
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    // Check all 6 tetrahedron types in this cell
-                    for (byte type = 0; type < 6; type++) {
-                        var tet = new Tet(x * cellSize, y * cellSize, z * cellSize, level, type);
-
-                        // Check if this tetrahedron intersects/contains the bounds
-                        var include = includeIntersecting ? tetrahedronIntersectsVolumeBounds(tet, bounds)
-                                                          : tetrahedronContainedInVolumeBounds(tet, bounds);
-
-                        if (include) {
-                            keys.add(tet.tmIndex());
-                        }
-                    }
-                }
-            }
+        // Use RangeHandle for lazy evaluation
+        var handle = new RangeHandle(this, bounds, includeIntersecting, this.l);
+        
+        // Option 1: For large volumes, use lazy streaming
+        if (shouldUseLazyEnumeration(bounds)) {
+            return handle.stream();
         }
-
-        return keys.stream();
+        
+        // Option 2: For smaller ranges, use the existing range-based approach
+        // but with lazy enumeration via LazySFCRangeStream
+        return computeSFCRanges(bounds, includeIntersecting)
+            .flatMap(range -> {
+                if (range.start().equals(range.end())) {
+                    // Single key range
+                    return Stream.of(range.start());
+                } else {
+                    // Use lazy stream for multi-key ranges
+                    return LazySFCRangeStream.stream(range);
+                }
+            });
+    }
+    
+    // Determine if we should use lazy enumeration based on bounds size
+    private boolean shouldUseLazyEnumeration(VolumeBounds bounds) {
+        float volumeSize = (bounds.maxX() - bounds.minX()) * 
+                          (bounds.maxY() - bounds.minY()) * 
+                          (bounds.maxZ() - bounds.minZ());
+        
+        // Use lazy enumeration for large volumes
+        // Also consider the level - deeper levels benefit more from lazy evaluation
+        return volumeSize > 5000.0f || this.l > 15;
     }
 
     // Recursively split large volumes into smaller manageable pieces
@@ -2319,11 +2264,109 @@ public class Tet {
         }
     }
 
-    // Record to represent spatial range metadata
-    private record SpatialRangeMetaData(byte depthID, long locationID, TouchedDimensions touched) {
-    }
 
     // Record to represent SFC index ranges
-    private record SFCRange(long start, long end) {
+    record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
+        /**
+         * Checks if this range can be merged with another range.
+         * Ranges can be merged if the end of this range is adjacent to or overlaps with the start of the other range.
+         *
+         * @param other the other range to check
+         * @return true if ranges can be merged, false otherwise
+         */
+        boolean canMergeWith(SFCRange other) {
+            if (other == null) {
+                return false;
+            }
+            
+            // Ranges must be at the same level to be merged
+            if (this.end.getLevel() != other.start.getLevel()) {
+                return false;
+            }
+            
+            // Check if ranges are adjacent or overlapping
+            return this.end.canMergeWith(other.start) || this.end.compareTo(other.start) >= 0;
+        }
+        
+        /**
+         * Merges this range with another range.
+         * 
+         * @param other the range to merge with
+         * @return a new SFCRange representing the merged range
+         * @throws IllegalArgumentException if ranges cannot be merged
+         */
+        SFCRange mergeWith(SFCRange other) {
+            if (!canMergeWith(other)) {
+                throw new IllegalArgumentException("Cannot merge non-adjacent ranges");
+            }
+            
+            // The merged range spans from the minimum start to the maximum end
+            TetreeKey<?> newStart = this.start.compareTo(other.start) <= 0 ? this.start : other.start;
+            TetreeKey<?> newEnd = this.end.max(other.end);
+            
+            return new SFCRange(newStart, newEnd);
+        }
+        
+        /**
+         * Creates a lazy iterator for this range.
+         * 
+         * @return An iterator that generates keys on demand
+         */
+        Iterator<TetreeKey<? extends TetreeKey>> iterator() {
+            var startTet = Tet.tetrahedron(start);
+            var endTet = Tet.tetrahedron(end);
+            return new LazyRangeIterator(startTet, endTet);
+        }
+        
+        /**
+         * Creates a lazy stream for this range.
+         * 
+         * @return A stream that generates keys on demand
+         */
+        Stream<TetreeKey<? extends TetreeKey>> stream() {
+            return LazySFCRangeStream.stream(this);
+        }
+        
+        /**
+         * Estimates the size of this range without iterating.
+         * 
+         * @return An estimate of the number of keys in the range
+         */
+        long estimateSize() {
+            if (start.equals(end)) {
+                return 1;
+            }
+            
+            var startTet = Tet.tetrahedron(start);
+            var endTet = Tet.tetrahedron(end);
+            var iter = new LazyRangeIterator(startTet, endTet);
+            return iter.estimateSize();
+        }
+        
+        /**
+         * Checks if this is a single-key range.
+         * 
+         * @return true if start equals end
+         */
+        boolean isSingle() {
+            return start.equals(end);
+        }
+        
+        /**
+         * Splits this range into multiple sub-ranges for parallel processing.
+         * Note: This is an approximation since we can't do precise arithmetic on TetreeKeys.
+         * 
+         * @param parts The number of parts to split into
+         * @return An array of sub-ranges
+         */
+        SFCRange[] split(int parts) {
+            if (parts <= 1 || isSingle()) {
+                return new SFCRange[] { this };
+            }
+            
+            // For now, return the original range
+            // A full implementation would require tree traversal
+            return new SFCRange[] { this };
+        }
     }
 }

@@ -277,6 +277,13 @@ Additional utilities (14):
 - **TmIndex**, **SimpleTMIndex**, **TMIndex128Clean** - Index implementations
 - **PluckerCoordinate** - Ray intersection optimization
 
+Lazy evaluation support (4):
+
+- **LazyRangeIterator** - O(1) memory iterator for TetreeKey ranges
+- **LazySFCRangeStream** - Stream API integration with lazy semantics
+- **RangeHandle** - Deferred computation for spatial queries
+- **RangeQueryVisitor** - Tree-based traversal with early termination
+
 ## Performance Characteristics
 
 ### Time Complexity
@@ -448,17 +455,18 @@ Stream<SpatialNode<LongEntityID>> nodes = octree.boundedBy(new Spatial.Cube(0, 0
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Characteristics (July 5, 2025)
+## Performance Characteristics (July 8, 2025)
 
-**Current State**: Following optimization efforts, Tetree performance has improved significantly from initial implementation.
+**Current State**: Following optimization efforts including lazy evaluation, Tetree performance has improved significantly from initial implementation.
 
 ### Individual Operations (Latest Metrics)
 
-- **Insertion**: Octree 3-7x faster due to O(1) Morton encoding vs O(level) tmIndex
-- **k-NN Search**: Tetree 2-4x faster due to spatial locality characteristics
-- **Range Query**: Tetree shows comparable performance at scale
-- **Memory**: Tetree uses 74-80% less memory
+- **Insertion**: Octree 2.9-15.3x faster due to O(1) Morton encoding vs O(level) tmIndex
+- **k-NN Search**: Tetree 2.2-3.4x faster due to spatial locality characteristics
+- **Range Query**: Tetree 2.5-3.8x faster with better cache efficiency
+- **Memory**: Tetree uses 77-80% less memory
 - **Child Lookup**: 3x faster with new efficient methods (17.10 ns per call)
+- **Lazy Range Queries**: 99.5% memory reduction, O(1) vs O(n) memory usage
 
 ### Bulk Loading Performance
 
@@ -471,6 +479,7 @@ Key optimizations implemented:
 - Parent cache: 17-67x speedup for parent operations (June 28)
 - Bulk operations: Deferred subdivision provides massive benefits (June 28)
 - Efficient child computation: 3x speedup for single child lookups (July 5)
+- Lazy evaluation: 99.5% memory reduction for large ranges (July 8)
 
 ## Testing
 

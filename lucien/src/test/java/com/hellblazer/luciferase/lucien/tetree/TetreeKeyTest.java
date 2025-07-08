@@ -113,10 +113,8 @@ class TetreeKeyTest {
 
         assertEquals(tet.l(), key.getLevel());
         assertEquals(tet.tmIndex(), key);
-
-        // TODO: Fix round-trip test once coordinate system is properly understood
-        // The current encode/decode assumes coordinates have bits in specific positions
-        // (bits 20 down to 20-level+1) which doesn't match typical grid coordinates
+        
+        // Note: Round-trip functionality is tested comprehensively in testRoundTripAtAllLevels()
     }
 
     @Test
