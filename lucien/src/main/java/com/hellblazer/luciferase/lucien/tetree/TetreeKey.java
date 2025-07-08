@@ -175,4 +175,79 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         // This cast is safe because all implementations must accept CompactTetreeKey as a valid key
         return (K) ROOT;
     }
+    
+    /**
+     * Checks if this key is adjacent to another key in the space-filling curve.
+     * Two keys are considered adjacent if they are at the same level and their
+     * indices differ by exactly 1.
+     *
+     * @param other the key to compare with
+     * @return true if the keys are adjacent, false otherwise
+     */
+    public boolean isAdjacentTo(TetreeKey<?> other) {
+        if (other == null || this.level != other.level) {
+            return false;
+        }
+        
+        // For keys at the same level, check if indices differ by 1
+        // We need to handle the case where keys might span the boundary between low and high bits
+        long thisLow = this.getLowBits();
+        long thisHigh = this.getHighBits();
+        long otherLow = other.getLowBits();
+        long otherHigh = other.getHighBits();
+        
+        // Compare as 128-bit values
+        if (thisHigh == otherHigh) {
+            // High bits are equal, check if low bits differ by 1
+            long diff = Math.abs(thisLow - otherLow);
+            return diff == 1;
+        } else if (Math.abs(thisHigh - otherHigh) == 1) {
+            // High bits differ by 1, check for boundary crossing
+            if (thisHigh < otherHigh) {
+                // This key is smaller, check if it's at max low bits and other is at 0
+                return thisLow == 0xFFFFFFFFFFFFFFFFL && otherLow == 0;
+            } else {
+                // Other key is smaller, check if it's at max low bits and this is at 0
+                return otherLow == 0xFFFFFFFFFFFFFFFFL && thisLow == 0;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Checks if this key can be merged with another key in a range.
+     * Keys can be merged if they are adjacent or if this key's end + 1 >= other key's start.
+     *
+     * @param other the key to check for mergeability
+     * @return true if the keys can be merged, false otherwise
+     */
+    public boolean canMergeWith(TetreeKey<?> other) {
+        if (other == null || this.level != other.level) {
+            return false;
+        }
+        
+        // Keys at the same level can be merged if they are adjacent or overlapping
+        // Since we're dealing with ranges, we consider them mergeable if they're adjacent
+        return this.isAdjacentTo(other) || this.equals(other);
+    }
+    
+    /**
+     * Returns the maximum of two TetreeKeys at the same level.
+     * This is used for determining the end of a merged range.
+     *
+     * @param other the other key to compare
+     * @return the larger of the two keys
+     * @throws IllegalArgumentException if keys are at different levels
+     */
+    public TetreeKey<?> max(TetreeKey<?> other) {
+        if (other == null) {
+            return this;
+        }
+        if (this.level != other.level) {
+            throw new IllegalArgumentException("Cannot compare keys at different levels");
+        }
+        
+        return this.compareTo(other) >= 0 ? this : other;
+    }
 }
