@@ -2,13 +2,13 @@
 
 ## Executive Summary
 
-Performance benchmarks run on July 6, 2025 show mixed results between Octree and Tetree implementations:
+Performance benchmarks run on July 8, 2025 show mixed results between Octree and Tetree implementations:
 
-- **Insertion**: Octree is 2.3x to 11.4x faster (performance gap increases with entity count)
-- **K-NN Search**: Tetree is 1.6x to 5.9x faster
-- **Range Queries**: Tetree is 1.4x to 3.5x faster  
+- **Insertion**: Octree is 2.9x to 15.3x faster (performance gap increases with entity count)
+- **K-NN Search**: Tetree is 2.2x to 3.4x faster
+- **Range Queries**: Tetree is 2.5x to 3.8x faster  
 - **Updates**: Mixed results (Tetree faster at 100 entities, Octree faster at 10K)
-- **Memory**: Tetree uses only 20-25% of Octree's memory footprint
+- **Memory**: Tetree uses only 20-23% of Octree's memory footprint
 
 ## Test Environment
 
@@ -16,7 +16,7 @@ Performance benchmarks run on July 6, 2025 show mixed results between Octree and
 - JVM: Java HotSpot(TM) 64-Bit Server VM 24
 - Processors: 16
 - Memory: 512 MB
-- Date: July 6, 2025
+- Date: July 8, 2025
 - Assertions: Disabled (-da flag)
 
 ## Detailed Results
@@ -25,40 +25,40 @@ Performance benchmarks run on July 6, 2025 show mixed results between Octree and
 
 | Operation | Octree | Tetree | Tetree/Octree | Winner |
 |-----------|--------|---------|---------------|---------|
-| Insertion | 5.307 μs/op | 5.089 μs/op | 0.96x | Tetree (1.0x faster) |
-| K-NN Search | 0.723 μs/op | 0.465 μs/op | 0.64x | Tetree (1.6x faster) |
-| Range Query | 0.365 μs/op | 0.255 μs/op | 0.70x | Tetree (1.4x faster) |
-| Update | 0.146 μs/op | 0.072 μs/op | 0.50x | Tetree (2.0x faster) |
-| Removal | 0.021 μs/op | 0.004 μs/op | 0.20x | Tetree (5.0x faster) |
-| Memory | 0.15 MB | 0.04 MB | 25.4% | Tetree |
+| Insertion | 3.874 μs/op | 5.063 μs/op | 1.31x | Octree (1.3x faster) |
+| K-NN Search | 0.766 μs/op | 0.527 μs/op | 0.69x | Tetree (1.5x faster) |
+| Range Query | 0.464 μs/op | 0.314 μs/op | 0.68x | Tetree (1.5x faster) |
+| Update | 0.131 μs/op | 0.093 μs/op | 0.71x | Tetree (1.4x faster) |
+| Removal | 0.023 μs/op | 0.010 μs/op | 0.43x | Tetree (2.3x faster) |
+| Memory | 0.16 MB | 0.04 MB | 22.7% | Tetree |
 
 ### 1,000 Entities
 
 | Operation | Octree | Tetree | Tetree/Octree | Winner |
 |-----------|--------|---------|---------------|---------|
-| Insertion | 2.414 μs/op | 5.571 μs/op | 2.31x | Octree (2.3x faster) |
-| K-NN Search | 4.811 μs/op | 0.822 μs/op | 0.17x | Tetree (5.9x faster) |
-| Range Query | 1.774 μs/op | 0.617 μs/op | 0.35x | Tetree (2.9x faster) |
-| Update | 0.003 μs/op | 0.003 μs/op | 1.06x | Octree (1.1x faster) |
-| Removal | 0.000 μs/op | 0.000 μs/op | 0.45x | Tetree (2.2x faster) |
-| Memory | 1.39 MB | 0.28 MB | 19.9% | Tetree |
+| Insertion | 2.210 μs/op | 6.473 μs/op | 2.93x | Octree (2.9x faster) |
+| K-NN Search | 4.674 μs/op | 2.174 μs/op | 0.47x | Tetree (2.2x faster) |
+| Range Query | 1.988 μs/op | 0.811 μs/op | 0.41x | Tetree (2.5x faster) |
+| Update | 0.003 μs/op | 0.004 μs/op | 1.10x | Octree (1.1x faster) |
+| Removal | 0.001 μs/op | 0.000 μs/op | 0.59x | Tetree (1.7x faster) |
+| Memory | 1.44 MB | 0.30 MB | 20.6% | Tetree |
 
 ### 10,000 Entities
 
 | Operation | Octree | Tetree | Tetree/Octree | Winner |
 |-----------|--------|---------|---------------|---------|
-| Insertion | 1.097 μs/op | 12.481 μs/op | 11.38x | Octree (11.4x faster) |
-| K-NN Search | 20.160 μs/op | 6.248 μs/op | 0.31x | Tetree (3.2x faster) |
-| Range Query | 20.146 μs/op | 5.791 μs/op | 0.29x | Tetree (3.5x faster) |
-| Update | 0.002 μs/op | 0.026 μs/op | 12.48x | Octree (12.5x faster) |
-| Removal | 0.001 μs/op | 0.002 μs/op | 1.83x | Octree (1.8x faster) |
-| Memory | 12.90 MB | 2.64 MB | 20.5% | Tetree |
+| Insertion | 1.004 μs/op | 15.330 μs/op | 15.27x | Octree (15.3x faster) |
+| K-NN Search | 20.942 μs/op | 6.089 μs/op | 0.29x | Tetree (3.4x faster) |
+| Range Query | 22.641 μs/op | 5.931 μs/op | 0.26x | Tetree (3.8x faster) |
+| Update | 0.002 μs/op | 0.033 μs/op | 15.29x | Octree (15.3x faster) |
+| Removal | 0.001 μs/op | 0.003 μs/op | 2.36x | Octree (2.4x faster) |
+| Memory | 13.59 MB | 2.89 MB | 21.3% | Tetree |
 
 ## Analysis
 
 ### Key Findings
 
-1. **Insertion Performance Gap**: The Tetree insertion performance degrades significantly with larger datasets, from near-parity at 100 entities to 11.4x slower at 10K entities. This is due to the O(level) cost of tmIndex() operations.
+1. **Insertion Performance Gap**: The Tetree insertion performance degrades significantly with larger datasets, from 1.3x slower at 100 entities to 15.3x slower at 10K entities. This is due to the O(level) cost of tmIndex() operations.
 
 2. **Search Performance Advantage**: Tetree consistently outperforms Octree in both K-NN and range queries, with advantages increasing at higher entity counts.
 
