@@ -7,7 +7,6 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -28,7 +27,6 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  *
  * @author hal.hildebrand
  */
-@Disabled("Performance tests disabled in CI - enable manually for benchmarking")
 public class CollisionShapePerformanceTest {
 
     private Random random;

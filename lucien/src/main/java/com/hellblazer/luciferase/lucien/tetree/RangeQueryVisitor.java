@@ -18,8 +18,12 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
+import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.visitor.AbstractTreeVisitor;
+
+import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -41,7 +45,7 @@ import java.util.function.BiPredicate;
 public class RangeQueryVisitor<ID extends EntityID, Content> 
     extends AbstractTreeVisitor<TetreeKey<? extends TetreeKey>, ID, Content> {
     
-    private final VolumeBounds queryBounds;
+    private VolumeBounds queryBounds;
     private final boolean includeIntersecting;
     private final List<SpatialNode<TetreeKey<? extends TetreeKey>, ID>> results;
     private final Set<TetreeKey<? extends TetreeKey>> visitedNodes;
@@ -138,6 +142,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * @param newBounds The new query bounds
      */
     public void reset(VolumeBounds newBounds) {
+        this.queryBounds = newBounds;
         this.results.clear();
         this.visitedNodes.clear();
         this.nodesVisited = 0;
@@ -183,19 +188,23 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * This enables early termination of subtree traversal.
      */
     private boolean couldContainResults(TetreeKey<? extends TetreeKey> nodeKey, int level) {
-        // Get approximate bounds for this node
+        // For coarse pruning, we can use the AABB of the tetrahedron's containing cube
+        // This is conservative but safe - we won't miss any actual intersections
         var tet = Tet.tetrahedron(nodeKey);
         var nodeLength = tet.length();
         
-        // Quick rejection test using node's bounding box
-        float nodeMaxX = tet.x + nodeLength;
-        float nodeMaxY = tet.y + nodeLength;
-        float nodeMaxZ = tet.z + nodeLength;
+        // Quick rejection test using the containing cube's bounds
+        float nodeMinX = tet.x();
+        float nodeMinY = tet.y();
+        float nodeMinZ = tet.z();
+        float nodeMaxX = nodeMinX + nodeLength;
+        float nodeMaxY = nodeMinY + nodeLength;
+        float nodeMaxZ = nodeMinZ + nodeLength;
         
-        // If node's bounding box doesn't intersect query bounds, prune it
-        return !(nodeMaxX < queryBounds.minX() || tet.x > queryBounds.maxX() ||
-                nodeMaxY < queryBounds.minY() || tet.y > queryBounds.maxY() ||
-                nodeMaxZ < queryBounds.minZ() || tet.z > queryBounds.maxZ());
+        // If the containing cube doesn't intersect query bounds, the tetrahedron can't either
+        return !(nodeMaxX < queryBounds.minX() || nodeMinX > queryBounds.maxX() ||
+                nodeMaxY < queryBounds.minY() || nodeMinY > queryBounds.maxY() ||
+                nodeMaxZ < queryBounds.minZ() || nodeMinZ > queryBounds.maxZ());
     }
     
     /**
@@ -203,19 +212,21 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      */
     private boolean nodeIntersectsBounds(TetreeKey<? extends TetreeKey> nodeKey, VolumeBounds bounds) {
         var tet = Tet.tetrahedron(nodeKey);
-        var vertices = tet.coordinates();
         
-        // Check if any vertex is inside bounds
-        for (var v : vertices) {
-            if (v.x >= bounds.minX() && v.x <= bounds.maxX() &&
-                v.y >= bounds.minY() && v.y <= bounds.maxY() &&
-                v.z >= bounds.minZ() && v.z <= bounds.maxZ()) {
-                return true;
-            }
+        // Get the actual tetrahedron vertices
+        Point3i[] intVertices = tet.coordinates();
+        Point3f[] vertices = new Point3f[4];
+        for (int i = 0; i < 4; i++) {
+            vertices[i] = new Point3f(intVertices[i].x, intVertices[i].y, intVertices[i].z);
         }
         
-        // Could add more sophisticated intersection tests here
-        return false;
+        // Create EntityBounds from VolumeBounds for the intersection test
+        Point3f minPoint = new Point3f(bounds.minX(), bounds.minY(), bounds.minZ());
+        Point3f maxPoint = new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ());
+        EntityBounds entityBounds = new EntityBounds(minPoint, maxPoint);
+        
+        // Use the proper tetrahedral geometry intersection test
+        return TetrahedralGeometry.aabbIntersectsTetrahedron(entityBounds, vertices);
     }
     
     /**
@@ -223,10 +234,12 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      */
     private boolean nodeContainedInBounds(TetreeKey<? extends TetreeKey> nodeKey, VolumeBounds bounds) {
         var tet = Tet.tetrahedron(nodeKey);
-        var vertices = tet.coordinates();
         
-        // Check if all vertices are inside bounds
-        for (var v : vertices) {
+        // Get the actual tetrahedron vertices
+        Point3i[] intVertices = tet.coordinates();
+        
+        // Check if all 4 vertices are inside the bounds
+        for (Point3i v : intVertices) {
             if (v.x < bounds.minX() || v.x > bounds.maxX() ||
                 v.y < bounds.minY() || v.y > bounds.maxY() ||
                 v.z < bounds.minZ() || v.z > bounds.maxZ()) {

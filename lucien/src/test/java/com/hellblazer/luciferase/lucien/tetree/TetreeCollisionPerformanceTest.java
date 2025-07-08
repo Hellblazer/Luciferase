@@ -8,7 +8,6 @@ import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -27,7 +26,6 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  *
  * @author hal.hildebrand
  */
-@Disabled("Performance tests disabled in CI - enable manually for benchmarking")
 public class TetreeCollisionPerformanceTest {
 
     private Tetree<LongEntityID, String> tetree;
@@ -445,9 +443,8 @@ public class TetreeCollisionPerformanceTest {
     }
 
     private boolean isRunningInCI() {
-        // Check common CI environment variables
-        return System.getenv("CI") != null || System.getenv("CONTINUOUS_INTEGRATION") != null || System.getenv(
-        "GITHUB_ACTIONS") != null || System.getenv("JENKINS_URL") != null || System.getenv("GITLAB_CI") != null
-        || System.getenv("TRAVIS") != null || System.getenv("CIRCLECI") != null;
+        return "true".equals(System.getenv("CI")) || 
+               "true".equals(System.getProperty("CI")) || 
+               "true".equals(System.getenv("GITHUB_ACTIONS"));
     }
 }
