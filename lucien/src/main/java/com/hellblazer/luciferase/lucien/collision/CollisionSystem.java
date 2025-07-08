@@ -20,6 +20,9 @@ import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialIndex.CollisionPair;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.collision.ccd.ContinuousCollisionDetector;
+import com.hellblazer.luciferase.lucien.collision.ccd.ContinuousCollisionResult;
+import com.hellblazer.luciferase.lucien.collision.ccd.MovingShape;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -342,6 +345,95 @@ public class CollisionSystem<ID extends EntityID, Content> {
         }
 
         return shouldApply;
+    }
+
+    /**
+     * Process continuous collision detection for high-speed entities
+     * 
+     * @param entityId the high-speed entity to check
+     * @param deltaTime the time step
+     * @return list of CCD results with time of impact
+     */
+    public List<ContinuousCollisionResult> processCCDForEntity(ID entityId, float deltaTime) {
+        List<ContinuousCollisionResult> results = new ArrayList<>();
+        
+        // Get entity properties
+        PhysicsProperties props = getPhysicsProperties(entityId);
+        if (props.isStatic() || props.getVelocity().lengthSquared() == 0) {
+            return results; // No CCD needed for static or non-moving entities
+        }
+        
+        // Get entity's collision shape
+        CollisionShape shape = getEntityShape(entityId);
+        if (shape == null) {
+            return results;
+        }
+        
+        // Create moving shape
+        Point3f startPos = spatialIndex.getEntityPosition(entityId);
+        Point3f endPos = new Point3f(startPos);
+        Vector3f displacement = new Vector3f(props.getVelocity());
+        displacement.scale(deltaTime);
+        endPos.add(displacement);
+        
+        MovingShape movingShape = new MovingShape(shape, startPos, endPos, 0, deltaTime);
+        
+        // Find potential collisions using broad phase
+        float searchRadius = props.getVelocity().length() * deltaTime + 10.0f; // Add some buffer
+        List<ID> nearbyEntities = spatialIndex.kNearestNeighbors(startPos, 100, searchRadius);
+        
+        // Check CCD against each nearby entity
+        for (ID otherId : nearbyEntities) {
+            if (entityId.equals(otherId)) continue;
+            
+            CollisionShape otherShape = getEntityShape(otherId);
+            if (otherShape == null) continue;
+            
+            PhysicsProperties otherProps = getPhysicsProperties(otherId);
+            
+            // Create other moving shape
+            Point3f otherStart = spatialIndex.getEntityPosition(otherId);
+            Point3f otherEnd = new Point3f(otherStart);
+            if (!otherProps.isStatic()) {
+                Vector3f otherDisp = new Vector3f(otherProps.getVelocity());
+                otherDisp.scale(deltaTime);
+                otherEnd.add(otherDisp);
+            }
+            
+            MovingShape otherMoving = new MovingShape(otherShape, otherStart, otherEnd, 0, deltaTime);
+            
+            // Perform CCD
+            ContinuousCollisionResult result = ContinuousCollisionDetector.detectCollision(movingShape, otherMoving);
+            if (result.collides()) {
+                results.add(result);
+            }
+        }
+        
+        return results;
+    }
+    
+    /**
+     * Get collision shape for an entity
+     */
+    private CollisionShape getEntityShape(ID entityId) {
+        // This would need to be implemented based on your entity system
+        // For now, return a simple sphere shape based on bounds
+        EntityBounds bounds = spatialIndex.getEntityBounds(entityId);
+        if (bounds == null) return null;
+        
+        Point3f center = new Point3f(
+            (bounds.getMinX() + bounds.getMaxX()) / 2,
+            (bounds.getMinY() + bounds.getMaxY()) / 2,
+            (bounds.getMinZ() + bounds.getMaxZ()) / 2
+        );
+        
+        float radius = Math.max(
+            Math.max(bounds.getMaxX() - bounds.getMinX(),
+                     bounds.getMaxY() - bounds.getMinY()),
+            bounds.getMaxZ() - bounds.getMinZ()
+        ) / 2;
+        
+        return new SphereShape(center, radius);
     }
 
     /**
