@@ -1926,11 +1926,6 @@ public class Tet {
         return new Point3i(coords[0], coords[1], coords[2]);
     }
 
-    // Create a spatial volume from bounds for final filtering
-    private Spatial createSpatialFromBounds(VolumeBounds bounds) {
-        return new Spatial.aabb(bounds.minX(), bounds.minY(), bounds.minZ(), bounds.maxX(), bounds.maxY(),
-                                bounds.maxZ());
-    }
 
     // Find minimum level that can contain the volume
     private byte findMinimumContainingLevel(VolumeBounds bounds) {
@@ -1964,61 +1959,6 @@ public class Tet {
         return findMinimumContainingLevel(bounds);
     }
 
-    /**
-     * Helper: Get cube-id from local index and parent type Using Table 6 from the paper
-     */
-    private int getCubeIdFromLocal(int parentType, int localIndex) {
-        // Use the system's PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID table
-        return Constants.PARENT_TYPE_LOCAL_INDEX_TO_CUBE_ID[parentType][localIndex];
-    }
-
-    // Get spatial range metadata for optimized queries
-    private SpatialRangeMetaData getSpatialRangeMetaData(VolumeBounds bounds, byte level) {
-        var touched = calculateTouchedDimensions(bounds, level);
-
-        // Calculate representative location ID
-        int length = Constants.lengthAtLevel(level);
-        int centerX = (int) ((bounds.minX() + bounds.maxX()) / (2 * length)) * length;
-        int centerY = (int) ((bounds.minY() + bounds.maxY()) / (2 * length)) * length;
-        int centerZ = (int) ((bounds.minZ() + bounds.maxZ()) / (2 * length)) * length;
-
-        // Create representative tetrahedron and get its SFC location
-        var tet = new Tet(centerX, centerY, centerZ, level, (byte) 0);
-        var locationID = tet.tmIndex();
-
-        return new SpatialRangeMetaData(level, locationID, touched);
-    }
-
-    // Get bounding box of a tetrahedron for quick filtering
-    private VolumeBounds getTetrahedronBounds(Tet tet) {
-        var vertices = tet.coordinates();
-        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
-
-        for (var vertex : vertices) {
-            minX = Math.min(minX, vertex.x);
-            minY = Math.min(minY, vertex.y);
-            minZ = Math.min(minZ, vertex.z);
-            maxX = Math.max(maxX, vertex.x);
-            maxY = Math.max(maxY, vertex.y);
-            maxZ = Math.max(maxZ, vertex.z);
-        }
-
-        return new VolumeBounds(minX, minY, minZ, maxX, maxY, maxZ);
-    }
-
-    /**
-     * Helper: Get type from local index and parent type Using Table 8 from the paper
-     */
-    private int getTypeFromLocal(int parentType, int localIndex) {
-        // Use the system's PARENT_TYPE_LOCAL_INDEX_TO_TYPE table which is identical
-        return Constants.PARENT_TYPE_LOCAL_INDEX_TO_TYPE[parentType][localIndex];
-    }
-
-    // Extract bounding box from various spatial volume types
-    private VolumeBounds getVolumeBounds(Spatial volume) {
-        return VolumeBounds.from(volume);
-    }
 
     // Hybrid cube/tetrahedral intersection test - preserves SFC cube navigation with tetrahedral geometry
     private boolean hybridCellIntersectsBounds(Point3f cellOrigin, int cellSize, byte level, VolumeBounds bounds,
@@ -2239,32 +2179,17 @@ public class Tet {
         // Merge adjacent ranges for efficiency
         var mergedRanges = mergeRangesOptimized(sfcRanges);
         
-        // Expand ranges back to individual TetreeKeys
+        // For now, we can only return the start and end of each range
+        // Full enumeration would require understanding the tree structure
         return mergedRanges.stream().flatMap(range -> {
-            // For now, we need to expand each range to individual keys
-            // This is necessary because we can't iterate through TetreeKey values
-            // In a future optimization, we could work directly with ranges
-            List<TetreeKey<?>> rangeKeys = new ArrayList<>();
-            
-            // If start equals end, it's a single key
             if (range.start().equals(range.end())) {
-                rangeKeys.add(range.start());
+                // Single key range
+                return Stream.of(range.start());
             } else {
-                // For multi-key ranges, we need a different approach
-                // Since we can't iterate TetreeKey values, we fall back to
-                // re-computing the keys for this specific range
-                // This is a limitation of the current TetreeKey design
-                
-                // Extract level from the range
-                byte level = range.start().getLevel();
-                
-                // For now, just add start and end
-                // A full implementation would need to enumerate all keys in the range
-                rangeKeys.add(range.start());
-                rangeKeys.add(range.end());
+                // Return start and end keys only
+                // A full implementation would need to traverse the tree structure
+                return Stream.of(range.start(), range.end());
             }
-            
-            return rangeKeys.stream();
         });
     }
 
@@ -2326,9 +2251,6 @@ public class Tet {
         }
     }
 
-    // Record to represent spatial range metadata
-    private record SpatialRangeMetaData(byte depthID, TetreeKey<?> locationID, TouchedDimensions touched) {
-    }
 
     // Record to represent SFC index ranges
     private record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
