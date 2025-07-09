@@ -1676,6 +1676,29 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
+    /**
+     * Get the total number of nodes in this spatial index.
+     *
+     * @return the number of nodes
+     */
+    public int getNodeCount() {
+        lock.readLock().lock();
+        try {
+            return spatialIndex.size();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get the number of non-empty nodes in this spatial index.
+     *
+     * @return the number of non-empty nodes
+     */
+    public int size() {
+        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
+    }
+
     @Override
     public Stream<SpatialNode<Key, ID>> nodes() {
         lock.readLock().lock();

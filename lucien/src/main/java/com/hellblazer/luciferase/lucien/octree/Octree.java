@@ -120,8 +120,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
      */
     // entitiesInRegion is now implemented in AbstractSpatialIndex
 
-
-
+    // getNodeCount() and size() are now implemented in AbstractSpatialIndex
 
     @Override
     protected void addNeighboringNodes(MortonKey nodeCode, Queue<MortonKey> toVisit, Set<MortonKey> visitedNodes) {

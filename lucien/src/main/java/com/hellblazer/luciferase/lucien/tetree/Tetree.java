@@ -569,19 +569,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
 
     // ===== Stream API Integration =====
 
-    /**
-     * Get the number of nodes in the spatial index
-     *
-     * @return the number of nodes
-     */
-    public int getNodeCount() {
-        lock.readLock().lock();
-        try {
-            return spatialIndex.size();
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
+    // getNodeCount() is now implemented in AbstractSpatialIndex
 
     /**
      * Count nodes at each level.
@@ -1145,14 +1133,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
         return siblingNodes.iterator();
     }
 
-    /**
-     * Get the size of the spatial index (number of non-empty nodes)
-     *
-     * @return the number of non-empty tetrahedral nodes
-     */
-    public int size() {
-        return (int) spatialIndex.values().stream().filter(node -> !node.isEmpty()).count();
-    }
+    // size() is now implemented in AbstractSpatialIndex
 
     /**
      * Validate the tetree structure for consistency
