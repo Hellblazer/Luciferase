@@ -2054,6 +2054,8 @@ implements SpatialIndex<Key, ID, Content> {
         lock.writeLock().lock();
         try {
             entityManager.setEntityCollisionShape(entityId, shape);
+            // Invalidate cache as bounds may have changed
+            entityCache.remove(entityId);
         } finally {
             lock.writeLock().unlock();
         }
