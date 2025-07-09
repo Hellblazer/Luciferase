@@ -81,8 +81,31 @@ Based on performance-history.csv (June 2025):
 3. **Mixed Workload Tests**: Benchmark scenarios with both batch and individual operations
 4. **Optimization**: Investigate further tmIndex optimizations for batch scenarios
 
+## Updated Performance Results (July 8, 2025)
+
+### BaselinePerformanceBenchmark - Optimization Effectiveness
+
+| Entity Count | Implementation | Operation | Performance | Speedup |
+|--------------|----------------|-----------|-------------|---------|
+| 1,000 | Octree Basic | Insertion | 5.511 μs/op | 1.0x |
+| 1,000 | Octree Optimized | Insertion | 2.210 μs/op | 2.5x |
+| 1,000 | Tetree Basic | Insertion | 100.361 μs/op | 1.0x |
+| 1,000 | Tetree Optimized | Insertion | 6.473 μs/op | 15.5x |
+| 10,000 | Octree Basic | Insertion | 30.311 μs/op | 1.0x |
+| 10,000 | Octree Optimized | Insertion | 1.004 μs/op | 30.2x |
+| 10,000 | Tetree Basic | Insertion | 28.175 μs/op | 1.0x |
+| 10,000 | Tetree Optimized | Insertion | 15.330 μs/op | 1.8x |
+
+### Key Insights from July 8 Testing
+
+1. **Tetree Optimization Impact**: 15.5x speedup at 1K entities demonstrates effectiveness of bulk loading
+2. **Octree Scalability**: Achieves 30.2x speedup at 10K entities with optimizations
+3. **Batch vs Individual**: Tetree batch loading remains dramatically faster than iterative insertion
+4. **Memory Efficiency**: Tetree continues to use 75-80% less memory across all batch operations
+
 ---
 
 *Benchmark conducted: July 2, 2025*
 *Test framework: BulkOperationBenchmark*
+*Updated: July 8, 2025 with BaselinePerformanceBenchmark results*
 *Environment: RUN_SPATIAL_INDEX_PERF_TESTS=true*

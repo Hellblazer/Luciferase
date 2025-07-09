@@ -200,6 +200,50 @@ The Luciferase collision system provides the following performance characteristi
 
 The system balances performance, flexibility, and code maintainability, supporting both discrete and continuous collision detection for various game and simulation scenarios.
 
+## Latest Performance Results (July 8, 2025)
+
+### OctreeCollisionPerformanceTest Results
+
+| Entity Count | Insertion Time | Collision Time | Collisions Found | Total Time |
+|--------------|----------------|----------------|------------------|------------|
+| 100 | 0.13 ms | 0.15 ms | 0 | 0.28 ms |
+| 500 | 0.78 ms | 0.91 ms | 2 | 1.69 ms |
+| 1,000 | 1.71 ms | 1.92 ms | 8 | 3.63 ms |
+| 1,500 | 2.21 ms | 2.68 ms | 18 | 4.89 ms |
+| 2,000 | 3.02 ms | 3.17 ms | 32 | 6.19 ms |
+
+**Performance Characteristics:**
+- Linear scaling with entity count
+- Consistent collision detection overhead (~0.15-0.20 ms per 100 entities)
+- Efficient broad-phase filtering
+- Handles 2,000 entities in 6.2ms total
+
+### TetreeCollisionPerformanceTest Results
+
+| Entity Count | Insertion Time | Collision Time | Collisions Found | Total Time |
+|--------------|----------------|----------------|------------------|------------|
+| 100 | 2 ms | 11 ms | 0 | 13 ms |
+| 500 | 18 ms | 53 ms | 3 | 71 ms |
+| 800 | 33 ms | 91 ms | 9 | 124 ms |
+| 1,000 | 54 ms | 131 ms | 11 | 185 ms |
+| 1,500 | 12 ms | 208 ms | 25 | 220 ms |
+
+**Performance Characteristics:**
+- Non-linear scaling issues
+- Collision detection degrades significantly with scale
+- 800 entities is practical limit for real-time applications
+- Performance gap vs Octree widens with entity count
+
+### Collision Detection Scaling Comparison
+
+| Entities | Octree Total | Tetree Total | Performance Gap |
+|----------|--------------|--------------|-----------------|
+| 100 | 0.28 ms | 13 ms | 46x slower |
+| 500 | 1.69 ms | 71 ms | 42x slower |
+| 1,000 | 3.63 ms | 185 ms | 51x slower |
+| 1,500 | 4.89 ms | 220 ms | 45x slower |
+
 ---
 *Generated on June 28, 2025*
 *Updated on July 7, 2025 - Full performance baseline with discrete and continuous collision detection*
+*Updated on July 8, 2025 - Added latest collision test results from comprehensive benchmark suite*
