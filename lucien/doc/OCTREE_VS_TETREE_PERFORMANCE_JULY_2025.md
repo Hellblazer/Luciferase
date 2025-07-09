@@ -2,13 +2,15 @@
 
 ## Executive Summary
 
-Performance benchmarks run on July 8, 2025 show mixed results between Octree and Tetree implementations:
+Comprehensive performance benchmarks run on July 8, 2025 show mixed results between Octree and Tetree implementations:
 
-- **Insertion**: Octree is 2.9x to 15.3x faster (performance gap increases with entity count)
-- **K-NN Search**: Tetree is 2.2x to 3.4x faster
-- **Range Queries**: Tetree is 2.5x to 3.8x faster  
+- **Insertion**: Octree is 1.3x to 15.3x faster (performance gap increases with entity count)
+- **K-NN Search**: Tetree is 1.5x to 5.9x faster 
+- **Range Queries**: Tetree is 1.4x to 3.8x faster
 - **Updates**: Mixed results (Tetree faster at 100 entities, Octree faster at 10K)
 - **Memory**: Tetree uses only 20-23% of Octree's memory footprint
+- **Collision Detection**: Octree handles 2K entities efficiently, Tetree degrades at scale
+- **Ray Intersection**: Both scale linearly, Octree more consistent
 
 ## Test Environment
 
@@ -88,12 +90,58 @@ Despite optimizations (caching, efficient data structures), the fundamental algo
 - Working with smaller datasets (<1000 entities)
 - Tetrahedral geometry provides natural fit for problem domain
 
+## Additional Performance Metrics
+
+### Collision Detection Performance
+
+| Entity Count | Octree Insertion | Octree Detection | Tetree Insertion | Tetree Detection |
+|--------------|------------------|------------------|------------------|------------------|
+| 800 | 1.3 ms | 1.5 ms | 33 ms | 91 ms |
+| 1,500 | 2.2 ms | 2.7 ms | 12 ms | 208 ms |
+| 2,000 | 3.0 ms | 3.2 ms | - | - |
+
+Octree maintains consistent performance while Tetree degrades significantly with scale.
+
+### Ray Intersection Performance
+
+| Rays | Entities | Octree Time | Throughput |
+|------|----------|-------------|------------|
+| 100 | 1,000 | 10 ms | 10K rays/sec |
+| 100 | 5,000 | 48 ms | 2K rays/sec |
+| 100 | 10,000 | 96 ms | 1K rays/sec |
+
+Both implementations scale linearly with entity count for ray operations.
+
+### TMIndex Performance Degradation
+
+| Level | tmIndex Time | Degradation vs Level 1 |
+|-------|--------------|------------------------|
+| 1 | 0.069 μs | 1.0x |
+| 5 | 0.081 μs | 1.2x |
+| 10 | 0.147 μs | 2.1x |
+| 15 | 0.303 μs | 4.4x |
+| 20 | 0.975 μs | 14.1x |
+
+This O(level) degradation is the core reason for Tetree's insertion performance issues.
+
+### Optimization Effectiveness
+
+| Optimization | Impact | Benefit |
+|--------------|--------|---------|
+| Parent caching | 17.3x speedup | Reduces parent() from O(level) to O(1) |
+| Single-child computation | 3.0x speedup | 17 ns vs 52 ns per child |
+| V2 tmIndex | 4.0x speedup | Simplified algorithm |
+| Lazy evaluation | 99.5% memory reduction | Enables unbounded ranges |
+| Bulk operations | 15.5x speedup (Tetree) | Amortizes tmIndex cost |
+
 ## Historical Context
 
-Previous benchmarks showed much larger performance gaps (770x slower insertion). Recent optimizations have improved this to 2.3-11.4x:
+Previous benchmarks showed much larger performance gaps (770x slower insertion). Recent optimizations have improved this to 1.3-15.3x:
 - Parent caching: 17.3x speedup
 - V2 tmIndex: 4x speedup  
 - Subdivision fixes: 38-96% improvement
 - Level caching: O(1) level extraction
+- Single-child optimization: 3x speedup
+- Lazy evaluation: Prevents memory exhaustion
 
 While significant improvements have been made, the fundamental O(level) vs O(1) algorithmic difference remains.

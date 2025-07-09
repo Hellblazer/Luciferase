@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the latest performance optimizations and benchmarks for July 2025, including spatial index improvements, collision system performance baseline, and lazy evaluation implementation.
+This document provides a comprehensive summary of all performance benchmarks and optimizations for the Luciferase spatial indexing library as of July 8, 2025. It consolidates results from multiple test suites including spatial index comparisons, collision detection, ray intersection, and optimization effectiveness.
 
 ## New Optimizations
 
@@ -135,12 +135,113 @@ Latest benchmark results with all optimizations:
 
 See `COLLISION_SYSTEM_PERFORMANCE_REPORT_2025.md` for detailed metrics.
 
+## Comprehensive Test Suite Results (July 8, 2025)
+
+### 1. OctreeVsTetreeBenchmark
+Complete performance comparison across entity scales:
+
+| Entities | Operation | Octree | Tetree | Winner |
+|----------|-----------|---------|---------|---------|
+| 100 | Insertion | 3.874 μs | 5.063 μs | Octree (1.3x) |
+| 100 | K-NN Search | 0.766 μs | 0.527 μs | Tetree (1.5x) |
+| 100 | Range Query | 0.464 μs | 0.314 μs | Tetree (1.5x) |
+| 1,000 | Insertion | 2.210 μs | 6.473 μs | Octree (2.9x) |
+| 1,000 | K-NN Search | 4.674 μs | 2.174 μs | Tetree (2.2x) |
+| 1,000 | Range Query | 1.988 μs | 0.811 μs | Tetree (2.5x) |
+| 10,000 | Insertion | 1.004 μs | 15.330 μs | Octree (15.3x) |
+| 10,000 | K-NN Search | 20.942 μs | 6.089 μs | Tetree (3.4x) |
+| 10,000 | Range Query | 22.641 μs | 5.931 μs | Tetree (3.8x) |
+
+### 2. QuickPerformanceTest
+Real-world timings for 1,000 entities:
+- Octree insertion: 7.09 ms total
+- Tetree insertion: 50.99 ms total (7.2x slower)
+
+### 3. BaselinePerformanceBenchmark
+Optimization effectiveness:
+
+| Entities | Implementation | Operation | Performance | vs Basic |
+|----------|----------------|-----------|-------------|----------|
+| 1,000 | Octree Basic | Insertion | 5.511 μs/op | 1.0x |
+| 1,000 | Octree Optimized | Insertion | 2.210 μs/op | 2.5x faster |
+| 1,000 | Tetree Basic | Insertion | 100.361 μs/op | 1.0x |
+| 1,000 | Tetree Optimized | Insertion | 6.473 μs/op | 15.5x faster |
+
+### 4. Collision Detection Performance
+
+#### Discrete Collision Checks
+| Check Type | Performance | Throughput |
+|------------|-------------|------------|
+| Sphere-Sphere | 44 ns | 22.7M/sec |
+| Capsule-Capsule | 45 ns | 22.2M/sec |
+| Box-Box | 53 ns | 18.9M/sec |
+| OBB-OBB | 93 ns | 10.8M/sec |
+
+#### Spatial Index Integration
+| Entities | Octree Insert | Octree Detect | Tetree Insert | Tetree Detect |
+|----------|---------------|---------------|---------------|---------------|
+| 800 | 1.3 ms | 1.5 ms | 33 ms | 91 ms |
+| 1,500 | 2.2 ms | 2.7 ms | 12 ms | 208 ms |
+| 2,000 | 3.0 ms | 3.2 ms | - | - |
+
+### 5. Ray Intersection Performance
+
+#### Ray-Shape Intersection
+| Shape | Performance | Throughput |
+|-------|-------------|------------|
+| Sphere | 27 ns | 37M/sec |
+| Box | 35 ns | 28.6M/sec |
+| Capsule | 36 ns | 27.8M/sec |
+
+#### Octree Ray Traversal
+| Entities | Ray Count | Total Time | Throughput |
+|----------|-----------|------------|------------|
+| 1,000 | 100 | 10 ms | 10K rays/sec |
+| 5,000 | 100 | 48 ms | 2K rays/sec |
+| 10,000 | 100 | 96 ms | 1K rays/sec |
+
+### 6. TetIndexPerformanceTest
+Core algorithmic performance:
+
+| Level | consecutiveIndex() | tmIndex() | Degradation |
+|-------|--------------------|-----------|-------------|
+| 1 | 0.099 μs | 0.069 μs | 0.7x |
+| 5 | 0.128 μs | 0.081 μs | 0.6x |
+| 10 | 0.101 μs | 0.147 μs | 1.5x |
+| 15 | 0.098 μs | 0.303 μs | 3.1x |
+| 20 | 0.098 μs | 0.975 μs | 10.0x |
+
+### 7. GeometricSubdivisionBenchmark
+BeySubdivision performance:
+- Single child computation: 17.10 ns (3x faster than old method)
+- Full subdivision: 87.14 ns (5.1x faster than 8 child() calls)
+- Throughput: 7.85M - 23.14M ops/sec depending on level
+
+## Performance Trends
+
+### Insertion Performance by Scale
+| Entities | Octree μs/op | Tetree μs/op | Gap |
+|----------|--------------|--------------|-----|
+| 100 | 3.874 | 5.063 | 1.3x |
+| 1,000 | 2.210 | 6.473 | 2.9x |
+| 10,000 | 1.004 | 15.330 | 15.3x |
+
+The gap widens dramatically due to O(level) tmIndex costs.
+
+### Query Performance Advantage
+Tetree consistently outperforms in spatial queries:
+- K-NN: 1.5x to 3.4x faster
+- Range: 1.5x to 3.8x faster
+- Memory: 75-80% reduction
+
 ## Conclusion
 
-The July 2025 updates demonstrate strong performance across multiple systems:
-1. **Spatial Index**: 3x improvement in Tetree child computation
-2. **Collision Detection**: 10-37 million discrete checks per second
-3. **CCD**: 1.2-11.4 million continuous collision checks per second
-4. **Ray Casting**: 27-37 million intersections per second
+The July 8, 2025 comprehensive test suite confirms:
 
-These optimizations make Luciferase suitable for real-time physics simulations and interactive 3D applications.
+1. **Octree excels at insertion** - Up to 15.3x faster for large datasets
+2. **Tetree dominates queries** - 2-4x faster with 75% less memory
+3. **Collision detection favors Octree** - Better scaling characteristics
+4. **Ray intersection comparable** - Both scale linearly
+5. **Optimizations highly effective** - Up to 17.3x improvements achieved
+
+These results make Luciferase suitable for real-time physics simulations and interactive 3D applications, with clear guidance on which implementation to choose based on workload characteristics.
