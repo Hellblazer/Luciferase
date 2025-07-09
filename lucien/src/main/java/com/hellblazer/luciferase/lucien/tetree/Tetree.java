@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
+import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 
@@ -1313,8 +1314,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
     }
 
     @Override
-    protected TreeBalancer createTreeBalancer() {
-        return new TetreeBalancer();
+    protected TreeBalancer<TetreeKey<? extends TetreeKey>, ID> createTreeBalancer() {
+        return new TetreeBalancer<>(this, entityManager, maxDepth, maxEntitiesPerNode);
     }
 
     @Override
@@ -2072,7 +2073,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
      * @param tetIndex the spatial index key for this tetrahedron
      * @return a new node with cached bounds
      */
-    private TetreeNodeImpl<ID> createNodeWithCachedBounds(TetreeKey<? extends TetreeKey> tetIndex) {
+    TetreeNodeImpl<ID> createNodeWithCachedBounds(TetreeKey<? extends TetreeKey> tetIndex) {
         TetreeNodeImpl<ID> node = new TetreeNodeImpl<>(maxEntitiesPerNode);
 
         // TODO: Re-implement bounds caching optimization
@@ -2683,179 +2684,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
         }
     }
 
-    /**
-     * Tetree-specific tree balancer implementation
-     */
-    protected class TetreeBalancer extends DefaultTreeBalancer {
+    // Package-private getters for TetreeBalancer - already defined as protected in AbstractSpatialIndex
 
-        @Override
-        public boolean mergeNodes(Set<TetreeKey<? extends TetreeKey>> tetIndices,
-                                  TetreeKey<? extends TetreeKey> parentIndex) {
-            if (tetIndices.isEmpty()) {
-                return false;
-            }
-
-            // Collect all entities from nodes to be merged
-            Set<ID> allEntities = new HashSet<>();
-            for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
-                TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
-                if (node != null && !node.isEmpty()) {
-                    allEntities.addAll(node.getEntityIds());
-                }
-            }
-
-            if (allEntities.isEmpty()) {
-                // Just remove empty nodes
-                for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
-                    spatialIndex.remove(tetIndex);
-                    sortedSpatialIndices.remove(tetIndex);
-                }
-                return true;
-            }
-
-            // Get or create parent node
-            TetreeNodeImpl<ID> parentNode = spatialIndex.computeIfAbsent(parentIndex, k -> {
-                sortedSpatialIndices.add(parentIndex);
-                return createNodeWithCachedBounds(parentIndex);
-            });
-
-            // Move all entities to parent
-            for (ID entityId : allEntities) {
-                // Remove from child locations
-                for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
-                    entityManager.removeEntityLocation(entityId, tetIndex);
-                }
-
-                // Add to parent
-                parentNode.addEntity(entityId);
-                entityManager.addEntityLocation(entityId, parentIndex);
-            }
-
-            // Remove child nodes
-            for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
-                spatialIndex.remove(tetIndex);
-                sortedSpatialIndices.remove(tetIndex);
-            }
-
-            // Parent no longer has children after merge
-            parentNode.setHasChildren(false);
-
-            return true;
-        }
-
-        @Override
-        public List<TetreeKey<? extends TetreeKey>> splitNode(TetreeKey<? extends TetreeKey> tetIndex, byte tetLevel) {
-            if (tetLevel >= maxDepth) {
-                return Collections.emptyList();
-            }
-
-            TetreeNodeImpl<ID> node = spatialIndex.get(tetIndex);
-            if (node == null || node.isEmpty()) {
-                return Collections.emptyList();
-            }
-
-            // Get entities to redistribute
-            Set<ID> entities = new HashSet<>(node.getEntityIds());
-
-            // Calculate child coordinates and level
-            Tet parentTet = Tet.tetrahedron(tetIndex);
-            byte childLevel = (byte) (tetLevel + 1);
-            int parentCellSize = Constants.lengthAtLevel(tetLevel);
-            int childCellSize = Constants.lengthAtLevel(childLevel);
-
-            // Create child nodes
-            List<TetreeKey<? extends TetreeKey>> createdChildren = new ArrayList<>();
-            Map<TetreeKey<? extends TetreeKey>, Set<ID>> childEntityMap = new HashMap<>();
-
-            // Distribute entities to children based on their positions
-            for (ID entityId : entities) {
-                Point3f pos = entityManager.getEntityPosition(entityId);
-                if (pos == null) {
-                    continue;
-                }
-
-                // Find the containing tetrahedron at the child level
-                Tet childTet = locate(pos, childLevel);
-                TetreeKey<? extends TetreeKey> childTetIndex = childTet.tmIndex();
-                childEntityMap.computeIfAbsent(childTetIndex, k -> new HashSet<>()).add(entityId);
-            }
-
-            // Check if all entities map to the same child - if so, don't split
-            if (childEntityMap.size() == 1 && childEntityMap.containsKey(tetIndex)) {
-                // All entities map to the same tetrahedron as the parent - splitting won't help
-                return Collections.emptyList();
-            }
-
-            // Create child nodes and add entities
-            for (Map.Entry<TetreeKey<? extends TetreeKey>, Set<ID>> entry : childEntityMap.entrySet()) {
-                TetreeKey<? extends TetreeKey> childTetIndex = entry.getKey();
-                Set<ID> childEntities = entry.getValue();
-
-                if (!childEntities.isEmpty()) {
-                    TetreeNodeImpl<ID> childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
-                        sortedSpatialIndices.add(childTetIndex);
-                        return createNodeWithCachedBounds(childTetIndex);
-                    });
-
-                    for (ID entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        entityManager.addEntityLocation(entityId, childTetIndex);
-                    }
-
-                    createdChildren.add(childTetIndex);
-                }
-            }
-
-            // Clear parent node and update entity locations
-            node.clearEntities();
-            node.setHasChildren(true);
-
-            // Set the specific child bits for the children that were created
-            // We need to determine which child indices these represent
-            for (TetreeKey<? extends TetreeKey> childTetIndex : createdChildren) {
-                Tet childTet = Tet.tetrahedron(childTetIndex);
-                // Find which child index this represents (0-7)
-                for (int i = 0; i < 8; i++) {
-                    try {
-                        Tet expectedChild = parentTet.child(i);
-                        if (expectedChild.tmIndex() == childTetIndex) {
-                            node.setChildBit(i);
-                            break;
-                        }
-                    } catch (Exception e) {
-                        // Skip invalid children
-                    }
-                }
-            }
-
-            for (ID entityId : entities) {
-                entityManager.removeEntityLocation(entityId, tetIndex);
-            }
-
-            return createdChildren;
-        }
-
-        @Override
-        protected Set<TetreeKey<? extends TetreeKey>> findSiblings(TetreeKey<? extends TetreeKey> tetIndex) {
-            Tet tet = Tet.tetrahedron(tetIndex);
-            if (tet.l() == 0) {
-                return Collections.emptySet(); // Root has no siblings
-            }
-
-            // Use the t8code-compliant TetreeFamily algorithm for finding siblings
-            Tet[] siblings = TetreeFamily.getSiblings(tet);
-            Set<TetreeKey<? extends TetreeKey>> result = new HashSet<>();
-
-            for (Tet sibling : siblings) {
-                TetreeKey<? extends TetreeKey> siblingIndex = sibling.tmIndex();
-                // Add if it's not the current node and exists in the spatial index
-                if (siblingIndex != tetIndex && spatialIndex.containsKey(siblingIndex)) {
-                    result.add(siblingIndex);
-                }
-            }
-
-            return result;
-        }
-
-    }
 }

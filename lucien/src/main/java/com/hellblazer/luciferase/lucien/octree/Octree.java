@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.octree;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
+import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
 
 import javax.vecmath.Point3f;
@@ -167,7 +168,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
     @Override
     protected TreeBalancer<MortonKey, ID> createTreeBalancer() {
-        return new OctreeBalancer();
+        return new OctreeBalancer<>(this, entityManager, maxDepth, maxEntitiesPerNode);
     }
 
     @Override
@@ -541,6 +542,17 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
     // ===== Ray Intersection Implementation =====
 
+    // Package-private getters for OctreeBalancer
+    @Override
+    protected Map<MortonKey, OctreeNode<ID>> getSpatialIndex() {
+        return spatialIndex;
+    }
+    
+    @Override
+    protected NavigableSet<MortonKey> getSortedSpatialIndices() {
+        return sortedSpatialIndices;
+    }
+
     boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
         return switch (volume) {
             case Spatial.Cube other ->
@@ -761,187 +773,4 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         }
     }
 
-    /**
-     * Octree-specific tree balancer implementation
-     */
-    protected class OctreeBalancer extends DefaultTreeBalancer {
-
-        @Override
-        public boolean mergeNodes(Set<MortonKey> nodeIndices, MortonKey parentIndex) {
-            if (nodeIndices.isEmpty()) {
-                return false;
-            }
-
-            // Collect all entities from nodes to be merged
-            var allEntities = new HashSet<ID>();
-            for (var nodeIndex : nodeIndices) {
-                var node = spatialIndex.get(nodeIndex);
-                if (node != null && !node.isEmpty()) {
-                    allEntities.addAll(node.getEntityIds());
-                }
-            }
-
-            if (allEntities.isEmpty()) {
-                // Just remove empty nodes
-                for (var nodeIndex : nodeIndices) {
-                    spatialIndex.remove(nodeIndex);
-                    sortedSpatialIndices.remove(nodeIndex);
-                }
-                return true;
-            }
-
-            // Get or create parent node
-            var parentNode = spatialIndex.computeIfAbsent(parentIndex, k -> {
-                sortedSpatialIndices.add(parentIndex);
-                return new OctreeNode<>(maxEntitiesPerNode);
-            });
-
-            // Move all entities to parent
-            for (var entityId : allEntities) {
-                // Remove from child locations
-                for (var nodeIndex : nodeIndices) {
-                    entityManager.removeEntityLocation(entityId, nodeIndex);
-                }
-
-                // Add to parent
-                parentNode.addEntity(entityId);
-                entityManager.addEntityLocation(entityId, parentIndex);
-            }
-
-            // Remove child nodes
-            for (var nodeIndex : nodeIndices) {
-                spatialIndex.remove(nodeIndex);
-                sortedSpatialIndices.remove(nodeIndex);
-            }
-
-            // Parent no longer has children after merge
-            parentNode.setHasChildren(false);
-
-            return true;
-        }
-
-        @Override
-        public List<MortonKey> splitNode(MortonKey nodeIndex, byte nodeLevel) {
-            if (nodeLevel >= maxDepth) {
-                return Collections.emptyList();
-            }
-
-            var node = spatialIndex.get(nodeIndex);
-            if (node == null || node.isEmpty()) {
-                return Collections.emptyList();
-            }
-
-            // Get entities to redistribute
-            var entities = new HashSet<>(node.getEntityIds());
-
-            // Calculate child coordinates
-            var parentCoords = MortonCurve.decode(nodeIndex.getMortonCode());
-            var parentCellSize = Constants.lengthAtLevel(nodeLevel);
-            var childCellSize = parentCellSize / 2;
-            var childLevel = (byte) (nodeLevel + 1);
-
-            // Create child nodes
-            var createdChildren = new ArrayList<MortonKey>();
-            var childEntityMap = new HashMap<MortonKey, Set<ID>>();
-
-            // Distribute entities to children based on their positions
-            for (var entityId : entities) {
-                var pos = entityManager.getEntityPosition(entityId);
-                if (pos == null) {
-                    continue;
-                }
-
-                // Determine which child octant this entity belongs to
-                var octant = 0;
-                if (pos.x >= parentCoords[0] + childCellSize) {
-                    octant |= 1;
-                }
-                if (pos.y >= parentCoords[1] + childCellSize) {
-                    octant |= 2;
-                }
-                if (pos.z >= parentCoords[2] + childCellSize) {
-                    octant |= 4;
-                }
-
-                var childX = parentCoords[0] + ((octant & 1) != 0 ? childCellSize : 0);
-                var childY = parentCoords[1] + ((octant & 2) != 0 ? childCellSize : 0);
-                var childZ = parentCoords[2] + ((octant & 4) != 0 ? childCellSize : 0);
-
-                var childIndex = new MortonKey(MortonCurve.encode(childX, childY, childZ), (byte) (nodeLevel + 1));
-                childEntityMap.computeIfAbsent(childIndex, k -> new HashSet<>()).add(entityId);
-            }
-
-            // Check if all entities map to the same child - if so, don't split
-            if (childEntityMap.size() == 1 && childEntityMap.containsKey(nodeIndex)) {
-                // All entities map to the same cell as the parent - splitting won't help
-                return Collections.emptyList();
-            }
-
-            // Create child nodes and add entities
-            for (var entry : childEntityMap.entrySet()) {
-                var childIndex = entry.getKey();
-                var childEntities = entry.getValue();
-
-                if (!childEntities.isEmpty()) {
-                    var childNode = spatialIndex.computeIfAbsent(childIndex, k -> {
-                        sortedSpatialIndices.add(childIndex);
-                        return new OctreeNode<>(maxEntitiesPerNode);
-                    });
-
-                    for (var entityId : childEntities) {
-                        childNode.addEntity(entityId);
-                        entityManager.addEntityLocation(entityId, childIndex);
-                    }
-
-                    createdChildren.add(childIndex);
-                }
-            }
-
-            // Clear parent node and update entity locations
-            node.clearEntities();
-            node.setHasChildren(true);
-            for (var entityId : entities) {
-                entityManager.removeEntityLocation(entityId, nodeIndex);
-            }
-
-            return createdChildren;
-        }
-
-        @Override
-        protected Set<MortonKey> findSiblings(MortonKey nodeIndex) {
-            var level = nodeIndex.getLevel();
-            if (level == 0) {
-                return Collections.emptySet(); // Root has no siblings
-            }
-
-            // Calculate parent coordinates
-            var coords = MortonCurve.decode(nodeIndex.getMortonCode());
-            var cellSize = Constants.lengthAtLevel(level);
-            var parentCellSize = cellSize * 2;
-
-            // Find parent cell coordinates
-            var parentX = (coords[0] / parentCellSize) * parentCellSize;
-            var parentY = (coords[1] / parentCellSize) * parentCellSize;
-            var parentZ = (coords[2] / parentCellSize) * parentCellSize;
-
-            var siblings = new HashSet<MortonKey>();
-
-            // Check all 8 positions in parent cell
-            for (var i = 0; i < OCTREE_CHILDREN; i++) {
-                var siblingX = parentX + ((i & 1) != 0 ? cellSize : 0);
-                var siblingY = parentY + ((i & 2) != 0 ? cellSize : 0);
-                var siblingZ = parentZ + ((i & 4) != 0 ? cellSize : 0);
-
-                var siblingIndex = new MortonKey(MortonCurve.encode(siblingX, siblingY, siblingZ), level);
-
-                // Add if it's not the current node and exists
-                if (siblingIndex.equals(nodeIndex) && spatialIndex.containsKey(siblingIndex)) {
-                    siblings.add(siblingIndex);
-                }
-            }
-
-            return siblings;
-        }
-
-    }
 }
