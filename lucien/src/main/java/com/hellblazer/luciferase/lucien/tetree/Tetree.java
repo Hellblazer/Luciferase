@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
+import com.hellblazer.luciferase.lucien.tetree.internal.TetDistance;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -2650,20 +2651,6 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, Tetree
     /**
      * Helper class to store tetrahedron index with distance for priority queue ordering
      */
-    private static class TetDistance implements Comparable<TetDistance> {
-        final TetreeKey<? extends TetreeKey> tetIndex;
-        final float                          distance;
-
-        TetDistance(TetreeKey<? extends TetreeKey> tetIndex, float distance) {
-            this.tetIndex = tetIndex;
-            this.distance = distance;
-        }
-
-        @Override
-        public int compareTo(TetDistance other) {
-            return Float.compare(this.distance, other.distance);
-        }
-    }
 
     // Package-private getters for TetreeBalancer - already defined as protected in AbstractSpatialIndex
 

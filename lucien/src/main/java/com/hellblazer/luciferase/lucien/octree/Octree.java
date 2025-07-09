@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.octree.internal.NodeDistance;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3i;
@@ -368,7 +369,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         Collections.sort(nodeDistances);
 
         // Return stream of node indices in order
-        return nodeDistances.stream().map(nd -> nd.nodeIndex);
+        return nodeDistances.stream().map(nd -> nd.getNodeIndex());
     }
 
     // ===== SpatialIndex Interface Implementation =====
@@ -754,22 +755,5 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
 
 
-    /**
-     * Helper class to store node index with distance for priority queue ordering
-     */
-    private static class NodeDistance implements Comparable<NodeDistance> {
-        final MortonKey nodeIndex;
-        final float     distance;
-
-        NodeDistance(MortonKey nodeIndex, float distance) {
-            this.nodeIndex = nodeIndex;
-            this.distance = distance;
-        }
-
-        @Override
-        public int compareTo(NodeDistance other) {
-            return Float.compare(this.distance, other.distance);
-        }
-    }
 
 }

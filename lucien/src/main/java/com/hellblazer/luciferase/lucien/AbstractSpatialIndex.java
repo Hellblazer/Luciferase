@@ -21,6 +21,8 @@ import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.internal.IndexedEntity;
+import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
 import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
@@ -3811,39 +3813,6 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
-    /**
-     * Helper class for unordered entity pairs
-     */
-    private static class UnorderedPair<T extends EntityID> {
-        private final T first;
-        private final T second;
-
-        UnorderedPair(T a, T b) {
-            if (a.compareTo(b) <= 0) {
-                this.first = a;
-                this.second = b;
-            } else {
-                this.first = b;
-                this.second = a;
-            }
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (!(o instanceof UnorderedPair<?> that)) {
-                return false;
-            }
-            return Objects.equals(first, that.first) && Objects.equals(second, that.second);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(first, second);
-        }
-    }
 
     /**
      * Memory usage statistics
@@ -3858,18 +3827,6 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
-    /**
-     * Helper class for sorting entities by spatial key
-     */
-    private static class IndexedEntity<K extends SpatialKey<K>> {
-        final int originalIndex;
-        final K   spatialKey;
-
-        IndexedEntity(int originalIndex, K spatialKey) {
-            this.originalIndex = originalIndex;
-            this.spatialKey = spatialKey;
-        }
-    }
 
     /**
      * Default tree balancer implementation.
