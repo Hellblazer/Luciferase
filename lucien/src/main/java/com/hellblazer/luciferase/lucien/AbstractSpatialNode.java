@@ -113,6 +113,14 @@ public abstract class AbstractSpatialNode<ID extends EntityID> implements Spatia
     public Collection<ID> getEntityIds() {
         return Collections.unmodifiableList(entityIds);
     }
+    
+    /**
+     * Get entity IDs as a Set
+     * @return an unmodifiable Set containing all entity IDs
+     */
+    public java.util.Set<ID> getEntityIdsAsSet() {
+        return Collections.unmodifiableSet(new java.util.HashSet<>(entityIds));
+    }
 
     /**
      * Get the maximum entities allowed before split

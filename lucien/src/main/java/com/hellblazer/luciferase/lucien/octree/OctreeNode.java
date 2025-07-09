@@ -50,39 +50,5 @@ public class OctreeNode<ID extends EntityID> extends AbstractSpatialNode<ID> {
         super(maxEntitiesBeforeSplit);
     }
 
-    /**
-     * Clear a bit in the children mask when a child is removed (octant-specific naming for backward compatibility)
-     *
-     * @param octant the octant index (0-7)
-     */
-    public void clearChildBit(int octant) {
-        super.clearChildBit(octant);
-    }
 
-    /**
-     * Get all entity IDs as a list (for backward compatibility)
-     *
-     * @return unmodifiable list view of entity IDs
-     */
-    public List<ID> getEntityIdsAsList() {
-        return Collections.unmodifiableList(entityIds);
-    }
-
-    /**
-     * Check if a specific octant has a child (octant-specific naming for backward compatibility)
-     *
-     * @param octant the octant index (0-7)
-     */
-    public boolean hasChild(int octant) {
-        return super.hasChild(octant);
-    }
-
-    /**
-     * Set a bit in the children mask to indicate a child exists (octant-specific naming for backward compatibility)
-     *
-     * @param octant the octant index (0-7)
-     */
-    public void setChildBit(int octant) {
-        super.setChildBit(octant);
-    }
 }
