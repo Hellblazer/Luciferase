@@ -1047,6 +1047,33 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
 
+    @Override
+    public List<ID> lookup(Point3f position, byte level) {
+        validateSpatialConstraints(position);
+        
+        lock.readLock().lock();
+        try {
+            var spatialIndex = calculateSpatialIndex(position, level);
+            var node = this.spatialIndex.get(spatialIndex);
+
+            if (node == null) {
+                return Collections.emptyList();
+            }
+
+            // If the node has been subdivided, look in child nodes
+            if (hasChildren(spatialIndex) || node.isEmpty()) {
+                var childLevel = (byte) (level + 1);
+                if (childLevel <= maxDepth) {
+                    return lookup(position, childLevel);
+                }
+            }
+
+            return new ArrayList<>(node.getEntityIds());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     /**
      * Get memory usage statistics for capacity planning
      */
@@ -1060,6 +1087,54 @@ implements SpatialIndex<Key, ID, Content> {
             var estimatedMemory = NodeEstimator.estimateMemoryUsage(nodeCount, (int) Math.ceil(avgEntitiesPerNode));
 
             return new MemoryStats(nodeCount, totalEntities, avgEntitiesPerNode, estimatedMemory);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get a stream of all non-empty nodes in the spatial index.
+     *
+     * @return Stream of spatial nodes
+     */
+    public Stream<NodeType> nodeStream() {
+        lock.readLock().lock();
+        try {
+            return spatialIndex.values().stream().filter(node -> !node.isEmpty());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get a stream of leaf nodes (nodes with no children).
+     *
+     * @return Stream of leaf nodes
+     */
+    public Stream<NodeType> leafStream() {
+        lock.readLock().lock();
+        try {
+            return spatialIndex.entrySet().stream()
+                    .filter(entry -> !entry.getValue().isEmpty() && !hasChildren(entry.getKey()))
+                    .map(Map.Entry::getValue);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get a stream of nodes at a specific level.
+     *
+     * @param level The spatial level
+     * @return Stream of nodes at the specified level
+     */
+    public Stream<NodeType> levelStream(byte level) {
+        lock.readLock().lock();
+        try {
+            return sortedSpatialIndices.stream()
+                    .filter(index -> index.getLevel() == level)
+                    .map(spatialIndex::get)
+                    .filter(node -> node != null && !node.isEmpty());
         } finally {
             lock.readLock().unlock();
         }
@@ -1164,6 +1239,41 @@ implements SpatialIndex<Key, ID, Content> {
             }
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Insert multiple entities at once with their data
+     * @param entities List of entity data to insert
+     */
+    public void insertAll(List<EntityData<ID, Content>> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return;
+        }
+        
+        // Use bulk mode if enough entities
+        if (entities.size() >= bulkConfig.getBatchSize()) {
+            enableBulkLoading();
+            try {
+                for (var data : entities) {
+                    if (data.bounds() != null) {
+                        insert(data.id(), data.position(), data.level(), data.content(), data.bounds());
+                    } else {
+                        insert(data.id(), data.position(), data.level(), data.content());
+                    }
+                }
+            } finally {
+                finalizeBulkLoading();
+            }
+        } else {
+            // Insert individually for small batches
+            for (var data : entities) {
+                if (data.bounds() != null) {
+                    insert(data.id(), data.position(), data.level(), data.content(), data.bounds());
+                } else {
+                    insert(data.id(), data.position(), data.level(), data.content());
+                }
+            }
         }
     }
 
@@ -2787,6 +2897,15 @@ implements SpatialIndex<Key, ID, Content> {
             return nodePool.acquire();
         });
 
+        // If the node has been subdivided, we need to insert into the appropriate child
+        if (hasChildren(spatialIndex) && !node.isEmpty()) {
+            var childLevel = (byte) (level + 1);
+            if (childLevel <= maxDepth) {
+                insertAtPosition(entityId, position, childLevel);
+                return;
+            }
+        }
+
         // Add entity to node
         var shouldSplit = node.addEntity(entityId);
 
@@ -2794,7 +2913,7 @@ implements SpatialIndex<Key, ID, Content> {
         entityManager.addEntityLocation(entityId, spatialIndex);
 
         // Handle subdivision if needed
-        if (shouldSplit && level < maxDepth) {
+        if (shouldSplit && level < maxDepth && !hasChildren(spatialIndex)) {
             if (bulkLoadingMode) {
                 // Defer subdivision during bulk loading
                 subdivisionManager.deferSubdivision(spatialIndex, node, node.getEntityCount(), level);
@@ -3223,14 +3342,20 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     /**
-     * Validate spatial constraints (e.g., positive coordinates for Tetree)
+     * Validate spatial constraints (e.g., positive coordinates for Tetree).
+     * Default implementation does no validation.
      */
-    protected abstract void validateSpatialConstraints(Point3f position);
+    protected void validateSpatialConstraints(Point3f position) {
+        // Default: no spatial constraints
+    }
 
     /**
-     * Validate spatial constraints for volumes
+     * Validate spatial constraints for volumes.
+     * Default implementation does no validation.
      */
-    protected abstract void validateSpatialConstraints(Spatial volume);
+    protected void validateSpatialConstraints(Spatial volume) {
+        // Default: no spatial constraints
+    }
 
     ID generateId() {
         return entityManager.generateEntityId();

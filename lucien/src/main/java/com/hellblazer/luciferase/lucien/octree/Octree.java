@@ -119,54 +119,8 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
      */
     // entitiesInRegion is now implemented in AbstractSpatialIndex
 
-    /**
-     * Bulk insert multiple entities efficiently
-     *
-     * @param entities collection of entity data to insert
-     */
-    public void insertAll(Collection<EntityData<ID, Content>> entities) {
-        // Pre-sort by Morton code for better cache locality
-        var sorted = entities.stream().sorted((e1, e2) -> {
-            var morton1 = calculateMortonCode(e1.position(), e1.level());
-            var morton2 = calculateMortonCode(e2.position(), e2.level());
-            return morton1.compareTo(morton2);
-        }).collect(Collectors.toList());
 
-        // Batch insert with optimized node access
-        for (var data : sorted) {
-            if (data.bounds() != null) {
-                insert(data.id(), data.position(), data.level(), data.content(), data.bounds());
-            } else {
-                insert(data.id(), data.position(), data.level(), data.content());
-            }
-        }
-    }
 
-    /**
-     * Lookup entities at a specific position
-     *
-     * @return list of entity IDs at the position
-     */
-    @Override
-    public List<ID> lookup(Point3f position, byte level) {
-        var mortonCode = calculateMortonCode(position, level);
-        var node = spatialIndex.get(mortonCode);
-
-        if (node == null) {
-            return Collections.emptyList();
-        }
-
-        // If the node has been subdivided, look in child nodes
-        if (node.hasChildren() || node.isEmpty()) {
-            // Calculate which child contains this position
-            var childLevel = (byte) (level + 1);
-            if (childLevel <= maxDepth) {
-                return lookup(position, childLevel);
-            }
-        }
-
-        return new ArrayList<>(node.getEntityIds());
-    }
 
     @Override
     protected void addNeighboringNodes(MortonKey nodeCode, Queue<MortonKey> toVisit, Set<MortonKey> visitedNodes) {
@@ -250,33 +204,21 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         var cellSize = Constants.lengthAtLevel(level);
 
         // Perform ray-AABB intersection test
-        return rayIntersectsAABB(ray, coords[0], coords[1], coords[2], coords[0] + cellSize, coords[1] + cellSize,
-                                 coords[2] + cellSize) >= 0;
+        return SpatialDistanceCalculator.rayIntersectsAABB(ray, coords[0], coords[1], coords[2], 
+                                                           coords[0] + cellSize, coords[1] + cellSize,
+                                                           coords[2] + cellSize) >= 0;
     }
 
     // ===== Plane Intersection Implementation =====
 
-    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
-
     @Override
     protected float estimateNodeDistance(MortonKey nodeIndex, Point3f queryPoint) {
-        // Get node bounds from Morton code
-        var coords = MortonCurve.decode(nodeIndex.getMortonCode());
-        var level = nodeIndex.getLevel();
-        var cellSize = Constants.lengthAtLevel(level);
-
-        // Calculate node center
-        var centerX = coords[0] + cellSize / 2.0f;
-        var centerY = coords[1] + cellSize / 2.0f;
-        var centerZ = coords[2] + cellSize / 2.0f;
-
-        // Return distance from query point to node center
-        var dx = queryPoint.x - centerX;
-        var dy = queryPoint.y - centerY;
-        var dz = queryPoint.z - centerZ;
-
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        var nodeBounds = getNodeBounds(nodeIndex);
+        return SpatialDistanceCalculator.distanceToCenter(nodeBounds, queryPoint);
     }
+
+    // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
+
 
     // ===== Frustum Intersection Implementation =====
 
@@ -399,8 +341,9 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         var cellSize = Constants.lengthAtLevel(level);
 
         // Calculate ray-AABB intersection distance
-        var distance = rayIntersectsAABB(ray, coords[0], coords[1], coords[2], coords[0] + cellSize,
-                                         coords[1] + cellSize, coords[2] + cellSize);
+        var distance = SpatialDistanceCalculator.rayIntersectsAABB(ray, coords[0], coords[1], coords[2], 
+                                                                   coords[0] + cellSize, coords[1] + cellSize, 
+                                                                   coords[2] + cellSize);
 
         return distance >= 0 ? distance : Float.MAX_VALUE;
     }
@@ -434,6 +377,8 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     protected NavigableSet<MortonKey> getSpatialIndexRange(VolumeBounds bounds) {
         return getMortonCodeRange(bounds);
     }
+
+
 
     @Override
     protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
@@ -522,40 +467,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         return node != null && node.hasChildren();
     }
 
-    /**
-     * Insert entity at a single position (no spanning) - override to add Morton code tracking
-     */
-    @Override
-    protected void insertAtPosition(ID entityId, Point3f position, byte level) {
-        // Calculate Morton code for position
-        var mortonCode = calculateMortonCode(position, level);
-
-        // Get or create node
-        var node = spatialIndex.computeIfAbsent(mortonCode, k -> {
-            sortedSpatialIndices.add(mortonCode);
-            return nodePool.acquire();
-        });
-
-        // If the node has been subdivided, insert into the appropriate child node
-        if (node.hasChildren() || node.isEmpty()) {
-            var childLevel = (byte) (level + 1);
-            if (childLevel <= maxDepth) {
-                insertAtPosition(entityId, position, childLevel);
-                return;
-            }
-        }
-
-        // Add entity to node
-        var shouldSplit = node.addEntity(entityId);
-
-        // Track entity location
-        entityManager.addEntityLocation(entityId, mortonCode);
-
-        // Handle subdivision if needed
-        if (shouldSplit && level < maxDepth) {
-            handleNodeSubdivision(mortonCode, level, node);
-        }
-    }
+    // insertAtPosition is now handled by AbstractSpatialIndex with proper subdivided node handling
 
     /**
      * Insert entity with spanning across multiple nodes
@@ -626,15 +538,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         return nodeDistance <= furthest.distance();
     }
 
-    @Override
-    protected void validateSpatialConstraints(Point3f position) {
-        // Octree doesn't have specific spatial constraints
-    }
-
-    @Override
-    protected void validateSpatialConstraints(Spatial volume) {
-        // Octree doesn't have specific spatial constraints
-    }
 
     // ===== Ray Intersection Implementation =====
 
@@ -714,8 +617,10 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var childIndex = new MortonKey(Constants.calculateMortonIndex(childCenter, childLevel));
 
             if (!visitedNodes.contains(childIndex)) {
-                var distance = rayIntersectsAABB(ray, childX, childY, childZ, childX + childCellSize,
-                                                 childY + childCellSize, childZ + childCellSize);
+                var distance = SpatialDistanceCalculator.rayIntersectsAABB(ray, childX, childY, childZ, 
+                                                                           childX + childCellSize,
+                                                                           childY + childCellSize, 
+                                                                           childZ + childCellSize);
                 if (distance >= 0 && distance <= ray.maxDistance()) {
                     nodeQueue.add(new NodeDistance(childIndex, distance));
                 }
@@ -782,21 +687,8 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
      * Calculate distance from camera position to node center for frustum culling traversal order
      */
     private float getFrustumNodeDistance(MortonKey nodeIndex, Point3f cameraPosition) {
-        var coords = MortonCurve.decode(nodeIndex.getMortonCode());
-        var level = nodeIndex.getLevel();
-        var cellSize = Constants.lengthAtLevel(level);
-
-        // Calculate node center
-        var centerX = coords[0] + cellSize / 2.0f;
-        var centerY = coords[1] + cellSize / 2.0f;
-        var centerZ = coords[2] + cellSize / 2.0f;
-
-        // Return distance from camera to node center
-        var dx = cameraPosition.x - centerX;
-        var dy = cameraPosition.y - centerY;
-        var dz = cameraPosition.z - centerZ;
-
-        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        var nodeBounds = getNodeBounds(nodeIndex);
+        return SpatialDistanceCalculator.distanceToCenter(nodeBounds, cameraPosition);
     }
 
     /**
@@ -845,106 +737,11 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
      * Calculate distance from plane to node center
      */
     private float getPlaneNodeDistance(MortonKey nodeIndex, Plane3D plane) {
-        var coords = MortonCurve.decode(nodeIndex.getMortonCode());
-        var level = nodeIndex.getLevel();
-        var cellSize = Constants.lengthAtLevel(level);
-
-        // Calculate node center
-        var centerX = coords[0] + cellSize / 2.0f;
-        var centerY = coords[1] + cellSize / 2.0f;
-        var centerZ = coords[2] + cellSize / 2.0f;
-
-        // Return signed distance from plane to node center
-        return plane.distanceToPoint(new Point3f(centerX, centerY, centerZ));
+        var nodeBounds = getNodeBounds(nodeIndex);
+        return SpatialDistanceCalculator.distanceToPlane(nodeBounds, plane);
     }
 
-    /**
-     * Ray-AABB intersection test
-     *
-     * @param ray  the ray to test
-     * @param minX minimum X coordinate
-     * @param minY minimum Y coordinate
-     * @param minZ minimum Z coordinate
-     * @param maxX maximum X coordinate
-     * @param maxY maximum Y coordinate
-     * @param maxZ maximum Z coordinate
-     * @return distance to intersection, or -1 if no intersection
-     */
-    private float rayIntersectsAABB(Ray3D ray, float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-        var tmin = 0.0f;
-        var tmax = ray.maxDistance();
 
-        // X axis
-        if (Math.abs(ray.direction().x) < 1e-6f) {
-            if (ray.origin().x < minX || ray.origin().x > maxX) {
-                return -1;
-            }
-        } else {
-            var t1 = (minX - ray.origin().x) / ray.direction().x;
-            var t2 = (maxX - ray.origin().x) / ray.direction().x;
-
-            if (t1 > t2) {
-                var temp = t1;
-                t1 = t2;
-                t2 = temp;
-            }
-
-            tmin = Math.max(tmin, t1);
-            tmax = Math.min(tmax, t2);
-
-            if (tmin > tmax) {
-                return -1;
-            }
-        }
-
-        // Y axis
-        if (Math.abs(ray.direction().y) < 1e-6f) {
-            if (ray.origin().y < minY || ray.origin().y > maxY) {
-                return -1;
-            }
-        } else {
-            var t1 = (minY - ray.origin().y) / ray.direction().y;
-            var t2 = (maxY - ray.origin().y) / ray.direction().y;
-
-            if (t1 > t2) {
-                var temp = t1;
-                t1 = t2;
-                t2 = temp;
-            }
-
-            tmin = Math.max(tmin, t1);
-            tmax = Math.min(tmax, t2);
-
-            if (tmin > tmax) {
-                return -1;
-            }
-        }
-
-        // Z axis
-        if (Math.abs(ray.direction().z) < 1e-6f) {
-            if (ray.origin().z < minZ || ray.origin().z > maxZ) {
-                return -1;
-            }
-        } else {
-            var t1 = (minZ - ray.origin().z) / ray.direction().z;
-            var t2 = (maxZ - ray.origin().z) / ray.direction().z;
-
-            if (t1 > t2) {
-                var temp = t1;
-                t1 = t2;
-                t2 = temp;
-            }
-
-            tmin = Math.max(tmin, t1);
-            tmax = Math.min(tmax, t2);
-
-            if (tmin > tmax) {
-                return -1;
-            }
-        }
-
-        return tmin;
-    }
 
     /**
      * Helper class to store node index with distance for priority queue ordering
