@@ -3,7 +3,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.Simplex;
 import com.hellblazer.luciferase.lucien.Spatial;
-import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
 import javax.vecmath.Point3f;
@@ -63,7 +63,7 @@ public class TetreeHelper {
      * @param bounds the bounding box to search within
      * @return stream of spatial nodes within the bounds
      */
-    public static <ID extends EntityID, Content> Stream<SpatialNode<TetreeKey<? extends TetreeKey>, ID>> directScanNodes(
+    public static <ID extends EntityID, Content> Stream<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>> directScanNodes(
     Tetree<ID, Content> tetree, Spatial.aabb bounds) {
 
         // Convert AABB bounds to a Spatial volume that Tetree can use

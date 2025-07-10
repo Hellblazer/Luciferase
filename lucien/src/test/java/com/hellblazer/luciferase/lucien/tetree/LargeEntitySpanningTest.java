@@ -160,7 +160,8 @@ public class LargeEntitySpanningTest {
 
         // This should complete without running out of memory due to memory-bounded algorithms
         var entityId = idGenerator.generateID();
-        tetree.insert(entityId, new Point3f(5000, 5000, 5000), (byte) 0, "huge-entity", hugeBounds);
+        // Use a reasonable level that can contain the position, not level 0
+        tetree.insert(entityId, new Point3f(5000, 5000, 5000), (byte) 5, "huge-entity", hugeBounds);
 
         assertNotNull(entityId);
 

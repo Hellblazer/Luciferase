@@ -460,7 +460,7 @@ performance_tests:
 ## 📖 Related Documentation
 
 - **Implementation Guide**: `/lucien/doc/PERFORMANCE_TUNING_GUIDE.md`
-- **Architecture Overview**: `/lucien/doc/LUCIEN_ARCHITECTURE_2025.md`
+- **Architecture Overview**: `/lucien/doc/LUCIEN_ARCHITECTURE.md`
 - **Optimization Details**: `CLAUDE.md` Performance Optimizations section
 - **Benchmark Results**: `/performance-results/` (generated during tests)
 

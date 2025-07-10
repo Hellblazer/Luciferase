@@ -21,7 +21,7 @@ import com.hellblazer.luciferase.lucien.SpatialNodePool;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
-import com.hellblazer.luciferase.lucien.octree.OctreeNode;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -128,11 +128,11 @@ public class MemoryOptimizationBenchmark {
     private void benchmarkPoolChurn(int poolSize) {
         System.out.println("\nPool Churn Test (size=" + poolSize + "):");
 
-        SpatialNodePool<OctreeNode<LongEntityID>> pool = new SpatialNodePool<>(() -> new OctreeNode<>());
+        SpatialNodePool<LongEntityID> pool = new SpatialNodePool<>(() -> new SpatialNodeImpl<>());
         pool.preAllocate(poolSize);
 
         int operations = 100_000;
-        List<OctreeNode<LongEntityID>> acquired = new ArrayList<>();
+        List<SpatialNodeImpl<LongEntityID>> acquired = new ArrayList<>();
 
         var start = System.nanoTime();
 
@@ -146,7 +146,7 @@ public class MemoryOptimizationBenchmark {
                 }
             } else {
                 // Acquire nodes
-                OctreeNode<LongEntityID> node = pool.acquire();
+                SpatialNodeImpl<LongEntityID> node = pool.acquire();
                 if (node != null) {
                     acquired.add(node);
                 }
@@ -209,7 +209,7 @@ public class MemoryOptimizationBenchmark {
         memoryBean.gc();
 
         // Create and pre-populate pool
-        SpatialNodePool<OctreeNode<LongEntityID>> pool = new SpatialNodePool<>(() -> new OctreeNode<>());
+        SpatialNodePool<LongEntityID> pool = new SpatialNodePool<>(() -> new SpatialNodeImpl<>());
         pool.preAllocate(poolSize);
 
         long allocBefore = getAllocationCount();

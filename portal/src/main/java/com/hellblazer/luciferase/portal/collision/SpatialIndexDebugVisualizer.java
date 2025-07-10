@@ -84,7 +84,7 @@ public class SpatialIndexDebugVisualizer {
     private final Map<Object, Long> lastAccessTime = new ConcurrentHashMap<>();
     
     // Spatial index reference
-    private AbstractSpatialIndex<?, ?, ?, ?> spatialIndex;
+    private AbstractSpatialIndex<?, ?, ?> spatialIndex;
     
     public SpatialIndexDebugVisualizer() {
         setupSceneGraph();
@@ -121,7 +121,7 @@ public class SpatialIndexDebugVisualizer {
     /**
      * Set the spatial index to visualize.
      */
-    public void setSpatialIndex(AbstractSpatialIndex<?, ?, ?, ?> spatialIndex) {
+    public void setSpatialIndex(AbstractSpatialIndex<?, ?, ?> spatialIndex) {
         this.spatialIndex = spatialIndex;
         refresh();
     }

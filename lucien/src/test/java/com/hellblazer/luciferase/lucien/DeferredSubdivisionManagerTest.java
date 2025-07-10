@@ -5,7 +5,7 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
-import com.hellblazer.luciferase.lucien.octree.OctreeNode;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class DeferredSubdivisionManagerTest {
 
-    private DeferredSubdivisionManager<MortonKey, LongEntityID, OctreeNode<LongEntityID>> manager;
+    private DeferredSubdivisionManager<MortonKey, LongEntityID> manager;
 
     @BeforeEach
     void setUp() {
@@ -32,7 +32,7 @@ public class DeferredSubdivisionManagerTest {
     void testBatchProcessing() {
         // Add many deferred subdivisions
         for (int i = 0; i < 10; i++) {
-            OctreeNode<LongEntityID> node = new OctreeNode<>();
+            SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
             for (int j = 0; j < i + 5; j++) {
                 node.addEntity(new LongEntityID(i * 100 + j));
             }
@@ -41,10 +41,10 @@ public class DeferredSubdivisionManagerTest {
 
         // Process in batches
         List<DeferredSubdivisionManager.SubdivisionResult> results = manager.processBatches(
-        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
+        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, SpatialNodeImpl<LongEntityID>>() {
             @Override
             public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex,
-                                                                                        OctreeNode<LongEntityID> node,
+                                                                                        SpatialNodeImpl<LongEntityID> node,
                                                                                         byte level) {
                 // Subdivide nodes with >8 entities
                 if (node.getEntityCount() > 8) {
@@ -70,7 +70,7 @@ public class DeferredSubdivisionManagerTest {
     @Test
     void testClearWithoutProcessing() {
         // Add some deferred subdivisions
-        OctreeNode<LongEntityID> node = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
         manager.deferSubdivision(new MortonKey(1L), node, 10, (byte) 5);
         manager.deferSubdivision(new MortonKey(2L), node, 20, (byte) 6);
 
@@ -87,9 +87,9 @@ public class DeferredSubdivisionManagerTest {
     @Test
     void testDeferAndProcess() {
         // Create test nodes
-        OctreeNode<LongEntityID> node1 = new OctreeNode<>();
-        OctreeNode<LongEntityID> node2 = new OctreeNode<>();
-        OctreeNode<LongEntityID> node3 = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> node1 = new SpatialNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> node2 = new SpatialNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> node3 = new SpatialNodeImpl<>();
 
         // Add some entities to nodes
         for (int i = 0; i < 10; i++) {
@@ -123,10 +123,10 @@ public class DeferredSubdivisionManagerTest {
         // Process all deferred subdivisions
         AtomicInteger subdivisionCount = new AtomicInteger(0);
         DeferredSubdivisionManager.SubdivisionResult<MortonKey> result = manager.processAll(
-        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
+        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, SpatialNodeImpl<LongEntityID>>() {
             @Override
             public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex,
-                                                                                        OctreeNode<LongEntityID> node,
+                                                                                        SpatialNodeImpl<LongEntityID> node,
                                                                                         byte level) {
                 subdivisionCount.incrementAndGet();
                 // Simulate subdivision - only subdivide nodes with >10 entities
@@ -160,10 +160,10 @@ public class DeferredSubdivisionManagerTest {
     void testEmptyProcessing() {
         // Process with no deferred subdivisions
         DeferredSubdivisionManager.SubdivisionResult<MortonKey> result = manager.processAll(
-        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, OctreeNode<LongEntityID>>() {
+        new DeferredSubdivisionManager.SubdivisionProcessor<MortonKey, LongEntityID, SpatialNodeImpl<LongEntityID>>() {
             @Override
             public DeferredSubdivisionManager.SubdivisionProcessor.Result subdivideNode(MortonKey nodeIndex,
-                                                                                        OctreeNode<LongEntityID> node,
+                                                                                        SpatialNodeImpl<LongEntityID> node,
                                                                                         byte level) {
                 return new DeferredSubdivisionManager.SubdivisionProcessor.Result(false, 0, 0);
             }
@@ -180,9 +180,9 @@ public class DeferredSubdivisionManagerTest {
         // Create manager with priority processing
         manager = new DeferredSubdivisionManager<>(2, true, 0.8);
 
-        OctreeNode<LongEntityID> smallNode = new OctreeNode<>();
-        OctreeNode<LongEntityID> mediumNode = new OctreeNode<>();
-        OctreeNode<LongEntityID> largeNode = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> smallNode = new SpatialNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> mediumNode = new SpatialNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> largeNode = new SpatialNodeImpl<>();
 
         // Add entities
         for (int i = 0; i < 5; i++) {

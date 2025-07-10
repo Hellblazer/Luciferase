@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
-import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
@@ -47,7 +47,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
     
     private VolumeBounds queryBounds;
     private final boolean includeIntersecting;
-    private final List<SpatialNode<TetreeKey<? extends TetreeKey>, ID>> results;
+    private final List<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>> results;
     private final Set<TetreeKey<? extends TetreeKey>> visitedNodes;
     private final BiPredicate<TetreeKey<? extends TetreeKey>, VolumeBounds> boundsPredicate;
     
@@ -78,7 +78,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
     }
     
     @Override
-    public boolean visitNode(SpatialNode<TetreeKey<? extends TetreeKey>, ID> node, 
+    public boolean visitNode(SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID> node, 
                            int level, TetreeKey<? extends TetreeKey> parentIndex) {
         nodesVisited++;
         var nodeKey = node.sfcIndex();
@@ -118,7 +118,7 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * 
      * @return List of matching spatial nodes
      */
-    public List<SpatialNode<TetreeKey<? extends TetreeKey>, ID>> getResults() {
+    public List<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>> getResults() {
         return new ArrayList<>(results);
     }
     
@@ -158,8 +158,8 @@ public class RangeQueryVisitor<ID extends EntityID, Content>
      * @param startNode The starting node for expansion
      */
     public void expandFromSeed(Tetree<ID, Content> tetree, 
-                              SpatialNode<TetreeKey<? extends TetreeKey>, ID> startNode) {
-        var toProcess = new ArrayList<SpatialNode<TetreeKey<? extends TetreeKey>, ID>>();
+                              SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID> startNode) {
+        var toProcess = new ArrayList<SpatialIndex.SpatialNode<TetreeKey<? extends TetreeKey>, ID>>();
         toProcess.add(startNode);
         
         while (!toProcess.isEmpty()) {

@@ -34,10 +34,10 @@ import java.util.concurrent.RecursiveTask;
  */
 public class BulkOperationProcessor<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
-    private final AbstractSpatialIndex<Key, ID, Content, ?> spatialIndex;
+    private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
     private final ForkJoinPool                              forkJoinPool;
 
-    public BulkOperationProcessor(AbstractSpatialIndex<Key, ID, Content, ?> spatialIndex) {
+    public BulkOperationProcessor(AbstractSpatialIndex<Key, ID, Content> spatialIndex) {
         this.spatialIndex = spatialIndex;
         this.forkJoinPool = ForkJoinPool.commonPool();
     }

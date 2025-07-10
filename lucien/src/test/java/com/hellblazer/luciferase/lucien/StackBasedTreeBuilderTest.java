@@ -7,7 +7,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octree;
-import com.hellblazer.luciferase.lucien.octree.OctreeNode;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -266,7 +266,7 @@ public class StackBasedTreeBuilderTest {
         final List<Integer> progressUpdates = new ArrayList<>();
         final List<String> phaseCompletions = new ArrayList<>();
 
-        var builder = new StackBasedTreeBuilder<MortonKey, LongEntityID, String, OctreeNode<LongEntityID>>(config);
+        var builder = new StackBasedTreeBuilder<MortonKey, LongEntityID, String>(config);
 
         builder.setProgressListener(new StackBasedTreeBuilder.ProgressListener() {
             @Override

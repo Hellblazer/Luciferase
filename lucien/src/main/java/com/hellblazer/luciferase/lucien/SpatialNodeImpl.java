@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Abstract base implementation of SpatialNodeStorage providing common functionality for spatial index nodes. This class
+ * Implementation of SpatialNodeStorage providing common functionality for spatial index nodes. This class
  * handles entity storage, child tracking, and threshold checking. Converges on the Octree implementation approach with
  * fine-grained child tracking using a bitmask.
  *
@@ -35,7 +35,7 @@ import java.util.List;
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
  */
-public abstract class AbstractSpatialNode<ID extends EntityID> implements SpatialNodeStorage<ID> {
+public class SpatialNodeImpl<ID extends EntityID> implements SpatialNodeStorage<ID> {
 
     protected final int      maxEntitiesBeforeSplit;
     protected final List<ID> entityIds;
@@ -44,7 +44,7 @@ public abstract class AbstractSpatialNode<ID extends EntityID> implements Spatia
     /**
      * Create a node with default max entities (10)
      */
-    protected AbstractSpatialNode() {
+    public SpatialNodeImpl() {
         this(10);
     }
 
@@ -53,7 +53,7 @@ public abstract class AbstractSpatialNode<ID extends EntityID> implements Spatia
      *
      * @param maxEntitiesBeforeSplit threshold for subdivision
      */
-    protected AbstractSpatialNode(int maxEntitiesBeforeSplit) {
+    public SpatialNodeImpl(int maxEntitiesBeforeSplit) {
         if (maxEntitiesBeforeSplit <= 0) {
             throw new IllegalArgumentException("Max entities before split must be positive");
         }
