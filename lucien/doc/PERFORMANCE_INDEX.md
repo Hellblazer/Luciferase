@@ -9,21 +9,18 @@ This index guides you to performance-related documentation for the Luciferase sp
 ## Main Performance Documents
 
 ### [PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md)
+
 **Current performance baseline and optimization history**
+
 - Octree vs Tetree comparison
 - Optimization timeline
 - Performance guidelines
 - Benchmark instructions
 
-### [COMPREHENSIVE_PERFORMANCE_TRACKING_JULY_2025.md](../archived/COMPREHENSIVE_PERFORMANCE_TRACKING_JULY_2025.md)
-**Detailed test results and analysis**
-- Complete benchmark suite results
-- Performance trends by scale
-- Memory usage analysis
-- Cross-reference to specialized reports
+### [OCTREE_VS_TETREE_PERFORMANCE_.md](OCTREE_VS_TETREE_PERFORMANCE.md)
 
-### [OCTREE_VS_TETREE_PERFORMANCE_JULY_2025.md](./OCTREE_VS_TETREE_PERFORMANCE_JULY_2025.md)
 **Primary spatial index comparison**
+
 - Insertion, query, and update benchmarks
 - Memory usage comparison
 - Collision and ray performance
@@ -31,19 +28,25 @@ This index guides you to performance-related documentation for the Luciferase sp
 
 ## Specialized Performance Reports
 
-### [COLLISION_SYSTEM_PERFORMANCE_REPORT_2025.md](./COLLISION_SYSTEM_PERFORMANCE_REPORT_2025.md)
+### [COLLISION_SYSTEM_PERFORMANCE_REPORT.md](COLLISION_SYSTEM_PERFORMANCE_REPORT.md)
+
 **Collision detection performance**
+
 - Discrete collision: 27-93 ns per check
 - Continuous collision detection
 - Spatial index integration
 
-### [BATCH_PERFORMANCE_JULY_2025.md](./BATCH_PERFORMANCE_JULY_2025.md)
+### [BATCH_PERFORMANCE_.md](BATCH_PERFORMANCE.md)
+
 **Batch loading analysis**
+
 - Tetree shows 74-296x speedup in batch mode
 - Bulk operation strategies
 
 ### [SPATIAL_INDEX_PERFORMANCE_GUIDE.md](./SPATIAL_INDEX_PERFORMANCE_GUIDE.md)
+
 **Performance tuning guide**
+
 - Configuration options
 - Optimization strategies
 - Best practices
@@ -72,4 +75,3 @@ mvn test -Dtest=*PerformanceTest
 
 ## Archived Documents
 
-Historical performance documentation is available in `lucien/archived/` for reference.

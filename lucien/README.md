@@ -49,26 +49,29 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 
 **Updated July 2025**: Latest benchmarks after S0-S5 decomposition implementation.
 
-| Operation         | Octree        | Tetree        | Tetree Advantage  |
-|-------------------|---------------|---------------|-------------------|
-| Insert (100)      | 5.3 μs/op     | 5.1 μs/op     | 1.0x faster       |
-| Insert (1K)       | 2.4 μs/op     | 5.6 μs/op     | 2.3x slower       |
-| Insert (10K)      | 1.1 μs/op     | 12.5 μs/op    | 11.4x slower      |
-| k-NN (10K)        | 20.2 μs/op    | 6.2 μs/op     | 3.2x faster       |
-| Range Query (10K) | 20.1 μs/op    | 5.8 μs/op     | 3.5x faster       |
-| Memory (10K)      | 12.9 MB       | 2.6 MB        | 80% less memory   |
+| Operation         | Octree     | Tetree     | Tetree Advantage |
+|-------------------|------------|------------|------------------|
+| Insert (100)      | 5.3 μs/op  | 5.1 μs/op  | 1.0x faster      |
+| Insert (1K)       | 2.4 μs/op  | 5.6 μs/op  | 2.3x slower      |
+| Insert (10K)      | 1.1 μs/op  | 12.5 μs/op | 11.4x slower     |
+| k-NN (10K)        | 20.2 μs/op | 6.2 μs/op  | 3.2x faster      |
+| Range Query (10K) | 20.1 μs/op | 5.8 μs/op  | 3.5x faster      |
+| Memory (10K)      | 12.9 MB    | 2.6 MB     | 80% less memory  |
 
-**Key Insight**: Choose Octree for insertion-heavy workloads, Tetree for query-heavy and memory-constrained applications.
+**Key Insight**: Choose Octree for insertion-heavy workloads, Tetree for query-heavy and memory-constrained
+applications.
 
 ## Choosing Between Octree and Tetree
 
 ### Use Octree When:
+
 - Fast insertion is critical (2-11x faster)
 - Workload is update-heavy
 - Simple, predictable performance is needed
 - Using existing Morton curve tools/algorithms
 
 ### Use Tetree When:
+
 - Memory efficiency matters (80% reduction)
 - Workload is query-heavy (3-5x faster searches)
 - Working with tetrahedral meshes or geometry
@@ -78,7 +81,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 
 ### Getting Started
 
-- [Architecture Summary](doc/ARCHITECTURE_SUMMARY_2025.md) - Overview of the system
+- [Architecture Summary](doc/ARCHITECTURE_SUMMARY.md) - Overview of the system
 - [Basic Operations API](doc/BASIC_OPERATIONS_API.md) - Core operations guide
 
 ### Core APIs
@@ -98,19 +101,19 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 
 ### Implementation Details
 
-- [Complete Architecture Guide](doc/LUCIEN_ARCHITECTURE_2025.md) - Detailed technical documentation
+- [Complete Architecture Guide](doc/LUCIEN_ARCHITECTURE.md) - Detailed technical documentation
 - [Tetree Implementation Guide](doc/TETREE_IMPLEMENTATION_GUIDE.md) - Tetrahedral specifics
 - [Performance Tuning Guide](doc/PERFORMANCE_TUNING_GUIDE.md) - Optimization strategies
 - [Spatial Index Optimization Guide](doc/SPATIAL_INDEX_OPTIMIZATION_GUIDE.md) - Implementation optimizations
 
 ### Performance Testing
 
-- [Performance Testing Plan](doc/SPATIAL_INDEX_PERFORMANCE_TESTING_PLAN_2025.md) - Benchmarking framework
+- [Performance Testing Plan](doc/SPATIAL_INDEX_PERFORMANCE_TESTING_PLAN.md) - Benchmarking framework
 
 ### Status Documents (July 2025)
 
-- [Architecture Summary](doc/ARCHITECTURE_SUMMARY_2025.md) - Complete system overview
-- [Octree vs Tetree Performance](doc/OCTREE_VS_TETREE_PERFORMANCE_JULY_2025.md) - Latest benchmarks
+- [Architecture Summary](doc/ARCHITECTURE_SUMMARY.md) - Complete system overview
+- [Octree vs Tetree Performance](doc/OCTREE_VS_TETREE_PERFORMANCE.md) - Latest benchmarks
 - [T8code Neighbor Analysis](doc/T8CODE_NEIGHBOR_ANALYSIS.md) - Neighbor functionality study
 - [Tet Neighbor Implementation Plan](doc/TET_NEIGHBOR_IMPLEMENTATION_PLAN.md) - Upcoming enhancements
 
@@ -138,13 +141,19 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 ```java
 // Insert with bounds for spanning
 EntityBounds bounds = new EntityBounds(0, 0, 0, 50, 100, 50);
-spatialIndex.insert(buildingId, center, level, building, bounds);
+spatialIndex.
+
+insert(buildingId, center, level, building, bounds);
 
 // Update position
-spatialIndex.updateEntity(entityId, newPosition, level);
+spatialIndex.
+
+updateEntity(entityId, newPosition, level);
 
 // Remove entity
-spatialIndex.removeEntity(entityId);
+spatialIndex.
+
+removeEntity(entityId);
 ```
 
 ### Spatial Queries
@@ -170,9 +179,13 @@ spatialIndex.enableBulkLoading();
 
 List<Point3f> millionPoints = loadPointCloud();
 List<Content> millionContents = loadContents();
-spatialIndex.insertBatch(millionPoints, millionContents, level);
+spatialIndex.
 
-spatialIndex.finalizeBulkLoading();
+insertBatch(millionPoints, millionContents, level);
+
+spatialIndex.
+
+finalizeBulkLoading();
 ```
 
 ## Requirements
@@ -201,6 +214,7 @@ AGPL v3.0 - See LICENSE file for details
 ## Status
 
 The spatial indexing implementation is feature-complete as of July 2025:
+
 - Unified architecture with type-safe spatial keys
 - S0-S5 tetrahedral decomposition with 100% geometric containment
 - Comprehensive test coverage and documentation

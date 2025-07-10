@@ -286,10 +286,6 @@ Tet child = BeySubdivision.getBeyChild(parent, beyIndex);
 
 - Bey, J. (1995). "Tetrahedral grid refinement"
 - t8code implementation (German Aerospace Center)
-- Internal documents:
-  - [BEY_REFINEMENT_UNDERSTANDING.md](./BEY_REFINEMENT_UNDERSTANDING.md) - Core insights
-  - [TETRAHEDRAL_SUBDIVISION_SUCCESS.md](./TETRAHEDRAL_SUBDIVISION_SUCCESS.md) - Success story
-  - [BEY_SUBDIVISION_EFFICIENT_CHILD.md](./BEY_SUBDIVISION_EFFICIENT_CHILD.md) - Optimization details
 
 ---
 
