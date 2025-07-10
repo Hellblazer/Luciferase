@@ -22,7 +22,7 @@ import com.hellblazer.luciferase.lucien.ParallelBulkOperations;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
-import com.hellblazer.luciferase.lucien.octree.OctreeNode;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -428,7 +428,7 @@ public class ParallelProcessingBenchmark {
         var processor = new BulkOperationProcessor<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String>(
         octree);
 
-        var parallelOps = new ParallelBulkOperations<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String, OctreeNode<LongEntityID>>(
+        var parallelOps = new ParallelBulkOperations<com.hellblazer.luciferase.lucien.octree.MortonKey, LongEntityID, String>(
         octree, processor, config);
 
         try {

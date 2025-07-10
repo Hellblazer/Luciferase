@@ -1,0 +1,471 @@
+package com.hellblazer.luciferase.lucien;
+
+import com.hellblazer.luciferase.common.IdentityGenerator;
+import com.hellblazer.luciferase.lucien.entity.Entity;
+import com.hellblazer.luciferase.lucien.entity.EntityBounds;
+import com.hellblazer.luciferase.lucien.entity.EntityId;
+import com.hellblazer.luciferase.lucien.entity.EntityManager;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive edge case tests for spatial indices (Octree and Tetree).
+ * Tests boundary conditions, numerical precision, and degenerate cases.
+ */
+public class SpatialIndexEdgeCaseTest {
+    
+    private static final float EPSILON = 1e-6f;
+    private static final float WORLD_SIZE = 1000.0f;
+    private static final int MAX_DEPTH = 20;
+    
+    private EntityManager<EntityId> entityManager;
+    
+    @BeforeEach
+    void setUp() {
+        entityManager = new EntityManager<>(new IdentityGenerator());
+    }
+    
+    private static Stream<Arguments> spatialIndexProviders() {
+        return Stream.of(
+            Arguments.of("Octree", new Octree<>(WORLD_SIZE, MAX_DEPTH)),
+            Arguments.of("Tetree", new Tetree<>(WORLD_SIZE, MAX_DEPTH))
+        );
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Points exactly on node boundaries")
+    void testPointsOnBoundaries(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Create points exactly on major boundaries
+        float[] boundaries = {0.0f, WORLD_SIZE / 4.0f, WORLD_SIZE / 2.0f, 3.0f * WORLD_SIZE / 4.0f, WORLD_SIZE};
+        
+        for (float x : boundaries) {
+            for (float y : boundaries) {
+                for (float z : boundaries) {
+                    if (x >= 0 && x <= WORLD_SIZE && y >= 0 && y <= WORLD_SIZE && z >= 0 && z <= WORLD_SIZE) {
+                        var entity = entityManager.allocateEntity(x, y, z);
+                        index.insert(entity.getId(), entity);
+                    }
+                }
+            }
+        }
+        
+        // Verify all entities were inserted
+        assertEquals(boundaries.length * boundaries.length * boundaries.length, index.size());
+        
+        // Verify we can find entities at boundary points
+        for (float boundary : boundaries) {
+            if (boundary >= 0 && boundary <= WORLD_SIZE) {
+                var found = index.getEntitiesAt(boundary, boundary, boundary);
+                assertFalse(found.isEmpty(), "Should find entity at boundary point (" + boundary + ", " + boundary + ", " + boundary + ")");
+            }
+        }
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Entities at coordinate limits")
+    void testCoordinateLimits(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Test at origin
+        var originEntity = entityManager.allocateEntity(0.0f, 0.0f, 0.0f);
+        index.insert(originEntity.getId(), originEntity);
+        
+        // Test at maximum coordinates
+        var maxEntity = entityManager.allocateEntity(WORLD_SIZE, WORLD_SIZE, WORLD_SIZE);
+        index.insert(maxEntity.getId(), maxEntity);
+        
+        // Test just inside boundaries
+        var justInsideMin = entityManager.allocateEntity(EPSILON, EPSILON, EPSILON);
+        index.insert(justInsideMin.getId(), justInsideMin);
+        
+        var justInsideMax = entityManager.allocateEntity(WORLD_SIZE - EPSILON, WORLD_SIZE - EPSILON, WORLD_SIZE - EPSILON);
+        index.insert(justInsideMax.getId(), justInsideMax);
+        
+        assertEquals(4, index.size());
+        
+        // Verify retrieval
+        assertFalse(index.getEntitiesAt(0.0f, 0.0f, 0.0f).isEmpty());
+        assertFalse(index.getEntitiesAt(WORLD_SIZE, WORLD_SIZE, WORLD_SIZE).isEmpty());
+        assertFalse(index.getEntitiesAt(EPSILON, EPSILON, EPSILON).isEmpty());
+        assertFalse(index.getEntitiesAt(WORLD_SIZE - EPSILON, WORLD_SIZE - EPSILON, WORLD_SIZE - EPSILON).isEmpty());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Zero-size bounds")
+    void testZeroSizeBounds(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Create entity with zero-size bounds (point entity)
+        var pointEntity = entityManager.allocateEntity(100.0f, 100.0f, 100.0f);
+        pointEntity.setBounds(new EntityBounds(new Point3f(100.0f, 100.0f, 100.0f), new Point3f(100.0f, 100.0f, 100.0f)));
+        
+        index.insert(pointEntity.getId(), pointEntity);
+        
+        assertEquals(1, index.size());
+        assertFalse(index.getEntitiesAt(100.0f, 100.0f, 100.0f).isEmpty());
+        
+        // Test range query around point
+        var nearbyEntities = index.getEntitiesWithinDistance(new Point3f(100.0f, 100.0f, 100.0f), 10.0f);
+        assertEquals(1, nearbyEntities.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Coincident points")
+    void testCoincidentPoints(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Insert multiple entities at the same position
+        Point3f position = new Point3f(200.0f, 200.0f, 200.0f);
+        int numCoincident = 10;
+        
+        for (int i = 0; i < numCoincident; i++) {
+            var entity = entityManager.allocateEntity(position.x, position.y, position.z);
+            index.insert(entity.getId(), entity);
+        }
+        
+        assertEquals(numCoincident, index.size());
+        
+        // All entities should be found at that position
+        var found = index.getEntitiesAt(position.x, position.y, position.z);
+        assertEquals(numCoincident, found.size());
+        
+        // k-NN should find all coincident points
+        var knn = index.findKNearestNeighbors(position, numCoincident);
+        assertEquals(numCoincident, knn.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Operations on empty tree")
+    void testEmptyTreeOperations(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Test all operations on empty tree
+        assertEquals(0, index.size());
+        assertTrue(index.isEmpty());
+        
+        // Get operations should return empty
+        assertTrue(index.getEntitiesAt(50.0f, 50.0f, 50.0f).isEmpty());
+        assertTrue(index.getEntitiesWithinDistance(new Point3f(50.0f, 50.0f, 50.0f), 100.0f).isEmpty());
+        assertTrue(index.findKNearestNeighbors(new Point3f(50.0f, 50.0f, 50.0f), 5).isEmpty());
+        assertTrue(index.getEntitiesInRegion(new Point3f(0.0f, 0.0f, 0.0f), new Point3f(100.0f, 100.0f, 100.0f)).isEmpty());
+        
+        // Remove from empty should not throw
+        assertDoesNotThrow(() -> index.remove(new EntityId(999)));
+        
+        // Update in empty should not throw
+        var entity = entityManager.allocateEntity(50.0f, 50.0f, 50.0f);
+        assertDoesNotThrow(() -> index.update(entity.getId(), entity));
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Single entity operations")
+    void testSingleEntityOperations(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        var entity = entityManager.allocateEntity(300.0f, 300.0f, 300.0f);
+        index.insert(entity.getId(), entity);
+        
+        assertEquals(1, index.size());
+        assertFalse(index.isEmpty());
+        
+        // Should find the single entity
+        assertEquals(1, index.getEntitiesAt(300.0f, 300.0f, 300.0f).size());
+        assertEquals(1, index.findKNearestNeighbors(new Point3f(0.0f, 0.0f, 0.0f), 10).size());
+        assertEquals(1, index.getEntitiesInRegion(new Point3f(0.0f, 0.0f, 0.0f), new Point3f(WORLD_SIZE, WORLD_SIZE, WORLD_SIZE)).size());
+        
+        // Remove the single entity
+        index.remove(entity.getId());
+        assertEquals(0, index.size());
+        assertTrue(index.isEmpty());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Remove last entity")
+    void testRemoveLastEntity(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Add multiple entities
+        var entities = new Entity[5];
+        for (int i = 0; i < entities.length; i++) {
+            entities[i] = entityManager.allocateEntity(i * 100.0f, i * 100.0f, i * 100.0f);
+            index.insert(entities[i].getId(), entities[i]);
+        }
+        
+        assertEquals(5, index.size());
+        
+        // Remove all entities one by one
+        for (var entity : entities) {
+            index.remove(entity.getId());
+        }
+        
+        assertEquals(0, index.size());
+        assertTrue(index.isEmpty());
+        
+        // Tree should still be functional
+        var newEntity = entityManager.allocateEntity(50.0f, 50.0f, 50.0f);
+        index.insert(newEntity.getId(), newEntity);
+        assertEquals(1, index.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Floating point edge cases")
+    void testFloatingPointEdgeCases(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Very small positive coordinates
+        var tinyEntity = entityManager.allocateEntity(Float.MIN_VALUE, Float.MIN_VALUE, Float.MIN_VALUE);
+        index.insert(tinyEntity.getId(), tinyEntity);
+        
+        // Near-zero coordinates
+        var nearZeroEntity = entityManager.allocateEntity(1e-10f, 1e-10f, 1e-10f);
+        index.insert(nearZeroEntity.getId(), nearZeroEntity);
+        
+        // Coordinates with precision loss potential
+        float precisionTest = 0.1f + 0.2f; // Classic floating point issue
+        var precisionEntity = entityManager.allocateEntity(precisionTest, precisionTest, precisionTest);
+        index.insert(precisionEntity.getId(), precisionEntity);
+        
+        assertEquals(3, index.size());
+        
+        // Verify retrieval with epsilon tolerance
+        assertFalse(index.getEntitiesWithinDistance(new Point3f(0.0f, 0.0f, 0.0f), 1.0f).isEmpty());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Very small and large coordinates")
+    void testExtremeCoordinates(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Test with very small differences
+        float base = WORLD_SIZE / 2.0f;
+        for (int i = 0; i < 10; i++) {
+            float offset = i * 1e-7f;
+            var entity = entityManager.allocateEntity(base + offset, base, base);
+            index.insert(entity.getId(), entity);
+        }
+        
+        // Test with coordinates near world size
+        for (int i = 0; i < 10; i++) {
+            float coord = WORLD_SIZE - (i * 1e-5f);
+            var entity = entityManager.allocateEntity(coord, coord, coord);
+            index.insert(entity.getId(), entity);
+        }
+        
+        assertEquals(20, index.size());
+        
+        // Verify spatial queries still work
+        var centerRegion = index.getEntitiesInRegion(
+            new Point3f(base - 0.001f, base - 0.001f, base - 0.001f),
+            new Point3f(base + 0.001f, base + 0.001f, base + 0.001f)
+        );
+        assertEquals(10, centerRegion.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Maximum depth scenarios")
+    void testMaximumDepth(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Create entities that will force maximum subdivision
+        // Place many entities in a very small region
+        float baseX = 100.0f;
+        float baseY = 100.0f;
+        float baseZ = 100.0f;
+        float spacing = 1e-6f; // Very small spacing
+        
+        int numEntities = 100;
+        for (int i = 0; i < numEntities; i++) {
+            float offset = i * spacing;
+            var entity = entityManager.allocateEntity(baseX + offset, baseY + offset, baseZ + offset);
+            index.insert(entity.getId(), entity);
+        }
+        
+        assertEquals(numEntities, index.size());
+        
+        // All entities should still be retrievable
+        var found = index.getEntitiesInRegion(
+            new Point3f(baseX - 0.1f, baseY - 0.1f, baseZ - 0.1f),
+            new Point3f(baseX + 0.1f, baseY + 0.1f, baseZ + 0.1f)
+        );
+        assertEquals(numEntities, found.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Line-like bounds (one dimension ~0)")
+    void testLineLikeBounds(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Create entity with line-like bounds along X axis
+        var lineEntity = entityManager.allocateEntity(100.0f, 200.0f, 300.0f);
+        lineEntity.setBounds(new EntityBounds(
+            new Point3f(50.0f, 200.0f, 300.0f),
+            new Point3f(150.0f, 200.0f + EPSILON, 300.0f + EPSILON)
+        ));
+        
+        index.insert(lineEntity.getId(), lineEntity);
+        
+        // Should be findable at various points along the line
+        assertFalse(index.getEntitiesAt(100.0f, 200.0f, 300.0f).isEmpty());
+        
+        // Range query should find it
+        var found = index.getEntitiesInRegion(
+            new Point3f(0.0f, 199.0f, 299.0f),
+            new Point3f(200.0f, 201.0f, 301.0f)
+        );
+        assertEquals(1, found.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Plane-like bounds (two dimensions ~0)")
+    void testPlaneLikeBounds(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Create entity with plane-like bounds in XY plane
+        var planeEntity = entityManager.allocateEntity(100.0f, 100.0f, 50.0f);
+        planeEntity.setBounds(new EntityBounds(
+            new Point3f(50.0f, 50.0f, 50.0f),
+            new Point3f(150.0f, 150.0f, 50.0f + EPSILON)
+        ));
+        
+        index.insert(planeEntity.getId(), planeEntity);
+        
+        // Should be findable within the plane
+        assertFalse(index.getEntitiesAt(100.0f, 100.0f, 50.0f).isEmpty());
+        
+        // Collision detection should work
+        var testPoint = entityManager.allocateEntity(75.0f, 75.0f, 50.0f);
+        index.insert(testPoint.getId(), testPoint);
+        
+        var collisions = index.getCollidingEntities(planeEntity.getBounds());
+        assertEquals(1, collisions.size()); // Should find the test point
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Point entities vs bounded entities")
+    void testPointVsBoundedEntities(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Add point entities (default bounds)
+        var pointEntity1 = entityManager.allocateEntity(100.0f, 100.0f, 100.0f);
+        var pointEntity2 = entityManager.allocateEntity(200.0f, 200.0f, 200.0f);
+        index.insert(pointEntity1.getId(), pointEntity1);
+        index.insert(pointEntity2.getId(), pointEntity2);
+        
+        // Add bounded entity that overlaps both points
+        var boundedEntity = entityManager.allocateEntity(150.0f, 150.0f, 150.0f);
+        boundedEntity.setBounds(new EntityBounds(
+            new Point3f(50.0f, 50.0f, 50.0f),
+            new Point3f(250.0f, 250.0f, 250.0f)
+        ));
+        index.insert(boundedEntity.getId(), boundedEntity);
+        
+        assertEquals(3, index.size());
+        
+        // Point queries should find appropriate entities
+        assertEquals(1, index.getEntitiesAt(100.0f, 100.0f, 100.0f).size());
+        assertEquals(1, index.getEntitiesAt(200.0f, 200.0f, 200.0f).size());
+        
+        // Bounded entity should collide with both points
+        var collisions = index.getCollidingEntities(boundedEntity.getBounds());
+        assertEquals(2, collisions.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Update entity across boundaries")
+    void testUpdateAcrossBoundaries(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        // Start entity at one corner
+        var entity = entityManager.allocateEntity(10.0f, 10.0f, 10.0f);
+        index.insert(entity.getId(), entity);
+        
+        // Move entity to opposite corner
+        entity.setPosition(WORLD_SIZE - 10.0f, WORLD_SIZE - 10.0f, WORLD_SIZE - 10.0f);
+        index.update(entity.getId(), entity);
+        
+        // Should not find at old position
+        assertTrue(index.getEntitiesAt(10.0f, 10.0f, 10.0f).isEmpty());
+        
+        // Should find at new position
+        assertFalse(index.getEntitiesAt(WORLD_SIZE - 10.0f, WORLD_SIZE - 10.0f, WORLD_SIZE - 10.0f).isEmpty());
+        
+        assertEquals(1, index.size());
+    }
+    
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("spatialIndexProviders")
+    @DisplayName("Numerical stability with many operations")
+    void testNumericalStability(String name, SpatialIndex<?, EntityId, Entity<EntityId>> index) {
+        index.clear();
+        
+        var random = ThreadLocalRandom.current();
+        int numOperations = 1000;
+        
+        // Perform many random insertions, updates, and removals
+        for (int i = 0; i < numOperations; i++) {
+            float x = random.nextFloat() * WORLD_SIZE;
+            float y = random.nextFloat() * WORLD_SIZE;
+            float z = random.nextFloat() * WORLD_SIZE;
+            
+            var entity = entityManager.allocateEntity(x, y, z);
+            index.insert(entity.getId(), entity);
+            
+            // Randomly update position
+            if (random.nextBoolean()) {
+                entity.setPosition(
+                    random.nextFloat() * WORLD_SIZE,
+                    random.nextFloat() * WORLD_SIZE,
+                    random.nextFloat() * WORLD_SIZE
+                );
+                index.update(entity.getId(), entity);
+            }
+            
+            // Randomly remove some entities
+            if (random.nextFloat() < 0.3f) {
+                index.remove(entity.getId());
+            }
+        }
+        
+        // Tree should still be functional
+        assertTrue(index.size() >= 0);
+        assertDoesNotThrow(() -> {
+            index.getEntitiesInRegion(
+                new Point3f(0.0f, 0.0f, 0.0f),
+                new Point3f(WORLD_SIZE, WORLD_SIZE, WORLD_SIZE)
+            );
+        });
+    }
+}

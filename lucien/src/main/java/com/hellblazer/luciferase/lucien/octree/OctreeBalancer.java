@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityManager;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 
 import java.util.*;
 
@@ -151,7 +152,7 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
         // Get or create parent node
         var parentNode = octree.getSpatialIndex().computeIfAbsent(parentIndex, k -> {
             octree.getSortedSpatialIndices().add(parentIndex);
-            return new OctreeNode<>(maxEntitiesPerNode);
+            return new SpatialNodeImpl<>(maxEntitiesPerNode);
         });
 
         // Add all entities to parent
@@ -260,7 +261,7 @@ public class OctreeBalancer<ID extends EntityID> implements TreeBalancer<MortonK
             if (!childEntities.isEmpty()) {
                 var childNode = octree.getSpatialIndex().computeIfAbsent(childIndex, k -> {
                     octree.getSortedSpatialIndices().add(childIndex);
-                    return new OctreeNode<>(maxEntitiesPerNode);
+                    return new SpatialNodeImpl<>(maxEntitiesPerNode);
                 });
 
                 for (var entityId : childEntities) {

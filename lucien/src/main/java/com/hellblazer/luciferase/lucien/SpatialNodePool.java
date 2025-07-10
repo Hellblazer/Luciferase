@@ -34,13 +34,13 @@ import java.util.function.Supplier;
  * @param <NodeType> The type of spatial nodes to pool
  * @author hal.hildebrand
  */
-public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
+public class SpatialNodePool<ID extends EntityID> {
 
     // Estimated memory per node (bytes)
     private static final long               ESTIMATED_NODE_MEMORY = 64; // Base object + collection overhead
     // Pool storage
-    private final        Queue<NodeType>    pool                  = new ConcurrentLinkedQueue<>();
-    private final        Supplier<NodeType> nodeFactory;
+    private final        Queue<SpatialNodeImpl<ID>>    pool                  = new ConcurrentLinkedQueue<>();
+    private final        Supplier<SpatialNodeImpl<ID>> nodeFactory;
     private final        PoolConfig         config;
     // Statistics
     private final        AtomicLong         allocations           = new AtomicLong(0);
@@ -51,11 +51,11 @@ public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
     private final        AtomicInteger      peakSize              = new AtomicInteger(0);
     private final        AtomicLong         memorySaved           = new AtomicLong(0);
 
-    public SpatialNodePool(Supplier<NodeType> nodeFactory) {
+    public SpatialNodePool(Supplier<SpatialNodeImpl<ID>> nodeFactory) {
         this(nodeFactory, new PoolConfig());
     }
 
-    public SpatialNodePool(Supplier<NodeType> nodeFactory, PoolConfig config) {
+    public SpatialNodePool(Supplier<SpatialNodeImpl<ID>> nodeFactory, PoolConfig config) {
         this.nodeFactory = nodeFactory;
         this.config = config;
 
@@ -67,24 +67,24 @@ public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
     /**
      * Create a pool with default configuration
      */
-    public static <ID extends EntityID, NodeType extends SpatialNodeStorage<ID>> SpatialNodePool<NodeType> createDefaultPool(
-    Supplier<NodeType> nodeFactory) {
+    public static <ID extends EntityID> SpatialNodePool<ID> createDefaultPool(
+    Supplier<SpatialNodeImpl<ID>> nodeFactory) {
         return new SpatialNodePool<>(nodeFactory, new PoolConfig());
     }
 
     /**
      * Factory method for creating type-specific pools
      */
-    public static <ID extends EntityID, NodeType extends SpatialNodeStorage<ID>> SpatialNodePool<NodeType> createPool(
-    Supplier<NodeType> nodeFactory, PoolConfig config) {
+    public static <ID extends EntityID> SpatialNodePool<ID> createPool(
+    Supplier<SpatialNodeImpl<ID>> nodeFactory, PoolConfig config) {
         return new SpatialNodePool<>(nodeFactory, config);
     }
 
     /**
      * Acquire a node from the pool or create a new one
      */
-    public NodeType acquire() {
-        NodeType node = pool.poll();
+    public SpatialNodeImpl<ID> acquire() {
+        SpatialNodeImpl<ID> node = pool.poll();
 
         if (node != null) {
             // Got node from pool
@@ -165,7 +165,7 @@ public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
         int toAllocate = Math.min(count, config.getMaxSize() - currentSize.get());
 
         for (int i = 0; i < toAllocate; i++) {
-            NodeType node = nodeFactory.get();
+            SpatialNodeImpl<ID> node = nodeFactory.get();
             pool.offer(node);
 
             if (config.isEnableStatistics()) {
@@ -182,7 +182,7 @@ public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
     /**
      * Release a node back to the pool for reuse
      */
-    public void release(NodeType node) {
+    public void release(SpatialNodeImpl<ID> node) {
         if (node == null) {
             return;
         }
@@ -206,8 +206,8 @@ public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
     /**
      * Release multiple nodes back to the pool
      */
-    public void releaseAll(Iterable<NodeType> nodes) {
-        for (NodeType node : nodes) {
+    public void releaseAll(Iterable<SpatialNodeImpl<ID>> nodes) {
+        for (SpatialNodeImpl<ID> node : nodes) {
             release(node);
         }
     }
@@ -231,7 +231,7 @@ public class SpatialNodePool<NodeType extends SpatialNodeStorage<?>> {
         targetSize = Math.max(0, targetSize);
 
         while (currentSize.get() > targetSize) {
-            NodeType node = pool.poll();
+            SpatialNodeImpl<ID> node = pool.poll();
             if (node == null) {
                 break;
             }

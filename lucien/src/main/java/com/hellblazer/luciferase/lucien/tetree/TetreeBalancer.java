@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityManager;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
@@ -132,7 +133,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         // Collect all entities from nodes to be merged
         Set<ID> allEntities = new HashSet<>();
         for (TetreeKey<? extends TetreeKey> tetIndex : tetIndices) {
-            TetreeNodeImpl<ID> node = tetree.getSpatialIndex().get(tetIndex);
+            SpatialNodeImpl<ID> node = tetree.getSpatialIndex().get(tetIndex);
             if (node != null && !node.isEmpty()) {
                 allEntities.addAll(node.getEntityIds());
             }
@@ -148,9 +149,9 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
         }
 
         // Get or create parent node
-        TetreeNodeImpl<ID> parentNode = tetree.getSpatialIndex().computeIfAbsent(parentIndex, k -> {
+        SpatialNodeImpl<ID> parentNode = tetree.getSpatialIndex().computeIfAbsent(parentIndex, k -> {
             tetree.getSortedSpatialIndices().add(parentIndex);
-            return tetree.createNodeWithCachedBounds(parentIndex);
+            return new SpatialNodeImpl<>(maxEntitiesPerNode);
         });
 
         // Add all entities to parent
@@ -200,7 +201,7 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
             return Collections.emptyList();
         }
 
-        TetreeNodeImpl<ID> node = tetree.getSpatialIndex().get(tetIndex);
+        SpatialNodeImpl<ID> node = tetree.getSpatialIndex().get(tetIndex);
         if (node == null || node.isEmpty()) {
             return Collections.emptyList();
         }
@@ -249,9 +250,9 @@ public class TetreeBalancer<ID extends EntityID> implements TreeBalancer<TetreeK
             Set<ID> childEntities = entry.getValue();
 
             if (!childEntities.isEmpty()) {
-                TetreeNodeImpl<ID> childNode = tetree.getSpatialIndex().computeIfAbsent(childIndex, k -> {
+                SpatialNodeImpl<ID> childNode = tetree.getSpatialIndex().computeIfAbsent(childIndex, k -> {
                     tetree.getSortedSpatialIndices().add(childIndex);
-                    return tetree.createNodeWithCachedBounds(childIndex);
+                    return new SpatialNodeImpl<>(maxEntitiesPerNode);
                 });
 
                 for (ID entityId : childEntities) {
