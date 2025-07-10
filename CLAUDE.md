@@ -76,9 +76,9 @@ The Java implementation uses a unified generic architecture:
 
 For accurate architecture documentation, see:
 
-- `lucien/doc/LUCIEN_ARCHITECTURE_2025.md` - Complete architecture overview (June 2025)
+- `lucien/doc/LUCIEN_ARCHITECTURE.md` - Complete architecture overview (June 2025)
 - `lucien/archived/SPATIAL_INDEX_CONSOLIDATION.md` - Details of the consolidation changes
-- `lucien/doc/ARCHITECTURE_SUMMARY_2025.md` - Complete class inventory
+- `lucien/doc/ARCHITECTURE_SUMMARY.md` - Complete class inventory
 
 Historical documents (describe unimplemented features):
 
@@ -199,7 +199,7 @@ Historical documents (describe unimplemented features):
     - **Solution**: Added efficient single-child methods to BeySubdivision
     - **New Methods**:
         - `getBeyChild(parent, beyIndex)` - Computes single child in Bey order
-        - `getTMChild(parent, tmIndex)` - Computes single child in TM order  
+        - `getTMChild(parent, tmIndex)` - Computes single child in TM order
         - `getMortonChild(parent, mortonIndex)` - Computes single child in Morton order
     - **Performance**: ~3x faster than computing all children (17.10 ns per call)
     - **Integration**: Tet.child() now uses BeySubdivision.getMortonChild()
@@ -212,7 +212,7 @@ Historical documents (describe unimplemented features):
     - **Solution**: Disabled tests expecting proper partitioning
     - **Affected Tests**:
         - TetreeContainmentConsistencyTest
-        - TetreePartitionTest  
+        - TetreePartitionTest
         - TetreeContainmentDebugTest
         - TetreeTypeDeterminationTest
         - CorrectTetreeLocateTest
@@ -231,17 +231,18 @@ Historical documents (describe unimplemented features):
     - **S0-S5 Pattern**: Each tetrahedra uses specific cube vertices (S0: 0,1,3,7; S1: 0,2,3,7; etc.)
     - **Results**: Achieved 100% containment rate (up from 35%), perfect cube tiling with no gaps/overlaps
     - **Coordinate Fix**: All types now share V0 (origin) and V7 (opposite corner) as required by cube decomposition
-    - **Containment Fix**: Updated containsUltraFast() to handle mirrored tetrahedra (types 1,3,4) with reversed face tests
+    - **Containment Fix**: Updated containsUltraFast() to handle mirrored tetrahedra (types 1,3,4) with reversed face
+      tests
     - **Test Updates**: Fixed all test failures by updating expectations to match S0-S5 geometry
     - **Location**: Tet.java coordinates() method, TetS0S5DecompositionTest validates implementation
     - **Impact**: Visualization now correctly shows entities contained within their tetrahedra
 - **PERFORMANCE BENCHMARKS (July 6, 2025):**
     - **Insertion**: Octree is 2.3x to 11.4x faster (gap increases with entity count)
-    - **K-NN Search**: Tetree is 1.6x to 5.9x faster 
+    - **K-NN Search**: Tetree is 1.6x to 5.9x faster
     - **Range Queries**: Tetree is 1.4x to 3.5x faster
     - **Memory**: Tetree uses only 20-25% of Octree's memory
     - **Root Cause**: tmIndex() O(level) parent chain walk vs Morton O(1) encoding
-    - **See**: lucien/doc/OCTREE_VS_TETREE_PERFORMANCE_JULY_2025.md for details
+    - **See**: lucien/doc/OCTREE_VS_TETREE_PERFORMANCE_.md for details
 - **DOCUMENTATION CLEANUP (July 6, 2025):**
     - **Archived**: 9 completed/outdated documents moved to lucien/archived/
     - **Updated**: Fixed references to legacy ei/ej algorithm in active docs
@@ -253,7 +254,8 @@ Historical documents (describe unimplemented features):
     - **Avoid exclamation marks**: Only use in code examples (e.g., != operator)
     - **Replace superlatives**: Use "complete" not "perfect", "faster" not "superior"
     - **No bold emphasis on performance**: Present metrics plainly (e.g., "3x faster" not "**3x faster**")
-    - **Neutral headings**: Use descriptive titles, not promotional ones (e.g., "Bulk Loading Performance" not "The Game Changer")
+    - **Neutral headings**: Use descriptive titles, not promotional ones (e.g., "Bulk Loading Performance" not "The Game
+      Changer")
     - **Factual descriptions**: Focus on technical accuracy without enthusiasm or marketing language
     - **Professional phrasing**: State improvements factually without celebration
     - **Measured claims**: Avoid absolute terms unless technically accurate

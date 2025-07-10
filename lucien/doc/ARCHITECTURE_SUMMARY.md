@@ -77,7 +77,6 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ### Primary References
 
 - **[LUCIEN_ARCHITECTURE.md](./LUCIEN_ARCHITECTURE.md)**: Comprehensive architecture guide
-- **[SPATIAL_INDEX_CONSOLIDATION.md](./archived/SPATIAL_INDEX_CONSOLIDATION.md)**: January 2025 consolidation details
 
 ### API Documentation
 
@@ -104,12 +103,7 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ### Implementation Guides
 
 - **[TETREE_IMPLEMENTATION_GUIDE.md](./TETREE_IMPLEMENTATION_GUIDE.md)**: Tetrahedral tree specifics
-- **[IMMEDIATE_PERFORMANCE_IMPROVEMENTS.md](./IMMEDIATE_PERFORMANCE_IMPROVEMENTS.md)**: Quick optimization wins
 
-### Historical Context
-
-- **[archived/](./archived/)**: Contains 35+ archived documents describing unimplemented features and completed work
-  phases
 
 ## Design Philosophy
 
@@ -209,4 +203,4 @@ the comprehensive architecture guide.
 
 ---
 
-*This summary reflects the current implemented architecture. For historical context, see the archived/ directory.*
+*This summary reflects the current implemented architecture.*
