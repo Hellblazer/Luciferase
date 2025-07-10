@@ -31,10 +31,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @param <NodeType> The type of spatial nodes
  * @author hal.hildebrand
  */
-public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends EntityID, NodeType extends SpatialNodeStorage<ID>> {
+public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends EntityID> {
 
     // Candidates for subdivision, keyed by node index
-    private final Map<Key, SubdivisionCandidate<Key, NodeType>> candidates;
+    private final Map<Key, SubdivisionCandidate<Key, SpatialNodeImpl<ID>>> candidates;
     // Configuration
     private final int                                           maxDeferredNodes;
     private final boolean                                       priorityBasedProcessing;
@@ -65,7 +65,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
     /**
      * Mark a node for deferred subdivision
      */
-    public void deferSubdivision(Key nodeIndex, NodeType node, int entityCount, byte level) {
+    public void deferSubdivision(Key nodeIndex, SpatialNodeImpl<ID> node, int entityCount, byte level) {
         if (candidates.size() >= maxDeferredNodes) {
             // If we've hit the limit, process immediately or drop based on priority
             if (priorityBasedProcessing) {
@@ -96,7 +96,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
     /**
      * Process all deferred subdivisions
      */
-    public SubdivisionResult processAll(SubdivisionProcessor<Key, ID, NodeType> processor) {
+    public SubdivisionResult processAll(SubdivisionProcessor<Key, ID, SpatialNodeImpl<ID>> processor) {
         if (candidates.isEmpty()) {
             return new SubdivisionResult(0, 0, 0, 0, Collections.emptyMap());
         }
@@ -140,7 +140,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
     /**
      * Process deferred subdivisions in batches
      */
-    public List<SubdivisionResult> processBatches(SubdivisionProcessor<Key, ID, NodeType> processor, int batchSize) {
+    public List<SubdivisionResult> processBatches(SubdivisionProcessor<Key, ID, SpatialNodeImpl<ID>> processor, int batchSize) {
         var results = new ArrayList<SubdivisionResult>();
 
         while (!candidates.isEmpty()) {
@@ -194,8 +194,8 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
         return (double) totalEntities / candidates.size();
     }
 
-    private List<SubdivisionCandidate<Key, NodeType>> getNextBatch(int batchSize) {
-        var batch = new ArrayList<SubdivisionCandidate<Key, NodeType>>();
+    private List<SubdivisionCandidate<Key, SpatialNodeImpl<ID>>> getNextBatch(int batchSize) {
+        var batch = new ArrayList<SubdivisionCandidate<Key, SpatialNodeImpl<ID>>>();
         var allCandidates = getProcessingOrder();
 
         for (var i = 0; i < Math.min(batchSize, allCandidates.size()); i++) {
@@ -205,7 +205,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
         return batch;
     }
 
-    private List<SubdivisionCandidate<Key, NodeType>> getProcessingOrder() {
+    private List<SubdivisionCandidate<Key, SpatialNodeImpl<ID>>> getProcessingOrder() {
         var toProcess = new ArrayList<>(candidates.values());
 
         if (priorityBasedProcessing) {
@@ -218,7 +218,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
 
     private void processLowestPriorityIfNeeded(int newPriority) {
         // Find and process lowest priority candidate if new one has higher priority
-        SubdivisionCandidate<Key, NodeType> lowest = null;
+        SubdivisionCandidate<Key, SpatialNodeImpl<ID>> lowest = null;
         for (var candidate : candidates.values()) {
             if (lowest == null || candidate.getPriority() < lowest.getPriority()) {
                 lowest = candidate;
@@ -232,7 +232,7 @@ public class DeferredSubdivisionManager<Key extends SpatialKey<Key>, ID extends 
 
     // Private helper methods
 
-    private boolean shouldSubdivide(SubdivisionCandidate<Key, NodeType> candidate) {
+    private boolean shouldSubdivide(SubdivisionCandidate<Key, SpatialNodeImpl<ID>> candidate) {
         // Could add additional checks here based on current tree state
         // For now, trust that if it was deferred, it needs subdivision
         return true;

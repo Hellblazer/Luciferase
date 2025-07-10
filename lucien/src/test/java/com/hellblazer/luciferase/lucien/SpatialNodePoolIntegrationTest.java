@@ -6,7 +6,7 @@ package com.hellblazer.luciferase.lucien;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
-import com.hellblazer.luciferase.lucien.octree.OctreeNode;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -186,7 +186,7 @@ public class SpatialNodePoolIntegrationTest {
 
         // Create a custom pool with proper node type
         @SuppressWarnings("unchecked")
-        SpatialNodePool<OctreeNode<LongEntityID>> customPool = new SpatialNodePool<>(() -> new OctreeNode<>(), config);
+        SpatialNodePool<LongEntityID> customPool = new SpatialNodePool<>(() -> new SpatialNodeImpl<>(), config);
         nodePoolField.set(octree, customPool);
 
         // Check pre-allocation

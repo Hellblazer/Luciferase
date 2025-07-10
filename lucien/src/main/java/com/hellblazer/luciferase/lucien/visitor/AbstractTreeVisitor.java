@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.visitor;
 
-import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
@@ -51,7 +51,7 @@ implements TreeVisitor<Key, ID, Content> {
     }
 
     @Override
-    public void leaveNode(SpatialNode<Key, ID> node, int level, int childCount) {
+    public void leaveNode(SpatialIndex.SpatialNode<Key, ID> node, int level, int childCount) {
         // Default: do nothing
     }
 
@@ -84,7 +84,7 @@ implements TreeVisitor<Key, ID, Content> {
     }
 
     @Override
-    public boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex) {
+    public boolean visitNode(SpatialIndex.SpatialNode<Key, ID> node, int level, Key parentIndex) {
         // Default: continue traversal
         return true;
     }

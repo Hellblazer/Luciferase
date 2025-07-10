@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.visitor;
 
-import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
@@ -130,7 +130,7 @@ extends AbstractTreeVisitor<Key, ID, Content> {
     }
 
     @Override
-    public boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex) {
+    public boolean visitNode(SpatialIndex.SpatialNode<Key, ID> node, int level, Key parentIndex) {
         totalNodes++;
         nodesPerLevel.merge(level, 1, Integer::sum);
         entitiesPerLevel.merge(level, node.entityIds().size(), Integer::sum);

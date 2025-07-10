@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,7 +58,7 @@ public class TetreeStreamAPITest {
             tetree.insert(p, (byte) 3, "leaf" + i);
         }
 
-        List<TetreeNodeImpl<LongEntityID>> leafNodes = tetree.getLeafNodes();
+        var leafNodes = tetree.getLeafNodes();
         assertNotNull(leafNodes);
         assertFalse(leafNodes.isEmpty(), "Should have leaf nodes");
 
@@ -126,7 +127,7 @@ public class TetreeStreamAPITest {
         assertTrue(allLeavesHaveNoChildren, "All nodes in leaf stream should be leaves");
 
         // Leaf nodes should contain entities
-        long entitiesInLeaves = tetree.leafStream().mapToLong(node -> node.getEntityIds().size()).sum();
+        long entitiesInLeaves = tetree.leafStream().mapToLong(node -> node.entityIds().size()).sum();
 
         assertTrue(entitiesInLeaves > 0, "Leaf nodes should contain entities");
     }
@@ -181,7 +182,7 @@ public class TetreeStreamAPITest {
         assertTrue(nodeCount > 0, "Should have at least one non-empty node");
 
         // Collect all entity IDs using stream
-        Set<LongEntityID> entityIds = tetree.nodeStream().flatMap(node -> node.getEntityIds().stream()).collect(
+        Set<LongEntityID> entityIds = tetree.nodeStream().flatMap(node -> node.entityIds().stream()).collect(
         Collectors.toSet());
 
         assertEquals(3, entityIds.size(), "Should have 3 unique entity IDs");
@@ -202,11 +203,11 @@ public class TetreeStreamAPITest {
         }
 
         // Filter nodes with multiple entities
-        List<TetreeNodeImpl<LongEntityID>> multiEntityNodes = tetree.nodeStream().filter(
-        node -> node.getEntityIds().size() > 1).collect(Collectors.toList());
+        var multiEntityNodes = tetree.nodeStream().filter(
+        node -> node.entityIds().size() > 1).collect(Collectors.toList());
 
         // Map to get total entity count
-        int totalEntities = tetree.nodeStream().mapToInt(node -> node.getEntityIds().size()).sum();
+        int totalEntities = tetree.nodeStream().mapToInt(node -> node.entityIds().size()).sum();
 
         assertEquals(30, totalEntities, "Should have 30 total entities");
 
@@ -229,11 +230,11 @@ public class TetreeStreamAPITest {
 
         // Test parallel stream performance
         long startSerial = System.currentTimeMillis();
-        long serialCount = tetree.nodeStream().filter(node -> !node.isEmpty()).count();
+        long serialCount = tetree.nodeStream().filter(node -> !node.entityIds().isEmpty()).count();
         long serialTime = System.currentTimeMillis() - startSerial;
 
         long startParallel = System.currentTimeMillis();
-        long parallelCount = tetree.nodeStream().parallel().filter(node -> !node.isEmpty()).count();
+        long parallelCount = tetree.nodeStream().parallel().filter(node -> !node.entityIds().isEmpty()).count();
         long parallelTime = System.currentTimeMillis() - startParallel;
 
         assertEquals(serialCount, parallelCount, "Serial and parallel counts should match");

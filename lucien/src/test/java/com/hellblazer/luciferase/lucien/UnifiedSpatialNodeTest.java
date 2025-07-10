@@ -17,8 +17,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
-import com.hellblazer.luciferase.lucien.octree.OctreeNode;
-import com.hellblazer.luciferase.lucien.tetree.TetreeNodeImpl;
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -28,8 +27,8 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for the unified AbstractSpatialNode implementation, verifying that both OctreeNode and TetreeNodeImpl behave
- * consistently with the unified architecture.
+ * Tests for the unified SpatialNode implementation, verifying that the single node class
+ * works correctly for both spatial index types.
  *
  * @author hal.hildebrand
  */
@@ -37,7 +36,7 @@ public class UnifiedSpatialNodeTest {
 
     @Test
     public void testAllChildrenMask() {
-        AbstractSpatialNode<LongEntityID> node = new TetreeNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
 
         // Set all children
         for (int i = 0; i < 8; i++) {
@@ -69,14 +68,14 @@ public class UnifiedSpatialNodeTest {
     @Test
     public void testBackwardCompatibility() {
         // Test OctreeNode octant methods
-        OctreeNode<LongEntityID> octreeNode = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> octreeNode = new SpatialNodeImpl<>();
         octreeNode.setChildBit(3); // Using octant terminology
         assertTrue(octreeNode.hasChild(3));
         octreeNode.clearChildBit(3);
         assertFalse(octreeNode.hasChild(3));
 
         // Test TetreeNodeImpl Set view
-        TetreeNodeImpl<LongEntityID> tetreeNode = new TetreeNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> tetreeNode = new SpatialNodeImpl<>();
         LongEntityID id1 = new LongEntityID(1);
         LongEntityID id2 = new LongEntityID(2);
         tetreeNode.addEntity(id1);
@@ -93,7 +92,7 @@ public class UnifiedSpatialNodeTest {
 
     @Test
     public void testChildIndexValidation() {
-        AbstractSpatialNode<LongEntityID> node = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
 
         // Valid indices
         for (int i = 0; i < 8; i++) {
@@ -104,7 +103,7 @@ public class UnifiedSpatialNodeTest {
         }
 
         // Invalid indices
-        final AbstractSpatialNode<LongEntityID> finalNode = node;
+        final SpatialNodeImpl<LongEntityID> finalNode = node;
         assertThrows(IllegalArgumentException.class, () -> finalNode.setChildBit(-1));
         assertThrows(IllegalArgumentException.class, () -> finalNode.setChildBit(8));
         assertThrows(IllegalArgumentException.class, () -> finalNode.hasChild(-1));
@@ -115,7 +114,7 @@ public class UnifiedSpatialNodeTest {
 
     @Test
     public void testChildMaskBitOperations() {
-        AbstractSpatialNode<LongEntityID> node = new TetreeNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
 
         // Test individual bit operations
         for (int i = 0; i < 8; i++) {
@@ -138,13 +137,13 @@ public class UnifiedSpatialNodeTest {
     @Test
     public void testChildTracking() {
         // Test both node types
-        testChildTrackingForNode(new OctreeNode<>());
-        testChildTrackingForNode(new TetreeNodeImpl<>());
+        testChildTrackingForNode(new SpatialNodeImpl<>());
+        testChildTrackingForNode(new SpatialNodeImpl<>());
     }
 
     @Test
     public void testEntityOrderPreservation() {
-        AbstractSpatialNode<LongEntityID> node = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
 
         // Add entities in specific order
         List<LongEntityID> insertOrder = new ArrayList<>();
@@ -162,8 +161,8 @@ public class UnifiedSpatialNodeTest {
     @Test
     public void testEntityStorage() {
         // Test both node types
-        testEntityStorageForNode(new OctreeNode<>());
-        testEntityStorageForNode(new TetreeNodeImpl<>());
+        testEntityStorageForNode(new SpatialNodeImpl<>());
+        testEntityStorageForNode(new SpatialNodeImpl<>());
     }
 
     @Test
@@ -191,7 +190,7 @@ public class UnifiedSpatialNodeTest {
 
     @Test
     public void testNullEntityHandling() {
-        AbstractSpatialNode<LongEntityID> node = new TetreeNodeImpl<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
 
         // Null checks
         assertThrows(IllegalArgumentException.class, () -> node.addEntity(null));
@@ -201,7 +200,7 @@ public class UnifiedSpatialNodeTest {
 
     @Test
     public void testSetHasChildren() {
-        AbstractSpatialNode<LongEntityID> node = new OctreeNode<>();
+        SpatialNodeImpl<LongEntityID> node = new SpatialNodeImpl<>();
 
         // Test that existing bits are preserved
         node.setChildBit(3);
@@ -213,14 +212,14 @@ public class UnifiedSpatialNodeTest {
     @Test
     public void testSplitThreshold() {
         // Test with custom threshold
-        OctreeNode<LongEntityID> octreeNode = new OctreeNode<>(3);
-        TetreeNodeImpl<LongEntityID> tetreeNode = new TetreeNodeImpl<>(3);
+        SpatialNodeImpl<LongEntityID> octreeNode = new SpatialNodeImpl<>(3);
+        SpatialNodeImpl<LongEntityID> tetreeNode = new SpatialNodeImpl<>(3);
 
         testSplitThresholdForNode(octreeNode, 3);
         testSplitThresholdForNode(tetreeNode, 3);
     }
 
-    private void testChildTrackingForNode(AbstractSpatialNode<LongEntityID> node) {
+    private void testChildTrackingForNode(SpatialNodeImpl<LongEntityID> node) {
         // Initially no children
         assertFalse(node.hasChildren());
         for (int i = 0; i < 8; i++) {
@@ -256,7 +255,7 @@ public class UnifiedSpatialNodeTest {
         assertEquals((byte) 0, node.getChildrenMask());
     }
 
-    private void testEntityStorageForNode(AbstractSpatialNode<LongEntityID> node) {
+    private void testEntityStorageForNode(SpatialNodeImpl<LongEntityID> node) {
         assertTrue(node.isEmpty());
         assertEquals(0, node.getEntityCount());
 
@@ -291,7 +290,7 @@ public class UnifiedSpatialNodeTest {
         assertEquals(0, node.getEntityCount());
     }
 
-    private void testSplitThresholdForNode(AbstractSpatialNode<LongEntityID> node, int threshold) {
+    private void testSplitThresholdForNode(SpatialNodeImpl<LongEntityID> node, int threshold) {
         assertEquals(threshold, node.getMaxEntitiesBeforeSplit());
 
         // Add entities up to threshold
@@ -307,7 +306,7 @@ public class UnifiedSpatialNodeTest {
 
     // Test subclass to access protected methods
     private static class TestNode<ID extends com.hellblazer.luciferase.lucien.entity.EntityID>
-    extends AbstractSpatialNode<ID> {
+    extends SpatialNodeImpl<ID> {
         @Override
         public List<ID> getMutableEntityIds() {
             return super.getMutableEntityIds();

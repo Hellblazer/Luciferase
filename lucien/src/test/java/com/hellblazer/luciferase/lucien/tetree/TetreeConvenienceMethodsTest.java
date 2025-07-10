@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,7 +67,7 @@ public class TetreeConvenienceMethodsTest {
         var commonAncestor = tetree.findCommonAncestor(corner1.tmIndex(), corner2.tmIndex());
 
         // Find neighbors within distance from one corner
-        Set<TetreeNodeImpl<LongEntityID>> nearbyNodes = tetree.findNeighborsWithinDistance(corner1.tmIndex(), 200f);
+        Set<SpatialNodeImpl<LongEntityID>> nearbyNodes = tetree.findNeighborsWithinDistance(corner1.tmIndex(), 200f);
 
         // Use stream API to count entities in nearby nodes
         long nearbyEntityCount = nearbyNodes.stream().mapToLong(node -> node.getEntityIdsAsSet().size()).sum();
@@ -206,7 +207,7 @@ public class TetreeConvenienceMethodsTest {
         }
 
         Tet boundaryTet = tetree.locateTetrahedron(boundary, (byte) 2);
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(boundaryTet.tmIndex(), 100f);
+        Set<SpatialNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(boundaryTet.tmIndex(), 100f);
 
         // Should find some neighbors even at boundary
         assertFalse(neighbors.isEmpty(), "Should find neighbors even at domain boundary");
@@ -219,7 +220,7 @@ public class TetreeConvenienceMethodsTest {
     void testFindNeighborsWithinDistanceEmpty() {
         // Test with empty tree
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        Set<TetreeNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100.0f);
+        Set<SpatialNodeImpl<LongEntityID>> neighbors = tetree.findNeighborsWithinDistance(rootTet.tmIndex(), 100.0f);
 
         assertNotNull(neighbors);
         assertTrue(neighbors.isEmpty(), "Empty tree should return empty neighbor set");

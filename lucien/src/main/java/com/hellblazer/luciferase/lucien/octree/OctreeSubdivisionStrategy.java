@@ -71,7 +71,7 @@ extends SubdivisionStrategy<MortonKey, ID, Content> {
 
     @Override
     public Set<MortonKey> calculateTargetNodes(MortonKey parentIndex, byte parentLevel, EntityBounds entityBounds,
-                                               AbstractSpatialIndex<MortonKey, ID, Content, ?> spatialIndex) {
+                                               AbstractSpatialIndex<MortonKey, ID, Content> spatialIndex) {
         var targetNodes = new HashSet<MortonKey>();
 
         if (entityBounds == null) {

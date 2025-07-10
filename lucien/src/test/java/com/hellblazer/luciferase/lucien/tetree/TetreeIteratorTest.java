@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.lucien.SpatialNodeImpl;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -126,7 +127,7 @@ public class TetreeIteratorTest {
         int maxIterations = 5; // Prevent infinite loops
 
         while (iter.hasNext() && nodeCount < maxIterations) {
-            TetreeNodeImpl<LongEntityID> node = iter.next();
+            SpatialNodeImpl<LongEntityID> node = iter.next();
             assertNotNull(node, "Node should not be null");
             assertNotNull(iter.getCurrentIndex(), "Current index should not be null");
             nodeCount++;
@@ -151,7 +152,7 @@ public class TetreeIteratorTest {
             TetreeIterator<LongEntityID, String> iter = new TetreeIterator<>(tetree, order);
 
             assertTrue(iter.hasNext(), "Should have one element for " + order);
-            TetreeNodeImpl<LongEntityID> node = iter.next();
+            SpatialNodeImpl<LongEntityID> node = iter.next();
             assertNotNull(node);
             assertTrue(node.getEntityIds().contains(id1));
 

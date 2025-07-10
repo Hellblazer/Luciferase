@@ -72,10 +72,9 @@ import java.util.stream.Stream;
  *
  * @param <ID>       The type of EntityID used
  * @param <Content>  The type of content stored
- * @param <NodeType> The type of spatial node used by the implementation
  * @author hal.hildebrand
  */
-public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>>
+public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
 implements SpatialIndex<Key, ID, Content> {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractSpatialIndex.class);
@@ -86,13 +85,13 @@ implements SpatialIndex<Key, ID, Content> {
     protected final byte                                               maxDepth;
     protected final EntitySpanningPolicy                               spanningPolicy;
     // Spatial index: Long index -> Node containing entity IDs
-    protected final Map<Key, NodeType>                                 spatialIndex;
+    protected final Map<Key, SpatialNodeImpl<ID>>                          spatialIndex;
     // Sorted spatial indices for efficient range queries
     protected final NavigableSet<Key>                                  sortedSpatialIndices;
     // Read-write lock for thread safety
     protected final ReadWriteLock                                      lock;
     // Fine-grained locking strategy for high-concurrency operations
-    protected FineGrainedLockingStrategy<ID, Content, NodeType>  lockingStrategy;
+    protected FineGrainedLockingStrategy<ID, Content>  lockingStrategy;
     protected final Set<Long>                                          deferredSubdivisionNodes = new HashSet<>();
     private final   TreeBalancer<Key, ID>                              treeBalancer;
     // Entity data cache for performance
@@ -101,11 +100,11 @@ implements SpatialIndex<Key, ID, Content> {
     protected       BulkOperationConfig                                bulkConfig               = new BulkOperationConfig();
     protected       boolean                                            bulkLoadingMode          = false;
     protected       BulkOperationProcessor<Key, ID, Content>           bulkProcessor;
-    protected       DeferredSubdivisionManager<Key, ID, NodeType>      subdivisionManager;
-    protected       SpatialNodePool<NodeType>                          nodePool;
-    protected       ParallelBulkOperations<Key, ID, Content, NodeType> parallelOperations;
+    protected       DeferredSubdivisionManager<Key, ID>      subdivisionManager;
+    protected       SpatialNodePool<ID>                          nodePool;
+    protected       ParallelBulkOperations<Key, ID, Content> parallelOperations;
     protected       SubdivisionStrategy<Key, ID, Content>              subdivisionStrategy;
-    protected       StackBasedTreeBuilder<Key, ID, Content, NodeType>  treeBuilder;
+    protected       StackBasedTreeBuilder<Key, ID, Content>  treeBuilder;
     // Tree balancing support
     private         TreeBalancingStrategy<ID>                          balancingStrategy;
     private         boolean                                            autoBalancingEnabled     = false;
@@ -137,7 +136,7 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     @Override
-    public Stream<SpatialNode<Key, ID>> boundedBy(Spatial volume) {
+    public Stream<SpatialIndex.SpatialNode<Key, ID>> boundedBy(Spatial volume) {
         validateSpatialConstraints(volume);
 
         var bounds = getVolumeBounds(volume);
@@ -150,7 +149,7 @@ implements SpatialIndex<Key, ID, Content> {
             // Must collect results inside lock to avoid concurrent modification
             var results = spatialRangeQuery(bounds, false).filter(
             entry -> isNodeContainedInVolume(entry.getKey(), volume)).map(
-            entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
+            entry -> new SpatialIndex.SpatialNode<Key, ID>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
             Collectors.toList());
             return results.stream();
         } finally {
@@ -159,7 +158,7 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     @Override
-    public Stream<SpatialNode<Key, ID>> bounding(Spatial volume) {
+    public Stream<SpatialIndex.SpatialNode<Key, ID>> bounding(Spatial volume) {
         validateSpatialConstraints(volume);
 
         var bounds = getVolumeBounds(volume);
@@ -172,7 +171,7 @@ implements SpatialIndex<Key, ID, Content> {
             // Must collect results inside lock to avoid concurrent modification
             var results = spatialRangeQuery(bounds, true).filter(
             entry -> doesNodeIntersectVolume(entry.getKey(), volume)).map(
-            entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
+            entry -> new SpatialIndex.SpatialNode<Key, ID>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
             Collectors.toList());
             return results.stream();
         } finally {
@@ -352,6 +351,25 @@ implements SpatialIndex<Key, ID, Content> {
                     uniqueEntities.addAll(entry.getValue().getEntityIds());
                 }
             });
+            
+            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
+            // This is because a spanning entity might be stored in nodes outside the query region
+            // but still have bounds that intersect with the query region
+            if (spanningPolicy.isSpanningEnabled()) {
+                // Check all entities with bounds
+                for (var entry : spatialIndex.entrySet()) {
+                    for (var entityId : entry.getValue().getEntityIds()) {
+                        if (!uniqueEntities.contains(entityId)) {
+                            var entityBounds = entityManager.getEntityBounds(entityId);
+                            if (entityBounds != null && 
+                                entityBounds.intersectsCube(region.originX(), region.originY(), region.originZ(),
+                                                           region.extent())) {
+                                uniqueEntities.add(entityId);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Filter by exact intersection - check entity bounds vs query region
             return uniqueEntities.stream().filter(entityId -> {
@@ -409,9 +427,9 @@ implements SpatialIndex<Key, ID, Content> {
             // Process all deferred subdivisions using the manager
             if (bulkConfig.isDeferSubdivision()) {
                 var result = subdivisionManager.processAll(
-                new DeferredSubdivisionManager.SubdivisionProcessor<Key, ID, NodeType>() {
+                new DeferredSubdivisionManager.SubdivisionProcessor<Key, ID, SpatialNodeImpl<ID>>() {
                     @Override
-                    public Result subdivideNode(Key nodeIndex, NodeType node, byte level) {
+                    public Result subdivideNode(Key nodeIndex, SpatialNodeImpl<ID> node, byte level) {
                         var initialCount = spatialIndex.size();
                         var entityCount = node.getEntityCount();
 
@@ -1020,10 +1038,12 @@ implements SpatialIndex<Key, ID, Content> {
      *
      * @return Stream of spatial nodes
      */
-    public Stream<NodeType> nodeStream() {
+    public Stream<SpatialIndex.SpatialNode<Key, ID>> nodeStream() {
         lock.readLock().lock();
         try {
-            return spatialIndex.values().stream().filter(node -> !node.isEmpty());
+            return spatialIndex.entrySet().stream()
+                    .filter(entry -> !entry.getValue().isEmpty())
+                    .map(entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
         } finally {
             lock.readLock().unlock();
         }
@@ -1034,12 +1054,12 @@ implements SpatialIndex<Key, ID, Content> {
      *
      * @return Stream of leaf nodes
      */
-    public Stream<NodeType> leafStream() {
+    public Stream<SpatialIndex.SpatialNode<Key, ID>> leafStream() {
         lock.readLock().lock();
         try {
             return spatialIndex.entrySet().stream()
                     .filter(entry -> !entry.getValue().isEmpty() && !hasChildren(entry.getKey()))
-                    .map(Map.Entry::getValue);
+                    .map(entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
         } finally {
             lock.readLock().unlock();
         }
@@ -1051,13 +1071,14 @@ implements SpatialIndex<Key, ID, Content> {
      * @param level The spatial level
      * @return Stream of nodes at the specified level
      */
-    public Stream<NodeType> levelStream(byte level) {
+    public Stream<SpatialIndex.SpatialNode<Key, ID>> levelStream(byte level) {
         lock.readLock().lock();
         try {
             return sortedSpatialIndices.stream()
                     .filter(index -> index.getLevel() == level)
-                    .map(spatialIndex::get)
-                    .filter(node -> node != null && !node.isEmpty());
+                    .map(index -> Map.entry(index, spatialIndex.get(index)))
+                    .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
+                    .map(entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds())));
         } finally {
             lock.readLock().unlock();
         }
@@ -1531,12 +1552,12 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     @Override
-    public Stream<SpatialNode<Key, ID>> nodes() {
+    public Stream<SpatialIndex.SpatialNode<Key, ID>> nodes() {
         lock.readLock().lock();
         try {
             // Must collect results inside lock to avoid concurrent modification
             var results = getSpatialIndex().entrySet().stream().filter(entry -> !entry.getValue().isEmpty()).map(
-            entry -> new SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
+            entry -> new SpatialIndex.SpatialNode<>(entry.getKey(), new HashSet<>(entry.getValue().getEntityIds()))).collect(
             Collectors.toList());
             return results.stream();
         } finally {
@@ -1827,6 +1848,45 @@ implements SpatialIndex<Key, ID, Content> {
                 }
             });
 
+            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
+            // This is because a spanning entity might be stored in nodes outside the ray's path
+            // but still have bounds that intersect with the ray
+            if (spanningPolicy.isSpanningEnabled()) {
+                // Check all entities with bounds
+                for (var entry : spatialIndex.entrySet()) {
+                    for (var entityId : entry.getValue().getEntityIds()) {
+                        if (!visitedEntities.contains(entityId)) {
+                            var entityBounds = entityManager.getEntityBounds(entityId);
+                            if (entityBounds != null) {
+                                // Check if ray intersects the entity bounds
+                                var distance = SpatialDistanceCalculator.rayIntersectsAABB(
+                                    ray, 
+                                    entityBounds.getMinX(), entityBounds.getMinY(), entityBounds.getMinZ(),
+                                    entityBounds.getMaxX(), entityBounds.getMaxY(), entityBounds.getMaxZ()
+                                );
+                                
+                                if (distance >= 0 && ray.isWithinDistance(distance)) {
+                                    visitedEntities.add(entityId);
+                                    var content = entityManager.getEntityContent(entityId);
+                                    var entityPos = getCachedEntityPosition(entityId);
+                                    
+                                    // Calculate intersection point
+                                    var intersectionPoint = ray.pointAt(distance);
+                                    
+                                    // Calculate normal (simplified - towards ray origin)
+                                    var normal = new Vector3f();
+                                    normal.sub(ray.origin(), intersectionPoint);
+                                    normal.normalize();
+                                    
+                                    intersections.add(
+                                        new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, entityBounds));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Sort by distance
             Collections.sort(intersections);
             return intersections;
@@ -1889,6 +1949,41 @@ implements SpatialIndex<Key, ID, Content> {
 
                         closest = new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, bounds);
                         closestDistance = distance;
+                    }
+                }
+            }
+
+            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
+            // This is needed for finding spanning entities stored in nodes outside the ray's path
+            if (spanningPolicy.isSpanningEnabled()) {
+                // Check all entities with bounds to find potentially closer spanning entities
+                for (var entry : spatialIndex.entrySet()) {
+                    for (var entityId : entry.getValue().getEntityIds()) {
+                        if (!visitedEntities.contains(entityId)) {
+                            var entityBounds = entityManager.getEntityBounds(entityId);
+                            if (entityBounds != null) {
+                                // Check if ray intersects the entity bounds
+                                var distance = SpatialDistanceCalculator.rayIntersectsAABB(
+                                    ray, 
+                                    entityBounds.getMinX(), entityBounds.getMinY(), entityBounds.getMinZ(),
+                                    entityBounds.getMaxX(), entityBounds.getMaxY(), entityBounds.getMaxZ()
+                                );
+                                
+                                if (distance >= 0 && distance < closestDistance && ray.isWithinDistance(distance)) {
+                                    visitedEntities.add(entityId);
+                                    var content = entityManager.getEntityContent(entityId);
+                                    var entityPos = getCachedEntityPosition(entityId);
+                                    var intersectionPoint = ray.pointAt(distance);
+                                    
+                                    var normal = new Vector3f();
+                                    normal.sub(ray.origin(), intersectionPoint);
+                                    normal.normalize();
+                                    
+                                    closest = new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, entityBounds);
+                                    closestDistance = distance;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1958,6 +2053,41 @@ implements SpatialIndex<Key, ID, Content> {
                     }
                 }
             });
+
+            // IMPORTANT: For spanning entities, we also need to check ALL entities that have bounds
+            // This is needed for finding spanning entities stored in nodes outside the ray's path
+            if (spanningPolicy.isSpanningEnabled()) {
+                // Check all entities with bounds that might be within max distance
+                for (var entry : spatialIndex.entrySet()) {
+                    for (var entityId : entry.getValue().getEntityIds()) {
+                        if (!visitedEntities.contains(entityId)) {
+                            var entityBounds = entityManager.getEntityBounds(entityId);
+                            if (entityBounds != null) {
+                                // Check if ray intersects the entity bounds
+                                var distance = SpatialDistanceCalculator.rayIntersectsAABB(
+                                    boundedRay, 
+                                    entityBounds.getMinX(), entityBounds.getMinY(), entityBounds.getMinZ(),
+                                    entityBounds.getMaxX(), entityBounds.getMaxY(), entityBounds.getMaxZ()
+                                );
+                                
+                                if (distance >= 0 && distance <= maxDistance) {
+                                    visitedEntities.add(entityId);
+                                    var content = entityManager.getEntityContent(entityId);
+                                    var entityPos = getCachedEntityPosition(entityId);
+                                    var intersectionPoint = boundedRay.pointAt(distance);
+                                    
+                                    var normal = new Vector3f();
+                                    normal.sub(boundedRay.origin(), intersectionPoint);
+                                    normal.normalize();
+                                    
+                                    intersections.add(
+                                        new RayIntersection<>(entityId, content, distance, intersectionPoint, normal, entityBounds));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             Collections.sort(intersections);
             return intersections;
@@ -2343,7 +2473,7 @@ implements SpatialIndex<Key, ID, Content> {
     /**
      * Clean up empty nodes from the spatial index
      */
-    protected void cleanupEmptyNode(Key spatialIndex, NodeType node) {
+    protected void cleanupEmptyNode(Key spatialIndex, SpatialNodeImpl<ID> node) {
         if (node.isEmpty() && !hasChildren(spatialIndex)) {
             getSpatialIndex().remove(spatialIndex);
             onNodeRemoved(spatialIndex);
@@ -2363,7 +2493,9 @@ implements SpatialIndex<Key, ID, Content> {
     /**
      * Create a new node instance
      */
-    protected abstract NodeType createNode();
+    protected SpatialNodeImpl<ID> createNode() {
+        return new SpatialNodeImpl<>(maxEntitiesPerNode);
+    }
 
     /**
      * Create a spatial volume from bounds for filtering
@@ -2433,10 +2565,10 @@ implements SpatialIndex<Key, ID, Content> {
      * @param nodePredicate predicate to test each node
      * @return list of node indices that match the predicate, in SFC order
      */
-    protected List<Key> filterNodesInSFCOrder(java.util.function.BiPredicate<Key, NodeType> nodePredicate) {
+    protected List<Key> filterNodesInSFCOrder(java.util.function.BiPredicate<Key, SpatialNodeImpl<ID>> nodePredicate) {
         var filteredNodes = new ArrayList<Key>();
         for (var nodeIndex : sortedSpatialIndices) {
-            NodeType node = spatialIndex.get(nodeIndex);
+            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty() && nodePredicate.test(nodeIndex, node)) {
                 filteredNodes.add(nodeIndex);
             }
@@ -2709,7 +2841,7 @@ implements SpatialIndex<Key, ID, Content> {
     /**
      * Get the spatial index storage map
      */
-    protected Map<Key, NodeType> getSpatialIndex() {
+    protected Map<Key, SpatialNodeImpl<ID>> getSpatialIndex() {
         return spatialIndex;
     }
 
@@ -2736,7 +2868,7 @@ implements SpatialIndex<Key, ID, Content> {
     /**
      * Hook for subclasses to handle node subdivision
      */
-    protected void handleNodeSubdivision(Key spatialIndex, byte level, NodeType node) {
+    protected void handleNodeSubdivision(Key spatialIndex, byte level, SpatialNodeImpl<ID> node) {
         // Default: no subdivision. Subclasses can override
     }
 
@@ -3020,7 +3152,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Key, ID> entityProcessor) {
         for (var nodeIndex : sortedSpatialIndices) {
-            NodeType node = spatialIndex.get(nodeIndex);
+            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty()) {
                 for (ID entityId : node.getEntityIds()) {
                     entityProcessor.accept(nodeIndex, entityId);
@@ -3035,9 +3167,9 @@ implements SpatialIndex<Key, ID, Content> {
      *
      * @param nodeProcessor function to process each non-empty node
      */
-    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Key, NodeType> nodeProcessor) {
+    protected void processNodesInSFCOrder(java.util.function.BiConsumer<Key, SpatialNodeImpl<ID>> nodeProcessor) {
         for (var nodeIndex : sortedSpatialIndices) {
-            NodeType node = spatialIndex.get(nodeIndex);
+            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty()) {
                 nodeProcessor.accept(nodeIndex, node);
             }
@@ -3188,7 +3320,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param includeIntersecting whether to include intersecting nodes
      * @return stream of node entries that match the query
      */
-    protected Stream<Map.Entry<Key, NodeType>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
+    protected Stream<Map.Entry<Key, SpatialNodeImpl<ID>>> spatialRangeQuery(VolumeBounds bounds, boolean includeIntersecting) {
         // Get range of spatial indices that could contain or intersect the bounds
         var candidateIndices = getSpatialIndexRange(bounds);
 
@@ -3629,13 +3761,13 @@ implements SpatialIndex<Key, ID, Content> {
         }
 
         // Get node
-        NodeType node = spatialIndex.get(nodeIndex);
+        SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
         if (node == null || node.isEmpty()) {
             return;
         }
 
         // Create SpatialNode wrapper
-        var spatialNode = new SpatialNode<>(nodeIndex, new HashSet<>(node.getEntityIds()));
+        var spatialNode = new SpatialIndex.SpatialNode<>(nodeIndex, new HashSet<>(node.getEntityIds()));
 
         // Mark as visited
         context.markVisited(nodeIndex);
@@ -3717,7 +3849,7 @@ implements SpatialIndex<Key, ID, Content> {
 
         @Override
         public BalancingAction checkNodeBalance(Key nodeIndex) {
-            NodeType node = spatialIndex.get(nodeIndex);
+            SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node == null) {
                 return BalancingAction.NONE;
             }
@@ -3822,7 +3954,7 @@ implements SpatialIndex<Key, ID, Content> {
             var counts = new int[siblings.size()];
             var i = 0;
             for (var sibling : siblings) {
-                NodeType node = spatialIndex.get(sibling);
+                SpatialNodeImpl<ID> node = spatialIndex.get(sibling);
                 counts[i++] = node != null ? node.getEntityCount() : 0;
             }
             return counts;
@@ -3836,7 +3968,7 @@ implements SpatialIndex<Key, ID, Content> {
 
             int modifications = 0;
 
-            NodeType node = spatialIndex.get(rootNodeIndex);
+            SpatialNodeImpl<ID> node = spatialIndex.get(rootNodeIndex);
             if (node == null) {
                 return 0;
             }
@@ -3891,9 +4023,11 @@ implements SpatialIndex<Key, ID, Content> {
     private boolean performKNNExpandingRadiusSearch(Point3f queryPoint, int k, float maxDistance,
                                                    PriorityQueue<EntityDistance<ID>> candidates,
                                                    Set<ID> addedToCandidates) {
-        var searchRadius = Math.min(maxDistance, getCellSizeAtLevel(maxDepth));
+        // Start with a reasonable initial radius - at least the cell size at a mid-level
+        var minInitialRadius = getCellSizeAtLevel((byte)Math.min(maxDepth, 15));
+        var searchRadius = Math.min(maxDistance, Math.max(minInitialRadius, getCellSizeAtLevel(maxDepth)));
         var searchExpansions = 0;
-        final var maxExpansions = 5; // Limit search expansion
+        final var maxExpansions = 10; // Allow more expansions to reach distant entities
         
         while (candidates.size() < k && searchRadius <= maxDistance && searchExpansions < maxExpansions) {
             var foundNewEntities = searchKNNInRadius(queryPoint, searchRadius, maxDistance, k, 
@@ -3952,8 +4086,8 @@ implements SpatialIndex<Key, ID, Content> {
                             
                             // Keep only k elements
                             if (candidates.size() > k) {
-                                var removed = candidates.poll();
-                                addedToCandidates.remove(removed.entityId());
+                                candidates.poll();
+                                // Don't remove from addedToCandidates to prevent re-adding
                             }
                         }
                     }

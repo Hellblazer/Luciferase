@@ -1,28 +1,25 @@
-# Architecture Summary - July 6, 2025 (Updated)
+# Lucien Architecture Summary
 
 ## Purpose
 
-This document provides a high-level summary of the Luciferase lucien module architecture as of July 2025. For
-detailed information, see the comprehensive documentation in this directory.
+This document provides a high-level summary of the Luciferase lucien module architecture. For detailed information, see the comprehensive documentation in this directory.
 
 ## Current State
 
 The lucien module provides spatial indexing through a unified architecture supporting both octree and tetrahedral
-decomposition. Following major consolidation in January 2025, the module uses inheritance to maximize code reuse while
-maintaining the unique characteristics of each approach. As of July 2025, all planned enhancements have been completed,
-including the critical S0-S5 tetrahedral decomposition that provides 100% geometric containment.
+decomposition. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each approach. All core features are complete, including S0-S5 tetrahedral decomposition with 100% geometric containment.
 
-**Total Classes: 98 Java files** organized across 8 packages
+**Total Classes: 96 Java files** organized across 8 packages (after Phase 6.2 node consolidation)
 
 ## Package Overview
 
-For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_2025.md](./LUCIEN_ARCHITECTURE_2025.md).
+For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.md](./LUCIEN_ARCHITECTURE.md).
 
-- **Root Package (27 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
+- **Root Package (26 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
-- **Octree Package (5 classes)**: Morton curve-based cubic spatial decomposition
-- **Tetree Package (36 classes)**: Tetrahedral spatial decomposition with extensive optimizations and lazy evaluation
-- **Balancing Package (3 classes)**: Tree balancing strategies
+- **Octree Package (4 classes)**: Morton curve-based cubic spatial decomposition
+- **Tetree Package (31 classes)**: Tetrahedral spatial decomposition with extensive optimizations and lazy evaluation
+- **Balancing Package (4 classes)**: Tree balancing strategies
 - **Collision Package (12 classes)**: Comprehensive collision detection system
 - **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
 - **Index Package (1 class)**: Additional indexing utilities
@@ -33,9 +30,9 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE_
 
 ```
 SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
-  └── AbstractSpatialIndex<Key, ID, Content, NodeType> (base class with ~90% shared functionality)
-      ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content, OctreeNode<ID>>
-      └── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content, TetreeNodeImpl<ID>>
+  └── AbstractSpatialIndex<Key, ID, Content> (base class with ~95% shared functionality)
+      ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
+      └── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
 ```
 
 ### Major Features
@@ -79,15 +76,14 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 
 ### Primary References
 
-- **[LUCIEN_ARCHITECTURE_2025.md](./LUCIEN_ARCHITECTURE_2025.md)**: Comprehensive architecture guide
+- **[LUCIEN_ARCHITECTURE.md](./LUCIEN_ARCHITECTURE.md)**: Comprehensive architecture guide
 - **[SPATIAL_INDEX_CONSOLIDATION.md](./archived/SPATIAL_INDEX_CONSOLIDATION.md)**: January 2025 consolidation details
 
 ### API Documentation
 
 #### Core APIs
 
-- **[BASIC_OPERATIONS_API.md](./BASIC_OPERATIONS_API.md)**: Fundamental operations (insert, lookup, update, remove)
-- **[ENTITY_MANAGEMENT_API.md](./ENTITY_MANAGEMENT_API.md)**: Entity lifecycle, bounds, and spanning
+- **[CORE_SPATIAL_INDEX_API.md](./CORE_SPATIAL_INDEX_API.md)**: Fundamental operations (insert, lookup, update, remove)
 - **[K_NEAREST_NEIGHBORS_API.md](./K_NEAREST_NEIGHBORS_API.md)**: Proximity queries and spatial clustering
 
 #### Advanced Features
@@ -102,8 +98,8 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 #### Performance
 
 - **[BULK_OPERATIONS_API.md](./BULK_OPERATIONS_API.md)**: High-performance batch operations
-- **[PERFORMANCE_TUNING_GUIDE.md](./PERFORMANCE_TUNING_GUIDE.md)**: Optimization strategies
-- **[SPATIAL_INDEX_OPTIMIZATION_GUIDE.md](./SPATIAL_INDEX_OPTIMIZATION_GUIDE.md)**: Implementation optimizations
+- **[SPATIAL_INDEX_PERFORMANCE_GUIDE.md](./SPATIAL_INDEX_PERFORMANCE_GUIDE.md)**: Performance tuning guide
+- **[PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md)**: Current performance baseline
 
 ### Implementation Guides
 
@@ -161,10 +157,8 @@ After V2 tmIndex, parent cache, and efficient child computation:
 - **Mitigation**: Batch operations where Tetree excels due to better spatial locality
 
 For detailed performance analysis, see:
-- [PERFORMANCE_OPTIMIZATION_HISTORY.md](./PERFORMANCE_OPTIMIZATION_HISTORY.md) - Complete optimization timeline
-- [PERFORMANCE_REALITY_JUNE_2025.md](./PERFORMANCE_REALITY_JUNE_2025.md) - Initial performance analysis
-- [PERFORMANCE_SUMMARY_JUNE_28_2025.md](./PERFORMANCE_SUMMARY_JUNE_28_2025.md) - V2 optimization results
-- [PERFORMANCE_SUMMARY_JULY_2025.md](./PERFORMANCE_SUMMARY_JULY_2025.md) - Efficient child computation
+- [PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md) - Current performance baseline
+- [PERFORMANCE_INDEX.md](./PERFORMANCE_INDEX.md) - Guide to all performance documentation
 
 ## Testing Coverage
 
@@ -181,39 +175,38 @@ For detailed performance analysis, see:
 For usage examples and detailed implementation guidance, refer to the specific API documentation files listed above and
 the comprehensive architecture guide.
 
-## Recent Updates
+## Recent Architecture Changes
 
-### Geometric Subdivision Implementation (June 28, 2025)
+### Phase 6.2 Cleanup (July 10, 2025)
 
-- **Feature**: Added `geometricSubdivide()` method to Tet class for true geometric subdivision
-- **Solution**: Created `subdivisionCoordinates()` method using V3 = anchor + (h,h,h) for compatibility
-- **Performance**: ~0.04 μs per operation, 5.5x faster than 8 individual child() calls
-- **Benefit**: 100% geometric containment of children within parent in subdivision space
-- **Impact**: No breaking changes to existing coordinate system
+1. **Node Class Consolidation**: 
+   - Eliminated `TetreeNodeImpl` and `OctreeNode` wrapper classes
+   - Created unified `SpatialNodeImpl<ID>` used by both implementations
+   - Reduced generic parameters from 4 to 3 throughout the codebase
+   - Result: Simpler architecture, reduced memory overhead
 
-### Bug Fixes (June 24, 2025)
+2. **K-NN Multi-Level Fix**:
+   - Fixed k-NN search to properly find entities at different levels
+   - Improved search radius expansion algorithm
+   - Increased initial search radius and max expansions
 
-1. **Collision Detection**: Fixed control flow in forEach loops (return → continue)
-2. **Neighbor Finding**: Fixed distance calculations (centroids → entity positions)
-3. **SpatialKey Implementation**: Resolved Tetree's non-unique SFC index issue
+3. **Spanning Entity Queries**:
+   - Fixed issue where large entities weren't found by small query regions
+   - Updated all query methods to check entities when spanning is enabled
 
-### Efficient Child Computation (July 5, 2025)
+### Performance Optimizations (July 2025)
 
-1. **Feature**: Added efficient single-child methods to BeySubdivision
-2. **Methods**: `getBeyChild()`, `getTMChild()`, `getMortonChild()`
-3. **Performance**: ~3x faster than computing all children (17.10 ns per call)
-4. **Integration**: `Tet.child()` now uses the efficient implementation
-5. **Documentation**: Identified t8code partition limitation, disabled affected tests
+1. **Lazy Evaluation**: 99.5% memory reduction for large range queries
+2. **Parent Caching**: 17.3x speedup for parent() operations  
+3. **V2 tmIndex**: 4x speedup over original implementation
+4. **Bulk Operations**: 15.5x speedup for batch insertion
 
 ### S0-S5 Tetrahedral Decomposition (July 6, 2025)
 
-1. **Problem**: Entity visualization showed spheres outside tetrahedra (35% containment rate)
-2. **Root Cause**: `Tet.coordinates()` using legacy ei/ej algorithm instead of standard S0-S5
-3. **Solution**: Implemented correct S0-S5 decomposition where 6 tetrahedra completely tile a cube
-4. **Results**: 100% containment rate, complete cube tiling with no gaps/overlaps
-5. **Impact**: Visualization now correctly shows entities within their containing tetrahedra
+- Implemented correct S0-S5 decomposition for 100% containment
+- Complete cube tiling with no gaps/overlaps
+- Fixed visualization to show entities within their tetrahedra
 
 ---
 
-*This summary reflects the actual implemented architecture as of July 6, 2025. For historical context about planned but
-unimplemented features, see the archived/ directory.*
+*This summary reflects the current implemented architecture. For historical context, see the archived/ directory.*

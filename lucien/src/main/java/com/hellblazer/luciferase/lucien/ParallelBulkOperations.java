@@ -37,10 +37,10 @@ import java.util.stream.IntStream;
  * @param <NodeType> The type of spatial node used by the implementation
  * @author hal.hildebrand
  */
-public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>> {
+public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
 
     // Dependencies
-    private final AbstractSpatialIndex<Key, ID, Content, NodeType> spatialIndex;
+    private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
     private final BulkOperationProcessor<Key, ID, Content>         bulkProcessor;
     private final ParallelConfig                                   config;
     // Thread pools
@@ -53,7 +53,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
     private final Map<String, Long>                                operationTimings    = new ConcurrentHashMap<>();
     private final Map<String, Integer>                             operationCounts     = new ConcurrentHashMap<>();
 
-    public ParallelBulkOperations(AbstractSpatialIndex<Key, ID, Content, NodeType> spatialIndex,
+    public ParallelBulkOperations(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                                   BulkOperationProcessor<Key, ID, Content> bulkProcessor, ParallelConfig config) {
         this.spatialIndex = spatialIndex;
         this.bulkProcessor = bulkProcessor;

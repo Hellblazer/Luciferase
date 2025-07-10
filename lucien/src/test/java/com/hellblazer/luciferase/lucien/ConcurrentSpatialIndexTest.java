@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -34,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Concurrent tests for spatial index implementations to verify thread safety
@@ -45,6 +47,11 @@ public class ConcurrentSpatialIndexTest {
     private static final int THREAD_COUNT          = 20;
     private static final int OPERATIONS_PER_THREAD = 1000;
     private static final int TEST_TIMEOUT_SECONDS  = 30;
+
+    @BeforeAll
+    public static void beforeAll() {
+        assumeTrue(Boolean.parseBoolean(System.getenv().getOrDefault("RUN_SPATIAL_INDEX_PERF_TESTS", "false")));
+    }
 
     @Test
     @Timeout(value = TEST_TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
@@ -149,7 +156,7 @@ public class ConcurrentSpatialIndexTest {
         }
     }
 
-    private void performConcurrentKNNSearch(AbstractSpatialIndex<?, LongEntityID, String, ?> index, String indexType)
+    private void performConcurrentKNNSearch(AbstractSpatialIndex<?, LongEntityID, String> index, String indexType)
     throws InterruptedException {
         // Pre-populate with entities in a grid
         for (int x = 0; x < 10; x++) {

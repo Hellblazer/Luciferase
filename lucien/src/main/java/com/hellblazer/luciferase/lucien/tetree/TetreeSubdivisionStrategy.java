@@ -71,7 +71,7 @@ extends SubdivisionStrategy<TetreeKey<? extends TetreeKey>, ID, Content> {
     @Override
     public Set<TetreeKey<?>> calculateTargetNodes(TetreeKey<? extends TetreeKey> parentIndex, byte parentLevel,
                                                   EntityBounds entityBounds,
-                                                  AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content, ?> spatialIndex) {
+                                                  AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> spatialIndex) {
         Set<TetreeKey<?>> targetNodes = new HashSet<>();
 
         if (entityBounds == null) {

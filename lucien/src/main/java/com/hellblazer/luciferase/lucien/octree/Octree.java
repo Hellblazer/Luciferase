@@ -39,7 +39,7 @@ import java.util.stream.Stream;
  * @param <Content> The type of content stored
  * @author hal.hildebrand
  */
-public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content, OctreeNode<ID>> {
+public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content> {
 
     // Default configuration constants
     private static final int DEFAULT_MAX_ENTITIES_PER_NODE = 10;
@@ -76,7 +76,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    public SpatialNode<MortonKey, ID> enclosing(Tuple3i point, byte level) {
+    public SpatialIndex.SpatialNode<MortonKey, ID> enclosing(Tuple3i point, byte level) {
         var position = new Point3f(point.x, point.y, point.z);
 
         // Start at the specified level and search down to find entities
@@ -84,7 +84,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var mortonIndex = new MortonKey(Constants.calculateMortonIndex(position, searchLevel), searchLevel);
             var node = spatialIndex.get(mortonIndex);
             if (node != null && !node.isEmpty()) {
-                return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+                return new SpatialIndex.SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
             }
         }
 
@@ -92,7 +92,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     }
 
     @Override
-    public SpatialNode<MortonKey, ID> enclosing(Spatial volume) {
+    public SpatialIndex.SpatialNode<MortonKey, ID> enclosing(Spatial volume) {
         var bounds = getVolumeBounds(volume);
         if (bounds == null) {
             return null;
@@ -109,7 +109,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var mortonIndex = new MortonKey(Constants.calculateMortonIndex(center, searchLevel), searchLevel);
             var node = spatialIndex.get(mortonIndex);
             if (node != null && !node.isEmpty()) {
-                return new SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
+                return new SpatialIndex.SpatialNode<>(mortonIndex, new HashSet<>(node.getEntityIds()));
             }
         }
 
@@ -159,11 +159,6 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     @Override
     protected SubdivisionStrategy<MortonKey, ID, Content> createDefaultSubdivisionStrategy() {
         return OctreeSubdivisionStrategy.balanced();
-    }
-
-    @Override
-    protected OctreeNode<ID> createNode() {
-        return new OctreeNode<>(maxEntitiesPerNode);
     }
 
     @Override
@@ -382,7 +377,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
 
     @Override
-    protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, OctreeNode<ID> parentNode) {
+    protected void handleNodeSubdivision(MortonKey parentMorton, byte parentLevel, SpatialNodeImpl<ID> parentNode) {
         // Can't subdivide beyond max depth
         if (parentLevel >= maxDepth) {
             return;
@@ -427,7 +422,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
             var childEntities = entry.getValue();
 
             if (!childEntities.isEmpty()) {
-                OctreeNode<ID> childNode;
+                SpatialNodeImpl<ID> childNode;
 
                 if (childMorton == parentMorton) {
                     // Special case: child has same Morton code as parent
@@ -544,7 +539,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
 
     // Package-private getters for OctreeBalancer
     @Override
-    protected Map<MortonKey, OctreeNode<ID>> getSpatialIndex() {
+    protected Map<MortonKey, SpatialNodeImpl<ID>> getSpatialIndex() {
         return spatialIndex;
     }
     

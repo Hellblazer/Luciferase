@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.visitor;
 
-import com.hellblazer.luciferase.lucien.SpatialIndex.SpatialNode;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
@@ -66,7 +66,7 @@ public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, C
      * @param level      The depth level of this node
      * @param childCount Number of child nodes that were visited
      */
-    default void leaveNode(SpatialNode<Key, ID> node, int level, int childCount) {
+    default void leaveNode(SpatialIndex.SpatialNode<Key, ID> node, int level, int childCount) {
         // Default: do nothing
     }
 
@@ -99,5 +99,5 @@ public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, C
      * @param parentIndex The parent node's spatial index (null for root)
      * @return true to continue traversing children, false to skip children
      */
-    boolean visitNode(SpatialNode<Key, ID> node, int level, Key parentIndex);
+    boolean visitNode(SpatialIndex.SpatialNode<Key, ID> node, int level, Key parentIndex);
 }

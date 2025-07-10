@@ -45,7 +45,7 @@ public abstract class SubdivisionStrategy<Key extends SpatialKey<Key>, ID extend
      * Calculate which child nodes an entity should belong to after subdivision
      */
     public abstract Set<Key> calculateTargetNodes(Key parentIndex, byte parentLevel, EntityBounds entityBounds,
-                                                  AbstractSpatialIndex<Key, ID, Content, ?> spatialIndex);
+                                                  AbstractSpatialIndex<Key, ID, Content> spatialIndex);
 
     /**
      * Determine the subdivision strategy for a given context

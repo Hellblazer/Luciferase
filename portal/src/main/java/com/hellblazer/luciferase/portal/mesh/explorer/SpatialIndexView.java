@@ -55,7 +55,7 @@ public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID extends E
     protected final Group overlayGroup = new Group();
 
     // Data structures
-    protected final AbstractSpatialIndex<Key, ID, Content, ?> spatialIndex;
+    protected final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
     protected final Map<Key, Node>                            nodeVisuals         = new ConcurrentHashMap<>();
     protected final Map<ID, Node>                             entityVisuals       = new ConcurrentHashMap<>();
     protected final Map<Integer, Material>                    levelMaterials      = new HashMap<>();
@@ -81,7 +81,7 @@ public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID extends E
      *
      * @param spatialIndex The spatial index to visualize
      */
-    protected SpatialIndexView(AbstractSpatialIndex<Key, ID, Content, ?> spatialIndex) {
+    protected SpatialIndexView(AbstractSpatialIndex<Key, ID, Content> spatialIndex) {
         this.spatialIndex = spatialIndex;
         initializeScene();
         initializeMaterials();

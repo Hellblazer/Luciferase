@@ -38,17 +38,17 @@ import java.util.function.Supplier;
  * @param <NodeType> The type of spatial node used by the implementation
  * @author hal.hildebrand
  */
-public class FineGrainedLockingStrategy<ID extends EntityID, Content, NodeType extends SpatialNodeStorage<ID>> {
+public class FineGrainedLockingStrategy<ID extends EntityID, Content> {
 
     // Lock storage: index -> NodeLock
     private final ConcurrentHashMap<Long, NodeLock>              nodeLocks = new ConcurrentHashMap<>();
     private final LockingConfig                                  config;
-    private final AbstractSpatialIndex<?, ID, Content, NodeType> spatialIndex;
+    private final AbstractSpatialIndex<?, ID, Content> spatialIndex;
     // Lock ordering for deadlock prevention
     private final ThreadLocal<java.util.Set<Long>>               heldLocks = ThreadLocal.withInitial(
     java.util.HashSet::new);
 
-    public FineGrainedLockingStrategy(AbstractSpatialIndex<?, ID, Content, NodeType> spatialIndex,
+    public FineGrainedLockingStrategy(AbstractSpatialIndex<?, ID, Content> spatialIndex,
                                       LockingConfig config) {
         this.spatialIndex = spatialIndex;
         this.config = config;
