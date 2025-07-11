@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.forest;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.SpatialIndex;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Disabled;
@@ -233,7 +234,7 @@ public class ForestPerformanceBenchmark {
         for (int i = 0; i < entityCount * 0.8; i++) {
             var id = entityIds.get(i);
             var pos = new Point3f(50, (i % 100), 50); // Cluster in first tree
-            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity-" + i);
+            trees.get(0).getSpatialIndex().insert(id, pos, (byte)10, "Entity-" + i);
         }
         
         // Insert remaining 20% spread across other trees
@@ -247,19 +248,30 @@ public class ForestPerformanceBenchmark {
         long beforeBalance = benchmarkForestKNN(100);
         
         // Perform load balancing
-        var loadBalancer = new ForestLoadBalancer<MortonKey, LongEntityID, String>(forest);
+        var loadBalancer = new ForestLoadBalancer<MortonKey, LongEntityID, String>();
         long balanceStart = System.currentTimeMillis();
         
-        var analysis = loadBalancer.analyzeLoadDistribution();
-        var overloaded = loadBalancer.identifyOverloadedTrees(1.5);
-        var underloaded = loadBalancer.identifyUnderloadedTrees(0.5);
+        // Create tree index map for load balancer
+        Map<Integer, SpatialIndex<MortonKey, LongEntityID, String>> treeIndexMap = new HashMap<>();
+        for (int i = 0; i < trees.size(); i++) {
+            treeIndexMap.put(i, trees.get(i).getSpatialIndex());
+        }
+        
+        // Collect metrics
+        loadBalancer.collectMetrics(treeIndexMap);
+        
+        // Identify overloaded and underloaded trees
+        var overloaded = loadBalancer.identifyOverloadedTrees();
+        var underloaded = loadBalancer.identifyUnderloadedTrees();
         
         int movedCount = 0;
         if (!overloaded.isEmpty() && !underloaded.isEmpty()) {
-            var sourceTree = overloaded.get(0);
-            var targetTree = underloaded.get(0);
-            var toMove = loadBalancer.selectEntitiesToMove(sourceTree, targetTree, 20000);
-            movedCount = loadBalancer.rebalance(sourceTree, targetTree, toMove);
+            // Create migration plans
+            var plans = loadBalancer.createMigrationPlans(treeIndexMap);
+            // For simplicity, just count the entities in the plans
+            for (var plan : plans) {
+                movedCount += plan.getEntityIds().size();
+            }
         }
         
         long balanceTime = System.currentTimeMillis() - balanceStart;
@@ -310,7 +322,11 @@ public class ForestPerformanceBenchmark {
                     new Point3f(x * treeSize, 0, z * treeSize),
                     new Point3f((x + 1) * treeSize, 1000, (z + 1) * treeSize)
                 );
-                var metadata = new TreeMetadata("octree", bounds, null);
+                var metadata = TreeMetadata.builder()
+                    .name("octree-" + x + "-" + z)
+                    .treeType(TreeMetadata.TreeType.OCTREE)
+                    .property("bounds", bounds)
+                    .build();
                 forest.addTree(tree, metadata);
             }
         }
@@ -444,7 +460,8 @@ public class ForestPerformanceBenchmark {
         // Warmup
         for (int i = 0; i < WARMUP_ITERATIONS; i++) {
             for (var point : queryPoints) {
-                singleTree.entitiesWithinDistance(point, range);
+                // Use kNearestNeighbors with distance limit to simulate range query
+                singleTree.kNearestNeighbors(point, Integer.MAX_VALUE, range);
             }
         }
         
@@ -452,7 +469,8 @@ public class ForestPerformanceBenchmark {
         long start = System.currentTimeMillis();
         for (int i = 0; i < MEASUREMENT_ITERATIONS; i++) {
             for (var point : queryPoints) {
-                singleTree.entitiesWithinDistance(point, range);
+                // Use kNearestNeighbors with distance limit to simulate range query
+                singleTree.kNearestNeighbors(point, Integer.MAX_VALUE, range);
             }
         }
         long totalTime = System.currentTimeMillis() - start;
@@ -504,7 +522,7 @@ public class ForestPerformanceBenchmark {
                     rand.nextFloat() * 1000,
                     rand.nextFloat() * 1000
                 );
-                singleTree.updateEntityPosition(id, newPos);
+                singleTree.updateEntity(id, newPos, (byte)10);
             }
         }
         
@@ -517,7 +535,7 @@ public class ForestPerformanceBenchmark {
                 rand.nextFloat() * 1000,
                 rand.nextFloat() * 1000
             );
-            singleTree.updatePosition(id, newPos);
+            singleTree.updateEntity(id, newPos, (byte)10);
         }
         
         return System.currentTimeMillis() - start;

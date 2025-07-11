@@ -519,6 +519,11 @@ public class GhostZoneManager<Key extends SpatialKey<Key>, ID extends EntityID, 
                                  float ghostZoneWidth) {
         var targetBounds = targetTree.getGlobalBounds();
         
+        // If target tree has no bounds yet, cannot determine if in ghost zone
+        if (targetBounds == null) {
+            return false;
+        }
+        
         // Use entity bounds if available, otherwise treat as point
         if (entityBounds != null) {
             return isAABBNearAABB(entityBounds, targetBounds, ghostZoneWidth);
@@ -528,6 +533,9 @@ public class GhostZoneManager<Key extends SpatialKey<Key>, ID extends EntityID, 
     }
     
     private boolean isPointNearAABB(Point3f point, EntityBounds aabb, float distance) {
+        if (aabb == null) {
+            return false;
+        }
         var min = aabb.getMin();
         var max = aabb.getMax();
         
@@ -546,6 +554,9 @@ public class GhostZoneManager<Key extends SpatialKey<Key>, ID extends EntityID, 
     }
     
     private boolean isAABBNearAABB(EntityBounds aabb1, EntityBounds aabb2, float distance) {
+        if (aabb1 == null || aabb2 == null) {
+            return false;
+        }
         var min1 = aabb1.getMin();
         var max1 = aabb1.getMax();
         var min2 = aabb2.getMin();

@@ -167,7 +167,7 @@ public class ForestEntityManager<Key extends SpatialKey<Key>, ID extends EntityI
             
             for (var tree : forest.getAllTrees()) {
                 var treeBounds = tree.getGlobalBounds();
-                if (containsPoint(treeBounds, position)) {
+                if (treeBounds != null && containsPoint(treeBounds, position)) {
                     // Prefer trees that tightly contain the position
                     var containment = calculateContainmentScore(treeBounds, position);
                     if (containment > bestContainment) {
@@ -181,12 +181,20 @@ public class ForestEntityManager<Key extends SpatialKey<Key>, ID extends EntityI
             if (bestTree == null) {
                 var closestDistance = Double.MAX_VALUE;
                 for (var tree : forest.getAllTrees()) {
-                    var distance = distanceToBounds(tree.getGlobalBounds(), position);
-                    if (distance < closestDistance) {
-                        closestDistance = distance;
-                        bestTree = tree;
+                    var treeBounds = tree.getGlobalBounds();
+                    if (treeBounds != null) {
+                        var distance = distanceToBounds(treeBounds, position);
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            bestTree = tree;
+                        }
                     }
                 }
+            }
+            
+            // If still no tree found (all have null bounds), use round-robin
+            if (bestTree == null && !forest.getAllTrees().isEmpty()) {
+                bestTree = forest.getAllTrees().get(0);
             }
             
             return bestTree != null ? bestTree.getTreeId() : null;
@@ -201,7 +209,8 @@ public class ForestEntityManager<Key extends SpatialKey<Key>, ID extends EntityI
             }
             
             // Check if position is still within current tree bounds
-            if (containsPoint(current.getGlobalBounds(), newPosition)) {
+            var currentBounds = current.getGlobalBounds();
+            if (currentBounds != null && containsPoint(currentBounds, newPosition)) {
                 return null;
             }
             

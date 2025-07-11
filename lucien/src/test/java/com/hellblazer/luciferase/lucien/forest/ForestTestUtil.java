@@ -44,10 +44,12 @@ public class ForestTestUtil {
         
         var treeId = forest.addTree(tree, metadata);
         
-        // Store bounds in tree node metadata
+        // Store bounds in tree node metadata and expand global bounds
         var treeNode = forest.getTree(treeId);
         if (treeNode != null && bounds != null) {
             treeNode.setMetadata("bounds", bounds);
+            // Initialize the tree's global bounds
+            treeNode.expandGlobalBounds(bounds);
         }
         
         return treeId;

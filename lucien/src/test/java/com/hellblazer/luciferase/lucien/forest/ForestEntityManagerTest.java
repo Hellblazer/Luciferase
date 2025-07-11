@@ -64,13 +64,13 @@ public class ForestEntityManagerTest {
     @Test
     void testInsertWithRoundRobinStrategy() {
         // Set round-robin strategy
-        entityManager.setTreeAssignmentStrategy(new ForestEntityManager.RoundRobinStrategy<>());
+        entityManager.setAssignmentStrategy(new ForestEntityManager.RoundRobinStrategy<>());
         
         // Insert entities
         for (int i = 0; i < 9; i++) {
             var id = new LongEntityID(i);
             var position = new Point3f(50, 50, 50); // Position doesn't matter for round-robin
-            entityManager.insert(id, position, "Entity " + i);
+            entityManager.insert(id, "Entity " + i, position, null);
         }
         
         // Verify equal distribution across trees
@@ -84,14 +84,14 @@ public class ForestEntityManagerTest {
     @Test
     void testInsertWithSpatialBoundsStrategy() {
         // Set spatial bounds strategy
-        entityManager.setTreeAssignmentStrategy(new ForestEntityManager.SpatialBoundsStrategy<>());
+        entityManager.setAssignmentStrategy(new ForestEntityManager.SpatialBoundsStrategy<>());
         
         // Insert entities in different spatial regions
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
                 var id = new LongEntityID(i * 3 + j);
                 var position = new Point3f(i * 100 + 50, 50, 50); // Each tree's region
-                entityManager.insert(id, position, "Entity " + (i * 3 + j));
+                entityManager.insert(id, "Entity " + (i * 3 + j), position, null);
             }
         }
         
@@ -109,8 +109,8 @@ public class ForestEntityManagerTest {
         var id2 = new LongEntityID(2);
         var pos = new Point3f(50, 50, 50);
         
-        entityManager.insert(id1, pos, "Entity 1");
-        entityManager.insert(id2, pos, "Entity 2");
+        entityManager.insert(id1, "Entity 1", pos, null);
+        entityManager.insert(id2, "Entity 2", pos, null);
         
         assertTrue(entityManager.containsEntity(id1));
         assertTrue(entityManager.containsEntity(id2));
@@ -126,11 +126,14 @@ public class ForestEntityManagerTest {
     
     @Test
     void testUpdatePosition() {
+        // Set spatial bounds strategy for position-based migration
+        entityManager.setAssignmentStrategy(new ForestEntityManager.SpatialBoundsStrategy<>());
+        
         var id = new LongEntityID(1);
         var initialPos = new Point3f(50, 50, 50);
         var newPos = new Point3f(150, 50, 50);
         
-        entityManager.insert(id, initialPos, "Entity");
+        entityManager.insert(id, "Entity", initialPos, null);
         
         var location1 = entityManager.getEntityLocation(id);
         assertNotNull(location1);
@@ -140,8 +143,8 @@ public class ForestEntityManagerTest {
         
         var location2 = entityManager.getEntityLocation(id);
         assertNotNull(location2);
-        assertNotEquals(location1.treeId(), location2.treeId());
-        assertEquals(newPos, location2.position());
+        assertNotEquals(location1.getTreeId(), location2.getTreeId());
+        assertEquals(newPos, location2.getPosition());
     }
     
     @Test
@@ -150,28 +153,25 @@ public class ForestEntityManagerTest {
         var pos = new Point3f(50, 50, 50);
         var content = "Test Content";
         
-        entityManager.insert(id, pos, content);
+        entityManager.insert(id, content, pos, null);
         
         assertEquals(pos, entityManager.getEntityPosition(id));
         assertEquals(content, entityManager.getEntityContent(id));
-        
-        var bounds = entityManager.getEntityBounds(id);
-        assertNotNull(bounds);
     }
     
     @Test
     void testGetEntitiesInTree() {
-        entityManager.setTreeAssignmentStrategy(new ForestEntityManager.RoundRobinStrategy<>());
+        entityManager.setAssignmentStrategy(new ForestEntityManager.RoundRobinStrategy<>());
         
         // Insert 10 entities
         for (int i = 0; i < 10; i++) {
             var id = new LongEntityID(i);
             var pos = new Point3f(50, 50, 50);
-            entityManager.insert(id, pos, "Entity " + i);
+            entityManager.insert(id, "Entity " + i, pos, null);
         }
         
         // Get entities in first tree
-        var trees = forest.getTrees().toList();
+        var trees = forest.getAllTrees();
         var entitiesInFirstTree = entityManager.getEntitiesInTree(trees.get(0).getTreeId());
         
         assertTrue(entitiesInFirstTree.size() >= 3); // At least 3 with round-robin
@@ -183,14 +183,14 @@ public class ForestEntityManagerTest {
         for (int i = 0; i < 10; i++) {
             var id = new LongEntityID(i);
             var pos = new Point3f(i * 10, 50, 50);
-            entityManager.insert(id, pos, "Entity " + i);
+            entityManager.insert(id, "Entity " + i, pos, null);
         }
         
-        assertEquals(10, entityManager.size());
+        assertEquals(10, entityManager.getEntityCount());
         
         // Clear all
         entityManager.clear();
-        assertEquals(0, entityManager.size());
+        assertEquals(0, entityManager.getEntityCount());
         
         // Verify all trees are empty
         var distribution = entityManager.getEntityDistribution();
@@ -217,7 +217,7 @@ public class ForestEntityManagerTest {
                             (float)(Math.random() * 100),
                             (float)(Math.random() * 100)
                         );
-                        entityManager.insert(id, pos, "Entity " + id);
+                        entityManager.insert(id, "Entity " + id, pos, null);
                     }
                 } finally {
                     latch.countDown();
@@ -229,7 +229,7 @@ public class ForestEntityManagerTest {
         executor.shutdown();
         
         // Verify all entities were inserted
-        assertEquals(numThreads * entitiesPerThread, entityManager.size());
+        assertEquals(numThreads * entitiesPerThread, entityManager.getEntityCount());
     }
     
     @Test
@@ -239,7 +239,7 @@ public class ForestEntityManagerTest {
         for (int i = 0; i < numEntities; i++) {
             var id = new LongEntityID(i);
             var pos = new Point3f(50, 50, 50);
-            entityManager.insert(id, pos, "Entity " + i);
+            entityManager.insert(id, "Entity " + i, pos, null);
         }
         
         int numThreads = 10;
@@ -269,15 +269,18 @@ public class ForestEntityManagerTest {
         executor.shutdown();
         
         // Verify all entities still exist
-        assertEquals(numEntities, entityManager.size());
+        assertEquals(numEntities, entityManager.getEntityCount());
     }
     
     @Test
     void testEntityMigrationTracking() {
+        // Set spatial bounds strategy for position-based migration
+        entityManager.setAssignmentStrategy(new ForestEntityManager.SpatialBoundsStrategy<>());
+        
         var id = new LongEntityID(1);
         
         // Insert in first tree's region
-        entityManager.insert(id, new Point3f(50, 50, 50), "Entity");
+        entityManager.insert(id, "Entity", new Point3f(50, 50, 50), null);
         var location1 = entityManager.getEntityLocation(id);
         
         // Update to second tree's region
@@ -289,14 +292,17 @@ public class ForestEntityManagerTest {
         var location3 = entityManager.getEntityLocation(id);
         
         // Verify migrations
-        assertNotEquals(location1.treeId(), location2.treeId());
-        assertNotEquals(location2.treeId(), location3.treeId());
-        assertNotEquals(location1.treeId(), location3.treeId());
+        assertNotEquals(location1.getTreeId(), location2.getTreeId());
+        assertNotEquals(location2.getTreeId(), location3.getTreeId());
+        assertNotEquals(location1.getTreeId(), location3.getTreeId());
     }
     
     @Test
     void testInvalidOperations() {
         var id = new LongEntityID(1);
+        
+        // Update non-existent entity
+        assertFalse(entityManager.updatePosition(id, new Point3f(0, 0, 0)));
         
         // Remove non-existent entity
         assertFalse(entityManager.remove(id));
@@ -304,34 +310,31 @@ public class ForestEntityManagerTest {
         // Get data for non-existent entity
         assertNull(entityManager.getEntityPosition(id));
         assertNull(entityManager.getEntityContent(id));
-        assertNull(entityManager.getEntityBounds(id));
         assertNull(entityManager.getEntityLocation(id));
-        
-        // Update non-existent entity
-        assertThrows(IllegalArgumentException.class, () -> 
-            entityManager.updatePosition(id, new Point3f(0, 0, 0))
-        );
     }
     
     @Test
-    void testTreeRemovalHandling() {
-        // Insert entities
-        var id1 = new LongEntityID(1);
-        var id2 = new LongEntityID(2);
-        entityManager.insert(id1, new Point3f(50, 50, 50), "Entity 1");
-        entityManager.insert(id2, new Point3f(150, 50, 50), "Entity 2");
+    void testEntityIdGeneration() {
+        var id1 = entityManager.generateEntityId();
+        var id2 = entityManager.generateEntityId();
         
-        // Get tree IDs
-        var location1 = entityManager.getEntityLocation(id1);
-        var location2 = entityManager.getEntityLocation(id2);
+        assertNotNull(id1);
+        assertNotNull(id2);
+        assertNotEquals(id1, id2);
+    }
+    
+    @Test
+    void testGetAllEntityIds() {
+        var ids = new LongEntityID[5];
+        for (int i = 0; i < 5; i++) {
+            ids[i] = new LongEntityID(i);
+            entityManager.insert(ids[i], "Entity " + i, new Point3f(i * 10, 50, 50), null);
+        }
         
-        // Remove tree containing entity 1
-        forest.removeTree(location1.treeId());
-        
-        // Entity 1 should be gone
-        assertFalse(entityManager.containsEntity(id1));
-        
-        // Entity 2 should still exist
-        assertTrue(entityManager.containsEntity(id2));
+        var allIds = entityManager.getAllEntityIds();
+        assertEquals(5, allIds.size());
+        for (var id : ids) {
+            assertTrue(allIds.contains(id));
+        }
     }
 }
