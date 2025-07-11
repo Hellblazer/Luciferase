@@ -1,0 +1,422 @@
+/*
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.lucien.forest;
+
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.entity.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.vecmath.Point3f;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive tests for DynamicForestManager
+ */
+public class DynamicForestManagerTest {
+    
+    private Forest<MortonKey, LongEntityID, String> forest;
+    private DynamicForestManager<MortonKey, LongEntityID, String> dynamicManager;
+    private SequentialLongIDGenerator idGenerator;
+    
+    @BeforeEach
+    void setUp() {
+        var config = ForestConfig.builder()
+            .withGhostZones(10.0f)
+            .build();
+        forest = new Forest<>(config);
+        idGenerator = new SequentialLongIDGenerator();
+        dynamicManager = new DynamicForestManager<>(forest);
+        
+        // Start with a single tree
+        var initialTree = new Octree<LongEntityID, String>(idGenerator);
+        var initialBounds = new EntityBounds(
+            new Point3f(0, 0, 0),
+            new Point3f(100, 100, 100)
+        );
+        forest.addTree(initialTree, initialBounds);
+    }
+    
+    @Test
+    void testExpandForest() {
+        // Verify initial state
+        assertEquals(1, forest.getTrees().count());
+        
+        // Expand in positive X direction
+        var newBounds = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        
+        var newTreeId = dynamicManager.expandForest(newBounds);
+        assertNotNull(newTreeId);
+        
+        // Verify forest expanded
+        assertEquals(2, forest.getTrees().count());
+        
+        // Verify the new tree exists
+        var newTree = forest.getTree(newTreeId);
+        assertTrue(newTree.isPresent());
+        assertEquals(newBounds, newTree.get().getMetadata().bounds());
+    }
+    
+    @Test
+    void testExpandForestWithOverlap() {
+        // Try to expand with overlapping bounds
+        var overlappingBounds = new EntityBounds(
+            new Point3f(50, 0, 0),
+            new Point3f(150, 100, 100)
+        );
+        
+        assertThrows(IllegalArgumentException.class, () ->
+            dynamicManager.expandForest(overlappingBounds)
+        );
+    }
+    
+    @Test
+    void testShrinkForest() {
+        // Add multiple trees
+        var bounds2 = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        var tree2Id = dynamicManager.expandForest(bounds2);
+        
+        var bounds3 = new EntityBounds(
+            new Point3f(200, 0, 0),
+            new Point3f(300, 100, 100)
+        );
+        var tree3Id = dynamicManager.expandForest(bounds3);
+        
+        assertEquals(3, forest.getTrees().count());
+        
+        // Shrink by removing empty tree
+        assertTrue(dynamicManager.shrinkForest(tree3Id));
+        assertEquals(2, forest.getTrees().count());
+        
+        // Add entities to tree2
+        var tree2 = forest.getTree(tree2Id).get().getTree();
+        var id = new LongEntityID(1);
+        tree2.insert(id, new Point3f(150, 50, 50), (byte)10, "Entity");
+        
+        // Should not be able to remove non-empty tree
+        assertFalse(dynamicManager.shrinkForest(tree2Id));
+        assertEquals(2, forest.getTrees().count());
+    }
+    
+    @Test
+    void testSplitTree() {
+        var trees = forest.getTrees().toList();
+        var originalTreeId = trees.get(0).getTreeId();
+        
+        // Add many entities to trigger split
+        for (int i = 0; i < 100; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(
+                (float)(Math.random() * 100),
+                (float)(Math.random() * 100),
+                (float)(Math.random() * 100)
+            );
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Split the tree
+        var newTreeIds = dynamicManager.splitTree(originalTreeId);
+        
+        assertNotNull(newTreeIds);
+        assertFalse(newTreeIds.isEmpty());
+        
+        // Verify new trees were created
+        assertEquals(1 + newTreeIds.size(), forest.getTrees().count());
+        
+        // Verify entities were distributed
+        var totalEntities = forest.getTrees()
+            .mapToInt(node -> node.getTree().entityCount())
+            .sum();
+        assertEquals(100, totalEntities);
+    }
+    
+    @Test
+    void testMergeTrees() {
+        // Create adjacent trees with few entities
+        var bounds2 = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        var tree2Id = dynamicManager.expandForest(bounds2);
+        
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        
+        // Add a few entities to each tree
+        for (int i = 0; i < 5; i++) {
+            var id1 = new LongEntityID(i);
+            var pos1 = new Point3f(50, i * 10, 50);
+            trees.get(0).getTree().insert(id1, pos1, (byte)10, "Entity " + i);
+            
+            var id2 = new LongEntityID(100 + i);
+            var pos2 = new Point3f(150, i * 10, 50);
+            forest.getTree(tree2Id).get().getTree().insert(id2, pos2, (byte)10, "Entity " + (100 + i));
+        }
+        
+        // Merge trees
+        var mergedTreeId = dynamicManager.mergeTrees(List.of(tree1Id, tree2Id));
+        
+        assertNotNull(mergedTreeId);
+        assertEquals(1, forest.getTrees().count());
+        
+        // Verify all entities are in the merged tree
+        var mergedTree = forest.getTree(mergedTreeId).get().getTree();
+        assertEquals(10, mergedTree.entityCount());
+    }
+    
+    @Test
+    void testAutoExpansion() throws InterruptedException {
+        // Configure auto-expansion
+        var config = DynamicForestManager.DynamicConfig.builder()
+            .withAutoExpansion(true)
+            .withExpansionThreshold(0.8) // 80% capacity
+            .withExpansionCheckInterval(100) // 100ms
+            .build();
+        
+        dynamicManager.configure(config);
+        dynamicManager.startDynamicManagement();
+        
+        var trees = forest.getTrees().toList();
+        var originalTree = trees.get(0).getTree();
+        
+        // Add entities near boundary to trigger expansion
+        for (int i = 0; i < 50; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(95 + (i % 5), 50, 50); // Near right boundary
+            originalTree.insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Wait for auto-expansion
+        Thread.sleep(500);
+        
+        // Check that forest expanded
+        assertTrue(forest.getTrees().count() > 1, "Forest should have expanded");
+        
+        dynamicManager.stopDynamicManagement();
+    }
+    
+    @Test
+    void testOptimizeForestStructure() {
+        // Create suboptimal structure
+        for (int i = 0; i < 5; i++) {
+            var bounds = new EntityBounds(
+                new Point3f(i * 100, 0, 0),
+                new Point3f((i + 1) * 100, 100, 100)
+            );
+            dynamicManager.expandForest(bounds);
+        }
+        
+        assertEquals(6, forest.getTrees().count()); // Including initial tree
+        
+        // Add very few entities to make trees candidates for merging
+        var trees = forest.getTrees().toList();
+        for (int i = 0; i < trees.size(); i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(i * 100 + 50, 50, 50);
+            trees.get(i).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Optimize structure
+        var changes = dynamicManager.optimizeForestStructure();
+        
+        assertTrue(changes > 0, "Should have made optimization changes");
+        assertTrue(forest.getTrees().count() < 6, "Should have merged some trees");
+    }
+    
+    @Test
+    void testAdaptToEntityDistribution() {
+        var trees = forest.getTrees().toList();
+        var tree = trees.get(0).getTree();
+        
+        // Create clustered distribution
+        // Cluster 1: Bottom-left
+        for (int i = 0; i < 50; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(10 + (i % 10), 10 + (i / 10), 10);
+            tree.insert(id, pos, (byte)10, "Cluster1-" + i);
+        }
+        
+        // Cluster 2: Top-right
+        for (int i = 50; i < 100; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(80 + (i % 10), 80 + ((i - 50) / 10), 80);
+            tree.insert(id, pos, (byte)10, "Cluster2-" + i);
+        }
+        
+        // Adapt to distribution
+        dynamicManager.adaptToEntityDistribution();
+        
+        // Should have split the tree to better handle clusters
+        assertTrue(forest.getTrees().count() > 1, 
+            "Forest should adapt to clustered distribution");
+    }
+    
+    @Test
+    void testGetStatistics() {
+        // Perform various operations
+        var bounds2 = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        dynamicManager.expandForest(bounds2);
+        
+        var trees = forest.getTrees().toList();
+        dynamicManager.shrinkForest(trees.get(1).getTreeId());
+        
+        var stats = dynamicManager.getStatistics();
+        
+        assertEquals(1, stats.totalExpansions());
+        assertEquals(1, stats.totalContractions());
+        assertEquals(0, stats.totalSplits());
+        assertEquals(0, stats.totalMerges());
+        assertTrue(stats.lastOptimizationTime() >= 0);
+    }
+    
+    @Test
+    void testConcurrentDynamicOperations() throws InterruptedException {
+        int numThreads = 4;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        AtomicInteger expansionCount = new AtomicInteger(0);
+        
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    // Each thread tries to expand in different direction
+                    var bounds = new EntityBounds(
+                        new Point3f((threadId + 1) * 100, 0, 0),
+                        new Point3f((threadId + 2) * 100, 100, 100)
+                    );
+                    
+                    try {
+                        dynamicManager.expandForest(bounds);
+                        expansionCount.incrementAndGet();
+                    } catch (IllegalArgumentException e) {
+                        // Expected if bounds overlap
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        // At least some expansions should succeed
+        assertTrue(expansionCount.get() > 0);
+        assertEquals(1 + expansionCount.get(), forest.getTrees().count());
+    }
+    
+    @Test
+    void testReactiveBehavior() throws InterruptedException {
+        // Configure reactive management
+        var config = DynamicForestManager.DynamicConfig.builder()
+            .withAutoExpansion(true)
+            .withAutoContraction(true)
+            .withAutoOptimization(true)
+            .withExpansionThreshold(0.7)
+            .withContractionThreshold(0.1)
+            .withOptimizationInterval(200)
+            .build();
+        
+        dynamicManager.configure(config);
+        dynamicManager.startDynamicManagement();
+        
+        // Add initial load
+        var trees = forest.getTrees().toList();
+        var tree = trees.get(0).getTree();
+        
+        for (int i = 0; i < 50; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(90 + (i % 10), 50, 50);
+            tree.insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Wait for expansion
+        Thread.sleep(300);
+        var treeCount1 = forest.getTrees().count();
+        assertTrue(treeCount1 > 1, "Should have expanded");
+        
+        // Remove most entities
+        for (int i = 0; i < 45; i++) {
+            tree.remove(new LongEntityID(i));
+        }
+        
+        // Wait for potential contraction/optimization
+        Thread.sleep(500);
+        
+        dynamicManager.stopDynamicManagement();
+        
+        // Verify dynamic behavior occurred
+        var stats = dynamicManager.getStatistics();
+        assertTrue(stats.totalExpansions() > 0 || 
+                  stats.totalContractions() > 0 || 
+                  stats.totalOptimizations() > 0,
+                  "Should have performed dynamic operations");
+    }
+    
+    @Test
+    void testSplitMergeCycle() {
+        var trees = forest.getTrees().toList();
+        var originalTreeId = trees.get(0).getTreeId();
+        var originalTree = trees.get(0).getTree();
+        
+        // Add entities
+        for (int i = 0; i < 20; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(i * 5, 50, 50);
+            originalTree.insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Split
+        var splitIds = dynamicManager.splitTree(originalTreeId);
+        assertFalse(splitIds.isEmpty());
+        
+        var totalTreesBefore = forest.getTrees().count();
+        
+        // Merge back
+        var allTreeIds = forest.getTrees()
+            .map(TreeNode::getTreeId)
+            .toList();
+        
+        var mergedId = dynamicManager.mergeTrees(allTreeIds);
+        assertNotNull(mergedId);
+        
+        // Should be back to single tree
+        assertEquals(1, forest.getTrees().count());
+        
+        // All entities should still exist
+        var finalTree = forest.getTree(mergedId).get().getTree();
+        assertEquals(20, finalTree.entityCount());
+    }
+}

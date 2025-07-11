@@ -1,0 +1,329 @@
+/*
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.lucien.forest;
+
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.entity.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.vecmath.Point3f;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive tests for GhostZoneManager
+ */
+public class GhostZoneManagerTest {
+    
+    private Forest<MortonKey, LongEntityID, String> forest;
+    private GhostZoneManager<MortonKey, LongEntityID, String> ghostManager;
+    private SequentialLongIDGenerator idGenerator;
+    
+    @BeforeEach
+    void setUp() {
+        var config = ForestConfig.builder()
+            .withGhostZones(10.0f)
+            .build();
+        forest = new Forest<>(config);
+        idGenerator = new SequentialLongIDGenerator();
+        
+        // Create two adjacent trees
+        var tree1 = new Octree<LongEntityID, String>(idGenerator);
+        var bounds1 = new EntityBounds(
+            new Point3f(0, 0, 0),
+            new Point3f(100, 100, 100)
+        );
+        var treeId1 = forest.addTree(tree1, bounds1);
+        
+        var tree2 = new Octree<LongEntityID, String>(idGenerator);
+        var bounds2 = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        var treeId2 = forest.addTree(tree2, bounds2);
+        
+        // Create ghost zone manager with 10 unit width
+        ghostManager = new GhostZoneManager<>(forest, 10.0f);
+    }
+    
+    @Test
+    void testEstablishGhostZone() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        // Establish ghost zone
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        
+        // Add entity near boundary in tree1
+        var id = new LongEntityID(1);
+        var pos = new Point3f(95, 50, 50); // Within 10 units of boundary
+        forest.insert(id, pos, (byte)10, "Entity near boundary");
+        
+        // Update ghost zone
+        var bounds = EntityBounds.point(pos);
+        ghostManager.updateGhostEntity(id, tree1Id, pos, bounds, "Entity near boundary");
+        
+        // Check ghost exists in tree2
+        var ghosts = ghostManager.getGhostEntities(tree2Id);
+        assertEquals(1, ghosts.size());
+        
+        var ghost = ghosts.get(0);
+        assertEquals(id, ghost.entityId());
+        assertEquals(pos, ghost.position());
+        assertEquals(tree1Id, ghost.sourceTreeId());
+    }
+    
+    @Test
+    void testIsInGhostZone() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, 15.0f); // Custom width
+        
+        // Entity close to boundary
+        var closePos = new Point3f(95, 50, 50);
+        var closeBounds = EntityBounds.point(closePos);
+        assertTrue(ghostManager.isInGhostZone(tree1Id, tree2Id, closePos, closeBounds));
+        
+        // Entity far from boundary
+        var farPos = new Point3f(50, 50, 50);
+        var farBounds = EntityBounds.point(farPos);
+        assertFalse(ghostManager.isInGhostZone(tree1Id, tree2Id, farPos, farBounds));
+        
+        // Entity with bounds spanning into ghost zone
+        var spanPos = new Point3f(80, 50, 50);
+        var spanBounds = new EntityBounds(
+            new Point3f(75, 45, 45),
+            new Point3f(85, 55, 55)
+        );
+        assertTrue(ghostManager.isInGhostZone(tree1Id, tree2Id, spanPos, spanBounds));
+    }
+    
+    @Test
+    void testRemoveGhostEntity() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        
+        // Add ghost entity
+        var id = new LongEntityID(1);
+        var pos = new Point3f(95, 50, 50);
+        var bounds = EntityBounds.point(pos);
+        ghostManager.updateGhostEntity(id, tree1Id, pos, bounds, "Ghost entity");
+        
+        assertEquals(1, ghostManager.getGhostEntities(tree2Id).size());
+        
+        // Remove ghost entity
+        ghostManager.removeGhostEntity(id, tree1Id);
+        
+        assertTrue(ghostManager.getGhostEntities(tree2Id).isEmpty());
+    }
+    
+    @Test
+    void testSynchronizeAllGhostZones() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        
+        // Add entities near boundary
+        for (int i = 0; i < 5; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(95 + i, 50, 50);
+            forest.insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Synchronize
+        ghostManager.synchronizeAllGhostZones();
+        
+        // Check ghosts were created
+        var ghosts = ghostManager.getGhostEntities(tree2Id);
+        assertTrue(ghosts.size() > 0, "Should have created ghost entities");
+    }
+    
+    @Test
+    void testGhostStatistics() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        
+        // Add multiple ghost entities
+        for (int i = 0; i < 10; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(95, i * 5, 50);
+            var bounds = EntityBounds.point(pos);
+            ghostManager.updateGhostEntity(id, tree1Id, pos, bounds, "Entity " + i);
+        }
+        
+        var stats = ghostManager.getGhostStatistics();
+        assertEquals(1, stats.totalRelationships());
+        assertEquals(10, stats.totalGhosts());
+        assertEquals(10.0, stats.averageGhostsPerRelation(), 0.01);
+        assertTrue(stats.ghostsByTree().containsKey(tree2Id));
+        assertEquals(10, stats.ghostsByTree().get(tree2Id).intValue());
+    }
+    
+    @Test
+    void testMultipleGhostZones() {
+        // Add a third tree
+        var tree3 = new Octree<LongEntityID, String>(idGenerator);
+        var bounds3 = new EntityBounds(
+            new Point3f(0, 100, 0),
+            new Point3f(100, 200, 100)
+        );
+        var tree3Id = forest.addTree(tree3, bounds3);
+        
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        // Establish multiple ghost zones
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        ghostManager.establishGhostZone(tree1Id, tree3Id, null);
+        
+        // Add entity that should be ghost in both tree2 and tree3
+        var id = new LongEntityID(1);
+        var pos1 = new Point3f(95, 50, 50); // Near tree2
+        var bounds1 = EntityBounds.point(pos1);
+        ghostManager.updateGhostEntity(id, tree1Id, pos1, bounds1, "Entity 1");
+        
+        // Add entity that should be ghost only in tree3
+        var id2 = new LongEntityID(2);
+        var pos2 = new Point3f(50, 95, 50); // Near tree3
+        var bounds2 = EntityBounds.point(pos2);
+        ghostManager.updateGhostEntity(id2, tree1Id, pos2, bounds2, "Entity 2");
+        
+        assertEquals(1, ghostManager.getGhostEntities(tree2Id).size());
+        assertEquals(2, ghostManager.getGhostEntities(tree3Id).size());
+    }
+    
+    @Test
+    void testEntityMovementBetweenGhostZones() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, 20.0f);
+        
+        var id = new LongEntityID(1);
+        
+        // Initially in ghost zone
+        var pos1 = new Point3f(85, 50, 50);
+        var bounds1 = EntityBounds.point(pos1);
+        ghostManager.updateGhostEntity(id, tree1Id, pos1, bounds1, "Moving entity");
+        assertEquals(1, ghostManager.getGhostEntities(tree2Id).size());
+        
+        // Move out of ghost zone
+        var pos2 = new Point3f(50, 50, 50);
+        var bounds2 = EntityBounds.point(pos2);
+        ghostManager.updateGhostEntity(id, tree1Id, pos2, bounds2, "Moving entity");
+        assertTrue(ghostManager.getGhostEntities(tree2Id).isEmpty());
+        
+        // Move back into ghost zone
+        ghostManager.updateGhostEntity(id, tree1Id, pos1, bounds1, "Moving entity");
+        assertEquals(1, ghostManager.getGhostEntities(tree2Id).size());
+    }
+    
+    @Test
+    void testConcurrentGhostOperations() throws InterruptedException {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        
+        int numThreads = 10;
+        int opsPerThread = 100;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    for (int i = 0; i < opsPerThread; i++) {
+                        var id = new LongEntityID(threadId * 1000 + i);
+                        var pos = new Point3f(95, threadId * 10 + i * 0.1f, 50);
+                        var bounds = EntityBounds.point(pos);
+                        
+                        // Add/update ghost
+                        ghostManager.updateGhostEntity(id, tree1Id, pos, bounds, 
+                            "Entity " + id);
+                        
+                        // Sometimes remove
+                        if (i % 5 == 0 && i > 0) {
+                            var removeId = new LongEntityID(threadId * 1000 + i - 5);
+                            ghostManager.removeGhostEntity(removeId, tree1Id);
+                        }
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        // Verify consistency
+        var stats = ghostManager.getGhostStatistics();
+        assertTrue(stats.totalGhosts() > 0);
+        
+        // Verify no exceptions during concurrent access
+        assertDoesNotThrow(() -> ghostManager.synchronizeAllGhostZones());
+    }
+    
+    @Test
+    void testDisableGhostZone() {
+        var trees = forest.getTrees().toList();
+        var tree1Id = trees.get(0).getTreeId();
+        var tree2Id = trees.get(1).getTreeId();
+        
+        ghostManager.establishGhostZone(tree1Id, tree2Id, null);
+        
+        // Add ghost
+        var id = new LongEntityID(1);
+        var pos = new Point3f(95, 50, 50);
+        var bounds = EntityBounds.point(pos);
+        ghostManager.updateGhostEntity(id, tree1Id, pos, bounds, "Ghost");
+        
+        assertEquals(1, ghostManager.getGhostEntities(tree2Id).size());
+        
+        // Disable ghost zone
+        ghostManager.disableGhostZone(tree1Id, tree2Id);
+        
+        // Ghost should be removed
+        assertTrue(ghostManager.getGhostEntities(tree2Id).isEmpty());
+        
+        // New updates should not create ghosts
+        ghostManager.updateGhostEntity(id, tree1Id, pos, bounds, "Ghost");
+        assertTrue(ghostManager.getGhostEntities(tree2Id).isEmpty());
+    }
+}

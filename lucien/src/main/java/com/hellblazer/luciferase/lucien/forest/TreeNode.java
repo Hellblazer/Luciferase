@@ -91,11 +91,8 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
         this.nodeCount = new AtomicLong(0);
         this.lastUpdateTime = System.currentTimeMillis();
         
-        // Initialize global bounds
-        this.globalBounds = new EntityBounds(
-            new Point3f(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE),
-            new Point3f(-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
-        );
+        // Initialize global bounds as null to indicate no entities yet
+        this.globalBounds = null;
         
         log.debug("Created TreeNode with ID: {}", treeId);
     }
@@ -134,24 +131,32 @@ public class TreeNode<Key extends SpatialKey<Key>, ID extends EntityID, Content>
      */
     public void expandGlobalBounds(EntityBounds entityBounds) {
         synchronized (this) {
-            var min = globalBounds.getMin();
-            var max = globalBounds.getMax();
-            var entityMin = entityBounds.getMin();
-            var entityMax = entityBounds.getMax();
-            
-            var newMin = new Point3f(
-                Math.min(min.x, entityMin.x),
-                Math.min(min.y, entityMin.y),
-                Math.min(min.z, entityMin.z)
-            );
-            
-            var newMax = new Point3f(
-                Math.max(max.x, entityMax.x),
-                Math.max(max.y, entityMax.y),
-                Math.max(max.z, entityMax.z)
-            );
-            
-            globalBounds = new EntityBounds(newMin, newMax);
+            if (globalBounds == null) {
+                // First entity - initialize bounds
+                globalBounds = new EntityBounds(
+                    new Point3f(entityBounds.getMin()),
+                    new Point3f(entityBounds.getMax())
+                );
+            } else {
+                var min = globalBounds.getMin();
+                var max = globalBounds.getMax();
+                var entityMin = entityBounds.getMin();
+                var entityMax = entityBounds.getMax();
+                
+                var newMin = new Point3f(
+                    Math.min(min.x, entityMin.x),
+                    Math.min(min.y, entityMin.y),
+                    Math.min(min.z, entityMin.z)
+                );
+                
+                var newMax = new Point3f(
+                    Math.max(max.x, entityMax.x),
+                    Math.max(max.y, entityMax.y),
+                    Math.max(max.z, entityMax.z)
+                );
+                
+                globalBounds = new EntityBounds(newMin, newMax);
+            }
             lastUpdateTime = System.currentTimeMillis();
         }
     }

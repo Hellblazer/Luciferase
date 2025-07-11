@@ -335,9 +335,13 @@ public class ForestEntityManager<Key extends SpatialKey<Key>, ID extends EntityI
             // Track the location
             entityLocations.put(entityId, new TreeLocation(treeId, position));
             
-            // Update tree bounds if necessary
+            // Update tree bounds
             if (bounds != null) {
                 treeNode.expandGlobalBounds(bounds);
+            } else {
+                // Create bounds from position (point bounds)
+                var pointBounds = new EntityBounds(position, position);
+                treeNode.expandGlobalBounds(pointBounds);
             }
             
             log.debug("Inserted entity {} into tree {}", entityId, treeId);

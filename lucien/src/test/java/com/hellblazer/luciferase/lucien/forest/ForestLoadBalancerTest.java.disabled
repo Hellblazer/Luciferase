@@ -1,0 +1,394 @@
+/*
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.lucien.forest;
+
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.entity.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.vecmath.Point3f;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive tests for ForestLoadBalancer
+ */
+public class ForestLoadBalancerTest {
+    
+    private Forest<MortonKey, LongEntityID, String> forest;
+    private ForestLoadBalancer<MortonKey, LongEntityID, String> loadBalancer;
+    private SequentialLongIDGenerator idGenerator;
+    
+    @BeforeEach
+    void setUp() {
+        var config = ForestConfig.defaultConfig();
+        forest = new Forest<>(config);
+        idGenerator = new SequentialLongIDGenerator();
+        
+        // Create trees with different initial loads
+        for (int i = 0; i < 4; i++) {
+            var tree = new Octree<LongEntityID, String>(idGenerator);
+            var bounds = new EntityBounds(
+                new Point3f(i * 100, 0, 0),
+                new Point3f((i + 1) * 100, 100, 100)
+            );
+            forest.addTree(tree, bounds);
+        }
+        
+        loadBalancer = new ForestLoadBalancer<>(forest);
+    }
+    
+    @Test
+    void testAnalyzeLoadDistribution() {
+        // Create uneven load distribution
+        var trees = forest.getTrees().toList();
+        
+        // Tree 0: 100 entities
+        for (int i = 0; i < 100; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(50, i * 0.5f, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Tree 1: 50 entities
+        for (int i = 100; i < 150; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(150, (i - 100) * 0.5f, 50);
+            trees.get(1).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Tree 2: 150 entities
+        for (int i = 150; i < 300; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(250, (i - 150) * 0.5f, 50);
+            trees.get(2).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Tree 3: 0 entities (empty)
+        
+        var analysis = loadBalancer.analyzeLoadDistribution();
+        
+        assertEquals(4, analysis.treeLoads().size());
+        assertEquals(300, analysis.totalEntities());
+        assertEquals(75.0, analysis.averageLoad(), 0.01);
+        assertTrue(analysis.standardDeviation() > 0);
+        assertTrue(analysis.loadImbalance() > 0.5); // Significant imbalance
+    }
+    
+    @Test
+    void testIdentifyOverloadedTrees() {
+        var trees = forest.getTrees().toList();
+        
+        // Create one heavily loaded tree
+        for (int i = 0; i < 200; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(50, i * 0.25f, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Other trees have normal load
+        for (int t = 1; t < 4; t++) {
+            for (int i = 0; i < 50; i++) {
+                var id = new LongEntityID(t * 1000 + i);
+                var pos = new Point3f(t * 100 + 50, i, 50);
+                trees.get(t).getTree().insert(id, pos, (byte)10, "Entity " + id);
+            }
+        }
+        
+        var overloaded = loadBalancer.identifyOverloadedTrees(1.5); // 150% of average
+        
+        assertEquals(1, overloaded.size());
+        assertEquals(trees.get(0).getTreeId(), overloaded.get(0));
+    }
+    
+    @Test
+    void testIdentifyUnderloadedTrees() {
+        var trees = forest.getTrees().toList();
+        
+        // All trees have normal load except one
+        for (int t = 0; t < 3; t++) {
+            for (int i = 0; i < 100; i++) {
+                var id = new LongEntityID(t * 1000 + i);
+                var pos = new Point3f(t * 100 + 50, i * 0.5f, 50);
+                trees.get(t).getTree().insert(id, pos, (byte)10, "Entity " + id);
+            }
+        }
+        
+        // Tree 3 has very few entities
+        for (int i = 0; i < 10; i++) {
+            var id = new LongEntityID(3000 + i);
+            var pos = new Point3f(350, i * 5, 50);
+            trees.get(3).getTree().insert(id, pos, (byte)10, "Entity " + id);
+        }
+        
+        var underloaded = loadBalancer.identifyUnderloadedTrees(0.5); // 50% of average
+        
+        assertEquals(1, underloaded.size());
+        assertEquals(trees.get(3).getTreeId(), underloaded.get(0));
+    }
+    
+    @Test
+    void testRebalanceSimple() {
+        var trees = forest.getTrees().toList();
+        var sourceTreeId = trees.get(0).getTreeId();
+        var targetTreeId = trees.get(1).getTreeId();
+        
+        // Add entities to source tree
+        List<LongEntityID> entityIds = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            var id = new LongEntityID(i);
+            entityIds.add(id);
+            var pos = new Point3f(50 + i * 0.1f, 50, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Target tree is empty
+        assertEquals(100, trees.get(0).getTree().entityCount());
+        assertEquals(0, trees.get(1).getTree().entityCount());
+        
+        // Rebalance 50 entities
+        var toMove = entityIds.subList(0, 50);
+        var moved = loadBalancer.rebalance(sourceTreeId, targetTreeId, toMove);
+        
+        assertEquals(50, moved);
+        assertEquals(50, trees.get(0).getTree().entityCount());
+        assertEquals(50, trees.get(1).getTree().entityCount());
+    }
+    
+    @Test
+    void testSelectEntitiesToMove() {
+        var trees = forest.getTrees().toList();
+        var sourceTree = trees.get(0).getTree();
+        
+        // Add entities spread across space
+        for (int i = 0; i < 100; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(
+                (float)(Math.random() * 100),
+                (float)(Math.random() * 100),
+                (float)(Math.random() * 100)
+            );
+            sourceTree.insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Select entities near boundary
+        var selected = loadBalancer.selectEntitiesToMove(
+            trees.get(0).getTreeId(),
+            trees.get(1).getTreeId(),
+            30
+        );
+        
+        assertNotNull(selected);
+        assertTrue(selected.size() <= 30);
+        assertTrue(selected.size() > 0);
+    }
+    
+    @Test
+    void testAutoBalance() throws InterruptedException {
+        var trees = forest.getTrees().toList();
+        
+        // Create severe imbalance
+        for (int i = 0; i < 400; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(50, i * 0.1f, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        // Configure and enable auto-balancing
+        var config = ForestLoadBalancer.BalancerConfig.builder()
+            .withEnabled(true)
+            .withCheckInterval(100) // 100ms
+            .withImbalanceThreshold(0.3)
+            .withMaxEntitiesPerMove(50)
+            .build();
+        
+        loadBalancer.configure(config);
+        loadBalancer.startAutoBalancing();
+        
+        // Wait for balancing to occur
+        Thread.sleep(500);
+        
+        // Check that load is more balanced
+        var analysis = loadBalancer.analyzeLoadDistribution();
+        assertTrue(analysis.loadImbalance() < 1.0, "Load should be more balanced");
+        
+        // Stop auto-balancing
+        loadBalancer.stopAutoBalancing();
+    }
+    
+    @Test
+    void testBalancingStatistics() {
+        var trees = forest.getTrees().toList();
+        
+        // Perform some rebalancing operations
+        for (int i = 0; i < 100; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(50, i, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        var toMove = new ArrayList<LongEntityID>();
+        for (int i = 0; i < 20; i++) {
+            toMove.add(new LongEntityID(i));
+        }
+        
+        loadBalancer.rebalance(trees.get(0).getTreeId(), trees.get(1).getTreeId(), toMove);
+        
+        var stats = loadBalancer.getStatistics();
+        assertEquals(1, stats.totalRebalanceOperations());
+        assertEquals(20, stats.totalEntitiesMoved());
+        assertTrue(stats.lastRebalanceTime() > 0);
+    }
+    
+    @Test
+    void testConcurrentRebalancing() throws InterruptedException {
+        var trees = forest.getTrees().toList();
+        
+        // Add entities to all trees
+        for (int t = 0; t < 4; t++) {
+            for (int i = 0; i < 100; i++) {
+                var id = new LongEntityID(t * 1000 + i);
+                var pos = new Point3f(t * 100 + 50, i * 0.5f, 50);
+                trees.get(t).getTree().insert(id, pos, (byte)10, "Entity " + id);
+            }
+        }
+        
+        int numThreads = 4;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        
+        // Each thread performs rebalancing between different tree pairs
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    var sourceIdx = threadId;
+                    var targetIdx = (threadId + 1) % 4;
+                    
+                    var toMove = new ArrayList<LongEntityID>();
+                    for (int i = 0; i < 10; i++) {
+                        toMove.add(new LongEntityID(sourceIdx * 1000 + i));
+                    }
+                    
+                    loadBalancer.rebalance(
+                        trees.get(sourceIdx).getTreeId(),
+                        trees.get(targetIdx).getTreeId(),
+                        toMove
+                    );
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        // Verify total entity count is preserved
+        var totalEntities = trees.stream()
+            .mapToInt(node -> node.getTree().entityCount())
+            .sum();
+        assertEquals(400, totalEntities);
+    }
+    
+    @Test
+    void testRebalanceWithInvalidParameters() {
+        var trees = forest.getTrees().toList();
+        
+        // Try to rebalance from non-existent tree
+        var result = loadBalancer.rebalance("invalid-tree", trees.get(0).getTreeId(), List.of());
+        assertEquals(0, result);
+        
+        // Try to rebalance to non-existent tree
+        result = loadBalancer.rebalance(trees.get(0).getTreeId(), "invalid-tree", List.of());
+        assertEquals(0, result);
+        
+        // Try to rebalance empty list
+        result = loadBalancer.rebalance(
+            trees.get(0).getTreeId(),
+            trees.get(1).getTreeId(),
+            List.of()
+        );
+        assertEquals(0, result);
+    }
+    
+    @Test
+    void testConfigurationValidation() {
+        assertThrows(IllegalArgumentException.class, () ->
+            ForestLoadBalancer.BalancerConfig.builder()
+                .withCheckInterval(-1) // Invalid
+                .build()
+        );
+        
+        assertThrows(IllegalArgumentException.class, () ->
+            ForestLoadBalancer.BalancerConfig.builder()
+                .withImbalanceThreshold(-0.1) // Invalid
+                .build()
+        );
+        
+        assertThrows(IllegalArgumentException.class, () ->
+            ForestLoadBalancer.BalancerConfig.builder()
+                .withMaxEntitiesPerMove(0) // Invalid
+                .build()
+        );
+    }
+    
+    @Test
+    void testLoadBalancingWithDifferentStrategies() {
+        // Test with custom selection strategy
+        loadBalancer.setSelectionStrategy((sourceTree, targetTree, count) -> {
+            // Custom strategy: select first N entities
+            var entities = new ArrayList<LongEntityID>();
+            sourceTree.forEach((id, pos, bounds, content) -> {
+                if (entities.size() < count) {
+                    entities.add((LongEntityID) id);
+                }
+            });
+            return entities;
+        });
+        
+        var trees = forest.getTrees().toList();
+        
+        // Add entities
+        for (int i = 0; i < 50; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(50, i, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity " + i);
+        }
+        
+        var selected = loadBalancer.selectEntitiesToMove(
+            trees.get(0).getTreeId(),
+            trees.get(1).getTreeId(),
+            10
+        );
+        
+        assertEquals(10, selected.size());
+        
+        // Verify it selected the first 10 entities
+        for (int i = 0; i < 10; i++) {
+            assertTrue(selected.contains(new LongEntityID(i)));
+        }
+    }
+}

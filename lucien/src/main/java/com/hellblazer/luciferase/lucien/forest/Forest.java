@@ -276,7 +276,7 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
         return trees.stream()
             .filter(tree -> {
                 var treeBounds = tree.getGlobalBounds();
-                return boundsOverlap(queryBounds, treeBounds);
+                return treeBounds != null && boundsOverlap(queryBounds, treeBounds);
             });
     }
     

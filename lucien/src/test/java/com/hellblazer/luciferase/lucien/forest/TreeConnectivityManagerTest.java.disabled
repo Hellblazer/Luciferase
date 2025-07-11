@@ -1,0 +1,370 @@
+/*
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.lucien.forest;
+
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.entity.EntityBounds;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.vecmath.Point3f;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive tests for TreeConnectivityManager
+ */
+public class TreeConnectivityManagerTest {
+    
+    private TreeConnectivityManager<MortonKey, LongEntityID, String> connectivityManager;
+    
+    @BeforeEach
+    void setUp() {
+        connectivityManager = new TreeConnectivityManager<>();
+    }
+    
+    @Test
+    void testAddAndRemoveConnections() {
+        var boundary = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(100, 100, 100)
+        );
+        
+        // Add connection
+        connectivityManager.addConnection("tree1", "tree2", 
+            TreeConnectivityManager.ConnectivityType.FACE, boundary);
+        
+        assertTrue(connectivityManager.areNeighbors("tree1", "tree2"));
+        assertTrue(connectivityManager.areNeighbors("tree2", "tree1")); // Bidirectional
+        
+        // Remove connection
+        assertTrue(connectivityManager.removeConnection("tree1", "tree2"));
+        assertFalse(connectivityManager.areNeighbors("tree1", "tree2"));
+        assertFalse(connectivityManager.areNeighbors("tree2", "tree1"));
+        
+        // Remove non-existent connection
+        assertFalse(connectivityManager.removeConnection("tree1", "tree2"));
+    }
+    
+    @Test
+    void testGetNeighbors() {
+        // Create a simple grid of connections
+        connectivityManager.addConnection("center", "north", 
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("center", "south", 
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("center", "east", 
+            TreeConnectivityManager.ConnectivityType.EDGE, null);
+        connectivityManager.addConnection("center", "west", 
+            TreeConnectivityManager.ConnectivityType.VERTEX, null);
+        
+        var neighbors = connectivityManager.getNeighbors("center");
+        assertEquals(4, neighbors.size());
+        assertTrue(neighbors.contains("north"));
+        assertTrue(neighbors.contains("south"));
+        assertTrue(neighbors.contains("east"));
+        assertTrue(neighbors.contains("west"));
+        
+        // Non-existent tree has no neighbors
+        assertTrue(connectivityManager.getNeighbors("unknown").isEmpty());
+    }
+    
+    @Test
+    void testGetConnectionsByType() {
+        connectivityManager.addConnection("tree1", "tree2", 
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("tree1", "tree3", 
+            TreeConnectivityManager.ConnectivityType.EDGE, null);
+        connectivityManager.addConnection("tree1", "tree4", 
+            TreeConnectivityManager.ConnectivityType.VERTEX, null);
+        connectivityManager.addConnection("tree1", "tree5", 
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        
+        var faceConnections = connectivityManager.getConnectionsByType("tree1", 
+            TreeConnectivityManager.ConnectivityType.FACE);
+        assertEquals(2, faceConnections.size());
+        assertTrue(faceConnections.contains("tree2"));
+        assertTrue(faceConnections.contains("tree5"));
+        
+        var edgeConnections = connectivityManager.getConnectionsByType("tree1",
+            TreeConnectivityManager.ConnectivityType.EDGE);
+        assertEquals(1, edgeConnections.size());
+        assertTrue(edgeConnections.contains("tree3"));
+    }
+    
+    @Test
+    void testFindSharedBoundary() {
+        var boundary1 = new EntityBounds(
+            new Point3f(0, 0, 0),
+            new Point3f(100, 100, 100)
+        );
+        var boundary2 = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        
+        // Add connection with shared boundary
+        var sharedBoundary = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(100, 100, 100)
+        );
+        connectivityManager.addConnection("tree1", "tree2",
+            TreeConnectivityManager.ConnectivityType.FACE, sharedBoundary);
+        
+        var retrieved = connectivityManager.findSharedBoundary("tree1", "tree2");
+        assertTrue(retrieved.isPresent());
+        assertEquals(sharedBoundary, retrieved.get());
+        
+        // No boundary for non-connected trees
+        assertTrue(connectivityManager.findSharedBoundary("tree1", "tree3").isEmpty());
+    }
+    
+    @Test
+    void testDetermineConnectivityType() {
+        // Adjacent faces (share a face)
+        var bounds1 = new EntityBounds(
+            new Point3f(0, 0, 0),
+            new Point3f(100, 100, 100)
+        );
+        var bounds2 = new EntityBounds(
+            new Point3f(100, 0, 0),
+            new Point3f(200, 100, 100)
+        );
+        assertEquals(TreeConnectivityManager.ConnectivityType.FACE,
+            connectivityManager.determineConnectivityType(bounds1, bounds2));
+        
+        // Share only an edge
+        var bounds3 = new EntityBounds(
+            new Point3f(100, 100, 0),
+            new Point3f(200, 200, 100)
+        );
+        assertEquals(TreeConnectivityManager.ConnectivityType.EDGE,
+            connectivityManager.determineConnectivityType(bounds1, bounds3));
+        
+        // Share only a vertex
+        var bounds4 = new EntityBounds(
+            new Point3f(100, 100, 100),
+            new Point3f(200, 200, 200)
+        );
+        assertEquals(TreeConnectivityManager.ConnectivityType.VERTEX,
+            connectivityManager.determineConnectivityType(bounds1, bounds4));
+        
+        // Overlapping
+        var bounds5 = new EntityBounds(
+            new Point3f(50, 50, 50),
+            new Point3f(150, 150, 150)
+        );
+        assertEquals(TreeConnectivityManager.ConnectivityType.OVERLAP,
+            connectivityManager.determineConnectivityType(bounds1, bounds5));
+        
+        // Disjoint
+        var bounds6 = new EntityBounds(
+            new Point3f(300, 300, 300),
+            new Point3f(400, 400, 400)
+        );
+        assertEquals(TreeConnectivityManager.ConnectivityType.DISJOINT,
+            connectivityManager.determineConnectivityType(bounds1, bounds6));
+    }
+    
+    @Test
+    void testFindConnectedComponents() {
+        // Create three separate components
+        // Component 1: A-B-C
+        connectivityManager.addConnection("A", "B",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("B", "C",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        
+        // Component 2: D-E
+        connectivityManager.addConnection("D", "E",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        
+        // Component 3: F (isolated)
+        connectivityManager.addConnection("F", "F",
+            TreeConnectivityManager.ConnectivityType.FACE, null); // Self-loop for tracking
+        
+        var components = connectivityManager.findConnectedComponents();
+        assertEquals(3, components.size());
+        
+        // Verify each component
+        boolean foundABC = false, foundDE = false, foundF = false;
+        for (var component : components) {
+            if (component.contains("A")) {
+                assertEquals(3, component.size());
+                assertTrue(component.containsAll(List.of("A", "B", "C")));
+                foundABC = true;
+            } else if (component.contains("D")) {
+                assertEquals(2, component.size());
+                assertTrue(component.containsAll(List.of("D", "E")));
+                foundDE = true;
+            } else if (component.contains("F")) {
+                assertEquals(1, component.size());
+                foundF = true;
+            }
+        }
+        
+        assertTrue(foundABC && foundDE && foundF);
+    }
+    
+    @Test
+    void testFindShortestPath() {
+        // Create a graph: A-B-C-D and A-E-D
+        connectivityManager.addConnection("A", "B",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("B", "C",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("C", "D",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("A", "E",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("E", "D",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        
+        var path = connectivityManager.findShortestPath("A", "D");
+        assertTrue(path.isPresent());
+        assertEquals(3, path.get().size()); // A -> E -> D
+        assertEquals("A", path.get().get(0));
+        assertEquals("E", path.get().get(1));
+        assertEquals("D", path.get().get(2));
+        
+        // No path between disconnected trees
+        assertTrue(connectivityManager.findShortestPath("A", "Z").isEmpty());
+        
+        // Path to self
+        var selfPath = connectivityManager.findShortestPath("A", "A");
+        assertTrue(selfPath.isPresent());
+        assertEquals(1, selfPath.get().size());
+        assertEquals("A", selfPath.get().get(0));
+    }
+    
+    @Test
+    void testFindTreesWithinDistance() {
+        // Create a linear chain: A-B-C-D-E
+        connectivityManager.addConnection("A", "B",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("B", "C",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("C", "D",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("D", "E",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        
+        // Trees within distance 2 of C
+        var within2 = connectivityManager.findTreesWithinDistance("C", 2);
+        assertEquals(5, within2.size()); // A, B, C, D, E
+        
+        // Trees within distance 1 of C
+        var within1 = connectivityManager.findTreesWithinDistance("C", 1);
+        assertEquals(3, within1.size()); // B, C, D
+        assertTrue(within1.containsAll(List.of("B", "C", "D")));
+        
+        // Trees within distance 0 (just itself)
+        var within0 = connectivityManager.findTreesWithinDistance("C", 0);
+        assertEquals(1, within0.size());
+        assertTrue(within0.contains("C"));
+    }
+    
+    @Test
+    void testGetConnectionStatistics() {
+        // Add various types of connections
+        connectivityManager.addConnection("A", "B",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("A", "C",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("B", "D",
+            TreeConnectivityManager.ConnectivityType.EDGE, null);
+        connectivityManager.addConnection("C", "D",
+            TreeConnectivityManager.ConnectivityType.VERTEX, null);
+        
+        var stats = connectivityManager.getConnectionStatistics();
+        assertEquals(4, stats.totalConnections());
+        assertEquals(2, stats.connectionsByType().get(TreeConnectivityManager.ConnectivityType.FACE));
+        assertEquals(1, stats.connectionsByType().get(TreeConnectivityManager.ConnectivityType.EDGE));
+        assertEquals(1, stats.connectionsByType().get(TreeConnectivityManager.ConnectivityType.VERTEX));
+        assertEquals(2.0, stats.averageDegree(), 0.01); // 8 total connections / 4 trees
+    }
+    
+    @Test
+    void testConcurrentOperations() throws InterruptedException {
+        int numThreads = 10;
+        int opsPerThread = 100;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    for (int i = 0; i < opsPerThread; i++) {
+                        String tree1 = "tree_" + threadId + "_" + i;
+                        String tree2 = "tree_" + threadId + "_" + ((i + 1) % opsPerThread);
+                        
+                        // Add connection
+                        connectivityManager.addConnection(tree1, tree2,
+                            TreeConnectivityManager.ConnectivityType.FACE, null);
+                        
+                        // Query
+                        assertTrue(connectivityManager.areNeighbors(tree1, tree2));
+                        
+                        // Remove some connections
+                        if (i % 3 == 0) {
+                            connectivityManager.removeConnection(tree1, tree2);
+                        }
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        // Verify consistency
+        var stats = connectivityManager.getConnectionStatistics();
+        assertTrue(stats.totalConnections() > 0);
+    }
+    
+    @Test
+    void testRemoveAllConnectionsForTree() {
+        // Create connections
+        connectivityManager.addConnection("center", "north",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("center", "south",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("center", "east",
+            TreeConnectivityManager.ConnectivityType.FACE, null);
+        connectivityManager.addConnection("north", "east",
+            TreeConnectivityManager.ConnectivityType.EDGE, null);
+        
+        // Remove all connections for "center"
+        connectivityManager.removeAllConnectionsForTree("center");
+        
+        // Verify "center" has no connections
+        assertTrue(connectivityManager.getNeighbors("center").isEmpty());
+        
+        // But other connections remain
+        assertTrue(connectivityManager.areNeighbors("north", "east"));
+    }
+}

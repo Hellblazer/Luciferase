@@ -1,0 +1,610 @@
+/*
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.lucien.forest;
+
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.entity.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive concurrency tests for Forest operations
+ */
+public class ForestConcurrencyTest {
+    
+    private Forest<MortonKey, LongEntityID, String> forest;
+    private SequentialLongIDGenerator idGenerator;
+    private ForestEntityManager<MortonKey, LongEntityID, String> entityManager;
+    private ForestSpatialQueries<MortonKey, LongEntityID, String> queries;
+    private ForestLoadBalancer<MortonKey, LongEntityID, String> loadBalancer;
+    private DynamicForestManager<MortonKey, LongEntityID, String> dynamicManager;
+    
+    @BeforeEach
+    void setUp() {
+        var config = ForestConfig.builder()
+            .withGhostZones(10.0f)
+            .build();
+        forest = new Forest<>(config);
+        idGenerator = new SequentialLongIDGenerator();
+        
+        // Create initial trees
+        for (int i = 0; i < 4; i++) {
+            var tree = new Octree<LongEntityID, String>(idGenerator);
+            var bounds = new EntityBounds(
+                new Point3f(i * 100, 0, 0),
+                new Point3f((i + 1) * 100, 100, 100)
+            );
+            forest.addTree(tree, bounds);
+        }
+        
+        entityManager = new ForestEntityManager<>(forest);
+        queries = new ForestSpatialQueries<>(forest);
+        loadBalancer = new ForestLoadBalancer<>(forest);
+        dynamicManager = new DynamicForestManager<>(forest);
+    }
+    
+    @Test
+    void testConcurrentEntityOperations() throws InterruptedException {
+        int numThreads = 20;
+        int operationsPerThread = 100;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        ConcurrentHashMap<LongEntityID, Point3f> expectedEntities = new ConcurrentHashMap<>();
+        
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    Random rand = new Random(threadId);
+                    
+                    for (int op = 0; op < operationsPerThread; op++) {
+                        int operation = rand.nextInt(4);
+                        
+                        switch (operation) {
+                            case 0: // Insert
+                                var id = new LongEntityID(threadId * 10000 + op);
+                                var pos = new Point3f(
+                                    rand.nextFloat() * 400,
+                                    rand.nextFloat() * 100,
+                                    rand.nextFloat() * 100
+                                );
+                                forest.insert(id, pos, (byte)10, "Entity-" + id);
+                                expectedEntities.put(id, pos);
+                                break;
+                                
+                            case 1: // Update
+                                if (!expectedEntities.isEmpty()) {
+                                    var keys = new ArrayList<>(expectedEntities.keySet());
+                                    if (!keys.isEmpty()) {
+                                        var updateId = keys.get(rand.nextInt(keys.size()));
+                                        var newPos = new Point3f(
+                                            rand.nextFloat() * 400,
+                                            rand.nextFloat() * 100,
+                                            rand.nextFloat() * 100
+                                        );
+                                        try {
+                                            forest.updatePosition(updateId, newPos);
+                                            expectedEntities.put(updateId, newPos);
+                                        } catch (IllegalArgumentException e) {
+                                            // Entity might have been removed
+                                        }
+                                    }
+                                }
+                                break;
+                                
+                            case 2: // Remove
+                                if (!expectedEntities.isEmpty()) {
+                                    var keys = new ArrayList<>(expectedEntities.keySet());
+                                    if (!keys.isEmpty()) {
+                                        var removeId = keys.get(rand.nextInt(keys.size()));
+                                        if (forest.remove(removeId)) {
+                                            expectedEntities.remove(removeId);
+                                        }
+                                    }
+                                }
+                                break;
+                                
+                            case 3: // Query
+                                var queryPos = new Point3f(
+                                    rand.nextFloat() * 400,
+                                    rand.nextFloat() * 100,
+                                    rand.nextFloat() * 100
+                                );
+                                forest.findKNearestNeighbors(queryPos, 10);
+                                break;
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    fail("Unexpected exception: " + e.getMessage());
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(30, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        // Verify consistency
+        for (var entry : expectedEntities.entrySet()) {
+            var pos = forest.getEntityPosition(entry.getKey());
+            assertNotNull(pos, "Entity " + entry.getKey() + " should exist");
+            assertEquals(entry.getValue(), pos);
+        }
+    }
+    
+    @Test
+    void testConcurrentTreeModifications() throws InterruptedException {
+        int numThreads = 10;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        Set<String> addedTreeIds = ConcurrentHashMap.newKeySet();
+        AtomicInteger treeCounter = new AtomicInteger(100);
+        
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    Random rand = new Random(threadId);
+                    
+                    for (int op = 0; op < 20; op++) {
+                        int operation = rand.nextInt(3);
+                        
+                        switch (operation) {
+                            case 0: // Add tree
+                                int x = treeCounter.getAndIncrement() * 100;
+                                var bounds = new EntityBounds(
+                                    new Point3f(x, 0, 0),
+                                    new Point3f(x + 100, 100, 100)
+                                );
+                                try {
+                                    var tree = new Octree<LongEntityID, String>(idGenerator);
+                                    var treeId = forest.addTree(tree, bounds);
+                                    addedTreeIds.add(treeId);
+                                } catch (IllegalArgumentException e) {
+                                    // Bounds might overlap
+                                }
+                                break;
+                                
+                            case 1: // Remove tree
+                                var treeIds = new ArrayList<>(addedTreeIds);
+                                if (!treeIds.isEmpty()) {
+                                    var removeId = treeIds.get(rand.nextInt(treeIds.size()));
+                                    if (forest.removeTree(removeId)) {
+                                        addedTreeIds.remove(removeId);
+                                    }
+                                }
+                                break;
+                                
+                            case 2: // Query trees
+                                forest.getTrees().forEach(node -> {
+                                    assertNotNull(node.getMetadata());
+                                });
+                                break;
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    fail("Unexpected exception: " + e.getMessage());
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(20, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        // Verify forest integrity
+        assertTrue(forest.getTrees().count() >= 4); // At least initial trees
+    }
+    
+    @Test
+    void testConcurrentQueries() throws InterruptedException {
+        // Populate forest
+        for (int i = 0; i < 1000; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(
+                (float)(Math.random() * 400),
+                (float)(Math.random() * 100),
+                (float)(Math.random() * 100)
+            );
+            forest.insert(id, pos, (byte)10, "Entity-" + i);
+        }
+        
+        int numThreads = 20;
+        int queriesPerThread = 50;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        AtomicInteger successfulQueries = new AtomicInteger(0);
+        
+        for (int t = 0; t < numThreads; t++) {
+            executor.submit(() -> {
+                try {
+                    Random rand = new Random();
+                    
+                    for (int q = 0; q < queriesPerThread; q++) {
+                        int queryType = rand.nextInt(4);
+                        
+                        switch (queryType) {
+                            case 0: // K-NN
+                                var knnPos = new Point3f(
+                                    rand.nextFloat() * 400,
+                                    rand.nextFloat() * 100,
+                                    rand.nextFloat() * 100
+                                );
+                                var knn = queries.findKNearestNeighbors(knnPos, 20);
+                                assertNotNull(knn);
+                                successfulQueries.incrementAndGet();
+                                break;
+                                
+                            case 1: // Range query
+                                var rangePos = new Point3f(
+                                    rand.nextFloat() * 400,
+                                    rand.nextFloat() * 100,
+                                    rand.nextFloat() * 100
+                                );
+                                var range = queries.findEntitiesWithinDistance(rangePos, 50.0f);
+                                assertNotNull(range);
+                                successfulQueries.incrementAndGet();
+                                break;
+                                
+                            case 2: // Ray intersection
+                                var origin = new Point3f(
+                                    rand.nextFloat() * 400,
+                                    rand.nextFloat() * 100,
+                                    rand.nextFloat() * 100
+                                );
+                                var direction = new Vector3f(
+                                    rand.nextFloat() - 0.5f,
+                                    rand.nextFloat() - 0.5f,
+                                    rand.nextFloat() - 0.5f
+                                );
+                                direction.normalize();
+                                var ray = new com.hellblazer.luciferase.lucien.Ray3D(origin, direction);
+                                var hits = queries.rayIntersectAll(ray);
+                                assertNotNull(hits);
+                                successfulQueries.incrementAndGet();
+                                break;
+                                
+                            case 3: // Frustum culling
+                                var frustum = createRandomFrustum(rand);
+                                var visible = queries.frustumCullVisible(frustum);
+                                assertNotNull(visible);
+                                successfulQueries.incrementAndGet();
+                                break;
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    fail("Unexpected exception: " + e.getMessage());
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(30, TimeUnit.SECONDS));
+        executor.shutdown();
+        
+        assertEquals(numThreads * queriesPerThread, successfulQueries.get());
+    }
+    
+    @Test
+    void testConcurrentLoadBalancing() throws InterruptedException {
+        // Create imbalanced load
+        var trees = forest.getTrees().toList();
+        for (int i = 0; i < 400; i++) {
+            var id = new LongEntityID(i);
+            var pos = new Point3f(50, i * 0.25f, 50);
+            trees.get(0).getTree().insert(id, pos, (byte)10, "Entity-" + i);
+        }
+        
+        int numThreads = 5;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        
+        // Enable auto-balancing
+        var balancerConfig = ForestLoadBalancer.BalancerConfig.builder()
+            .withEnabled(true)
+            .withCheckInterval(50)
+            .withImbalanceThreshold(0.3)
+            .build();
+        loadBalancer.configure(balancerConfig);
+        loadBalancer.startAutoBalancing();
+        
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    Random rand = new Random(threadId);
+                    
+                    // Continuously add/remove entities while balancing occurs
+                    for (int op = 0; op < 100; op++) {
+                        if (rand.nextBoolean()) {
+                            // Add entity
+                            var id = new LongEntityID(1000 + threadId * 1000 + op);
+                            var treeIdx = rand.nextInt(4);
+                            var pos = new Point3f(
+                                treeIdx * 100 + 50,
+                                rand.nextFloat() * 100,
+                                50
+                            );
+                            forest.insert(id, pos, (byte)10, "Dynamic-" + id);
+                        } else {
+                            // Remove random entity
+                            var removeId = new LongEntityID(rand.nextInt(400));
+                            forest.remove(removeId);
+                        }
+                        
+                        Thread.sleep(10);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(20, TimeUnit.SECONDS));
+        executor.shutdown();
+        loadBalancer.stopAutoBalancing();
+        
+        // Verify load is more balanced
+        var analysis = loadBalancer.analyzeLoadDistribution();
+        assertTrue(analysis.loadImbalance() < 1.5, "Load should be somewhat balanced");
+    }
+    
+    @Test
+    void testConcurrentDynamicManagement() throws InterruptedException {
+        // Configure dynamic management
+        var dynamicConfig = DynamicForestManager.DynamicConfig.builder()
+            .withAutoExpansion(true)
+            .withAutoContraction(true)
+            .withExpansionThreshold(0.8)
+            .withContractionThreshold(0.2)
+            .build();
+        dynamicManager.configure(dynamicConfig);
+        dynamicManager.startDynamicManagement();
+        
+        int numThreads = 8;
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+        AtomicBoolean stop = new AtomicBoolean(false);
+        
+        // Thread to continuously monitor forest structure
+        executor.submit(() -> {
+            while (!stop.get()) {
+                try {
+                    var treeCount = forest.getTrees().count();
+                    assertTrue(treeCount > 0, "Forest should never be empty");
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        });
+        
+        for (int t = 0; t < numThreads - 1; t++) {
+            final int threadId = t;
+            executor.submit(() -> {
+                try {
+                    Random rand = new Random(threadId);
+                    
+                    for (int op = 0; op < 50; op++) {
+                        // Add entities in different patterns
+                        if (threadId % 2 == 0) {
+                            // Add entities near boundaries
+                            for (int i = 0; i < 10; i++) {
+                                var id = new LongEntityID(threadId * 10000 + op * 100 + i);
+                                var x = (threadId * 100) + 90 + rand.nextFloat() * 20;
+                                var pos = new Point3f(x, 50, 50);
+                                forest.insert(id, pos, (byte)10, "Boundary-" + id);
+                            }
+                        } else {
+                            // Add entities in clusters
+                            var centerX = rand.nextFloat() * 400;
+                            for (int i = 0; i < 20; i++) {
+                                var id = new LongEntityID(threadId * 10000 + op * 100 + i);
+                                var pos = new Point3f(
+                                    centerX + rand.nextFloat() * 20,
+                                    50 + rand.nextFloat() * 20,
+                                    50
+                                );
+                                forest.insert(id, pos, (byte)10, "Cluster-" + id);
+                            }
+                        }
+                        
+                        Thread.sleep(20);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        assertTrue(latch.await(30, TimeUnit.SECONDS));
+        stop.set(true);
+        dynamicManager.stopDynamicManagement();
+        executor.shutdown();
+        
+        // Verify dynamic operations occurred
+        var stats = dynamicManager.getStatistics();
+        assertTrue(
+            stats.totalExpansions() > 0 || 
+            stats.totalSplits() > 0 ||
+            stats.totalMerges() > 0,
+            "Dynamic operations should have occurred"
+        );
+    }
+    
+    @Test
+    void testStressTestAllOperations() throws InterruptedException {
+        // This test runs all forest operations concurrently
+        int duration = 5000; // 5 seconds
+        AtomicBoolean running = new AtomicBoolean(true);
+        List<Future<?>> futures = new ArrayList<>();
+        ExecutorService executor = Executors.newCachedThreadPool();
+        
+        // Entity operations
+        futures.add(executor.submit(() -> {
+            Random rand = new Random();
+            int idCounter = 0;
+            while (running.get()) {
+                try {
+                    var id = new LongEntityID(idCounter++);
+                    var pos = new Point3f(
+                        rand.nextFloat() * 400,
+                        rand.nextFloat() * 100,
+                        rand.nextFloat() * 100
+                    );
+                    forest.insert(id, pos, (byte)10, "Stress-" + id);
+                    
+                    if (idCounter % 10 == 0) {
+                        forest.remove(new LongEntityID(rand.nextInt(idCounter)));
+                    }
+                } catch (Exception e) {
+                    // Ignore expected concurrent modification exceptions
+                }
+            }
+        }));
+        
+        // Query operations
+        futures.add(executor.submit(() -> {
+            Random rand = new Random();
+            while (running.get()) {
+                try {
+                    var pos = new Point3f(
+                        rand.nextFloat() * 400,
+                        rand.nextFloat() * 100,
+                        rand.nextFloat() * 100
+                    );
+                    queries.findKNearestNeighbors(pos, 10);
+                    queries.findEntitiesWithinDistance(pos, 30.0f);
+                } catch (Exception e) {
+                    // Ignore query exceptions
+                }
+            }
+        }));
+        
+        // Load balancing
+        futures.add(executor.submit(() -> {
+            var config = ForestLoadBalancer.BalancerConfig.builder()
+                .withEnabled(true)
+                .withCheckInterval(100)
+                .build();
+            loadBalancer.configure(config);
+            loadBalancer.startAutoBalancing();
+            
+            while (running.get()) {
+                try {
+                    Thread.sleep(100);
+                    loadBalancer.analyzeLoadDistribution();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+            
+            loadBalancer.stopAutoBalancing();
+        }));
+        
+        // Dynamic management
+        futures.add(executor.submit(() -> {
+            dynamicManager.startDynamicManagement();
+            
+            while (running.get()) {
+                try {
+                    Thread.sleep(200);
+                    dynamicManager.optimizeForestStructure();
+                } catch (Exception e) {
+                    // Ignore
+                }
+            }
+            
+            dynamicManager.stopDynamicManagement();
+        }));
+        
+        // Let stress test run
+        Thread.sleep(duration);
+        running.set(false);
+        
+        // Wait for all tasks to complete
+        for (var future : futures) {
+            try {
+                future.get(5, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+            }
+        }
+        
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        
+        // Verify forest is still in valid state
+        assertTrue(forest.getTrees().count() > 0);
+        forest.getTrees().forEach(node -> {
+            assertNotNull(node.getTree());
+            assertNotNull(node.getMetadata());
+        });
+    }
+    
+    private com.hellblazer.luciferase.lucien.Frustum3D createRandomFrustum(Random rand) {
+        var planes = new Vector3f[6];
+        var points = new float[6];
+        
+        float centerX = rand.nextFloat() * 400;
+        float centerY = rand.nextFloat() * 100;
+        float centerZ = rand.nextFloat() * 100;
+        float size = 50 + rand.nextFloat() * 50;
+        
+        // Create a box frustum around center point
+        planes[0] = new Vector3f(-1, 0, 0);
+        points[0] = -(centerX - size);
+        
+        planes[1] = new Vector3f(1, 0, 0);
+        points[1] = centerX + size;
+        
+        planes[2] = new Vector3f(0, -1, 0);
+        points[2] = -(centerY - size);
+        
+        planes[3] = new Vector3f(0, 1, 0);
+        points[3] = centerY + size;
+        
+        planes[4] = new Vector3f(0, 0, -1);
+        points[4] = -(centerZ - size);
+        
+        planes[5] = new Vector3f(0, 0, 1);
+        points[5] = centerZ + size;
+        
+        return new com.hellblazer.luciferase.lucien.Frustum3D(planes, points);
+    }
+}
