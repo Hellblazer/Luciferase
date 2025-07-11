@@ -109,3 +109,13 @@ Based on performance-history.csv (June 2025):
 *Test framework: BulkOperationBenchmark*
 *Updated: July 8, 2025 with BaselinePerformanceBenchmark results*
 *Environment: RUN_SPATIAL_INDEX_PERF_TESTS=true*
+
+## Impact of Concurrent Optimizations (July 11, 2025)
+
+The concurrent optimization refactoring (ConcurrentSkipListMap integration) has fundamentally changed individual insertion performance characteristics. While this report focuses on batch operations which remain largely unaffected, note that:
+
+- **Individual insertions**: Tetree now 2.1x to 6.2x faster than Octree (complete reversal)
+- **Memory usage**: Tetree now uses 65-73% of Octree's memory (up from 20-25%)
+- **Batch operations**: Performance advantages remain similar as batch loading optimizations bypass many of the concurrent structures
+
+The batch loading performance advantages documented above remain valid as bulk operations use specialized paths that minimize the impact of concurrent data structures.

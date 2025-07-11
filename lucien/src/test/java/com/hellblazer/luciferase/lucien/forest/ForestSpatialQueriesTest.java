@@ -208,7 +208,7 @@ public class ForestSpatialQueriesTest {
         for (var id : visible) {
             var pos = entityManager.getEntityPosition(id);
             assertNotNull(pos);
-            assertTrue(frustum.contains(pos), "Visible entity should be in frustum");
+            assertTrue(frustum.containsPoint(pos), "Visible entity should be in frustum");
         }
     }
     
@@ -293,6 +293,10 @@ public class ForestSpatialQueriesTest {
         
         assertEquals(new HashSet<>(seqRange), new HashSet<>(parRange),
             "Parallel and sequential range queries should match");
+        
+        // Clean up
+        seqQueries.shutdown();
+        parQueries.shutdown();
     }
     
     @Test
@@ -307,34 +311,16 @@ public class ForestSpatialQueriesTest {
     }
     
     private Frustum3D createTestFrustum() {
-        // Create a simple frustum for testing
-        var planes = new Vector3f[6];
-        var points = new float[6];
+        // Create a simple orthographic frustum for testing
+        var cameraPosition = new Point3f(100, 50, 50);
+        var lookAt = new Point3f(100, 50, 150);
+        var up = new Vector3f(0, 1, 0);
         
-        // Near plane
-        planes[0] = new Vector3f(-1, 0, 0);
-        points[0] = -10;
-        
-        // Far plane
-        planes[1] = new Vector3f(1, 0, 0);
-        points[1] = 200;
-        
-        // Left plane
-        planes[2] = new Vector3f(0, 0, -1);
-        points[2] = -50;
-        
-        // Right plane
-        planes[3] = new Vector3f(0, 0, 1);
-        points[3] = 150;
-        
-        // Top plane
-        planes[4] = new Vector3f(0, -1, 0);
-        points[4] = 0;
-        
-        // Bottom plane
-        planes[5] = new Vector3f(0, 1, 0);
-        points[5] = 100;
-        
-        return new Frustum3D(planes, points);
+        return Frustum3D.createOrthographic(
+            cameraPosition, lookAt, up,
+            50, 150,    // left, right
+            25, 75,     // bottom, top  
+            10, 200     // near, far
+        );
     }
 }

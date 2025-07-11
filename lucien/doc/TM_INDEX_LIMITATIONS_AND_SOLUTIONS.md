@@ -1,5 +1,7 @@
 # TM-Index Limitations and Solutions
 
+**Note**: As of July 11, 2025, concurrent optimizations have reversed performance characteristics. Tetree is now 2.1x to 6.2x faster for insertions despite the O(level) tmIndex computation. The limitations described below remain accurate but their practical impact has been overshadowed by concurrent data structure benefits.
+
 ## Overview
 
 The TetreeKey (TM-index) is a 128-bit spatial key that encodes the hierarchical path through a tetrahedral tree. Unlike Morton codes used in Octrees, TetreeKey values encode tree structure rather than sequential indices, which creates fundamental limitations but also enables unique benefits.
@@ -36,10 +38,10 @@ for (int i = l - 1; i >= 0; i--) {
 }
 ```
 
-**Performance Impact:**
-- Insertion: 2.9x to 15.3x slower than Octree
+**Performance Impact (Before July 11 Optimizations):**
+- Insertion: Was 2.9x to 15.3x slower than Octree
 - Key generation at level 20 is ~140x slower than level 1
-- Cannot be optimized further without changing fundamental design
+- After concurrent optimizations: Tetree now 2.1-6.2x FASTER for insertions
 
 ### 3. Limited Range Operations
 
@@ -86,8 +88,9 @@ Each of the 6 tetrahedral types has different vertex arrangements:
 
 **Performance Gains:**
 - Original: 770x slower than Octree
-- After optimizations: 2.9x to 15.3x slower
-- Memory usage: 77-80% reduction vs Octree
+- After early optimizations: 2.9x to 15.3x slower
+- After concurrent optimizations (July 11): 2.1x to 6.2x FASTER
+- Memory usage: 27-35% reduction vs Octree
 
 ### 3. Enhanced SFCRange with Merging
 
@@ -113,10 +116,11 @@ record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
 
 | Metric | Octree | Tetree | Impact |
 |--------|---------|---------|---------|
-| Insertion | 1x | 2.9-15.3x slower | Acceptable for memory savings |
-| K-NN Search | 1x | 2.2-3.4x faster | Benefit from better locality |
+| Insertion | 1x | 2.1-6.2x FASTER | Complete reversal from concurrent optimizations |
+| K-NN Search (<10K) | 1x | 1.1-1.6x faster | Slight advantage |
+| K-NN Search (>10K) | 1x | 1.2x slower | Octree better at scale |
 | Range Query | 1x | 2.5-3.8x faster | Improved spatial coherence |
-| Memory Usage | 1x | 0.20-0.23x | 77-80% reduction |
+| Memory Usage | 1x | 0.65-0.73x | 27-35% reduction |
 | Lazy Range Query | O(n) memory | O(1) memory | 99.5% reduction for large ranges |
 
 ### Why These Limitations Cannot Be Eliminated

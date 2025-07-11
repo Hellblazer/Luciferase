@@ -27,18 +27,24 @@ The lucien module provides high-performance 3D spatial indexing with both Octree
 ### Performance Characteristics
 
 **Octree**
-- Insertion: Fast (O(1) Morton encoding)
-- Queries: Good performance
-- Memory: Higher usage
-- Best for: Frequent updates, predictable performance
+- Insertion: O(1) Morton encoding (now slower due to concurrent structures)
+- Queries: Better k-NN performance at scale (>10K entities)
+- Memory: Higher usage (100% baseline)
+- Best for: k-NN at scale, high-frequency updates at 10K+ entities
 
-**Tetree**
-- Insertion: Slower (O(level) tmIndex)
-- Queries: 2-4x faster than Octree
-- Memory: 75-80% reduction
-- Best for: Query-heavy, memory-constrained applications
+**Tetree**  
+- Insertion: 2.1x to 6.2x faster than Octree (after concurrent optimizations)
+- Queries: 1.1-1.6x faster k-NN at low counts, 2.5-3.8x faster range queries
+- Memory: Uses 65-73% of Octree's memory
+- Best for: General use, insertion-heavy workloads, range queries
 
 ## Recent Improvements
+
+### Concurrent Optimizations (July 11, 2025)
+- Replaced dual HashMap/TreeSet with ConcurrentSkipListMap
+- 54-61% memory reduction, eliminated ConcurrentModificationException
+- Performance reversal: Tetree now 2.1-6.2x faster for insertions
+- Extended ObjectPools to all allocation hot spots
 
 ### Phase 6.2 Cleanup (July 10, 2025)
 - Eliminated redundant node wrapper classes (unified to `SpatialNodeImpl`)
@@ -72,7 +78,7 @@ The lucien module provides high-performance 3D spatial indexing with both Octree
 
 ## Known Limitations
 
-1. **Tetree insertion performance**: O(level) tmIndex computation creates 15x gap vs Octree
+1. **Performance reversal**: ConcurrentSkipListMap made Tetree faster for insertions despite O(level) tmIndex
 2. **Coordinate constraints**: Entities must have positive coordinates
 3. **T8code partition**: Tetree doesn't perfectly partition space (fundamental limitation)
 

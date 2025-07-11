@@ -44,6 +44,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 - **Plane Intersection**: Arbitrary 3D plane queries
 - **Frustum Culling**: View frustum visibility for graphics
 - **Bulk Operations**: 5-10x faster batch insertions
+- **Forest Management**: Multi-tree coordination for distributed spatial indexing
 
 ## Performance
 
@@ -82,11 +83,11 @@ applications.
 ### Getting Started
 
 - [Architecture Summary](doc/ARCHITECTURE_SUMMARY.md) - Overview of the system
-- [Basic Operations API](doc/BASIC_OPERATIONS_API.md) - Core operations guide
+- [Core Spatial Index API](doc/CORE_SPATIAL_INDEX_API.md) - Basic operations guide
 
 ### Core APIs
 
-- [Entity Management API](doc/ENTITY_MANAGEMENT_API.md) - Entity lifecycle and properties
+- [Core Spatial Index API](doc/CORE_SPATIAL_INDEX_API.md) - Entity management and core operations
 - [K-Nearest Neighbors API](doc/K_NEAREST_NEIGHBORS_API.md) - Proximity queries
 - [Bulk Operations API](doc/BULK_OPERATIONS_API.md) - High-performance batch operations
 
@@ -128,11 +129,12 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 
 ### Key Components
 
-- **98 Java files** organized in 8 packages
+- **109 Java files** organized in 9 packages
 - **Entity Management**: Centralized lifecycle with ID generation
 - **Spatial Queries**: Bounded, bounding, enclosing, k-NN
 - **Performance Optimizations**: O(1) operations, caching, bulk loading
 - **Geometric Accuracy**: S0-S5 tetrahedral decomposition with 100% containment
+- **Forest Architecture**: Multi-tree management for large-scale distributed applications
 
 ## Usage Examples
 
@@ -179,13 +181,49 @@ spatialIndex.enableBulkLoading();
 
 List<Point3f> millionPoints = loadPointCloud();
 List<Content> millionContents = loadContents();
-spatialIndex.
+spatialIndex.insertBatch(millionPoints, millionContents, level);
 
-insertBatch(millionPoints, millionContents, level);
+spatialIndex.finalizeBulkLoading();
+```
 
-spatialIndex.
+### Forest Management
 
-finalizeBulkLoading();
+```java
+// Create a forest for multi-tree management
+Forest<MortonKey, LongEntityID, String> forest = new Forest<>();
+
+// Add multiple trees
+Octree<LongEntityID, String> tree1 = new Octree<>(idGenerator, 10, (byte) 20);
+Octree<LongEntityID, String> tree2 = new Octree<>(idGenerator, 10, (byte) 20);
+
+TreeMetadata metadata = TreeMetadata.builder()
+    .name("region_north")
+    .treeType(TreeMetadata.TreeType.OCTREE)
+    .property("region", "north")
+    .build();
+
+String treeId1 = forest.addTree(tree1, metadata);
+String treeId2 = forest.addTree(tree2);
+
+// Forest-wide queries
+List<LongEntityID> nearestInForest = forest.findKNearestNeighbors(
+    new Point3f(100, 200, 300), 10);
+
+// Grid forest for uniform partitioning
+GridForest<MortonKey, LongEntityID, String> gridForest = 
+    GridForest.createOctreeGrid(
+        new Point3f(0, 0, 0),         // origin
+        new Vector3f(1000, 1000, 1000), // total size
+        4, 4, 4                       // 4x4x4 grid
+    );
+
+// Dynamic forest management
+DynamicForestManager<MortonKey, LongEntityID, String> manager = 
+    new DynamicForestManager<>(forest, entityManager, 
+        () -> new Octree<>(idGenerator, 10, (byte) 20));
+
+// Enable automatic tree splitting/merging based on load
+manager.enableAutoManagement(60000); // Check every minute
 ```
 
 ## Requirements
@@ -220,3 +258,4 @@ The spatial indexing implementation is feature-complete as of July 2025:
 - Comprehensive test coverage and documentation
 - Performance-optimized with caching and bulk operations
 - Active development on t8code-compatible neighbor finding
+- Complete forest architecture for multi-tree spatial indexing
