@@ -1230,7 +1230,8 @@ implements SpatialIndex<Key, ID, Content> {
 
         var effectiveLevel = determineBatchInsertionLevel(positions, level);
         var startTime = System.nanoTime();
-        var insertedIds = new ArrayList<ID>(positions.size());
+        var insertedIds = ObjectPools.<ID>borrowArrayList(positions.size());
+        try {
 
         lock.writeLock().lock();
         try {
@@ -1264,8 +1265,12 @@ implements SpatialIndex<Key, ID, Content> {
             lock.writeLock().unlock();
         }
 
-        logBatchPerformance(positions.size(), startTime);
-        return insertedIds;
+            logBatchPerformance(positions.size(), startTime);
+            // Return a copy to avoid returning pooled object
+            return new ArrayList<>(insertedIds);
+        } finally {
+            ObjectPools.returnArrayList(insertedIds);
+        }
     }
 
     /**
@@ -1357,14 +1362,26 @@ implements SpatialIndex<Key, ID, Content> {
     private void insertGroupedEntities(List<BulkOperationProcessor.SfcEntity<Key, Content>> mortonEntities,
                                       byte level, List<ID> insertedIds) {
         var grouped = bulkProcessor.groupByNode(mortonEntities, level);
-
-        for (var entry : grouped.getGroups().entrySet()) {
-            for (var entity : entry.getValue()) {
-                var entityId = entityManager.generateEntityId();
-                insertedIds.add(entityId);
-                entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
-                insertAtPosition(entityId, entity.position, level);
+        
+        // Pre-generate IDs for better performance
+        var idsNeeded = mortonEntities.size();
+        var preGeneratedIds = ObjectPools.<ID>borrowArrayList(idsNeeded);
+        try {
+            for (int i = 0; i < idsNeeded; i++) {
+                preGeneratedIds.add(entityManager.generateEntityId());
             }
+            
+            int idIndex = 0;
+            for (var entry : grouped.getGroups().entrySet()) {
+                for (var entity : entry.getValue()) {
+                    var entityId = preGeneratedIds.get(idIndex++);
+                    insertedIds.add(entityId);
+                    entityManager.createOrUpdateEntity(entityId, entity.content, entity.position, null);
+                    insertAtPosition(entityId, entity.position, level);
+                }
+            }
+        } finally {
+            ObjectPools.returnArrayList(preGeneratedIds);
         }
     }
 

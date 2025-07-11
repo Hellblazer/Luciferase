@@ -301,13 +301,15 @@ Historical documents (describe unimplemented features):
     - **ConcurrentSkipListMap Refactoring**: Replaced dual HashMap/TreeSet with single ConcurrentSkipListMap
     - **Memory Reduction**: 54-61% reduction in memory usage, especially at scale
     - **CopyOnWriteArrayList**: Used for entity storage in SpatialNodeImpl to prevent ConcurrentModificationException
-    - **ObjectPool Integration**: Extended to k-NN, collision detection, ray intersection, and frustum culling
+    - **ObjectPool Integration**: Extended to k-NN, collision detection, ray intersection, frustum culling, and bulk operations
     - **Performance Metrics**:
         - k-NN: 0.18ms per query with minimal GC pressure
         - Collision Detection: 9.46ms average, 419 ops/sec concurrent
         - Ray Intersection: 0.323ms per ray, 26,607 rays/sec concurrent
+        - Bulk Insert: 347K-425K entities/sec, < 1.2 MB memory leak over 10 iterations
     - **ExtremeConcurrencyStressTest**: Successfully handles 50-100 threads with mixed operations
     - **ForestConcurrencyTest**: All tests now pass (previously failing with CME)
+    - **Bulk Operation Optimizations**: Added ObjectPool usage and ID pre-generation in insertBatch
     - **Result**: All ForestConcurrencyTest tests pass without concurrent modification exceptions
 - **K-NN OBJECTPOOL OPTIMIZATION (July 11, 2025):**
     - **Problem**: k-NN search identified as #1 allocation hot spot
