@@ -36,6 +36,8 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
@@ -47,13 +49,14 @@ import java.util.stream.Stream;
  * decomposition strategy.
  *
  * <h2>Thread Safety and Locking Strategy</h2>
- * <p>This class uses a {@link ReadWriteLock} to ensure thread-safe access to the spatial index and entity data.
- * The locking strategy follows these principles:</p>
+ * <p>This class uses a {@link ConcurrentNavigableMap} (specifically {@link ConcurrentSkipListMap}) for the spatial
+ * index, providing thread-safe concurrent access without explicit locking for most operations. A {@link ReadWriteLock}
+ * is still used for complex multi-step operations that require atomicity.</p>
  * <ul>
- *   <li><b>Read locks</b> for query operations (entity lookups, spatial queries, statistics)</li>
- *   <li><b>Write locks</b> for modification operations (insert, remove, update, tree restructuring)</li>
- *   <li><b>Lock ordering</b> to prevent deadlocks when acquiring multiple locks</li>
- *   <li><b>Minimal lock scope</b> to maximize concurrency</li>
+ *   <li><b>Lock-free operations</b> for single-key access (get, put, remove) via ConcurrentSkipListMap</li>
+ *   <li><b>Read locks</b> for complex query operations requiring consistent snapshots</li>
+ *   <li><b>Write locks</b> for bulk modifications and tree restructuring operations</li>
+ *   <li><b>No concurrent modification exceptions</b> during iteration due to concurrent data structure</li>
  * </ul>
  *
  * <h3>Why Entity Delegation Methods Need Locking</h3>
@@ -84,11 +87,9 @@ implements SpatialIndex<Key, ID, Content> {
     protected final int                                                maxEntitiesPerNode;
     protected final byte                                               maxDepth;
     protected final EntitySpanningPolicy                               spanningPolicy;
-    // Spatial index: Long index -> Node containing entity IDs
-    protected final Map<Key, SpatialNodeImpl<ID>>                          spatialIndex;
-    // Sorted spatial indices for efficient range queries
-    protected final NavigableSet<Key>                                  sortedSpatialIndices;
-    // Read-write lock for thread safety
+    // Spatial index: Key -> Node containing entity IDs, sorted for efficient range queries
+    protected final ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>    spatialIndex;
+    // Read-write lock for thread safety (still needed for complex operations)
     protected final ReadWriteLock                                      lock;
     // Fine-grained locking strategy for high-concurrency operations
     protected FineGrainedLockingStrategy<ID, Content>  lockingStrategy;
@@ -119,8 +120,7 @@ implements SpatialIndex<Key, ID, Content> {
         this.maxEntitiesPerNode = maxEntitiesPerNode;
         this.maxDepth = maxDepth;
         this.spanningPolicy = Objects.requireNonNull(spanningPolicy);
-        this.spatialIndex = new HashMap<>();
-        this.sortedSpatialIndices = new TreeSet<>();
+        this.spatialIndex = new ConcurrentSkipListMap<>();
         this.lock = new ReentrantReadWriteLock();
         this.balancingStrategy = new DefaultBalancingStrategy<>();
         this.treeBalancer = createTreeBalancer();
@@ -193,7 +193,7 @@ implements SpatialIndex<Key, ID, Content> {
             // Clear existing tree if needed
             if (!spatialIndex.isEmpty()) {
                 spatialIndex.clear();
-                sortedSpatialIndices.clear();
+                // spatialIndex.clear() is handled above
                 entityManager.clear();
             }
 
@@ -797,7 +797,7 @@ implements SpatialIndex<Key, ID, Content> {
 
             // SFC-optimized balancing stats: Process nodes in spatial order for better cache locality
             // This improves memory access patterns during statistics calculation
-            for (var nodeIndex : sortedSpatialIndices) {
+            for (var nodeIndex : spatialIndex.keySet()) {
                 var node = spatialIndex.get(nodeIndex);
                 if (node == null) {
                     continue;
@@ -830,7 +830,7 @@ implements SpatialIndex<Key, ID, Content> {
             // Calculate variance using SFC ordering for improved cache performance
             var variance = 0.0;
             if (totalNodes > 0) {
-                for (var nodeIndex : sortedSpatialIndices) {
+                for (var nodeIndex : spatialIndex.keySet()) {
                     var node = spatialIndex.get(nodeIndex);
                     if (node != null) {
                         var diff = node.getEntityCount() - averageLoad;
@@ -1074,7 +1074,7 @@ implements SpatialIndex<Key, ID, Content> {
     public Stream<SpatialIndex.SpatialNode<Key, ID>> levelStream(byte level) {
         lock.readLock().lock();
         try {
-            return sortedSpatialIndices.stream()
+            return spatialIndex.keySet().stream()
                     .filter(index -> index.getLevel() == level)
                     .map(index -> Map.entry(index, spatialIndex.get(index)))
                     .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
@@ -1697,7 +1697,7 @@ implements SpatialIndex<Key, ID, Content> {
                 if (!spatialIndex.containsKey(morton)) {
                     var node = createNode();
                     spatialIndex.put(morton, node);
-                    sortedSpatialIndices.add(morton);
+                    // morton is already added to spatialIndex above
                     created++;
                 }
             }
@@ -1780,7 +1780,7 @@ implements SpatialIndex<Key, ID, Content> {
                         if (!spatialIndex.containsKey(mortonIndex)) {
                             var node = createNode();
                             spatialIndex.put(mortonIndex, node);
-                            sortedSpatialIndices.add(mortonIndex);
+                            // mortonIndex is already added to spatialIndex above
                             created++;
                         }
                     }
@@ -2306,7 +2306,7 @@ implements SpatialIndex<Key, ID, Content> {
             // Remove empty nodes
             for (var key : emptyNodes) {
                 spatialIndex.remove(key);
-                sortedSpatialIndices.remove(key);
+                // key is already removed from spatialIndex above
             }
 
             if (!emptyNodes.isEmpty()) {
@@ -2567,7 +2567,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     protected List<Key> filterNodesInSFCOrder(java.util.function.BiPredicate<Key, SpatialNodeImpl<ID>> nodePredicate) {
         var filteredNodes = new ArrayList<Key>();
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty() && nodePredicate.test(nodeIndex, node)) {
                 filteredNodes.add(nodeIndex);
@@ -2835,7 +2835,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @return NavigableSet containing spatial indices in SFC order
      */
     protected NavigableSet<Key> getSortedSpatialIndices() {
-        return sortedSpatialIndices;
+        return spatialIndex.navigableKeySet();
     }
 
     /**
@@ -2855,7 +2855,7 @@ implements SpatialIndex<Key, ID, Content> {
     protected NavigableSet<Key> getSpatialIndexRange(VolumeBounds bounds) {
         // Default implementation: return all indices
         // Subclasses should override for better performance
-        return new TreeSet<>(sortedSpatialIndices);
+        return new TreeSet<>(spatialIndex.keySet());
     }
 
     /**
@@ -2887,7 +2887,7 @@ implements SpatialIndex<Key, ID, Content> {
 
         // Get or create node directly - no need for ancestor nodes in SFC-based implementation
         var node = getSpatialIndex().computeIfAbsent(spatialIndex, k -> {
-            sortedSpatialIndices.add(spatialIndex);
+            // spatialIndex key is already in the ConcurrentSkipListMap
             return nodePool.acquire();
         });
 
@@ -3029,7 +3029,7 @@ implements SpatialIndex<Key, ID, Content> {
      * Hook for subclasses when a node is removed
      */
     protected void onNodeRemoved(Key spatialIndex) {
-        sortedSpatialIndices.remove(spatialIndex);
+        // spatialIndex key is already removed from the ConcurrentSkipListMap above
     }
 
     /**
@@ -3151,7 +3151,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param entityProcessor function to process each entity ID with its containing node index
      */
     protected void processEntitiesInSFCOrder(java.util.function.BiConsumer<Key, ID> entityProcessor) {
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty()) {
                 for (ID entityId : node.getEntityIds()) {
@@ -3168,7 +3168,7 @@ implements SpatialIndex<Key, ID, Content> {
      * @param nodeProcessor function to process each non-empty node
      */
     protected void processNodesInSFCOrder(java.util.function.BiConsumer<Key, SpatialNodeImpl<ID>> nodeProcessor) {
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             if (node != null && !node.isEmpty()) {
                 nodeProcessor.accept(nodeIndex, node);
@@ -4104,7 +4104,7 @@ implements SpatialIndex<Key, ID, Content> {
     private void performKNNSFCBasedSearch(Point3f queryPoint, int k, float maxDistance,
                                          PriorityQueue<EntityDistance<ID>> candidates,
                                          Set<ID> addedToCandidates) {
-        if (sortedSpatialIndices.isEmpty()) {
+        if (spatialIndex.isEmpty()) {
             return;
         }
         
@@ -4162,7 +4162,7 @@ implements SpatialIndex<Key, ID, Content> {
         Key nearestNodeIndex = null;
         var cellSize = getCellSizeAtLevel(maxDepth);
         
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             var node = spatialIndex.get(nodeIndex);
             if (node == null || node.isEmpty()) {
                 continue;
@@ -4204,7 +4204,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     private void findIntraNodeCollisions(List<CollisionPair<ID, Content>> collisions,
                                        Set<UnorderedPair<ID>> checkedPairs) {
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             var node = spatialIndex.get(nodeIndex);
             if (node == null || node.isEmpty()) {
                 continue;
@@ -4259,7 +4259,7 @@ implements SpatialIndex<Key, ID, Content> {
      */
     private void findAdjacentNodeCollisions(List<CollisionPair<ID, Content>> collisions,
                                           Set<UnorderedPair<ID>> checkedPairs) {
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             var node = spatialIndex.get(nodeIndex);
             if (node == null || node.isEmpty()) {
                 continue;
@@ -4312,7 +4312,7 @@ implements SpatialIndex<Key, ID, Content> {
         // First, collect all bounded entities and their expanded search regions
         var boundedEntitySearchNodes = new HashMap<ID, Set<Key>>();
         
-        for (var nodeIndex : sortedSpatialIndices) {
+        for (var nodeIndex : spatialIndex.keySet()) {
             var node = spatialIndex.get(nodeIndex);
             if (node == null || node.isEmpty()) {
                 continue;

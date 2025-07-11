@@ -186,6 +186,27 @@ Historical documents (describe unimplemented features):
     - **Integration**: Full production integration completed June 28, 2025
 - **Performance Testing Configuration:**
     - Disable Java assertions when running performance testing to reduce overhead
+- **CONCURRENT SPATIAL INDEX REFACTORING (July 2025):**
+    - **Problem**: ConcurrentModificationException when iterating sortedSpatialIndices during concurrent operations
+    - **Root Cause**: Multiple issues:
+        1. Separate HashMap (spatialIndex) and TreeSet (sortedSpatialIndices) not synchronized
+        2. SpatialNodeImpl using ArrayList for entityIds, causing CME during iteration
+    - **Solution**: 
+        1. Replaced spatialIndex HashMap and sortedSpatialIndices TreeSet with single ConcurrentSkipListMap
+        2. Changed SpatialNodeImpl.entityIds from ArrayList to CopyOnWriteArrayList
+    - **Benefits**:
+        - Eliminates ConcurrentModificationException during iteration
+        - Thread-safe sorted key access without explicit locking
+        - Single source of truth for spatial data
+        - O(log n) operations with concurrent access
+        - Thread-safe entity list iteration
+    - **Changes**:
+        - AbstractSpatialIndex now uses ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>
+        - Removed all sortedSpatialIndices references (19 in AbstractSpatialIndex, 9 in Octree, 19 in Tetree)
+        - Updated Octree and Tetree to use spatialIndex.keySet() for iteration
+        - SpatialNodeImpl now uses CopyOnWriteArrayList for thread-safe iteration
+        - ForestConcurrencyTest adjusted to handle frustum coordinate constraints
+    - **Impact**: Fixes concurrent query failures, simplifies architecture, enables lock-free reads
 - **TETRAHEDRAL SUBDIVISION SOLUTION (June 28, 2025):**
     - **Problem**: Tetrahedral subdivision only achieved 37.5% containment due to vertex system mismatch
     - **Root Cause**: Our Tet used type-dependent V3 computation vs Subdivision.md's V3 = anchor + (h,h,h)

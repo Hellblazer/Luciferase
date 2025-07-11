@@ -302,16 +302,20 @@ public class ForestConcurrencyTest {
                                 break;
                                 
                             case 3: // Frustum culling
-                                var frustum = createRandomFrustum(rand);
-                                var visible = queries.frustumCullVisible(frustum);
-                                assertNotNull(visible);
-                                successfulQueries.incrementAndGet();
+                                try {
+                                    var frustum = createRandomFrustum(rand);
+                                    var visible = queries.frustumCullVisible(frustum);
+                                    assertNotNull(visible);
+                                    successfulQueries.incrementAndGet();
+                                } catch (IllegalArgumentException e) {
+                                    // Skip if frustum creation fails due to coordinate constraints
+                                    if (!e.getMessage().contains("coordinates must be positive")) {
+                                        throw e;
+                                    }
+                                }
                                 break;
                         }
                     }
-                } catch (ConcurrentModificationException e) {
-                    // Expected in high concurrency scenarios
-                    // The AbstractSpatialIndex has known concurrency issues
                 } catch (Exception e) {
                     e.printStackTrace();
                     fail("Unexpected exception: " + e.getMessage());
@@ -324,12 +328,12 @@ public class ForestConcurrencyTest {
         assertTrue(latch.await(30, TimeUnit.SECONDS));
         executor.shutdown();
         
-        // Due to ConcurrentModificationExceptions in AbstractSpatialIndex during high concurrency,
-        // not all queries may succeed. Accept at least 5% success rate as a baseline.
-        // The actual rate depends on timing and thread contention.
-        assertTrue(successfulQueries.get() >= (numThreads * queriesPerThread) / 20,
-            "Expected at least 5% queries to succeed, but only " + successfulQueries.get() + 
-            " out of " + (numThreads * queriesPerThread) + " succeeded");
+        // With ConcurrentSkipListMap, queries should succeed except for frustum creation failures
+        // We expect at least 85% success rate (frustum queries are ~25% and some may fail)
+        int expectedMinimum = (int) (numThreads * queriesPerThread * 0.85);
+        assertTrue(successfulQueries.get() >= expectedMinimum,
+            "Expected at least " + expectedMinimum + " queries to succeed, but only " + 
+            successfulQueries.get() + " out of " + (numThreads * queriesPerThread) + " succeeded");
     }
     
     @Test
@@ -626,12 +630,12 @@ public class ForestConcurrencyTest {
             cameraPos,
             lookAt,
             up,
-            centerX - size,               // left
-            centerX + size,               // right
-            centerY - size,               // bottom
-            centerY + size,               // top
-            1.0f,                         // near
-            size * 4                      // far
+            Math.max(0.1f, centerX - size),     // left - ensure positive
+            centerX + size,                      // right
+            Math.max(0.1f, centerY - size),     // bottom - ensure positive
+            centerY + size,                      // top
+            1.0f,                                // near
+            size * 4                             // far
         );
     }
 }
