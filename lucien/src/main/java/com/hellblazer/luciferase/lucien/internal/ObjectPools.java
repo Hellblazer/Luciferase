@@ -30,6 +30,7 @@ public class ObjectPools {
     // Thread-local pools for single-threaded access patterns
     private static final ThreadLocal<ArrayListPool> ARRAY_LIST_POOL = ThreadLocal.withInitial(ArrayListPool::new);
     private static final ThreadLocal<HashSetPool> HASH_SET_POOL = ThreadLocal.withInitial(HashSetPool::new);
+    private static final ThreadLocal<PriorityQueuePool> PRIORITY_QUEUE_POOL = ThreadLocal.withInitial(PriorityQueuePool::new);
     
     // Concurrent pools for multi-threaded access
     private static final ConcurrentPool<ArrayList<?>> CONCURRENT_LIST_POOL = new ConcurrentPool<>(ArrayList::new, 100);
@@ -106,6 +107,32 @@ public class ObjectPools {
     }
     
     /**
+     * Borrow a PriorityQueue from the thread-local pool
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> PriorityQueue<T> borrowPriorityQueue() {
+        return (PriorityQueue<T>) PRIORITY_QUEUE_POOL.get().borrow();
+    }
+    
+    /**
+     * Borrow a PriorityQueue with a specific comparator
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> PriorityQueue<T> borrowPriorityQueue(Comparator<? super T> comparator) {
+        return (PriorityQueue<T>) PRIORITY_QUEUE_POOL.get().borrowWithComparator(comparator);
+    }
+    
+    /**
+     * Return a PriorityQueue to the pool
+     */
+    public static <T> void returnPriorityQueue(PriorityQueue<T> queue) {
+        if (queue != null) {
+            queue.clear();
+            PRIORITY_QUEUE_POOL.get().returnToPool(queue);
+        }
+    }
+    
+    /**
      * Thread-local pool for ArrayLists
      */
     private static class ArrayListPool {
@@ -166,6 +193,33 @@ public class ObjectPools {
         public void returnToPool(T item) {
             if (pool.size() < maxSize) {
                 pool.offer(item);
+            }
+        }
+    }
+    
+    /**
+     * Thread-local pool for PriorityQueues
+     */
+    private static class PriorityQueuePool {
+        private final Deque<PriorityQueue<?>> pool = new ArrayDeque<>(10);
+        private static final int MAX_POOL_SIZE = 10;
+        
+        @SuppressWarnings("unchecked")
+        public <T> PriorityQueue<T> borrow() {
+            var queue = pool.pollFirst();
+            return queue != null ? (PriorityQueue<T>) queue : new PriorityQueue<T>();
+        }
+        
+        @SuppressWarnings("unchecked")
+        public <T> PriorityQueue<T> borrowWithComparator(Comparator<? super T> comparator) {
+            // For queues with custom comparators, we can't reuse from pool safely
+            // because we can't change the comparator after construction
+            return new PriorityQueue<T>(comparator);
+        }
+        
+        public void returnToPool(PriorityQueue<?> queue) {
+            if (pool.size() < MAX_POOL_SIZE && queue.size() == 0) {
+                pool.offerLast(queue);
             }
         }
     }

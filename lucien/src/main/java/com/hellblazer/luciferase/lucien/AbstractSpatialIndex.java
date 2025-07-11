@@ -1505,17 +1505,21 @@ implements SpatialIndex<Key, ID, Content> {
         // Use fine-grained locking for read operations
         return lockingStrategy.executeRead(0L, () -> {
             // Priority queue to keep track of k nearest entities (max heap)
-            var candidates = new PriorityQueue<EntityDistance<ID>>(EntityDistance.maxHeapComparator());
-            var addedToCandidates = new HashSet<ID>();
+            var candidates = ObjectPools.borrowPriorityQueue(EntityDistance.<ID>maxHeapComparator());
+            var addedToCandidates = ObjectPools.<ID>borrowHashSet();
+            try {
+                // Try expanding radius search first
+                if (!performKNNExpandingRadiusSearch(queryPoint, k, maxDistance, candidates, addedToCandidates)) {
+                    // If expanding search didn't find enough, try SFC-based search
+                    performKNNSFCBasedSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
+                }
 
-            // Try expanding radius search first
-            if (!performKNNExpandingRadiusSearch(queryPoint, k, maxDistance, candidates, addedToCandidates)) {
-                // If expanding search didn't find enough, try SFC-based search
-                performKNNSFCBasedSearch(queryPoint, k, maxDistance, candidates, addedToCandidates);
+                // Convert to sorted list (closest first)
+                return convertKNNCandidatesToList(candidates);
+            } finally {
+                ObjectPools.returnPriorityQueue(candidates);
+                ObjectPools.returnHashSet(addedToCandidates);
             }
-
-            // Convert to sorted list (closest first)
-            return convertKNNCandidatesToList(candidates);
         });
     }
 
@@ -4055,47 +4059,51 @@ implements SpatialIndex<Key, ID, Content> {
     private boolean searchKNNInRadius(Point3f queryPoint, float searchRadius, float maxDistance, int k,
                                      PriorityQueue<EntityDistance<ID>> candidates,
                                      Set<ID> addedToCandidates) {
-        var visitedThisExpansion = new HashSet<ID>();
-        var searchBounds = new VolumeBounds(
-            queryPoint.x - searchRadius, queryPoint.y - searchRadius, queryPoint.z - searchRadius,
-            queryPoint.x + searchRadius, queryPoint.y + searchRadius, queryPoint.z + searchRadius
-        );
-        
-        var candidateNodes = findNodesIntersectingBounds(searchBounds);
-        var foundNewEntities = false;
-        
-        for (Key nodeKey : candidateNodes) {
-            var node = spatialIndex.get(nodeKey);
-            if (node == null || node.isEmpty()) {
-                continue;
-            }
+        var visitedThisExpansion = ObjectPools.<ID>borrowHashSet();
+        try {
+            var searchBounds = new VolumeBounds(
+                queryPoint.x - searchRadius, queryPoint.y - searchRadius, queryPoint.z - searchRadius,
+                queryPoint.x + searchRadius, queryPoint.y + searchRadius, queryPoint.z + searchRadius
+            );
             
-            // Check all entities in this node
-            for (ID entityId : node.getEntityIds()) {
-                if (visitedThisExpansion.add(entityId)) {
-                    var entityPos = getCachedEntityPosition(entityId);
-                    if (entityPos != null) {
-                        var distance = queryPoint.distance(entityPos);
-                        
-                        // Only consider entities within current search radius
-                        if (distance <= searchRadius && distance <= maxDistance && 
-                            !addedToCandidates.contains(entityId)) {
-                            candidates.add(new EntityDistance<>(entityId, distance));
-                            addedToCandidates.add(entityId);
-                            foundNewEntities = true;
+            var candidateNodes = findNodesIntersectingBounds(searchBounds);
+            var foundNewEntities = false;
+        
+            for (Key nodeKey : candidateNodes) {
+                var node = spatialIndex.get(nodeKey);
+                if (node == null || node.isEmpty()) {
+                    continue;
+                }
+                
+                // Check all entities in this node
+                for (ID entityId : node.getEntityIds()) {
+                    if (visitedThisExpansion.add(entityId)) {
+                        var entityPos = getCachedEntityPosition(entityId);
+                        if (entityPos != null) {
+                            var distance = queryPoint.distance(entityPos);
                             
-                            // Keep only k elements
-                            if (candidates.size() > k) {
-                                candidates.poll();
-                                // Don't remove from addedToCandidates to prevent re-adding
+                            // Only consider entities within current search radius
+                            if (distance <= searchRadius && distance <= maxDistance && 
+                                !addedToCandidates.contains(entityId)) {
+                                candidates.add(new EntityDistance<>(entityId, distance));
+                                addedToCandidates.add(entityId);
+                                foundNewEntities = true;
+                                
+                                // Keep only k elements
+                                if (candidates.size() > k) {
+                                    candidates.poll();
+                                    // Don't remove from addedToCandidates to prevent re-adding
+                                }
                             }
                         }
                     }
                 }
             }
+            
+            return foundNewEntities;
+        } finally {
+            ObjectPools.returnHashSet(visitedThisExpansion);
         }
-        
-        return foundNewEntities;
     }
     
     /**
@@ -4115,8 +4123,9 @@ implements SpatialIndex<Key, ID, Content> {
         
         // Breadth-first search from nearest node
         var toVisit = new LinkedList<Key>();
-        var visitedNodes = new HashSet<Key>();
-        toVisit.add(nearestNodeIndex);
+        var visitedNodes = ObjectPools.<Key>borrowHashSet();
+        try {
+            toVisit.add(nearestNodeIndex);
         
         while (!toVisit.isEmpty() && candidates.size() < k) {
             var current = toVisit.poll();
@@ -4151,6 +4160,9 @@ implements SpatialIndex<Key, ID, Content> {
             if (candidates.size() < k || shouldContinueKNNSearch(current, queryPoint, candidates)) {
                 addNeighboringNodes(current, toVisit, visitedNodes);
             }
+        }
+        } finally {
+            ObjectPools.returnHashSet(visitedNodes);
         }
     }
     
@@ -4187,14 +4199,19 @@ implements SpatialIndex<Key, ID, Content> {
      * Convert k-NN candidates to sorted list
      */
     private List<ID> convertKNNCandidatesToList(PriorityQueue<EntityDistance<ID>> candidates) {
-        var sorted = new ArrayList<>(candidates);
-        sorted.sort(EntityDistance.minHeapComparator());
-        
-        var result = new ArrayList<ID>(sorted.size());
-        for (var entry : sorted) {
-            result.add(entry.entityId());
+        var sorted = ObjectPools.<EntityDistance<ID>>borrowArrayList(candidates.size());
+        try {
+            sorted.addAll(candidates);
+            sorted.sort(EntityDistance.minHeapComparator());
+            
+            var result = new ArrayList<ID>(sorted.size());
+            for (var entry : sorted) {
+                result.add(entry.entityId());
+            }
+            return result;
+        } finally {
+            ObjectPools.returnArrayList(sorted);
         }
-        return result;
     }
     
     // Collision Detection Helper Methods
