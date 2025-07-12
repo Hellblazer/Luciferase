@@ -4,7 +4,28 @@
 
 This document tracks performance benchmarks and optimization results for the Luciferase spatial indexing library.
 
-## Current Performance Baseline (July 2025)
+## Current Performance Baseline (July 11, 2025)
+
+### Latest Benchmark Results
+
+| Entity Count | Metric | Octree | Tetree | Difference |
+|--------------|--------|--------|--------|-----------|
+| **100 entities** | | | | |
+| | Insertion | 0.47 μs/op | 0.22 μs/op | Tetree 2.1x faster |
+| | K-NN Search | 7.3 μs/op | 4.6 μs/op | Tetree 1.6x faster |
+| | Memory | 0.68 MB | 0.46 MB | Tetree uses 68% |
+| **1,000 entities** | | | | |
+| | Insertion | 5.5 μs/op | 1.0 μs/op | Tetree 5.5x faster |
+| | K-NN Search | 14.2 μs/op | 12.9 μs/op | Tetree 1.1x faster |
+| | Memory | 2.1 MB | 1.5 MB | Tetree uses 71% |
+| **10,000 entities** | | | | |
+| | Insertion | 31.0 μs/op | 5.0 μs/op | Tetree 6.2x faster |
+| | K-NN Search | 18.5 μs/op | 22.2 μs/op | Octree 1.2x faster |
+| | Memory | 13.7 MB | 10.0 MB | Tetree uses 73% |
+
+*Note: July 11 results show significant improvements from concurrent optimizations*
+
+## Previous Performance Baseline (July 2025)
 
 ### Octree vs Tetree Comparison
 
@@ -37,26 +58,55 @@ This document tracks performance benchmarks and optimization results for the Luc
 
 ### Recent Optimizations (2025)
 
-1. **Lazy Evaluation** (July 8)
+1. **Concurrent Optimization** (July 11)
+   - ConcurrentSkipListMap replacing dual HashMap/TreeSet
+   - 54-61% memory reduction
+   - Eliminated ConcurrentModificationException
+   - ObjectPool extended to all query operations
+
+2. **Lock-Free Entity Updates** (July 11)
+   - 264K movements/sec with 4 threads
+   - 1.69M content updates/sec
+   - 187 bytes per entity memory overhead
+   - Zero conflicts with optimistic concurrency
+
+3. **Lazy Evaluation** (July 8)
    - 99.5% memory reduction for large range queries
    - O(1) memory usage regardless of range size
 
-2. **Parent Caching** (June 28)
+4. **Parent Caching** (June 28)
    - 17.3x speedup for parent() operations
    - Reduces Tetree insertion gap
 
-3. **V2 tmIndex Algorithm** (June 28)
+5. **V2 tmIndex Algorithm** (June 28)
    - 4x speedup over original implementation
    - Simplified from 70+ lines to 15 lines
 
-4. **Bulk Operations** (June 2025)
+6. **Bulk Operations** (June 2025)
    - 15.5x speedup for batch insertions
    - Parallel processing support
 
-5. **Node Consolidation** (July 10)
+7. **Node Consolidation** (July 10)
    - Eliminated redundant wrapper classes
    - Reduced memory overhead
    - Simplified architecture
+
+## Performance Trends
+
+### Insertion Performance Evolution
+- July 11: Tetree 2.1x-6.2x faster (concurrent optimizations)
+- Early July: Octree 15x faster (before optimizations)
+- June: Octree 7-10x faster (after V2 tmIndex)
+
+### Memory Usage Evolution
+- July 11: Tetree uses 65-73% of Octree's memory
+- Early July: Tetree uses 21% of Octree's memory
+- Concurrent optimizations traded some memory for thread safety
+
+### Query Performance
+- Consistently strong Tetree performance for k-NN at low entity counts
+- Crossover point around 10K entities where Octree becomes competitive
+- Range queries remain Tetree's strength across all scales
 
 ## Benchmark Suite
 

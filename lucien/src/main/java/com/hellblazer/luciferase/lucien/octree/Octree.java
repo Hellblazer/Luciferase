@@ -223,13 +223,13 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         var intersectingNodes = new HashSet<MortonKey>();
 
         // For Octree, we can use Morton code ordering for efficient range queries
-        // The sortedSpatialIndices are already ordered by Morton code
+        // The spatialIndex keys are already ordered by Morton code
 
         // Calculate the Morton code range that could contain nodes intersecting the bounds
         // This is more efficient than checking every node
 
         // Find the minimum and maximum Morton codes that could intersect
-        for (var nodeKey : sortedSpatialIndices) {
+        for (var nodeKey : spatialIndex.keySet()) {
             // Decode the Morton code to get cell coordinates
             var coords = MortonCurve.decode(nodeKey.getMortonCode());
             var level = nodeKey.getLevel();
@@ -295,7 +295,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     protected Stream<MortonKey> getFrustumTraversalOrder(Frustum3D frustum, Point3f cameraPosition) {
         // For octree, use spatial ordering to traverse nodes that could intersect with the frustum
         // Order by distance from camera to node center for optimal culling traversal
-        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+        return spatialIndex.keySet().stream().filter(nodeIndex -> {
             var node = spatialIndex.get(nodeIndex);
             return node != null && !node.isEmpty();
         }).sorted((n1, n2) -> {
@@ -319,7 +319,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     protected Stream<MortonKey> getPlaneTraversalOrder(Plane3D plane) {
         // For octree, use spatial ordering to traverse nodes that could intersect with the plane
         // Order by distance from plane to node center for better early termination
-        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+        return spatialIndex.keySet().stream().filter(nodeIndex -> {
             var node = spatialIndex.get(nodeIndex);
             return node != null && !node.isEmpty();
         }).sorted((n1, n2) -> {
@@ -432,7 +432,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
                 } else {
                     // Create or get child node
                     childNode = spatialIndex.computeIfAbsent(childMorton, k -> {
-                        sortedSpatialIndices.add(childMorton);
+                        // childMorton is already added to spatialIndex above
                         return nodePool.acquire();
                     });
 
@@ -476,7 +476,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         // Add entity to all intersecting nodes
         for (var mortonCode : intersectingNodes) {
             var node = spatialIndex.computeIfAbsent(mortonCode, k -> {
-                sortedSpatialIndices.add(mortonCode);
+                // mortonCode is already added to spatialIndex above
                 return nodePool.acquire();
             });
 
@@ -545,7 +545,7 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     
     @Override
     protected NavigableSet<MortonKey> getSortedSpatialIndices() {
-        return sortedSpatialIndices;
+        return (NavigableSet<MortonKey>) spatialIndex.navigableKeySet();
     }
 
     boolean doesCubeIntersectVolume(Spatial.Cube cube, Spatial volume) {
@@ -717,20 +717,20 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         if (minMorton == maxMorton) {
             // Special case: single point or very small bounds
             candidateCodes = new TreeSet<>();
-            if (sortedSpatialIndices.contains(minMorton)) {
+            if (spatialIndex.containsKey(minMorton)) {
                 candidateCodes.add(minMorton);
             }
         } else {
-            candidateCodes = sortedSpatialIndices.subSet(minMorton, true, maxMorton, true);
+            candidateCodes = spatialIndex.navigableKeySet().subSet(minMorton, true, maxMorton, true);
         }
 
         // Also check codes just outside the range as Morton curve can be non-contiguous
         var extendedCodes = new TreeSet<>(candidateCodes);
-        var lower = sortedSpatialIndices.lower(minMorton);
+        var lower = spatialIndex.lowerKey(minMorton);
         if (lower != null) {
             extendedCodes.add(lower);
         }
-        var higher = sortedSpatialIndices.higher(maxMorton);
+        var higher = spatialIndex.higherKey(maxMorton);
         if (higher != null) {
             extendedCodes.add(higher);
         }

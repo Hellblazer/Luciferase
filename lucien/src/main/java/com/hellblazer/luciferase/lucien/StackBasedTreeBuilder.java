@@ -169,7 +169,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                 entitiesProcessed.incrementAndGet();
             }
 
-            index.getSortedSpatialIndices().add(nodeIndex);
+            // Keys are automatically sorted in ConcurrentSkipListMap
         }
 
         // Phase 3: Build internal nodes from bottom to top
@@ -186,7 +186,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                     // Create parent node
                     var parentNode = index.createNode();
                     index.getSpatialIndex().put(parentIndex, parentNode);
-                    index.getSortedSpatialIndices().add(parentIndex);
+                    // Keys are automatically sorted in ConcurrentSkipListMap
                     nodesCreated.incrementAndGet();
 
                     // Mark parent as having children
@@ -282,7 +282,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                 if (parentIndex != null && !index.getSpatialIndex().containsKey(parentIndex)) {
                     var parentNode = index.createNode();
                     index.getSpatialIndex().put(parentIndex, parentNode);
-                    index.getSortedSpatialIndices().add(parentIndex);
+                    // Keys are automatically sorted in ConcurrentSkipListMap
                     nodesCreated.incrementAndGet();
 
                     if (parentNode instanceof SpatialNodeImpl) {
@@ -373,7 +373,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
             entitiesProcessed.incrementAndGet();
         }
 
-        index.getSortedSpatialIndices().add(nodeIndex);
+        // Keys are automatically sorted in ConcurrentSkipListMap
     }
 
     /**
@@ -498,8 +498,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
             entitiesProcessed.incrementAndGet();
         }
 
-        // Add to sorted indices
-        index.getSortedSpatialIndices().add(frame.nodeIndex);
+        // No need to add to sorted indices - already added when node was created
     }
 
     /**

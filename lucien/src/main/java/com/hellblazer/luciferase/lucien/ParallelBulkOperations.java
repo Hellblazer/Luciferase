@@ -17,6 +17,8 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import java.util.*;
@@ -38,6 +40,8 @@ import java.util.stream.IntStream;
  * @author hal.hildebrand
  */
 public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
+    
+    private static final Logger log = LoggerFactory.getLogger(ParallelBulkOperations.class);
 
     // Dependencies
     private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
@@ -344,7 +348,7 @@ public class ParallelBulkOperations<Key extends SpatialKey<Key>, ID extends Enti
             return insertedIds;
         } catch (Exception e) {
             // Log error and return empty list
-            System.err.println("Failed to insert batch in region " + regionId + ": " + e.getMessage());
+            log.error("Failed to insert batch in region {}: {}", regionId, e.getMessage(), e);
             return new ArrayList<>();
         }
     }

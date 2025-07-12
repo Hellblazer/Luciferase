@@ -114,6 +114,7 @@ The current architecture prioritizes:
 3. **Maintainability**: Single place for algorithm changes
 4. **Extensibility**: Easy addition of new spatial decomposition strategies
 5. **Performance**: O(1) operations through HashMap-based storage
+6. **Scalability**: Forest architecture for distributed and large-scale applications
 
 ## Performance Reality (June 2025 - OctreeVsTetreeBenchmark)
 
@@ -123,18 +124,18 @@ Previous performance claims were based on using the `consecutiveIndex()` method 
 After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
 characteristics have changed dramatically.
 
-### Current Performance Metrics (All Optimizations - July 5, 2025)
+### Current Performance Metrics (Concurrent Optimizations - July 11, 2025)
 
-After V2 tmIndex, parent cache, and efficient child computation:
+After ConcurrentSkipListMap integration, the performance characteristics have completely reversed:
 
 | Entities | Operation | Octree  | Tetree  | Winner        | Current State |
 |---------|-----------|---------|---------|---------------|---------------|
-| 100     | Insertion | 4.48 μs | 30.25 μs| Octree (6.8x) | **From 770x** |
-| 1K      | Insertion | 2.49 μs | 7.84 μs | Octree (3.1x) | **to 3-7x** |
-| 10K     | Insertion | 1.27 μs | 4.75 μs | Octree (3.7x) | **slower** |
-| 1K      | k-NN      | 4.10 μs | 2.15 μs | Tetree (1.9x) | Tetree faster |
-| 10K     | k-NN      | 42.6 μs | 10.3 μs | Tetree (4.1x) | Tetree faster |
-| 50K+    | Batch     | Baseline| Faster  | Tetree        | 74-296x faster|
+| 100     | Insertion | 12.58 μs| 5.92 μs | Tetree (2.1x) | **Complete** |
+| 1K      | Insertion | 17.89 μs| 4.72 μs | Tetree (3.8x) | **reversal** |
+| 10K     | Insertion | 36.87 μs| 5.97 μs | Tetree (6.2x) | **from July** |
+| 1K      | k-NN      | 4.15 μs | 2.64 μs | Tetree (1.6x) | Tetree faster |
+| 10K     | k-NN      | 19.23 μs| 23.46 μs| Octree (1.2x) | Mixed results |
+| 50K+    | Batch     | Baseline| Faster  | Tetree        | 35-38% faster|
 
 ### Optimization Timeline
 
@@ -142,13 +143,15 @@ After V2 tmIndex, parent cache, and efficient child computation:
 - **June 28**: Subdivision fix + V2 tmIndex - reduced to 6-35x slower
 - **June 28**: Parent cache - reduced to 3-7x slower
 - **July 5**: Efficient child computation - 3x faster child lookups
-- **Result**: 256-385x cumulative performance improvement
+- **July 11**: ConcurrentSkipListMap - Tetree now 2.1-6.2x FASTER for insertions
+- **Result**: Complete performance reversal from concurrent optimizations
 
-### Remaining Gap Explanation
+### Performance Reversal Explanation
 
-- **Octree**: Uses Morton encoding (simple bit interleaving) - always O(1)
-- **Tetree**: Uses tmIndex() which requires parent chain traversal - O(level)
-- **Mitigation**: Batch operations where Tetree excels due to better spatial locality
+- **Fundamental algorithms unchanged**: Octree still O(1), Tetree still O(level)
+- **ConcurrentSkipListMap impact**: Favors simpler key comparisons (benefits Tetree)
+- **Memory trade-off**: Tetree now uses 65-73% of Octree's memory (was 20-25%)
+- **Concurrent benefits**: Lock-free reads and reduced contention favor Tetree
 
 For detailed performance analysis, see:
 - [PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md) - Current performance baseline

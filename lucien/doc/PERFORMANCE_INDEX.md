@@ -4,7 +4,7 @@
 
 This index guides you to performance-related documentation for the Luciferase spatial indexing library.
 
-**Last Updated**: July 10, 2025
+**Last Updated**: July 11, 2025
 
 ## Main Performance Documents
 
@@ -17,7 +17,7 @@ This index guides you to performance-related documentation for the Luciferase sp
 - Performance guidelines
 - Benchmark instructions
 
-### [OCTREE_VS_TETREE_PERFORMANCE_.md](OCTREE_VS_TETREE_PERFORMANCE.md)
+### [OCTREE_VS_TETREE_PERFORMANCE.md](OCTREE_VS_TETREE_PERFORMANCE.md)
 
 **Primary spatial index comparison**
 
@@ -36,7 +36,7 @@ This index guides you to performance-related documentation for the Luciferase sp
 - Continuous collision detection
 - Spatial index integration
 
-### [BATCH_PERFORMANCE_.md](BATCH_PERFORMANCE.md)
+### [BATCH_PERFORMANCE.md](BATCH_PERFORMANCE.md)
 
 **Batch loading analysis**
 
@@ -55,10 +55,11 @@ This index guides you to performance-related documentation for the Luciferase sp
 
 ### For Different Workloads
 
-**Insertion-Heavy**: Use Octree (up to 15x faster)
-**Query-Heavy**: Use Tetree (2-4x faster queries)
-**Memory-Constrained**: Use Tetree (75-80% less memory)
-**Batch Loading**: Use Tetree with bulk operations
+**Insertion-Heavy**: Use Tetree (2.1x to 6.2x faster after concurrent optimizations)
+**Query-Heavy**: Use Tetree for k-NN at low entity counts, Octree at scale (>10K)
+**Memory-Constrained**: Use Tetree (65-73% of Octree's memory usage)
+**Batch Loading**: Use Tetree with bulk operations (35-38% faster)
+**Update-Heavy**: Mixed results - profile your specific use case
 
 ### Running Benchmarks
 

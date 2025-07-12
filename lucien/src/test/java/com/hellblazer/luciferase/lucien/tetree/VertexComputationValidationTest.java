@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.TestOutputSuppressor;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -19,8 +20,8 @@ public class VertexComputationValidationTest {
 
     @Test
     void testEdgeIdentification() {
-        System.out.println("\nEdge Identification Test");
-        System.out.println("========================");
+        TestOutputSuppressor.println("\nEdge Identification Test");
+        TestOutputSuppressor.println("========================");
 
         // Use grid-aligned coordinates
         byte level = 10;
@@ -29,57 +30,57 @@ public class VertexComputationValidationTest {
         Point3i[] vertices = tet.coordinates();
 
         // List all 6 edges
-        System.out.println("Edges:");
-        System.out.println("  Edge 0-1: " + pointToString(vertices[0]) + " to " + pointToString(vertices[1]));
-        System.out.println("  Edge 0-2: " + pointToString(vertices[0]) + " to " + pointToString(vertices[2]));
-        System.out.println("  Edge 0-3: " + pointToString(vertices[0]) + " to " + pointToString(vertices[3]));
-        System.out.println("  Edge 1-2: " + pointToString(vertices[1]) + " to " + pointToString(vertices[2]));
-        System.out.println("  Edge 1-3: " + pointToString(vertices[1]) + " to " + pointToString(vertices[3]));
-        System.out.println("  Edge 2-3: " + pointToString(vertices[2]) + " to " + pointToString(vertices[3]));
+        TestOutputSuppressor.println("Edges:");
+        TestOutputSuppressor.println("  Edge 0-1: " + pointToString(vertices[0]) + " to " + pointToString(vertices[1]));
+        TestOutputSuppressor.println("  Edge 0-2: " + pointToString(vertices[0]) + " to " + pointToString(vertices[2]));
+        TestOutputSuppressor.println("  Edge 0-3: " + pointToString(vertices[0]) + " to " + pointToString(vertices[3]));
+        TestOutputSuppressor.println("  Edge 1-2: " + pointToString(vertices[1]) + " to " + pointToString(vertices[2]));
+        TestOutputSuppressor.println("  Edge 1-3: " + pointToString(vertices[1]) + " to " + pointToString(vertices[3]));
+        TestOutputSuppressor.println("  Edge 2-3: " + pointToString(vertices[2]) + " to " + pointToString(vertices[3]));
 
         // Calculate edge midpoints
-        System.out.println("\nEdge Midpoints:");
+        TestOutputSuppressor.println("\nEdge Midpoints:");
         Point3f[] midpoints = computeEdgeMidpoints(vertices);
-        System.out.println("  M01: " + pointToString(midpoints[0]));
-        System.out.println("  M02: " + pointToString(midpoints[1]));
-        System.out.println("  M03: " + pointToString(midpoints[2]));
-        System.out.println("  M12: " + pointToString(midpoints[3]));
-        System.out.println("  M13: " + pointToString(midpoints[4]));
-        System.out.println("  M23: " + pointToString(midpoints[5]));
+        TestOutputSuppressor.println("  M01: " + pointToString(midpoints[0]));
+        TestOutputSuppressor.println("  M02: " + pointToString(midpoints[1]));
+        TestOutputSuppressor.println("  M03: " + pointToString(midpoints[2]));
+        TestOutputSuppressor.println("  M12: " + pointToString(midpoints[3]));
+        TestOutputSuppressor.println("  M13: " + pointToString(midpoints[4]));
+        TestOutputSuppressor.println("  M23: " + pointToString(midpoints[5]));
     }
 
     @Test
     void testFaceIdentification() {
-        System.out.println("\nFace Identification Test");
-        System.out.println("========================");
+        TestOutputSuppressor.println("\nFace Identification Test");
+        TestOutputSuppressor.println("========================");
 
         Tet tet = new Tet(0, 0, 0, (byte) 10, (byte) 0);
         Point3i[] vertices = tet.coordinates();
 
-        System.out.println("Faces (each opposite to a vertex):");
-        System.out.println("  Face 0 (opposite V0): V1-V2-V3");
-        System.out.println("  Face 1 (opposite V1): V0-V2-V3");
-        System.out.println("  Face 2 (opposite V2): V0-V1-V3");
-        System.out.println("  Face 3 (opposite V3): V0-V1-V2");
+        TestOutputSuppressor.println("Faces (each opposite to a vertex):");
+        TestOutputSuppressor.println("  Face 0 (opposite V0): V1-V2-V3");
+        TestOutputSuppressor.println("  Face 1 (opposite V1): V0-V2-V3");
+        TestOutputSuppressor.println("  Face 2 (opposite V2): V0-V1-V3");
+        TestOutputSuppressor.println("  Face 3 (opposite V3): V0-V1-V2");
     }
 
     @Test
     void testTypePairs() {
-        System.out.println("\nType Pairs Analysis");
-        System.out.println("===================");
+        TestOutputSuppressor.println("\nType Pairs Analysis");
+        TestOutputSuppressor.println("===================");
 
         for (byte type = 0; type < 6; type++) {
             int ei = type / 2;
             int ej = (ei + ((type % 2 == 0) ? 2 : 1)) % 3;
 
-            System.out.println(
+            TestOutputSuppressor.println(
             "Type " + type + ": ei=" + ei + " (" + dimensionName(ei) + "), ej=" + ej + " (" + dimensionName(ej) + ")");
         }
 
-        System.out.println("\nGrouped by primary axis:");
-        System.out.println("  X-axis primary (ei=0): Types 0, 1");
-        System.out.println("  Y-axis primary (ei=1): Types 2, 3");
-        System.out.println("  Z-axis primary (ei=2): Types 4, 5");
+        TestOutputSuppressor.println("\nGrouped by primary axis:");
+        TestOutputSuppressor.println("  X-axis primary (ei=0): Types 0, 1");
+        TestOutputSuppressor.println("  Y-axis primary (ei=1): Types 2, 3");
+        TestOutputSuppressor.println("  Z-axis primary (ei=2): Types 4, 5");
     }
 
     @Test
@@ -91,18 +92,18 @@ public class VertexComputationValidationTest {
         int y = 3 * cellSize; // 6144 - aligned to grid
         int z = 4 * cellSize; // 8192 - aligned to grid
 
-        System.out.println("S0-S5 Tetrahedral Decomposition Analysis");
-        System.out.println("========================================");
-        System.out.println("Anchor: (" + x + ", " + y + ", " + z + ")");
-        System.out.println("Level: " + level);
+        TestOutputSuppressor.println("S0-S5 Tetrahedral Decomposition Analysis");
+        TestOutputSuppressor.println("========================================");
+        TestOutputSuppressor.println("Anchor: (" + x + ", " + y + ", " + z + ")");
+        TestOutputSuppressor.println("Level: " + level);
 
         for (byte type = 0; type < 6; type++) {
             Tet tet = new Tet(x, y, z, level, type);
             Point3i[] vertices = tet.coordinates();
             int h = tet.length();
 
-            System.out.println("\nType " + type + " (S" + type + "):");
-            System.out.println("  Cell size (h): " + h);
+            TestOutputSuppressor.println("\nType " + type + " (S" + type + "):");
+            TestOutputSuppressor.println("  Cell size (h): " + h);
 
             // Print which cube vertices this tet uses
             String cubeVertices = switch (type) {
@@ -114,11 +115,11 @@ public class VertexComputationValidationTest {
                 case 5 -> "0,2,6,7";
                 default -> "unknown";
             };
-            System.out.println("  Cube vertices: " + cubeVertices);
+            TestOutputSuppressor.println("  Cube vertices: " + cubeVertices);
 
             // Print vertices
             for (int i = 0; i < 4; i++) {
-                System.out.println("  V" + i + ": " + pointToString(vertices[i]));
+                TestOutputSuppressor.println("  V" + i + ": " + pointToString(vertices[i]));
             }
 
             // Validate vertex positions match S0-S5 pattern
@@ -127,7 +128,7 @@ public class VertexComputationValidationTest {
             // Calculate and validate volume
             float volume = calculateVolume(vertices);
             float expectedVolume = (float) h * (float) h * (float) h / 6.0f;
-            System.out.println("  Volume: " + volume + " (expected: " + expectedVolume + ")");
+            TestOutputSuppressor.println("  Volume: " + volume + " (expected: " + expectedVolume + ")");
 
             // Validate orientation (volume should be positive)
             assertTrue(volume > 0, "Negative volume for type " + type);

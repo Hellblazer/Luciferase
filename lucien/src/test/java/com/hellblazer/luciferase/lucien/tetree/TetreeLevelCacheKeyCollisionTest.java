@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.TestOutputSuppressor;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,26 +39,26 @@ public class TetreeLevelCacheKeyCollisionTest {
     public void demonstrateFixedImplementation() {
         // Show how to fix the cache key generation
 
-        System.out.println("\n=== FIXED IMPLEMENTATION ===");
-        System.out.println("For 32-bit coordinates, we need to use a different approach:");
-        System.out.println();
-        System.out.println("Option 1: Use coordinate bits more efficiently");
-        System.out.println("- Limit coordinates to 20 bits each (max ~1 million)");
-        System.out.println("- Pack as: (x:20)(y:20)(z:20)(level:3)(type:1) = 64 bits");
-        System.out.println();
-        System.out.println("Option 2: Use a hash function");
-        System.out.println("- Compute a proper hash of all inputs");
-        System.out.println("- long hash = x * 31L + y * 961L + z * 29791L + level * 923521L + type");
-        System.out.println();
-        System.out.println("Option 3: Use two cache levels");
-        System.out.println("- First level: (x, y) -> intermediate key");
-        System.out.println("- Second level: (intermediate key, z, level, type) -> index");
-        System.out.println();
-        System.out.println("Recommended fix for TetreeLevelCache.java:");
-        System.out.println("Replace lines 66 and 114 with:");
-        System.out.println(
+        TestOutputSuppressor.println("\n=== FIXED IMPLEMENTATION ===");
+        TestOutputSuppressor.println("For 32-bit coordinates, we need to use a different approach:");
+        TestOutputSuppressor.println("");
+        TestOutputSuppressor.println("Option 1: Use coordinate bits more efficiently");
+        TestOutputSuppressor.println("- Limit coordinates to 20 bits each (max ~1 million)");
+        TestOutputSuppressor.println("- Pack as: (x:20)(y:20)(z:20)(level:3)(type:1) = 64 bits");
+        TestOutputSuppressor.println("");
+        TestOutputSuppressor.println("Option 2: Use a hash function");
+        TestOutputSuppressor.println("- Compute a proper hash of all inputs");
+        TestOutputSuppressor.println("- long hash = x * 31L + y * 961L + z * 29791L + level * 923521L + type");
+        TestOutputSuppressor.println("");
+        TestOutputSuppressor.println("Option 3: Use two cache levels");
+        TestOutputSuppressor.println("- First level: (x, y) -> intermediate key");
+        TestOutputSuppressor.println("- Second level: (intermediate key, z, level, type) -> index");
+        TestOutputSuppressor.println("");
+        TestOutputSuppressor.println("Recommended fix for TetreeLevelCache.java:");
+        TestOutputSuppressor.println("Replace lines 66 and 114 with:");
+        TestOutputSuppressor.println(
         "long key = ((long)(x & 0xFFFFF) << 44) | ((long)(y & 0xFFFFF) << 24) | ((long)(z & 0xFFFFF) << 4) | ((level & 0xF) << 1) | (type & 0x1);");
-        System.out.println("This limits coordinates to 20 bits, level to 4 bits, and type to 1 bit.");
+        TestOutputSuppressor.println("This limits coordinates to 20 bits, level to 4 bits, and type to 1 bit.");
     }
 
     @Test
@@ -86,26 +87,26 @@ public class TetreeLevelCacheKeyCollisionTest {
         long extractedLevel = (key >>> 8) & 0xFFL;
         long extractedType = key & 0xFFL;
 
-        System.out.println("\nBit overlap demonstration:");
-        System.out.println("Original x:     0x" + Integer.toHexString(x));
-        System.out.println("Extracted x:    0x" + Long.toHexString(extractedX));
-        System.out.println("Match: " + (x == extractedX));
+        TestOutputSuppressor.println("\nBit overlap demonstration:");
+        TestOutputSuppressor.println("Original x:     0x" + Integer.toHexString(x));
+        TestOutputSuppressor.println("Extracted x:    0x" + Long.toHexString(extractedX));
+        TestOutputSuppressor.println("Match: " + (x == extractedX));
 
-        System.out.println("\nOriginal y:     0x" + Integer.toHexString(y));
-        System.out.println("Extracted y:    0x" + Long.toHexString(extractedY));
-        System.out.println("Match: " + (y == extractedY) + " (corrupted by z overlap!)");
+        TestOutputSuppressor.println("\nOriginal y:     0x" + Integer.toHexString(y));
+        TestOutputSuppressor.println("Extracted y:    0x" + Long.toHexString(extractedY));
+        TestOutputSuppressor.println("Match: " + (y == extractedY) + " (corrupted by z overlap!)");
 
-        System.out.println("\nOriginal z:     0x" + Integer.toHexString(z));
-        System.out.println("Extracted z:    0x" + Long.toHexString(extractedZ));
-        System.out.println("Match: " + (z == extractedZ));
+        TestOutputSuppressor.println("\nOriginal z:     0x" + Integer.toHexString(z));
+        TestOutputSuppressor.println("Extracted z:    0x" + Long.toHexString(extractedZ));
+        TestOutputSuppressor.println("Match: " + (z == extractedZ));
 
-        System.out.println("\nOriginal level: 0x" + Integer.toHexString(level));
-        System.out.println("Extracted level: 0x" + Long.toHexString(extractedLevel));
-        System.out.println("Match: " + ((level & 0xFF) == extractedLevel) + " (corrupted by z overlap!)");
+        TestOutputSuppressor.println("\nOriginal level: 0x" + Integer.toHexString(level));
+        TestOutputSuppressor.println("Extracted level: 0x" + Long.toHexString(extractedLevel));
+        TestOutputSuppressor.println("Match: " + ((level & 0xFF) == extractedLevel) + " (corrupted by z overlap!)");
 
-        System.out.println("\nOriginal type:  0x" + Integer.toHexString(type));
-        System.out.println("Extracted type: 0x" + Long.toHexString(extractedType));
-        System.out.println("Match: " + ((type & 0xFF) == extractedType) + " (corrupted by z overlap!)");
+        TestOutputSuppressor.println("\nOriginal type:  0x" + Integer.toHexString(type));
+        TestOutputSuppressor.println("Extracted type: 0x" + Long.toHexString(extractedType));
+        TestOutputSuppressor.println("Match: " + ((type & 0xFF) == extractedType) + " (corrupted by z overlap!)");
     }
 
     @Test
@@ -152,10 +153,10 @@ public class TetreeLevelCacheKeyCollisionTest {
         assertEquals(actualKey1, actualKey3,
                      "Different tetrahedra (with different level and type) produce the same cache key!");
 
-        System.out.println("Collision demonstration:");
-        System.out.println("Tet1: x=" + x1 + ", y=" + y1 + ", z=" + z1 + ", level=" + level1 + ", type=" + type1);
-        System.out.println("Tet3: x=" + x3 + ", y=" + y3 + ", z=" + z3 + ", level=" + level3 + ", type=" + type3);
-        System.out.println("Both produce key: 0x" + Long.toHexString(actualKey1));
+        TestOutputSuppressor.println("Collision demonstration:");
+        TestOutputSuppressor.println("Tet1: x=" + x1 + ", y=" + y1 + ", z=" + z1 + ", level=" + level1 + ", type=" + type1);
+        TestOutputSuppressor.println("Tet3: x=" + x3 + ", y=" + y3 + ", z=" + z3 + ", level=" + level3 + ", type=" + type3);
+        TestOutputSuppressor.println("Both produce key: 0x" + Long.toHexString(actualKey1));
     }
 
     @Test
@@ -186,11 +187,11 @@ public class TetreeLevelCacheKeyCollisionTest {
             slotsUsed[slot] = true;
         }
 
-        System.out.println("\nCache slot collision rate:");
-        System.out.println("Total tests: " + totalTests);
-        System.out.println("Unique slots used: " + (totalTests - collisions));
-        System.out.println("Collisions: " + collisions);
-        System.out.println("Collision rate: " + (100.0 * collisions / totalTests) + "%");
+        TestOutputSuppressor.println("\nCache slot collision rate:");
+        TestOutputSuppressor.println("Total tests: " + totalTests);
+        TestOutputSuppressor.println("Unique slots used: " + (totalTests - collisions));
+        TestOutputSuppressor.println("Collisions: " + collisions);
+        TestOutputSuppressor.println("Collision rate: " + (100.0 * collisions / totalTests) + "%");
 
         // With the bug, we expect more collisions than necessary
         assertTrue(collisions > 0, "Should have some collisions with buggy key generation");
@@ -244,8 +245,8 @@ public class TetreeLevelCacheKeyCollisionTest {
         assertEquals(level, extractedLevel, "Level should be preserved");
         assertEquals(type, extractedType, "Type should be preserved");
 
-        System.out.println("\nCorrect bit packing (16-bit coordinates):");
-        System.out.println("Key: 0x" + Long.toHexString(correctKey));
-        System.out.println("Successfully packed and extracted all components!");
+        TestOutputSuppressor.println("\nCorrect bit packing (16-bit coordinates):");
+        TestOutputSuppressor.println("Key: 0x" + Long.toHexString(correctKey));
+        TestOutputSuppressor.println("Successfully packed and extracted all components!");
     }
 }
