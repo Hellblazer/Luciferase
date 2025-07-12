@@ -68,6 +68,10 @@ com.hellblazer.luciferase.lucien/
 │   ├── Specialized: GridForest
 │   ├── Spatial Queries: ForestQuery, ForestSpatialQueries
 │   └── Connectivity: TreeConnectivityManager, GhostZoneManager
+├── lockfree/ (3 classes)
+│   ├── LockFreeEntityMover - Atomic movement protocol (264K movements/sec)
+│   ├── AtomicSpatialNode - Lock-free spatial node using atomic collections
+│   └── VersionedEntityState - Immutable versioned state for optimistic concurrency
 └── index/ (1 class)
     └── TMIndexSimple - Simplified TM-index implementation
 ```
@@ -98,14 +102,15 @@ The previous `OctreeNode` and `TetreeNodeImpl` classes have been eliminated in f
 
 The `AbstractSpatialIndex` class contains the majority of spatial indexing functionality:
 
-### Common State
+### Common State (Updated July 2025)
 
-- `spatialIndex: Map<Key, NodeType>` - Main spatial storage mapping spatial keys to nodes
-- `sortedSpatialIndices: NavigableSet<Key>` - Sorted keys for efficient range queries (uses SpatialIndexSet)
+- `spatialIndex: ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>` - **Thread-safe spatial storage** using ConcurrentSkipListMap (replaces dual HashMap/TreeSet structure)
 - `entityManager: EntityManager<ID, Content>` - Centralized entity lifecycle management
 - `maxEntitiesPerNode: int` - Threshold for node subdivision
 - `maxDepth: byte` - Maximum tree depth
 - `spanningPolicy: EntitySpanningPolicy` - Controls entity spanning behavior
+
+**Key Architectural Change (July 2025):** Eliminated separate `sortedSpatialIndices` NavigableSet in favor of single ConcurrentSkipListMap providing both O(log n) access and sorted iteration with thread safety.
 
 ### Common Operations
 
@@ -236,6 +241,14 @@ The `EntityManager` class provides centralized entity lifecycle:
 - **LongEntityID**, **UUIDEntityID** - Concrete ID types
 - **SequentialLongIDGenerator**, **UUIDGenerator** - ID generators
 
+### Lock-Free Package (3) - July 2025
+
+High-performance concurrent operations using atomic protocols:
+
+- **LockFreeEntityMover** - Four-phase atomic movement protocol achieving 264K movements/sec with 4 threads
+- **AtomicSpatialNode** - Lock-free spatial node using CopyOnWriteArraySet and atomic operations
+- **VersionedEntityState** - Immutable versioned state for optimistic concurrency control with ABA prevention
+
 ### Octree Package (4)
 
 - **Octree** - Morton curve-based spatial index
@@ -288,34 +301,40 @@ Lazy evaluation support (4):
 - **RangeHandle** - Deferred computation for spatial queries
 - **RangeQueryVisitor** - Tree-based traversal with early termination
 
-### Forest Package (13)
+### Forest Package (16) - Complete Multi-Tree Architecture
 
-The Forest package provides multi-tree spatial indexing capabilities, enabling coordinated operations across multiple spatial index trees. It supports distributed spatial indexing, level-of-detail management, and advanced spatial partitioning strategies.
+The Forest package provides a comprehensive multi-tree spatial indexing solution designed for large-scale applications requiring distributed spatial data management. Supports both simple grid partitioning and sophisticated adaptive/hierarchical forests.
 
-**Core Components:**
+**Core Forest Management (4 classes):**
 
-- **Forest** - Main forest management class coordinating multiple spatial index trees
-- **TreeNode** - Wrapper for spatial index trees with forest-specific metadata and neighbor tracking
-- **TreeMetadata** - Immutable metadata container for tree information (name, type, creation time, properties)
-- **TreeLocation** - Spatial location and bounds information for trees within the forest
+- **Forest** - Main forest coordinator with thread-safe collections (CopyOnWriteArrayList, ConcurrentHashMap)
+- **TreeNode** - Wrapper providing forest-specific metadata, neighbor tracking, and global bounds management
+- **TreeMetadata** - Immutable metadata with builder pattern (name, type, creation time, custom properties)
+- **TreeLocation** - Spatial positioning and bounds tracking for trees within forest coordinate system
 
-**Configuration and Management:**
+**Entity and Load Management (3 classes):**
 
-- **ForestConfig** - Configuration for forest behavior including overlap policies, ghost zones, and partition strategies
-- **DynamicForestManager** - Manages dynamic forest operations including tree splitting, merging, and load balancing
-- **ForestEntityManager** - Entity lifecycle management across multiple trees with cross-tree migration support
-- **ForestLoadBalancer** - Load balancing strategies for distributing entities across trees
+- **ForestEntityManager** - Cross-tree entity lifecycle with automatic tree assignment strategies (RoundRobin, SpatialBounds, LoadBalanced)
+- **ForestLoadBalancer** - Real-time load metrics and automatic rebalancing (entity count, memory usage, query load thresholds)
+- **DynamicForestManager** - Runtime tree operations with background processing (splitting, merging, entity migration)
 
-**Specialized Implementations:**
+**Specialized Forest Types (3 classes):**
 
-- **GridForest** - Specialized forest implementation creating uniform grids of spatial index trees
+- **GridForest** - Uniform spatial partitioning with factory methods for both Octree and Tetree grids
+- **AdaptiveForest** - Dynamic density-based adaptation with multiple subdivision strategies (Octant, Binary, K-means, Adaptive)
+- **HierarchicalForest** - Level-of-detail management with distance-based entity promotion/demotion and configurable LOD distances
 
-**Query and Connectivity:**
+**Query and Connectivity (4 classes):**
 
-- **ForestQuery** - Query interface for forest-wide operations
-- **ForestSpatialQueries** - Spatial query implementations across multiple trees
-- **TreeConnectivityManager** - Manages spatial relationships and connectivity between trees
-- **GhostZoneManager** - Handles boundary entity management and ghost zone synchronization
+- **ForestQuery** - Unified query interface for single-tree targeting and forest-wide operations
+- **ForestSpatialQueries** - Parallel spatial queries (k-NN, range, ray intersection, frustum culling) with configurable thread counts
+- **TreeConnectivityManager** - Spatial relationship management with adjacency detection and shared boundary analysis
+- **GhostZoneManager** - Boundary entity synchronization with configurable ghost zone widths and bulk update operations
+
+**Configuration (2 classes):**
+
+- **ForestConfig** - Builder-pattern configuration (overlapping policies, ghost zones, partition strategies, background management)
+- **AdaptiveForestEntityManager** - Enhanced entity manager for adaptive forests with integrated density tracking
 
 **Forest Features:**
 
@@ -541,6 +560,17 @@ The Forest architecture is designed for high-performance concurrent operations:
 
 ## Recent Architecture Updates
 
+### Concurrent Optimization Refactoring (July 11, 2025)
+
+**Major architectural shift eliminating separate HashMap/TreeSet in favor of single ConcurrentSkipListMap:**
+
+- **ConcurrentSkipListMap Replacement**: Single thread-safe data structure replaces spatialIndex HashMap + sortedSpatialIndices TreeSet
+- **Memory Efficiency**: 54-61% reduction in memory usage through architectural consolidation
+- **Thread Safety**: Eliminated ConcurrentModificationException during iteration
+- **CopyOnWriteArrayList**: SpatialNodeImpl now uses thread-safe entity storage preventing iteration conflicts
+- **Lock-Free Entity Updates**: Added atomic movement protocol with four-phase commit (PREPARE → INSERT → UPDATE → REMOVE)
+- **ObjectPool Integration**: Extended pooling to all query operations (k-NN, collision, ray intersection, frustum culling)
+
 ### Phase 6.2 Cleanup (July 10, 2025)
 
 - **Node Class Consolidation**: Eliminated `TetreeNodeImpl` and `OctreeNode`, created unified `SpatialNodeImpl`
@@ -574,23 +604,27 @@ The Forest architecture is designed for high-performance concurrent operations:
 - **Performance Testing Framework**: Automated benchmarking
 - **Architecture Documentation**: Updated to reflect current state
 
-## Performance Characteristics (July 8, 2025)
+## Performance Characteristics (July 11, 2025)
 
-**Current State**: Following optimization efforts including lazy evaluation, Tetree performance has improved significantly from initial implementation.
+**Major Performance Reversal**: Concurrent optimizations have completely reversed performance characteristics. Tetree is now superior for most operations.
 
-### Individual Operations (Latest Metrics)
+### Individual Operations (Current Metrics)
 
-- **Insertion**: Octree 2.9-15.3x faster due to O(1) Morton encoding vs O(level) tmIndex
-- **k-NN Search**: Tetree 2.2-3.4x faster due to spatial locality characteristics
-- **Range Query**: Tetree 2.5-3.8x faster with better cache efficiency
-- **Memory**: Tetree uses 77-80% less memory
-- **Child Lookup**: 3x faster with new efficient methods (17.10 ns per call)
-- **Lazy Range Queries**: 99.5% memory reduction, O(1) vs O(n) memory usage
+| Operation | Octree | Tetree | Winner |
+|-----------|--------|--------|--------|
+| **Insertion** | 1.5-2.0 μs/op | 0.24-0.95 μs/op | **Tetree 2-6x faster** |
+| **k-NN Query** | 15.8-18.2 μs/op | 7.8-19.0 μs/op | **Mixed, Tetree better for smaller datasets** |
+| **Range Query** | 2.1-14.2 μs/op | 13.0-19.9 μs/op | **Octree 1.4-6x faster** |
+| **Memory Usage** | 100% | 65-73% | **Tetree 27-35% less memory** |
+| **Concurrent Movement** | - | 264K movements/sec | **Lock-free operations** |
+| **Content Updates** | - | 1.69M updates/sec | **Optimistic concurrency** |
 
-### Bulk Loading Performance
+### Concurrent Architecture Benefits (July 2025)
 
-- **50K entities**: Tetree 35% faster than Octree
-- **100K entities**: Tetree 38% faster than Octree
+- **ConcurrentSkipListMap**: 54-61% memory reduction vs dual HashMap/TreeSet
+- **Lock-Free Operations**: Zero blocking for read operations, optimistic updates
+- **ObjectPool Integration**: Reduced GC pressure across all query operations
+- **Atomic Movement Protocol**: Four-phase atomic entity movement with conflict resolution
 
 Key optimizations implemented:
 
