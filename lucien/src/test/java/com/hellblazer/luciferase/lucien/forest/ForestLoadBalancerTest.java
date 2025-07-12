@@ -41,6 +41,7 @@ public class ForestLoadBalancerTest {
     private ForestLoadBalancer<MortonKey, LongEntityID, String> loadBalancer;
     private SequentialLongIDGenerator idGenerator;
     private Map<Integer, SpatialIndex<MortonKey, LongEntityID, String>> treeIndexMap;
+    private List<String> treeIds;
     
     @BeforeEach
     void setUp() {
@@ -48,6 +49,7 @@ public class ForestLoadBalancerTest {
         forest = new Forest<>(config);
         idGenerator = new SequentialLongIDGenerator();
         treeIndexMap = new HashMap<>();
+        treeIds = new ArrayList<>();
         
         // Create trees with different initial loads
         for (int i = 0; i < 4; i++) {
@@ -57,9 +59,9 @@ public class ForestLoadBalancerTest {
                 .treeType(TreeMetadata.TreeType.OCTREE)
                 .build();
             var treeId = forest.addTree(tree, metadata);
-            // Extract numeric ID from treeId (e.g., "tree_0_0" -> 0)
-            var numericId = Integer.parseInt(treeId.split("_")[2]);
-            treeIndexMap.put(numericId, tree);
+            treeIds.add(treeId);
+            // Use index directly instead of parsing tree ID
+            treeIndexMap.put(i, tree);
         }
         
         loadBalancer = new ForestLoadBalancer<>();

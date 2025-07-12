@@ -31,6 +31,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * A Forest manages multiple spatial index trees, providing coordinated operations across
@@ -399,10 +401,42 @@ public class Forest<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
     private String generateTreeId(TreeMetadata metadata) {
         var id = treeIdGenerator.getAndIncrement();
+        String input;
+        
         if (metadata != null && metadata.getName() != null) {
-            return metadata.getName() + "_" + id;
+            // Use metadata name + id + timestamp for uniqueness
+            input = metadata.getName() + "_" + id + "_" + System.nanoTime();
+        } else {
+            input = "tree_" + id + "_" + System.nanoTime();
         }
-        return "tree_" + id;
+        
+        try {
+            // Generate SHA-256 hash
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes());
+            
+            // Take first 12 bytes (96 bits) for a shorter but still unique ID
+            byte[] truncated = Arrays.copyOf(hash, 12);
+            
+            // Base64 encode (will produce 16 characters for 12 bytes)
+            String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(truncated);
+            
+            // Add a short prefix for readability
+            if (metadata != null && metadata.getName() != null) {
+                String prefix = metadata.getName();
+                // Extract a short prefix from the name
+                if (prefix.length() > 4) {
+                    prefix = prefix.substring(0, 4);
+                }
+                return prefix + "_" + encoded;
+            }
+            return "T_" + encoded;
+            
+        } catch (NoSuchAlgorithmException e) {
+            // Fallback to simple ID if hashing fails
+            log.warn("Failed to generate hash-based tree ID, using fallback", e);
+            return "tree_" + id;
+        }
     }
     
     private void updateTotalEntityCount() {

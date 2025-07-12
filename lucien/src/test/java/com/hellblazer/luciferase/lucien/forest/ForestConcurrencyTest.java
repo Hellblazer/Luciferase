@@ -21,6 +21,8 @@ import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.entity.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -35,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Comprehensive concurrency tests for Forest operations
  */
 public class ForestConcurrencyTest {
+    private static final Logger log = LoggerFactory.getLogger(ForestConcurrencyTest.class);
     
     private Forest<MortonKey, LongEntityID, String> forest;
     private SequentialLongIDGenerator idGenerator;
@@ -142,8 +145,8 @@ public class ForestConcurrencyTest {
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    fail("Unexpected exception: " + e.getMessage());
+                    log.error("Test failed with exception", e);
+                    fail("Unexpected exception: " + e.getMessage(), e);
                 } finally {
                     latch.countDown();
                 }
@@ -225,8 +228,8 @@ public class ForestConcurrencyTest {
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    fail("Unexpected exception: " + e.getMessage());
+                    log.error("Test failed with exception", e);
+                    fail("Unexpected exception: " + e.getMessage(), e);
                 } finally {
                     latch.countDown();
                 }
@@ -324,8 +327,8 @@ public class ForestConcurrencyTest {
                         }
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    fail("Unexpected exception: " + e.getMessage());
+                    log.error("Test failed with exception", e);
+                    fail("Unexpected exception: " + e.getMessage(), e);
                 } finally {
                     latch.countDown();
                 }
@@ -395,7 +398,7 @@ public class ForestConcurrencyTest {
                         Thread.sleep(10);
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    log.debug("Expected exception in concurrent test", e);
                 } finally {
                     latch.countDown();
                 }
@@ -484,7 +487,7 @@ public class ForestConcurrencyTest {
                         Thread.sleep(20);
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    log.debug("Expected exception in concurrent test", e);
                 } finally {
                     latch.countDown();
                 }
