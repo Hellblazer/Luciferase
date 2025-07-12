@@ -22,6 +22,8 @@ import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 import com.hellblazer.luciferase.lucien.tetree.internal.TetDistance;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -45,6 +47,8 @@ import java.util.stream.Stream;
 public class Tetree<ID extends EntityID, Content>
 extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
 
+    private static final Logger log = LoggerFactory.getLogger(Tetree.class);
+    
     // Neighbor finder instance (lazily initialized)
     private TetreeNeighborFinder neighborFinder;
 
@@ -157,7 +161,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
             }
 
             // Check entities in different tetrahedra of the same grid cell
-            for (var nodeIndex : sortedSpatialIndices) {
+            for (var nodeIndex : spatialIndex.keySet()) {
                 var node = spatialIndex.get(nodeIndex);
                 if (node == null || node.isEmpty()) {
                     continue;
@@ -578,7 +582,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
      * @return Map of level to node count
      */
     public Map<Byte, Integer> getNodeCountByLevel() {
-        return sortedSpatialIndices.stream().collect(java.util.stream.Collectors.groupingBy(index -> index.getLevel(),
+        return spatialIndex.keySet().stream().collect(java.util.stream.Collectors.groupingBy(index -> index.getLevel(),
                                                                                             java.util.stream.Collectors.collectingAndThen(
                                                                                             java.util.stream.Collectors.toList(),
                                                                                             List::size)));
@@ -592,7 +596,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     public NavigableSet<TetreeKey<?>> getSortedSpatialIndices() {
         lock.readLock().lock();
         try {
-            return new TreeSet<>(sortedSpatialIndices);
+            return new TreeSet<>(spatialIndex.keySet());
         } finally {
             lock.readLock().unlock();
         }
@@ -615,7 +619,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     public TetreeValidator.TreeStats getTreeStatistics() {
         lock.readLock().lock();
         try {
-            return TetreeValidator.analyzeTreeIndices(sortedSpatialIndices);
+            return TetreeValidator.analyzeTreeIndices(spatialIndex.navigableKeySet());
         } finally {
             lock.readLock().unlock();
         }
@@ -1144,7 +1148,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     public TetreeValidator.ValidationResult validate() {
         lock.readLock().lock();
         try {
-            return TetreeValidator.validateTreeStructure(sortedSpatialIndices);
+            return TetreeValidator.validateTreeStructure(spatialIndex.navigableKeySet());
         } finally {
             lock.readLock().unlock();
         }
@@ -1375,11 +1379,11 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Debug output
         boolean debug = false;
         if (debug && tet.x() == 512 && tet.y() == 0 && tet.z() == 0 && tet.l() == 13) {
-            System.out.println("doesNodeIntersectVolume debug for tet at (512,0,0):");
-            System.out.println("  tetIndex: " + tetIndex);
-            System.out.println("  tet: " + tet);
-            System.out.println("  bounds: " + bounds);
-            System.out.println("  result: " + Tet.tetrahedronIntersectsVolumeBounds(tet, bounds));
+            log.debug("doesNodeIntersectVolume debug for tet at (512,0,0):");
+            log.debug("  tetIndex: {}", tetIndex);
+            log.debug("  tet: {}", tet);
+            log.debug("  bounds: {}", bounds);
+            log.debug("  result: {}", Tet.tetrahedronIntersectsVolumeBounds(tet, bounds));
         }
 
         return Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
@@ -1456,7 +1460,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         
         // First, collect nodes by level for efficient traversal
         var nodesByLevel = new HashMap<Byte, List<TetreeKey<?>>>();
-        for (var nodeKey : sortedSpatialIndices) {
+        for (var nodeKey : spatialIndex.keySet()) {
             var tet = Tet.tetrahedron(nodeKey);
             nodesByLevel.computeIfAbsent(tet.l(), k -> new ArrayList<>()).add(nodeKey);
         }
@@ -1560,7 +1564,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
                                                                               Point3f cameraPosition) {
         // For tetree, use spatial ordering to traverse nodes that could intersect with the frustum
         // Order by distance from camera to tetrahedron centroid for optimal culling traversal
-        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+        return spatialIndex.keySet().stream().filter(nodeIndex -> {
             SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             return node != null && !node.isEmpty();
         }).sorted((n1, n2) -> {
@@ -1587,7 +1591,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     protected Stream<TetreeKey<? extends TetreeKey>> getPlaneTraversalOrder(Plane3D plane) {
         // For tetree, use spatial ordering to traverse nodes that could intersect with the plane
         // Order by distance from plane to tetrahedron centroid for better early termination
-        return sortedSpatialIndices.stream().filter(nodeIndex -> {
+        return spatialIndex.keySet().stream().filter(nodeIndex -> {
             SpatialNodeImpl<ID> node = spatialIndex.get(nodeIndex);
             return node != null && !node.isEmpty();
         }).sorted((n1, n2) -> {
@@ -1622,24 +1626,24 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     @Override
     protected NavigableSet<TetreeKey<? extends TetreeKey>> getSpatialIndexRange(VolumeBounds bounds) {
         // FAST PATH: For small datasets, linear scan is faster than any optimization
-        if (sortedSpatialIndices.size() <= 5000) {
+        if (spatialIndex.size() <= 5000) {
             NavigableSet<TetreeKey<? extends TetreeKey>> candidates = new TreeSet<>();
             
             // Debug output
             boolean debug = true;
-            if (debug && sortedSpatialIndices.size() > 100) {
-                System.out.println("getSpatialIndexRange FAST PATH: checking " + sortedSpatialIndices.size() + " nodes");
-                System.out.println("  Query bounds: " + bounds);
+            if (debug && spatialIndex.size() > 100) {
+                log.debug("getSpatialIndexRange FAST PATH: checking {} nodes", spatialIndex.size());
+                log.debug("  Query bounds: {}", bounds);
             }
             
             // Check each existing node to see if it intersects the bounds
             int checkedCount = 0;
-            for (TetreeKey<? extends TetreeKey> key : sortedSpatialIndices) {
+            for (TetreeKey<? extends TetreeKey> key : spatialIndex.keySet()) {
                 if (doesNodeIntersectVolume(key, createSpatialFromBounds(bounds))) {
                     candidates.add(key);
                     if (debug && candidates.size() <= 3) {
                         var tet = Tet.tetrahedron(key);
-                        System.out.println("    Found intersecting node: " + tet);
+                        log.debug("    Found intersecting node: {}", tet);
                     }
                 }
                 checkedCount++;
@@ -1648,16 +1652,16 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
                 if (debug) {
                     var tet = Tet.tetrahedron(key);
                     if (tet.x() == 512 && tet.y() == 0 && tet.z() == 0 && tet.l() == 13) {
-                        System.out.println("    Found tet at (512,0,0): " + tet + ", type=" + tet.type());
+                        log.debug("    Found tet at (512,0,0): {}, type={}", tet, tet.type());
                         var spatial = createSpatialFromBounds(bounds);
                         var intersects = doesNodeIntersectVolume(key, spatial);
-                        System.out.println("      doesNodeIntersectVolume result: " + intersects);
+                        log.debug("      doesNodeIntersectVolume result: {}", intersects);
                     }
                 }
             }
             
-            if (debug && sortedSpatialIndices.size() > 100) {
-                System.out.println("  Found " + candidates.size() + " candidate nodes");
+            if (debug && spatialIndex.size() > 100) {
+                log.debug("  Found {} candidate nodes", candidates.size());
             }
             
             return candidates;
@@ -1789,7 +1793,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
             if (!childEntities.isEmpty()) {
                 // Create or get child node
                 SpatialNodeImpl<ID> childNode = spatialIndex.computeIfAbsent(childTetIndex, k -> {
-                    sortedSpatialIndices.add(childTetIndex);
+                    // childTetIndex is already added to spatialIndex above
                     return createNode();
                 });
 
@@ -1838,7 +1842,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Add entity to all intersecting tetrahedra
         for (TetreeKey<? extends TetreeKey> tetIndex : intersectingTets) {
             SpatialNodeImpl<ID> node = spatialIndex.computeIfAbsent(tetIndex, k -> {
-                sortedSpatialIndices.add(tetIndex);
+                // tetIndex is already added to spatialIndex above
                 return createNode();
             });
 
@@ -1869,11 +1873,11 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Debug output
         boolean debug = true;
         if (debug && bounds.getMaxX() - bounds.getMinX() > 400) { // Large spanning entity
-            System.out.println("findIntersectingTetrahedra: bounds=" + bounds + ", level=" + level);
-            System.out.println("  cellSize=" + cellSize);
-            System.out.println("  x range: " + minX + " to " + maxX);
-            System.out.println("  y range: " + minY + " to " + maxY);
-            System.out.println("  z range: " + minZ + " to " + maxZ);
+            log.debug("findIntersectingTetrahedra: bounds={}, level={}", bounds, level);
+            log.debug("  cellSize={}", cellSize);
+            log.debug("  x range: {} to {}", minX, maxX);
+            log.debug("  y range: {} to {}", minY, maxY);
+            log.debug("  z range: {} to {}", minZ, maxZ);
         }
         
         // Check each cube that might contain intersecting tetrahedra
@@ -1887,8 +1891,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
                         
                         // Debug specific tetrahedron
                         if (debug && x == 512 && y == 0 && z == 0 && level == 13) {
-                            System.out.println("    Checking tet at (512,0,0) type " + type);
-                            System.out.println("      tetrahedronIntersectsBounds result: " + tetrahedronIntersectsBounds(tet, bounds));
+                            log.debug("    Checking tet at (512,0,0) type {}", type);
+                            log.debug("      tetrahedronIntersectsBounds result: {}", tetrahedronIntersectsBounds(tet, bounds));
                         }
                         
                         // Check if this tetrahedron intersects the bounds
@@ -1902,7 +1906,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         }
         
         if (debug && bounds.getMaxX() - bounds.getMinX() > 400) {
-            System.out.println("  Found " + result.size() + " intersecting tetrahedra");
+            log.debug("  Found {} intersecting tetrahedra", result.size());
         }
         
         return result;
@@ -2174,14 +2178,14 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         
         // Debug output
         boolean debug = true;
-        if (debug && sortedSpatialIndices.size() > 100) {
-            System.out.println("calculateExistingKeySFCRange: checking " + sortedSpatialIndices.size() + " tetrahedra");
-            System.out.println("  Query bounds: " + entityBounds);
+        if (debug && spatialIndex.size() > 100) {
+            log.debug("calculateExistingKeySFCRange: checking {} tetrahedra", spatialIndex.size());
+            log.debug("  Query bounds: {}", entityBounds);
         }
         
         // For each existing tetrahedron in our index
         int checked = 0;
-        for (var tetKey : sortedSpatialIndices) {
+        for (var tetKey : spatialIndex.keySet()) {
             // Get the tetrahedron
             var tet = Tet.tetrahedron(tetKey);
             
@@ -2189,14 +2193,14 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
             if (tetrahedronIntersectsBounds(tet, entityBounds)) {
                 candidates.add(tetKey);
                 if (debug && checked < 3) {
-                    System.out.println("  Found intersecting tet: " + tet);
+                    log.debug("  Found intersecting tet: {}", tet);
                 }
             }
             checked++;
         }
         
-        if (debug && sortedSpatialIndices.size() > 100) {
-            System.out.println("  Found " + candidates.size() + " candidate tetrahedra");
+        if (debug && spatialIndex.size() > 100) {
+            log.debug("  Found {} candidate tetrahedra", candidates.size());
         }
         
         return candidates;
@@ -2380,20 +2384,20 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         // This is less efficient but correct. The SFC range computation logic
         // would need a complete rewrite to work properly with the Tet.tmIndex() algorithm.
 
-        for (TetreeKey<? extends TetreeKey> spatialIndex : sortedSpatialIndices) {
+        for (TetreeKey<? extends TetreeKey> spatialKey : spatialIndex.keySet()) {
             try {
-                Tet tet = Tet.tetrahedron(spatialIndex);
+                Tet tet = Tet.tetrahedron(spatialKey);
 
                 if (includeIntersecting) {
                     // Check if tetrahedron intersects the bounds
                     boolean intersects = Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
                     if (intersects) {
-                        result.add(spatialIndex);
+                        result.add(spatialKey);
                     }
                 } else {
                     // Check if tetrahedron is contained within bounds
                     if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
-                        result.add(spatialIndex);
+                        result.add(spatialKey);
                     }
                 }
             } catch (Exception e) {
@@ -2410,7 +2414,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     private TetreeKey<? extends TetreeKey> getSuccessor(TetreeKey<? extends TetreeKey> tetIndex) {
         // Use the NavigableSet to find the next key
-        TetreeKey<? extends TetreeKey> higher = sortedSpatialIndices.higher(tetIndex);
+        TetreeKey<? extends TetreeKey> higher = spatialIndex.higherKey(tetIndex);
         return higher != null ? higher : tetIndex; // Return same if no successor
     }
 

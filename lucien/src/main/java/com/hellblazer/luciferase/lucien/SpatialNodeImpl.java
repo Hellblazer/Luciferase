@@ -18,19 +18,19 @@ package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Implementation of SpatialNodeStorage providing common functionality for spatial index nodes. This class
  * handles entity storage, child tracking, and threshold checking. Converges on the Octree implementation approach with
  * fine-grained child tracking using a bitmask.
  *
- * Thread Safety: This class is NOT thread-safe on its own. It relies on external synchronization provided by
- * AbstractSpatialIndex's read-write lock. All access to node instances must be performed within the appropriate lock
- * context.
+ * Thread Safety: This class uses CopyOnWriteArrayList for entity storage, making iteration thread-safe.
+ * However, structural modifications (add/remove) still rely on external synchronization provided by
+ * AbstractSpatialIndex's read-write lock.
  *
  * @param <ID> The type of EntityID used for entity identification
  * @author hal.hildebrand
@@ -58,7 +58,7 @@ public class SpatialNodeImpl<ID extends EntityID> implements SpatialNodeStorage<
             throw new IllegalArgumentException("Max entities before split must be positive");
         }
         this.maxEntitiesBeforeSplit = maxEntitiesBeforeSplit;
-        this.entityIds = new ArrayList<>();
+        this.entityIds = new CopyOnWriteArrayList<>();
     }
 
     @Override
@@ -111,6 +111,7 @@ public class SpatialNodeImpl<ID extends EntityID> implements SpatialNodeStorage<
 
     @Override
     public Collection<ID> getEntityIds() {
+        // CopyOnWriteArrayList is thread-safe for iteration
         return Collections.unmodifiableList(entityIds);
     }
     

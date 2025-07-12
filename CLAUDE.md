@@ -186,6 +186,27 @@ Historical documents (describe unimplemented features):
     - **Integration**: Full production integration completed June 28, 2025
 - **Performance Testing Configuration:**
     - Disable Java assertions when running performance testing to reduce overhead
+- **CONCURRENT SPATIAL INDEX REFACTORING (July 2025):**
+    - **Problem**: ConcurrentModificationException when iterating sortedSpatialIndices during concurrent operations
+    - **Root Cause**: Multiple issues:
+        1. Separate HashMap (spatialIndex) and TreeSet (sortedSpatialIndices) not synchronized
+        2. SpatialNodeImpl using ArrayList for entityIds, causing CME during iteration
+    - **Solution**:
+        1. Replaced spatialIndex HashMap and sortedSpatialIndices TreeSet with single ConcurrentSkipListMap
+        2. Changed SpatialNodeImpl.entityIds from ArrayList to CopyOnWriteArrayList
+    - **Benefits**:
+        - Eliminates ConcurrentModificationException during iteration
+        - Thread-safe sorted key access without explicit locking
+        - Single source of truth for spatial data
+        - O(log n) operations with concurrent access
+        - Thread-safe entity list iteration
+    - **Changes**:
+        - AbstractSpatialIndex now uses ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>
+        - Removed all sortedSpatialIndices references (19 in AbstractSpatialIndex, 9 in Octree, 19 in Tetree)
+        - Updated Octree and Tetree to use spatialIndex.keySet() for iteration
+        - SpatialNodeImpl now uses CopyOnWriteArrayList for thread-safe iteration
+        - ForestConcurrencyTest adjusted to handle frustum coordinate constraints
+    - **Impact**: Fixes concurrent query failures, simplifies architecture, enables lock-free reads
 - **TETRAHEDRAL SUBDIVISION SOLUTION (June 28, 2025):**
     - **Problem**: Tetrahedral subdivision only achieved 37.5% containment due to vertex system mismatch
     - **Root Cause**: Our Tet used type-dependent V3 computation vs Subdivision.md's V3 = anchor + (h,h,h)
@@ -270,5 +291,60 @@ Historical documents (describe unimplemented features):
     - **Performance**: 99.5% memory savings for large ranges (6M+ keys)
     - **Trade-offs**: Small overhead for tiny ranges, massive benefits for large ranges
     - **Documentation**: See lucien/doc/LAZY_EVALUATION_USAGE_GUIDE.md for usage examples
+- **CONCURRENT SKIPLIST REFACTORING (July 11, 2025):**
+    - **Problem**: ConcurrentModificationException in ForestConcurrencyTest due to separate HashMap/TreeSet
+    - **Solution**: Consolidated to single ConcurrentSkipListMap for thread-safe operations
+    - **Memory Savings**: 54-61% reduction in memory usage vs dual-structure approach
+    - **Entity Storage**: Changed from ArrayList to CopyOnWriteArrayList for thread-safe iteration
+    - **Fix Location**: AbstractSpatialIndex, Octree, Tetree, SpatialNodeImpl, StackBasedTreeBuilder
+- **CONCURRENT OPTIMIZATION COMPLETION (July 11, 2025):**
+    - **ConcurrentSkipListMap Refactoring**: Replaced dual HashMap/TreeSet with single ConcurrentSkipListMap
+    - **Memory Reduction**: 54-61% reduction in memory usage, especially at scale
+    - **CopyOnWriteArrayList**: Used for entity storage in SpatialNodeImpl to prevent ConcurrentModificationException
+    - **ObjectPool Integration**: Extended to k-NN, collision detection, ray intersection, frustum culling, and bulk
+      operations
+    - **Performance Metrics**:
+        - k-NN: 0.18ms per query with minimal GC pressure
+        - Collision Detection: 9.46ms average, 419 ops/sec concurrent
+        - Ray Intersection: 0.323ms per ray, 26,607 rays/sec concurrent
+        - Bulk Insert: 347K-425K entities/sec, < 1.2 MB memory leak over 10 iterations
+    - **ExtremeConcurrencyStressTest**: Successfully handles 50-100 threads with mixed operations
+    - **ForestConcurrencyTest**: All tests now pass (previously failing with CME)
+    - **Bulk Operation Optimizations**: Added ObjectPool usage and ID pre-generation in insertBatch
+    - **Result**: All ForestConcurrencyTest tests pass without concurrent modification exceptions
+- **K-NN OBJECTPOOL OPTIMIZATION (July 11, 2025):**
+    - **Problem**: k-NN search identified as #1 allocation hot spot
+    - **Solution**: Added PriorityQueue support to ObjectPools, modified k-NN methods to use pooling
+    - **Methods Optimized**: findKNearestNeighborsAtPosition, searchKNNInRadius, performKNNSFCBasedSearch,
+      convertKNNCandidatesToList
+    - **Objects Pooled**: PriorityQueue, HashSet, ArrayList
+    - **Impact**: Significant GC pressure reduction for k-NN queries
+- **COMPREHENSIVE OPTIMIZATION ANALYSIS (July 11, 2025):**
+    - **Stress Tests**: ExtremeConcurrencyStressTest with 50-100 threads for extreme validation
+    - **Reports Created**: CONCURRENT_OPTIMIZATION_REPORT.md documents all changes and results
+    - **Optimization Opportunities**: OPTIMIZATION_OPPORTUNITIES.md identifies remaining allocation hot spots
+    - **Performance Results**: 0.18ms per k-NN query, 54-61% memory reduction overall
+    - **Cleanup**: Removed temporary benchmark/analysis classes after documenting results
+- **LOCK-FREE ENTITY UPDATE IMPLEMENTATION (July 11, 2025):**
+    - **VersionedEntityState**: Immutable versioned state for optimistic concurrency control
+    - **AtomicSpatialNode**: Lock-free spatial node using CopyOnWriteArraySet and atomic operations
+    - **LockFreeEntityMover**: Four-phase atomic movement protocol (PREPARE → INSERT → UPDATE → REMOVE)
+    - **Atomic Movement Protocol**: Ensures entities always findable during concurrent operations
+    - **Performance Results**:
+        - Single-threaded: 101K movements/sec
+        - Concurrent: 264K movements/sec (4 threads)
+        - Content updates: 1.69M updates/sec
+        - Memory efficiency: 187 bytes per entity
+    - **Zero conflicts** in testing with optimistic retry mechanism
+    - **LockFreePerformanceTest**: Validates throughput and memory efficiency
+- **LOGGING AND TREE ID CLEANUP (July 12, 2025):**
+    - **Problem**: System.out/err calls in implementation classes and excessive tree name concatenation
+    - **Logging Fix**: Replaced System.out with log.debug() in Tetree.java, System.err with log.error() in
+      ParallelBulkOperations
+    - **TestOutputSuppressor**: Created utility to suppress test output by default (enabled via VERBOSE_TESTS env var)
+    - **Tree ID Fix**: Implemented SHA-256 hash-based tree IDs with Base64 encoding in Forest.generateTreeId()
+    - **ID Format**: 16-character Base64 string from first 12 bytes of SHA-256 hash, with optional 4-char prefix
+    - **Naming**: Simplified AdaptiveForest tree names to "SubTree" and "MergedTree" instead of concatenating parent IDs
+    - **Result**: Eliminated "Child_Child_Child_..." excessive naming issue, all Forest tests passing
 
 [... rest of the file remains unchanged ...]

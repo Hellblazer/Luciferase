@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.TestOutputSuppressor;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -40,7 +41,7 @@ public class TetreeKNNGeometryAnalysisTest {
     
     @Test
     void analyzeGeometricDifferences() {
-        System.out.println("\n=== Analyzing Geometric Differences in k-NN Search ===\n");
+        TestOutputSuppressor.println("\n=== Analyzing Geometric Differences in k-NN Search ===\n");
         
         // Setup identical scenarios
         var tetree = new Tetree<LongEntityID, String>(new SequentialLongIDGenerator());
@@ -52,7 +53,7 @@ public class TetreeKNNGeometryAnalysisTest {
         
         // Cell size at level 15
         float cellSize = Constants.lengthAtLevel(level);
-        System.out.println("Level " + level + " cell size: " + cellSize + " units\n");
+        TestOutputSuppressor.println("Level " + level + " cell size: " + cellSize + " units\n");
         
         // Track which cells contain entities for both structures
         Map<String, List<Float>> octreeCells = new HashMap<>();

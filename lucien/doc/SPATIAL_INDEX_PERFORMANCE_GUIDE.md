@@ -9,44 +9,51 @@ The Luciferase system provides two spatial index implementations:
 - **Octree**: Uses Morton encoding (simple bit interleaving) for O(1) operations
 - **Tetree**: Uses tetrahedral decomposition with TM-index for memory efficiency
 
-## Performance Characteristics (July 2025)
+## Performance Characteristics (July 11, 2025)
 
 ### Operation Performance Comparison
 
+**Note**: Performance characteristics underwent dramatic reversal after concurrent optimizations (July 11, 2025).
+
 | Operation | Entity Count | Octree | Tetree | Winner | Ratio |
 |-----------|-------------|---------|---------|---------|-------|
-| **Individual Insertion** | 100 | 5.58 μs/entity | 28.42 μs/entity | Octree | 5.1x faster |
-| | 1,000 | 2.47 μs/entity | 7.66 μs/entity | Octree | 3.1x faster |
-| | 10,000 | 1.03 μs/entity | 5.27 μs/entity | Octree | 5.1x faster |
+| **Individual Insertion** | 100 | 12.584 μs/op | 5.924 μs/op | Tetree | 2.1x faster |
+| | 1,000 | 17.892 μs/op | 4.721 μs/op | Tetree | 3.8x faster |
+| | 10,000 | 36.871 μs/op | 5.968 μs/op | Tetree | 6.2x faster |
 | **Bulk Loading** | 50,000 | 82 ms | 53 ms | Tetree | 35% faster |
 | | 100,000 | 162 ms | 101 ms | Tetree | 38% faster |
-| **k-NN Search** | 10,000 | 36.26 μs | 12.63 μs | Tetree | 2.9x faster |
-| **Range Query** | 10,000 | 21.12 μs | 162.70 μs | Octree | 7.7x faster |
-| **Update** | - | ~0.002 μs | ~0.005 μs | Octree | 2.5x faster |
+| **k-NN Search** | 1,000 | 4.153 μs | 2.635 μs | Tetree | 1.6x faster |
+| | 10,000 | 19.234 μs | 23.457 μs | Octree | 1.2x faster |
+| **Range Query** | 1,000 | 1.988 μs | 0.811 μs | Tetree | 2.5x faster |
+| | 10,000 | 22.641 μs | 5.931 μs | Tetree | 3.8x faster |
+| **Update** | 100 | 0.131 μs | 0.093 μs | Tetree | 1.4x faster |
+| | 10,000 | 0.002 μs | 0.033 μs | Octree | 15.3x faster |
 
 ### Memory Usage Comparison
 
-| Entity Count | Octree (MB) | Tetree (MB) | Tetree Efficiency |
-|--------------|-------------|-------------|-------------------|
-| 100          | 0.15        | 0.04        | 74% less memory   |
-| 1,000        | 1.39        | 0.33        | 76% less memory   |
-| 10,000       | 12.89       | 3.31        | 74% less memory   |
+| Entity Count | Octree (MB) | Tetree (MB) | Tetree Usage |
+|--------------|-------------|-------------|--------------|
+| 100          | 0.16        | 0.12        | 73.1%        |
+| 1,000        | 1.44        | 0.94        | 65.3%        |
+| 10,000       | 13.59       | 9.12        | 67.1%        |
+
+**Note**: Memory usage increased for Tetree after ConcurrentSkipListMap integration but remains more efficient.
 
 ## Choosing the Right Index
 
 ### Use Octree When:
-- **Real-time insertions** are critical (game engines, simulations)
-- **Range queries** dominate your workload
-- **Frequent updates** to entity positions
-- **Consistent low latency** is required
-- Memory usage is not a primary concern
+- **k-NN queries at scale** (>10K entities) are critical
+- **High-frequency updates** at scale (10K+ entities)
+- **Predictable performance** is more important than peak performance
+- **Legacy systems** designed around Octree characteristics
+- Cube-based spatial decomposition fits the problem domain
 
 ### Use Tetree When:
-- **Bulk loading** large datasets (50K+ entities)
-- **k-NN queries** are primary operation
-- **Memory efficiency** is critical (embedded systems)
-- **Read-heavy workloads** with infrequent updates
-- Better **spatial locality** for cache performance
+- **Insertion performance** is the primary concern (2.1x to 6.2x faster)
+- **Range queries** are important (2.5x to 3.8x faster)
+- **Memory efficiency** matters (uses 65-73% of Octree's memory)
+- **Bulk loading** large datasets (35-38% faster)
+- **Concurrent workloads** benefit from simpler key comparisons
 
 ## General Optimization Strategies
 
@@ -312,13 +319,13 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 1. Check node occupancy: `avgOccupancy < 0.5` indicates sparse tree
 2. Enable node pooling for dynamic workloads
 3. Use adaptive pre-allocation
-4. Consider Tetree for 74-76% memory reduction
+4. Consider Tetree for 27-35% memory reduction
 
 ### Poor Query Performance
 1. Check tree balance: `maxDepth > 15` indicates imbalance
 2. Enable query caching for repeated queries
 3. Use appropriate spatial hints
-4. Consider index type (Tetree for k-NN, Octree for range)
+4. Consider index type (Tetree for k-NN at low counts, Octree at scale)
 
 ### Slow Bulk Loading
 1. Ensure pre-sorting is enabled
@@ -342,7 +349,7 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 ## Best Practices Summary
 
 1. **Profile First**: Measure your specific use case before optimizing
-2. **Choose Wisely**: Octree for writes/ranges, Tetree for reads/memory
+2. **Choose Wisely**: Tetree for insertions/ranges, Octree for k-NN at scale
 3. **Batch Everything**: Always batch operations when possible
 4. **Pre-sort Data**: Use spatial sorting for better locality
 5. **Monitor Production**: Track performance metrics in real deployments
@@ -353,21 +360,25 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 
 | Use Case | Recommended | Reason |
 |----------|-------------|--------|
-| Real-time game entities | Octree | Consistent low-latency insertions |
+| Real-time insertions | Tetree | 2.1x to 6.2x faster insertions |
 | Bulk point cloud loading | Tetree | 35-38% faster at large scales |
-| k-NN intensive apps | Tetree | 2.9x faster searches |
-| Range query heavy | Octree | 7.7x faster range queries |
-| Memory constrained | Tetree | 74-76% less memory usage |
-| Mixed workload | Profile first | Depends on read/write ratio |
+| k-NN intensive apps (<10K) | Tetree | 1.1x to 1.6x faster searches |
+| k-NN intensive apps (>10K) | Octree | 1.2x faster at scale |
+| Range query heavy | Tetree | 2.5x to 3.8x faster range queries |
+| Memory constrained | Tetree | 27-35% less memory usage |
+| Update-heavy at scale | Octree | Up to 15.3x faster updates at 10K+ |
+| Mixed workload | Profile first | Performance reversal changed dynamics |
 
 ## Conclusion
 
 The key to optimal spatial index performance is understanding your workload:
 
-1. **Insertion-heavy**: Choose Octree for O(1) Morton encoding
-2. **Query-heavy**: Choose Tetree for better k-NN performance
-3. **Memory-limited**: Choose Tetree for 74-76% reduction
+1. **Insertion-heavy**: Choose Tetree (2.1x to 6.2x faster after concurrent optimizations)
+2. **Query-heavy**: Choose based on scale - Tetree for <10K entities, profile for larger
+3. **Memory-limited**: Choose Tetree for 27-35% reduction
 4. **Bulk loading**: Choose Tetree for 35-38% faster performance
 5. **Always**: Use bulk operations, pre-allocation, and appropriate configuration
+
+**Note**: The July 11, 2025 concurrent optimizations fundamentally changed performance characteristics. ConcurrentSkipListMap integration reversed insertion performance, making Tetree faster for insertions despite its O(level) tmIndex computation.
 
 Start with your dominant operation pattern to choose the right spatial index, then apply the optimization strategies outlined in this guide.
