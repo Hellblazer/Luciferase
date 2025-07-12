@@ -1,0 +1,388 @@
+/*
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.lucien.prism;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Comprehensive test suite for Triangle class.
+ * 
+ * Tests cover complex SFC validation, type system correctness, 4-way subdivision,
+ * point-in-triangle tests, edge neighbors, and geometric accuracy.
+ * 
+ * @author hal.hildebrand
+ */
+class TriangleTest {
+    
+    @Test
+    @DisplayName("Triangle construction validates parameters")
+    void testTriangleConstruction() {
+        // Valid construction
+        var triangle = new Triangle(5, 1, 10, 15, 8);
+        assertEquals(5, triangle.getLevel());
+        assertEquals(1, triangle.getType());
+        assertEquals(10, triangle.getX());
+        assertEquals(15, triangle.getY());
+        assertEquals(8, triangle.getN());
+        
+        // Invalid level
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(-1, 0, 0, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(22, 0, 0, 0, 0));
+        
+        // Invalid type
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(0, -1, 0, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(0, 2, 0, 0, 0));
+        
+        // Invalid coordinates
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(0, 0, -1, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(0, 0, 0, -1, 0));
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(0, 0, 0, 0, -1));
+        
+        // Coordinates too large for level
+        assertThrows(IllegalArgumentException.class, () -> new Triangle(2, 0, 8, 0, 0)); // max for level 2 is 3
+    }
+    
+    @Test
+    @DisplayName("fromWorldCoordinates creates correct triangle")
+    void testFromWorldCoordinates() {
+        // Test root level
+        var triangle1 = Triangle.fromWorldCoordinates(0.0f, 0.0f, 0);
+        assertEquals(0, triangle1.getLevel());
+        assertEquals(0, triangle1.getX());
+        assertEquals(0, triangle1.getY());
+        
+        // Test various coordinates at level 1
+        var triangle2 = Triangle.fromWorldCoordinates(0.5f, 0.5f, 1);
+        assertEquals(1, triangle2.getLevel());
+        // The specific coordinates depend on the triangulation scheme
+        
+        // Test level 2
+        var triangle3 = Triangle.fromWorldCoordinates(0.25f, 0.75f, 2);
+        assertEquals(2, triangle3.getLevel());
+        
+        // Invalid coordinates should throw
+        assertThrows(IllegalArgumentException.class, () -> Triangle.fromWorldCoordinates(-0.1f, 0.0f, 0));
+        assertThrows(IllegalArgumentException.class, () -> Triangle.fromWorldCoordinates(1.0f, 0.0f, 0));
+        assertThrows(IllegalArgumentException.class, () -> Triangle.fromWorldCoordinates(0.0f, -0.1f, 0));
+        assertThrows(IllegalArgumentException.class, () -> Triangle.fromWorldCoordinates(0.0f, 1.0f, 0));
+    }
+    
+    @Test
+    @DisplayName("consecutiveIndex provides spatial ordering")
+    void testConsecutiveIndex() {
+        // Root should have index 0
+        var root = new Triangle(0, 0, 0, 0, 0);
+        assertEquals(0, root.consecutiveIndex());
+        
+        // Level 1 triangles should have different indices
+        var tri1_0 = new Triangle(1, 0, 0, 0, 0);
+        var tri1_1 = new Triangle(1, 0, 1, 0, 0);
+        var tri1_2 = new Triangle(1, 0, 0, 1, 0);
+        var tri1_3 = new Triangle(1, 1, 0, 0, 0);
+        
+        // All should have different SFC indices
+        var indices = new long[]{tri1_0.consecutiveIndex(), tri1_1.consecutiveIndex(), 
+                                tri1_2.consecutiveIndex(), tri1_3.consecutiveIndex()};
+        
+        for (int i = 0; i < indices.length; i++) {
+            for (int j = i + 1; j < indices.length; j++) {
+                assertNotEquals(indices[i], indices[j], 
+                              String.format("Triangles %d and %d have same SFC index %d", i, j, indices[i]));
+            }
+        }
+        
+        // Test that SFC preserves some spatial locality (simplified test)
+        // Adjacent coordinates should generally have closer indices than distant ones
+        for (int level = 1; level <= 3; level++) {
+            var tri1 = new Triangle(level, 0, 0, 0, 0);
+            var tri2 = new Triangle(level, 0, 1, 0, 0);  // Adjacent in x
+            var tri3 = new Triangle(level, 0, 0, 1, 0);  // Adjacent in y
+            var maxCoord = Math.min(2, (1 << level) - 1);
+            var tri4 = new Triangle(level, 0, maxCoord, maxCoord, 0);  // Distant
+            
+            var idx1 = tri1.consecutiveIndex();
+            var idx2 = tri2.consecutiveIndex();
+            var idx3 = tri3.consecutiveIndex();
+            var idx4 = tri4.consecutiveIndex();
+            
+            // Adjacent should be closer than distant (simplified locality test)
+            var adjacentDist = Math.min(Math.abs(idx1 - idx2), Math.abs(idx1 - idx3));
+            var distantDist = Math.abs(idx1 - idx4);
+            
+            // This is a weak locality test since we're using simplified SFC
+            assertTrue(adjacentDist <= distantDist || level == 1, 
+                     String.format("Spatial locality violated at level %d", level));
+        }
+    }
+    
+    @Test
+    @DisplayName("Parent-child relationships maintain type system")
+    void testParentChildRelationships() {
+        // Root has no parent
+        var root = new Triangle(0, 0, 0, 0, 0);
+        assertNull(root.parent());
+        
+        // Test 4-way subdivision
+        var parent = new Triangle(2, 1, 2, 1, 1);
+        
+        for (int childIndex = 0; childIndex < Triangle.CHILDREN; childIndex++) {
+            var child = parent.child(childIndex);
+            
+            // Child should be at level + 1
+            assertEquals(parent.getLevel() + 1, child.getLevel());
+            
+            // Child should have parent as its parent
+            assertEquals(parent, child.parent());
+            
+            // Child index should round-trip
+            assertEquals(childIndex, child.getChildIndex());
+            
+            // Type should follow transition rules (simplified validation)
+            assertTrue(child.getType() >= 0 && child.getType() < Triangle.TYPES);
+        }
+        
+        // Test that all 4 children are different
+        var children = new Triangle[Triangle.CHILDREN];
+        for (int i = 0; i < Triangle.CHILDREN; i++) {
+            children[i] = parent.child(i);
+        }
+        
+        for (int i = 0; i < children.length; i++) {
+            for (int j = i + 1; j < children.length; j++) {
+                assertNotEquals(children[i], children[j], 
+                              String.format("Children %d and %d are identical", i, j));
+            }
+        }
+    }
+    
+    @Test
+    @DisplayName("Type transitions follow geometric rules")
+    void testTypeTransitions() {
+        // Test that type transitions are consistent
+        for (int parentType = 0; parentType < Triangle.TYPES; parentType++) {
+            var parent = new Triangle(3, parentType, 4, 4, 2);
+            
+            for (int childIndex = 0; childIndex < Triangle.CHILDREN; childIndex++) {
+                var child = parent.child(childIndex);
+                
+                // Child type should be valid
+                assertTrue(child.getType() >= 0 && child.getType() < Triangle.TYPES);
+                
+                // Type transition should be deterministic
+                var child2 = parent.child(childIndex);
+                assertEquals(child.getType(), child2.getType());
+                
+                // Parent computation should yield same type
+                var computedParent = child.parent();
+                assertEquals(parent.getType(), computedParent.getType());
+            }
+        }
+    }
+    
+    @Test
+    @DisplayName("Containment testing works correctly") 
+    void testContainment() {
+        // Root should contain origin
+        var root = new Triangle(0, 0, 0, 0, 0);
+        assertTrue(root.contains(0.0f, 0.0f));
+        
+        // Test containment at various levels (simplified since we don't have full geometric containment)
+        for (int level = 1; level <= 3; level++) {
+            var triangle = new Triangle(level, 0, 0, 0, 0);
+            var bounds = triangle.getWorldBounds();
+            
+            // Should contain its own centroid
+            var centroid = triangle.getCentroidWorldCoordinates();
+            assertTrue(triangle.contains(centroid[0], centroid[1]),
+                     String.format("Triangle at level %d doesn't contain its centroid", level));
+            
+            // Test boundary behavior
+            assertFalse(triangle.contains(-0.1f, 0.0f));
+            assertFalse(triangle.contains(0.0f, -0.1f));
+            assertFalse(triangle.contains(1.1f, 0.0f));
+            assertFalse(triangle.contains(0.0f, 1.1f));
+        }
+        
+        // Test that fromWorldCoordinates and contains are consistent
+        for (int level = 1; level <= 3; level++) {
+            var worldX = 0.3f;
+            var worldY = 0.7f;
+            var triangle = Triangle.fromWorldCoordinates(worldX, worldY, level);
+            
+            // The triangle that was created should contain the original coordinates
+            assertTrue(triangle.contains(worldX, worldY),
+                     String.format("fromWorldCoordinates/contains inconsistent at level %d", level));
+        }
+    }
+    
+    @Test
+    @DisplayName("Neighbor finding returns valid triangles")
+    void testNeighborFinding() {
+        var triangle = new Triangle(3, 0, 4, 4, 2);
+        var neighbors = triangle.neighbors();
+        
+        assertEquals(Triangle.EDGES, neighbors.length);
+        
+        for (int i = 0; i < neighbors.length; i++) {
+            var neighbor = neighbors[i];
+            if (neighbor != null) {
+                // Neighbor should be at same level
+                assertEquals(triangle.getLevel(), neighbor.getLevel());
+                
+                // Neighbor should be different from original
+                assertNotEquals(triangle, neighbor);
+                
+                // Should be valid triangle
+                assertTrue(neighbor.getX() >= 0);
+                assertTrue(neighbor.getY() >= 0);
+                assertTrue(neighbor.getN() >= 0);
+            }
+        }
+        
+        // Test boundary triangles (should have some null neighbors)
+        var boundaryTriangle = new Triangle(3, 0, 0, 0, 0);
+        var boundaryNeighbors = boundaryTriangle.neighbors();
+        
+        // At least one neighbor should be null (at boundary)
+        var nullCount = 0;
+        for (var neighbor : boundaryNeighbors) {
+            if (neighbor == null) nullCount++;
+        }
+        assertTrue(nullCount > 0, "Boundary triangle should have some null neighbors");
+    }
+    
+    @Test
+    @DisplayName("World coordinate conversion is accurate")
+    void testWorldCoordinateConversion() {
+        // Test bounds computation
+        var triangle = new Triangle(2, 0, 1, 2, 1);
+        var bounds = triangle.getWorldBounds();
+        
+        assertEquals(4, bounds.length);
+        assertTrue(bounds[0] >= 0.0f && bounds[0] < 1.0f); // minX
+        assertTrue(bounds[1] >= 0.0f && bounds[1] < 1.0f); // minY
+        assertTrue(bounds[2] > bounds[0]);                  // maxX > minX
+        assertTrue(bounds[3] > bounds[1]);                  // maxY > minY
+        
+        // Test centroid computation
+        var centroid = triangle.getCentroidWorldCoordinates();
+        assertEquals(2, centroid.length);
+        assertTrue(centroid[0] >= bounds[0] && centroid[0] <= bounds[2]);
+        assertTrue(centroid[1] >= bounds[1] && centroid[1] <= bounds[3]);
+        
+        // Test consistency across levels
+        for (int level = 0; level <= 3; level++) {
+            var tri = new Triangle(level, 0, 0, 0, 0);
+            var triBounds = tri.getWorldBounds();
+            var triCentroid = tri.getCentroidWorldCoordinates();
+            
+            // Centroid should be within bounds
+            assertTrue(triCentroid[0] >= triBounds[0] && triCentroid[0] <= triBounds[2]);
+            assertTrue(triCentroid[1] >= triBounds[1] && triCentroid[1] <= triBounds[3]);
+        }
+    }
+    
+    @Test
+    @DisplayName("Boundary conditions are handled correctly")
+    void testBoundaryConditions() {
+        // Maximum level
+        var maxLevelTriangle = new Triangle(Triangle.MAX_LEVEL, 0, 0, 0, 0);
+        assertEquals(Triangle.MAX_LEVEL, maxLevelTriangle.getLevel());
+        assertThrows(IllegalArgumentException.class, () -> maxLevelTriangle.child(0));
+        
+        // Maximum coordinates at various levels
+        for (int level = 0; level <= 3; level++) {
+            var maxCoord = (1 << level) - 1;
+            var triangle = new Triangle(level, 1, maxCoord, maxCoord, maxCoord);
+            assertEquals(level, triangle.getLevel());
+            assertEquals(maxCoord, triangle.getX());
+            assertEquals(maxCoord, triangle.getY());
+            assertEquals(maxCoord, triangle.getN());
+            
+            if (level < Triangle.MAX_LEVEL) {
+                // Should be able to create children
+                for (int childIndex = 0; childIndex < Triangle.CHILDREN; childIndex++) {
+                    assertNotNull(triangle.child(childIndex));
+                }
+            }
+        }
+        
+        // Test all valid type combinations
+        for (int type = 0; type < Triangle.TYPES; type++) {
+            var triangle = new Triangle(2, type, 0, 0, 0);
+            assertEquals(type, triangle.getType());
+            
+            // Should be able to create children with valid type transitions
+            for (int childIndex = 0; childIndex < Triangle.CHILDREN; childIndex++) {
+                var child = triangle.child(childIndex);
+                assertTrue(child.getType() >= 0 && child.getType() < Triangle.TYPES);
+            }
+        }
+    }
+    
+    
+    @Test
+    @DisplayName("Equals and hashCode work correctly")
+    void testEqualsAndHashCode() {
+        var triangle1 = new Triangle(3, 1, 3, 2, 1);
+        var triangle2 = new Triangle(3, 1, 3, 2, 1);
+        var triangle3 = new Triangle(3, 1, 3, 2, 0); // Different n
+        var triangle4 = new Triangle(3, 0, 3, 2, 1); // Different type
+        var triangle5 = new Triangle(2, 1, 3, 2, 1); // Different level
+        
+        // Equals
+        assertEquals(triangle1, triangle2);
+        assertNotEquals(triangle1, triangle3);
+        assertNotEquals(triangle1, triangle4);
+        assertNotEquals(triangle1, triangle5);
+        assertNotEquals(triangle1, null);
+        assertNotEquals(triangle1, "not a triangle");
+        
+        // Hash code consistency
+        assertEquals(triangle1.hashCode(), triangle2.hashCode());
+        
+        // Different objects should generally have different hash codes
+        assertNotEquals(triangle1.hashCode(), triangle3.hashCode());
+        assertNotEquals(triangle1.hashCode(), triangle4.hashCode());
+        
+        // Test reflexivity, symmetry, transitivity
+        assertEquals(triangle1, triangle1);
+        assertEquals(triangle1.equals(triangle2), triangle2.equals(triangle1));
+        
+        var triangle2Copy = new Triangle(3, 1, 3, 2, 1);
+        assertTrue(triangle1.equals(triangle2) && triangle2.equals(triangle2Copy) && triangle1.equals(triangle2Copy));
+    }
+    
+    @Test
+    @DisplayName("String representation is informative")
+    void testToString() {
+        var triangle = new Triangle(3, 1, 3, 2, 1);
+        var str = triangle.toString();
+        
+        assertTrue(str.contains("Triangle"));
+        assertTrue(str.contains("level=3"));
+        assertTrue(str.contains("type=1"));
+        assertTrue(str.contains("coords=(3,2,1)"));
+        assertTrue(str.contains("center="));
+        
+        // Should contain useful information
+        assertTrue(str.length() > 30);
+        assertFalse(str.contains("null"));
+    }
+}

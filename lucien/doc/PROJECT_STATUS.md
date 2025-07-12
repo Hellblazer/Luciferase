@@ -109,9 +109,25 @@ is production-ready with comprehensive test coverage and optimized performance.
 2. **Coordinate constraints**: Entities must have positive coordinates
 3. **T8code partition**: Tetree doesn't perfectly partition space (fundamental limitation)
 
+## Current Development
+
+### Active Projects (July 12, 2025)
+
+**Prism Spatial Index Implementation** - Adding triangular prism-based spatial indexing as a third option alongside Octree and Tetree:
+- **Status**: Phase 1 - Foundation Components
+- **Progress**: Project initialization and planning complete
+- **Timeline**: 6-week implementation plan
+- **Documentation**: [Prism Implementation Plan](./PRISM_IMPLEMENTATION_PLAN.md)
+
+**Target Benefits**:
+- **Anisotropic decomposition**: Fine horizontal, coarse vertical granularity
+- **Memory efficiency**: 20-30% better for layered data
+- **Specialized queries**: 5x+ faster vertical layer operations
+- **Use cases**: Geological layers, atmospheric data, urban floor modeling
+
 ## Next Steps
 
-The module is feature-complete and optimized. Future work may include:
+Future work beyond prism implementation may include:
 
 - Alternative tetrahedral indexing strategies
 - GPU acceleration for specific operations
