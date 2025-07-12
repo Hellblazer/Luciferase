@@ -173,13 +173,24 @@ public final class Triangle {
             throw new IllegalArgumentException("World Y coordinate must be [0.0, 1.0), got: " + worldY);
         }
         
+        // For level 0, return root triangle
+        if (level == 0) {
+            return new Triangle(0, 0, 0, 0, 0);
+        }
+        
         var scale = 1 << level;
         var quantX = Math.min((int) (worldX * scale), scale - 1);
         var quantY = Math.min((int) (worldY * scale), scale - 1);
         
-        // Determine triangle type and n coordinate based on position
-        // This is a simplified version - the full t8code algorithm is more complex
-        var type = ((quantX + quantY) % 2);
+        // Determine which triangle in the square contains the point
+        // Convert to local coordinates within the square [0,1) x [0,1)
+        float localX = (worldX * scale) - quantX;
+        float localY = (worldY * scale) - quantY;
+        
+        // Determine triangle type based on which side of the diagonal the point is on
+        // Type 0: bottom-left triangle (localX + localY <= 1.0)
+        // Type 1: top-right triangle (localX + localY > 1.0)
+        var type = (localX + localY > 1.0f) ? 1 : 0;
         var n = Math.min(quantX, quantY);
         
         return new Triangle(level, type, quantX, quantY, n);
@@ -296,13 +307,55 @@ public final class Triangle {
             return false;
         }
         
-        // Simplified containment test - quantize and compare
-        var scale = 1 << level;
-        var quantX = Math.min((int) (worldX * scale), scale - 1);
-        var quantY = Math.min((int) (worldY * scale), scale - 1);
+        // Special case for level 0 root triangle - covers entire [0,1) x [0,1) square
+        if (level == 0) {
+            return true; // Already passed the [0,1) range check above
+        }
         
-        // Basic triangular region test (simplified)
-        return quantX == x && quantY == y;
+        // Get the world bounds for this triangle
+        var bounds = getWorldBounds();
+        float minX = bounds[0];
+        float minY = bounds[1];
+        float maxX = bounds[2];
+        float maxY = bounds[3];
+        
+        // First check if point is within bounding box
+        if (worldX < minX || worldX > maxX || worldY < minY || worldY > maxY) {
+            return false;
+        }
+        
+        // Use proper geometric test based on triangle type and vertices
+        float[][] vertices = getVertices();
+        
+        // Use barycentric coordinates or point-in-triangle test
+        return isPointInTriangle(worldX, worldY, vertices[0], vertices[1], vertices[2]);
+    }
+    
+    /**
+     * Test if a point is inside a triangle using barycentric coordinates.
+     * 
+     * @param px point x coordinate
+     * @param py point y coordinate
+     * @param v1 triangle vertex 1
+     * @param v2 triangle vertex 2
+     * @param v3 triangle vertex 3
+     * @return true if point is inside triangle
+     */
+    private boolean isPointInTriangle(float px, float py, float[] v1, float[] v2, float[] v3) {
+        // Calculate barycentric coordinates
+        float denom = (v2[1] - v3[1]) * (v1[0] - v3[0]) + (v3[0] - v2[0]) * (v1[1] - v3[1]);
+        
+        if (Math.abs(denom) < 1e-10f) {
+            // Degenerate triangle
+            return false;
+        }
+        
+        float a = ((v2[1] - v3[1]) * (px - v3[0]) + (v3[0] - v2[0]) * (py - v3[1])) / denom;
+        float b = ((v3[1] - v1[1]) * (px - v3[0]) + (v1[0] - v3[0]) * (py - v3[1])) / denom;
+        float c = 1 - a - b;
+        
+        // Point is inside if all barycentric coordinates are non-negative
+        return a >= 0 && b >= 0 && c >= 0;
     }
     
     /**
@@ -330,6 +383,40 @@ public final class Triangle {
         }
         
         return neighbors;
+    }
+    
+    /**
+     * Find the neighbor of this triangle across a specific edge.
+     * 
+     * @param edge the edge index (0-2)
+     * @return the neighbor triangle, or null if at boundary
+     * @throws IllegalArgumentException if edge index is invalid
+     */
+    public Triangle neighbor(int edge) {
+        if (edge < 0 || edge >= EDGES) {
+            throw new IllegalArgumentException("Edge index must be 0-2, got: " + edge);
+        }
+        
+        // Simplified neighbor finding - full t8code algorithm is more complex
+        switch (edge) {
+            case 0: // right neighbor
+                if (x + 1 < (1 << level)) {
+                    return new Triangle(level, type, x + 1, y, n);
+                }
+                break;
+            case 1: // top neighbor
+                if (y + 1 < (1 << level)) {
+                    return new Triangle(level, type, x, y + 1, n);
+                }
+                break;
+            case 2: // diagonal neighbor (simplified)
+                if (x > 0 && y > 0) {
+                    return new Triangle(level, type, x - 1, y - 1, n);
+                }
+                break;
+        }
+        
+        return null; // At boundary
     }
     
     /**
@@ -398,5 +485,48 @@ public final class Triangle {
         var centroid = getCentroidWorldCoordinates();
         return String.format("Triangle(level=%d, type=%d, coords=(%d,%d,%d), center=(%.4f,%.4f))", 
                            level, type, x, y, n, centroid[0], centroid[1]);
+    }
+    
+    /**
+     * Get the vertices of this triangle.
+     * 
+     * @return array of 3 vertices as [x,y] coordinates
+     */
+    public float[][] getVertices() {
+        var bounds = getWorldBounds();
+        float minX = bounds[0];
+        float minY = bounds[1];
+        float maxX = bounds[2];
+        float maxY = bounds[3];
+        
+        // For simplicity, return triangle vertices based on type
+        if (type == 0) {
+            return new float[][]{
+                {minX, minY},
+                {maxX, minY},
+                {minX, maxY}
+            };
+        } else {
+            return new float[][]{
+                {maxX, minY},
+                {maxX, maxY},
+                {minX, maxY}
+            };
+        }
+    }
+    
+    
+    /**
+     * Set the bounds of this triangle (stub for API compatibility).
+     * Note: This is a simplified implementation.
+     * 
+     * @param minX minimum X
+     * @param minY minimum Y  
+     * @param maxX maximum X
+     * @param maxY maximum Y
+     */
+    public void setBounds(float minX, float minY, float maxX, float maxY) {
+        // This is a stub - in a full implementation, this would
+        // update the triangle's coordinates based on the bounds
     }
 }

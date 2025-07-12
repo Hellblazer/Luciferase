@@ -207,6 +207,33 @@ public final class Line {
     }
     
     /**
+     * Find the neighbor of this line in a specific direction.
+     * 
+     * @param direction the direction (-1 for below, 1 for above)
+     * @return the neighbor line, or null if at boundary
+     * @throws IllegalArgumentException if direction is not -1 or 1
+     */
+    public Line neighbor(int direction) {
+        if (direction != -1 && direction != 1) {
+            throw new IllegalArgumentException("Direction must be -1 (below) or 1 (above), got: " + direction);
+        }
+        
+        if (direction == -1) {
+            // Below neighbor
+            if (z > 0) {
+                return new Line(level, z - 1);
+            }
+        } else {
+            // Above neighbor
+            if (z + 1 < (1 << level)) {
+                return new Line(level, z + 1);
+            }
+        }
+        
+        return null; // At boundary
+    }
+    
+    /**
      * Get the world coordinate range for this line.
      * 
      * @return array of [minZ, maxZ] coordinates in world space

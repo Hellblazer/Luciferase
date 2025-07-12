@@ -135,29 +135,19 @@ public final class PrismGeometry {
         float maxX = bounds[2];
         float maxY = bounds[3];
         
-        // For simplicity, use the bounding box corners
-        // In a full implementation, this would compute exact triangle vertices
-        // based on the triangular space-filling curve
+        // Create proper triangular vertices for triangular prism
+        // Standard right triangle in first quadrant with vertices at:
+        // (minX, minY), (maxX, minY), (minX, maxY)
+        // This ensures we stay within triangular constraint x + y <= 1.0
         
-        // Bottom-left vertex
+        // Bottom-left vertex (origin of triangle)
         vertices.add(new float[] {minX, minY});
         
-        // Bottom-right vertex
+        // Bottom-right vertex 
         vertices.add(new float[] {maxX, minY});
         
-        // Top vertex (respecting triangular constraint)
-        // For a right triangle with hypotenuse on x+y=1 line
-        float topX = minX;
-        float topY = maxY;
-        
-        // Ensure triangular constraint
-        if (topX + topY >= 1.0f) {
-            // Adjust to stay within triangle
-            float total = 0.99f; // Stay just inside boundary
-            topY = total - topX;
-        }
-        
-        vertices.add(new float[] {topX, topY});
+        // Top-left vertex (forms right triangle)
+        vertices.add(new float[] {minX, maxY});
         
         return vertices;
     }
@@ -222,5 +212,22 @@ public final class PrismGeometry {
         
         // Approximate area for right triangle
         return 0.5f * width * height;
+    }
+    
+    /**
+     * Convert prism vertices to float array format.
+     * This is a utility method used by the collision detection system.
+     * 
+     * @param prism the prism key
+     * @return vertices as float array
+     */
+    public static float[][] getVerticesAsFloatArray(PrismKey prism) {
+        var vertices = getVertices(prism);
+        float[][] result = new float[vertices.size()][];
+        for (int i = 0; i < vertices.size(); i++) {
+            Point3f vertex = vertices.get(i);
+            result[i] = new float[]{vertex.x, vertex.y, vertex.z};
+        }
+        return result;
     }
 }

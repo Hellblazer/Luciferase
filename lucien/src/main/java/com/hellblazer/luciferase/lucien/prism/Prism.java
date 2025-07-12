@@ -447,8 +447,29 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     protected Stream<PrismKey> getRayTraversalOrder(Ray3D ray) {
-        // Return empty stream for now - would need ray traversal implementation
-        return Stream.empty();
+        // Find all prisms that the ray intersects, ordered by distance
+        return spatialIndex.keySet().stream()
+            .filter(key -> PrismRayIntersector.intersectRayAABB(ray, key))
+            .map(key -> {
+                var result = PrismRayIntersector.intersectRayPrism(ray, key);
+                return new RayIntersection(key, result.tNear);
+            })
+            .filter(intersection -> intersection.t >= 0)
+            .sorted((a, b) -> Float.compare(a.t, b.t))
+            .map(intersection -> intersection.key);
+    }
+    
+    /**
+     * Helper class for ray intersection sorting.
+     */
+    private static class RayIntersection {
+        final PrismKey key;
+        final float t;
+        
+        RayIntersection(PrismKey key, float t) {
+            this.key = key;
+            this.t = t;
+        }
     }
     
     @Override
@@ -467,6 +488,145 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
             return new SpatialIndex.SpatialNode<>(prismKey, new HashSet<>(node.getEntityIds()));
         }
         return null;
+    }
+    
+    /**
+     * Find all entities within a triangular region in the XY plane.
+     * This query is optimized for the prism's triangular decomposition.
+     * 
+     * @param triangle The triangle defining the search region in XY plane
+     * @param minZ Minimum Z coordinate
+     * @param maxZ Maximum Z coordinate
+     * @return Set of entity IDs within the triangular region
+     */
+    public Set<ID> findInTriangularRegion(Triangle searchTriangle, float minZ, float maxZ) {
+        Set<ID> results = new HashSet<>();
+        
+        // Normalize coordinates
+        float normMinZ = minZ / worldSize;
+        float normMaxZ = maxZ / worldSize;
+        
+        // Find all prism keys that might intersect this triangular region
+        spatialIndex.forEach((key, node) -> {
+            if (node != null && !node.getEntityIds().isEmpty()) {
+                // Check if prism's triangle intersects search triangle
+                var prismTriangle = key.getTriangle();
+                if (trianglesIntersect(prismTriangle, searchTriangle)) {
+                    // Check Z overlap
+                    var prismLine = key.getLine();
+                    float[] lineBounds = prismLine.getWorldBounds();
+                    float prismMinZ = lineBounds[0];
+                    float prismMaxZ = lineBounds[1];
+                    
+                    if (prismMinZ <= normMaxZ && prismMaxZ >= normMinZ) {
+                        // This prism intersects the search region
+                        results.addAll(node.getEntityIds());
+                    }
+                }
+            }
+        });
+        
+        return results;
+    }
+    
+    /**
+     * Find all entities within a specific vertical layer.
+     * This is highly optimized for the prism structure which has coarse vertical granularity.
+     * 
+     * @param minZ Minimum Z coordinate of the layer
+     * @param maxZ Maximum Z coordinate of the layer
+     * @return Set of entity IDs within the vertical layer
+     */
+    public Set<ID> findInVerticalLayer(float minZ, float maxZ) {
+        Set<ID> results = new HashSet<>();
+        
+        // Normalize Z coordinates
+        float normMinZ = minZ / worldSize;
+        float normMaxZ = maxZ / worldSize;
+        
+        // Efficiently find all prisms in this Z range
+        spatialIndex.forEach((key, node) -> {
+            if (node != null && !node.getEntityIds().isEmpty()) {
+                var line = key.getLine();
+                float[] lineBounds = line.getWorldBounds();
+                float prismMinZ = lineBounds[0];
+                float prismMaxZ = lineBounds[1];
+                
+                // Check if prism overlaps the layer
+                if (prismMinZ <= normMaxZ && prismMaxZ >= normMinZ) {
+                    results.addAll(node.getEntityIds());
+                }
+            }
+        });
+        
+        return results;
+    }
+    
+    /**
+     * Find all entities within a specific vertical layer that also fall within
+     * a triangular region in the XY plane. Combines the benefits of both query types.
+     * 
+     * @param triangle The triangle defining the search region in XY plane
+     * @param minZ Minimum Z coordinate
+     * @param maxZ Maximum Z coordinate
+     * @return Set of entity IDs within the triangular prism volume
+     */
+    public Set<ID> findInTriangularPrism(Triangle searchTriangle, float minZ, float maxZ) {
+        // This is equivalent to findInTriangularRegion but named more clearly
+        return findInTriangularRegion(searchTriangle, minZ, maxZ);
+    }
+    
+    /**
+     * Check if two triangles intersect in 2D (XY plane).
+     * Uses separating axis theorem for triangle-triangle intersection.
+     */
+    private boolean trianglesIntersect(Triangle t1, Triangle t2) {
+        // Get vertices of both triangles
+        float[][] v1 = t1.getVertices();
+        float[][] v2 = t2.getVertices();
+        
+        // First check if any vertex of t1 is inside t2
+        for (float[] vertex : v1) {
+            if (t2.contains(vertex[0], vertex[1])) {
+                return true;
+            }
+        }
+        
+        // Check if any vertex of t2 is inside t1
+        for (float[] vertex : v2) {
+            if (t1.contains(vertex[0], vertex[1])) {
+                return true;
+            }
+        }
+        
+        // Check edge-edge intersections
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (edgesIntersect(
+                    v1[i][0], v1[i][1], v1[(i + 1) % 3][0], v1[(i + 1) % 3][1],
+                    v2[j][0], v2[j][1], v2[(j + 1) % 3][0], v2[(j + 1) % 3][1])) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Check if two line segments intersect.
+     */
+    private boolean edgesIntersect(float x1, float y1, float x2, float y2,
+                                  float x3, float y3, float x4, float y4) {
+        float denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        if (Math.abs(denom) < 1e-10) {
+            return false; // Lines are parallel
+        }
+        
+        float t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+        float u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+        
+        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
     }
     
     /**
