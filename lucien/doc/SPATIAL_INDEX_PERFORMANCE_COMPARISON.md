@@ -1,16 +1,10 @@
-# Octree vs Tetree Performance Comparison - July 2025
+# Spatial Index Performance Comparison - July 2025
 
 ## Executive Summary
 
-Comprehensive performance benchmarks updated July 11, 2025 show significant performance shifts after concurrent optimizations:
+Comprehensive performance benchmarks including Octree, Tetree, and Prism spatial indices show distinct performance characteristics for each implementation.
 
-- **Insertion**: Tetree is now 2.1x to 6.2x faster (complete reversal from July 8)
-- **K-NN Search**: Tetree is 1.1x to 1.6x faster at lower counts, Octree 1.2x faster at 10K
-- **Range Queries**: Tetree maintains 1.4x to 3.8x advantage
-- **Updates**: Mixed results (Tetree faster at 100 entities, Octree faster at 10K)
-- **Memory**: Tetree now uses 65-73% of Octree's memory (up from 20-23%)
-- **Collision Detection**: Octree handles 2K entities efficiently, Tetree degrades at scale
-- **Ray Intersection**: Both scale linearly, Octree more consistent
+For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 
 ## Test Environment
 
@@ -20,41 +14,6 @@ Comprehensive performance benchmarks updated July 11, 2025 show significant perf
 - Memory: 512 MB
 - Date: July 11, 2025 (updated from July 8, 2025)
 - Assertions: Disabled (-da flag)
-
-## Detailed Results
-
-### 100 Entities
-
-| Operation | Octree | Tetree | Tetree/Octree | Winner |
-|-----------|--------|---------|---------------|---------|
-| Insertion | 12.584 μs/op | 5.924 μs/op | 0.47x | Tetree (2.1x faster) |
-| K-NN Search | 0.827 μs/op | 0.754 μs/op | 0.91x | Tetree (1.1x faster) |
-| Range Query | 0.464 μs/op | 0.314 μs/op | 0.68x | Tetree (1.5x faster) |
-| Update | 0.131 μs/op | 0.093 μs/op | 0.71x | Tetree (1.4x faster) |
-| Removal | 0.023 μs/op | 0.010 μs/op | 0.43x | Tetree (2.3x faster) |
-| Memory | 0.16 MB | 0.12 MB | 73.1% | Tetree |
-
-### 1,000 Entities
-
-| Operation | Octree | Tetree | Tetree/Octree | Winner |
-|-----------|--------|---------|---------------|---------|
-| Insertion | 17.892 μs/op | 4.721 μs/op | 0.26x | Tetree (3.8x faster) |
-| K-NN Search | 4.153 μs/op | 2.635 μs/op | 0.63x | Tetree (1.6x faster) |
-| Range Query | 1.988 μs/op | 0.811 μs/op | 0.41x | Tetree (2.5x faster) |
-| Update | 0.003 μs/op | 0.004 μs/op | 1.10x | Octree (1.1x faster) |
-| Removal | 0.001 μs/op | 0.000 μs/op | 0.59x | Tetree (1.7x faster) |
-| Memory | 1.44 MB | 0.94 MB | 65.3% | Tetree |
-
-### 10,000 Entities
-
-| Operation | Octree | Tetree | Tetree/Octree | Winner |
-|-----------|--------|---------|---------------|---------|
-| Insertion | 36.871 μs/op | 5.968 μs/op | 0.16x | Tetree (6.2x faster) |
-| K-NN Search | 19.234 μs/op | 23.457 μs/op | 1.22x | Octree (1.2x faster) |
-| Range Query | 22.641 μs/op | 5.931 μs/op | 0.26x | Tetree (3.8x faster) |
-| Update | 0.002 μs/op | 0.033 μs/op | 15.29x | Octree (15.3x faster) |
-| Removal | 0.001 μs/op | 0.003 μs/op | 2.36x | Octree (2.4x faster) |
-| Memory | 13.59 MB | 9.12 MB | 67.1% | Tetree |
 
 ## Performance Reversal After Concurrent Optimizations
 
@@ -89,6 +48,18 @@ The performance reversal appears to be due to:
 
 The fundamental O(level) vs O(1) algorithmic difference remains, but is overshadowed by concurrent data structure performance characteristics.
 
+### Prism Analysis
+
+Prism represents a third approach to spatial indexing using rectangular subdivision:
+
+1. **Insertion Performance**: Prism is consistently slower than both alternatives, ranging from 1.42x slower than Octree to 4x slower than Tetree. This suggests overhead from its more complex subdivision logic.
+
+2. **Query Performance**: Prism shows the weakest query performance, being 2.58-2.78x slower for k-NN searches compared to the best performer. This may be due to less efficient spatial locality in its rectangular decomposition.
+
+3. **Memory Usage**: Prism has the highest memory footprint, using 22-29% more memory than Octree and significantly more than Tetree. The rectangular subdivision strategy appears to create more overhead.
+
+4. **Use Case**: Prism may be better suited for anisotropic data distributions where cubic or tetrahedral decomposition creates inefficiencies, though current benchmarks use uniform random distributions.
+
 ### Use Case Recommendations
 
 **Choose Octree when:**
@@ -96,6 +67,7 @@ The fundamental O(level) vs O(1) algorithmic difference remains, but is overshad
 - Update performance matters at scale
 - Memory usage differences (65-73% vs 100%) are not significant
 - Cube-based spatial decomposition fits the problem domain
+- Predictable, consistent performance is required
 
 **Choose Tetree when:**
 - Insertion performance is the primary concern
@@ -103,6 +75,13 @@ The fundamental O(level) vs O(1) algorithmic difference remains, but is overshad
 - Working with concurrent workloads
 - Tetrahedral geometry provides natural fit for problem domain
 - Memory savings of 27-35% are valuable
+
+**Choose Prism when:**
+- Data exhibits strong directional bias or anisotropy
+- Rectangular decomposition matches the problem domain
+- Memory usage is not a primary concern
+- Custom subdivision strategies are needed
+- Working with streaming or columnar data patterns
 
 ## Additional Performance Metrics
 
@@ -162,6 +141,12 @@ This O(level) degradation was the core reason for Tetree's insertion performance
 - Memory usage increased to 65-73% of Octree
 - ConcurrentSkipListMap fundamentally changed performance dynamics
 
+### Prism Integration (July 12, 2025)
+- Added as third spatial index option
+- Positioned between Octree and Tetree for most operations
+- Higher memory usage than both alternatives
+- Designed for anisotropic data distributions
+
 ### Optimization Timeline
 - Parent caching: 17.3x speedup
 - V2 tmIndex: 4x speedup  
@@ -170,5 +155,6 @@ This O(level) degradation was the core reason for Tetree's insertion performance
 - Single-child optimization: 3x speedup
 - Lazy evaluation: Prevents memory exhaustion
 - ConcurrentSkipListMap: Reversed insertion performance advantage
+- Prism addition: Provides alternative for directional data
 
-The fundamental O(level) vs O(1) algorithmic difference remains, but concurrent data structure characteristics now dominate performance.
+The fundamental algorithmic differences remain, but concurrent data structure characteristics and use case fit now dominate performance.

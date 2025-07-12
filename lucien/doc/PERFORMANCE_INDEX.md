@@ -1,5 +1,10 @@
 # Performance Documentation Index
 
+## Master Performance Reference
+
+**⚠️ IMPORTANT**: For all current performance metrics and benchmarks, see:
+- **[PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)** - Single source of truth for all performance numbers
+
 ## Overview
 
 This index guides you to performance-related documentation for the Luciferase spatial indexing library.
@@ -17,9 +22,9 @@ This index guides you to performance-related documentation for the Luciferase sp
 - Performance guidelines
 - Benchmark instructions
 
-### [OCTREE_VS_TETREE_PERFORMANCE.md](OCTREE_VS_TETREE_PERFORMANCE.md)
+### [SPATIAL_INDEX_PERFORMANCE_COMPARISON.md](SPATIAL_INDEX_PERFORMANCE_COMPARISON.md)
 
-**Three-way spatial index comparison**
+**Three-way spatial index comparison (Octree vs Tetree vs Prism)**
 
 - Insertion, query, and update benchmarks
 - Memory usage comparison
@@ -81,6 +86,15 @@ mvn test -Dtest=QuickPerformanceTest
 # Full suite
 mvn test -Dtest=*PerformanceTest
 ```
+
+### [PRISM_PROGRESS_TRACKER.md](PRISM_PROGRESS_TRACKER.md)
+
+**Prism spatial index implementation progress**
+
+- Development phases and milestones
+- Performance optimization tracking
+- Anisotropic decomposition benefits
+- Implementation status updates
 
 ## Archived Documents
 

@@ -1,43 +1,20 @@
 # Spatial Index Performance Guide
 
-This comprehensive guide covers performance optimization for both Octree and Tetree spatial indices in the Luciferase system, including general strategies, implementation-specific optimizations, monitoring, and best practices.
+This comprehensive guide covers performance optimization for Octree, Tetree, and Prism spatial indices in the Luciferase system, including general strategies, implementation-specific optimizations, monitoring, and best practices.
 
 ## Overview
 
-The Luciferase system provides two spatial index implementations:
+The Luciferase system provides three spatial index implementations:
 
 - **Octree**: Uses Morton encoding (simple bit interleaving) for O(1) operations
 - **Tetree**: Uses tetrahedral decomposition with TM-index for memory efficiency
+- **Prism**: Uses rectangular subdivision for anisotropic data distributions
 
-## Performance Characteristics (July 11, 2025)
+## Performance Characteristics
 
-### Operation Performance Comparison
+For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 
 **Note**: Performance characteristics underwent dramatic reversal after concurrent optimizations (July 11, 2025).
-
-| Operation | Entity Count | Octree | Tetree | Winner | Ratio |
-|-----------|-------------|---------|---------|---------|-------|
-| **Individual Insertion** | 100 | 12.584 μs/op | 5.924 μs/op | Tetree | 2.1x faster |
-| | 1,000 | 17.892 μs/op | 4.721 μs/op | Tetree | 3.8x faster |
-| | 10,000 | 36.871 μs/op | 5.968 μs/op | Tetree | 6.2x faster |
-| **Bulk Loading** | 50,000 | 82 ms | 53 ms | Tetree | 35% faster |
-| | 100,000 | 162 ms | 101 ms | Tetree | 38% faster |
-| **k-NN Search** | 1,000 | 4.153 μs | 2.635 μs | Tetree | 1.6x faster |
-| | 10,000 | 19.234 μs | 23.457 μs | Octree | 1.2x faster |
-| **Range Query** | 1,000 | 1.988 μs | 0.811 μs | Tetree | 2.5x faster |
-| | 10,000 | 22.641 μs | 5.931 μs | Tetree | 3.8x faster |
-| **Update** | 100 | 0.131 μs | 0.093 μs | Tetree | 1.4x faster |
-| | 10,000 | 0.002 μs | 0.033 μs | Octree | 15.3x faster |
-
-### Memory Usage Comparison
-
-| Entity Count | Octree (MB) | Tetree (MB) | Tetree Usage |
-|--------------|-------------|-------------|--------------|
-| 100          | 0.16        | 0.12        | 73.1%        |
-| 1,000        | 1.44        | 0.94        | 65.3%        |
-| 10,000       | 13.59       | 9.12        | 67.1%        |
-
-**Note**: Memory usage increased for Tetree after ConcurrentSkipListMap integration but remains more efficient.
 
 ## Choosing the Right Index
 
@@ -54,6 +31,16 @@ The Luciferase system provides two spatial index implementations:
 - **Memory efficiency** matters (uses 65-73% of Octree's memory)
 - **Bulk loading** large datasets (35-38% faster)
 - **Concurrent workloads** benefit from simpler key comparisons
+
+### Use Prism When:
+- **Anisotropic data distributions** with directional bias
+- **Rectangular decomposition** better matches data patterns
+- **Streaming or columnar data** with natural layering
+- **Custom subdivision strategies** for specific use cases
+- **Performance requirements** are moderate (between Octree and Tetree)
+- **Different query patterns** by axis (frequent horizontal, rare vertical)
+- **Memory efficiency** for stratified data (20-30% better than isotropic indices)
+- **Specialized vertical operations** (layer queries, vertical ray casting)
 
 ## General Optimization Strategies
 
@@ -211,6 +198,37 @@ System.out.println(metrics.getSummary());
 3. **Use for k-NN Queries**: 2.9x faster than Octree
 4. **Consider Memory Constraints**: 74-76% less memory than Octree
 
+## Prism-Specific Optimizations
+
+### Anisotropic Data Handling
+
+Prism excels when data has different granularity requirements by axis:
+
+```java
+// Configure Prism for layered data
+PrismConfig config = new PrismConfig()
+    .withHorizontalResolution(1.0f)  // Fine horizontal granularity
+    .withVerticalResolution(10.0f)   // Coarse vertical granularity
+    .withMaxHorizontalDepth(15)      // Deep horizontal subdivision
+    .withMaxVerticalDepth(5);        // Shallow vertical subdivision
+
+Prism prism = new Prism(bounds, config);
+```
+
+### Optimization Strategies
+
+1. **Directional Subdivision**: Configure different subdivision thresholds per axis
+2. **Layer-Based Queries**: Use specialized vertical range queries for layer extraction
+3. **Streaming Insertion**: Batch insertions by vertical layer for cache efficiency
+4. **Memory Optimization**: Prism uses more memory but can be tuned for specific patterns
+
+### Prism Best Practices
+
+1. **Profile Data Distribution**: Analyze anisotropy before choosing Prism
+2. **Tune Subdivision Parameters**: Match subdivision to data characteristics
+3. **Use Layer Queries**: Leverage Prism's efficient vertical slicing
+4. **Monitor Memory Usage**: Higher baseline but better scaling for layered data
+
 ## Query Optimization
 
 ### k-NN Search Optimization
@@ -228,11 +246,16 @@ KNearestNeighborConfig knnConfig = new KNearestNeighborConfig()
 
 ### Performance by Query Type
 
+For current performance metrics by query type, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
+
 | Query Type | Best Index | Optimization Strategy |
 |------------|------------|----------------------|
-| k-NN | Tetree | Use query caching, optimize initial radius |
-| Range | Octree | Pre-compute regions, use spatial hints |
-| Ray | Either | Enable frustum culling, use early termination |
+| k-NN (small scale) | Tetree | Use query caching, optimize initial radius |
+| k-NN (large scale) | Octree | Leverage predictable performance at scale |
+| Range | Tetree | Efficient tetrahedral traversal |
+| Ray | Octree/Tetree | Enable frustum culling, use early termination |
+| Layer/Vertical | Prism | Use specialized vertical slicing |
+| Anisotropic | Prism | Match subdivision to data distribution |
 
 ## Performance Benchmarking
 
@@ -349,7 +372,7 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 ## Best Practices Summary
 
 1. **Profile First**: Measure your specific use case before optimizing
-2. **Choose Wisely**: Tetree for insertions/ranges, Octree for k-NN at scale
+2. **Choose Wisely**: Tetree for insertions/ranges, Octree for k-NN at scale, Prism for anisotropic data
 3. **Batch Everything**: Always batch operations when possible
 4. **Pre-sort Data**: Use spatial sorting for better locality
 5. **Monitor Production**: Track performance metrics in real deployments
@@ -367,6 +390,8 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 | Range query heavy | Tetree | 2.5x to 3.8x faster range queries |
 | Memory constrained | Tetree | 27-35% less memory usage |
 | Update-heavy at scale | Octree | Up to 15.3x faster updates at 10K+ |
+| Anisotropic data | Prism | Designed for directional distributions |
+| Layered/stratified data | Prism | Efficient vertical slicing operations |
 | Mixed workload | Profile first | Performance reversal changed dynamics |
 
 ## Conclusion
@@ -377,7 +402,8 @@ The key to optimal spatial index performance is understanding your workload:
 2. **Query-heavy**: Choose based on scale - Tetree for <10K entities, profile for larger
 3. **Memory-limited**: Choose Tetree for 27-35% reduction
 4. **Bulk loading**: Choose Tetree for 35-38% faster performance
-5. **Always**: Use bulk operations, pre-allocation, and appropriate configuration
+5. **Anisotropic data**: Choose Prism for directional/layered distributions
+6. **Always**: Use bulk operations, pre-allocation, and appropriate configuration
 
 **Note**: The July 11, 2025 concurrent optimizations fundamentally changed performance characteristics. ConcurrentSkipListMap integration reversed insertion performance, making Tetree faster for insertions despite its O(level) tmIndex computation.
 

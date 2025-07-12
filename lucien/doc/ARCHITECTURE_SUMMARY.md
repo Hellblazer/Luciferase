@@ -6,10 +6,10 @@ This document provides a high-level summary of the Luciferase lucien module arch
 
 ## Current State
 
-The lucien module provides spatial indexing through a unified architecture supporting octree, tetrahedral, and prismatic
-decomposition. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each approach. All core features are complete, including S0-S5 tetrahedral decomposition with 100% geometric containment and anisotropic prism decomposition.
+The lucien module provides spatial indexing through a unified architecture supporting octree (cubic), tetrahedral, and prismatic (anisotropic)
+decomposition. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each approach. All core features are complete, including S0-S5 tetrahedral decomposition with 100% geometric containment and anisotropic prism decomposition with triangular/linear spatial indexing.
 
-**Total Classes: 150 Java files** organized across 9 packages (including Prism implementation)
+**Total Classes: 150 Java files** organized across 9 packages (including complete Prism implementation)
 
 ## Package Overview
 
@@ -124,7 +124,7 @@ The current architecture prioritizes:
 5. **Performance**: O(1) operations through HashMap-based storage
 6. **Scalability**: Forest architecture for distributed and large-scale applications
 
-## Performance Reality (June 2025 - OctreeVsTetreeBenchmark)
+## Performance Reality
 
 ### Important Performance Update
 
@@ -132,20 +132,11 @@ Previous performance claims were based on using the `consecutiveIndex()` method 
 After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
 characteristics have changed dramatically.
 
-### Current Performance Metrics (Concurrent Optimizations - July 11, 2025)
+### Current Performance Metrics
 
-After ConcurrentSkipListMap integration, the performance characteristics have completely reversed:
+After ConcurrentSkipListMap integration (July 11, 2025), the performance characteristics have completely reversed.
 
-| Entities | Operation | Octree  | Tetree  | Winner        | Current State |
-|---------|-----------|---------|---------|---------------|---------------|
-| 100     | Insertion | 12.58 μs| 5.92 μs | Tetree (2.1x) | **Complete** |
-| 1K      | Insertion | 17.89 μs| 4.72 μs | Tetree (3.8x) | **reversal** |
-| 10K     | Insertion | 36.87 μs| 5.97 μs | Tetree (6.2x) | **from July** |
-| 1K      | k-NN      | 4.15 μs | 2.64 μs | Tetree (1.6x) | Tetree faster |
-| 10K     | k-NN      | 19.23 μs| 23.46 μs| Octree (1.2x) | Mixed results |
-| 50K+    | Batch     | Baseline| Faster  | Tetree        | 35-38% faster|
-
-*Note: Prism performance characteristics are under evaluation. Expected to provide efficient operations for anisotropic data distributions.*
+For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 
 ### Optimization Timeline
 
@@ -169,14 +160,14 @@ For detailed performance analysis, see:
 
 ## Testing Coverage
 
-**200+ total tests** with comprehensive coverage:
+**250+ total tests** with comprehensive coverage:
 
 - Unit tests for all major operations across all spatial indices (Octree, Tetree, Prism)
 - Integration tests for spatial queries
 - Performance benchmarks (controlled by environment flag)
 - Thread-safety tests for concurrent operations
 - API-specific test suites for all features
-- Prism-specific tests for anisotropic decomposition, collision detection, and ray intersection
+- Prism-specific tests for anisotropic decomposition, collision detection, and ray intersection (47 Phase 5 tests)
 
 ## Usage
 

@@ -20,7 +20,8 @@ public class TreeMetadata {
      */
     public enum TreeType {
         OCTREE,
-        TETREE
+        TETREE,
+        PRISM
     }
     
     private final String name;

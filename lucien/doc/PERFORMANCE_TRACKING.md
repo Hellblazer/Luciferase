@@ -4,62 +4,9 @@
 
 This document tracks performance benchmarks and optimization results for the Luciferase spatial indexing library.
 
-## Current Performance Baseline (July 12, 2025)
+## Current Performance Baseline
 
-### Latest Three-Way Benchmark Results
-
-| Entity Count | Metric | Octree | Tetree | Prism | Best |
-|--------------|--------|--------|--------|--------|------|
-| **100 entities** | | | | | |
-| | Insertion | 0.47 μs/op | 0.22 μs/op | 0.73 μs/op | Tetree |
-| | K-NN Search | 7.3 μs/op | 4.6 μs/op | 20.0 μs/op | Tetree |
-| | Memory | 0.68 MB | 0.46 MB | 0.83 MB | Tetree |
-| **1,000 entities** | | | | | |
-| | Insertion | 4.46 ms | 1.0 μs/op | 6.86 ms | Tetree |
-| | K-NN Search | 725.71 μs | 12.9 μs/op | 1995.79 μs | Tetree |
-| | Range Query | 1776.96 μs | 881.0 μs | 2144.79 μs | Tetree |
-| | Memory | 633.52 KB | 1.5 MB | 774.83 KB | Octree |
-| **2,000 entities** | | | | | |
-| | Memory | 633.52 KB | 590.13 KB | 774.83 KB | Tetree |
-| **10,000 entities** | | | | | |
-| | Insertion | 31.0 μs/op | 5.0 μs/op | 47.7 μs/op | Tetree |
-| | K-NN Search | 18.5 μs/op | 22.2 μs/op | 50.9 μs/op | Octree |
-| | Memory | 13.7 MB | 10.0 MB | 16.7 MB | Tetree |
-
-*Note: July 12 results include new Prism benchmarks alongside July 11 concurrent optimizations*
-
-## Previous Performance Baseline (July 2025)
-
-### Three-Way Comparison Summary
-
-| Metric | Octree | Tetree | Prism | Performance Ranking |
-|--------|--------|--------|--------|-------------------|
-| **Insertion** | 1.0 μs/op | 15.3 μs/op | 1.54 μs/op | Octree > Prism > Tetree |
-| **K-NN Search** | 20.9 μs/op | 6.1 μs/op | 57.5 μs/op | Tetree > Octree > Prism |
-| **Range Query** | 22.6 μs/op | 5.9 μs/op | 27.3 μs/op | Tetree > Octree > Prism |
-| **Memory Usage** | 13.6 MB | 2.9 MB | 16.6 MB | Tetree > Octree > Prism |
-| **Update** | Baseline | 3-5x faster | Similar to Octree | Tetree > Octree ≈ Prism |
-| **Removal** | Baseline | 4x faster | Similar to Octree | Tetree > Octree ≈ Prism |
-
-*Benchmark: 10,000 entities, random distribution*
-
-### Prism vs Octree Detailed Results
-
-| Entity Count | Metric | Octree | Prism | Prism vs Octree |
-|--------------|--------|--------|--------|-----------------|
-| **1,000** | Insertion | 4.46 ms | 6.86 ms | 1.54x slower |
-| | K-NN Search | 725.71 μs | 1995.79 μs | 2.75x slower |
-| | Range Query | 1776.96 μs | 2144.79 μs | 1.21x slower |
-| | Memory | 633.52 KB | 774.83 KB | 1.22x higher |
-
-### Prism vs Tetree Detailed Results
-
-| Entity Count | Metric | Tetree | Prism | Prism vs Tetree |
-|--------------|--------|--------|--------|-----------------|
-| **1,000** | Insertion | 31.23 ms | 6.61 ms | 4.7x faster |
-| | K-NN Search | 1081.79 μs | 2181.92 μs | 2.02x slower |
-| | Range Query | 2016.21 μs | 2291.17 μs | 1.14x slower |
-| | Memory | 590.13 KB | 760.70 KB | 1.29x higher |
+For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 
 ### Key Performance Characteristics
 
