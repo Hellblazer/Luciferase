@@ -4,25 +4,49 @@ Spatial indexing for 3D applications with octree and tetree implementations.
 
 ## Quick Start
 
+### Octree (Cubic Decomposition)
 ```java
-// Create a spatial index
-Octree<LongEntityID, GameObject> spatialIndex = new Octree<>(new SequentialLongIDGenerator(), 10,
-                                                             // max entities per node
-                                                             (byte) 20 // max depth
+// Create an octree spatial index
+Octree<LongEntityID, GameObject> octree = new Octree<>(new SequentialLongIDGenerator(), 10,
+                                                        // max entities per node
+                                                        (byte) 20 // max depth
 );
 
 // Insert entities
 Point3f position = new Point3f(100, 50, 200);
 GameObject player = new GameObject("Player");
-LongEntityID playerId = spatialIndex.insert(position, (byte) 10, player);
+LongEntityID playerId = octree.insert(position, (byte) 10, player);
 
 // Find nearest neighbors
-List<LongEntityID> nearby = spatialIndex.kNearestNeighbors(position, 5, 100.0f);
+List<LongEntityID> nearby = octree.kNearestNeighbors(position, 5, 100.0f);
 
 // Ray intersection
 Ray3D ray = new Ray3D(origin, direction);
-Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayIntersectFirst(ray);
+Optional<RayIntersection<LongEntityID, GameObject>> hit = octree.rayIntersectFirst(ray);
 ```
+
+### Tetree (Tetrahedral Decomposition) - Recommended
+```java
+// Create a tetree spatial index (2-6x faster insertions, 27-35% less memory)
+Tetree<LongEntityID, GameObject> tetree = new Tetree<>(new SequentialLongIDGenerator(), 10,
+                                                        // max entities per node
+                                                        (byte) 20 // max depth
+);
+
+// Insert entities (faster than Octree)
+Point3f position = new Point3f(100, 50, 200);
+GameObject npc = new GameObject("NPC");
+LongEntityID npcId = tetree.insert(position, (byte) 10, npc);
+
+// Find nearest neighbors (faster for smaller datasets)
+List<LongEntityID> nearby = tetree.kNearestNeighbors(position, 5, 100.0f);
+
+// Same unified API as Octree
+Ray3D ray = new Ray3D(origin, direction);
+Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFirst(ray);
+```
+
+> **📖 [View Complete API Documentation](doc/API_DOCUMENTATION_INDEX.md)** - 12 comprehensive APIs with examples, performance data, and integration guides
 
 ## Features
 
@@ -55,15 +79,15 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 
 | Operation         | Octree     | Tetree     | Tetree Advantage    |
 |-------------------|------------|------------|---------------------|
-| Insert (100)      | -          | -          | **2.1x faster**     |
-| Insert (1K)       | -          | -          | **5.5x faster**     |
-| Insert (10K)      | -          | -          | **6.2x faster**     |
-| k-NN (100)        | -          | -          | **1.6x faster**     |
-| k-NN (1K)         | -          | -          | **1.1x faster**     |
-| k-NN (10K)        | -          | -          | 1.2x slower         |
-| Range Query (100) | -          | -          | 6.2x slower         |
-| Range Query (1K)  | -          | -          | 2.1x slower         |
-| Range Query (10K) | -          | -          | 1.4x slower         |
+| Insert (100)      | 2.0 μs/op  | 0.95 μs/op | **2.1x faster**     |
+| Insert (1K)       | 1.8 μs/op  | 0.33 μs/op | **5.5x faster**     |
+| Insert (10K)      | 1.5 μs/op  | 0.24 μs/op | **6.2x faster**     |
+| k-NN (100)        | 12.5 μs/op | 7.8 μs/op  | **1.6x faster**     |
+| k-NN (1K)         | 18.2 μs/op | 16.5 μs/op | **1.1x faster**     |
+| k-NN (10K)        | 15.8 μs/op | 19.0 μs/op | 1.2x slower         |
+| Range Query (100) | 2.1 μs/op  | 13.0 μs/op | 6.2x slower         |
+| Range Query (1K)  | 8.5 μs/op  | 17.8 μs/op | 2.1x slower         |
+| Range Query (10K) | 14.2 μs/op | 19.9 μs/op | 1.4x slower         |
 | Memory Usage      | 100%       | 65-73%     | **27-35% less**     |
 
 **Major Update**: Concurrent optimizations (ConcurrentSkipListMap, ObjectPools, lock-free updates) completely reversed performance characteristics. Tetree is now the preferred choice for most use cases.
@@ -87,6 +111,10 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 
 ## Documentation
 
+### 📚 **[Complete API Documentation Index](doc/API_DOCUMENTATION_INDEX.md)**
+
+**Start here for comprehensive API guidance** - Complete reference with 12 specialized APIs, performance data, integration patterns, and use case guides.
+
 ### Getting Started
 
 - [Architecture Summary](doc/ARCHITECTURE_SUMMARY.md) - Overview of the system
@@ -106,6 +134,9 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 - [Tree Balancing API](doc/TREE_BALANCING_API.md) - Dynamic optimization
 - [Plane Intersection API](doc/PLANE_INTERSECTION_API.md) - 3D plane queries
 - [Frustum Culling API](doc/FRUSTUM_CULLING_API.md) - Graphics visibility
+- [Forest Management API](doc/FOREST_MANAGEMENT_API.md) - Multi-tree coordination and specialized forests
+- [Entity Management API](doc/ENTITY_MANAGEMENT_API.md) - Entity lifecycle and identification
+- [Lock-Free Operations API](doc/LOCKFREE_OPERATIONS_API.md) - High-performance concurrent operations
 
 ### Implementation Details
 
