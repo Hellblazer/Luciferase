@@ -95,7 +95,7 @@ is production-ready with comprehensive test coverage and optimized performance.
 
 - [Lucien Architecture Overview](./LUCIEN_ARCHITECTURE.md)
 - [Architecture Summary](./ARCHITECTURE_SUMMARY.md)
-- [Unified Node Architecture](./UNIFIED_SPATIAL_NODE_ARCHITECTURE.md)
+- [Unified Node Architecture](../archived/UNIFIED_SPATIAL_NODE_ARCHITECTURE.md)
 
 ### Performance
 
