@@ -4,7 +4,7 @@
 
 This index guides you to performance-related documentation for the Luciferase spatial indexing library.
 
-**Last Updated**: July 11, 2025
+**Last Updated**: July 12, 2025
 
 ## Main Performance Documents
 
@@ -12,18 +12,19 @@ This index guides you to performance-related documentation for the Luciferase sp
 
 **Current performance baseline and optimization history**
 
-- Octree vs Tetree comparison
+- Octree vs Tetree vs Prism comparison
 - Optimization timeline
 - Performance guidelines
 - Benchmark instructions
 
 ### [OCTREE_VS_TETREE_PERFORMANCE.md](OCTREE_VS_TETREE_PERFORMANCE.md)
 
-**Primary spatial index comparison**
+**Three-way spatial index comparison**
 
 - Insertion, query, and update benchmarks
 - Memory usage comparison
 - Collision and ray performance
+- Anisotropic vs isotropic performance
 - Use case recommendations
 
 ## Specialized Performance Reports
@@ -55,17 +56,24 @@ This index guides you to performance-related documentation for the Luciferase sp
 
 ### For Different Workloads
 
-**Insertion-Heavy**: Use Tetree (2.1x to 6.2x faster after concurrent optimizations)
-**Query-Heavy**: Use Tetree for k-NN at low entity counts, Octree at scale (>10K)
-**Memory-Constrained**: Use Tetree (65-73% of Octree's memory usage)
+**Insertion-Heavy**: Use Tetree (2.1x to 6.2x faster), avoid Prism (1.54x slower than Octree)
+**Query-Heavy**: Use Tetree for k-NN at low entity counts, Octree at scale (>10K), Prism for anisotropic data
+**Memory-Constrained**: Use Tetree (65-73% of Octree's memory usage), Prism uses 22-29% more than Octree
 **Batch Loading**: Use Tetree with bulk operations (35-38% faster)
 **Update-Heavy**: Mixed results - profile your specific use case
+**Anisotropic Data**: Use Prism for directional data patterns, avoids Octree's cubic subdivision overhead
 
 ### Running Benchmarks
 
 ```bash
-# Primary comparison
+# Three-way comparison (Octree vs Tetree vs Prism)
 mvn test -Dtest=OctreeVsTetreeBenchmark
+
+# Prism-specific benchmarks
+mvn test -Dtest=*PrismPerformanceTest
+
+# Anisotropic workload testing
+mvn test -Dtest=*AnisotropicTest
 
 # Quick validation
 mvn test -Dtest=QuickPerformanceTest
