@@ -131,4 +131,24 @@ public record Ray3D(Point3f origin, Vector3f direction, float maxDistance) {
     public Ray3D withMaxDistance(float newMaxDistance) {
         return new Ray3D(origin, direction, newMaxDistance);
     }
+    
+    /**
+     * Represents an intersection between a ray and a surface.
+     * 
+     * @param t The parameter along the ray where intersection occurs
+     * @param point The intersection point in 3D space
+     * @param normal The surface normal at the intersection point
+     */
+    public static record Intersection(float t, Point3f point, Vector3f normal) {
+        
+        /**
+         * Check if this intersection is closer than another.
+         * 
+         * @param other The other intersection to compare
+         * @return true if this intersection is closer (smaller t value)
+         */
+        public boolean isCloserThan(Intersection other) {
+            return other == null || t < other.t;
+        }
+    }
 }

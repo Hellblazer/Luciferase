@@ -1,6 +1,6 @@
 # Lucien - 3D Spatial Indexing Module
 
-Spatial indexing for 3D applications with octree and tetree implementations.
+Spatial indexing for 3D applications with octree, tetree, and prism implementations.
 
 ## Quick Start
 
@@ -46,13 +46,34 @@ Ray3D ray = new Ray3D(origin, direction);
 Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFirst(ray);
 ```
 
+### Prism (Anisotropic Decomposition)
+```java
+// Create a prism spatial index (triangular constraint: x + y < worldSize)
+Prism<LongEntityID, GameObject> prism = new Prism<>(new SequentialLongIDGenerator(), 10,
+                                                     // max entities per node
+                                                     (byte) 20 // max depth
+);
+
+// Insert entities (faster than Tetree but slower than Octree)
+Point3f position = new Point3f(100, 50, 200);
+GameObject building = new GameObject("Building");
+LongEntityID buildingId = prism.insert(position, (byte) 10, building);
+
+// Find nearest neighbors (good for anisotropic data)
+List<LongEntityID> nearby = prism.kNearestNeighbors(position, 5, 100.0f);
+
+// Same unified API as Octree and Tetree
+Ray3D ray = new Ray3D(origin, direction);
+Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirst(ray);
+```
+
 > **📖 [View Complete API Documentation](doc/API_DOCUMENTATION_INDEX.md)** - 12 comprehensive APIs with examples, performance data, and integration guides
 
 ## Features
 
 ### Core Capabilities
 
-- **Unified Architecture**: Single API for both octree and tetree implementations
+- **Unified Architecture**: Single API for octree, tetree, and prism implementations
 - **Multi-Entity Support**: Multiple entities per spatial location
 - **Entity Spanning**: Large entities can span multiple spatial nodes
 - **Thread-Safe**: Concurrent access with read-write locks
@@ -75,39 +96,45 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFir
 
 ## Performance
 
-**Updated July 11, 2025**: Major performance reversal after concurrent optimizations - Tetree now faster for insertions!
+**Updated July 12, 2025**: Added Prism spatial index for anisotropic data applications.
 
-| Operation         | Octree     | Tetree     | Tetree Advantage    |
-|-------------------|------------|------------|---------------------|
-| Insert (100)      | 2.0 μs/op  | 0.95 μs/op | **2.1x faster**     |
-| Insert (1K)       | 1.8 μs/op  | 0.33 μs/op | **5.5x faster**     |
-| Insert (10K)      | 1.5 μs/op  | 0.24 μs/op | **6.2x faster**     |
-| k-NN (100)        | 12.5 μs/op | 7.8 μs/op  | **1.6x faster**     |
-| k-NN (1K)         | 18.2 μs/op | 16.5 μs/op | **1.1x faster**     |
-| k-NN (10K)        | 15.8 μs/op | 19.0 μs/op | 1.2x slower         |
-| Range Query (100) | 2.1 μs/op  | 13.0 μs/op | 6.2x slower         |
-| Range Query (1K)  | 8.5 μs/op  | 17.8 μs/op | 2.1x slower         |
-| Range Query (10K) | 14.2 μs/op | 19.9 μs/op | 1.4x slower         |
-| Memory Usage      | 100%       | 65-73%     | **27-35% less**     |
+| Operation         | Octree     | Tetree     | Prism      | Best Choice      |
+|-------------------|------------|------------|------------|------------------|
+| Insert (1K)       | 4.46ms     | 31.23ms    | 6.86ms     | **Octree**       |
+| k-NN (1K)         | 725.71μs   | 1081.79μs  | 1995.79μs  | **Octree**       |
+| Range Query (1K)  | 1776.96μs  | 2016.21μs  | 2144.79μs  | **Octree**       |
+| Memory (2K)       | 633.52KB   | 590.13KB   | 774.83KB   | **Tetree**       |
 
-**Major Update**: Concurrent optimizations (ConcurrentSkipListMap, ObjectPools, lock-free updates) completely reversed performance characteristics. Tetree is now the preferred choice for most use cases.
+**Relative Performance** (vs Octree):
+- **Tetree**: 7.0x slower insertion, 1.5x slower k-NN, 1.1x slower range, 7% less memory
+- **Prism**: 1.5x slower insertion, 2.8x slower k-NN, 1.2x slower range, 22% more memory
 
-## Choosing Between Octree and Tetree
+## Choosing Between Spatial Index Types
 
-### Use Tetree When (Recommended):
+### Use Octree When (General Recommendation):
 
-- **Fast insertion is needed (2-6x faster after July 2025 optimizations)**
-- **Memory efficiency matters (27-35% less memory)**
-- **Concurrent access is required (superior thread safety)**
-- k-NN queries are primary workload (1.1-1.6x faster for smaller datasets)
-- Working with tetrahedral meshes or geometry
-
-### Use Octree When:
-
-- Range queries are the primary workload (1.4-6x faster)
-- Simple, predictable performance is needed
+- **Best overall performance** (fastest insertion, k-NN, and range queries)
+- General 3D spatial indexing needs
+- Simple, predictable performance is required
 - Using existing Morton curve tools/algorithms
 - Working with legacy systems expecting cubic decomposition
+- High-performance applications where speed is critical
+
+### Use Tetree When:
+
+- **Memory efficiency is critical** (7% less memory than Octree)
+- Working with tetrahedral meshes or geometry
+- Specific geometric applications requiring tetrahedral decomposition
+- Memory-constrained environments
+
+### Use Prism When:
+
+- **Anisotropic data patterns** (non-uniform spatial distribution)
+- **Terrain or urban modeling applications** 
+- **Horizontal precision is more important than vertical**
+- Data naturally fits triangular constraint (x + y < worldSize)
+- 2D triangular decomposition combined with 1D linear decomposition is preferred
+- Acceptable trade-off of 1.5x slower insertion for specialized geometry
 
 ## Documentation
 
@@ -153,12 +180,13 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFir
 SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
   └── AbstractSpatialIndex<Key, ID, Content, NodeType> (90% shared code)
       ├── Octree<ID, Content> (Morton curve-based)
-      └── Tetree<ID, Content> (Tetrahedral SFC with S0-S5 decomposition)
+      ├── Tetree<ID, Content> (Tetrahedral SFC with S0-S5 decomposition)
+      └── Prism<ID, Content> (Triangular constraint anisotropic decomposition)
 ```
 
 ### Key Components
 
-- **109 Java files** organized in 9 packages (core, entity, octree, tetree, collision, balancing, visitor, forest, index)
+- **150 Java files** organized in 10 packages (core, entity, octree, tetree, prism, collision, balancing, visitor, forest, index)
 - **Entity Management**: Centralized lifecycle with multiple ID generation strategies
 - **Spatial Queries**: k-NN, range, ray intersection, collision detection, frustum culling
 - **Performance Optimizations**: ConcurrentSkipListMap, ObjectPools, lock-free updates, lazy evaluation
@@ -221,9 +249,10 @@ spatialIndex.finalizeBulkLoading();
 // Create a forest for multi-tree management
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>();
 
-// Add multiple trees
+// Add multiple trees with different spatial index types
 Octree<LongEntityID, String> tree1 = new Octree<>(idGenerator, 10, (byte) 20);
-Octree<LongEntityID, String> tree2 = new Octree<>(idGenerator, 10, (byte) 20);
+Tetree<LongEntityID, String> tree2 = new Tetree<>(idGenerator, 10, (byte) 20);
+Prism<LongEntityID, String> tree3 = new Prism<>(idGenerator, 10, (byte) 20);
 
 TreeMetadata metadata = TreeMetadata.builder()
     .name("region_north")
@@ -233,6 +262,7 @@ TreeMetadata metadata = TreeMetadata.builder()
 
 String treeId1 = forest.addTree(tree1, metadata);
 String treeId2 = forest.addTree(tree2);
+String treeId3 = forest.addTree(tree3);
 
 // Forest-wide queries
 List<LongEntityID> nearestInForest = forest.findKNearestNeighbors(
@@ -282,10 +312,11 @@ AGPL v3.0 - See LICENSE file for details
 
 **Production Ready** - Feature-complete as of July 2025:
 
-- ✅ **Performance Breakthrough**: Concurrent optimizations make Tetree 2-6x faster for insertions
+- ✅ **Three Spatial Index Types**: Octree (best performance), Tetree (memory efficient), Prism (anisotropic data)
 - ✅ **Complete Forest Implementation**: Adaptive and hierarchical forests with 15 test classes
 - ✅ **Lock-Free Concurrency**: 264K entity movements/sec with atomic protocols
 - ✅ **S0-S5 Tetrahedral Decomposition**: 100% geometric containment achieved
-- ✅ **Comprehensive API Coverage**: 9 specialized APIs for all spatial operations
-- ✅ **787 Tests Passing**: Full test coverage with performance benchmarks
-- ✅ **Clean Documentation**: 24 active docs, 161+ archived historical documents
+- ✅ **Comprehensive API Coverage**: 12 specialized APIs for all spatial operations
+- ✅ **Unified Architecture**: Single API across all three spatial index implementations
+- ✅ **Extensive Test Coverage**: Full test coverage with performance benchmarks
+- ✅ **Clean Documentation**: 24 active docs, comprehensive performance analysis
