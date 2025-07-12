@@ -191,7 +191,7 @@ Historical documents (describe unimplemented features):
     - **Root Cause**: Multiple issues:
         1. Separate HashMap (spatialIndex) and TreeSet (sortedSpatialIndices) not synchronized
         2. SpatialNodeImpl using ArrayList for entityIds, causing CME during iteration
-    - **Solution**: 
+    - **Solution**:
         1. Replaced spatialIndex HashMap and sortedSpatialIndices TreeSet with single ConcurrentSkipListMap
         2. Changed SpatialNodeImpl.entityIds from ArrayList to CopyOnWriteArrayList
     - **Benefits**:
@@ -301,7 +301,8 @@ Historical documents (describe unimplemented features):
     - **ConcurrentSkipListMap Refactoring**: Replaced dual HashMap/TreeSet with single ConcurrentSkipListMap
     - **Memory Reduction**: 54-61% reduction in memory usage, especially at scale
     - **CopyOnWriteArrayList**: Used for entity storage in SpatialNodeImpl to prevent ConcurrentModificationException
-    - **ObjectPool Integration**: Extended to k-NN, collision detection, ray intersection, frustum culling, and bulk operations
+    - **ObjectPool Integration**: Extended to k-NN, collision detection, ray intersection, frustum culling, and bulk
+      operations
     - **Performance Metrics**:
         - k-NN: 0.18ms per query with minimal GC pressure
         - Collision Detection: 9.46ms average, 419 ops/sec concurrent
@@ -314,7 +315,8 @@ Historical documents (describe unimplemented features):
 - **K-NN OBJECTPOOL OPTIMIZATION (July 11, 2025):**
     - **Problem**: k-NN search identified as #1 allocation hot spot
     - **Solution**: Added PriorityQueue support to ObjectPools, modified k-NN methods to use pooling
-    - **Methods Optimized**: findKNearestNeighborsAtPosition, searchKNNInRadius, performKNNSFCBasedSearch, convertKNNCandidatesToList
+    - **Methods Optimized**: findKNearestNeighborsAtPosition, searchKNNInRadius, performKNNSFCBasedSearch,
+      convertKNNCandidatesToList
     - **Objects Pooled**: PriorityQueue, HashSet, ArrayList
     - **Impact**: Significant GC pressure reduction for k-NN queries
 - **COMPREHENSIVE OPTIMIZATION ANALYSIS (July 11, 2025):**
@@ -335,5 +337,14 @@ Historical documents (describe unimplemented features):
         - Memory efficiency: 187 bytes per entity
     - **Zero conflicts** in testing with optimistic retry mechanism
     - **LockFreePerformanceTest**: Validates throughput and memory efficiency
+- **LOGGING AND TREE ID CLEANUP (July 12, 2025):**
+    - **Problem**: System.out/err calls in implementation classes and excessive tree name concatenation
+    - **Logging Fix**: Replaced System.out with log.debug() in Tetree.java, System.err with log.error() in
+      ParallelBulkOperations
+    - **TestOutputSuppressor**: Created utility to suppress test output by default (enabled via VERBOSE_TESTS env var)
+    - **Tree ID Fix**: Implemented SHA-256 hash-based tree IDs with Base64 encoding in Forest.generateTreeId()
+    - **ID Format**: 16-character Base64 string from first 12 bytes of SHA-256 hash, with optional 4-char prefix
+    - **Naming**: Simplified AdaptiveForest tree names to "SubTree" and "MergedTree" instead of concatenating parent IDs
+    - **Result**: Eliminated "Child_Child_Child_..." excessive naming issue, all Forest tests passing
 
 [... rest of the file remains unchanged ...]
