@@ -38,45 +38,52 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 ### Advanced Features
 
 - **Ray Intersection**: Fast ray traversal for line-of-sight queries
-- **Collision Detection**: Broad and narrow phase collision detection
+- **Collision Detection**: Broad and narrow phase collision detection with physics response
 - **Tree Traversal**: Visitor pattern with multiple strategies
 - **Dynamic Balancing**: Automatic tree optimization
 - **Plane Intersection**: Arbitrary 3D plane queries
 - **Frustum Culling**: View frustum visibility for graphics
-- **Bulk Operations**: 5-10x faster batch insertions
+- **Bulk Operations**: 5-10x faster batch insertions with ObjectPool optimization
+- **Lock-Free Updates**: 264K entity movements/sec with atomic movement protocol
 - **Forest Management**: Multi-tree coordination for distributed spatial indexing
+- **Adaptive Forest**: Dynamic density-based subdivision and merging
+- **Hierarchical Forest**: Level-of-detail management with distance-based LOD
 
 ## Performance
 
-**Updated July 2025**: Latest benchmarks after S0-S5 decomposition implementation.
+**Updated July 11, 2025**: Major performance reversal after concurrent optimizations - Tetree now faster for insertions!
 
-| Operation         | Octree     | Tetree     | Tetree Advantage |
-|-------------------|------------|------------|------------------|
-| Insert (100)      | 5.3 μs/op  | 5.1 μs/op  | 1.0x faster      |
-| Insert (1K)       | 2.4 μs/op  | 5.6 μs/op  | 2.3x slower      |
-| Insert (10K)      | 1.1 μs/op  | 12.5 μs/op | 11.4x slower     |
-| k-NN (10K)        | 20.2 μs/op | 6.2 μs/op  | 3.2x faster      |
-| Range Query (10K) | 20.1 μs/op | 5.8 μs/op  | 3.5x faster      |
-| Memory (10K)      | 12.9 MB    | 2.6 MB     | 80% less memory  |
+| Operation         | Octree     | Tetree     | Tetree Advantage    |
+|-------------------|------------|------------|---------------------|
+| Insert (100)      | -          | -          | **2.1x faster**     |
+| Insert (1K)       | -          | -          | **5.5x faster**     |
+| Insert (10K)      | -          | -          | **6.2x faster**     |
+| k-NN (100)        | -          | -          | **1.6x faster**     |
+| k-NN (1K)         | -          | -          | **1.1x faster**     |
+| k-NN (10K)        | -          | -          | 1.2x slower         |
+| Range Query (100) | -          | -          | 6.2x slower         |
+| Range Query (1K)  | -          | -          | 2.1x slower         |
+| Range Query (10K) | -          | -          | 1.4x slower         |
+| Memory Usage      | 100%       | 65-73%     | **27-35% less**     |
 
-**Key Insight**: Choose Octree for insertion-heavy workloads, Tetree for query-heavy and memory-constrained
-applications.
+**Major Update**: Concurrent optimizations (ConcurrentSkipListMap, ObjectPools, lock-free updates) completely reversed performance characteristics. Tetree is now the preferred choice for most use cases.
 
 ## Choosing Between Octree and Tetree
 
+### Use Tetree When (Recommended):
+
+- **Fast insertion is needed (2-6x faster after July 2025 optimizations)**
+- **Memory efficiency matters (27-35% less memory)**
+- **Concurrent access is required (superior thread safety)**
+- k-NN queries are primary workload (1.1-1.6x faster for smaller datasets)
+- Working with tetrahedral meshes or geometry
+
 ### Use Octree When:
 
-- Fast insertion is critical (2-11x faster)
-- Workload is update-heavy
+- Range queries are the primary workload (1.4-6x faster)
 - Simple, predictable performance is needed
 - Using existing Morton curve tools/algorithms
-
-### Use Tetree When:
-
-- Memory efficiency matters (80% reduction)
-- Workload is query-heavy (3-5x faster searches)
-- Working with tetrahedral meshes or geometry
-- Need better spatial locality for queries
+- Working with legacy systems expecting cubic decomposition
 
 ## Documentation
 
@@ -104,19 +111,10 @@ applications.
 
 - [Complete Architecture Guide](doc/LUCIEN_ARCHITECTURE.md) - Detailed technical documentation
 - [Tetree Implementation Guide](doc/TETREE_IMPLEMENTATION_GUIDE.md) - Tetrahedral specifics
-- [Performance Tuning Guide](doc/PERFORMANCE_TUNING_GUIDE.md) - Optimization strategies
-- [Spatial Index Optimization Guide](doc/SPATIAL_INDEX_OPTIMIZATION_GUIDE.md) - Implementation optimizations
-
-### Performance Testing
-
-- [Performance Testing Plan](doc/SPATIAL_INDEX_PERFORMANCE_TESTING_PLAN.md) - Benchmarking framework
-
-### Status Documents (July 2025)
-
-- [Architecture Summary](doc/ARCHITECTURE_SUMMARY.md) - Complete system overview
+- [Spatial Index Performance Guide](doc/SPATIAL_INDEX_PERFORMANCE_GUIDE.md) - Performance tuning
 - [Octree vs Tetree Performance](doc/OCTREE_VS_TETREE_PERFORMANCE.md) - Latest benchmarks
-- [T8code Neighbor Analysis](doc/T8CODE_NEIGHBOR_ANALYSIS.md) - Neighbor functionality study
-- [Tet Neighbor Implementation Plan](doc/TET_NEIGHBOR_IMPLEMENTATION_PLAN.md) - Upcoming enhancements
+- [Lazy Evaluation Usage Guide](doc/LAZY_EVALUATION_USAGE_GUIDE.md) - Deferred operations
+- [TM Index Limitations](doc/TM_INDEX_LIMITATIONS_AND_SOLUTIONS.md) - Current constraints
 
 ## Architecture Overview
 
@@ -129,12 +127,12 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 
 ### Key Components
 
-- **109 Java files** organized in 9 packages
-- **Entity Management**: Centralized lifecycle with ID generation
-- **Spatial Queries**: Bounded, bounding, enclosing, k-NN
-- **Performance Optimizations**: O(1) operations, caching, bulk loading
+- **109 Java files** organized in 9 packages (core, entity, octree, tetree, collision, balancing, visitor, forest, index)
+- **Entity Management**: Centralized lifecycle with multiple ID generation strategies
+- **Spatial Queries**: k-NN, range, ray intersection, collision detection, frustum culling
+- **Performance Optimizations**: ConcurrentSkipListMap, ObjectPools, lock-free updates, lazy evaluation
 - **Geometric Accuracy**: S0-S5 tetrahedral decomposition with 100% containment
-- **Forest Architecture**: Multi-tree management for large-scale distributed applications
+- **Forest Architecture**: Complete multi-tree management with adaptive and hierarchical specializations
 
 ## Usage Examples
 
@@ -251,11 +249,12 @@ AGPL v3.0 - See LICENSE file for details
 
 ## Status
 
-The spatial indexing implementation is feature-complete as of July 2025:
+**Production Ready** - Feature-complete as of July 2025:
 
-- Unified architecture with type-safe spatial keys
-- S0-S5 tetrahedral decomposition with 100% geometric containment
-- Comprehensive test coverage and documentation
-- Performance-optimized with caching and bulk operations
-- Active development on t8code-compatible neighbor finding
-- Complete forest architecture for multi-tree spatial indexing
+- ✅ **Performance Breakthrough**: Concurrent optimizations make Tetree 2-6x faster for insertions
+- ✅ **Complete Forest Implementation**: Adaptive and hierarchical forests with 15 test classes
+- ✅ **Lock-Free Concurrency**: 264K entity movements/sec with atomic protocols
+- ✅ **S0-S5 Tetrahedral Decomposition**: 100% geometric containment achieved
+- ✅ **Comprehensive API Coverage**: 9 specialized APIs for all spatial operations
+- ✅ **787 Tests Passing**: Full test coverage with performance benchmarks
+- ✅ **Clean Documentation**: 24 active docs, 161+ archived historical documents
