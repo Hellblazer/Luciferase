@@ -77,7 +77,7 @@ public final class Triangle {
         
         // For level 0, return root triangle
         if (level == 0) {
-            return new Triangle(0, 0, 0, 0, 1);
+            return new Triangle(0, 0, 0, 0, 0);
         }
         
         // Quantize to grid

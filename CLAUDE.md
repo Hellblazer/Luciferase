@@ -173,7 +173,7 @@ Historical documents (describe unimplemented features):
     - **Problem**: Tetree was creating only 2 nodes for 1000 entities instead of proper subdivision
     - **Root Cause**: Tetree wasn't overriding `insertAtPosition` to handle empty/subdivided nodes
     - **Solution**: Added override to automatically insert at finer levels like Octree does
-    - **Result**: Performance improved 38-96%, memory usage now correct (92-103% of Octree)
+    - **Results**: Performance improved 38-96%, memory usage now correct (92-103% of Octree)
     - **Location**: Tetree.java lines 1391-1430 (insertAtPosition override)
     - **Impact**: Insertion now 6-35x slower (was 770x), proper tree structure maintained
 - **V2 TMINDEX OPTIMIZATION (June 28, 2025):**
@@ -343,5 +343,18 @@ Historical documents (describe unimplemented features):
     - **ID Format**: 16-character Base64 string from first 12 bytes of SHA-256 hash, with optional 4-char prefix
     - **Naming**: Simplified AdaptiveForest tree names to "SubTree" and "MergedTree" instead of concatenating parent IDs
     - **Result**: Eliminated "Child_Child_Child_..." excessive naming issue, all Forest tests passing
+- **PERFORMANCE DOCUMENTATION PROCESS (July 12, 2025):**
+    - **Standardized Process**: Created PERFORMANCE_TESTING_PROCESS.md to document repeatable performance testing workflow
+    - **Maven Integration**: Added performance profiles to pom.xml for automated test execution, data extraction, and documentation updates
+    - **Key Profiles**:
+        - `performance`: Runs all performance benchmarks with proper environment configuration
+        - `performance-extract`: Extracts metrics from test results into CSV/markdown format
+        - `performance-docs`: Updates documentation files with current performance data
+        - `performance-full`: Complete workflow combining all steps
+    - **Documentation Maintenance**: Process prevents performance data inconsistencies across documentation files
+    - **Commands**: Use `mvn clean test -Pperformance` for benchmarks, `mvn clean verify -Pperformance-full` for complete update
+    - **Critical**: This process and documentation must be kept current as performance characteristics evolve
+- **PERFORMANCE METRICS PROCESS:**
+    - follow the process in PERFORMANCE_METRICS_MASTER.md, updating as necessary, when we need performance metrics
 
 [... rest of the file remains unchanged ...]

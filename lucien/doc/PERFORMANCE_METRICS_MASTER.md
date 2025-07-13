@@ -1,21 +1,21 @@
 # Performance Metrics Master Reference
 
-**Last Updated**: July 12, 2025  
+**Last Updated**: July 12, 2025
 **Purpose**: Single source of truth for all spatial index performance metrics
 
 > **IMPORTANT**: All performance documentation should reference these numbers. Do not duplicate performance metrics in other files.
 
 ## Current Performance Metrics (July 12, 2025)
 
-These are the authoritative performance numbers based on the latest benchmarks run on Mac OS X aarch64, Java 24.
+These are the authoritative performance numbers based on OctreeVsTetreeBenchmark run on Mac OS X aarch64, Java 24.
 
 ### Insertion Performance
 
 | Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
 |-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
-| 100         | 1.378 ms    | 0.731 ms    | 1.9x faster      | -          | -               | -               |
-| 1,000       | 24.220 ms   | 4.226 ms    | 5.7x faster      | 7.17 ms    | 1.42x slower    | 0.59x faster    |
-| 10,000      | 755.526 ms  | 121.099 ms  | 6.2x faster      | -          | -               | -               |
+| 100 | 1.067 ms | 0.624 ms | 1.7x faster | - | - | - |
+| 1,000 | 26.561 ms | 4.672 ms | 5.7x faster | - | - | - |
+| 10,000 | 772.212 ms | 185.826 ms | 4.2x faster | - | - | - |
 
 **Key Insight**: Tetree insertion is now significantly faster than Octree due to ConcurrentSkipListMap optimizations (July 11, 2025).
 
@@ -23,9 +23,9 @@ These are the authoritative performance numbers based on the latest benchmarks r
 
 | Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
 |-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
-| 100         | 0.029 ms    | 0.018 ms    | 1.6x faster      | -          | -               | -               |
-| 1,000       | 0.021 ms    | 0.021 ms    | Same             | 2.053 ms   | 2.78x slower    | 2.58x slower    |
-| 10,000      | 0.097 ms    | 0.115 ms    | 1.2x slower      | -          | -               | -               |
+| 100         | 0.026 ms    | 0.022 ms    | 1.2x faster      | -          | -               | -               |
+| 1,000       | 0.025 ms    | 0.029 ms    | 1.2x slower      | 2.053 ms   | 82x slower      | 71x slower      |
+| 10,000      | 0.110 ms    | 0.117 ms    | 1.1x slower      | -          | -               | -               |
 
 **Key Insight**: Performance varies by scale. Tetree is faster at small scale, Octree faster at large scale. Prism is consistently slowest.
 
@@ -33,9 +33,9 @@ These are the authoritative performance numbers based on the latest benchmarks r
 
 | Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
 |-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
-| 100         | 0.006 ms    | 0.041 ms    | 6.3x slower      | -          | -               | -               |
-| 1,000       | 0.014 ms    | 0.029 ms    | 2.1x slower      | 2.422 ms   | 1.38x slower    | 1.29x slower    |
-| 10,000      | 0.150 ms    | 0.151 ms    | Same             | -          | -               | -               |
+| 100         | 0.007 ms    | 0.041 ms    | 6.1x slower      | -          | -               | -               |
+| 1,000       | 0.014 ms    | 0.044 ms    | 3.2x slower      | 2.422 ms   | 173x slower     | 55x slower      |
+| 10,000      | 0.122 ms    | 0.160 ms    | 1.3x slower      | -          | -               | -               |
 
 **Key Insight**: Octree performs best for range queries. Tetree and Prism have similar slower performance.
 
@@ -43,28 +43,27 @@ These are the authoritative performance numbers based on the latest benchmarks r
 
 | Entity Count | Octree Memory | Tetree Memory | Tetree vs Octree | Prism Memory | Prism vs Octree | Prism vs Tetree |
 |-------------|---------------|---------------|------------------|--------------|-----------------|-----------------|
-| 100         | 0.05 MB       | 0.04 MB       | 73%              | -            | -               | -               |
-| 1,000       | 0.42 MB       | 0.27 MB       | 65%              | -            | -               | -               |
-| 2,000       | -             | -             | -                | 0.774 MB     | 122%            | 129%            |
-| 10,000      | 4.15 MB       | 2.67 MB       | 64%              | -            | -               | -               |
+| 100 | 0.050 MB | 0.040 MB | 1.3x less | - | - | - |
+| 1,000 | 0.420 MB | 0.270 MB | 1.6x less | - | - | - |
+| 10,000 | 4.250 MB | 2.630 MB | 1.6x less | - | - | - |
 
-**Key Insight**: Tetree uses 64-73% of Octree's memory. Prism uses 22-29% more memory than competitors.
+**Key Insight**: Tetree uses 62-73% of Octree's memory. Prism uses 22-29% more memory than competitors.
 
 ### Update Performance
 
-| Entity Count | Octree Time | Tetree Time | Tetree vs Octree |
-|-------------|-------------|-------------|------------------|
-| 100         | 0.014 ms    | 0.009 ms    | 1.5x faster      |
-| 1,000       | 0.018 ms    | 0.008 ms    | 2.3x faster      |
-| 10,000      | 0.153 ms    | 0.024 ms    | 6.3x faster      |
+| Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
+|-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
+| 100 | 0.012 ms | 0.007 ms | 1.7x faster | - | - | - |
+| 1,000 | 0.021 ms | 0.011 ms | 1.9x faster | - | - | - |
+| 10,000 | 0.148 ms | 0.038 ms | 3.9x faster | - | - | - |
 
 ### Removal Performance
 
-| Entity Count | Octree Time | Tetree Time | Tetree vs Octree |
-|-------------|-------------|-------------|------------------|
-| 100         | 0.001 ms    | 0.000 ms    | 1.6x faster      |
-| 1,000       | 0.001 ms    | 0.000 ms    | 1.3x faster      |
-| 10,000      | 0.009 ms    | 0.002 ms    | 4.9x faster      |
+| Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
+|-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
+| 100 | 0.002 ms | 0.000 ms | 2.0x faster | - | - | - |
+| 1,000 | 0.001 ms | 0.000 ms | 1.0x faster | - | - | - |
+| 10,000 | 0.009 ms | 0.002 ms | 4.5x faster | - | - | - |
 
 ## Historical Context
 
@@ -77,7 +76,7 @@ A major architectural change on July 11, 2025 completely reversed insertion perf
 - Cause: O(1) Morton encoding vs O(level) tmIndex computation
 
 **After July 11**:
-- Tetree is now 1.9x to 6.2x faster for insertions
+- Tetree is now 2.1x to 5.7x faster for insertions
 - Cause: ConcurrentSkipListMap refactoring favored Tetree's simpler key comparisons
 
 ## Recommendations
@@ -88,7 +87,7 @@ A major architectural change on July 11, 2025 completely reversed insertion perf
 - Balanced performance across all operations required
 
 ### Use Tetree When:
-- Memory efficiency is critical (uses 64-73% of Octree memory)
+- Memory efficiency is critical (uses 62-73% of Octree memory)
 - Insert/update/remove performance is priority
 - Working with large datasets (10K+ entities)
 
@@ -103,8 +102,9 @@ A major architectural change on July 11, 2025 completely reversed insertion perf
 - **Platform**: Mac OS X aarch64
 - **JVM**: Java HotSpot(TM) 64-Bit Server VM 24
 - **Processors**: 16
-- **Memory**: 512 MB
+- **Memory**: 8192 MB
 - **Date**: July 12, 2025
+- **Benchmark**: OctreeVsTetreeBenchmark
 
 ## Notes
 
