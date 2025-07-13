@@ -22,7 +22,7 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 - **Root Package (28 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
 - **Octree Package (6 classes)**: Morton curve-based cubic spatial subdivision with internal utilities
-- **Tetree Package (34 classes)**: Tetrahedral spatial subdivision with extensive optimizations and lazy evaluation
+- **Tetree Package (34 classes)**: Tetrahedral spatial subdivision with 21-level support, extensive optimizations, and lazy evaluation
 - **Prism Package (8 classes)**: Anisotropic spatial subdivision with Line/Triangle elements, PrismKey composite keys,
   geometric operations, neighbor finding, ray intersection, and collision detection using SAT
 - **Balancing Package (4 classes)**: Tree balancing strategies
@@ -59,7 +59,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 - **Entity Management**: Centralized through EntityManager with multi-entity support
 - **Thread Safety**: ReadWriteLock-based concurrent access
 - **Performance**: HashMap-based O(1) node access for all implementations
-- **Type-Safe Keys**: SpatialKey architecture prevents mixing incompatible indices (MortonKey, TetreeKey, PrismKey)
+- **Type-Safe Keys**: SpatialKey architecture prevents mixing incompatible indices (MortonKey, TetreeKey with 21-level support, PrismKey)
 
 ## What This Architecture Includes
 
@@ -88,7 +88,8 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ✅ **TetreeLevelCache**: Eliminates O(log n) level calculations  
 ✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
 ✅ **Bulk Loading Mode**: 5-10x performance for large datasets
-✅ **SpatialKey Architecture**: Type-safe keys with MortonKey, TetreeKey, and PrismKey
+✅ **SpatialKey Architecture**: Type-safe keys with MortonKey, TetreeKey (21-level support), and PrismKey  
+✅ **TetreeKey Encoding**: Dual implementation with CompactTetreeKey (levels 0-10) and ExtendedTetreeKey (levels 0-21) using innovative level 21 bit packing
 
 ## Documentation Structure
 

@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,7 @@ public class TetreeLocateMethodTest {
     private void testLocateAtLevel(Tetree<?, ?> tetree, byte level) {
         System.out.printf("\nTesting level %d:\n", level);
         
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         Random random = new Random(42 + level); // Different seed per level
         
         int totalTests = 500;
@@ -142,7 +143,7 @@ public class TetreeLocateMethodTest {
             new Tetree<>(new SequentialLongIDGenerator());
         
         byte level = 10;
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         
         // Test cube corners
         Point3f[] corners = {
@@ -190,7 +191,7 @@ public class TetreeLocateMethodTest {
             new Tetree<>(new SequentialLongIDGenerator());
         
         byte level = 8; // Smaller level for faster testing
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         Random random = new Random(789);
         
         int[] typeCounts = new int[6];
@@ -236,7 +237,7 @@ public class TetreeLocateMethodTest {
             new Tetree<>(new SequentialLongIDGenerator());
         
         byte level = 10;
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         Random random = new Random(456);
         
         // Generate test points
@@ -299,7 +300,7 @@ public class TetreeLocateMethodTest {
             new Tetree<>(new SequentialLongIDGenerator());
         
         byte level = 12;
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         
         // Test points that historically caused issues in coordinate dominance approach
         float[][] problematicPoints = {

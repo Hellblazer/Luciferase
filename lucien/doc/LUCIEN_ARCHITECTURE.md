@@ -396,8 +396,10 @@ Core classes:
 
 Key implementations (4):
 
-- **TetreeKey** - Main space-filling curve key
-- **BaseTetreeKey**, **CompactTetreeKey**, **LazyTetreeKey** - Optimized key variants
+- **TetreeKey** - Abstract base class for tetrahedral space-filling curve keys
+- **CompactTetreeKey** - Single-long optimization for levels 0-10 (64-bit storage)
+- **ExtendedTetreeKey** - Full implementation supporting levels 0-21 (128-bit storage with level 21 bit packing)
+- **LazyTetreeKey** - Lazy evaluation variant for deferred computation
 
 Performance optimizations (7):
 
@@ -539,7 +541,7 @@ public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Cont
 **SpatialKey Architecture**:
 
 - `MortonKey`: Wraps long Morton code for Octree
-- `TetreeKey`: Encodes (level, sfcIndex) tuple for Tetree
+- `TetreeKey`: Encodes (level, sfcIndex) tuple for Tetree with support for 21 levels matching Octree capacity
 - `PrismKey`: Composite key combining Triangle and Line indices for anisotropic subdivision
 - Type safety prevents mixing incompatible keys
 - Maintains spatial locality and comparable semantics
@@ -574,6 +576,51 @@ Built into the core architecture:
 4. **Type Safety**: Generic types ensure compile-time correctness
 5. **Performance**: HashMap provides O(1) node access
 6. **Flexibility**: Easy to add new spatial subdivision strategies
+
+## TetreeKey Encoding Architecture
+
+The TetreeKey system provides efficient spatial key encoding for tetrahedral subdivision with full 21-level support matching Octree capacity:
+
+### Dual Implementation Strategy
+
+**CompactTetreeKey (Levels 0-10)**:
+- Single 64-bit long storage for optimal performance
+- Handles 95%+ of typical use cases efficiently
+- 6 bits per level encoding (3 coordinate + 3 type bits)
+- Maximum 60 bits used (10 levels × 6 bits)
+
+**ExtendedTetreeKey (Levels 0-21)**:
+- Dual 64-bit long storage (128-bit total)
+- Standard encoding for levels 0-20
+- Special bit packing for level 21 using leftover bits
+
+### Level 21 Bit Packing Implementation
+
+Level 21 uses innovative split encoding to achieve full 21-level support:
+
+```
+Level 21 Encoding (6 bits total):
+- 4 bits stored in low long positions 60-63
+- 2 bits stored in high long positions 60-61
+- Preserves space-filling curve ordering
+- Enables efficient parent/child computation
+```
+
+**Key Features**:
+- Maintains SFC ordering properties despite split encoding
+- No performance penalty for levels 0-20
+- Seamless factory method selection based on level
+- Complete compatibility with existing tetrahedral operations
+
+**Constants and Masks**:
+```java
+protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low long
+protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long  
+protected static final long LEVEL_21_LOW_MASK = 0xFL;      // 4 bits: 0b1111
+protected static final long LEVEL_21_HIGH_MASK = 0x3L;     // 2 bits: 0b11
+```
+
+This design achieves full Octree-equivalent refinement levels while maintaining the memory efficiency and performance characteristics of the tetrahedral space-filling curve.
 
 ## Architectural Simplification
 

@@ -10,7 +10,7 @@ Spatial indexing for 3D applications with octree, tetree, and prism implementati
 // Create an octree spatial index
 Octree<LongEntityID, GameObject> octree = new Octree<>(new SequentialLongIDGenerator(), 10,
                                                        // max entities per node
-                                                       (byte) 20 // max depth
+                                                       (byte) 21 // max depth (21 levels)
 );
 
 // Insert entities
@@ -32,7 +32,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = octree.rayIntersectFir
 // Create a tetree spatial index (2-6x faster insertions, 27-35% less memory)
 Tetree<LongEntityID, GameObject> tetree = new Tetree<>(new SequentialLongIDGenerator(), 10,
                                                        // max entities per node
-                                                       (byte) 20 // max depth
+                                                       (byte) 21 // max depth (full 21-level support)
 );
 
 // Insert entities (faster than Octree)
@@ -54,7 +54,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFir
 // Create a prism spatial index (triangular constraint: x + y < worldSize)
 Prism<LongEntityID, GameObject> prism = new Prism<>(new SequentialLongIDGenerator(), 10,
                                                     // max entities per node
-                                                    (byte) 20 // max depth
+                                                    (byte) 21 // max depth (21 levels)
 );
 
 // Insert entities (slower than both Octree and Tetree)
@@ -83,6 +83,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Thread-Safe**: Concurrent access with read-write locks
 - **High Performance**: O(1) node access, optimized algorithms
 - **S0-S5 Subdivision**: Tetree uses standard 6-tetrahedra cube tiling
+- **Full 21-Level Support**: Tetree now matches Octree capacity with innovative bit packing
 
 ### Advanced Features
 
@@ -252,9 +253,9 @@ spatialIndex.finalizeBulkLoading();
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>();
 
 // Add multiple trees with different spatial index types
-Octree<LongEntityID, String> tree1 = new Octree<>(idGenerator, 10, (byte) 20);
-Tetree<LongEntityID, String> tree2 = new Tetree<>(idGenerator, 10, (byte) 20);
-Prism<LongEntityID, String> tree3 = new Prism<>(idGenerator, 10, (byte) 20);
+Octree<LongEntityID, String> tree1 = new Octree<>(idGenerator, 10, (byte) 21);
+Tetree<LongEntityID, String> tree2 = new Tetree<>(idGenerator, 10, (byte) 21);
+Prism<LongEntityID, String> tree3 = new Prism<>(idGenerator, 10, (byte) 21);
 
 TreeMetadata metadata = TreeMetadata.builder()
     .name("region_north")
@@ -280,7 +281,7 @@ GridForest<MortonKey, LongEntityID, String> gridForest =
 // Dynamic forest management
 DynamicForestManager<MortonKey, LongEntityID, String> manager = 
     new DynamicForestManager<>(forest, entityManager,
-        () -> new Octree<>(idGenerator, 10, (byte) 20));
+        () -> new Octree<>(idGenerator, 10, (byte) 21));
 
 // Enable automatic tree splitting/merging based on load
 manager.enableAutoManagement(60000); // Check every minute

@@ -13,7 +13,6 @@ import javax.vecmath.Tuple3i;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -1256,7 +1255,7 @@ public class Tet {
      * @throws IllegalStateException if at max refinement level
      */
     public Tet[] geometricSubdivide() {
-        if (l >= TetreeKey.MAX_REFINEMENT_LEVEL) {
+        if (l >= MortonCurve.MAX_REFINEMENT_LEVEL) {
             throw new IllegalStateException("Cannot subdivide at max refinement level");
         }
 

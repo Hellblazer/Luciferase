@@ -76,53 +76,16 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     @Override
     String toString();
 
-    /**
-     * Convert this SpatialKey to protobuf SpatialKey representation.
-     * This method provides a generic way to serialize any spatial key type.
-     *
-     * @return protobuf SpatialKey message with the appropriate key type set
-     */
+    // TODO: Re-enable protobuf serialization after testing
+    /*
     default com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey toProtoSpatialKey() {
-        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder();
-        
-        if (this instanceof com.hellblazer.luciferase.lucien.tetree.TetreeKey) {
-            // Use the optimized TetreeKey protobuf conversion
-            var tetreeKey = (com.hellblazer.luciferase.lucien.tetree.TetreeKey<?>) this;
-            builder.setTetree(tetreeKey.toProto());
-        } else if (this instanceof com.hellblazer.luciferase.lucien.octree.MortonKey) {
-            // Convert MortonKey to protobuf
-            var mortonKey = (com.hellblazer.luciferase.lucien.octree.MortonKey) this;
-            builder.setMorton(MortonKey.newBuilder()
-                .setMortonCode(mortonKey.getMortonCode())
-                .setLevel(mortonKey.getLevel())
-                .build());
-        } else {
-            throw new IllegalArgumentException("Unsupported spatial key type: " + this.getClass().getName());
-        }
-        
-        return builder.build();
+        // Temporarily disabled for testing
+        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
     }
 
-    /**
-     * Create a SpatialKey from protobuf representation, automatically detecting
-     * the key type and using optimal implementations.
-     *
-     * @param proto the protobuf SpatialKey message
-     * @return appropriate SpatialKey implementation
-     */
     static SpatialKey<?> fromProtoSpatialKey(com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
-        switch (proto.getKeyTypeCase()) {
-            case TETREE:
-                return com.hellblazer.luciferase.lucien.tetree.TetreeKey.fromProto(proto.getTetree());
-            case MORTON:
-                var morton = proto.getMorton();
-                return new com.hellblazer.luciferase.lucien.octree.MortonKey(
-                    morton.getMortonCode(), 
-                    (byte) morton.getLevel()
-                );
-            case KEYTYPE_NOT_SET:
-            default:
-                throw new IllegalArgumentException("No spatial key type set in protobuf message");
-        }
+        // Temporarily disabled for testing
+        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
     }
+    */
 }

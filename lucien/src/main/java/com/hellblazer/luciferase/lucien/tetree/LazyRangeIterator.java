@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -102,7 +104,7 @@ public class LazyRangeIterator implements Iterator<TetreeKey<? extends TetreeKey
         
         // Need to move to next grid cell
         int cellSize = current.length();
-        int maxCoord = (1 << TetreeKey.MAX_REFINEMENT_LEVEL);
+        int maxCoord = (1 << MortonCurve.MAX_REFINEMENT_LEVEL);
         
         // Try next cell in X direction
         if (current.x + cellSize < maxCoord) {
