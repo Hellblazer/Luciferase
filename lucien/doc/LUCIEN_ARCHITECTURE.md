@@ -8,13 +8,13 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 117 Java files organized across 10 packages, providing a comprehensive spatial indexing system with advanced features including collision detection, tree balancing, visitor patterns, and forest management. All core features are complete, including the S0-S5 tetrahedral decomposition and anisotropic prism decomposition.
+The module consists of 150 Java files organized across 12 packages, providing a comprehensive spatial indexing system with advanced features including collision detection, tree balancing, visitor patterns, and forest management. All core features are complete, including the S0-S5 tetrahedral decomposition and anisotropic prism decomposition.
 
 ## Package Structure
 
 ```
 com.hellblazer.luciferase.lucien/
-├── Root package (26 classes + 2 images)
+├── Root package (28 classes + 2 images)
 │   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex, 
 │   │                      SpatialNodeStorage, SpatialNodeImpl, SpatialKey
 │   ├── Spatial types: Spatial, VolumeBounds, SpatialIndexSet
@@ -30,21 +30,24 @@ com.hellblazer.luciferase.lucien/
 │   ├── Management: EntityManager, EntitySpanningPolicy
 │   └── Implementations: LongEntityID, UUIDEntityID,
 │                       SequentialLongIDGenerator, UUIDGenerator
-├── octree/ (4 classes)
+├── octree/ (6 classes)
 │   ├── Octree - Main implementation
 │   ├── MortonKey - Space-filling curve key
 │   ├── OctreeBalancer - Tree balancing implementation
-│   └── OctreeSubdivisionStrategy - Subdivision policy
-├── tetree/ (31 classes)
+│   ├── OctreeSubdivisionStrategy - Subdivision policy
+│   ├── Octant - Octant enumeration
+│   └── internal/NodeDistance - Node distance utilities
+├── tetree/ (34 classes)
 │   ├── Core: Tetree, Tet, TetrahedralGeometry, TetrahedralSearchBase
-│   ├── Keys: TetreeKey, BaseTetreeKey, CompactTetreeKey, LazyTetreeKey
-│   ├── Indexing: TmIndex, SimpleTMIndex, TMIndex128Clean
+│   ├── Keys: TetreeKey, CompactTetreeKey, LazyTetreeKey
+│   ├── Indexing: TmIndex, SimpleTMIndex
 │   ├── Caching: TetreeLevelCache, TetreeRegionCache, SpatialLocalityCache, ThreadLocalTetreeCache
 │   ├── Utilities: TetreeBits, TetreeConnectivity, TetreeFamily, TetreeHelper, 
-│   │              TetreeIterator, TetreeLUT, TetreeMetrics, TetreeNeighborFinder
-│   ├── Subdivision: TetrahedralSubdivision, BeySubdivision, TetreeSubdivisionStrategy
-│   └── Advanced: TetreeSFCRayTraversal, TetreeValidator, TetreeValidationUtils, 
-│                 PluckerCoordinate, TetOptimized
+│   │              TetreeIterator, TetreeLUT, TetreeNeighborFinder
+│   ├── Subdivision: BeySubdivision, TetreeSubdivisionStrategy
+│   ├── Advanced: TetreeSFCRayTraversal, TetreeValidator, TetreeValidationUtils, 
+│   │             PluckerCoordinate, TetOptimized
+│   └── internal/TetDistance - Distance utilities
 ├── prism/ (8 classes)
 │   ├── Core: Prism, PrismKey, PrismGeometry
 │   ├── Primitives: Line, Triangle
@@ -56,29 +59,36 @@ com.hellblazer.luciferase.lucien/
 │   ├── TreeBalancingStrategy - Strategy pattern
 │   ├── DefaultBalancingStrategy - Default implementation
 │   └── TetreeBalancer - Tetree-specific balancing
-├── collision/ (12 classes)
-│   ├── Core: CollisionSystem, CollisionShape, CollisionResponse
-│   ├── Shapes: BoxShape, SphereShape, CapsuleShape, OrientedBoxShape
-│   └── Support: CollisionFilter, CollisionListener, CollisionResolver,
-│                CollisionShapeFactory, PhysicsProperties
+├── collision/ (29 classes)
+│   ├── Main: CollisionSystem, CollisionShape, CollisionResponse, etc. (18 classes)
+│   ├── ccd/ - Continuous collision detection (4 classes)
+│   ├── physics/ - Physics integration (4 classes)
+│   └── physics/constraints/ - Constraint system (3 classes)
 ├── visitor/ (6 classes)
 │   ├── TreeVisitor - Visitor interface
 │   ├── AbstractTreeVisitor - Base implementation
 │   ├── Concrete: EntityCollectorVisitor, NodeCountVisitor
 │   └── Support: TraversalContext, TraversalStrategy
-├── forest/ (13 classes)
+├── forest/ (16 classes)
 │   ├── Core: Forest, TreeNode, TreeMetadata, TreeLocation
 │   ├── Configuration: ForestConfig
 │   ├── Management: DynamicForestManager, ForestEntityManager, ForestLoadBalancer
-│   ├── Specialized: GridForest
+│   ├── Specialized: GridForest, AdaptiveForest, HierarchicalForest
 │   ├── Spatial Queries: ForestQuery, ForestSpatialQueries
 │   └── Connectivity: TreeConnectivityManager, GhostZoneManager
 ├── lockfree/ (3 classes)
 │   ├── LockFreeEntityMover - Atomic movement protocol (264K movements/sec)
 │   ├── AtomicSpatialNode - Lock-free spatial node using atomic collections
 │   └── VersionedEntityState - Immutable versioned state for optimistic concurrency
-└── index/ (1 class)
-    └── TMIndexSimple - Simplified TM-index implementation
+├── internal/ (4 classes)
+│   ├── EntityCache - Entity caching system
+│   ├── IndexedEntity - Indexed entity utilities
+│   ├── ObjectPools - Memory pool management
+│   └── UnorderedPair - Utility for unordered pairs
+├── geometry/ (1 class)
+│   └── AABBIntersector - AABB intersection utilities
+└── index/ (0 classes)
+    └── [Empty directory]
 ```
 
 ## Class Hierarchy
@@ -128,13 +138,25 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 
 ### Abstract Methods (Implementation-Specific)
 
-- `calculateSpatialIndex(Point3f, byte level)` - Convert position to spatial index
-- `createNode()` - Create implementation-specific node type
-- `getLevelFromIndex(long)` - Extract level from spatial index
-- `getNodeBounds(long)` - Get spatial bounds of a node
-- `validateSpatialConstraints()` - Validate coordinate constraints
-- `shouldContinueKNNSearch()` - k-NN search continuation logic
-- `addNeighboringNodes()` - Neighbor traversal for searches
+The actual AbstractSpatialIndex defines 17 abstract methods for implementation-specific behavior:
+
+- `addNeighboringNodes(Key, Queue<Key>, Set<Key>)` - Neighbor traversal for searches
+- `calculateSpatialIndex(Point3f, byte)` - Convert position to spatial index  
+- `createDefaultSubdivisionStrategy()` - Create default subdivision strategy
+- `doesFrustumIntersectNode(Key, Frustum3D)` - Frustum intersection testing
+- `doesNodeIntersectVolume(Key, Spatial)` - Volume intersection testing
+- `doesPlaneIntersectNode(Key, Plane3D)` - Plane intersection testing
+- `doesRayIntersectNode(Key, Ray3D)` - Ray intersection testing
+- `estimateNodeDistance(Key, Point3f)` - Distance estimation for optimization
+- `findNodesIntersectingBounds(VolumeBounds)` - Find nodes intersecting bounds
+- `getCellSizeAtLevel(byte)` - Get cell size at specific level
+- `getFrustumTraversalOrder(Frustum3D, Point3f)` - Frustum traversal optimization
+- `getNodeBounds(Key)` - Get spatial bounds of a node (takes Key not long)
+- `getPlaneTraversalOrder(Plane3D)` - Plane traversal optimization
+- `getRayNodeIntersectionDistance(Key, Ray3D)` - Ray-node intersection distance
+- `getRayTraversalOrder(Ray3D)` - Ray traversal optimization
+- `isNodeContainedInVolume(Key, Spatial)` - Volume containment testing
+- `shouldContinueKNNSearch(Key, Point3f, ...)` - k-NN search continuation logic
 
 ## Octree Implementation
 
@@ -321,13 +343,14 @@ High-performance concurrent operations using atomic protocols:
 - **AtomicSpatialNode** - Lock-free spatial node using CopyOnWriteArraySet and atomic operations
 - **VersionedEntityState** - Immutable versioned state for optimistic concurrency control with ABA prevention
 
-### Octree Package (4)
+### Octree Package (6)
 
 - **Octree** - Morton curve-based spatial index
-- **OctreeNode** - List-based entity storage per node
 - **MortonKey** - Space-filling curve key using Morton encoding
-- **Octant** - Octant enumeration and utilities
+- **OctreeBalancer** - Tree balancing implementation  
 - **OctreeSubdivisionStrategy** - Subdivision policy for octree nodes
+- **Octant** - Octant enumeration and utilities
+- **internal/NodeDistance** - Node distance utilities
 
 ### Prism Package (8)
 
@@ -348,12 +371,11 @@ Specialized operations:
 - **PrismRayIntersector** - Ray intersection with triangular/linear space partitioning
 - **PrismNeighborFinder** - Neighbor traversal across triangular and linear boundaries
 
-### Tetree Package (31)
+### Tetree Package (34)
 
 Core classes:
 
 - **Tetree** - Tetrahedral tree with positive coordinate constraints
-- **TetreeNodeImpl** - Set-based entity storage per node
 - **Tet** - Tetrahedron representation with SFC indexing
 - **TetrahedralGeometry** - Geometric operations on tetrahedra
 - **TetrahedralSearchBase** - Base class for tetrahedral queries

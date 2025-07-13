@@ -13,9 +13,9 @@ These are the authoritative performance numbers based on OctreeVsTetreeBenchmark
 
 | Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
 |-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
-| 100 | 1.067 ms | 0.624 ms | 1.7x faster | - | - | - |
-| 1,000 | 26.561 ms | 4.672 ms | 5.7x faster | - | - | - |
-| 10,000 | 772.212 ms | 185.826 ms | 4.2x faster | - | - | - |
+| 100 | 1.363 ms | 0.645 ms | 2.1x faster | - | - | - |
+| 1,000 | 23.132 ms | 4.182 ms | 5.5x faster | - | - | - |
+| 10,000 | 704.240 ms | 112.233 ms | 6.3x faster | - | - | - |
 
 **Key Insight**: Tetree insertion is now significantly faster than Octree due to ConcurrentSkipListMap optimizations (July 11, 2025).
 
@@ -43,9 +43,9 @@ These are the authoritative performance numbers based on OctreeVsTetreeBenchmark
 
 | Entity Count | Octree Memory | Tetree Memory | Tetree vs Octree | Prism Memory | Prism vs Octree | Prism vs Tetree |
 |-------------|---------------|---------------|------------------|--------------|-----------------|-----------------|
-| 100 | 0.050 MB | 0.040 MB | 1.3x less | - | - | - |
-| 1,000 | 0.420 MB | 0.270 MB | 1.6x less | - | - | - |
-| 10,000 | 4.250 MB | 2.630 MB | 1.6x less | - | - | - |
+| 100 | 0.050 MB | 0.040 MB | 1.3x faster | - | - | - |
+| 1,000 | 0.420 MB | 0.270 MB | 1.6x faster | - | - | - |
+| 10,000 | 4.140 MB | 2.700 MB | 1.5x faster | - | - | - |
 
 **Key Insight**: Tetree uses 62-73% of Octree's memory. Prism uses 22-29% more memory than competitors.
 
@@ -53,17 +53,17 @@ These are the authoritative performance numbers based on OctreeVsTetreeBenchmark
 
 | Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
 |-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
-| 100 | 0.012 ms | 0.007 ms | 1.7x faster | - | - | - |
-| 1,000 | 0.021 ms | 0.011 ms | 1.9x faster | - | - | - |
-| 10,000 | 0.148 ms | 0.038 ms | 3.9x faster | - | - | - |
+| 100 | 0.015 ms | 0.009 ms | 1.7x faster | - | - | - |
+| 1,000 | 0.019 ms | 0.009 ms | 2.1x faster | - | - | - |
+| 10,000 | 0.146 ms | 0.022 ms | 6.6x faster | - | - | - |
 
 ### Removal Performance
 
 | Entity Count | Octree Time | Tetree Time | Tetree vs Octree | Prism Time | Prism vs Octree | Prism vs Tetree |
 |-------------|-------------|-------------|------------------|------------|-----------------|-----------------|
-| 100 | 0.002 ms | 0.000 ms | 2.0x faster | - | - | - |
-| 1,000 | 0.001 ms | 0.000 ms | 1.0x faster | - | - | - |
-| 10,000 | 0.009 ms | 0.002 ms | 4.5x faster | - | - | - |
+| 100 | 0.001 ms | 0.000 ms | Infinityx faster | - | - | - |
+| 1,000 | 0.000 ms | 0.000 ms | NaNx slower | - | - | - |
+| 10,000 | 0.008 ms | 0.002 ms | 4.0x faster | - | - | - |
 
 ## Historical Context
 

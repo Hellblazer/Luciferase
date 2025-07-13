@@ -100,27 +100,27 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 
 | Operation         | Octree     | Tetree     | Prism      | Best Choice      |
 |-------------------|------------|------------|------------|------------------|
-| Insert (1K)       | 4.46ms     | 31.23ms    | 6.86ms     | **Octree**       |
-| k-NN (1K)         | 725.71μs   | 1081.79μs  | 1995.79μs  | **Octree**       |
-| Range Query (1K)  | 1776.96μs  | 2016.21μs  | 2144.79μs  | **Octree**       |
-| Memory (2K)       | 633.52KB   | 590.13KB   | 774.83KB   | **Tetree**       |
+| Insert (1K)       | 23.13ms    | 4.18ms     | -          | **Tetree**       |
+| k-NN (1K)         | 0.024ms    | 0.083ms    | -          | **Octree**       |
+| Range Query (1K)  | 0.044ms    | 0.042ms    | -          | **Tetree**       |
+| Memory (1K)       | 430KB      | 276KB      | -          | **Tetree**       |
 
 **Relative Performance** (vs Octree):
-- **Tetree**: 7.0x slower insertion, 1.5x slower k-NN, 1.1x slower range, 7% less memory
-- **Prism**: 1.5x slower insertion, 2.8x slower k-NN, 1.2x slower range, 22% more memory
+- **Tetree**: 5.5x faster insertion, 3.4x slower k-NN, 1.1x faster range, 36% less memory
+- **Prism**: Data not available in current benchmark
 
 ## Choosing Between Spatial Index Types
 
-### Use Octree When (General Recommendation):
+### Use Tetree When (Recommended for Most Use Cases):
 
-- **Best overall performance** (fastest insertion, k-NN, and range queries)
+- **Fastest insertion performance** (2-6x faster than Octree after July 2025 optimizations)
 - General 3D spatial indexing needs
 - Simple, predictable performance is required
 - Using existing Morton curve tools/algorithms
 - Working with legacy systems expecting cubic decomposition
 - High-performance applications where speed is critical
 
-### Use Tetree When:
+### Use Octree When:
 
 - **Memory efficiency is critical** (7% less memory than Octree)
 - Working with tetrahedral meshes or geometry

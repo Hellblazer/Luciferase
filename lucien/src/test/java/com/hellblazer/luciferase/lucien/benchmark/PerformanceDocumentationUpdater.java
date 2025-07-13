@@ -95,6 +95,10 @@ public class PerformanceDocumentationUpdater {
         if (UPDATE_MODE.equals("all") || UPDATE_MODE.contains("index")) {
             updatePerformanceIndex();
         }
+        
+        if (UPDATE_MODE.equals("all") || UPDATE_MODE.contains("readme")) {
+            updateReadme();
+        }
     }
 
     private Path findLatestCSVFile() throws IOException {
@@ -212,8 +216,31 @@ public class PerformanceDocumentationUpdater {
         System.out.println("Updated PERFORMANCE_INDEX.md");
     }
 
+    private void updateReadme() throws IOException {
+        var readmeFile = Path.of("README.md");
+        if (!Files.exists(readmeFile)) {
+            System.out.println("README.md not found, skipping");
+            return;
+        }
+        
+        if (BACKUP_ENABLED) {
+            createBackup(readmeFile);
+        }
+        
+        System.out.println("Updating README.md...");
+        
+        var content = Files.readString(readmeFile);
+        content = updateReadmePerformanceTable(content);
+        content = updateReadmeRecommendations(content);
+        content = updateLastUpdatedDate(content);
+        
+        Files.writeString(readmeFile, content);
+        System.out.println("Updated README.md");
+    }
+
     private void createBackup(Path file) throws IOException {
-        var backupDir = file.getParent().resolve("backup");
+        var parent = file.getParent();
+        var backupDir = parent != null ? parent.resolve("backup") : Path.of("backup");
         Files.createDirectories(backupDir);
         
         var timestamp = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
@@ -345,6 +372,132 @@ public class PerformanceDocumentationUpdater {
     private PerformanceData getMetric(String operation, int entityCount, String implementation) {
         var key = operation + "_" + entityCount + "_" + implementation;
         return latestMetrics.get(key);
+    }
+
+    private String updateReadmePerformanceTable(String content) {
+        // Update the performance table in README.md
+        var tablePattern = Pattern.compile(
+            "\\| Operation\\s+\\| Octree\\s+\\| Tetree\\s+\\| Prism\\s+\\| Best Choice\\s+\\|.*?" +
+            "\\|---[^\\n]*\\n" +
+            "((?:\\|[^\\n]*\\n)*)",
+            Pattern.DOTALL
+        );
+        
+        var matcher = tablePattern.matcher(content);
+        if (!matcher.find()) {
+            System.out.println("Could not find README performance table to update");
+            return content;
+        }
+        
+        // Get current metrics for 1K entities (most representative)
+        var octreeInsert = getMetric("insertion", 1000, "Octree");
+        var tetreeInsert = getMetric("insertion", 1000, "Tetree");
+        var prismInsert = getMetric("insertion", 1000, "Prism");
+        
+        var octreeKnn = getMetric("knn", 1000, "Octree"); 
+        var tetreeKnn = getMetric("knn", 1000, "Tetree");
+        var prismKnn = getMetric("knn", 1000, "Prism");
+        
+        var octreeRange = getMetric("range", 1000, "Octree");
+        var tetreeRange = getMetric("range", 1000, "Tetree"); 
+        var prismRange = getMetric("range", 1000, "Prism");
+        
+        var octreeMemory = getMetric("memory", 1000, "Octree");
+        var tetreeMemory = getMetric("memory", 1000, "Tetree");
+        var prismMemory = getMetric("memory", 1000, "Prism");
+        
+        // Generate new table with current data
+        var newTable = new StringBuilder();
+        newTable.append("| Operation         | Octree     | Tetree     | Prism      | Best Choice      |\n");
+        newTable.append("|-------------------|------------|------------|------------|------------------|\n");
+        
+        // Insertion row
+        var insertBest = determineBestPerformer(octreeInsert, tetreeInsert, prismInsert, false);
+        newTable.append(String.format("| Insert (1K)       | %s | %s | %s | **%s**       |\n",
+            formatTableValue(octreeInsert), formatTableValue(tetreeInsert), formatTableValue(prismInsert), insertBest));
+        
+        // k-NN row  
+        var knnBest = determineBestPerformer(octreeKnn, tetreeKnn, prismKnn, false);
+        newTable.append(String.format("| k-NN (1K)         | %s | %s | %s | **%s**       |\n",
+            formatTableValue(octreeKnn), formatTableValue(tetreeKnn), formatTableValue(prismKnn), knnBest));
+        
+        // Range query row
+        var rangeBest = determineBestPerformer(octreeRange, tetreeRange, prismRange, false);
+        newTable.append(String.format("| Range Query (1K)  | %s | %s | %s | **%s**       |\n",
+            formatTableValue(octreeRange), formatTableValue(tetreeRange), formatTableValue(prismRange), rangeBest));
+        
+        // Memory row (lower is better)
+        var memoryBest = determineBestPerformer(octreeMemory, tetreeMemory, prismMemory, true);
+        newTable.append(String.format("| Memory (2K)       | %s | %s | %s | **%s**       |\n",
+            formatTableValue(octreeMemory), formatTableValue(tetreeMemory), formatTableValue(prismMemory), memoryBest));
+        
+        return content.substring(0, matcher.start(1)) + newTable.toString() + content.substring(matcher.end(1));
+    }
+    
+    private String updateReadmeRecommendations(String content) {
+        // Update the "Use Octree When" vs "Use Tetree When" recommendations based on current performance
+        var octreeInsert = getMetric("insertion", 1000, "Octree");
+        var tetreeInsert = getMetric("insertion", 1000, "Tetree");
+        
+        var tetreeFaster = tetreeInsert != null && octreeInsert != null && tetreeInsert.value < octreeInsert.value;
+        
+        if (tetreeFaster) {
+            // Update recommendations to reflect Tetree's superior insertion performance
+            content = content.replaceAll(
+                "### Use Octree When \\(General Recommendation\\):",
+                "### Use Tetree When (Recommended for Most Use Cases):");
+            
+            content = content.replaceAll(
+                "- \\*\\*Best overall performance\\*\\* \\(fastest insertion, k-NN, and range queries\\)",
+                "- **Fastest insertion performance** (2-6x faster than Octree after July 2025 optimizations)");
+                
+            content = content.replaceAll(
+                "### Use Tetree When:",
+                "### Use Octree When:");
+        }
+        
+        return content;
+    }
+    
+    private String determineBestPerformer(PerformanceData octree, PerformanceData tetree, PerformanceData prism, boolean lowerIsBetter) {
+        var best = "Octree";
+        var bestValue = Double.MAX_VALUE;
+        if (!lowerIsBetter) bestValue = 0;
+        
+        if (octree != null) {
+            if (lowerIsBetter ? octree.value < bestValue : octree.value > bestValue) {
+                bestValue = octree.value;
+                best = "Octree";
+            }
+        }
+        
+        if (tetree != null) {
+            if (lowerIsBetter ? tetree.value < bestValue : tetree.value > bestValue) {
+                bestValue = tetree.value;
+                best = "Tetree";
+            }
+        }
+        
+        if (prism != null) {
+            if (lowerIsBetter ? prism.value < bestValue : prism.value > bestValue) {
+                bestValue = prism.value;
+                best = "Prism";
+            }
+        }
+        
+        return best;
+    }
+    
+    private String formatTableValue(PerformanceData data) {
+        if (data == null) return "-         ";
+        
+        if ("ms".equals(data.unit)) {
+            return String.format("%-10s", String.format("%.2fms", data.value));
+        } else if ("MB".equals(data.unit)) {
+            return String.format("%-10s", String.format("%.0fKB", data.value * 1024));
+        } else {
+            return String.format("%-10s", String.format("%.0f%s", data.value, data.unit));
+        }
     }
 
     private static class PerformanceData {
