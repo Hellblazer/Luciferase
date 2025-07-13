@@ -19,8 +19,11 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
+import com.google.protobuf.Timestamp;
 
 import javax.vecmath.Point3f;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
@@ -325,6 +328,163 @@ public class GhostLayer<Key extends SpatialKey<Key>, ID extends EntityID, Conten
         
         void incrementGhostCount() {
             ghostCount++;
+        }
+    }
+    
+    /**
+     * Converts all ghost elements to a Protocol Buffer batch.
+     * 
+     * @param sourceRank the rank of this process
+     * @param sourceTreeId the tree ID of this process
+     * @param contentSerializer the serializer for content
+     * @return the protobuf ghost batch
+     * @throws ContentSerializer.SerializationException if serialization fails
+     */
+    public GhostBatch toProtobufBatch(int sourceRank, long sourceTreeId, 
+                                     ContentSerializer<Content> contentSerializer) 
+            throws ContentSerializer.SerializationException {
+        
+        lock.readLock().lock();
+        try {
+            var batch = GhostBatch.newBuilder()
+                .setSourceRank(sourceRank)
+                .setSourceTreeId(sourceTreeId)
+                .setTimestamp(Timestamp.newBuilder()
+                    .setSeconds(System.currentTimeMillis() / 1000)
+                    .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                    .build());
+            
+            // Add all ghost elements
+            for (var elements : ghostElements.values()) {
+                for (var element : elements) {
+                    batch.addElements(element.toProtobuf(contentSerializer));
+                }
+            }
+            
+            return batch.build();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Converts a range of ghost elements to a Protocol Buffer batch.
+     * 
+     * @param fromKey the starting key (inclusive)
+     * @param toKey the ending key (inclusive)
+     * @param sourceRank the rank of this process
+     * @param sourceTreeId the tree ID of this process
+     * @param contentSerializer the serializer for content
+     * @return the protobuf ghost batch
+     * @throws ContentSerializer.SerializationException if serialization fails
+     */
+    public GhostBatch toProtobufBatch(Key fromKey, Key toKey, int sourceRank, long sourceTreeId,
+                                     ContentSerializer<Content> contentSerializer)
+            throws ContentSerializer.SerializationException {
+        
+        lock.readLock().lock();
+        try {
+            var batch = GhostBatch.newBuilder()
+                .setSourceRank(sourceRank)
+                .setSourceTreeId(sourceTreeId)
+                .setTimestamp(Timestamp.newBuilder()
+                    .setSeconds(System.currentTimeMillis() / 1000)
+                    .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                    .build());
+            
+            // Add ghost elements in range
+            var subMap = ghostElements.subMap(fromKey, true, toKey, true);
+            for (var elements : subMap.values()) {
+                for (var element : elements) {
+                    batch.addElements(element.toProtobuf(contentSerializer));
+                }
+            }
+            
+            return batch.build();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Creates a ghost layer from a Protocol Buffer batch.
+     * 
+     * @param batch the protobuf batch
+     * @param contentSerializer the serializer for content
+     * @param entityIdClass the class for entity IDs
+     * @param <K> the spatial key type
+     * @param <I> the entity ID type
+     * @param <C> the content type
+     * @return the ghost layer
+     * @throws ContentSerializer.SerializationException if deserialization fails
+     */
+    public static <K extends SpatialKey<K>, I extends EntityID, C> GhostLayer<K, I, C> fromProtobufBatch(
+            GhostBatch batch, 
+            ContentSerializer<C> contentSerializer,
+            Class<I> entityIdClass,
+            GhostType ghostType) throws ContentSerializer.SerializationException {
+        
+        var ghostLayer = new GhostLayer<K, I, C>(ghostType);
+        
+        for (var elementProto : batch.getElementsList()) {
+            var element = GhostElement.<K, I, C>fromProtobuf(elementProto, contentSerializer, entityIdClass);
+            ghostLayer.addGhostElement(element);
+        }
+        
+        return ghostLayer;
+    }
+    
+    /**
+     * Adds ghost elements from a Protocol Buffer batch.
+     * 
+     * @param batch the protobuf batch
+     * @param contentSerializer the serializer for content
+     * @param entityIdClass the class for entity IDs
+     * @throws ContentSerializer.SerializationException if deserialization fails
+     */
+    public void addFromProtobufBatch(GhostBatch batch,
+                                   ContentSerializer<Content> contentSerializer,
+                                   Class<ID> entityIdClass) throws ContentSerializer.SerializationException {
+        
+        for (var elementProto : batch.getElementsList()) {
+            var element = GhostElement.<Key, ID, Content>fromProtobuf(
+                elementProto, contentSerializer, entityIdClass);
+            addGhostElement(element);
+        }
+    }
+    
+    /**
+     * Creates a statistics response for this ghost layer.
+     * 
+     * @param requesterRank the rank of the requesting process
+     * @return the protobuf statistics response
+     */
+    public StatsResponse createStatsResponse(int requesterRank) {
+        lock.readLock().lock();
+        try {
+            var response = StatsResponse.newBuilder()
+                .setTotalGhostElements((int) numGhostElements.get())
+                .setTotalRemoteElements((int) numRemoteElements.get());
+            
+            // Add ghosts per rank
+            Map<Integer, Integer> ghostsPerRank = new HashMap<>();
+            for (var elements : ghostElements.values()) {
+                for (var element : elements) {
+                    ghostsPerRank.merge(element.getOwnerRank(), 1, Integer::sum);
+                }
+            }
+            response.putAllGhostsPerRank(ghostsPerRank);
+            
+            // Add remotes per rank
+            Map<Integer, Integer> remotesPerRank = new HashMap<>();
+            for (var entry : remoteElements.entrySet()) {
+                remotesPerRank.put(entry.getKey(), entry.getValue().size());
+            }
+            response.putAllRemotesPerRank(remotesPerRank);
+            
+            return response.build();
+        } finally {
+            lock.readLock().unlock();
         }
     }
 }

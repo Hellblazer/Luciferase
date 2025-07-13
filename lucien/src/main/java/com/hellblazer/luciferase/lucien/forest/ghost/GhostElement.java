@@ -19,8 +19,14 @@ package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.octree.MortonKey;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
+import com.google.protobuf.Timestamp;
+import com.google.protobuf.ByteString;
 
 import javax.vecmath.Point3f;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -140,5 +146,56 @@ public class GhostElement<Key extends SpatialKey<Key>, ID extends EntityID, Cont
     public String toString() {
         return String.format("GhostElement[key=%s, id=%s, owner=%d, tree=%d]",
                            spatialKey, entityId, ownerRank, globalTreeId);
+    }
+    
+    /**
+     * Converts this ghost element to a Protocol Buffer message.
+     * 
+     * @param contentSerializer the serializer for the content type
+     * @return the protobuf representation
+     * @throws ContentSerializer.SerializationException if content serialization fails
+     */
+    public com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement toProtobuf(
+            ContentSerializer<Content> contentSerializer) throws ContentSerializer.SerializationException {
+        
+        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement.newBuilder()
+            .setSpatialKey(ProtobufConverters.spatialKeyToProtobuf(spatialKey))
+            .setEntityId(ProtobufConverters.entityIdToString(entityId))
+            .setContent(contentSerializer.serialize(content))
+            .setPosition(ProtobufConverters.point3fToProtobuf(position))
+            .setOwnerRank(ownerRank)
+            .setGlobalTreeId(globalTreeId)
+            .setTimestamp(Timestamp.newBuilder()
+                .setSeconds(System.currentTimeMillis() / 1000)
+                .setNanos((int) ((System.currentTimeMillis() % 1000) * 1_000_000))
+                .build());
+        
+        return builder.build();
+    }
+    
+    /**
+     * Creates a ghost element from a Protocol Buffer message.
+     * 
+     * @param proto the protobuf message
+     * @param contentSerializer the serializer for the content type
+     * @param <K> the spatial key type
+     * @param <I> the entity ID type
+     * @param <C> the content type
+     * @return the ghost element
+     * @throws ContentSerializer.SerializationException if content deserialization fails
+     */
+    @SuppressWarnings("unchecked")
+    public static <K extends SpatialKey<K>, I extends EntityID, C> GhostElement<K, I, C> fromProtobuf(
+            com.hellblazer.luciferase.lucien.forest.ghost.proto.GhostElement proto,
+            ContentSerializer<C> contentSerializer,
+            Class<I> entityIdClass) throws ContentSerializer.SerializationException {
+        
+        var spatialKey = (K) ProtobufConverters.spatialKeyFromProtobuf(proto.getSpatialKey());
+        var entityId = ProtobufConverters.createEntityId(proto.getEntityId(), entityIdClass);
+        var content = contentSerializer.deserialize(proto.getContent());
+        var position = ProtobufConverters.point3fFromProtobuf(proto.getPosition());
+        
+        return new GhostElement<>(spatialKey, entityId, content, position, 
+                                proto.getOwnerRank(), proto.getGlobalTreeId());
     }
 }
