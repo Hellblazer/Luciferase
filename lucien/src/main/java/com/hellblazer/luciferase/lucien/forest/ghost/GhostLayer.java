@@ -162,6 +162,24 @@ public class GhostLayer<Key extends SpatialKey<Key>, ID extends EntityID, Conten
     }
     
     /**
+     * Gets all ghost elements in the layer.
+     * 
+     * @return list of all ghost elements
+     */
+    public List<GhostElement<Key, ID, Content>> getAllGhostElements() {
+        lock.readLock().lock();
+        try {
+            List<GhostElement<Key, ID, Content>> result = new ArrayList<>();
+            for (List<GhostElement<Key, ID, Content>> elements : ghostElements.values()) {
+                result.addAll(elements);
+            }
+            return result;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
      * Gets all remote elements for a specific process rank.
      * 
      * @param remoteRank the rank of the remote process

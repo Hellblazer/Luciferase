@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.EntityIDGenerator;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
@@ -449,6 +450,9 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         }
         
         subdivisionCount.incrementAndGet();
+        
+        // Trigger ghost updates for all affected trees after subdivision
+        triggerGhostUpdatesAfterSubdivision(treeId);
     }
     
     /**
@@ -979,6 +983,9 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
         // Remove original trees
         removeTree(tree1.getTreeId());
         removeTree(tree2.getTreeId());
+        
+        // Trigger ghost updates after forest repartitioning
+        triggerGhostUpdatesAfterRepartitioning(mergedTree.getSpatialIndex());
     }
     
     /**
@@ -1079,6 +1086,89 @@ public class AdaptiveForest<Key extends SpatialKey<Key>, ID extends EntityID, Co
     
     public int getMergeCount() {
         return mergeCount.get();
+    }
+    
+    // ========================================
+    // Ghost Layer Integration
+    // ========================================
+    
+    /**
+     * Triggers ghost updates for all spatial indices after forest repartitioning.
+     * Called after tree merging operations.
+     * 
+     * @param affectedIndex the spatial index that was affected by repartitioning
+     */
+    private void triggerGhostUpdatesAfterRepartitioning(AbstractSpatialIndex<Key, ID, Content> affectedIndex) {
+        if (affectedIndex.getGhostType() != GhostType.NONE) {
+            log.debug("Triggering ghost updates after forest repartitioning");
+            try {
+                affectedIndex.updateGhostLayer();
+            } catch (Exception e) {
+                log.warn("Failed to update ghost layer after repartitioning", e);
+            }
+        }
+        
+        // Also update ghosts for other trees that might be affected by the repartitioning
+        triggerGhostUpdatesForAllTrees();
+    }
+    
+    /**
+     * Triggers ghost updates for affected trees after subdivision.
+     * Called after tree subdivision operations.
+     * 
+     * @param originalTreeId the ID of the tree that was subdivided (may no longer exist)
+     */
+    private void triggerGhostUpdatesAfterSubdivision(String originalTreeId) {
+        log.debug("Triggering ghost updates after tree subdivision for tree: {}", originalTreeId);
+        
+        // Update ghosts for all trees since subdivision may have created new boundary relationships
+        triggerGhostUpdatesForAllTrees();
+    }
+    
+    /**
+     * Triggers ghost updates for all trees in the forest.
+     * This is a comprehensive approach used when the forest structure changes significantly.
+     */
+    private void triggerGhostUpdatesForAllTrees() {
+        for (var tree : getAllTrees()) {
+            var spatialIndex = tree.getSpatialIndex();
+            if (spatialIndex.getGhostType() != GhostType.NONE) {
+                try {
+                    spatialIndex.updateGhostLayer();
+                } catch (Exception e) {
+                    log.warn("Failed to update ghost layer for tree {}", tree.getTreeId(), e);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Sets the ghost type for all trees in the forest.
+     * 
+     * @param ghostType the ghost type to set for all spatial indices
+     */
+    public void setForestGhostType(GhostType ghostType) {
+        log.info("Setting ghost type {} for all trees in forest", ghostType);
+        for (var tree : getAllTrees()) {
+            tree.getSpatialIndex().setGhostType(ghostType);
+        }
+    }
+    
+    /**
+     * Creates ghost layers for all trees in the forest.
+     */
+    public void createForestGhostLayers() {
+        log.info("Creating ghost layers for all trees in forest");
+        for (var tree : getAllTrees()) {
+            var spatialIndex = tree.getSpatialIndex();
+            if (spatialIndex.getGhostType() != GhostType.NONE) {
+                try {
+                    spatialIndex.createGhostLayer();
+                } catch (Exception e) {
+                    log.warn("Failed to create ghost layer for tree {}", tree.getTreeId(), e);
+                }
+            }
+        }
     }
     
 }

@@ -22,9 +22,11 @@ import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.forest.ghost.*;
 import com.hellblazer.luciferase.lucien.internal.EntityCache;
 import com.hellblazer.luciferase.lucien.internal.ObjectPools;
 import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
+import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
 import com.hellblazer.luciferase.lucien.visitor.TraversalContext;
 import com.hellblazer.luciferase.lucien.visitor.TraversalStrategy;
 import com.hellblazer.luciferase.lucien.visitor.TreeVisitor;
@@ -79,6 +81,11 @@ import java.util.stream.Stream;
 public abstract class AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
 implements SpatialIndex<Key, ID, Content> {
 
+    /**
+     * Record representing a neighbor search result with distance information.
+     */
+    public record NeighborResult<ID extends EntityID, Content>(ID entityId, Content content, float distance) {}
+
     private static final Logger log = LoggerFactory.getLogger(AbstractSpatialIndex.class);
 
     // Common fields
@@ -109,6 +116,12 @@ implements SpatialIndex<Key, ID, Content> {
     private         TreeBalancingStrategy<ID>                        balancingStrategy;
     private         boolean                                          autoBalancingEnabled     = false;
     private         long                                             lastBalancingTime        = 0;
+    
+    // Ghost layer support
+    protected       GhostType                                        ghostType                = GhostType.NONE;
+    protected       GhostLayer<Key, ID, Content>                     ghostLayer;
+    protected       ElementGhostManager<Key, ID, Content>            elementGhostManager;
+    protected       NeighborDetector<Key>                            neighborDetector;
 
     /**
      * Constructor with common parameters
@@ -132,6 +145,10 @@ implements SpatialIndex<Key, ID, Content> {
         this.subdivisionStrategy = createDefaultSubdivisionStrategy();
         this.treeBuilder = new StackBasedTreeBuilder<>(StackBasedTreeBuilder.defaultConfig());
         this.entityCache = new EntityCache<>(10000); // Cache up to 10k entities
+        
+        // Initialize ghost components (neighbor detector and element manager set by subclasses)
+        this.ghostLayer = new GhostLayer<>(GhostType.NONE);
+        // ElementGhostManager initialized when neighbor detector is set
     }
 
     @Override
@@ -490,6 +507,9 @@ implements SpatialIndex<Key, ID, Content> {
             }
 
             deferredSubdivisionNodes.clear();
+            
+            // Trigger ghost updates after tree adaptation
+            triggerGhostUpdateAfterAdaptation();
         } finally {
             lock.writeLock().unlock();
         }
@@ -1223,6 +1243,10 @@ implements SpatialIndex<Key, ID, Content> {
             }
 
             logBatchPerformance(positions.size(), startTime);
+            
+            // Trigger ghost updates after successful bulk insertion
+            triggerGhostUpdateAfterBulkInsert();
+            
             // Return a copy to avoid returning pooled object
             return new ArrayList<>(insertedIds);
         } finally {
@@ -4506,5 +4530,241 @@ implements SpatialIndex<Key, ID, Content> {
         }
     }
     
+    // ========================================
+    // Ghost Layer Configuration and Operations
+    // ========================================
+    
+    /**
+     * Sets the ghost type for this spatial index.
+     * 
+     * @param type the ghost type to set
+     */
+    public void setGhostType(GhostType type) {
+        lock.writeLock().lock();
+        try {
+            this.ghostType = Objects.requireNonNull(type);
+            this.ghostLayer = new GhostLayer<>(type);
+            // Recreate ElementGhostManager with new ghost type if we have a neighbor detector
+            if (this.neighborDetector != null) {
+                this.elementGhostManager = new ElementGhostManager<>(this, neighborDetector, type);
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Gets the current ghost type.
+     * 
+     * @return the current ghost type
+     */
+    public GhostType getGhostType() {
+        return ghostType;
+    }
+    
+    /**
+     * Creates or updates the ghost layer based on the current ghost type.
+     * This method analyzes the local elements and creates ghost elements
+     * for neighboring elements owned by other processes.
+     */
+    public void createGhostLayer() {
+        if (ghostType == GhostType.NONE || elementGhostManager == null) {
+            return;
+        }
+        
+        lock.writeLock().lock();
+        try {
+            log.debug("Creating ghost layer with type: {}", ghostType);
+            elementGhostManager.createGhostLayer();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Updates the existing ghost layer, typically called after
+     * modifications to the spatial index.
+     */
+    public void updateGhostLayer() {
+        if (ghostType == GhostType.NONE || elementGhostManager == null) {
+            return;
+        }
+        
+        lock.writeLock().lock();
+        try {
+            log.debug("Updating ghost layer");
+            // For now, just recreate the entire ghost layer
+            // More sophisticated incremental updates could be implemented later
+            elementGhostManager.createGhostLayer();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Gets the ghost layer for this spatial index.
+     * 
+     * @return the ghost layer, or null if none exists
+     */
+    public GhostLayer<Key, ID, Content> getGhostLayer() {
+        return ghostLayer;
+    }
+    
+    /**
+     * Gets the neighbor detector for this spatial index.
+     * Implementation-specific, set by subclasses.
+     * 
+     * @return the neighbor detector, or null if not set
+     */
+    public NeighborDetector<Key> getNeighborDetector() {
+        return neighborDetector;
+    }
+    
+    /**
+     * Gets all spatial keys currently in the spatial index.
+     * Used by ghost layer management to iterate through elements.
+     * 
+     * @return set of all spatial keys
+     */
+    public Set<Key> getSpatialKeys() {
+        lock.readLock().lock();
+        try {
+            return new HashSet<>(spatialIndex.keySet());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Checks if a spatial key exists in the index.
+     * Used by ghost layer management to test element existence.
+     * 
+     * @param key the spatial key to check
+     * @return true if the key exists in the spatial index
+     */
+    public boolean containsSpatialKey(Key key) {
+        return spatialIndex.containsKey(key);
+    }
+    
+    /**
+     * Sets the neighbor detector for this spatial index.
+     * Should be called by subclasses during initialization.
+     * 
+     * @param detector the neighbor detector to set
+     */
+    protected void setNeighborDetector(NeighborDetector<Key> detector) {
+        this.neighborDetector = detector;
+        // Initialize ElementGhostManager now that we have a neighbor detector
+        if (detector != null && this.elementGhostManager == null) {
+            this.elementGhostManager = new ElementGhostManager<>(this, detector, ghostType);
+        }
+    }
+    
+    /**
+     * Finds entities at the given spatial key, including ghost elements.
+     * 
+     * @param key the spatial key to search
+     * @return list of entity IDs including both local and ghost entities
+     */
+    public List<ID> findEntitiesIncludingGhosts(Key key) {
+        var result = new ArrayList<ID>();
+        
+        lock.readLock().lock();
+        try {
+            // Add local entities
+            var node = spatialIndex.get(key);
+            if (node != null) {
+                var entityIds = node.getEntityIds();
+                if (entityIds != null) {
+                    result.addAll(entityIds);
+                }
+            }
+            
+            // Add ghost entities if available
+            var currentGhostLayer = ghostLayer; // Capture reference to avoid race conditions
+            if (currentGhostLayer != null) {
+                var ghostElements = currentGhostLayer.getGhostElements(key);
+                if (ghostElements != null) {
+                    for (var ghost : ghostElements) {
+                        if (ghost != null) {
+                            var entityId = ghost.getEntityId();
+                            if (entityId != null) {
+                                result.add(entityId);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return result;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Finds neighbors within the specified distance, including ghost elements.
+     * 
+     * @param position the center position
+     * @param radius the search radius
+     * @return list of neighbor results including both local and ghost neighbors
+     */
+    public List<NeighborResult<ID, Content>> findNeighborsIncludingGhosts(Point3f position, float radius) {
+        var result = new ArrayList<NeighborResult<ID, Content>>();
+        
+        lock.readLock().lock();
+        try {
+            // Find local neighbors using k-nearest approach with large k
+            var localNeighbors = kNearestNeighbors(position, Integer.MAX_VALUE, radius);
+            for (var entityId : localNeighbors) {
+                var entityContent = entityManager.getEntityContent(entityId);
+                var entityPosition = entityManager.getEntityPosition(entityId);
+                if (entityContent != null && entityPosition != null) {
+                    float distance = position.distance(entityPosition);
+                    result.add(new NeighborResult<>(entityId, entityContent, distance));
+                }
+            }
+            
+            // Add ghost neighbors if available
+            if (ghostLayer != null && elementGhostManager != null) {
+                // For now, iterate through all ghost elements to find those within range
+                // This could be optimized with spatial range queries later
+                for (var entry : ghostLayer.getAllGhostElements()) {
+                    float distance = position.distance(entry.getPosition());
+                    if (distance <= radius) {
+                        result.add(new NeighborResult<>(entry.getEntityId(), entry.getContent(), distance));
+                    }
+                }
+            }
+            
+            return result;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    // ========================================
+    // Ghost Update Hooks
+    // ========================================
+    
+    /**
+     * Called after bulk insertions to trigger ghost updates if enabled.
+     */
+    protected void triggerGhostUpdateAfterBulkInsert() {
+        if (ghostType != GhostType.NONE && elementGhostManager != null) {
+            log.debug("Triggering ghost update after bulk insertion");
+            updateGhostLayer();
+        }
+    }
+    
+    /**
+     * Called after tree adaptation to trigger ghost updates if enabled.
+     */
+    protected void triggerGhostUpdateAfterAdaptation() {
+        if (ghostType != GhostType.NONE && elementGhostManager != null) {
+            log.debug("Triggering ghost update after tree adaptation");
+            updateGhostLayer();
+        }
+    }
 
 }

@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.neighbor.TetreeNeighborDetector;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 import com.hellblazer.luciferase.lucien.tetree.internal.TetDistance;
 import org.slf4j.Logger;
@@ -80,6 +81,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
+        
+        // Initialize Tetree-based neighbor detector for ghost layer support
+        setNeighborDetector(new TetreeNeighborDetector(this));
     }
 
     // k-NN search is now provided by AbstractSpatialIndex
