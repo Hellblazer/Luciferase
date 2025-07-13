@@ -50,6 +50,7 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     private final AbstractSpatialIndex<Key, ID, Content> spatialIndex;
     private final NeighborDetector<Key> neighborDetector;
     private final GhostLayer<Key, ID, Content> ghostLayer;
+    private final GhostAlgorithm ghostAlgorithm;
     
     // Track boundary elements for efficient ghost detection
     private final Set<Key> boundaryElements;
@@ -70,9 +71,25 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
     public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
                               NeighborDetector<Key> neighborDetector,
                               GhostType ghostType) {
+        this(spatialIndex, neighborDetector, ghostType, GhostAlgorithm.CONSERVATIVE);
+    }
+    
+    /**
+     * Create an element ghost manager with specified algorithm.
+     * 
+     * @param spatialIndex the spatial index
+     * @param neighborDetector the neighbor detector for this index type
+     * @param ghostType the type of ghosts to create
+     * @param ghostAlgorithm the ghost creation algorithm to use
+     */
+    public ElementGhostManager(AbstractSpatialIndex<Key, ID, Content> spatialIndex,
+                              NeighborDetector<Key> neighborDetector,
+                              GhostType ghostType,
+                              GhostAlgorithm ghostAlgorithm) {
         this.spatialIndex = Objects.requireNonNull(spatialIndex);
         this.neighborDetector = Objects.requireNonNull(neighborDetector);
         this.ghostLayer = new GhostLayer<>(ghostType);
+        this.ghostAlgorithm = Objects.requireNonNull(ghostAlgorithm);
         this.boundaryElements = new ConcurrentSkipListSet<>();
         this.processedElements = ConcurrentHashMap.newKeySet();
         this.elementOwners = new ConcurrentHashMap<>();
@@ -225,8 +242,8 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
             return;
         }
         
-        // Find neighbors based on ghost type
-        var neighbors = neighborDetector.findNeighbors(key, ghostLayer.getGhostType());
+        // Find neighbors based on ghost type and algorithm
+        var neighbors = findNeighborsForGhostCreation(key);
         
         for (var neighborKey : neighbors) {
             // Check if neighbor exists in our spatial index
@@ -241,6 +258,70 @@ public class ElementGhostManager<Key extends SpatialKey<Key>, ID extends EntityI
         }
         
         processedElements.add(key);
+    }
+    
+    /**
+     * Find neighbors for ghost creation based on the configured algorithm.
+     */
+    private Set<Key> findNeighborsForGhostCreation(Key key) {
+        var neighbors = new HashSet<Key>();
+        
+        switch (ghostAlgorithm) {
+            case MINIMAL -> {
+                // Only direct neighbors
+                neighbors.addAll(neighborDetector.findNeighbors(key, ghostLayer.getGhostType()));
+            }
+            case CONSERVATIVE -> {
+                // Direct neighbors and their neighbors
+                var directNeighbors = neighborDetector.findNeighbors(key, ghostLayer.getGhostType());
+                neighbors.addAll(directNeighbors);
+                
+                // Add neighbors of neighbors (limited depth)
+                for (var neighbor : directNeighbors) {
+                    var secondLevelNeighbors = neighborDetector.findNeighbors(neighbor, ghostLayer.getGhostType());
+                    neighbors.addAll(secondLevelNeighbors);
+                }
+            }
+            case AGGRESSIVE -> {
+                // Extensive neighbor search with multiple levels
+                var currentLevel = Set.of(key);
+                var visited = new HashSet<Key>();
+                
+                // Search up to 3 levels deep
+                for (int level = 0; level < 3; level++) {
+                    var nextLevel = new HashSet<Key>();
+                    for (var currentKey : currentLevel) {
+                        if (!visited.contains(currentKey)) {
+                            var levelNeighbors = neighborDetector.findNeighbors(currentKey, ghostLayer.getGhostType());
+                            neighbors.addAll(levelNeighbors);
+                            nextLevel.addAll(levelNeighbors);
+                            visited.add(currentKey);
+                        }
+                    }
+                    currentLevel = nextLevel;
+                }
+            }
+            case ADAPTIVE -> {
+                // Start with conservative, could be enhanced with usage statistics
+                // For now, use conservative approach
+                var directNeighbors = neighborDetector.findNeighbors(key, ghostLayer.getGhostType());
+                neighbors.addAll(directNeighbors);
+                
+                for (var neighbor : directNeighbors) {
+                    var secondLevelNeighbors = neighborDetector.findNeighbors(neighbor, ghostLayer.getGhostType());
+                    neighbors.addAll(secondLevelNeighbors);
+                }
+            }
+            case CUSTOM -> {
+                // For custom algorithms, delegate to a pluggable strategy
+                // For now, fall back to conservative
+                log.warn("CUSTOM ghost algorithm not implemented, using CONSERVATIVE");
+                var directNeighbors = neighborDetector.findNeighbors(key, ghostLayer.getGhostType());
+                neighbors.addAll(directNeighbors);
+            }
+        }
+        
+        return neighbors;
     }
     
     private void createGhostElement(Key neighborKey, int ownerRank) {

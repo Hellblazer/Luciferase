@@ -119,8 +119,10 @@ implements SpatialIndex<Key, ID, Content> {
     
     // Ghost layer support
     protected       GhostType                                        ghostType                = GhostType.NONE;
+    protected       GhostAlgorithm                                   ghostAlgorithm           = GhostAlgorithm.CONSERVATIVE;
     protected       GhostLayer<Key, ID, Content>                     ghostLayer;
     protected       ElementGhostManager<Key, ID, Content>            elementGhostManager;
+    protected       DistributedGhostManager<Key, ID, Content>        distributedGhostManager;
     protected       NeighborDetector<Key>                            neighborDetector;
 
     /**
@@ -4546,7 +4548,7 @@ implements SpatialIndex<Key, ID, Content> {
             this.ghostLayer = new GhostLayer<>(type);
             // Recreate ElementGhostManager with new ghost type if we have a neighbor detector
             if (this.neighborDetector != null) {
-                this.elementGhostManager = new ElementGhostManager<>(this, neighborDetector, type);
+                this.elementGhostManager = new ElementGhostManager<>(this, neighborDetector, type, ghostAlgorithm);
             }
         } finally {
             lock.writeLock().unlock();
@@ -4560,6 +4562,34 @@ implements SpatialIndex<Key, ID, Content> {
      */
     public GhostType getGhostType() {
         return ghostType;
+    }
+    
+    /**
+     * Sets the ghost creation algorithm for this spatial index.
+     * 
+     * @param algorithm the ghost creation algorithm to use
+     */
+    public void setGhostCreationAlgorithm(GhostAlgorithm algorithm) {
+        lock.writeLock().lock();
+        try {
+            this.ghostAlgorithm = Objects.requireNonNull(algorithm);
+            // Recreate ElementGhostManager with new algorithm if we have one
+            if (this.elementGhostManager != null) {
+                this.elementGhostManager = new ElementGhostManager<>(this, neighborDetector, ghostType, algorithm);
+            }
+            log.debug("Set ghost creation algorithm to: {}", algorithm);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Gets the current ghost creation algorithm.
+     * 
+     * @return the current ghost creation algorithm
+     */
+    public GhostAlgorithm getGhostCreationAlgorithm() {
+        return ghostAlgorithm;
     }
     
     /**
@@ -4656,7 +4686,7 @@ implements SpatialIndex<Key, ID, Content> {
         this.neighborDetector = detector;
         // Initialize ElementGhostManager now that we have a neighbor detector
         if (detector != null && this.elementGhostManager == null) {
-            this.elementGhostManager = new ElementGhostManager<>(this, detector, ghostType);
+            this.elementGhostManager = new ElementGhostManager<>(this, detector, ghostType, ghostAlgorithm);
         }
     }
     
@@ -4764,6 +4794,156 @@ implements SpatialIndex<Key, ID, Content> {
         if (ghostType != GhostType.NONE && elementGhostManager != null) {
             log.debug("Triggering ghost update after tree adaptation");
             updateGhostLayer();
+            
+            // Also trigger distributed ghost updates if enabled
+            if (distributedGhostManager != null) {
+                distributedGhostManager.updateDistributedGhostLayer();
+            }
+        }
+    }
+    
+    // ========================================
+    // Distributed Ghost Management
+    // ========================================
+    
+    /**
+     * Sets up distributed ghost management with the provided communication manager.
+     * 
+     * @param communicationManager the gRPC communication manager
+     * @param contentSerializer the content serializer
+     * @param entityIdClass the entity ID class for deserialization
+     * @param currentRank the rank of this process
+     * @param treeId the tree identifier
+     */
+    public void setupDistributedGhosts(com.hellblazer.luciferase.lucien.forest.ghost.grpc.GhostCommunicationManager<Key, ID, Content> communicationManager,
+                                      ContentSerializer<Content> contentSerializer,
+                                      Class<ID> entityIdClass,
+                                      int currentRank,
+                                      long treeId) {
+        lock.writeLock().lock();
+        try {
+            if (elementGhostManager == null) {
+                log.warn("Cannot setup distributed ghosts - local ghost manager not initialized");
+                return;
+            }
+            
+            this.distributedGhostManager = new DistributedGhostManager<>(
+                this, communicationManager, elementGhostManager, contentSerializer, entityIdClass, currentRank, treeId);
+            
+            log.info("Distributed ghost management enabled for rank {} tree {}", currentRank, treeId);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Initialize the distributed ghost layer.
+     * This should be called after all processes are ready.
+     */
+    public void initializeDistributedGhosts() {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.initialize();
+        } else {
+            log.warn("Cannot initialize distributed ghosts - distributed ghost manager not set up");
+        }
+    }
+    
+    /**
+     * Create or update the distributed ghost layer.
+     * This coordinates with other processes to exchange ghost elements.
+     */
+    public void createDistributedGhostLayer() {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.createDistributedGhostLayer();
+        } else {
+            // Fall back to local ghost layer creation
+            createGhostLayer();
+        }
+    }
+    
+    /**
+     * Add a known process for distributed ghost communication.
+     * 
+     * @param rank the process rank to add
+     */
+    public void addDistributedProcess(int rank) {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.addKnownProcess(rank);
+        }
+    }
+    
+    /**
+     * Remove a process from distributed ghost communication.
+     * 
+     * @param rank the process rank to remove
+     */
+    public void removeDistributedProcess(int rank) {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.removeKnownProcess(rank);
+        }
+    }
+    
+    /**
+     * Set element ownership information for distributed ghost detection.
+     * 
+     * @param key the spatial key
+     * @param ownerRank the rank of the process that owns this element
+     */
+    public void setElementOwner(Key key, int ownerRank) {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.setElementOwner(key, ownerRank);
+        }
+    }
+    
+    /**
+     * Synchronize ghost elements with all known processes.
+     */
+    public void synchronizeDistributedGhosts() {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.synchronizeWithAllProcesses();
+        }
+    }
+    
+    /**
+     * Enable or disable automatic distributed ghost synchronization.
+     * 
+     * @param enabled true to enable auto-sync, false to disable
+     */
+    public void setDistributedGhostAutoSync(boolean enabled) {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.setAutoSyncEnabled(enabled);
+        }
+    }
+    
+    /**
+     * Get distributed ghost statistics.
+     * 
+     * @return map of statistics, or empty map if distributed ghosts not enabled
+     */
+    public Map<String, Object> getDistributedGhostStatistics() {
+        if (distributedGhostManager != null) {
+            return distributedGhostManager.getStatistics();
+        }
+        return Map.of();
+    }
+    
+    /**
+     * Check if distributed ghost management is enabled.
+     * 
+     * @return true if distributed ghosts are enabled
+     */
+    public boolean isDistributedGhostsEnabled() {
+        return distributedGhostManager != null;
+    }
+    
+    /**
+     * Shutdown distributed ghost management.
+     */
+    public void shutdownDistributedGhosts() {
+        if (distributedGhostManager != null) {
+            distributedGhostManager.shutdown();
+            distributedGhostManager = null;
+            log.info("Distributed ghost management shut down");
         }
     }
 

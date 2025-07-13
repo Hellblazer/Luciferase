@@ -381,6 +381,15 @@ public class GhostCommunicationManager<Key extends SpatialKey<Key>, ID extends E
     }
     
     /**
+     * Gets the service discovery mechanism.
+     * 
+     * @return the service discovery
+     */
+    public GhostServiceClient.ServiceDiscovery getServiceDiscovery() {
+        return serviceDiscovery;
+    }
+    
+    /**
      * Implementation of GhostLayerProvider for the service.
      */
     private class GhostLayerProviderImpl implements GhostExchangeServiceImpl.GhostLayerProvider<Key, ID, Content> {
