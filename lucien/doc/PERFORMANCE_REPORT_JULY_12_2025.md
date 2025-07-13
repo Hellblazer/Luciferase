@@ -44,7 +44,7 @@ This report presents comprehensive performance benchmarks comparing three spatia
 
 **Analysis**:
 - Tetree shows 1.49x better k-NN performance than Octree despite insertion overhead
-- Prism k-NN is 2.75x slower than Octree due to triangular decomposition complexity
+- Prism k-NN is 2.75x slower than Octree due to triangular subdivision complexity
 - All indices maintain sub-millisecond performance for typical k values
 
 ### 3. Range Query Performance
@@ -111,7 +111,7 @@ This report presents comprehensive performance benchmarks comparing three spatia
 - **Strengths**:
   - Superior memory efficiency (20-25% less than Octree)
   - Best k-NN search performance
-  - Tetrahedral decomposition matches certain geometric problems
+  - Tetrahedral subdivision matches certain geometric problems
 - **Weaknesses**:
   - Slowest insertion performance (7-10x slower than Octree)
   - Complex tmIndex() computation bottleneck
@@ -125,7 +125,7 @@ This report presents comprehensive performance benchmarks comparing three spatia
 ### When to Use Prism
 **Best for**: Layered or stratified spatial data
 - **Strengths**:
-  - Anisotropic decomposition (fine horizontal, coarse vertical)
+  - Anisotropic subdivision (fine horizontal, coarse vertical)
   - Efficient vertical layer queries
   - Good balance between insertion and query performance
   - Natural fit for height-stratified data

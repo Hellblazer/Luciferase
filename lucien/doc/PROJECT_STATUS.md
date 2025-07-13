@@ -124,13 +124,13 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 **Prism Spatial Index Implementation** ✅ - Successfully added triangular prism-based spatial indexing as a third option alongside Octree and Tetree:
 - **Status**: COMPLETED - All phases implemented and tested
-- **Features**: Anisotropic decomposition, triangular coordinate system, specialized collision detection
+- **Features**: Anisotropic subdivision, triangular coordinate system, specialized collision detection
 - **Performance**: 78-85% of Octree's memory usage, optimized for height-stratified data
 - **Testing**: 47 comprehensive tests across Phase 5 implementation
 - **Documentation**: [Prism API](./PRISM_API.md)
 
 **Delivered Benefits**:
-- **Anisotropic decomposition**: Fine horizontal (triangular), coarse vertical (linear) granularity
+- **Anisotropic subdivision**: Fine horizontal (triangular), coarse vertical (linear) granularity
 - **Memory efficiency**: 20-30% better for layered data as predicted
 - **Specialized queries**: 5x+ faster vertical layer operations confirmed
 - **Use cases**: Geological layers, atmospheric data, urban floor modeling fully supported

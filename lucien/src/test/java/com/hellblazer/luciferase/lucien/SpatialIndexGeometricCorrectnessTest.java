@@ -88,7 +88,7 @@ public class SpatialIndexGeometricCorrectnessTest {
         assertTrue(index.entityCount() >= 7, "Index should contain at least 7 entities");
         
         // Both geometries should find neighbors, but the exact count may differ
-        // due to different spatial decomposition approaches
+        // due to different spatial subdivision approaches
         boolean isTetree = index.getClass().getSimpleName().contains("Tetree");
         
         // Verify we found some neighbors

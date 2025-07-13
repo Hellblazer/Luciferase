@@ -17,9 +17,9 @@
 
 ## Executive Summary
 
-This plan details the implementation of a triangular prism spatial index for the Luciferase spatial data structure library. The implementation will extend the existing `AbstractSpatialIndex` framework, introducing prism-based spatial decomposition as a third spatial indexing option alongside Octree and Tetree.
+This plan details the implementation of a triangular prism spatial index for the Luciferase spatial data structure library. The implementation will extend the existing `AbstractSpatialIndex` framework, introducing prism-based spatial subdivision as a third spatial indexing option alongside Octree and Tetree.
 
-**Key Innovation**: Prisms provide **anisotropic spatial decomposition** - fine granularity in the horizontal plane (triangular base) with coarser vertical granularity (linear height), making them ideal for layered or stratified data (geological layers, atmospheric data, urban floor-based modeling).
+**Key Innovation**: Prisms provide **anisotropic spatial subdivision** - fine granularity in the horizontal plane (triangular base) with coarser vertical granularity (linear height), making them ideal for layered or stratified data (geological layers, atmospheric data, urban floor-based modeling).
 
 ## 1. Architecture Overview
 
@@ -70,7 +70,7 @@ lucien/src/main/java/com/hellblazer/luciferase/lucien/
 
 ### 2.1 Line.java - 1D Linear Element
 
-**Purpose**: Represents vertical (z-axis) decomposition with simple binary subdivision.
+**Purpose**: Represents vertical (z-axis) subdivision with simple binary subdivision.
 
 ```java
 public class Line {
@@ -97,7 +97,7 @@ public long consecutiveIndex() {
 
 ### 2.2 Triangle.java - 2D Triangular Element
 
-**Purpose**: Represents horizontal (x,y) decomposition using triangular space-filling curve.
+**Purpose**: Represents horizontal (x,y) subdivision using triangular space-filling curve.
 
 ```java
 public class Triangle {
@@ -608,7 +608,7 @@ The following section documents the comprehensive analysis of the t8code prism i
 
 ### Executive Summary
 
-The t8code prism implementation represents a hybrid 3D spatial data structure that combines triangular base decomposition with linear vertical extension. The prism is fundamentally composed of two sub-elements: a triangle (t8_dtri_t) providing the 2D base structure and a line (t8_dline_t) providing the vertical dimension.
+The t8code prism implementation represents a hybrid 3D spatial data structure that combines triangular base subdivision with linear vertical extension. The prism is fundamentally composed of two sub-elements: a triangle (t8_dtri_t) providing the 2D base structure and a line (t8_dline_t) providing the vertical dimension.
 
 ### Core Data Structure
 

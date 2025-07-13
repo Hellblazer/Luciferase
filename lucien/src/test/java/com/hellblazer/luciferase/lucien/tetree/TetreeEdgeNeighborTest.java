@@ -242,11 +242,11 @@ public class TetreeEdgeNeighborTest {
         }
 
         // With standard refinement, the edge neighbor relationships are different
-        // The test was written for Freudenthal decomposition which has different geometric properties
+        // The test was written for Freudenthal subdivision which has different geometric properties
         // For now, we'll just verify the method doesn't crash and returns a valid result
         assertTrue(totalEdgeNeighbors >= 0, "Edge neighbor count should be non-negative, got: " + totalEdgeNeighbors);
 
         // Note: With standard refinement, entities that were edge neighbors under Freudenthal
-        // decomposition may not be edge neighbors anymore due to different spatial organization
+        // subdivision may not be edge neighbors anymore due to different spatial organization
     }
 }

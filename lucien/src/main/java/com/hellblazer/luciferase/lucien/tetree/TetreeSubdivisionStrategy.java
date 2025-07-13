@@ -27,7 +27,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Tetree-specific subdivision strategy implementation. Optimized for tetrahedral spatial decomposition.
+ * Tetree-specific subdivision strategy implementation. Optimized for tetrahedral spatial subdivision.
  *
  * Key features: - Tetrahedral geometry-aware subdivision - Support for entity spanning across multiple tetrahedra -
  * Adaptive subdivision based on tetrahedral volume - Efficient child tetrahedron calculation

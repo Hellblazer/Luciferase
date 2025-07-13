@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Edge case tests for Tetree ray intersection functionality. Tests challenging scenarios specific to tetrahedral
- * spatial decomposition.
+ * spatial subdivision.
  *
  * @author hal.hildebrand
  */

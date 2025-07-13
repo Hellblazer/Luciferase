@@ -209,7 +209,7 @@ public class EntitySpanningPolicy {
      * @param nodeSize     The size of the spatial node
      * @param currentNodes Current number of nodes in the index
      * @param entityCount  Current number of entities
-     * @param level        The spatial decomposition level
+     * @param level        The spatial subdivision level
      * @return true if the entity should span multiple nodes
      */
     public boolean shouldSpanAdvanced(float entitySize, float nodeSize, int currentNodes, int entityCount, byte level) {

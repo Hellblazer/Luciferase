@@ -285,7 +285,7 @@ public class TetreeCollisionEdgeCaseTest {
     @Test
     void testTetrahedralIndexOverflow() {
         // Test collision detection with large coordinates (but within reasonable bounds for tetree)
-        // Tetree uses tetrahedral decomposition which may have different limits than octree
+        // Tetree uses tetrahedral subdivision which may have different limits than octree
         Point3f pos1 = new Point3f(10000, 10000, 10000); // Large but reasonable coordinates
         Point3f pos2 = new Point3f(10000.05f, 10000.05f, 10000.05f);
 

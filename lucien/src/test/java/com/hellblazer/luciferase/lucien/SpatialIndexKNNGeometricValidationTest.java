@@ -29,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Validates that k-NN search results from both Octree and Tetree are geometrically
- * correct for their respective spatial decompositions. This test demonstrates that
+ * correct for their respective spatial subdivisions. This test demonstrates that
  * different results are not limitations but natural consequences of different geometries.
  * 
  * @author hal.hildebrand

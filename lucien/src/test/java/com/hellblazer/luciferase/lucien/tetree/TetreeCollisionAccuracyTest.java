@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Accuracy tests for Tetree collision detection. Validates geometric accuracy, contact points, normals, and penetration
- * depths within the tetrahedral spatial decomposition.
+ * depths within the tetrahedral spatial subdivision.
  *
  * @author hal.hildebrand
  */
