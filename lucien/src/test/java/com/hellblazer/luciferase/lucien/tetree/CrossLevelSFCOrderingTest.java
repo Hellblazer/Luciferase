@@ -54,14 +54,18 @@ class CrossLevelSFCOrderingTest {
         
         // Level 9 keys (CompactTetreeKey - single long, max level for CompactTetreeKey is 10)
         for (int i = 0; i < 8; i++) {
-            long level9Data = baseLow | ((long) i << 54); // Put data in level 9 position (54-59)
+            // Clear bits 54-59 in baseLow before setting new value
+            long mask = ~(0x3FL << 54); // Mask to clear bits 54-59
+            long level9Data = (baseLow & mask) | ((long) i << 54); // Put data in level 9 position (54-59)
             var key = new CompactTetreeKey((byte) 9, level9Data);
             testKeys.add(new KeyWithLevel(9, i, key));
         }
         
         // Level 20 keys (ExtendedTetreeKey - dual long, standard encoding)
         for (int i = 0; i < 8; i++) {
-            long level20Data = baseHigh | ((long) i << 54); // Put data in level 10 position (54-59 in high bits)
+            // Clear bits 54-59 in baseHigh before setting new value
+            long mask = ~(0x3FL << 54); // Mask to clear bits 54-59
+            long level20Data = (baseHigh & mask) | ((long) i << 54); // Put data in level 10 position (54-59 in high bits)
             var key = new ExtendedTetreeKey((byte) 20, baseLow, level20Data);
             testKeys.add(new KeyWithLevel(20, i, key));
         }
@@ -172,7 +176,8 @@ class CrossLevelSFCOrderingTest {
     private void testFullSortConsistency(List<KeyWithLevel> testKeys) {
         // Create expected order: level 9 (indices 0-7), then level 20 (indices 0-7), then level 21 (indices 0-7)
         List<KeyWithLevel> expected = new ArrayList<>();
-        for (int level = 9; level <= 21; level += 11) { // 9, 20, 21
+        int[] levels = {9, 20, 21}; // The three levels we're testing
+        for (int level : levels) {
             final int finalLevel = level; // Make effectively final for lambda
             for (int index = 0; index < 8; index++) {
                 final int finalIndex = index; // Make effectively final for lambda
@@ -205,19 +210,19 @@ class CrossLevelSFCOrderingTest {
      * Test boundary conditions at level transitions
      */
     private void testAdjacentLevelTransitions() {
-        // Test the boundary between CompactTetreeKey (level 19) and ExtendedTetreeKey (level 20)
+        // Test the boundary between CompactTetreeKey (level 10) and ExtendedTetreeKey (level 11)
         // This verifies that the key type transition doesn't break ordering
         
-        // Create max level 19 key
-        long maxLevel19Data = 0x0FFFFFFFFFFFFFFFL; // All valid bits set
-        var maxLevel19 = new CompactTetreeKey((byte) 19, maxLevel19Data);
+        // Create max level 10 key (last CompactTetreeKey level)
+        long maxLevel10Data = 0x0FFFFFFFFFFFFFFFL; // All valid bits set
+        var maxLevel10 = new CompactTetreeKey((byte) 10, maxLevel10Data);
         
-        // Create min level 20 key
-        var minLevel20 = new ExtendedTetreeKey((byte) 20, 0L, 0L);
+        // Create min level 11 key (first ExtendedTetreeKey level)
+        var minLevel11 = new ExtendedTetreeKey((byte) 11, 0L, 0L);
         
-        int comparison = maxLevel19.compareTo(minLevel20);
+        int comparison = maxLevel10.compareTo(minLevel11);
         assertTrue(comparison < 0, 
-            String.format("Max level 19 key should < min level 20 key, but got %d", comparison));
+            String.format("Max level 10 key should < min level 11 key, but got %d", comparison));
         
         // Test the boundary between level 20 and level 21 (bit packing transition)
         // Create max level 20 key
