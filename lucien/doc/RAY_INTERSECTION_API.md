@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ray Intersection API provides efficient ray tracing capabilities for spatial queries in both Octree and Tetree
+The Ray Intersection API provides efficient ray tracing capabilities for spatial queries in Octree, Tetree, and Prism
 implementations. This API is designed for applications requiring line-of-sight queries, visibility checks, and ray-based
 spatial interactions.
 

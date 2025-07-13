@@ -6,23 +6,28 @@ This document provides a high-level summary of the Luciferase lucien module arch
 
 ## Current State
 
-The lucien module provides spatial indexing through a unified architecture supporting both octree and tetrahedral
-decomposition. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each approach. All core features are complete, including S0-S5 tetrahedral decomposition with 100% geometric containment.
+The lucien module provides spatial indexing through a unified architecture supporting octree (cubic), tetrahedral, and prismatic (anisotropic)
+decomposition. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each approach. All core features are complete, including S0-S5 tetrahedral decomposition with 100% geometric containment and anisotropic prism decomposition with triangular/linear spatial indexing.
 
-**Total Classes: 96 Java files** organized across 8 packages (after Phase 6.2 node consolidation)
+**Total Classes: 150 Java files** organized across 12 packages (including complete Prism implementation)
 
 ## Package Overview
 
 For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.md](./LUCIEN_ARCHITECTURE.md).
 
-- **Root Package (26 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
+- **Root Package (28 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
-- **Octree Package (4 classes)**: Morton curve-based cubic spatial decomposition
-- **Tetree Package (31 classes)**: Tetrahedral spatial decomposition with extensive optimizations and lazy evaluation
+- **Octree Package (6 classes)**: Morton curve-based cubic spatial decomposition with internal utilities
+- **Tetree Package (34 classes)**: Tetrahedral spatial decomposition with extensive optimizations and lazy evaluation
+- **Prism Package (8 classes)**: Anisotropic spatial decomposition with Line/Triangle elements, PrismKey composite keys, geometric operations, neighbor finding, ray intersection, and collision detection using SAT
 - **Balancing Package (4 classes)**: Tree balancing strategies
-- **Collision Package (12 classes)**: Comprehensive collision detection system
+- **Collision Package (29 classes)**: Comprehensive collision detection system with CCD and physics subpackages
 - **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
-- **Index Package (1 class)**: Additional indexing utilities
+- **Forest Package (16 classes)**: Multi-tree coordination for distributed spatial indexing
+- **Lockfree Package (3 classes)**: Lock-free concurrent operations with atomic protocols
+- **Internal Package (4 classes)**: Entity caching and object pool utilities
+- **Geometry Package (1 class)**: AABB intersection utilities
+- **Index Package (0 classes)**: Empty directory
 
 ## Key Architecture Components
 
@@ -32,16 +37,23 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
   └── AbstractSpatialIndex<Key, ID, Content> (base class with ~95% shared functionality)
       ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
-      └── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
+      ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
+      └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
 ```
+
+### Spatial Decomposition Strategies
+
+- **Octree**: Isotropic cubic decomposition using Morton curve space-filling curves
+- **Tetree**: Tetrahedral decomposition with S0-S5 characteristic tetrahedra
+- **Prism**: Anisotropic decomposition combining 2D triangular and 1D linear elements for applications requiring fine horizontal granularity and coarse vertical granularity
 
 ### Major Features
 
-- **Unified API**: Both octree and tetree share common operations through AbstractSpatialIndex
+- **Unified API**: All spatial indices share common operations through AbstractSpatialIndex
 - **Entity Management**: Centralized through EntityManager with multi-entity support
 - **Thread Safety**: ReadWriteLock-based concurrent access
-- **Performance**: HashMap-based O(1) node access for both implementations
-- **Type-Safe Keys**: SpatialKey architecture prevents mixing incompatible indices
+- **Performance**: HashMap-based O(1) node access for all implementations
+- **Type-Safe Keys**: SpatialKey architecture prevents mixing incompatible indices (MortonKey, TetreeKey, PrismKey)
 
 ## What This Architecture Includes
 
@@ -70,7 +82,7 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 ✅ **TetreeLevelCache**: Eliminates O(log n) level calculations  
 ✅ **Dynamic Level Selection**: Automatic optimization for data distribution  
 ✅ **Bulk Loading Mode**: 5-10x performance for large datasets
-✅ **SpatialKey Architecture**: Type-safe keys with MortonKey and TetreeKey
+✅ **SpatialKey Architecture**: Type-safe keys with MortonKey, TetreeKey, and PrismKey
 
 ## Documentation Structure
 
@@ -112,11 +124,11 @@ The current architecture prioritizes:
 1. **Simplicity**: Essential functionality without unnecessary complexity
 2. **Code Reuse**: 90% shared implementation through inheritance
 3. **Maintainability**: Single place for algorithm changes
-4. **Extensibility**: Easy addition of new spatial decomposition strategies
+4. **Extensibility**: Easy addition of new spatial decomposition strategies (demonstrated by Octree, Tetree, and Prism implementations)
 5. **Performance**: O(1) operations through HashMap-based storage
 6. **Scalability**: Forest architecture for distributed and large-scale applications
 
-## Performance Reality (June 2025 - OctreeVsTetreeBenchmark)
+## Performance Reality
 
 ### Important Performance Update
 
@@ -124,18 +136,11 @@ Previous performance claims were based on using the `consecutiveIndex()` method 
 After refactoring to use the globally unique `tmIndex()` for correctness (unique across all levels), the performance
 characteristics have changed dramatically.
 
-### Current Performance Metrics (Concurrent Optimizations - July 11, 2025)
+### Current Performance Metrics
 
-After ConcurrentSkipListMap integration, the performance characteristics have completely reversed:
+After ConcurrentSkipListMap integration (July 11, 2025), the performance characteristics have completely reversed.
 
-| Entities | Operation | Octree  | Tetree  | Winner        | Current State |
-|---------|-----------|---------|---------|---------------|---------------|
-| 100     | Insertion | 12.58 μs| 5.92 μs | Tetree (2.1x) | **Complete** |
-| 1K      | Insertion | 17.89 μs| 4.72 μs | Tetree (3.8x) | **reversal** |
-| 10K     | Insertion | 36.87 μs| 5.97 μs | Tetree (6.2x) | **from July** |
-| 1K      | k-NN      | 4.15 μs | 2.64 μs | Tetree (1.6x) | Tetree faster |
-| 10K     | k-NN      | 19.23 μs| 23.46 μs| Octree (1.2x) | Mixed results |
-| 50K+    | Batch     | Baseline| Faster  | Tetree        | 35-38% faster|
+For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 
 ### Optimization Timeline
 
@@ -159,13 +164,14 @@ For detailed performance analysis, see:
 
 ## Testing Coverage
 
-**200+ total tests** with comprehensive coverage:
+**250+ total tests** with comprehensive coverage:
 
-- Unit tests for all major operations
+- Unit tests for all major operations across all spatial indices (Octree, Tetree, Prism)
 - Integration tests for spatial queries
 - Performance benchmarks (controlled by environment flag)
 - Thread-safety tests for concurrent operations
 - API-specific test suites for all features
+- Prism-specific tests for anisotropic decomposition, collision detection, and ray intersection (47 Phase 5 tests)
 
 ## Usage
 

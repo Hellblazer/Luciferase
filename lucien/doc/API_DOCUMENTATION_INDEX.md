@@ -22,6 +22,7 @@ Essential APIs for all spatial indexing operations:
 | **[Core Spatial Index API](CORE_SPATIAL_INDEX_API.md)** | Basic spatial operations | `SpatialIndex`, `AbstractSpatialIndex` | Starting any spatial indexing project |
 | **[Entity Management API](ENTITY_MANAGEMENT_API.md)** | Entity lifecycle management | `EntityManager`, `EntityBounds`, ID generators | Managing entities in spatial indexes |
 | **[Bulk Operations API](BULK_OPERATIONS_API.md)** | High-performance batch operations | `BulkOperationProcessor`, batch methods | Inserting/updating large datasets (5-10x faster) |
+| **[Prism API](PRISM_API.md)** | Anisotropic spatial indexing | `Prism`, `PrismKey`, triangular decomposition | Layered data, atmospheric/geological modeling |
 
 ### 🔍 **Query APIs**
 
@@ -110,6 +111,10 @@ Multi-tree coordination and specialized forest types:
 **Tetree (Tetrahedral Decomposition):**
 - Best for: Insertions (2-6x faster), memory efficiency (27-35% less), k-NN queries
 - Use with: [Lock-Free Operations](LOCKFREE_OPERATIONS_API.md), [Entity Management](ENTITY_MANAGEMENT_API.md)
+
+**Prism (Triangular Prism Decomposition):**
+- Best for: Anisotropic data (fine horizontal, coarse vertical), layered structures
+- Use with: [Prism API](PRISM_API.md), [Core Spatial Index](CORE_SPATIAL_INDEX_API.md)
 
 **Forest (Multi-Tree):**
 - Best for: Massive scale, complex domains, specialized requirements
@@ -237,7 +242,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 - **Implementation Details**: [TETREE_IMPLEMENTATION_GUIDE.md](TETREE_IMPLEMENTATION_GUIDE.md)
 
 ### Performance Resources  
-- **Benchmark Results**: [OCTREE_VS_TETREE_PERFORMANCE.md](OCTREE_VS_TETREE_PERFORMANCE.md)
+- **Benchmark Results**: [SPATIAL_INDEX_PERFORMANCE_COMPARISON.md](SPATIAL_INDEX_PERFORMANCE_COMPARISON.md)
 - **Performance Tracking**: [PERFORMANCE_TRACKING.md](PERFORMANCE_TRACKING.md)
 - **Optimization Guide**: [LAZY_EVALUATION_USAGE_GUIDE.md](LAZY_EVALUATION_USAGE_GUIDE.md)
 
@@ -248,5 +253,5 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 ---
 
 **Last Updated**: July 12, 2025  
-**API Count**: 12 comprehensive APIs covering all spatial indexing functionality  
+**API Count**: 13 comprehensive APIs covering all spatial indexing functionality  
 **Status**: Production Ready ✅
