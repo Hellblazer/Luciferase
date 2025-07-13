@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @param <ID>       The type of EntityID used
  * @param <Content>  The type of content stored
- * @param <NodeType> The type of spatial node used
  * @author hal.hildebrand
  */
 public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
@@ -285,8 +284,8 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
                     // Keys are automatically sorted in ConcurrentSkipListMap
                     nodesCreated.incrementAndGet();
 
-                    if (parentNode instanceof SpatialNodeImpl) {
-                        ((SpatialNodeImpl<ID>) parentNode).setHasChildren(true);
+                    if (parentNode != null) {
+                        parentNode.setHasChildren(true);
                     }
 
                     parentNodes.add(parentIndex);
@@ -311,7 +310,7 @@ public class StackBasedTreeBuilder<Key extends SpatialKey<Key>, ID extends Entit
         // Initialize stack with root frame
         var stack = new ArrayDeque<BuildStackFrame<Key, ID, Content>>();
         // Get the root key for this spatial index type
-        var rootKey = entities.get(0).sfcIndex.root();
+        var rootKey = entities.getFirst().sfcIndex.root();
         stack.push(new BuildStackFrame<>(rootKey, startLevel, entities, 0, entities.size(), BuildPhase.PROCESS_NODE));
 
         // Process stack

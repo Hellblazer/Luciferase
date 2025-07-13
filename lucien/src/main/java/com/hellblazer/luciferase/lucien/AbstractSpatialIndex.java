@@ -3268,13 +3268,13 @@ implements SpatialIndex<Key, ID, Content> {
         return entityManager;
     }
 
-    byte getMaxDepth() {
+    public byte getMaxDepth() {
         return maxDepth;
     }
 
     // ===== Common Region Query Implementation =====
 
-    int getMaxEntitiesPerNode() {
+    public int getMaxEntitiesPerNode() {
         return maxEntitiesPerNode;
     }
 
@@ -4500,5 +4500,6 @@ implements SpatialIndex<Key, ID, Content> {
             return modifications;
         }
     }
+    
 
 }
