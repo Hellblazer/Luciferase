@@ -3234,15 +3234,20 @@ implements SpatialIndex<Key, ID, Content> {
         // Get range of spatial indices that could contain or intersect the bounds
         var candidateIndices = getSpatialIndexRange(bounds);
 
-        return candidateIndices.stream().map(index -> Map.entry(index, getSpatialIndex().get(index))).filter(
-        entry -> entry.getValue() != null && !entry.getValue().isEmpty()).filter(entry -> {
-            // Final precise filtering
-            if (includeIntersecting) {
-                return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
-            } else {
-                return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
-            }
-        });
+        return candidateIndices.stream()
+            .map(index -> {
+                SpatialNodeImpl<ID> node = getSpatialIndex().get(index);
+                return node != null ? Map.entry(index, node) : null;
+            })
+            .filter(entry -> entry != null && !entry.getValue().isEmpty())
+            .filter(entry -> {
+                // Final precise filtering
+                if (includeIntersecting) {
+                    return doesNodeIntersectVolume(entry.getKey(), createSpatialFromBounds(bounds));
+                } else {
+                    return isNodeContainedInVolume(entry.getKey(), createSpatialFromBounds(bounds));
+                }
+            });
     }
 
     /**

@@ -14,12 +14,14 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.lucien.forest;
+package com.hellblazer.luciferase.lucien.forest.ghost;
 
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.Entity;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.forest.Forest;
+import com.hellblazer.luciferase.lucien.forest.TreeNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

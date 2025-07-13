@@ -61,12 +61,6 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
     public int compareTo(TetreeKey other) {
         Objects.requireNonNull(other, "Cannot compare to null ExtendedTetreeKey");
 
-        // If levels differ, compare by level first (shallower nodes come first)
-        if (getLevel() != other.getLevel()) {
-            return Byte.compare(getLevel(), other.getLevel());
-        }
-
-        // Same level, compare high bits first
         int highComparison = Long.compareUnsigned(this.highBits, other.getHighBits());
         if (highComparison != 0) {
             return highComparison;
