@@ -140,28 +140,59 @@ service GhostExchange {
 **Goal**: Implement distributed ghost exchange using gRPC.
 
 **Tasks**:
-1. Create `GhostExchangeService` implementation
-2. Add asynchronous ghost request handling
-3. Implement streaming updates for real-time sync
+1. Create `GhostExchangeService` implementation using virtual threads
+2. Add synchronous ghost request handling with virtual thread pools
+3. Implement streaming updates for real-time sync using blocking I/O
 
 **Key Components**:
-- `GhostServiceServer`: Handles incoming ghost requests
-- `GhostServiceClient`: Manages outgoing requests
-- `GhostSyncManager`: Coordinates distributed synchronization
+- `GhostServiceServer`: Handles incoming ghost requests using virtual threads
+- `GhostServiceClient`: Manages outgoing requests with synchronous calls
+- `GhostSyncManager`: Coordinates distributed synchronization using virtual thread executors
 
-### 3.3 Network Topology Management
+### 3.3 Virtual Threads Architecture
 
-**Goal**: Manage connections between distributed processes.
+**Goal**: Leverage Java virtual threads for simplified concurrent gRPC operations.
+
+**Design Principles**:
+1. Use synchronous gRPC calls with virtual thread executors
+2. Eliminate async callbacks and CompletableFuture complexity
+3. Leverage blocking I/O patterns with virtual thread scalability
+
+**Implementation Strategy**:
+```java
+// Virtual thread executor for ghost operations
+var ghostExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
+// Synchronous ghost request handling
+public GhostBatch requestGhosts(GhostRequest request) {
+    // Direct synchronous call - virtual threads handle scalability
+    return ghostServiceClient.requestGhosts(request);
+}
+
+// Streaming with virtual threads
+public void streamGhostUpdates(Stream<GhostUpdate> updates) {
+    updates.forEach(update -> {
+        ghostExecutor.submit(() -> {
+            // Synchronous processing per update
+            processGhostUpdate(update);
+        });
+    });
+}
+```
+
+### 3.4 Network Topology Management
+
+**Goal**: Manage connections between distributed processes using virtual threads.
 
 **Tasks**:
-1. Implement service discovery mechanism
+1. Implement service discovery mechanism with virtual thread pools
 2. Create connection pooling for efficiency
-3. Add fault tolerance and reconnection logic
+3. Add fault tolerance and reconnection logic using blocking calls
 
 **Features**:
-- Dynamic peer discovery
-- Load-balanced connections
-- Graceful degradation on failures
+- Dynamic peer discovery using synchronous calls
+- Load-balanced connections with virtual thread scaling
+- Graceful degradation on failures without callback complexity
 
 ## Phase 4: Spatial Index Integration (2-3 weeks)
 
@@ -319,11 +350,65 @@ public abstract class AbstractSpatialIndex<Key, ID, Content> {
    - Comprehensive documentation
    - Working examples
 
+## Current Status (Updated July 13, 2025)
+
+### ✅ Completed Phases
+
+- **Phase 1: Neighbor Detection Infrastructure** - COMPLETED
+  - Unified NeighborDetector interface implemented
+  - Morton-based octree neighbor detection completed
+  - Tetrahedral neighbor detection with full face/edge/vertex support
+  - Boundary detection for both spatial indices
+  
+- **Phase 4: Spatial Index Integration** - COMPLETED
+  - Ghost configuration integrated into AbstractSpatialIndex
+  - Ghost-aware query methods implemented
+  - Automatic ghost update hooks added
+  - Forest-level ghost management completed
+
+### 🚧 Next Priority Phases
+
+**Immediate Focus: Phase 2 → Phase 3 → Phase 5**
+
+Since the core infrastructure is complete, we should prioritize the communication layers:
+
+1. **Phase 2: Protocol Buffer Serialization** (1-2 weeks)
+   - Complete protobuf conversion methods for ghost classes
+   - Implement content serialization strategy
+   - Add batch serialization optimization
+
+2. **Phase 3: gRPC Communication Infrastructure** (2-3 weeks)
+   - Implement GhostExchangeService server
+   - Create GhostServiceClient for remote requests
+   - Add streaming support for real-time updates
+
+3. **Phase 5: Testing and Optimization** (2-3 weeks)
+   - Integration tests with gRPC
+   - Performance benchmarking
+   - Memory optimization and scalability testing
+
 ## Next Steps
 
-1. Review and approve implementation plan
-2. Set up development environment with MPI
-3. Create detailed design for Phase 1
-4. Begin implementation of neighbor detection
+1. **Phase 2 Implementation** - Start with protobuf integration
+   - Add `toProtobuf()` and `fromProtobuf()` methods to GhostElement, GhostLayer
+   - Implement SpatialKey serialization for MortonKey and TetreeKey
+   - Create ContentSerializer interface for generic content handling
+   - Add batch serialization methods for efficient network transport
 
-This plan provides a roadmap to achieve ghost functionality parity with t8code while maintaining the design principles and performance characteristics of the lucien spatial index.
+2. **Phase 3 Implementation** - Build gRPC communication layer
+   - Implement GhostExchangeServiceImpl server using virtual threads
+   - Create GhostServiceClient with synchronous calls and connection pooling
+   - Add bidirectional streaming using blocking I/O with virtual threads
+   - Implement service discovery and fault tolerance using virtual thread executors
+
+3. **Distributed Testing** - Validate with multi-process scenarios
+   - Create multi-process test harness using gRPC
+   - Test ghost synchronization across distributed spatial indices
+   - Validate performance under concurrent load
+
+4. **Performance Optimization** - Ensure scalability targets are met
+   - Profile protobuf serialization overhead
+   - Optimize network batching strategies
+   - Test memory usage with large ghost sets
+
+This plan has been updated to reflect the substantial progress made on core ghost functionality. The remaining work focuses on distributed communication and optimization.
