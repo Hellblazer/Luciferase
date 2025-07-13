@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.octree.Octree;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,16 +97,17 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     
     @Override
     public boolean isBoundaryElement(MortonKey element, Direction direction) {
-        var coords = decodeCoordinates(element);
+        // Decode coordinates directly - these are actual coordinate values
+        int[] rawCoords = MortonCurve.decode(element.getMortonCode());
         var cellSize = 1L << (Constants.getMaxRefinementLevel() - element.getLevel());
         
         return switch (direction) {
-            case POSITIVE_X -> coords[0] + cellSize >= maxCoordinate;
-            case NEGATIVE_X -> coords[0] == 0;
-            case POSITIVE_Y -> coords[1] + cellSize >= maxCoordinate;
-            case NEGATIVE_Y -> coords[1] == 0;
-            case POSITIVE_Z -> coords[2] + cellSize >= maxCoordinate;
-            case NEGATIVE_Z -> coords[2] == 0;
+            case POSITIVE_X -> rawCoords[0] + cellSize > maxCoordinate;
+            case NEGATIVE_X -> rawCoords[0] == 0;
+            case POSITIVE_Y -> rawCoords[1] + cellSize > maxCoordinate;
+            case NEGATIVE_Y -> rawCoords[1] == 0;
+            case POSITIVE_Z -> rawCoords[2] + cellSize > maxCoordinate;
+            case NEGATIVE_Z -> rawCoords[2] == 0;
         };
     }
     
@@ -160,41 +162,25 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     
     /**
      * Decode Morton code to coordinates.
-     * This is a simplified version - the actual implementation would use
-     * the optimized Morton decoding from the Octree class.
      */
-    private long[] decodeCoordinates(MortonKey key) {
-        // Extract interleaved bits
-        var morton = key.getMortonCode();
-        var x = 0L;
-        var y = 0L;
-        var z = 0L;
-        
-        for (int i = 0; i < 21; i++) {
-            x |= ((morton & (1L << (3 * i))) >>> (3 * i)) << i;
-            y |= ((morton & (1L << (3 * i + 1))) >>> (3 * i + 1)) << i;
-            z |= ((morton & (1L << (3 * i + 2))) >>> (3 * i + 2)) << i;
-        }
+    public long[] decodeCoordinates(MortonKey key) {
+        // Use the proper MortonCurve decode
+        int[] decoded = MortonCurve.decode(key.getMortonCode());
         
         // Shift to correct level
         var shift = Constants.getMaxRefinementLevel() - key.getLevel();
-        return new long[] {x << shift, y << shift, z << shift};
+        return new long[] {
+            (long)decoded[0] << shift,
+            (long)decoded[1] << shift,
+            (long)decoded[2] << shift
+        };
     }
     
     /**
      * Encode coordinates to Morton code.
-     * This is a simplified version - the actual implementation would use
-     * the optimized Morton encoding from the Octree class.
      */
     private long encodeMorton(long x, long y, long z) {
-        var morton = 0L;
-        
-        for (int i = 0; i < 21; i++) {
-            morton |= ((x & (1L << i)) << (2 * i)) |
-                     ((y & (1L << i)) << (2 * i + 1)) |
-                     ((z & (1L << i)) << (2 * i + 2));
-        }
-        
-        return morton;
+        // Use the proper MortonCurve encode
+        return MortonCurve.encode((int)x, (int)y, (int)z);
     }
 }

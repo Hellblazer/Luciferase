@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostType;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.Constants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -138,9 +139,36 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<?>> {
     
     @Override
     public boolean isBoundaryElement(TetreeKey<?> element, Direction direction) {
-        // TODO: Implement boundary detection for tetree
-        // This requires access to the tetree bounds and proper coordinate extraction
-        return false;
+        var tet = keyToTet(element);
+        
+        // Get the tetrahedron's bounding box
+        var coords = tet.coordinates();
+        
+        // Find min and max coordinates across all vertices
+        float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
+        float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
+        float minZ = Float.MAX_VALUE, maxZ = Float.MIN_VALUE;
+        
+        for (var vertex : coords) {
+            minX = Math.min(minX, vertex.x);
+            maxX = Math.max(maxX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            maxY = Math.max(maxY, vertex.y);
+            minZ = Math.min(minZ, vertex.z);
+            maxZ = Math.max(maxZ, vertex.z);
+        }
+        
+        // Maximum coordinate value (2^21 - 1)
+        long maxCoord = (1L << Constants.getMaxRefinementLevel()) - 1;
+        
+        return switch (direction) {
+            case POSITIVE_X -> Math.round(maxX) >= maxCoord;
+            case NEGATIVE_X -> Math.round(minX) <= 0;
+            case POSITIVE_Y -> Math.round(maxY) >= maxCoord;
+            case NEGATIVE_Y -> Math.round(minY) <= 0;
+            case POSITIVE_Z -> Math.round(maxZ) >= maxCoord;
+            case NEGATIVE_Z -> Math.round(minZ) <= 0;
+        };
     }
     
     @Override
@@ -302,7 +330,7 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<?>> {
     /**
      * Convert a TetreeKey to a Tet object.
      */
-    private Tet keyToTet(TetreeKey<?> key) {
+    public Tet keyToTet(TetreeKey<?> key) {
         // Extract the level and TM-index data from the key
         byte level = key.getLevel();
         

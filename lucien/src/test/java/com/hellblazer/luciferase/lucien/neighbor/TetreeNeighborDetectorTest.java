@@ -159,20 +159,29 @@ class TetreeNeighborDetectorTest {
     
     @Test
     void testBoundaryDetection() {
+        // Insert entity at origin to test negative boundaries
+        tetree.insert(new Point3f(5, 5, 5), (byte)5, null);
+        
         var keys = tetree.getSortedSpatialIndices();
-        assertFalse(keys.isEmpty(), "Tree should have keys after insertion");
-        
-        var testKey = keys.first();
-        
-        // Test boundary detection (currently returns false - placeholder)
-        for (var dir : NeighborDetector.Direction.values()) {
-            assertFalse(detector.isBoundaryElement(testKey, dir),
-                       "Boundary detection is not yet implemented");
+        TetreeKey<?> originKey = null;
+        for (var key : keys) {
+            if (key.getLevel() > 0) {
+                originKey = key;
+                break;
+            }
         }
+        assertNotNull(originKey, "Should find non-root key");
         
-        var boundaryDirs = detector.getBoundaryDirections(testKey);
-        assertTrue(boundaryDirs.isEmpty(),
-                  "Boundary directions should be empty for non-implemented detection");
+        // Should be at negative boundaries
+        assertTrue(detector.isBoundaryElement(originKey, NeighborDetector.Direction.NEGATIVE_X));
+        assertTrue(detector.isBoundaryElement(originKey, NeighborDetector.Direction.NEGATIVE_Y));
+        assertTrue(detector.isBoundaryElement(originKey, NeighborDetector.Direction.NEGATIVE_Z));
+        assertFalse(detector.isBoundaryElement(originKey, NeighborDetector.Direction.POSITIVE_X));
+        assertFalse(detector.isBoundaryElement(originKey, NeighborDetector.Direction.POSITIVE_Y));
+        assertFalse(detector.isBoundaryElement(originKey, NeighborDetector.Direction.POSITIVE_Z));
+        
+        var boundaryDirs = detector.getBoundaryDirections(originKey);
+        assertEquals(3, boundaryDirs.size(), "Should have 3 boundary directions");
     }
     
     @Test
