@@ -16,4 +16,4 @@ Luciferase provides spatial indexing for 3D applications:
 ___
 This library is licensed under the AGPL v3.0, requires Java 23+ and is built with Maven 3.91+.  To build, cd into the root directory and do:
 
-    mvn clean install
+    ./mvnw clean install
