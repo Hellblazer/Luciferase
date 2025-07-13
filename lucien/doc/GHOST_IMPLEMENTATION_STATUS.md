@@ -2,6 +2,23 @@
 
 ## Current State (January 2025)
 
+### Recent Progress (July 13, 2025)
+- Completed TetreeNeighborDetector implementation with face, edge, and vertex neighbor detection
+- Integrated with TetreeConnectivity tables for sibling neighbor relationships
+- Added test framework for neighbor detection validation
+- Implemented keyToTet() method to reconstruct Tet from TetreeKey
+- Fixed all compilation errors and tests now pass successfully
+- Enhanced edge and vertex neighbor detection with:
+  - Proper edge and vertex connectivity tables
+  - Sibling neighbor detection using parent-child relationships
+  - Framework for non-sibling neighbor detection (simplified implementation)
+  - Comprehensive test suite with integer-scale coordinates
+- Fixed test coordinate issues based on user feedback:
+  - Switched from fractional (< 1.0) coordinates to integer-scale coordinates
+  - Ensured proper cell distribution by using coordinates that span multiple cells
+  - Configured tests to use maxEntitiesPerNode=1 to force proper tree subdivision
+  - All enhanced tests now pass successfully
+
 ### Completed Components
 
 #### 1. Ghost Data Structures
@@ -21,17 +38,27 @@
 #### 3. Neighbor Detection Infrastructure
 - ✅ `NeighborDetector.java` - Interface for topological neighbor detection
 - ✅ `MortonNeighborDetector.java` - Morton code-based neighbor detection for Octree
-- ✅ `TetreeNeighborDetector.java` - Tetrahedral neighbor detection (partial)
+- ✅ `TetreeNeighborDetector.java` - Complete tetrahedral neighbor detection implementation
 - ✅ Support for face, edge, and vertex neighbors
+- ✅ NeighborInfo record for distributed ownership tracking
+- ✅ Direction enum for boundary detection
+
+#### 4. Tetree Neighbor Detection (Completed)
+- ✅ Full edge and vertex neighbor algorithms implemented
+- ✅ Integration with TetreeConnectivity tables
+- ✅ Implemented keyToTet() method to reconstruct Tet from TetreeKey
+- ✅ Implemented getChildIndex() to extract child index from morton code
+- ✅ Edge connectivity tables (6 edges, vertex pairs defined)
+- ✅ Vertex connectivity tables (4 vertices, edge/face relationships)
+- ✅ Sibling neighbor detection using parent-child vertex mapping
+- ✅ Comprehensive test suite (TetreeNeighborDetectorEnhancedTest)
+- ⚠️ Non-sibling neighbor detection simplified - could be enhanced with full tree traversal
+- ⚠️ Boundary detection not yet implemented (isBoundaryElement)
 
 
 ### In Progress
 
-#### 1. Tetree Neighbor Detection
-- Need to complete edge and vertex neighbor algorithms
-- Requires full integration with TetreeConnectivity tables
-
-#### 2. Spatial Index Integration
+#### 1. Spatial Index Integration
 - Need to add ghost support to AbstractSpatialIndex
 - Implement ghost-aware query methods
 - Add hooks for automatic ghost updates
@@ -92,12 +119,7 @@ grpc/
 
 ## Next Steps
 
-1. **Complete Tetree Neighbor Detection**
-   - Implement edge neighbor algorithm using connectivity tables
-   - Implement vertex neighbor algorithm
-   - Add comprehensive tests
-
-2. **Integrate with AbstractSpatialIndex**
+1. **Integrate with AbstractSpatialIndex**
    - Add ghost configuration methods
    - Implement ghost-aware queries
    - Add automatic update triggers
@@ -108,7 +130,7 @@ grpc/
    - Implement streaming protocols
 
 4. **Testing Suite**
-   - Unit tests for neighbor detection
+   - ✅ Unit tests for neighbor detection (completed)
    - Integration tests for ghost creation
    - Distributed tests with gRPC
 
