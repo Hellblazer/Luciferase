@@ -33,13 +33,13 @@ message SpatialKey {
 // Morton key for Octree
 message MortonKey {
     uint64 morton_code = 1;
-    uint32 level = 2;
 }
 
 // Tetree key
 message TetreeKey {
-    repeated uint32 types = 1;  // Type chain from root
-    uint32 level = 2;
+    uint64 low = 1;
+    uint64 high = 2;
+    uint32 level = 3;
 }
 
 // Ghost element representation

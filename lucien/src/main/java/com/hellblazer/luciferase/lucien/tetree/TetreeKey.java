@@ -249,4 +249,47 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return (K) ROOT;
     }
 
+    // ===== Protobuf Serialization =====
+
+    /**
+     * Convert this TetreeKey to protobuf representation with optimal space usage.
+     * For CompactTetreeKey (levels 0-10), only sets low and level fields.
+     * For ExtendedTetreeKey (levels 0-20), conditionally sets high field only when needed.
+     *
+     * @return protobuf TetreeKey message
+     */
+    public com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey toProto() {
+        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.newBuilder()
+            .setLow(getLowBits())
+            .setLevel(level);
+        
+        // Only set high bits if they're non-zero (optimization for compact keys)
+        long highBits = getHighBits();
+        if (highBits != 0L) {
+            builder.setHigh(highBits);
+        }
+        
+        return builder.build();
+    }
+
+    /**
+     * Create a TetreeKey from protobuf representation, automatically choosing
+     * the optimal implementation (CompactTetreeKey vs ExtendedTetreeKey).
+     *
+     * @param proto the protobuf TetreeKey message
+     * @return optimal TetreeKey implementation
+     */
+    public static TetreeKey<?> fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey proto) {
+        byte level = (byte) proto.getLevel();
+        long lowBits = proto.getLow();
+        long highBits = proto.getHigh();
+        
+        // Use CompactTetreeKey for levels <= 10 and when high bits are zero
+        if (level <= MAX_COMPACT_LEVEL && highBits == 0L) {
+            return new CompactTetreeKey(level, lowBits);
+        } else {
+            return new ExtendedTetreeKey(level, lowBits, highBits);
+        }
+    }
+
 }
