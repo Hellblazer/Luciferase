@@ -1,6 +1,6 @@
 # TM-Index Limitations and Solutions
 
-**Note**: As of July 11, 2025, concurrent optimizations have reversed performance characteristics. Tetree is now 2.1x to 6.2x faster for insertions despite the O(level) tmIndex computation. The limitations described below remain accurate but their practical impact has been overshadowed by concurrent data structure benefits.
+**Note**: As of July 11, 2025, concurrent optimizations have reversed performance characteristics. Tetree is now 2.1x to 6.2x faster for insertions despite the O(level) tmIndex computation. The limitations described below remain accurate but their practical impact has been overshadowed by concurrent data structure benefits. The Prism spatial index provides an alternative approach using composite keys (LineKey + TriangleKey) that avoids the parent chain walk entirely.
 
 ## Overview
 

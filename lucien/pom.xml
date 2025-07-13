@@ -51,4 +51,273 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- Performance Testing Profile -->
+        <profile>
+            <id>performance</id>
+            <properties>
+                <skipTests>false</skipTests>
+                <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
+                <performance.output.dir>${project.build.directory}/performance-results</performance.output.dir>
+                <performance.timestamp>${maven.build.timestamp}</performance.timestamp>
+            </properties>
+
+            <build>
+                <plugins>
+                    <!-- Ensure clean build before performance tests -->
+                    <plugin>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>clean-performance</id>
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>clean</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Increase memory for performance tests -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*Benchmark.java</include>
+                                <include>**/*PerformanceTest.java</include>
+                                <include>**/OctreeVsTetreeBenchmark.java</include>
+                                <include>**/SpatialIndexStressTest.java</include>
+                                <include>**/BaselinePerformanceBenchmark.java</include>
+                                <include>**/PrismStressTest.java</include>
+                                <include>**/Prism*ComparisonTest.java</include>
+                                <include>**/LockFreePerformanceTest.java</include>
+                            </includes>
+                            <argLine>-Xmx8g -XX:MaxMetaspaceSize=512m</argLine>
+                            <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                            <systemPropertyVariables>
+                                <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
+                                <performance.output.dir>${performance.output.dir}</performance.output.dir>
+                            </systemPropertyVariables>
+                            <reportFormat>plain</reportFormat>
+                            <useFile>true</useFile>
+                            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        </configuration>
+                    </plugin>
+
+                    <!-- Create performance results directory -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>create-performance-dir</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${performance.output.dir}"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>generate-performance-summary</id>
+                                <phase>post-integration-test</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <echo file="${performance.output.dir}/performance-summary.md">
+# Performance Test Results
+
+**Generated**: ${maven.build.timestamp}
+**Maven Version**: ${maven.version}
+**Java Version**: ${java.version}
+**OS**: ${os.name} ${os.arch}
+
+## Test Execution Summary
+
+Performance tests completed successfully.
+
+## Output Files
+
+Check the following locations for detailed results:
+- Surefire reports: `${project.build.directory}/surefire-reports/`
+- Console output: Individual test `.txt` files in surefire-reports
+
+## Next Steps
+
+1. Review individual test outputs
+2. Extract metrics using: `mvn performance:extract-data`
+3. Update documentation using: `mvn performance:update-docs`
+
+Generated by Maven performance profile.
+                                        </echo>
+                                        <echo message="Performance test results saved to: ${performance.output.dir}"/>
+                                        <echo message="Summary report: ${performance.output.dir}/performance-summary.md"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Performance Data Extraction Profile -->
+        <profile>
+            <id>performance-extract</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>extract-performance-data</id>
+                                <phase>compile</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.lucien.benchmark.PerformanceDataExtractor</mainClass>
+                                    <includePluginDependencies>false</includePluginDependencies>
+                                    <classpathScope>test</classpathScope>
+                                    <args>
+                                        <arg>${project.build.directory}/surefire-reports</arg>
+                                        <arg>${project.build.directory}/performance-results</arg>
+                                    </args>
+                                    <systemProperties>
+                                        <systemProperty>
+                                            <key>output.format</key>
+                                            <value>csv,markdown</value>
+                                        </systemProperty>
+                                    </systemProperties>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Documentation Update Profile -->
+        <profile>
+            <id>performance-docs</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>update-performance-docs</id>
+                                <phase>compile</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.lucien.benchmark.PerformanceDocumentationUpdater</mainClass>
+                                    <args>
+                                        <arg>${project.build.directory}/performance-results</arg>
+                                        <arg>${project.basedir}/doc</arg>
+                                    </args>
+                                    <systemProperties>
+                                        <systemProperty>
+                                            <key>update.mode</key>
+                                            <value>all</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>backup.enabled</key>
+                                            <value>true</value>
+                                        </systemProperty>
+                                    </systemProperties>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Combined Performance Workflow Profile -->
+        <profile>
+            <id>performance-full</id>
+            <properties>
+                <skipTests>false</skipTests>
+                <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
+            </properties>
+            <build>
+                <plugins>
+                    <!-- First: Run performance tests -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>performance-tests</id>
+                                <phase>test</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <configuration>
+                                    <includes>
+                                        <include>**/*Benchmark.java</include>
+                                        <include>**/*PerformanceTest.java</include>
+                                    </includes>
+                                    <argLine>-Xmx8g -XX:MaxMetaspaceSize=512m</argLine>
+                                    <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
+                                    <systemPropertyVariables>
+                                        <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Second: Extract data -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>extract-data</id>
+                                <phase>post-integration-test</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.lucien.benchmark.PerformanceDataExtractor</mainClass>
+                                    <classpathScope>test</classpathScope>
+                                    <args>
+                                        <arg>${project.build.directory}/surefire-reports</arg>
+                                        <arg>${project.build.directory}/performance-results</arg>
+                                    </args>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>update-docs</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.lucien.benchmark.PerformanceDocumentationUpdater</mainClass>
+                                    <classpathScope>test</classpathScope>
+                                    <args>
+                                        <arg>${project.build.directory}/performance-results</arg>
+                                        <arg>${project.basedir}/doc</arg>
+                                    </args>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
