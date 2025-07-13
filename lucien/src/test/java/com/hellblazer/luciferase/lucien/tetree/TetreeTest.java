@@ -166,7 +166,7 @@ public class TetreeTest {
 
     @Test
     void testMultipleTypesInSameCell() {
-        // In tetrahedral decomposition, each grid cell has 6 tetrahedra (types 0-5)
+        // In tetrahedral subdivision, each grid cell has 6 tetrahedra (types 0-5)
         // Entities in the same grid cell but different tetrahedra should be separate
 
         var pos = new Point3f(100, 100, 100);

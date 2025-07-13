@@ -229,7 +229,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     public List<TetreeKey<?>> findCellNeighbors(TetreeKey<? extends TetreeKey> tetIndex) {
         Tet tet = Tet.tetrahedron(tetIndex);
-        // For tetrahedral decomposition, find all neighbors (face-adjacent)
+        // For tetrahedral subdivision, find all neighbors (face-adjacent)
         List<Tet> neighborTets = getNeighborFinder().findAllNeighbors(tet);
         return neighborTets.stream().map(Tet::tmIndex).collect(java.util.stream.Collectors.toList());
     }
@@ -2620,7 +2620,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
      * @param x normalized coordinate [0,1] within cube
      * @param y normalized coordinate [0,1] within cube  
      * @param z normalized coordinate [0,1] within cube
-     * @return tetrahedron type [0-5] for S0-S5 decomposition
+     * @return tetrahedron type [0-5] for S0-S5 subdivision
      */
     private static byte classifyPointInS0S5Cube(double x, double y, double z) {
         // S0-S5 tetrahedron centroids (calculated from vertex averages)

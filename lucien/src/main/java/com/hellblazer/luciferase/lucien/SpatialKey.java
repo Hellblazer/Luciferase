@@ -58,9 +58,9 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     K parent();
 
     /**
-     * Answer the root cell of the decomposition
+     * Answer the root cell of the subdivision
      *
-     * @return K - the root cell of the decomposition
+     * @return K - the root cell of the subdivision
      */
     K root();
 

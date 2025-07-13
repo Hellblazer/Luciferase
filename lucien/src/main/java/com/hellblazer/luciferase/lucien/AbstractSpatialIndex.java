@@ -45,7 +45,7 @@ import java.util.stream.Stream;
 /**
  * Abstract base class for spatial index implementations. Provides common functionality for entity management,
  * configuration, and basic spatial operations while allowing concrete implementations to specialize the spatial
- * decomposition strategy.
+ * subdivision strategy.
  *
  * <h2>Thread Safety and Locking Strategy</h2>
  * <p>This class uses a {@link ConcurrentNavigableMap} (specifically {@link ConcurrentSkipListMap}) for the spatial

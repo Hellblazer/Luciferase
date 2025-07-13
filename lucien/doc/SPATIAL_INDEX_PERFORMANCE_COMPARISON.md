@@ -54,11 +54,11 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 
 1. **Insertion Performance**: Prism is consistently slower than both alternatives, ranging from 1.42x slower than Octree to 4x slower than Tetree. This suggests overhead from its more complex subdivision logic.
 
-2. **Query Performance**: Prism shows the weakest query performance, being 2.58-2.78x slower for k-NN searches compared to the best performer. This may be due to less efficient spatial locality in its rectangular decomposition.
+2. **Query Performance**: Prism shows the weakest query performance, being 2.58-2.78x slower for k-NN searches compared to the best performer. This may be due to less efficient spatial locality in its rectangular subdivision.
 
 3. **Memory Usage**: Prism has the highest memory footprint, using 22-29% more memory than Octree and significantly more than Tetree. The rectangular subdivision strategy appears to create more overhead.
 
-4. **Use Case**: Prism may be better suited for anisotropic data distributions where cubic or tetrahedral decomposition creates inefficiencies, though current benchmarks use uniform random distributions.
+4. **Use Case**: Prism may be better suited for anisotropic data distributions where cubic or tetrahedral subdivision creates inefficiencies, though current benchmarks use uniform random distributions.
 
 ### Use Case Recommendations
 
@@ -66,7 +66,7 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 - K-NN search performance at scale (>10K entities) is critical
 - Update performance matters at scale
 - Memory usage differences (65-73% vs 100%) are not significant
-- Cube-based spatial decomposition fits the problem domain
+- Cube-based spatial subdivision fits the problem domain
 - Predictable, consistent performance is required
 
 **Choose Tetree when:**
@@ -78,7 +78,7 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 
 **Choose Prism when:**
 - Data exhibits strong directional bias or anisotropy
-- Rectangular decomposition matches the problem domain
+- Rectangular subdivision matches the problem domain
 - Memory usage is not a primary concern
 - Custom subdivision strategies are needed
 - Working with streaming or columnar data patterns

@@ -161,7 +161,7 @@ mvn test -Dtest=PrismStreamingDataTest
 - Directional or streaming data patterns
 - Applications with moderate insertion requirements
 - When cubic subdivision creates overhead
-- Workloads where rectangular decomposition fits naturally
+- Workloads where rectangular subdivision fits naturally
 - Medium-scale applications (between Octree and Tetree complexity)
 
 ### Performance Recommendations by Use Case

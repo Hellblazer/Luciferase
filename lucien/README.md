@@ -4,7 +4,7 @@ Spatial indexing for 3D applications with octree, tetree, and prism implementati
 
 ## Quick Start
 
-### Octree (Cubic Decomposition)
+### Octree (Cubic Subdivision)
 
 ```java
 // Create an octree spatial index
@@ -26,7 +26,7 @@ Ray3D ray = new Ray3D(origin, direction);
 Optional<RayIntersection<LongEntityID, GameObject>> hit = octree.rayIntersectFirst(ray);
 ```
 
-### Tetree (Tetrahedral Decomposition) - Recommended
+### Tetree (Tetrahedral Subdivision) - Recommended
 
 ```java
 // Create a tetree spatial index (2-6x faster insertions, 27-35% less memory)
@@ -48,7 +48,7 @@ Ray3D ray = new Ray3D(origin, direction);
 Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFirst(ray);
 ```
 
-### Prism (Anisotropic Decomposition)
+### Prism (Anisotropic Subdivision)
 
 ```java
 // Create a prism spatial index (triangular constraint: x + y < worldSize)
@@ -82,7 +82,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Entity Spanning**: Large entities can span multiple spatial nodes
 - **Thread-Safe**: Concurrent access with read-write locks
 - **High Performance**: O(1) node access, optimized algorithms
-- **S0-S5 Decomposition**: Tetree uses standard 6-tetrahedra cube tiling
+- **S0-S5 Subdivision**: Tetree uses standard 6-tetrahedra cube tiling
 
 ### Advanced Features
 
@@ -130,7 +130,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Range queries are critical** (1.4-6x faster than Tetree)
 - Need support for negative coordinates
 - Working with existing Morton curve tools/algorithms
-- Uniform cubic decomposition matches your use case
+- Uniform cubic subdivision matches your use case
 - Predictable, well-understood performance characteristics needed
 
 ### Use Prism When:
@@ -139,7 +139,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Terrain or urban modeling applications**
 - **Horizontal precision is more important than vertical**
 - Data naturally fits triangular constraint (x + y < worldSize)
-- 2D triangular decomposition combined with 1D linear decomposition is preferred
+- 2D triangular subdivision combined with 1D linear subdivision is preferred
 - Acceptable trade-off of 1.5x slower insertion for specialized geometry
 
 ## Documentation
@@ -198,7 +198,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interfa
 - **Entity Management**: Centralized lifecycle with multiple ID generation strategies
 - **Spatial Queries**: k-NN, range, ray intersection, collision detection, frustum culling
 - **Performance Optimizations**: ConcurrentSkipListMap, ObjectPools, lock-free updates, lazy evaluation
-- **Geometric Accuracy**: S0-S5 tetrahedral decomposition with 100% containment
+- **Geometric Accuracy**: S0-S5 tetrahedral subdivision with 100% containment
 - **Forest Architecture**: Complete multi-tree management with adaptive and hierarchical specializations
 
 ## Usage Examples
@@ -311,10 +311,11 @@ AGPL v3.0 - See LICENSE file for details
 
 ## Status
 
-- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (anisotropic data)
+- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (
+  anisotropic data)
 - ✅ **Complete Forest Implementation**: Adaptive and hierarchical forests with 15 test classes
 - ✅ **Lock-Free Concurrency**: 264K entity movements/sec with atomic protocols
-- ✅ **S0-S5 Tetrahedral Decomposition**: 100% geometric containment achieved
+- ✅ **S0-S5 Tetrahedral Subdivision**: 100% geometric containment achieved
 - ✅ **Comprehensive API Coverage**: 13 specialized APIs for all spatial operations
 - ✅ **Unified Architecture**: Single API across all three spatial index implementations
 - ✅ **Extensive Test Coverage**: Full test coverage with performance benchmarks

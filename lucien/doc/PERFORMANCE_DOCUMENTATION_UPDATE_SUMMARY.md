@@ -46,7 +46,7 @@
 
 ### Prism Use Cases
 - Anisotropic data distributions with directional bias
-- Rectangular decomposition matching data patterns
+- Rectangular subdivision matching data patterns
 - Streaming or columnar data with natural layering
 - Custom subdivision strategies for specific use cases
 - Performance requirements between Octree and Tetree

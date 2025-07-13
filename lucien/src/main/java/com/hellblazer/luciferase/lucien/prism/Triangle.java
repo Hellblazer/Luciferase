@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.lucien.prism;
 import java.util.Objects;
 
 /**
- * 2D triangular element for prism horizontal (x,y) decomposition.
+ * 2D triangular element for prism horizontal (x,y) subdivision.
  * 
  * Triangle elements provide 4-way subdivision in the horizontal plane, forming the base component
  * of prism spatial keys. The space-filling curve is complex, adapted from t8code's triangular SFC

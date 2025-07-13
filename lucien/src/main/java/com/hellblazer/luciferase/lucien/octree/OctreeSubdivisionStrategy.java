@@ -28,7 +28,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Octree-specific subdivision strategy implementation. Optimized for cubic spatial decomposition with Morton ordering.
+ * Octree-specific subdivision strategy implementation. Optimized for cubic spatial subdivision with Morton ordering.
  *
  * Key features: - Efficient child node calculation using Morton codes - Support for entity spanning across multiple
  * octants - Adaptive subdivision based on entity distribution - Memory-efficient single child creation

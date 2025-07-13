@@ -2,11 +2,14 @@
 
 ## Overview
 
-The Prism spatial index provides anisotropic spatial decomposition combining fine horizontal granularity with coarse vertical granularity. This design is ideal for applications where horizontal precision is more important than vertical precision, such as terrain systems, urban planning, and layered environmental data.
+The Prism spatial index provides anisotropic spatial subdivision combining fine horizontal granularity with coarse
+vertical granularity. This design is ideal for applications where horizontal precision is more important than vertical
+precision, such as terrain systems, urban planning, and layered environmental data.
 
 The Prism implementation follows a hybrid approach, combining:
-- **2D Triangular Decomposition**: For horizontal (x,y) space using 4-way subdivision
-- **1D Linear Decomposition**: For vertical (z) space using 2-way subdivision
+
+- **2D Triangular Subdivision**: For horizontal (x,y) space using 4-way subdivision
+- **1D Linear Subdivision**: For vertical (z) space using 2-way subdivision
 - **Composite Space-Filling Curve**: Preserving spatial locality across both dimensions
 
 ## Table of Contents
@@ -26,19 +29,21 @@ The Prism implementation follows a hybrid approach, combining:
 
 ## Core Concepts
 
-### Anisotropic Decomposition
+### Anisotropic Subdivision
 
 The Prism structure provides different spatial granularities for different dimensions:
 
-- **Horizontal (X,Y)**: Fine-grained triangular decomposition with 4-way subdivision
-- **Vertical (Z)**: Coarse-grained linear decomposition with 2-way subdivision
+- **Horizontal (X,Y)**: Fine-grained triangular subdivision with 4-way subdivision
+- **Vertical (Z)**: Coarse-grained linear subdivision with 2-way subdivision
 
 This creates a **composite 8-way subdivision** per prism level:
+
 - 4 triangle children × 2 line children = 8 total children
 
 ### Triangular Constraint
 
-All coordinates must satisfy the constraint **x + y < worldSize** in normalized space. This confines entities to a triangular region in the horizontal plane.
+All coordinates must satisfy the constraint **x + y < worldSize** in normalized space. This confines entities to a
+triangular region in the horizontal plane.
 
 ### Space-Filling Curve
 
@@ -127,7 +132,7 @@ public Prism(EntityIDGenerator<ID> idGenerator, float worldSize, int maxLevel)
 
 ```java
 // Calculate spatial index for position
-protected PrismKey calculateSpatialIndex(Point3f position, byte level)
+private PrismKey calculateSpatialIndex(Point3f position, byte level)
 
 // Distance estimation for k-NN searches
 protected float estimateNodeDistance(PrismKey prismKey, Point3f queryPoint)
@@ -136,10 +141,11 @@ protected float estimateNodeDistance(PrismKey prismKey, Point3f queryPoint)
 protected boolean doesRayIntersectNode(PrismKey prismKey, Ray3D ray)
 
 // Frustum culling support
-protected boolean doesFrustumIntersectNode(PrismKey prismKey, Frustum3D frustum)
+protected boolean doesFrustumIntersectNode(PrismKey prismKey, Frustum3D fr
 ```
 
 **Example:**
+
 ```java
 // Create Prism spatial index
 SequentialLongIDGenerator idGen = new SequentialLongIDGenerator();
@@ -188,6 +194,7 @@ public float[] getWorldBounds()
 ```
 
 **Example:**
+
 ```java
 // Create PrismKey from coordinates
 PrismKey key = PrismKey.fromWorldCoordinates(0.3f, 0.4f, 0.5f, 10);
@@ -207,7 +214,7 @@ PrismKey child0 = key.child(0);           // First child in Morton order
 
 ### 3. Triangle
 
-2D triangular element for horizontal decomposition.
+2D triangular element for horizontal subdivision.
 
 ```java
 public final class Triangle
@@ -244,6 +251,7 @@ public Triangle neighbor(int edge)      // Specific edge neighbor
 ```
 
 **Example:**
+
 ```java
 // Create triangle at specific level
 Triangle triangle = Triangle.fromWorldCoordinate(0.3f, 0.4f, 10);
@@ -261,7 +269,7 @@ Triangle rightNeighbor = triangle.neighbor(0);
 
 ### 4. Line
 
-1D linear element for vertical decomposition.
+1D linear element for vertical subdivision.
 
 ```java
 public final class Line
@@ -297,6 +305,7 @@ public Line neighbor(int direction) // -1 (below) or +1 (above)
 ```
 
 **Example:**
+
 ```java
 // Create line element
 Line line = Line.fromWorldCoordinate(0.5f, 10);
@@ -342,6 +351,7 @@ public static float computeVolume(PrismKey prismKey)
 ```
 
 **Example:**
+
 ```java
 PrismKey prism = PrismKey.fromWorldCoordinates(0.3f, 0.4f, 0.5f, 10);
 
@@ -401,9 +411,9 @@ The Prism spatial index includes several optimizations for the anisotropic struc
 public float getCellSizeAtLevelFloat(byte level)
 
 // Efficient parent/child navigation
-protected PrismKey getParentIndex(PrismKey childKey)
+private PrismKey getParentIndex(PrismKey childKey)
 protected PrismKey getChildIndex(PrismKey parentKey, int childIdx)
-protected List<PrismKey> getAllChildren(PrismKey parentKey)
+protected List<PrismKey> getAllChildren(PrismKey parent
 ```
 
 ## Triangular Prism Geometry
@@ -411,6 +421,7 @@ protected List<PrismKey> getAllChildren(PrismKey parentKey)
 ### Prism Structure
 
 A triangular prism has:
+
 - **6 vertices**: 3 on bottom triangle, 3 on top triangle
 - **5 faces**: 2 triangular faces (top/bottom), 3 quadrilateral side faces
 - **9 edges**: 3 vertical edges, 3 bottom edges, 3 top edges
@@ -455,6 +466,7 @@ public Set<ID> findInTriangularRegion(Triangle searchTriangle, float minZ, float
 Finds all entities within a triangular region in the XY plane and a Z range.
 
 **Example:**
+
 ```java
 // Create search triangle
 Triangle searchArea = Triangle.fromWorldCoordinate(0.3f, 0.4f, 8); // Larger area at level 8
@@ -475,9 +487,10 @@ for (ID entityId : entities) {
 public Set<ID> findInVerticalLayer(float minZ, float maxZ)
 ```
 
-Efficiently finds all entities within a horizontal layer, leveraging the coarse vertical decomposition.
+Efficiently finds all entities within a horizontal layer, leveraging the coarse vertical subdivision.
 
 **Example:**
+
 ```java
 // Find all entities on ground level
 Set<ID> groundEntities = prism.findInVerticalLayer(0.0f, 10.0f);
@@ -499,6 +512,7 @@ public Set<ID> findInTriangularPrism(Triangle searchTriangle, float minZ, float 
 Combines triangular region and vertical layer queries for precise volume searches.
 
 **Example:**
+
 ```java
 // Define search volume
 Triangle searchTriangle = Triangle.fromWorldCoordinate(0.2f, 0.3f, 10);
@@ -530,6 +544,7 @@ public static List<PrismKey> findAllFaceNeighbors(PrismKey prism)
 ```
 
 **Example:**
+
 ```java
 PrismKey prism = PrismKey.fromWorldCoordinates(0.3f, 0.4f, 0.5f, 10);
 
@@ -553,6 +568,7 @@ public static Set<PrismKey> findVertexNeighbors(PrismKey prism)
 ```
 
 **Example:**
+
 ```java
 // Find edge neighbors (share a common edge)
 Set<PrismKey> edgeNeighbors = PrismNeighborFinder.findEdgeNeighbors(prism);
@@ -575,6 +591,7 @@ public static List<PrismKey> findCrossLevelNeighbors(PrismKey prism, int maxLeve
 ```
 
 **Example:**
+
 ```java
 // Find neighbors within 2 levels of current prism
 List<PrismKey> crossLevelNeighbors = PrismNeighborFinder.findCrossLevelNeighbors(prism, 2);
@@ -600,12 +617,14 @@ public static IntersectionResult intersectRayPrism(Ray3D ray, PrismKey prism)
 ```
 
 **IntersectionResult fields:**
+
 - `boolean hit` - Whether intersection occurred
-- `float tNear, tFar` - Ray parameters for entry/exit points  
+- `float tNear, tFar` - Ray parameters for entry/exit points
 - `Point3f nearPoint, farPoint` - World coordinates of intersection points
 - `int nearFace, farFace` - Which faces were hit
 
 **Example:**
+
 ```java
 // Cast ray from camera
 Point3f rayOrigin = camera.getPosition();
@@ -630,6 +649,7 @@ public static boolean intersectRayAABB(Ray3D ray, PrismKey prism)
 ```
 
 **Example:**
+
 ```java
 // Quick culling test before detailed intersection
 if (PrismRayIntersector.intersectRayAABB(ray, prism)) {
@@ -646,6 +666,7 @@ public static float[] findEntryExitPoints(Ray3D ray, PrismKey prism)
 ```
 
 **Example:**
+
 ```java
 // For volume rendering or transparency
 float[] entryExit = PrismRayIntersector.findEntryExitPoints(ray, prism);
@@ -669,12 +690,14 @@ public static CollisionResult testPrismPrismCollision(PrismKey prism1, PrismKey 
 ```
 
 **CollisionResult fields:**
+
 - `boolean collides` - Whether collision occurred
 - `float penetrationDepth` - How deeply objects interpenetrate
 - `Vector3f separationAxis` - Direction to separate objects
 - `Point3f contactPoint` - World coordinate of contact
 
 **Example:**
+
 ```java
 // Test collision between two prisms
 PrismKey prism1 = PrismKey.fromWorldCoordinates(0.3f, 0.4f, 0.5f, 10);
@@ -702,6 +725,7 @@ public static CollisionResult testPrismSphereCollision(PrismKey prism,
 ```
 
 **Example:**
+
 ```java
 // Test collision with sphere (player, projectile, etc.)
 Point3f playerPos = new Point3f(100, 150, 50);
@@ -724,6 +748,7 @@ public static Set<PrismKey> findCollidingPrisms(PrismKey prism,
 ```
 
 **Example:**
+
 ```java
 // Find all collisions for moving object
 PrismKey movingObject = getMovingObjectPrism();
@@ -1081,4 +1106,6 @@ public class ResourceDistributionSystem {
 }
 ```
 
-These examples demonstrate the Prism spatial index's strengths in handling anisotropic spatial data with fine horizontal precision and coarse vertical granularity, making it ideal for layered environmental systems, urban planning, and terrain-based applications.
+These examples demonstrate the Prism spatial index's strengths in handling anisotropic spatial data with fine horizontal
+precision and coarse vertical granularity, making it ideal for layered environmental systems, urban planning, and
+terrain-based applications.

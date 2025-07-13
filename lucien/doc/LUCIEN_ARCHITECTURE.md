@@ -2,13 +2,17 @@
 
 ## Overview
 
-The lucien module provides spatial indexing capabilities through a unified architecture that supports octree (cubic), tetree (tetrahedral), and prism (anisotropic) decomposition strategies. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each spatial indexing approach.
+The lucien module provides spatial indexing capabilities through a unified architecture that supports octree (cubic),
+tetree (tetrahedral), and prism (anisotropic) subdivision strategies. The module uses inheritance to maximize code
+reuse while maintaining the unique characteristics of each spatial indexing approach.
 
 The Luciferase codebase underwent architectural simplification in 2025, focusing on core spatial indexing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 150 Java files organized across 12 packages, providing a comprehensive spatial indexing system with advanced features including collision detection, tree balancing, visitor patterns, and forest management. All core features are complete, including the S0-S5 tetrahedral decomposition and anisotropic prism decomposition.
+The module consists of 150 Java files organized across 12 packages, providing a comprehensive spatial indexing system
+with advanced features including collision detection, tree balancing, visitor patterns, and forest management. All core
+features are complete, including the S0-S5 tetrahedral subdivision and anisotropic prism subdivision.
 
 ## Package Structure
 
@@ -112,7 +116,8 @@ SpatialNodeStorage<ID> (interface)
     └── SpatialNodeImpl<ID> (unified implementation used by both Octree and Tetree)
 ```
 
-The previous `OctreeNode` and `TetreeNodeImpl` classes have been eliminated in favor of a single unified node implementation.
+The previous `OctreeNode` and `TetreeNodeImpl` classes have been eliminated in favor of a single unified node
+implementation.
 
 ## AbstractSpatialIndex - The Foundation
 
@@ -120,13 +125,15 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 
 ### Common State (Updated July 2025)
 
-- `spatialIndex: ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>` - **Thread-safe spatial storage** using ConcurrentSkipListMap (replaces dual HashMap/TreeSet structure)
+- `spatialIndex: ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>` - **Thread-safe spatial storage** using
+  ConcurrentSkipListMap (replaces dual HashMap/TreeSet structure)
 - `entityManager: EntityManager<ID, Content>` - Centralized entity lifecycle management
 - `maxEntitiesPerNode: int` - Threshold for node subdivision
 - `maxDepth: byte` - Maximum tree depth
 - `spanningPolicy: EntitySpanningPolicy` - Controls entity spanning behavior
 
-**Key Architectural Change (July 2025):** Eliminated separate `sortedSpatialIndices` NavigableSet in favor of single ConcurrentSkipListMap providing both O(log n) access and sorted iteration with thread safety.
+**Key Architectural Change (July 2025):** Eliminated separate `sortedSpatialIndices` NavigableSet in favor of single
+ConcurrentSkipListMap providing both O(log n) access and sorted iteration with thread safety.
 
 ### Common Operations
 
@@ -141,7 +148,7 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 The actual AbstractSpatialIndex defines 17 abstract methods for implementation-specific behavior:
 
 - `addNeighboringNodes(Key, Queue<Key>, Set<Key>)` - Neighbor traversal for searches
-- `calculateSpatialIndex(Point3f, byte)` - Convert position to spatial index  
+- `calculateSpatialIndex(Point3f, byte)` - Convert position to spatial index
 - `createDefaultSubdivisionStrategy()` - Create default subdivision strategy
 - `doesFrustumIntersectNode(Key, Frustum3D)` - Frustum intersection testing
 - `doesNodeIntersectVolume(Key, Spatial)` - Volume intersection testing
@@ -160,7 +167,7 @@ The actual AbstractSpatialIndex defines 17 abstract methods for implementation-s
 
 ## Octree Implementation
 
-The `Octree` class provides Morton curve-based cubic spatial decomposition:
+The `Octree` class provides Morton curve-based cubic spatial subdivision:
 
 ### Unique Characteristics
 
@@ -177,18 +184,18 @@ The `Octree` class provides Morton curve-based cubic spatial decomposition:
 
 ## Tetree Implementation
 
-The `Tetree` class provides tetrahedral spatial decomposition:
+The `Tetree` class provides tetrahedral spatial subdivision:
 
 ### Unique Characteristics
 
 - Uses tetrahedral space-filling curve
 - Requires positive coordinates only
-- 6 tetrahedra per grid cell (S0-S5 decomposition)
+- 6 tetrahedra per grid cell (S0-S5 subdivision)
 - Complex neighbor relationships
 
-### S0-S5 Tetrahedral Decomposition (July 2025)
+### S0-S5 Tetrahedral Subdivision (July 2025)
 
-The Tetree uses the standard S0-S5 decomposition where 6 tetrahedra completely tile a cube:
+The Tetree uses the standard S0-S5 subdivision where 6 tetrahedra completely tile a cube:
 
 - **S0**: Vertices {0, 1, 3, 7} - X-dominant, upper diagonal
 - **S1**: Vertices {0, 2, 3, 7} - Y-dominant, upper diagonal
@@ -198,9 +205,10 @@ The Tetree uses the standard S0-S5 decomposition where 6 tetrahedra completely t
 - **S5**: Vertices {0, 2, 6, 7} - Y-dominant, lower diagonal
 
 This replaced the legacy ei/ej algorithm and provides:
+
 - 100% cube coverage with no gaps or overlaps
 - Correct geometric containment for all entities
-- Standard decomposition matching academic literature
+- Standard subdivision matching academic literature
 
 ### Key Methods
 
@@ -212,27 +220,28 @@ This replaced the legacy ei/ej algorithm and provides:
 
 ## Prism Implementation
 
-The `Prism` class provides anisotropic spatial decomposition using composite triangular and linear indices:
+The `Prism` class provides anisotropic spatial subdivision using composite triangular and linear indices:
 
 ### Unique Characteristics
 
-- Uses anisotropic decomposition (2D triangular + 1D linear)
+- Uses anisotropic subdivision (2D triangular + 1D linear)
 - Composite spatial key combining Line and Triangle indices
 - Triangular constraint: x + y < worldSize for valid coordinates
 - Fine horizontal granularity, coarse vertical granularity
 - Optimized for terrain data, urban planning, and height-stratified content
 
-### Anisotropic Decomposition Pattern
+### Anisotropic Subdivision Pattern
 
-Unlike uniform cubic (Octree) or tetrahedral (Tetree) decomposition, Prism uses distinct decomposition strategies for different dimensions:
+Unlike uniform cubic (Octree) or tetrahedral (Tetree) subdivision, Prism uses distinct subdivision strategies for
+different dimensions:
 
-- **Horizontal Plane (X, Y)**: Triangular decomposition using right triangles for fine spatial resolution
-- **Vertical Axis (Z)**: Linear decomposition using simple bins for coarse height stratification
+- **Horizontal Plane (X, Y)**: Triangular subdivision using right triangles for fine spatial resolution
+- **Vertical Axis (Z)**: Linear subdivision using simple bins for coarse height stratification
 - **Composite Indexing**: Combines Triangle index (horizontal) with Line index (vertical) into PrismKey
 
 ### Triangular Coordinate System
 
-The horizontal triangular decomposition imposes geometric constraints:
+The horizontal triangular subdivision imposes geometric constraints:
 
 - **Valid Region**: Points must satisfy x + y < worldSize
 - **Right Triangle Grid**: Space divided into right triangles with configurable granularity
@@ -252,26 +261,31 @@ The horizontal triangular decomposition imposes geometric constraints:
 The Prism spatial index is optimized for specific domain applications:
 
 **Terrain and Geographic Data:**
+
 - Height maps and elevation data
 - Geographic information systems (GIS)
 - Topographic analysis and visualization
 
 **Urban Planning:**
+
 - Building height regulations
 - Zoning with height restrictions
 - City skyline analysis
 
 **Atmospheric and Oceanographic Data:**
+
 - Layered atmospheric measurements
 - Ocean depth stratification
 - Environmental monitoring with altitude components
 
 **Game Development:**
+
 - 2.5D game environments
 - Platformer games with height layers
 - Terrain-based gameplay mechanics
 
 **Scientific Visualization:**
+
 - Data with natural height stratification
 - Cross-sectional analysis
 - Layer-based scientific datasets
@@ -347,7 +361,7 @@ High-performance concurrent operations using atomic protocols:
 
 - **Octree** - Morton curve-based spatial index
 - **MortonKey** - Space-filling curve key using Morton encoding
-- **OctreeBalancer** - Tree balancing implementation  
+- **OctreeBalancer** - Tree balancing implementation
 - **OctreeSubdivisionStrategy** - Subdivision policy for octree nodes
 - **Octant** - Octant enumeration and utilities
 - **internal/NodeDistance** - Node distance utilities
@@ -356,14 +370,14 @@ High-performance concurrent operations using atomic protocols:
 
 Core classes:
 
-- **Prism** - Anisotropic spatial index with triangular/linear decomposition
+- **Prism** - Anisotropic spatial index with triangular/linear subdivision
 - **PrismKey** - Composite spatial key combining Triangle and Line indices
 - **PrismGeometry** - Geometric operations for triangular coordinate systems
 
 Primitive types:
 
-- **Line** - Linear decomposition primitive for vertical axis
-- **Triangle** - Right triangle primitive for horizontal plane decomposition
+- **Line** - Linear subdivision primitive for vertical axis
+- **Triangle** - Right triangle primitive for horizontal plane subdivision
 
 Specialized operations:
 
@@ -416,7 +430,9 @@ Lazy evaluation support (4):
 
 ### Forest Package (16) - Complete Multi-Tree Architecture
 
-The Forest package provides a comprehensive multi-tree spatial indexing solution designed for large-scale applications requiring distributed spatial data management. Supports both simple grid partitioning and sophisticated adaptive/hierarchical forests.
+The Forest package provides a comprehensive multi-tree spatial indexing solution designed for large-scale applications
+requiring distributed spatial data management. Supports both simple grid partitioning and sophisticated
+adaptive/hierarchical forests.
 
 **Core Forest Management (4 classes):**
 
@@ -427,26 +443,32 @@ The Forest package provides a comprehensive multi-tree spatial indexing solution
 
 **Entity and Load Management (3 classes):**
 
-- **ForestEntityManager** - Cross-tree entity lifecycle with automatic tree assignment strategies (RoundRobin, SpatialBounds, LoadBalanced)
-- **ForestLoadBalancer** - Real-time load metrics and automatic rebalancing (entity count, memory usage, query load thresholds)
+- **ForestEntityManager** - Cross-tree entity lifecycle with automatic tree assignment strategies (RoundRobin,
+  SpatialBounds, LoadBalanced)
+- **ForestLoadBalancer** - Real-time load metrics and automatic rebalancing (entity count, memory usage, query load
+  thresholds)
 - **DynamicForestManager** - Runtime tree operations with background processing (splitting, merging, entity migration)
 
 **Specialized Forest Types (3 classes):**
 
 - **GridForest** - Uniform spatial partitioning with factory methods for both Octree and Tetree grids
-- **AdaptiveForest** - Dynamic density-based adaptation with multiple subdivision strategies (Octant, Binary, K-means, Adaptive)
-- **HierarchicalForest** - Level-of-detail management with distance-based entity promotion/demotion and configurable LOD distances
+- **AdaptiveForest** - Dynamic density-based adaptation with multiple subdivision strategies (Octant, Binary, K-means,
+  Adaptive)
+- **HierarchicalForest** - Level-of-detail management with distance-based entity promotion/demotion and configurable LOD
+  distances
 
 **Query and Connectivity (4 classes):**
 
 - **ForestQuery** - Unified query interface for single-tree targeting and forest-wide operations
-- **ForestSpatialQueries** - Parallel spatial queries (k-NN, range, ray intersection, frustum culling) with configurable thread counts
+- **ForestSpatialQueries** - Parallel spatial queries (k-NN, range, ray intersection, frustum culling) with configurable
+  thread counts
 - **TreeConnectivityManager** - Spatial relationship management with adjacency detection and shared boundary analysis
 - **GhostZoneManager** - Boundary entity synchronization with configurable ghost zone widths and bulk update operations
 
 **Configuration (2 classes):**
 
-- **ForestConfig** - Builder-pattern configuration (overlapping policies, ghost zones, partition strategies, background management)
+- **ForestConfig** - Builder-pattern configuration (overlapping policies, ghost zones, partition strategies, background
+  management)
 - **AdaptiveForestEntityManager** - Enhanced entity manager for adaptive forests with integrated density tracking
 
 **Forest Features:**
@@ -491,12 +513,12 @@ The Forest package provides a comprehensive multi-tree spatial indexing solution
 - O(1) average node access (HashMap-based as of January 2025)
 - Tetrahedral SFC for positive coordinates only
 - More complex geometry calculations
-- Subdivision support through tetrahedral decomposition
+- Subdivision support through tetrahedral subdivision
 
 **Prism:**
 
 - O(1) average node access (HashMap-based)
-- Anisotropic decomposition for specialized use cases
+- Anisotropic subdivision for specialized use cases
 - Triangular constraint limits coordinate space
 - Optimized for terrain and height-stratified data
 
@@ -518,7 +540,7 @@ public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Cont
 
 - `MortonKey`: Wraps long Morton code for Octree
 - `TetreeKey`: Encodes (level, sfcIndex) tuple for Tetree
-- `PrismKey`: Composite key combining Triangle and Line indices for anisotropic decomposition
+- `PrismKey`: Composite key combining Triangle and Line indices for anisotropic subdivision
 - Type safety prevents mixing incompatible keys
 - Maintains spatial locality and comparable semantics
 
@@ -551,7 +573,7 @@ Built into the core architecture:
 3. **Maintainability**: Changes to core algorithms only needed in one place
 4. **Type Safety**: Generic types ensure compile-time correctness
 5. **Performance**: HashMap provides O(1) node access
-6. **Flexibility**: Easy to add new spatial decomposition strategies
+6. **Flexibility**: Easy to add new spatial subdivision strategies
 
 ## Architectural Simplification
 
@@ -606,9 +628,15 @@ Prism<LongEntityID, String> prism = new Prism<>(new SequentialLongIDGenerator(),
 
 // Insert entities
 LongEntityID id = new LongEntityID(1);
-octree.insert(id, new Point3f(100, 200, 300), (byte) 10, "Entity data");
-tetree.insert(id, new Point3f(100, 200, 300), (byte) 10, "Entity data");  // positive coordinates
-prism.insert(id, new Point3f(100, 200, 300), (byte) 10, "Entity data");   // x + y < worldSize
+octree.
+
+insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");
+tetree.
+
+insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");  // positive coordinates
+prism.
+
+insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");   // x + y < worldSize
 
 // k-NN search (same API across all implementations)
 List<LongEntityID> nearest = octree.kNearestNeighbors(new Point3f(110, 210, 310), 5,  // find 5 nearest
@@ -628,41 +656,42 @@ Octree<LongEntityID, String> tree1 = new Octree<>(new SequentialLongIDGenerator(
 Tetree<LongEntityID, String> tree2 = new Tetree<>(new SequentialLongIDGenerator(), 10, (byte) 20);
 Prism<LongEntityID, String> tree3 = new Prism<>(new SequentialLongIDGenerator(), 10, (byte) 20, 1000.0f);
 
-TreeMetadata metadata1 = TreeMetadata.builder()
-    .name("region_1")
-    .treeType(TreeMetadata.TreeType.OCTREE)
-    .property("region", "northeast")
-    .build();
+TreeMetadata metadata1 = TreeMetadata.builder().name("region_1").treeType(TreeMetadata.TreeType.OCTREE).property(
+"region", "northeast").build();
 
 String treeId1 = octreeForest.addTree(tree1, metadata1);
 String treeId2 = tetreeForest.addTree(tree2);
 String treeId3 = prismForest.addTree(tree3);
 
 // Forest-wide k-NN search (type-specific)
-List<LongEntityID> nearestAcrossOctrees = octreeForest.findKNearestNeighbors(
-    new Point3f(100, 200, 300), 10);
-List<LongEntityID> nearestAcrossPrisms = prismForest.findKNearestNeighbors(
-    new Point3f(100, 200, 300), 10);  // x + y < worldSize constraint applies
+List<LongEntityID> nearestAcrossOctrees = octreeForest.findKNearestNeighbors(new Point3f(100, 200, 300), 10);
+List<LongEntityID> nearestAcrossPrisms = prismForest.findKNearestNeighbors(new Point3f(100, 200, 300),
+                                                                           10);  // x + y < worldSize constraint applies
 
 // Grid forest for uniform partitioning
-GridForest<MortonKey, LongEntityID, String> gridForest = GridForest.createOctreeGrid(
-    new Point3f(0, 0, 0),     // origin
-    new Vector3f(1000, 1000, 1000),  // total size
-    4, 4, 4               // 4x4x4 grid of trees
-);
+GridForest<MortonKey, LongEntityID, String> gridForest = GridForest.createOctreeGrid(new Point3f(0, 0, 0),     // origin
+                                                                                     new Vector3f(1000, 1000, 1000),
+                                                                                     // total size
+                                                                                     4, 4, 4
+                                                                                     // 4x4x4 grid of trees
+                                                                                    );
 
 // Dynamic forest management
-DynamicForestManager<MortonKey, LongEntityID, String> manager = 
-    new DynamicForestManager<>(forest, entityManager, () -> 
-        new Octree<>(new SequentialLongIDGenerator(), 10, (byte) 20));
+DynamicForestManager<MortonKey, LongEntityID, String> manager = new DynamicForestManager<>(forest, entityManager,
+                                                                                           () -> new Octree<>(
+                                                                                           new SequentialLongIDGenerator(),
+                                                                                           10, (byte) 20));
 
 // Enable automatic tree splitting/merging
-manager.enableAutoManagement(60000); // Check every minute
+manager.
+
+enableAutoManagement(60000); // Check every minute
 ```
 
 ## Forest Architecture
 
-The Forest package provides a complete multi-tree spatial indexing solution designed for large-scale applications that require distributed spatial data management. The forest architecture enables:
+The Forest package provides a complete multi-tree spatial indexing solution designed for large-scale applications that
+require distributed spatial data management. The forest architecture enables:
 
 ### Use Cases
 
@@ -699,12 +728,15 @@ The Forest architecture is designed for high-performance concurrent operations:
 
 **Major architectural shift eliminating separate HashMap/TreeSet in favor of single ConcurrentSkipListMap:**
 
-- **ConcurrentSkipListMap Replacement**: Single thread-safe data structure replaces spatialIndex HashMap + sortedSpatialIndices TreeSet
+- **ConcurrentSkipListMap Replacement**: Single thread-safe data structure replaces spatialIndex HashMap +
+  sortedSpatialIndices TreeSet
 - **Memory Efficiency**: 54-61% reduction in memory usage through architectural consolidation
 - **Thread Safety**: Eliminated ConcurrentModificationException during iteration
 - **CopyOnWriteArrayList**: SpatialNodeImpl now uses thread-safe entity storage preventing iteration conflicts
-- **Lock-Free Entity Updates**: Added atomic movement protocol with four-phase commit (PREPARE → INSERT → UPDATE → REMOVE)
-- **ObjectPool Integration**: Extended pooling to all query operations (k-NN, collision, ray intersection, frustum culling)
+- **Lock-Free Entity Updates**: Added atomic movement protocol with four-phase commit (PREPARE → INSERT → UPDATE →
+  REMOVE)
+- **ObjectPool Integration**: Extended pooling to all query operations (k-NN, collision, ray intersection, frustum
+  culling)
 
 ### Phase 6.2 Cleanup (July 10, 2025)
 
@@ -746,6 +778,7 @@ The unified architecture allows easy switching between spatial index types based
 ### Octree - General Purpose Spatial Indexing
 
 **Use Octree when:**
+
 - Working with general 3D spatial data without geometric constraints
 - Need support for negative coordinates
 - Uniform data distribution across all dimensions
@@ -753,18 +786,21 @@ The unified architecture allows easy switching between spatial index types based
 - Working with volumetric data or 3D objects
 
 **Advantages:**
+
 - No coordinate constraints
 - Fastest range queries (1.4-6x faster than Tetree)
 - Mature Morton curve optimizations
 - Uniform cubic subdivision
 
 **Trade-offs:**
+
 - Higher memory usage (27-35% more than Tetree)
 - Slower insertion performance (2-6x slower than Tetree)
 
 ### Tetree - Memory-Efficient Advanced Indexing
 
 **Use Tetree when:**
+
 - Memory efficiency is critical
 - k-NN searches are primary operations
 - Working with positive coordinate space only
@@ -772,12 +808,14 @@ The unified architecture allows easy switching between spatial index types based
 - Complex neighbor relationships required
 
 **Advantages:**
+
 - Superior memory efficiency (20-25% of Octree memory usage)
 - Faster k-NN searches (1.6-5.9x faster)
 - Advanced tetrahedral geometric operations
 - Better insertion performance (2-6x faster)
 
 **Trade-offs:**
+
 - Positive coordinates only constraint
 - More complex geometric calculations
 - Slower range queries
@@ -785,6 +823,7 @@ The unified architecture allows easy switching between spatial index types based
 ### Prism - Specialized Anisotropic Indexing
 
 **Use Prism when:**
+
 - Working with terrain or height-stratified data
 - Fine horizontal resolution with coarse vertical binning needed
 - Data naturally fits triangular coordinate constraints (x + y < worldSize)
@@ -792,42 +831,45 @@ The unified architecture allows easy switching between spatial index types based
 - Urban planning or geographic information systems
 
 **Advantages:**
+
 - Optimized for anisotropic data patterns
 - Efficient triangular coordinate system
 - Specialized collision detection for terrain
 - Natural height stratification
 
 **Trade-offs:**
+
 - Limited to triangular coordinate constraint
 - Specialized use case optimization
 - Less general-purpose than Octree/Tetree
 
 ### Decision Matrix
 
-| Criterion | Octree | Tetree | Prism |
-|-----------|--------|--------|-------|
-| **Coordinate Constraints** | None | Positive only | x + y < worldSize |
-| **Memory Usage** | High | Low | Medium |
-| **Insertion Speed** | Slow | Fast | Medium |
-| **k-NN Performance** | Medium | Fast | Medium |
-| **Range Queries** | Fast | Slow | Medium |
-| **Use Case Generality** | High | High | Specialized |
-| **Geometric Complexity** | Low | High | Medium |
+| Criterion                  | Octree | Tetree        | Prism             |
+|----------------------------|--------|---------------|-------------------|
+| **Coordinate Constraints** | None   | Positive only | x + y < worldSize |
+| **Memory Usage**           | High   | Low           | Medium            |
+| **Insertion Speed**        | Slow   | Fast          | Medium            |
+| **k-NN Performance**       | Medium | Fast          | Medium            |
+| **Range Queries**          | Fast   | Slow          | Medium            |
+| **Use Case Generality**    | High   | High          | Specialized       |
+| **Geometric Complexity**   | Low    | High          | Medium            |
 
 ## Performance Characteristics (July 11, 2025)
 
-**Major Performance Reversal**: Concurrent optimizations have completely reversed performance characteristics. Tetree is now superior for most operations.
+**Major Performance Reversal**: Concurrent optimizations have completely reversed performance characteristics. Tetree is
+now superior for most operations.
 
 ### Individual Operations (Current Metrics)
 
-| Operation | Octree | Tetree | Prism | Winner |
-|-----------|--------|--------|-------|--------|
-| **Insertion** | 1.5-2.0 μs/op | 0.24-0.95 μs/op | 0.8-1.3 μs/op | **Tetree 2-6x faster** |
-| **k-NN Query** | 15.8-18.2 μs/op | 7.8-19.0 μs/op | 10.5-16.2 μs/op | **Mixed, Tetree better for smaller datasets** |
-| **Range Query** | 2.1-14.2 μs/op | 13.0-19.9 μs/op | 5.8-12.1 μs/op | **Octree fastest, Prism second** |
-| **Memory Usage** | 100% | 65-73% | 78-85% | **Tetree 27-35% less memory** |
-| **Triangular Queries** | N/A | N/A | 3.2-7.8 μs/op | **Prism specialized optimization** |
-| **Height Stratification** | Standard | Standard | Optimized | **Prism for layered data** |
+| Operation                 | Octree          | Tetree          | Prism           | Winner                                        |
+|---------------------------|-----------------|-----------------|-----------------|-----------------------------------------------|
+| **Insertion**             | 1.5-2.0 μs/op   | 0.24-0.95 μs/op | 0.8-1.3 μs/op   | **Tetree 2-6x faster**                        |
+| **k-NN Query**            | 15.8-18.2 μs/op | 7.8-19.0 μs/op  | 10.5-16.2 μs/op | **Mixed, Tetree better for smaller datasets** |
+| **Range Query**           | 2.1-14.2 μs/op  | 13.0-19.9 μs/op | 5.8-12.1 μs/op  | **Octree fastest, Prism second**              |
+| **Memory Usage**          | 100%            | 65-73%          | 78-85%          | **Tetree 27-35% less memory**                 |
+| **Triangular Queries**    | N/A             | N/A             | 3.2-7.8 μs/op   | **Prism specialized optimization**            |
+| **Height Stratification** | Standard        | Standard        | Optimized       | **Prism for layered data**                    |
 
 ### Concurrent Architecture Benefits (July 2025)
 
@@ -867,4 +909,6 @@ As of July 2025, the lucien module represents a complete spatial indexing soluti
 - Robust test coverage
 - Specialized optimization for different data patterns and use cases
 
-The architecture successfully balances simplicity with advanced features, providing both ease of use and high performance for diverse 3D spatial indexing needs. The addition of Prism extends the system to handle anisotropic data patterns, completing the coverage of major spatial decomposition strategies.
+The architecture successfully balances simplicity with advanced features, providing both ease of use and high
+performance for diverse 3D spatial indexing needs. The addition of Prism extends the system to handle anisotropic data
+patterns, completing the coverage of major spatial subdivision strategies.

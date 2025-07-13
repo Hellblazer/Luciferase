@@ -54,12 +54,12 @@ public class Tet {
     byte l;         // Level (0-20)
     byte type;      // Type (0-5)
     
-    // Returns S0-S5 tetrahedral decomposition coordinates
+    // Returns S0-S5 tetrahedral subdivision coordinates
     public Point3i[] coordinates() {
         var coords = new Point3i[4];
         var h = length();
         
-        // S0-S5 decomposition: 6 tetrahedra tile a cube
+        // S0-S5 subdivision: 6 tetrahedra tile a cube
         // All share vertices V0 (origin) and V7 (opposite corner)
         switch (type) {
             case 0: // S0: vertices {0,1,3,7}
@@ -233,7 +233,7 @@ Created `subdivisionCoordinates()` method that provides Bey-compatible vertices 
 
 ### Key Lessons Learned
 
-1. **Coordinate systems matter**: Different tetrahedral decompositions cannot share subdivision rules
+1. **Coordinate systems matter**: Different tetrahedral subdivisions cannot share subdivision rules
 2. **The algorithm was correct**: BeySubdivision worked correctly once coordinates aligned
 3. **Simple is better**: Uniform V3 rule is cleaner than type-dependent positions
 4. **Localized solutions work**: Can maintain different coordinate systems for different purposes

@@ -11,9 +11,9 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Test that the S0-S5 tetrahedral decomposition correctly tiles a cube.
+ * Test that the S0-S5 tetrahedral subdivision correctly tiles a cube.
  */
-public class TetS0S5DecompositionTest {
+public class TetS0S5SubdivisionTest {
     
     @Test
     void testCorrectVertices() {
@@ -24,7 +24,7 @@ public class TetS0S5DecompositionTest {
         System.out.println("=== S0-S5 Vertex Verification ===");
         System.out.println("Cube size (h): " + h);
         
-        // Expected vertices for each type according to S0-S5 decomposition
+        // Expected vertices for each type according to S0-S5 subdivision
         Point3i[][][] expectedVertices = {
             // Type 0 (S0): vertices 0, 1, 3, 7
             {{new Point3i(0, 0, 0), new Point3i(h, 0, 0), new Point3i(h, h, 0), new Point3i(h, h, h)}},
@@ -219,7 +219,7 @@ public class TetS0S5DecompositionTest {
         System.out.printf("Containment rate: %.1f%%%n", containmentRate);
         
         assertTrue(containmentRate > 95.0, 
-            "Containment rate should be > 95% with correct S0-S5 decomposition");
+            "Containment rate should be > 95% with correct S0-S5 subdivision");
     }
     
     @Test

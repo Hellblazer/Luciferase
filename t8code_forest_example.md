@@ -160,6 +160,6 @@ void create_three_disconnected_cubes(sc_MPI_Comm comm) {
 
 This design makes t8code well-suited for applications with multiple spatial domains, such as:
 - Multi-body simulations
-- Domain decomposition methods
+- Domain subdivision methods
 - Adaptive mesh refinement for scattered objects
 - Parallel load balancing across disconnected regions

@@ -20,18 +20,18 @@ Added to TetreeVisualization.java:
 ### 3. Integration Points
 
 #### S0-S5 Visualization
-- `showS0S5Decomposition()` calls `resetRenderingStats()` at start
+- `showS0S5Subdivision()` calls `resetRenderingStats()` at start
 - Uses `showTransformedS0S5Tetrahedron()` which calls `createTransformedWireframe()`
 - Prints validation stats at end showing all wireframes use transforms
 
 #### Subdivision Visualization  
-- `showCharacteristicDecomposition()` calls `resetRenderingStats()` at start
+- `showCharacteristicSubdivision()` calls `resetRenderingStats()` at start
 - When `useTransformBased=true`, uses transform-based rendering
 - Prints validation stats at end
 
 ### 4. Demo Integration
 TetreeVisualizationDemo.java:
-- S0-S5 button: Always uses transform-based (built into showS0S5Decomposition)
+- S0-S5 button: Always uses transform-based (built into showS0S5Subdivision)
 - Subdivision button: Explicitly passes `true` for transform-based rendering
 
 ## How to Validate

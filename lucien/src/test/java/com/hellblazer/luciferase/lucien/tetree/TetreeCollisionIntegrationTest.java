@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for Tetree collision detection with the full collision system. Tests the complete pipeline
- * including physics, listeners, and filters within the tetrahedral spatial decomposition.
+ * including physics, listeners, and filters within the tetrahedral spatial subdivision.
  *
  * @author hal.hildebrand
  */
