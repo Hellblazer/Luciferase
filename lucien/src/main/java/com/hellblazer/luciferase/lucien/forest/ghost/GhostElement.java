@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.octree.MortonKey;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.lucien.forest.ghost.grpc.ProtobufConverters;
 import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.ByteString;
