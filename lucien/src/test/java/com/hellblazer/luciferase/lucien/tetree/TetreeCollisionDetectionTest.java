@@ -315,7 +315,7 @@ public class TetreeCollisionDetectionTest {
     @Test
     void testTetrahedralReferenceSystem() {
         // Test collision detection within the S0 reference tetrahedron system
-        // Entities should be within the tetrahedral space decomposition
+        // Entities should be within the tetrahedral space subdivision
         Point3f[] tetraPositions = { new Point3f(32, 32, 32),    // S0 tetrahedron regions
                                      new Point3f(64, 32, 32), new Point3f(32, 64, 32), new Point3f(32, 32, 64) };
 

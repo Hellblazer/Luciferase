@@ -32,8 +32,8 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 
 - **Core** (27 classes): `AbstractSpatialIndex`, `SpatialIndex`, `SpatialNodeStorage`, etc.
 - **Entity Management** (12 classes): `EntityManager`, `EntityBounds`, ID generators, etc.
-- **Octree** (5 classes): Morton curve-based cubic decomposition
-- **Tetree** (32 classes): Tetrahedral space-filling curve decomposition
+- **Octree** (5 classes): Morton curve-based cubic subdivision
+- **Tetree** (32 classes): Tetrahedral space-filling curve subdivision
 - **Collision** (12 classes): Collision detection system with shapes and physics
 - **Balancing** (3 classes): Tree balancing strategies
 - **Visitor** (6 classes): Tree traversal visitor pattern
@@ -229,7 +229,7 @@ Historical documents (describe unimplemented features):
 - **T8CODE PARTITION LIMITATION (July 2025):**
     - **Problem**: Tests expecting cube partitioning were failing after our changes
     - **Root Cause**: t8code tetrahedra fundamentally don't partition the cube
-    - **Analysis**: ~48% gaps and ~32% overlaps in t8code decomposition
+    - **Analysis**: ~48% gaps and ~32% overlaps in t8code subdivision
     - **Solution**: Disabled tests expecting proper partitioning
     - **Affected Tests**:
         - TetreeContainmentConsistencyTest
@@ -245,17 +245,17 @@ Historical documents (describe unimplemented features):
     - **Parent Wireframe**: Now correctly shows S0 tetrahedron edges using actual t8code coordinates
     - **Edge Rotation**: Switched from Box to Cylinder for edges, using cross product for proper alignment
     - **Coordinate Accuracy**: Visualizations now use real Tet class coordinates, not approximations
-- **S0-S5 TETRAHEDRAL DECOMPOSITION COMPLETION (July 2025):**
+- **S0-S5 TETRAHEDRAL SUBDIVISION COMPLETION (July 2025):**
     - **Problem**: Entity visualization showed spheres outside their containing tetrahedra due to incorrect coordinates
-    - **Root Cause**: Tet.coordinates() was using legacy ei/ej algorithm instead of standard S0-S5 cube decomposition
-    - **Solution**: Implemented correct S0-S5 decomposition where 6 tetrahedra perfectly tile a cube
+    - **Root Cause**: Tet.coordinates() was using legacy ei/ej algorithm instead of standard S0-S5 cube subdivision
+    - **Solution**: Implemented correct S0-S5 subdivision where 6 tetrahedra perfectly tile a cube
     - **S0-S5 Pattern**: Each tetrahedra uses specific cube vertices (S0: 0,1,3,7; S1: 0,2,3,7; etc.)
     - **Results**: Achieved 100% containment rate (up from 35%), perfect cube tiling with no gaps/overlaps
-    - **Coordinate Fix**: All types now share V0 (origin) and V7 (opposite corner) as required by cube decomposition
+    - **Coordinate Fix**: All types now share V0 (origin) and V7 (opposite corner) as required by cube subdivision
     - **Containment Fix**: Updated containsUltraFast() to handle mirrored tetrahedra (types 1,3,4) with reversed face
       tests
     - **Test Updates**: Fixed all test failures by updating expectations to match S0-S5 geometry
-    - **Location**: Tet.java coordinates() method, TetS0S5DecompositionTest validates implementation
+    - **Location**: Tet.java coordinates() method, TetS0S5SubdivisionTest validates implementation
     - **Impact**: Visualization now correctly shows entities contained within their tetrahedra
 - **PERFORMANCE BENCHMARKS:**
     - **See**: lucien/doc/PERFORMANCE_METRICS_MASTER.md for current performance metrics

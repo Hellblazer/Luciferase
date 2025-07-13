@@ -11,8 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Validates the S0-S5 tetrahedral decomposition in Tet.coordinates()
- * Tests that the 6 tetrahedra correctly tile a cube using standard cube vertices.
+ * Validates the S0-S5 tetrahedral subdivision in Tet.coordinates() Tests that the 6 tetrahedra correctly tile a cube
+ * using standard cube vertices.
  *
  * @author hal.hildebrand
  */
@@ -92,7 +92,7 @@ public class VertexComputationValidationTest {
         int y = 3 * cellSize; // 6144 - aligned to grid
         int z = 4 * cellSize; // 8192 - aligned to grid
 
-        TestOutputSuppressor.println("S0-S5 Tetrahedral Decomposition Analysis");
+        TestOutputSuppressor.println("S0-S5 Tetrahedral Subdivision Analysis");
         TestOutputSuppressor.println("========================================");
         TestOutputSuppressor.println("Anchor: (" + x + ", " + y + ", " + z + ")");
         TestOutputSuppressor.println("Level: " + level);
@@ -204,9 +204,9 @@ public class VertexComputationValidationTest {
         assertEquals(y, vertices[0].y);
         assertEquals(z, vertices[0].z);
 
-        // S0-S5 decomposition: Expected vertices for each type
+        // S0-S5 subdivision: Expected vertices for each type
         Point3i expectedV1, expectedV2, expectedV3;
-        
+
         switch (type) {
             case 0: // S0: vertices 0, 1, 3, 7
                 expectedV1 = new Point3i(x + h, y, z);          // V1

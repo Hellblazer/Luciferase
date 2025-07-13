@@ -25,7 +25,7 @@ import java.util.Objects;
  * 
  * PrismKey implements the SpatialKey interface for prism-based spatial indexing, following
  * t8code's design of prisms as Cartesian products of triangles and lines. This provides
- * anisotropic spatial decomposition with fine horizontal granularity and coarse vertical
+ * anisotropic spatial subdivision with fine horizontal granularity and coarse vertical
  * granularity, ideal for layered data.
  * 
  * The key maintains strict level synchronization between triangle and line components,

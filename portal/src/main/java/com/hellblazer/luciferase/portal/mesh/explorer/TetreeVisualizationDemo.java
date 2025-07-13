@@ -16,7 +16,6 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
@@ -28,7 +27,6 @@ import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.scene.*;
 import javafx.scene.control.*;
-import javafx.geometry.Pos;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -75,8 +73,9 @@ public class TetreeVisualizationDemo extends Application {
     private double                                                  mouseX, mouseY;
 
     // Additional visualization groups
-    private Group cubeDecompositionGroup;
+    private Group cubeSubdivisionGroup;
     private Group characteristicTypesGroup;
+    private boolean useSubdivisionBounds = true; // Flag to control which bounds to use
 
     public static void main(String[] args) {
         launch(args);
@@ -101,9 +100,9 @@ public class TetreeVisualizationDemo extends Application {
         root3D.getChildren().add(axes);
 
         // Initialize additional visualization groups
-        cubeDecompositionGroup = new Group();
+        cubeSubdivisionGroup = new Group();
         characteristicTypesGroup = new Group();
-        root3D.getChildren().addAll(cubeDecompositionGroup, characteristicTypesGroup);
+        root3D.getChildren().addAll(cubeSubdivisionGroup, characteristicTypesGroup);
 
         scene3D = new SubScene(root3D, SCENE_WIDTH - 320, SCENE_HEIGHT, true, SceneAntialiasing.BALANCED);
         scene3D.setFill(Color.DARKGRAY);
@@ -170,8 +169,6 @@ public class TetreeVisualizationDemo extends Application {
         scene3D.requestFocus();
     }
 
-    private boolean useSubdivisionBounds = true; // Flag to control which bounds to use
-    
     private void addRandomEntities(int count) {
         Random random = new Random();
         // Insert entities at a coarser level (5) for better visibility
@@ -181,12 +178,12 @@ public class TetreeVisualizationDemo extends Application {
         float L = (float) Math.pow(2, TetreeKey.MAX_REFINEMENT_LEVEL);
 
         System.out.println("\n=== Inserting " + count + " entities at level " + level + " ===");
-        
+
         // Create root tetrahedron
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
         Point3i[] coords;
         String boundsType;
-        
+
         if (useSubdivisionBounds) {
             coords = rootTet.subdivisionCoordinates();
             boundsType = "subdivision";
@@ -194,54 +191,54 @@ public class TetreeVisualizationDemo extends Application {
             coords = rootTet.coordinates();
             boundsType = "S0-S5";
         }
-        
+
         // Convert to float for barycentric calculation
         Point3f v0 = new Point3f(coords[0].x, coords[0].y, coords[0].z);
         Point3f v1 = new Point3f(coords[1].x, coords[1].y, coords[1].z);
         Point3f v2 = new Point3f(coords[2].x, coords[2].y, coords[2].z);
         Point3f v3 = new Point3f(coords[3].x, coords[3].y, coords[3].z);
-        
+
         System.out.println("Using " + boundsType + " tetrahedron bounds:");
         System.out.println("  V0: " + v0);
         System.out.println("  V1: " + v1);
         System.out.println("  V2: " + v2);
         System.out.println("  V3: " + v3);
-        
+
         int inserted = 0;
         int attempts = 0;
-        
+
         // Generate points that are guaranteed to be within the subdivision tetrahedron
         while (inserted < count && attempts < count * 10) {
             attempts++;
-            
+
             // Use barycentric coordinates to generate points inside subdivision tetrahedron
             float r1 = random.nextFloat();
             float r2 = random.nextFloat();
             float r3 = random.nextFloat();
             float r4 = random.nextFloat();
-            
+
             // Normalize to sum to 1
             float sum = r1 + r2 + r3 + r4;
             r1 /= sum;
             r2 /= sum;
             r3 /= sum;
             r4 /= sum;
-            
+
             // Compute point using barycentric coordinates with subdivision vertices
             float x = r1 * v0.x + r2 * v1.x + r3 * v2.x + r4 * v3.x;
             float y = r1 * v0.y + r2 * v1.y + r3 * v2.y + r4 * v3.y;
             float z = r1 * v0.z + r2 * v1.z + r3 * v2.z + r4 * v3.z;
-            
+
             Point3f position = new Point3f(x, y, z);
-            
+
             // For subdivision geometry, we don't need containment check as barycentric 
             // coordinates guarantee the point is inside the tetrahedron
 
             // Debug: find the enclosing tetrahedron before insertion
             var enclosingNode = tetree.enclosing(new javax.vecmath.Point3i((int) x, (int) y, (int) z), level);
             if (enclosingNode != null) {
-                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", inserted, x, y, z,
-                                  level);
+                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", inserted, x,
+                                  y, z, level);
             } else {
                 System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> No enclosing node found%n", inserted, x, y, z);
             }
@@ -249,7 +246,7 @@ public class TetreeVisualizationDemo extends Application {
             tetree.insert(position, level, "Entity " + inserted);
             inserted++;
         }
-        
+
         if (inserted < count) {
             System.out.printf("Warning: Only inserted %d/%d entities after %d attempts%n", inserted, count, attempts);
         }
@@ -384,13 +381,15 @@ public class TetreeVisualizationDemo extends Application {
             entityIds.forEach(tetree::removeEntity);
             visualization.updateVisualization();
         });
-        
+
         CheckBox useSubdivisionBoundsCheck = new CheckBox("Use Subdivision Bounds");
         useSubdivisionBoundsCheck.setSelected(useSubdivisionBounds);
-        useSubdivisionBoundsCheck.setTooltip(new Tooltip("When checked, entities are generated within subdivision tetrahedron bounds\nWhen unchecked, entities use S0-S5 tetrahedron bounds"));
+        useSubdivisionBoundsCheck.setTooltip(new Tooltip(
+        "When checked, entities are generated within subdivision tetrahedron bounds\nWhen unchecked, entities use S0-S5 tetrahedron bounds"));
         useSubdivisionBoundsCheck.setOnAction(_ -> {
             useSubdivisionBounds = useSubdivisionBoundsCheck.isSelected();
-            System.out.println("Entity generation will use " + (useSubdivisionBounds ? "subdivision" : "S0-S5") + " bounds");
+            System.out.println(
+            "Entity generation will use " + (useSubdivisionBounds ? "subdivision" : "S0-S5") + " bounds");
         });
 
         controls.getChildren().addAll(addRandomEntities, clearEntities, useSubdivisionBoundsCheck);
@@ -420,21 +419,21 @@ public class TetreeVisualizationDemo extends Application {
 
         controls.getChildren().addAll(showEmptyNodes, showEntityPositions, showNodeBounds, showLevelColors,
                                       showFilledFaces);
-                                      
+
         // Face render mode
         controls.getChildren().add(new Label("Face Render Mode:"));
         ComboBox<TetreeVisualization.FaceRenderMode> faceRenderModeCombo = new ComboBox<>();
         faceRenderModeCombo.getItems().addAll(TetreeVisualization.FaceRenderMode.values());
         faceRenderModeCombo.setValue(TetreeVisualization.FaceRenderMode.LEAF_NODES_ONLY);
-        faceRenderModeCombo.setTooltip(new Tooltip("Controls which tetrahedra show filled faces:\n" +
-                                                   "ALL_NODES: Show faces for all nodes with entities\n" +
-                                                   "LEAF_NODES_ONLY: Only show faces for nodes without children\n" +
-                                                   "LARGEST_NODES_ONLY: Only show faces for largest nodes at each location"));
+        faceRenderModeCombo.setTooltip(new Tooltip(
+        "Controls which tetrahedra show filled faces:\n" + "ALL_NODES: Show faces for all nodes with entities\n"
+        + "LEAF_NODES_ONLY: Only show faces for nodes without children\n"
+        + "LARGEST_NODES_ONLY: Only show faces for largest nodes at each location"));
         faceRenderModeCombo.setOnAction(_ -> {
             visualization.setFaceRenderMode(faceRenderModeCombo.getValue());
         });
         controls.getChildren().add(faceRenderModeCombo);
-        
+
         // Opacity control
         controls.getChildren().add(new Label("Face Opacity:"));
         Slider opacitySlider = new Slider(0.1, 1.0, visualization.nodeOpacityProperty().get());
@@ -578,26 +577,28 @@ public class TetreeVisualizationDemo extends Application {
         Label refinementLabel = new Label("Refinement Level:");
         Spinner<Integer> refinementSpinner = new Spinner<>(0, 5, 1);
         refinementSpinner.setPrefWidth(60);
-        refinementSpinner.setTooltip(new Tooltip("Control refinement depth (0=root only, 1=8 children, 2=64 grandchildren, etc.)"));
+        refinementSpinner.setTooltip(
+        new Tooltip("Control refinement depth (0=root only, 1=8 children, 2=64 grandchildren, etc.)"));
         refinementBox.getChildren().addAll(refinementLabel, refinementSpinner);
         controls.getChildren().add(refinementBox);
-        
-        Button showS0Decomposition = new Button("Show S0-S5 Decomposition");
-        showS0Decomposition.setTooltip(new Tooltip("Shows the actual S0 tetrahedron used for entity bounds"));
-        showS0Decomposition.setOnAction(_ -> {
+
+        Button showS0Subdivision = new Button("Show S0-S5 Subdivision");
+        showS0Subdivision.setTooltip(new Tooltip("Shows the actual S0 tetrahedron used for entity bounds"));
+        showS0Subdivision.setOnAction(_ -> {
             int level = refinementSpinner.getValue();
-            visualization.showS0S5Decomposition(null, level);
+            visualization.showS0S5Subdivision(null, level);
         });
-        controls.getChildren().add(showS0Decomposition);
-        
+        controls.getChildren().add(showS0Subdivision);
+
         Button showSubdivision = new Button("Show Subdivision Geometry");
-        showSubdivision.setTooltip(new Tooltip("Shows subdivision-compatible tetrahedra using transform-based rendering"));
+        showSubdivision.setTooltip(
+        new Tooltip("Shows subdivision-compatible tetrahedra using transform-based rendering"));
         showSubdivision.setOnAction(_ -> {
             int level = refinementSpinner.getValue();
-            visualization.showCharacteristicDecomposition(null, level, true); // Always use transform-based
+            visualization.showCharacteristicSubdivision(null, level, true); // Always use transform-based
         });
         controls.getChildren().add(showSubdivision);
-        
+
         // Animated refinement button
         Button animateRefinement = new Button("Animate Refinement");
         animateRefinement.setTooltip(new Tooltip("Shows animated level-by-level refinement"));
@@ -608,15 +609,15 @@ public class TetreeVisualizationDemo extends Application {
         });
         controls.getChildren().add(animateRefinement);
 
-        CheckBox showCubeDecomposition = new CheckBox("Show Cube Decomposition");
-        showCubeDecomposition.setOnAction(_ -> {
-            if (showCubeDecomposition.isSelected()) {
-                showCubeDecompositionVisualization();
+        CheckBox showCubeSubdivision = new CheckBox("Show Cube Subdivision");
+        showCubeSubdivision.setOnAction(_ -> {
+            if (showCubeSubdivision.isSelected()) {
+                showCubeSubdivisionVisualization();
             } else {
-                hideCubeDecompositionVisualization();
+                hideCubeSubdivisionVisualization();
             }
         });
-        controls.getChildren().add(showCubeDecomposition);
+        controls.getChildren().add(showCubeSubdivision);
 
         CheckBox showCharacteristicTypes = new CheckBox("Show 6 Characteristic Types");
         showCharacteristicTypes.setOnAction(_ -> {
@@ -784,8 +785,8 @@ public class TetreeVisualizationDemo extends Application {
         controls.getChildren().add(new Separator());
         controls.getChildren().add(new Label("About Tetree"));
 
-        TextArea infoText = new TextArea("The Tetree uses tetrahedral decomposition of space.\n\n"
-                                         + "A cube can be decomposed into 6 characteristic tetrahedra (S0-S5), "
+        TextArea infoText = new TextArea("The Tetree uses tetrahedral subdivision of space.\n\n"
+                                         + "A cube can be subdivided into 6 characteristic tetrahedra (S0-S5), "
                                          + "which form the basis for the spatial indexing structure.\n\n"
                                          + "Each tetrahedron can be further subdivided into 8 smaller tetrahedra, "
                                          + "creating a hierarchical structure similar to an octree but using "
@@ -898,8 +899,8 @@ public class TetreeVisualizationDemo extends Application {
         characteristicTypesGroup.getChildren().clear();
     }
 
-    private void hideCubeDecompositionVisualization() {
-        cubeDecompositionGroup.getChildren().clear();
+    private void hideCubeSubdivisionVisualization() {
+        cubeSubdivisionGroup.getChildren().clear();
     }
 
     private void resetView() {
@@ -987,8 +988,8 @@ public class TetreeVisualizationDemo extends Application {
         }
     }
 
-    private void showCubeDecompositionVisualization() {
-        cubeDecompositionGroup.getChildren().clear();
+    private void showCubeSubdivisionVisualization() {
+        cubeSubdivisionGroup.getChildren().clear();
 
         // Create wireframe cube and 6 tetrahedra in natural coordinates
         double cubeSize = 524288; // 2^19 - half the root tet size
@@ -996,7 +997,7 @@ public class TetreeVisualizationDemo extends Application {
 
         // Add wireframe cube
         Group wireframeCube = createWireframeCube(offset, cubeSize);
-        cubeDecompositionGroup.getChildren().add(wireframeCube);
+        cubeSubdivisionGroup.getChildren().add(wireframeCube);
 
         // Cube vertices
         Point3f[] cubeVertices = new Point3f[8];
@@ -1035,7 +1036,7 @@ public class TetreeVisualizationDemo extends Application {
             MeshView tet = createTetrahedronMesh(cubeVertices[tetIndices[i][0]], cubeVertices[tetIndices[i][1]],
                                                  cubeVertices[tetIndices[i][2]], cubeVertices[tetIndices[i][3]],
                                                  colors[i]);
-            cubeDecompositionGroup.getChildren().add(tet);
+            cubeSubdivisionGroup.getChildren().add(tet);
         }
     }
 

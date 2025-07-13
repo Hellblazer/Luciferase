@@ -63,7 +63,7 @@ This document tracks the maintenance and updates of all documentation in the Luc
 - Query APIs: K-NN, Ray, Plane, Frustum
 - Advanced APIs: Collision, Lock-Free, Tree Traversal, Tree Balancing
 - Forest API: Multi-tree coordination
-- **NEW**: Prism API for anisotropic decomposition
+- **NEW**: Prism API for anisotropic subdivision
 
 ### Performance Documentation
 - **PERFORMANCE_INDEX.md** - Guide to all performance docs
@@ -74,7 +74,7 @@ This document tracks the maintenance and updates of all documentation in the Luc
 ### Implementation Guides
 - **TETREE_IMPLEMENTATION_GUIDE.md** - Tetrahedral implementation
 - **PRISM_IMPLEMENTATION_PLAN.md** - Triangular prism implementation
-- **S0_S5_TETRAHEDRAL_DECOMPOSITION.md** - Geometric details
+- **S0_S5_TETRAHEDRAL_SUBDIVISION.md** - Geometric details
 
 ## Documentation Standards
 

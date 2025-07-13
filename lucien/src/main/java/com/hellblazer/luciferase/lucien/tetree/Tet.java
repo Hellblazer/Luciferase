@@ -22,7 +22,7 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
 /**
  * A tetrahedron in the tetrahedral space-filling curve (Tet SFC) implementation.
  *
- * This class represents a single tetrahedron in the hierarchical tetrahedral decomposition of 3D space. The
+ * This class represents a single tetrahedron in the hierarchical tetrahedral subdivision of 3D space. The
  * implementation is based on t8code and the paper "A tetrahedral space-filling curve for non-conforming adaptive
  * meshes" (https://arxiv.org/abs/1509.04627).
  *
@@ -881,7 +881,7 @@ public class Tet {
         // Inline all computations for maximum performance
         final int h = 1 << (Constants.getMaxRefinementLevel() - l);
 
-        // Precompute all vertex coordinates using S0-S5 decomposition
+        // Precompute all vertex coordinates using S0-S5 subdivision
         float v0x = x, v0y = y, v0z = z;  // v0 is the anchor point (always same for all types)
         float v1x, v1y, v1z;
         float v2x, v2y, v2z;
@@ -1021,7 +1021,7 @@ public class Tet {
         var coords = new Point3i[4];
         var h = length();
 
-        // Correct S0-S5 cube decomposition
+        // Correct S0-S5 cube subdivision
         // All 6 tetrahedra share vertices V0 (origin) and V7 (opposite corner)
         switch (type) {
             case 0: // S0: vertices 0, 1, 3, 7 of cube
@@ -1071,7 +1071,7 @@ public class Tet {
      * Legacy coordinate calculation using t8code algorithm. This method is preserved for reference and testing
      * compatibility.
      *
-     * @deprecated Use {@link #coordinates()} which implements correct S0-S5 decomposition
+     * @deprecated Use {@link #coordinates()} which implements correct S0-S5 subdivision
      */
     @Deprecated
     public Point3i[] coordinatesLegacy() {

@@ -7,7 +7,7 @@ This comprehensive guide covers performance optimization for Octree, Tetree, and
 The Luciferase system provides three spatial index implementations:
 
 - **Octree**: Uses Morton encoding (simple bit interleaving) for O(1) operations
-- **Tetree**: Uses tetrahedral decomposition with TM-index for memory efficiency
+- **Tetree**: Uses tetrahedral subdivision with TM-index for memory efficiency
 - **Prism**: Uses rectangular subdivision for anisotropic data distributions
 
 ## Performance Characteristics
@@ -23,7 +23,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - **High-frequency updates** at scale (10K+ entities)
 - **Predictable performance** is more important than peak performance
 - **Legacy systems** designed around Octree characteristics
-- Cube-based spatial decomposition fits the problem domain
+- Cube-based spatial subdivision fits the problem domain
 
 ### Use Tetree When:
 - **Insertion performance** is the primary concern (2.1x to 6.2x faster)
@@ -34,7 +34,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 ### Use Prism When:
 - **Anisotropic data distributions** with directional bias
-- **Rectangular decomposition** better matches data patterns
+- **Rectangular subdivision** better matches data patterns
 - **Streaming or columnar data** with natural layering
 - **Custom subdivision strategies** for specific use cases
 - **Performance requirements** are moderate (between Octree and Tetree)

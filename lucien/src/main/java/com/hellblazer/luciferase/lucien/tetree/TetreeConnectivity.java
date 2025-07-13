@@ -42,7 +42,7 @@ public final class TetreeConnectivity {
     // Number of vertices per face
     public static final int VERTICES_PER_FACE = 3;
 
-    // Number of tetrahedron types in grid decomposition
+    // Number of tetrahedron types in grid subdivision
     public static final int TET_TYPES = 6;
 
     /**

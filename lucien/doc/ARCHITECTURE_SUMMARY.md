@@ -2,12 +2,16 @@
 
 ## Purpose
 
-This document provides a high-level summary of the Luciferase lucien module architecture. For detailed information, see the comprehensive documentation in this directory.
+This document provides a high-level summary of the Luciferase lucien module architecture. For detailed information, see
+the comprehensive documentation in this directory.
 
 ## Current State
 
-The lucien module provides spatial indexing through a unified architecture supporting octree (cubic), tetrahedral, and prismatic (anisotropic)
-decomposition. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each approach. All core features are complete, including S0-S5 tetrahedral decomposition with 100% geometric containment and anisotropic prism decomposition with triangular/linear spatial indexing.
+The lucien module provides spatial indexing through a unified architecture supporting octree (cubic), tetrahedral, and
+prismatic (anisotropic)
+subdivision. The module uses inheritance to maximize code reuse while maintaining the unique characteristics of each
+approach. All core features are complete, including S0-S5 tetrahedral subdivision with 100% geometric containment and
+anisotropic prism subdivision with triangular/linear spatial indexing.
 
 **Total Classes: 150 Java files** organized across 12 packages (including complete Prism implementation)
 
@@ -17,9 +21,10 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 
 - **Root Package (28 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Package (12 classes)**: Complete entity management infrastructure
-- **Octree Package (6 classes)**: Morton curve-based cubic spatial decomposition with internal utilities
-- **Tetree Package (34 classes)**: Tetrahedral spatial decomposition with extensive optimizations and lazy evaluation
-- **Prism Package (8 classes)**: Anisotropic spatial decomposition with Line/Triangle elements, PrismKey composite keys, geometric operations, neighbor finding, ray intersection, and collision detection using SAT
+- **Octree Package (6 classes)**: Morton curve-based cubic spatial subdivision with internal utilities
+- **Tetree Package (34 classes)**: Tetrahedral spatial subdivision with extensive optimizations and lazy evaluation
+- **Prism Package (8 classes)**: Anisotropic spatial subdivision with Line/Triangle elements, PrismKey composite keys,
+  geometric operations, neighbor finding, ray intersection, and collision detection using SAT
 - **Balancing Package (4 classes)**: Tree balancing strategies
 - **Collision Package (29 classes)**: Comprehensive collision detection system with CCD and physics subpackages
 - **Visitor Package (6 classes)**: Tree traversal visitor pattern implementation
@@ -41,11 +46,12 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
       └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
 ```
 
-### Spatial Decomposition Strategies
+### Spatial Subdivision Strategies
 
-- **Octree**: Isotropic cubic decomposition using Morton curve space-filling curves
-- **Tetree**: Tetrahedral decomposition with S0-S5 characteristic tetrahedra
-- **Prism**: Anisotropic decomposition combining 2D triangular and 1D linear elements for applications requiring fine horizontal granularity and coarse vertical granularity
+- **Octree**: Isotropic cubic subdivision using Morton curve space-filling curves
+- **Tetree**: Tetrahedral subdivision with S0-S5 characteristic tetrahedra
+- **Prism**: Anisotropic subdivision combining 2D triangular and 1D linear elements for applications requiring fine
+  horizontal granularity and coarse vertical granularity
 
 ### Major Features
 
@@ -116,7 +122,6 @@ see [COLLISION_DETECTION_API.md](./COLLISION_DETECTION_API.md))
 
 - **[TETREE_IMPLEMENTATION_GUIDE.md](./TETREE_IMPLEMENTATION_GUIDE.md)**: Tetrahedral tree specifics
 
-
 ## Design Philosophy
 
 The current architecture prioritizes:
@@ -124,7 +129,8 @@ The current architecture prioritizes:
 1. **Simplicity**: Essential functionality without unnecessary complexity
 2. **Code Reuse**: 90% shared implementation through inheritance
 3. **Maintainability**: Single place for algorithm changes
-4. **Extensibility**: Easy addition of new spatial decomposition strategies (demonstrated by Octree, Tetree, and Prism implementations)
+4. **Extensibility**: Easy addition of new spatial subdivision strategies (demonstrated by Octree, Tetree, and Prism
+   implementations)
 5. **Performance**: O(1) operations through HashMap-based storage
 6. **Scalability**: Forest architecture for distributed and large-scale applications
 
@@ -159,6 +165,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - **Concurrent benefits**: Lock-free reads and reduced contention favor Tetree
 
 For detailed performance analysis, see:
+
 - [PERFORMANCE_TRACKING.md](./PERFORMANCE_TRACKING.md) - Current performance baseline
 - [PERFORMANCE_INDEX.md](./PERFORMANCE_INDEX.md) - Guide to all performance documentation
 
@@ -171,7 +178,7 @@ For detailed performance analysis, see:
 - Performance benchmarks (controlled by environment flag)
 - Thread-safety tests for concurrent operations
 - API-specific test suites for all features
-- Prism-specific tests for anisotropic decomposition, collision detection, and ray intersection (47 Phase 5 tests)
+- Prism-specific tests for anisotropic subdivision, collision detection, and ray intersection (47 Phase 5 tests)
 
 ## Usage
 
@@ -182,31 +189,31 @@ the comprehensive architecture guide.
 
 ### Phase 6.2 Cleanup (July 10, 2025)
 
-1. **Node Class Consolidation**: 
-   - Eliminated `TetreeNodeImpl` and `OctreeNode` wrapper classes
-   - Created unified `SpatialNodeImpl<ID>` used by both implementations
-   - Reduced generic parameters from 4 to 3 throughout the codebase
-   - Result: Simpler architecture, reduced memory overhead
+1. **Node Class Consolidation**:
+    - Eliminated `TetreeNodeImpl` and `OctreeNode` wrapper classes
+    - Created unified `SpatialNodeImpl<ID>` used by both implementations
+    - Reduced generic parameters from 4 to 3 throughout the codebase
+    - Result: Simpler architecture, reduced memory overhead
 
 2. **K-NN Multi-Level Fix**:
-   - Fixed k-NN search to properly find entities at different levels
-   - Improved search radius expansion algorithm
-   - Increased initial search radius and max expansions
+    - Fixed k-NN search to properly find entities at different levels
+    - Improved search radius expansion algorithm
+    - Increased initial search radius and max expansions
 
 3. **Spanning Entity Queries**:
-   - Fixed issue where large entities weren't found by small query regions
-   - Updated all query methods to check entities when spanning is enabled
+    - Fixed issue where large entities weren't found by small query regions
+    - Updated all query methods to check entities when spanning is enabled
 
 ### Performance Optimizations (July 2025)
 
 1. **Lazy Evaluation**: 99.5% memory reduction for large range queries
-2. **Parent Caching**: 17.3x speedup for parent() operations  
+2. **Parent Caching**: 17.3x speedup for parent() operations
 3. **V2 tmIndex**: 4x speedup over original implementation
 4. **Bulk Operations**: 15.5x speedup for batch insertion
 
-### S0-S5 Tetrahedral Decomposition (July 6, 2025)
+### S0-S5 Tetrahedral Subdivision (July 6, 2025)
 
-- Implemented correct S0-S5 decomposition for 100% containment
+- Implemented correct S0-S5 subdivision for 100% containment
 - Complete cube tiling with no gaps/overlaps
 - Fixed visualization to show entities within their tetrahedra
 

@@ -38,8 +38,8 @@ import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
 
 /**
- * Prism-based spatial index implementation combining 2D triangular decomposition
- * with 1D linear decomposition to create an anisotropic spatial data structure.
+ * Prism-based spatial index implementation combining 2D triangular subdivision
+ * with 1D linear subdivision to create an anisotropic spatial data structure.
  * 
  * This implementation provides fine horizontal granularity and coarse vertical
  * granularity, making it ideal for applications where horizontal precision is
@@ -492,7 +492,7 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     /**
      * Find all entities within a triangular region in the XY plane.
-     * This query is optimized for the prism's triangular decomposition.
+     * This query is optimized for the prism's triangular subdivision.
      * 
      * @param triangle The triangle defining the search region in XY plane
      * @param minZ Minimum Z coordinate

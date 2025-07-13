@@ -77,7 +77,7 @@ public class TetreeRegionCache {
      * @param x     x coordinate
      * @param y     y coordinate
      * @param z     z coordinate
-     * @param level decomposition level
+     * @param level subdivision level
      * @param type  tetrahedron type
      * @return the cached ExtendedTetreeKey or null if not in cache
      */
@@ -105,7 +105,7 @@ public class TetreeRegionCache {
      * performance by ensuring all tmIndex() calls hit the cache.
      *
      * @param bounds the spatial region to pre-compute
-     * @param level  the tetrahedral decomposition level
+     * @param level  the tetrahedral subdivision level
      */
     public void precomputeRegion(VolumeBounds bounds, byte level) {
         var cellSize = Constants.lengthAtLevel(level);

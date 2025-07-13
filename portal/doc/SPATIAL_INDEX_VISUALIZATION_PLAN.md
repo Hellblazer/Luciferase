@@ -6,7 +6,7 @@
 **Module**: portal  
 **Integration**: lucien module (Octree/Tetree)
 
-> **Note**: This document represents the original implementation plan which has been fully completed as of July 2025. All planned features have been implemented, with additional enhancements including transform-based rendering and S0-S5 tetrahedral decomposition visualization.
+> **Note**: This document represents the original implementation plan which has been fully completed as of July 2025. All planned features have been implemented, with additional enhancements including transform-based rendering and S0-S5 tetrahedral subdivision visualization.
 
 ## Project Goal
 
@@ -27,7 +27,7 @@ lucien module, enabling developers and users to:
 - ✅ Basic polyhedra rendering (Cube, Tetrahedron, etc.)
 - ✅ Grid visualization framework (CubicGrid)
 - ✅ Full Octree integration with lucien module
-- ✅ Complete Tetree visualization with S0-S5 decomposition
+- ✅ Complete Tetree visualization with S0-S5 subdivision
 - ✅ Transform-based rendering for memory efficiency
 - ✅ Interactive camera controls and UI
 - ✅ Query visualization (range, k-NN, ray traversal)
@@ -84,12 +84,12 @@ public class OctreeVisualization<ID, Content> extends SpatialIndexView<MortonKey
 public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey, ID, Content> {
     private Tetree<ID, Content> tetree;
     private       Map<Integer, Color> levelColors;
-    private boolean showTetrahedralDecomposition = true;
+    private boolean showTetrahedralSubdivision = true;
     
     // Visualization methods
     private MeshView createTetVisual(Tet tet, int level);
     private void renderTetreeLevel(int level);
-    private void showBeyerDecomposition();
+    private void showBeyerSubdivision();
 }
 ```
 
@@ -106,7 +106,7 @@ public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey
 2. **Tetree Nodes (Tets)**:
     - Wireframe tetrahedra with semi-transparent faces
     - Color-coded by type (0-5) and level
-    - Highlight characteristic tetrahedron decomposition
+    - Highlight characteristic tetrahedron subdivision
     - Show centroid markers
 
 #### Entity Visualization
@@ -158,7 +158,7 @@ public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey
     - [x] Implement TetreeVisualization class
     - [x] Create tetrahedron mesh generation
     - [x] Handle 6 characteristic types (S0-S5)
-    - [x] Show Bey decomposition
+    - [x] Show Bey subdivision
     - [x] Transform-based rendering implementation
 
 2. **Entity rendering**
@@ -228,7 +228,7 @@ public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey
 
 1. **Functionality**:
     - ✓ Visualize Octree with up to 100K nodes at 60 FPS
-    - ✓ Visualize Tetree with proper tetrahedral decomposition
+    - ✓ Visualize Tetree with proper tetrahedral subdivision
     - ✓ Interactive navigation with <16ms response time
     - ✓ Query visualization with clear visual feedback
 
@@ -263,7 +263,7 @@ Tetree<Long, EntityData> tetree = new Tetree<>();
 
 TransformBasedTetreeVisualization<Long, EntityData> viz = 
     new TransformBasedTetreeVisualization<>(tetree);
-viz.showS0S5Decomposition(true, 3); // Show 3 levels
+viz.showS0S5Subdivision(true, 3); // Show 3 levels
 viz.showAnimatedRefinement(true, 5, 500); // Animate 5 levels
 ```
 
@@ -273,12 +273,12 @@ viz.showAnimatedRefinement(true, 5, 500); // Animate 5 levels
 
 1. **Core Visualization Classes**
    - SpatialIndexView abstract base class
-   - OctreeVisualization for cubic decomposition
+   - OctreeVisualization for cubic subdivision
    - TetreeVisualization for tetrahedral structures
    - TransformBasedTetreeVisualization for memory efficiency
 
 2. **Key Features Implemented**
-   - S0-S5 tetrahedral decomposition visualization
+   - S0-S5 tetrahedral subdivision visualization
    - Transform-based rendering (80% memory reduction)
    - Interactive camera controls with ArcBall
    - Query visualization (range, k-NN, ray)
@@ -308,7 +308,7 @@ The spatial index visualization has been successfully implemented, providing com
 ## Summary of Changes from Original Plan
 
 1. **Enhanced Architecture**: Added transform-based rendering approach not in original plan
-2. **S0-S5 Implementation**: Correctly implemented S0-S5 tetrahedral decomposition (July 2025)
+2. **S0-S5 Implementation**: Correctly implemented S0-S5 tetrahedral subdivision (July 2025)
 3. **Memory Optimizations**: Achieved 80% memory reduction with transform approach
 4. **Educational Demos**: Added visualization demos showing mathematical concepts
 5. **Performance**: Met all performance targets with 60+ FPS for typical datasets

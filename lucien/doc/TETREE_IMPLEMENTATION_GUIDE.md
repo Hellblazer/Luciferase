@@ -3,7 +3,7 @@
 ## Overview
 
 This document provides comprehensive documentation of the Tetree (tetrahedral tree) implementation in Luciferase. The
-Tetree is a spatial data structure based on tetrahedral decomposition of 3D space, implementing algorithms from t8code
+Tetree is a spatial data structure based on tetrahedral subdivision of 3D space, implementing algorithms from t8code
 and the paper "A tetrahedral space-filling curve for non-conforming adaptive meshes".
 
 ## Current Implementation Status (June 2025)
@@ -246,7 +246,7 @@ The following duplications have been removed:
     - `TetreeContainmentDebugTest`
     - `TetreeTypeDeterminationTest`
     - `CorrectTetreeLocateTest`
-- **Note**: This is not a bug in our implementation but a characteristic of t8code's decomposition
+- **Note**: This is not a bug in our implementation but a characteristic of t8code's subdivision
 
 ### Remaining Items for Future Enhancement
 

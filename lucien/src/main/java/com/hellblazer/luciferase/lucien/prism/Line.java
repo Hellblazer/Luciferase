@@ -19,10 +19,10 @@ package com.hellblazer.luciferase.lucien.prism;
 import java.util.Objects;
 
 /**
- * 1D linear element for prism vertical (z) decomposition.
+ * 1D linear element for prism vertical (z) subdivision.
  * 
  * Line elements provide 2-way subdivision along the z-axis, forming the height component
- * of prism spatial keys. The decomposition follows a simple binary subdivision pattern
+ * of prism spatial keys. The subdivision follows a simple binary subdivision pattern
  * similar to standard octree subdivision along a single axis.
  * 
  * @author hal.hildebrand

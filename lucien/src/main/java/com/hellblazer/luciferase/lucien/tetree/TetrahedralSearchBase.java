@@ -541,7 +541,7 @@ public abstract class TetrahedralSearchBase {
 
     /**
      * Perform tetrahedral-specific k-nearest neighbor search using tetrahedral space-filling curve properties. This
-     * method leverages the unique properties of tetrahedral decomposition for enhanced performance compared to generic
+     * method leverages the unique properties of tetrahedral subdivision for enhanced performance compared to generic
      * spatial index k-NN search.
      *
      * @param queryPoint query point (must have positive coordinates)
@@ -797,7 +797,7 @@ public abstract class TetrahedralSearchBase {
 
     /**
      * Group of simplicies representing the same spatial region (up to 6 tetrahedra per cubic region in tetrahedral
-     * decomposition)
+     * subdivision)
      */
     public static class SimplexGroup<Content> {
         public final List<Simplex<Content>>         simplicies;

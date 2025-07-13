@@ -226,7 +226,7 @@ public class TetrahedralGeometryEdgeCaseTest {
 
         var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetKey);
         // This test may intersect due to spatial index mapping all positions to root tetrahedron
-        // TODO: This is a limitation of the current spatial decomposition, not a geometry bug
+        // TODO: This is a limitation of the current spatial subdivision, not a geometry bug
         // assertFalse(result.intersects, "Parallel ray outside should not intersect");
 
         // Instead, just verify the method doesn't crash
@@ -307,7 +307,7 @@ public class TetrahedralGeometryEdgeCaseTest {
         var result = TetrahedralGeometry.rayIntersectsTetrahedron(ray, tetKey);
 
         // For now, just verify the method doesn't crash
-        // The test might be expecting behavior that doesn't match the actual tetrahedral decomposition
+        // The test might be expecting behavior that doesn't match the actual tetrahedral subdivision
         assertNotNull(result, "Ray intersection result should not be null");
 
         // If it intersects, verify basic properties

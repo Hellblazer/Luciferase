@@ -93,7 +93,7 @@ mvn test -Dtest=*PerformanceTest
 
 - Development phases and milestones
 - Performance optimization tracking
-- Anisotropic decomposition benefits
+- Anisotropic subdivision benefits
 - Implementation status updates
 
 ## Archived Documents
