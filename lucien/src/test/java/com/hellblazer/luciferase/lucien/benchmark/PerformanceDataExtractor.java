@@ -39,6 +39,11 @@ public class PerformanceDataExtractor {
     private static final Pattern ENTITY_COUNT_PATTERN = Pattern.compile("=== Testing with ([0-9,]+) entities ===");
     private static final Pattern UPDATE_PATTERN = Pattern.compile("UPDATE.*?(Octree|Tetree|Prism):\\s+([0-9.]+)\\s+ms");
     private static final Pattern REMOVAL_PATTERN = Pattern.compile("REMOVAL.*?(Octree|Tetree|Prism):\\s+([0-9.]+)\\s+ms");
+    
+    // Ghost layer performance patterns
+    private static final Pattern GHOST_CREATION_PATTERN = Pattern.compile("(Octree|Tetree|Prism)\\s+Ghost:\\s+([0-9.]+)\\s+ms");
+    private static final Pattern GHOST_MEMORY_PATTERN = Pattern.compile("(Octree|Tetree|Prism)\\s+Ghost\\s+Memory:\\s+([0-9.]+)\\s+MB");
+    private static final Pattern GHOST_SERIALIZATION_PATTERN = Pattern.compile("(Octree|Tetree|Prism)\\s+Ghost\\s+Serialization:\\s+([0-9.]+)\\s+μs");
 
     private final String outputFormat;
     private final Path surefireDir;
@@ -98,11 +103,24 @@ public class PerformanceDataExtractor {
 
     private Path findBenchmarkOutput() throws IOException {
         try (var stream = Files.walk(surefireDir)) {
-            return stream
+            // First try to find the comprehensive three-way benchmark
+            var prismBenchmark = stream
                 .filter(path -> path.getFileName().toString().contains("TEST-") &&
-                              path.getFileName().toString().contains("OctreeVsTetreeBenchmark.xml"))
-                .findFirst()
-                .orElse(null);
+                              path.getFileName().toString().contains("OctreeVsTetreeVsPrismBenchmark.xml"))
+                .findFirst();
+            
+            if (prismBenchmark.isPresent()) {
+                return prismBenchmark.get();
+            }
+            
+            // Fall back to the two-way benchmark
+            try (var stream2 = Files.walk(surefireDir)) {
+                return stream2
+                    .filter(path -> path.getFileName().toString().contains("TEST-") &&
+                                  path.getFileName().toString().contains("OctreeVsTetreeBenchmark.xml"))
+                    .findFirst()
+                    .orElse(null);
+            }
         }
     }
 
@@ -144,6 +162,14 @@ public class PerformanceDataExtractor {
                 currentSection = "removal";
             } else if (line.contains("MEMORY USAGE")) {
                 currentSection = "memory";
+            } else if (line.contains("GHOST LAYER Performance")) {
+                currentSection = "ghost_layer";
+            } else if (line.contains("Ghost Creation Performance")) {
+                currentSection = "ghost_creation";
+            } else if (line.contains("Ghost Memory Usage")) {
+                currentSection = "ghost_memory";
+            } else if (line.contains("Ghost Serialization Performance")) {
+                currentSection = "ghost_serialization";
             }
             
             if (currentEntityCount == null || currentSection == null) continue;
@@ -183,6 +209,33 @@ public class PerformanceDataExtractor {
                         metrics.add(new PerformanceMetric(
                             "memory", currentEntityCount,
                             matcher.group(1), Double.parseDouble(matcher.group(2)), "MB"
+                        ));
+                    }
+                }
+                case "ghost_creation" -> {
+                    var matcher = GHOST_CREATION_PATTERN.matcher(line);
+                    if (matcher.find()) {
+                        metrics.add(new PerformanceMetric(
+                            "ghost_creation", currentEntityCount,
+                            matcher.group(1), Double.parseDouble(matcher.group(2)), "ms"
+                        ));
+                    }
+                }
+                case "ghost_memory" -> {
+                    var matcher = GHOST_MEMORY_PATTERN.matcher(line);
+                    if (matcher.find()) {
+                        metrics.add(new PerformanceMetric(
+                            "ghost_memory", currentEntityCount,
+                            matcher.group(1), Double.parseDouble(matcher.group(2)), "MB"
+                        ));
+                    }
+                }
+                case "ghost_serialization" -> {
+                    var matcher = GHOST_SERIALIZATION_PATTERN.matcher(line);
+                    if (matcher.find()) {
+                        metrics.add(new PerformanceMetric(
+                            "ghost_serialization", currentEntityCount,
+                            matcher.group(1), Double.parseDouble(matcher.group(2)), "μs"
                         ));
                     }
                 }
@@ -265,6 +318,9 @@ public class PerformanceDataExtractor {
             generateMemoryTable(writer);
             generateUpdateTable(writer);
             generateRemovalTable(writer);
+            generateGhostCreationTable(writer);
+            generateGhostMemoryTable(writer);
+            generateGhostSerializationTable(writer);
             
             writer.write("\n## Data Summary\n\n");
             writer.write("- **Total Metrics**: " + metrics.size() + "\n");
@@ -297,6 +353,18 @@ public class PerformanceDataExtractor {
 
     private void generateRemovalTable(BufferedWriter writer) throws IOException {
         generateOperationTable(writer, "removal", "Removal Performance", "ms");
+    }
+
+    private void generateGhostCreationTable(BufferedWriter writer) throws IOException {
+        generateOperationTable(writer, "ghost_creation", "Ghost Creation Performance", "ms");
+    }
+
+    private void generateGhostMemoryTable(BufferedWriter writer) throws IOException {
+        generateOperationTable(writer, "ghost_memory", "Ghost Memory Usage", "MB");
+    }
+
+    private void generateGhostSerializationTable(BufferedWriter writer) throws IOException {
+        generateOperationTable(writer, "ghost_serialization", "Ghost Serialization Performance", "μs");
     }
 
     private void generateOperationTable(BufferedWriter writer, String operation, String title, String unit) throws IOException {

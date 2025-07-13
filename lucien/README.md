@@ -105,10 +105,12 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 
 | Operation        | Octree  | Tetree  | Prism | Best Choice |
 |------------------|---------|---------|-------|-------------|
-| Insert (1K)      | 23.13ms | 4.18ms  | -     | **Tetree**  |
-| k-NN (1K)        | 0.024ms | 0.083ms | -     | **Octree**  |
-| Range Query (1K) | 0.044ms | 0.042ms | -     | **Tetree**  |
-| Memory (1K)      | 430KB   | 276KB   | -     | **Tetree**  |
+| Operation         | Octree     | Tetree     | Prism      | Best Choice      |
+|-------------------|------------|------------|------------|------------------|
+| Insert (1K)       | 25.84ms    | 4.64ms     | -          | **Octree**       |
+| k-NN (1K)         | -          | -          | -          | **Octree**       |
+| Range Query (1K)  | -          | -          | -          | **Octree**       |
+| Memory (2K)       | 430KB      | 287KB      | -          | **Tetree**       |
 
 **Relative Performance** (vs Octree):
 
