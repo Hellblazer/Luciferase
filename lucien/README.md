@@ -5,11 +5,12 @@ Spatial indexing for 3D applications with octree, tetree, and prism implementati
 ## Quick Start
 
 ### Octree (Cubic Decomposition)
+
 ```java
 // Create an octree spatial index
 Octree<LongEntityID, GameObject> octree = new Octree<>(new SequentialLongIDGenerator(), 10,
-                                                        // max entities per node
-                                                        (byte) 20 // max depth
+                                                       // max entities per node
+                                                       (byte) 20 // max depth
 );
 
 // Insert entities
@@ -26,11 +27,12 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = octree.rayIntersectFir
 ```
 
 ### Tetree (Tetrahedral Decomposition) - Recommended
+
 ```java
 // Create a tetree spatial index (2-6x faster insertions, 27-35% less memory)
 Tetree<LongEntityID, GameObject> tetree = new Tetree<>(new SequentialLongIDGenerator(), 10,
-                                                        // max entities per node
-                                                        (byte) 20 // max depth
+                                                       // max entities per node
+                                                       (byte) 20 // max depth
 );
 
 // Insert entities (faster than Octree)
@@ -47,14 +49,15 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFir
 ```
 
 ### Prism (Anisotropic Decomposition)
+
 ```java
 // Create a prism spatial index (triangular constraint: x + y < worldSize)
 Prism<LongEntityID, GameObject> prism = new Prism<>(new SequentialLongIDGenerator(), 10,
-                                                     // max entities per node
-                                                     (byte) 20 // max depth
+                                                    // max entities per node
+                                                    (byte) 20 // max depth
 );
 
-// Insert entities (faster than Tetree but slower than Octree)
+// Insert entities (slower than both Octree and Tetree)
 Point3f position = new Point3f(100, 50, 200);
 GameObject building = new GameObject("Building");
 LongEntityID buildingId = prism.insert(position, (byte) 10, building);
@@ -67,7 +70,8 @@ Ray3D ray = new Ray3D(origin, direction);
 Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirst(ray);
 ```
 
-> **📖 [View Complete API Documentation](doc/API_DOCUMENTATION_INDEX.md)** - 12 comprehensive APIs with examples, performance data, and integration guides
+> **📖 [View Complete API Documentation](doc/API_DOCUMENTATION_INDEX.md)** - 13 comprehensive APIs with examples,
+> performance data, and integration guides
 
 ## Features
 
@@ -98,14 +102,15 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 
 **Updated July 12, 2025**: Added Prism spatial index for anisotropic data applications.
 
-| Operation         | Octree     | Tetree     | Prism      | Best Choice      |
-|-------------------|------------|------------|------------|------------------|
-| Insert (1K)       | 23.13ms    | 4.18ms     | -          | **Tetree**       |
-| k-NN (1K)         | 0.024ms    | 0.083ms    | -          | **Octree**       |
-| Range Query (1K)  | 0.044ms    | 0.042ms    | -          | **Tetree**       |
-| Memory (1K)       | 430KB      | 276KB      | -          | **Tetree**       |
+| Operation        | Octree  | Tetree  | Prism | Best Choice |
+|------------------|---------|---------|-------|-------------|
+| Insert (1K)      | 23.13ms | 4.18ms  | -     | **Tetree**  |
+| k-NN (1K)        | 0.024ms | 0.083ms | -     | **Octree**  |
+| Range Query (1K) | 0.044ms | 0.042ms | -     | **Tetree**  |
+| Memory (1K)      | 430KB   | 276KB   | -     | **Tetree**  |
 
 **Relative Performance** (vs Octree):
+
 - **Tetree**: 5.5x faster insertion, 3.4x slower k-NN, 1.1x faster range, 36% less memory
 - **Prism**: Data not available in current benchmark
 
@@ -114,23 +119,24 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 ### Use Tetree When (Recommended for Most Use Cases):
 
 - **Fastest insertion performance** (2-6x faster than Octree after July 2025 optimizations)
-- General 3D spatial indexing needs
-- Simple, predictable performance is required
-- Using existing Morton curve tools/algorithms
-- Working with legacy systems expecting cubic decomposition
-- High-performance applications where speed is critical
+- **Memory efficiency is important** (27-35% less memory than Octree)
+- Working with positive coordinate space only
+- Need fast entity updates and removals
+- Bulk loading large datasets
+- Complex geometric operations on tetrahedral meshes
 
 ### Use Octree When:
 
-- **Memory efficiency is critical** (7% less memory than Octree)
-- Working with tetrahedral meshes or geometry
-- Specific geometric applications requiring tetrahedral decomposition
-- Memory-constrained environments
+- **Range queries are critical** (1.4-6x faster than Tetree)
+- Need support for negative coordinates
+- Working with existing Morton curve tools/algorithms
+- Uniform cubic decomposition matches your use case
+- Predictable, well-understood performance characteristics needed
 
 ### Use Prism When:
 
 - **Anisotropic data patterns** (non-uniform spatial distribution)
-- **Terrain or urban modeling applications** 
+- **Terrain or urban modeling applications**
 - **Horizontal precision is more important than vertical**
 - Data naturally fits triangular constraint (x + y < worldSize)
 - 2D triangular decomposition combined with 1D linear decomposition is preferred
@@ -140,7 +146,8 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 
 ### 📚 **[Complete API Documentation Index](doc/API_DOCUMENTATION_INDEX.md)**
 
-**Start here for comprehensive API guidance** - Complete reference with 12 specialized APIs, performance data, integration patterns, and use case guides.
+**Start here for comprehensive API guidance** - Complete reference with 13 specialized APIs, performance data,
+integration patterns, and use case guides.
 
 ### Getting Started
 
@@ -170,23 +177,24 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - [Complete Architecture Guide](doc/LUCIEN_ARCHITECTURE.md) - Detailed technical documentation
 - [Tetree Implementation Guide](doc/TETREE_IMPLEMENTATION_GUIDE.md) - Tetrahedral specifics
 - [Spatial Index Performance Guide](doc/SPATIAL_INDEX_PERFORMANCE_GUIDE.md) - Performance tuning
-- [Octree vs Tetree Performance](doc/OCTREE_VS_TETREE_PERFORMANCE.md) - Latest benchmarks
+- [Performance Metrics Master](doc/PERFORMANCE_METRICS_MASTER.md) - Latest benchmarks
 - [Lazy Evaluation Usage Guide](doc/LAZY_EVALUATION_USAGE_GUIDE.md) - Deferred operations
 - [TM Index Limitations](doc/TM_INDEX_LIMITATIONS_AND_SOLUTIONS.md) - Current constraints
 
 ## Architecture Overview
 
 ```
-SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
-  └── AbstractSpatialIndex<Key, ID, Content, NodeType> (90% shared code)
-      ├── Octree<ID, Content> (Morton curve-based)
-      ├── Tetree<ID, Content> (Tetrahedral SFC with S0-S5 decomposition)
-      └── Prism<ID, Content> (Triangular constraint anisotropic decomposition)
+SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
+  └── AbstractSpatialIndex<Key, ID, Content> (90% shared code)
+      ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
+      ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
+      └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
 ```
 
 ### Key Components
 
-- **150 Java files** organized in 10 packages (core, entity, octree, tetree, prism, collision, balancing, visitor, forest, index)
+- **150 Java files** organized in 12 packages (core, entity, octree, tetree, prism, collision, balancing, visitor,
+  forest, lockfree, internal, geometry)
 - **Entity Management**: Centralized lifecycle with multiple ID generation strategies
 - **Spatial Queries**: k-NN, range, ray intersection, collision detection, frustum culling
 - **Performance Optimizations**: ConcurrentSkipListMap, ObjectPools, lock-free updates, lazy evaluation
@@ -200,19 +208,13 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 ```java
 // Insert with bounds for spanning
 EntityBounds bounds = new EntityBounds(0, 0, 0, 50, 100, 50);
-spatialIndex.
-
-insert(buildingId, center, level, building, bounds);
+spatialIndex.insert(buildingId, center, level, building, bounds);
 
 // Update position
-spatialIndex.
-
-updateEntity(entityId, newPosition, level);
+spatialIndex.updateEntity(entityId, newPosition, level);
 
 // Remove entity
-spatialIndex.
-
-removeEntity(entityId);
+spatialIndex.removeEntity(entityId);
 ```
 
 ### Spatial Queries
@@ -265,8 +267,7 @@ String treeId2 = forest.addTree(tree2);
 String treeId3 = forest.addTree(tree3);
 
 // Forest-wide queries
-List<LongEntityID> nearestInForest = forest.findKNearestNeighbors(
-    new Point3f(100, 200, 300), 10);
+List<LongEntityID> nearestInForest = forest.findKNearestNeighbors(new Point3f(100, 200, 300), 10);
 
 // Grid forest for uniform partitioning
 GridForest<MortonKey, LongEntityID, String> gridForest = 
@@ -278,7 +279,7 @@ GridForest<MortonKey, LongEntityID, String> gridForest =
 
 // Dynamic forest management
 DynamicForestManager<MortonKey, LongEntityID, String> manager = 
-    new DynamicForestManager<>(forest, entityManager, 
+    new DynamicForestManager<>(forest, entityManager,
         () -> new Octree<>(idGenerator, 10, (byte) 20));
 
 // Enable automatic tree splitting/merging based on load
@@ -310,13 +311,11 @@ AGPL v3.0 - See LICENSE file for details
 
 ## Status
 
-**Production Ready** - Feature-complete as of July 2025:
-
-- ✅ **Three Spatial Index Types**: Octree (best performance), Tetree (memory efficient), Prism (anisotropic data)
+- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (anisotropic data)
 - ✅ **Complete Forest Implementation**: Adaptive and hierarchical forests with 15 test classes
 - ✅ **Lock-Free Concurrency**: 264K entity movements/sec with atomic protocols
 - ✅ **S0-S5 Tetrahedral Decomposition**: 100% geometric containment achieved
-- ✅ **Comprehensive API Coverage**: 12 specialized APIs for all spatial operations
+- ✅ **Comprehensive API Coverage**: 13 specialized APIs for all spatial operations
 - ✅ **Unified Architecture**: Single API across all three spatial index implementations
 - ✅ **Extensive Test Coverage**: Full test coverage with performance benchmarks
 - ✅ **Clean Documentation**: 24 active docs, comprehensive performance analysis
