@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.hellblazer.luciferase.lucien.forest.ghost.proto";
+option java_outer_classname = "GhostProto";
+option objc_class_prefix = "Ghost";
+
+package lucien.ghost;
+
+import "google/protobuf/timestamp.proto";
+
+// 3D point representation
+message Point3f {
+    float x = 1;
+    float y = 2;
+    float z = 3;
+}
+
+// Entity bounds (AABB)
+message EntityBounds {
+    Point3f min = 1;
+    Point3f max = 2;
+}
+
+// Base spatial key message
+message SpatialKey {
+    oneof key_type {
+        MortonKey morton = 1;
+        TetreeKey tetree = 2;
+    }
+}
+
+// Morton key for Octree
+message MortonKey {
+    uint64 morton_code = 1;
+}
+
+// Tetree key
+message TetreeKey {
+    uint64 low = 1;
+    uint64 high = 2;
+    uint32 level = 3;
+}
+
+// Ghost element representation
+message GhostElement {
+    SpatialKey spatial_key = 1;
+    string entity_id = 2;
+    bytes content = 3;  // Serialized content
+    Point3f position = 4;
+    EntityBounds bounds = 5;
+    int32 owner_rank = 6;
+    int64 global_tree_id = 7;
+    google.protobuf.Timestamp timestamp = 8;
+}
+
+// Batch of ghost elements
+message GhostBatch {
+    repeated GhostElement elements = 1;
+    int32 source_rank = 2;
+    int64 source_tree_id = 3;
+    google.protobuf.Timestamp timestamp = 4;
+}
+
+// Request for ghost elements
+message GhostRequest {
+    int32 requester_rank = 1;
+    int64 requester_tree_id = 2;
+    GhostType ghost_type = 3;
+    repeated SpatialKey boundary_keys = 4;  // Keys at boundary needing ghosts
+}
+
+// Ghost type specification
+enum GhostType {
+    NONE = 0;
+    FACES = 1;
+    EDGES = 2;
+    VERTICES = 3;
+}
+
+// Update notification for ghost elements
+message GhostUpdate {
+    oneof update_type {
+        GhostElement insert = 1;
+        GhostElement update = 2;
+        GhostRemoval remove = 3;
+    }
+}
+
+// Ghost removal notification
+message GhostRemoval {
+    string entity_id = 1;
+    int64 source_tree_id = 2;
+}
+
+// Acknowledgment for ghost updates
+message GhostAck {
+    string entity_id = 1;
+    bool success = 2;
+    string error_message = 3;
+}
+
+// Synchronization request
+message SyncRequest {
+    int32 requester_rank = 1;
+    repeated int64 tree_ids = 2;
+    GhostType ghost_type = 3;
+    google.protobuf.Timestamp since = 4;  // Only sync changes since this time
+}
+
+// Synchronization response
+message SyncResponse {
+    repeated GhostBatch batches = 1;
+    google.protobuf.Timestamp sync_time = 2;
+    int32 total_elements = 3;
+}
+
+// Ghost exchange service
+service GhostExchange {
+    // Request ghost elements from remote process
+    rpc RequestGhosts(GhostRequest) returns (GhostBatch);
+    
+    // Stream ghost updates in real-time
+    rpc StreamGhostUpdates(stream GhostUpdate) returns (stream GhostAck);
+    
+    // Bulk ghost synchronization
+    rpc SyncGhosts(SyncRequest) returns (SyncResponse);
+    
+    // Get ghost statistics
+    rpc GetGhostStats(StatsRequest) returns (StatsResponse);
+}
+
+// Statistics request
+message StatsRequest {
+    int32 requester_rank = 1;
+}
+
+// Statistics response
+message StatsResponse {
+    int32 total_ghost_elements = 1;
+    int32 total_remote_elements = 2;
+    map<int32, int32> ghosts_per_rank = 3;
+    map<int32, int32> remotes_per_rank = 4;
+}

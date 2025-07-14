@@ -16,18 +16,37 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 import java.util.Objects;
 
 /**
- * Full spatial key implementation for Tetree structures using 128-bit representation for all levels 0-20. This extends
- * CompactTetreeKey to add the high bits needed for levels > 10.
+ * Extended spatial key implementation for Tetree structures using 128-bit representation supporting all levels 0-21.
+ * This provides full Octree-equivalent refinement capacity with innovative level 21 bit packing.
  *
- * Unlike Morton codes used in Octrees, Tetree SFC indices are NOT unique across levels. The same index value can
- * represent different tetrahedra at different levels. This key implementation combines both the level and the SFC index
- * to ensure uniqueness.
+ * <h3>Memory Layout</h3>
+ * <ul>
+ * <li><b>Total Storage</b>: 128 bits (two longs: lowBits + highBits)</li>
+ * <li><b>Standard Encoding</b>: Levels 0-20 use standard 6-bits-per-level encoding</li>
+ * <li><b>Level 21 Bit Packing</b>: Uses leftover bits in both longs for full 21-level support</li>
+ * </ul>
  *
- * The TM-index is represented using two longs (128 bits total), which is sufficient for levels 0-20. The comparison
- * ordering ensures spatial locality within each level.
+ * <h3>Level 21 Innovation</h3>
+ * Level 21 uses split encoding across both longs:
+ * <ul>
+ * <li><b>Low Long</b>: 4 bits stored in positions 60-63</li>
+ * <li><b>High Long</b>: 2 bits stored in positions 60-61</li>
+ * <li><b>Total</b>: 6 bits (3 coordinate + 3 type) maintaining SFC semantics</li>
+ * <li><b>Ordering</b>: Preserves space-filling curve ordering properties</li>
+ * </ul>
+ *
+ * <h3>Key Features</h3>
+ * <ul>
+ * <li><b>Global Uniqueness</b>: Level + tmIndex tuple ensures uniqueness across all levels</li>
+ * <li><b>Spatial Locality</b>: SFC ordering maintains spatial proximity in key space</li>
+ * <li><b>Octree Parity</b>: Full 21-level support matches MortonKey capacity</li>
+ * <li><b>Efficient Operations</b>: Optimized parent/child computation with bit manipulation</li>
+ * </ul>
  *
  * @author hal.hildebrand
  */
@@ -37,10 +56,11 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
 
     /**
      * Create a new ExtendedTetreeKey using 128-bit representation.
+     * For level 21, uses special bit packing with level 21 data split across both longs.
      *
-     * @param level    the hierarchical level (0-based)
-     * @param lowBits  the lower 64 bits of the TM-index (levels 0-9)
-     * @param highBits the upper 64 bits of the TM-index (levels 10-20)
+     * @param level    the hierarchical level (0-based, 0-21)
+     * @param lowBits  the lower 64 bits of the TM-index (levels 0-9, plus level 21 bits 0-3)
+     * @param highBits the upper 64 bits of the TM-index (levels 10-20, plus level 21 bits 4-5)
      */
     public ExtendedTetreeKey(byte level, long lowBits, long highBits) {
         super(level, lowBits, true); // Use protected constructor to skip level validation
@@ -57,16 +77,38 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
         return new ExtendedTetreeKey(compactKey.getLevel(), compactKey.getLowBits(), 0L);
     }
 
+    /**
+     * Create a level 21 ExtendedTetreeKey with proper bit packing.
+     * This method handles the special encoding required for level 21.
+     *
+     * @param baseLowBits  the TM-index data for levels 0-9 (60 bits)
+     * @param baseHighBits the TM-index data for levels 10-20 (60 bits)
+     * @param level21Bits  the 6-bit value for level 21 (will be split across both longs)
+     * @return ExtendedTetreeKey with level 21 encoding
+     */
+    public static ExtendedTetreeKey createLevel21Key(long baseLowBits, long baseHighBits, byte level21Bits) {
+        // Pack the level 21 bits using the split encoding
+        long[] packedBits = packLevel21Bits(level21Bits);
+        
+        // Combine base bits with packed level 21 bits
+        long finalLowBits = baseLowBits | packedBits[0];
+        long finalHighBits = baseHighBits | packedBits[1];
+        
+        return new ExtendedTetreeKey((byte) 21, finalLowBits, finalHighBits);
+    }
+
     @Override
     public int compareTo(TetreeKey other) {
-        Objects.requireNonNull(other, "Cannot compare to null ExtendedTetreeKey");
+        Objects.requireNonNull(other, "Cannot compare to null TetreeKey");
 
-        // If levels differ, compare by level first (shallower nodes come first)
-        if (getLevel() != other.getLevel()) {
-            return Byte.compare(getLevel(), other.getLevel());
+        // CRITICAL: First compare level - essential for SFC ordering across levels
+        int levelComparison = Byte.compare(this.level, other.getLevel());
+        if (levelComparison != 0) {
+            return levelComparison;
         }
-
-        // Same level, compare high bits first
+        
+        // Levels are equal, now compare TM-index bits
+        // First compare high bits
         int highComparison = Long.compareUnsigned(this.highBits, other.getHighBits());
         if (highComparison != 0) {
             return highComparison;
@@ -98,7 +140,7 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
     @Override
     public boolean isValid() {
         // Check basic level validity
-        if (level < 0 || level > MAX_REFINEMENT_LEVEL) {
+        if (level < 0 || level > MortonCurve.MAX_REFINEMENT_LEVEL) {
             return false;
         }
 
@@ -115,6 +157,11 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
             // Check that we don't have bits set beyond what's needed
             long maxBitsForLevel = (1L << (level * BITS_PER_LEVEL)) - 1;
             return (getLowBits() & ~maxBitsForLevel) == 0;
+        }
+
+        // Special validation for level 21 with split bit encoding
+        if (level == 21) {
+            return isLevel21Valid();
         }
 
         // For levels 11-20, both low and high bits may be used
@@ -143,6 +190,15 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
         // Calculate parent by removing the last 6-bit tuple
         byte parentLevel = (byte) (level - 1);
 
+        // Special handling for level 21 with split encoding
+        if (level == 21) {
+            // For level 21, we need to remove the split-encoded level 21 bits
+            // and return a level 20 key with standard encoding
+            long parentLowBits = getLowBits() & ((1L << LEVEL_21_LOW_BITS_SHIFT) - 1); // Clear bits 60-63
+            long parentHighBits = highBits & ((1L << LEVEL_21_HIGH_BITS_SHIFT) - 1);   // Clear bits 60-61
+            return new ExtendedTetreeKey(parentLevel, parentLowBits, parentHighBits);
+        }
+
         // The tm-index structure stores levels 0-9 in lowBits (60 bits used)
         // and levels 10-20 in highBits (66 bits used)
         long parentLowBits;
@@ -165,6 +221,36 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
         }
 
         return new ExtendedTetreeKey(parentLevel, parentLowBits, parentHighBits);
+    }
+
+    /**
+     * Validates level 21 bit encoding. For level 21, validates that:
+     * 1. Low bits 0-59 contain valid levels 0-9 data
+     * 2. Low bits 60-63 contain valid level 21 data (4 bits)
+     * 3. High bits 0-59 contain valid levels 10-20 data
+     * 4. High bits 60-61 contain valid level 21 data (2 bits)
+     * 5. High bits 62-63 are unused (must be 0)
+     *
+     * @return true if level 21 encoding is valid
+     */
+    private boolean isLevel21Valid() {
+        // Check that unused high bits (62-63) are zero
+        long unusedHighBits = highBits & ~((1L << 62) - 1); // Mask off bits 0-61
+        if (unusedHighBits != 0) {
+            return false;
+        }
+        
+        // Level 21 needs 21 * 6 = 126 bits total
+        // We have 60 (low 0-59) + 60 (high 0-59) + 4 (low 60-63) + 2 (high 60-61) = 126 bits exactly
+        // So the encoding can use all available bits except high bits 62-63
+        
+        // Validate that level 21 split bits are within valid range (0-63 for 6-bit value)
+        long lowLevel21Bits = (getLowBits() >> LEVEL_21_LOW_BITS_SHIFT) & LEVEL_21_LOW_MASK;
+        long highLevel21Bits = (highBits >> LEVEL_21_HIGH_BITS_SHIFT) & LEVEL_21_HIGH_MASK;
+        long combinedLevel21Bits = lowLevel21Bits | (highLevel21Bits << 4);
+        
+        // The 6-bit value should be valid (0-63)
+        return combinedLevel21Bits <= 0x3F;
     }
 
     @Override

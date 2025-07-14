@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
@@ -175,7 +176,7 @@ public class TetreeVisualizationDemo extends Application {
         // At level 5, cell size is 2^15 = 32768
         // This gives us much larger, more visible tetrahedra
         byte level = 5;
-        float L = (float) Math.pow(2, TetreeKey.MAX_REFINEMENT_LEVEL);
+        float L = (float) Math.pow(2, MortonCurve.MAX_REFINEMENT_LEVEL);
 
         System.out.println("\n=== Inserting " + count + " entities at level " + level + " ===");
 
@@ -338,7 +339,7 @@ public class TetreeVisualizationDemo extends Application {
 
         // Axes in natural coordinates (will be scaled by scene transform)
         // Root tet edge length is 2^20, so make axes slightly longer for visibility
-        double axisLength = (1 << TetreeKey.MAX_REFINEMENT_LEVEL) * 1.1; // 2^20 * 1.1
+        double axisLength = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) * 1.1; // 2^20 * 1.1
         double axisRadius = 8192;    // 2^13
 
         // X axis - Red

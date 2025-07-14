@@ -16,10 +16,11 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
-import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.neighbor.TetreeNeighborDetector;
 import com.hellblazer.luciferase.lucien.tetree.TetreeIterator.TraversalOrder;
 import com.hellblazer.luciferase.lucien.tetree.internal.TetDistance;
 import org.slf4j.Logger;
@@ -80,6 +81,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     public Tetree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
+        
+        // Initialize Tetree-based neighbor detector for ghost layer support
+        setNeighborDetector(new TetreeNeighborDetector(this));
     }
 
     // k-NN search is now provided by AbstractSpatialIndex
@@ -959,8 +963,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     public Iterator<SpatialNodeImpl<ID>> nonEmptyIterator(TraversalOrder order) {
         return new Iterator<SpatialNodeImpl<ID>>() {
             private final Iterator<SpatialNodeImpl<ID>> baseIterator = new TetreeIterator<>(Tetree.this, order, (byte) 0,
-                                                                                           TetreeKey.MAX_REFINEMENT_LEVEL,
-                                                                                           false);
+                                                                                            MortonCurve.MAX_REFINEMENT_LEVEL,
+                                                                                            false);
             private       SpatialNodeImpl<ID>           nextNode     = null;
 
             {
@@ -1958,14 +1962,14 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     private void addChildTetrahedra(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
                                     Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         byte childLevel = (byte) (currentTet.l() + 1);
-        int childCellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - childLevel);
+        int childCellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - childLevel);
 
         // Each tetrahedron can be subdivided into smaller tetrahedra
         // This is a simplified approach - check child cells that overlap current tet
         int minX = currentTet.x();
         int minY = currentTet.y();
         int minZ = currentTet.z();
-        int currentCellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - currentTet.l());
+        int currentCellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - currentTet.l());
 
         for (int x = minX; x < minX + currentCellSize; x += childCellSize) {
             for (int y = minY; y < minY + currentCellSize; y += childCellSize) {
@@ -2086,7 +2090,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         Tet currentTet = Tet.tetrahedron(tetIndex);
 
         // Check neighboring tetrahedra at the same level
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - currentTet.l());
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - currentTet.l());
 
         // For tetrahedral mesh, neighbors are more complex than cubic
         // Check tetrahedra in adjacent grid cells
@@ -2138,7 +2142,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     private void addParentTetrahedra(Tet currentTet, Ray3D ray, PriorityQueue<TetDistance> tetQueue,
                                      Set<TetreeKey<? extends TetreeKey>> visitedTets) {
         byte parentLevel = (byte) (currentTet.l() - 1);
-        int parentCellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - parentLevel);
+        int parentCellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - parentLevel);
 
         // Calculate parent cell coordinates
         int px = (currentTet.x() / parentCellSize) * parentCellSize;
