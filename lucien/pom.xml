@@ -253,7 +253,7 @@
                                 </goals>
                                 <configuration>
                                     <mainClass>
-                                        com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater
+                                        com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater
                                     </mainClass>
                                     <arguments>
                                         <argument>${project.build.directory}/performance-results</argument>
@@ -342,7 +342,7 @@
                                 </goals>
                                 <configuration>
                                     <mainClass>
-                                        com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater
+                                        com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater
                                     </mainClass>
                                     <classpathScope>test</classpathScope>
                                     <arguments>

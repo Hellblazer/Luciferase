@@ -29,7 +29,7 @@ mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.Per
 
 # Step 4: Update documentation
 echo "📚 Updating documentation..."
-mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater" \
+mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater" \
     -Dexec.args="target/performance-results.csv" \
     -Dexec.classpathScope=test
 

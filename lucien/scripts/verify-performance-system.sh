@@ -16,7 +16,7 @@ fi
 # Check if performance classes exist
 echo -n "Checking performance tools... "
 if [ -f "src/test/java/com/hellblazer/luciferase/lucien/performance/TestResultExtractor.java" ] && \
-   [ -f "src/test/java/com/hellblazer/luciferase/lucien/performance/PerformanceDocumentationUpdater.java" ] && \
+   [ -f "src/test/java/com/hellblazer/luciferase/lucien/performance/RobustPerformanceUpdater.java" ] && \
    [ -f "src/test/java/com/hellblazer/luciferase/lucien/performance/PerformanceReportGenerator.java" ]; then
     echo "✓"
 else

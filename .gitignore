@@ -12,3 +12,9 @@
 /lucien/fast-ray.pdf
 /lucien/archived/**
 /logs/**
+
+# Performance testing artifacts
+*.backup
+*.test-backup
+target/prism-test-data*.csv
+target/debug-test.csv
