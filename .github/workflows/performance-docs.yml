@@ -39,25 +39,26 @@ jobs:
         distribution: 'temurin'
         cache: maven
         
+    - name: Build all modules
+      run: |
+        mvn clean compile test-compile
+        
     - name: Run OctreeVsTetreeVsPrismBenchmark
       run: |
-        cd lucien
-        mvn test -Dtest=OctreeVsTetreeVsPrismBenchmark -DRun_SPATIAL_INDEX_PERF_TESTS=true -DfailIfNoTests=false
+        mvn test -Dtest=OctreeVsTetreeVsPrismBenchmark -DRun_SPATIAL_INDEX_PERF_TESTS=true -DfailIfNoTests=false -pl lucien
         
     - name: Extract Performance Data
       run: |
-        cd lucien
         # Extract data from test output
         mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.TestResultExtractor" \
-          -Dexec.args="target/surefire-reports target/performance-results.csv" \
-          -Dexec.classpathScope=test
+          -Dexec.args="lucien/target/surefire-reports lucien/target/performance-results.csv" \
+          -Dexec.classpathScope=test -pl lucien
           
     - name: Update Documentation
       run: |
-        cd lucien
         mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater" \
-          -Dexec.args="target/performance-results.csv" \
-          -Dexec.classpathScope=test
+          -Dexec.args="lucien/target/performance-results.csv" \
+          -Dexec.classpathScope=test -pl lucien
           
     - name: Check for changes
       id: verify-changed-files
