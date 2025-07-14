@@ -2,6 +2,8 @@
 
 Complete guide to all APIs in the Lucien spatial indexing module.
 
+**Total APIs**: 15 (including Ghost and Neighbor Detection)
+
 ## Quick Start Guide
 
 **New to Lucien?** Start here:
@@ -45,6 +47,8 @@ High-performance and specialized operations:
 | **[Lock-Free Operations API](LOCKFREE_OPERATIONS_API.md)** | High-performance concurrent ops | 264K movements/sec, atomic protocols      | High-concurrency scenarios      |
 | **[Tree Traversal API](TREE_TRAVERSAL_API.md)**            | Visitor pattern tree walking    | Custom traversal strategies, filtering    | Complex tree analysis           |
 | **[Tree Balancing API](TREE_BALANCING_API.md)**            | Dynamic tree optimization       | Automatic rebalancing, performance tuning | Maintaining optimal performance |
+| **[Ghost API](GHOST_API.md)**                              | Distributed spatial indexing    | gRPC communication, 5 ghost algorithms    | Distributed simulations         |
+| **[Neighbor Detection API](NEIGHBOR_DETECTION_API.md)**    | Topological neighbor finding    | O(1) for Octree, face/edge/vertex support | Ghost creation, optimization    |
 
 ### 🌲 **Forest Management**
 
@@ -76,7 +80,7 @@ Multi-tree coordination and specialized forest types:
 
 - Start: [Core Spatial Index](CORE_SPATIAL_INDEX_API.md) + [Bulk Operations](BULK_OPERATIONS_API.md)
 - Add: [K-Nearest Neighbors](K_NEAREST_NEIGHBORS_API.md) + [Tree Balancing](TREE_BALANCING_API.md)
-- Scale: [Forest Management](FOREST_MANAGEMENT_API.md)
+- Scale: [Forest Management](FOREST_MANAGEMENT_API.md) + [Ghost API](GHOST_API.md)
 
 **Graphics/Rendering:**
 
@@ -208,6 +212,16 @@ CollisionSystem<LongEntityID, GameObject> collision = new CollisionSystem<>(spat
 Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayIntersectFirst(ray);
 ```
 
+**Distributed Ghost Support:**
+
+```java
+// See: Ghost API + Neighbor Detection API
+spatialIndex.setGhostType(GhostType.FACES);
+spatialIndex.createGhostLayer();
+GhostCommunicationManager ghostManager = new GhostCommunicationManager(50051, spatialIndex, registry);
+ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
+```
+
 ## Performance Reference
 
 ### Benchmark Data (July 2025)
@@ -287,6 +301,6 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayInters
 
 ---
 
-**Last Updated**: July 12, 2025  
-**API Count**: 13 comprehensive APIs covering all spatial indexing functionality  
+**Last Updated**: July 14, 2025  
+**API Count**: 15 comprehensive APIs covering all spatial indexing functionality  
 **Status**: Production Ready ✅

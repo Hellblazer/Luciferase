@@ -10,9 +10,10 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 150 Java files organized across 12 packages, providing a comprehensive spatial indexing system
-with advanced features including collision detection, tree balancing, visitor patterns, and forest management. All core
-features are complete, including the S0-S5 tetrahedral subdivision and anisotropic prism subdivision.
+The module consists of 172 Java files organized across 14 packages, providing a comprehensive spatial indexing system
+with advanced features including collision detection, tree balancing, visitor patterns, forest management, and distributed
+ghost support. All core features are complete, including the S0-S5 tetrahedral subdivision, anisotropic prism subdivision,
+and full ghost layer implementation with gRPC communication.
 
 ## Package Structure
 
@@ -73,13 +74,25 @@ com.hellblazer.luciferase.lucien/
 │   ├── AbstractTreeVisitor - Base implementation
 │   ├── Concrete: EntityCollectorVisitor, NodeCountVisitor
 │   └── Support: TraversalContext, TraversalStrategy
-├── forest/ (16 classes)
+├── forest/ (16 classes + ghost subpackage)
 │   ├── Core: Forest, TreeNode, TreeMetadata, TreeLocation
 │   ├── Configuration: ForestConfig
 │   ├── Management: DynamicForestManager, ForestEntityManager, ForestLoadBalancer
 │   ├── Specialized: GridForest, AdaptiveForest, HierarchicalForest
 │   ├── Spatial Queries: ForestQuery, ForestSpatialQueries
-│   └── Connectivity: TreeConnectivityManager, GhostZoneManager
+│   ├── Connectivity: TreeConnectivityManager
+│   └── ghost/ (11 classes)
+│       ├── Core: GhostElement, GhostType, GhostLayer, GhostZoneManager
+│       ├── Management: ElementGhostManager, DistributedGhostManager
+│       ├── Communication: GhostExchangeServiceImpl, GhostServiceClient, 
+│       │                  GhostCommunicationManager
+│       ├── Serialization: ProtobufConverters, ContentSerializer, 
+│       │                  ContentSerializerRegistry
+│       └── Discovery: SimpleServiceDiscovery
+├── neighbor/ (3 classes)
+│   ├── NeighborDetector - Interface for topological neighbor detection
+│   ├── MortonNeighborDetector - Octree neighbor detection
+│   └── TetreeNeighborDetector - Tetree neighbor detection
 ├── lockfree/ (3 classes)
 │   ├── LockFreeEntityMover - Atomic movement protocol (264K movements/sec)
 │   ├── AtomicSpatialNode - Lock-free spatial node using atomic collections

@@ -98,6 +98,8 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Forest Management**: Multi-tree coordination for distributed spatial indexing
 - **Adaptive Forest**: Dynamic density-based subdivision and merging
 - **Hierarchical Forest**: Level-of-detail management with distance-based LOD
+- **Ghost Layer**: Complete distributed support with gRPC communication
+- **Neighbor Detection**: Topological neighbor finding for Octree and Tetree
 
 ## Performance
 
@@ -289,6 +291,36 @@ DynamicForestManager<MortonKey, LongEntityID, String> manager =
 manager.enableAutoManagement(60000); // Check every minute
 ```
 
+### Distributed Ghost Support
+
+```java
+// Enable ghost layer for distributed operations
+spatialIndex.setGhostType(GhostType.FACES);
+spatialIndex.createGhostLayer();
+
+// Query including ghost elements
+List<ID> nearbyIncludingGhosts = spatialIndex.findEntitiesIncludingGhosts(position, radius);
+
+// Distributed ghost synchronization with gRPC
+GhostCommunicationManager ghostManager = new GhostCommunicationManager(
+    50051,  // Server port
+    spatialIndex,
+    new ContentSerializerRegistry()
+);
+
+// Start ghost service
+ghostManager.startServer();
+
+// Connect to remote spatial index
+ghostManager.addRemoteEndpoint("remote-host:50051");
+
+// Synchronize ghosts
+CompletableFuture<SyncResponse> sync = ghostManager.syncGhosts(
+    Arrays.asList("tree1", "tree2"),
+    GhostType.FACES
+);
+```
+
 ## Requirements
 
 - Java 23+
@@ -314,12 +346,12 @@ AGPL v3.0 - See LICENSE file for details
 
 ## Status
 
-- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (
-  anisotropic data)
+- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (anisotropic data)
 - ✅ **Complete Forest Implementation**: Adaptive and hierarchical forests with 15 test classes
 - ✅ **Lock-Free Concurrency**: 264K entity movements/sec with atomic protocols
 - ✅ **S0-S5 Tetrahedral Subdivision**: 100% geometric containment achieved
-- ✅ **Comprehensive API Coverage**: 13 specialized APIs for all spatial operations
+- ✅ **Comprehensive API Coverage**: 14 specialized APIs for all spatial operations
 - ✅ **Unified Architecture**: Single API across all three spatial index implementations
+- ✅ **Ghost Layer**: Complete distributed support with gRPC and Protocol Buffers
 - ✅ **Extensive Test Coverage**: Full test coverage with performance benchmarks
-- ✅ **Clean Documentation**: 24 active docs, comprehensive performance analysis
+- ✅ **Clean Documentation**: 27 active docs, comprehensive performance analysis
