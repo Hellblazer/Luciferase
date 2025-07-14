@@ -10,7 +10,7 @@ Spatial indexing for 3D applications with octree, tetree, and prism implementati
 // Create an octree spatial index
 Octree<LongEntityID, GameObject> octree = new Octree<>(new SequentialLongIDGenerator(), 10,
                                                        // max entities per node
-                                                       (byte) 20 // max depth
+                                                       (byte) 21 // max depth (21 levels)
 );
 
 // Insert entities
@@ -32,7 +32,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = octree.rayIntersectFir
 // Create a tetree spatial index (2-6x faster insertions, 27-35% less memory)
 Tetree<LongEntityID, GameObject> tetree = new Tetree<>(new SequentialLongIDGenerator(), 10,
                                                        // max entities per node
-                                                       (byte) 20 // max depth
+                                                       (byte) 21 // max depth (full 21-level support)
 );
 
 // Insert entities (faster than Octree)
@@ -54,7 +54,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = tetree.rayIntersectFir
 // Create a prism spatial index (triangular constraint: x + y < worldSize)
 Prism<LongEntityID, GameObject> prism = new Prism<>(new SequentialLongIDGenerator(), 10,
                                                     // max entities per node
-                                                    (byte) 20 // max depth
+                                                    (byte) 21 // max depth (21 levels)
 );
 
 // Insert entities (slower than both Octree and Tetree)
@@ -83,6 +83,7 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Thread-Safe**: Concurrent access with read-write locks
 - **High Performance**: O(1) node access, optimized algorithms
 - **S0-S5 Subdivision**: Tetree uses standard 6-tetrahedra cube tiling
+- **Full 21-Level Support**: Tetree now matches Octree capacity with innovative bit packing
 
 ### Advanced Features
 
@@ -97,6 +98,8 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 - **Forest Management**: Multi-tree coordination for distributed spatial indexing
 - **Adaptive Forest**: Dynamic density-based subdivision and merging
 - **Hierarchical Forest**: Level-of-detail management with distance-based LOD
+- **Ghost Layer**: Complete distributed support with gRPC communication
+- **Neighbor Detection**: Topological neighbor finding for Octree and Tetree
 
 ## Performance
 
@@ -104,10 +107,12 @@ Optional<RayIntersection<LongEntityID, GameObject>> hit = prism.rayIntersectFirs
 
 | Operation        | Octree  | Tetree  | Prism | Best Choice |
 |------------------|---------|---------|-------|-------------|
-| Insert (1K)      | 23.13ms | 4.18ms  | -     | **Tetree**  |
-| k-NN (1K)        | 0.024ms | 0.083ms | -     | **Octree**  |
-| Range Query (1K) | 0.044ms | 0.042ms | -     | **Tetree**  |
-| Memory (1K)      | 430KB   | 276KB   | -     | **Tetree**  |
+| Operation         | Octree     | Tetree     | Prism      | Best Choice      |
+|-------------------|------------|------------|------------|------------------|
+| Insert (1K)       | 25.84ms    | 4.64ms     | -          | **Octree**       |
+| k-NN (1K)         | -          | -          | -          | **Octree**       |
+| Range Query (1K)  | -          | -          | -          | **Octree**       |
+| Memory (2K)       | 430KB      | 287KB      | -          | **Tetree**       |
 
 **Relative Performance** (vs Octree):
 
@@ -252,9 +257,9 @@ spatialIndex.finalizeBulkLoading();
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>();
 
 // Add multiple trees with different spatial index types
-Octree<LongEntityID, String> tree1 = new Octree<>(idGenerator, 10, (byte) 20);
-Tetree<LongEntityID, String> tree2 = new Tetree<>(idGenerator, 10, (byte) 20);
-Prism<LongEntityID, String> tree3 = new Prism<>(idGenerator, 10, (byte) 20);
+Octree<LongEntityID, String> tree1 = new Octree<>(idGenerator, 10, (byte) 21);
+Tetree<LongEntityID, String> tree2 = new Tetree<>(idGenerator, 10, (byte) 21);
+Prism<LongEntityID, String> tree3 = new Prism<>(idGenerator, 10, (byte) 21);
 
 TreeMetadata metadata = TreeMetadata.builder()
     .name("region_north")
@@ -280,10 +285,40 @@ GridForest<MortonKey, LongEntityID, String> gridForest =
 // Dynamic forest management
 DynamicForestManager<MortonKey, LongEntityID, String> manager = 
     new DynamicForestManager<>(forest, entityManager,
-        () -> new Octree<>(idGenerator, 10, (byte) 20));
+        () -> new Octree<>(idGenerator, 10, (byte) 21));
 
 // Enable automatic tree splitting/merging based on load
 manager.enableAutoManagement(60000); // Check every minute
+```
+
+### Distributed Ghost Support
+
+```java
+// Enable ghost layer for distributed operations
+spatialIndex.setGhostType(GhostType.FACES);
+spatialIndex.createGhostLayer();
+
+// Query including ghost elements
+List<ID> nearbyIncludingGhosts = spatialIndex.findEntitiesIncludingGhosts(position, radius);
+
+// Distributed ghost synchronization with gRPC
+GhostCommunicationManager ghostManager = new GhostCommunicationManager(
+    50051,  // Server port
+    spatialIndex,
+    new ContentSerializerRegistry()
+);
+
+// Start ghost service
+ghostManager.startServer();
+
+// Connect to remote spatial index
+ghostManager.addRemoteEndpoint("remote-host:50051");
+
+// Synchronize ghosts
+CompletableFuture<SyncResponse> sync = ghostManager.syncGhosts(
+    Arrays.asList("tree1", "tree2"),
+    GhostType.FACES
+);
 ```
 
 ## Requirements
@@ -311,12 +346,12 @@ AGPL v3.0 - See LICENSE file for details
 
 ## Status
 
-- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (
-  anisotropic data)
+- ✅ **Three Spatial Index Types**: Tetree (fastest insertions, memory efficient), Octree (fastest queries), Prism (anisotropic data)
 - ✅ **Complete Forest Implementation**: Adaptive and hierarchical forests with 15 test classes
 - ✅ **Lock-Free Concurrency**: 264K entity movements/sec with atomic protocols
 - ✅ **S0-S5 Tetrahedral Subdivision**: 100% geometric containment achieved
-- ✅ **Comprehensive API Coverage**: 13 specialized APIs for all spatial operations
+- ✅ **Comprehensive API Coverage**: 14 specialized APIs for all spatial operations
 - ✅ **Unified Architecture**: Single API across all three spatial index implementations
+- ✅ **Ghost Layer**: Complete distributed support with gRPC and Protocol Buffers
 - ✅ **Extensive Test Coverage**: Full test coverage with performance benchmarks
-- ✅ **Clean Documentation**: 24 active docs, comprehensive performance analysis
+- ✅ **Clean Documentation**: 27 active docs, comprehensive performance analysis

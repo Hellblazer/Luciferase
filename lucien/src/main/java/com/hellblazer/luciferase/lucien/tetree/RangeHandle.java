@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Spatial;
 import com.hellblazer.luciferase.lucien.VolumeBounds;
 
@@ -136,7 +137,7 @@ public class RangeHandle {
     private Stream<TetreeKey<? extends TetreeKey>> streamIntersecting() {
         // Simple implementation: check all tetrahedra at the target level
         // In practice, this would use spatial indexing for efficiency
-        int cellSize = (1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level));
+        int cellSize = (1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level));
         
         List<TetreeKey<? extends TetreeKey>> results = new ArrayList<>();
         
@@ -282,7 +283,7 @@ public class RangeHandle {
      */
     public long estimateSize() {
         // Calculate based on volume and level
-        int tetLength = (1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level));
+        int tetLength = (1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level));
         
         long xCells = (long) Math.ceil((bounds.maxX() - bounds.minX()) / tetLength);
         long yCells = (long) Math.ceil((bounds.maxY() - bounds.minY()) / tetLength);

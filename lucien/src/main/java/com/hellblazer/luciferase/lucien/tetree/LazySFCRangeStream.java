@@ -16,8 +16,9 @@
  */
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
+
 import java.util.Spliterator;
-import java.util.Spliterators;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -170,7 +171,7 @@ public class LazySFCRangeStream {
             }
             
             int cellSize = current.length();
-            int maxCoord = (1 << TetreeKey.MAX_REFINEMENT_LEVEL);
+            int maxCoord = (1 << MortonCurve.MAX_REFINEMENT_LEVEL);
             
             if (current.x + cellSize < maxCoord) {
                 return new Tet(current.x + cellSize, current.y, current.z, current.l, (byte)0);

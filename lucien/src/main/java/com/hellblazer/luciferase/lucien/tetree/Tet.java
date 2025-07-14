@@ -13,7 +13,6 @@ import javax.vecmath.Tuple3i;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -1206,9 +1205,16 @@ public class Tet {
             ret = 3 - face;
         }
 
-        // Check if the neighbor would have negative coordinates
-        if (coords[0] < 0 || coords[1] < 0 || coords[2] < 0) {
-            // Return null to indicate no neighbor exists (boundary of positive octant)
+        // Check if the neighbor would have negative coordinates or exceed MAX_COORD
+        if (coords[0] < 0 || coords[1] < 0 || coords[2] < 0 ||
+            coords[0] > Constants.MAX_COORD || coords[1] > Constants.MAX_COORD || coords[2] > Constants.MAX_COORD) {
+            // Return null to indicate no neighbor exists (boundary of domain)
+            return null;
+        }
+
+        // Special case: at level 0, we can only have type 0
+        // If the neighbor would be at level 0 with a different type, it doesn't exist
+        if (l == 0 && typeNew != 0) {
             return null;
         }
 
@@ -1249,7 +1255,7 @@ public class Tet {
      * @throws IllegalStateException if at max refinement level
      */
     public Tet[] geometricSubdivide() {
-        if (l >= TetreeKey.MAX_REFINEMENT_LEVEL) {
+        if (l >= MortonCurve.MAX_REFINEMENT_LEVEL) {
             throw new IllegalStateException("Cannot subdivide at max refinement level");
         }
 

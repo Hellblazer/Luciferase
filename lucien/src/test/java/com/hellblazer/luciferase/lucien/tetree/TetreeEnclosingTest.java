@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +27,7 @@ public class TetreeEnclosingTest {
     void testEnclosingFindsTetrahedronBeforeEntityInsertion() {
         // Test points at level 5
         byte level = 5;
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level); // 2^15 = 32768
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // 2^15 = 32768
         
         // Test point in the middle of the domain
         Point3i testPoint = new Point3i(cellSize * 10, cellSize * 10, cellSize * 10);
@@ -50,7 +51,7 @@ public class TetreeEnclosingTest {
     @Test
     void testEnclosingForVariousPoints() {
         byte level = 5;
-        int maxCoord = 1 << TetreeKey.MAX_REFINEMENT_LEVEL; // 2^20
+        int maxCoord = 1 << MortonCurve.MAX_REFINEMENT_LEVEL; // 2^20
         
         // Test points across the valid domain
         Point3i[] testPoints = {

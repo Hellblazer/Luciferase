@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
@@ -18,7 +19,7 @@ public class TetGeometricSubdivisionTest {
     @Test
     void testGeometricSubdivideAtMaxLevelThrows() {
         // Create a tetrahedron at max level - 1
-        byte maxLevel = TetreeKey.MAX_REFINEMENT_LEVEL;
+        byte maxLevel = MortonCurve.MAX_REFINEMENT_LEVEL;
         Tet parent = new Tet(0, 0, 0, maxLevel, (byte) 0);
 
         // Should throw when trying to subdivide

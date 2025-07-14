@@ -1,9 +1,9 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import org.junit.jupiter.api.Test;
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
-import javax.vecmath.Vector3f;
 
 /**
  * Verify containment using barycentric coordinates to validate S0-S5 implementation
@@ -13,7 +13,7 @@ public class TetContainmentVerificationTest {
     @Test
     void verifyS0S5UsingBarycentricCoordinates() {
         byte level = 5;
-        int h = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int h = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         
         System.out.println("=== S0-S5 Containment Verification Using Barycentric Coordinates ===");
         System.out.println("Cube size (h): " + h);

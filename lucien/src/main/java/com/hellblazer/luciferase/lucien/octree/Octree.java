@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.*;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancer;
 import com.hellblazer.luciferase.lucien.balancing.TreeBalancingStrategy;
 import com.hellblazer.luciferase.lucien.entity.*;
+import com.hellblazer.luciferase.lucien.neighbor.MortonNeighborDetector;
 import com.hellblazer.luciferase.lucien.octree.internal.NodeDistance;
 
 import javax.vecmath.Point3f;
@@ -66,6 +67,9 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     public Octree(EntityIDGenerator<ID> idGenerator, int maxEntitiesPerNode, byte maxDepth,
                   EntitySpanningPolicy spanningPolicy) {
         super(idGenerator, maxEntitiesPerNode, maxDepth, spanningPolicy);
+        
+        // Initialize Morton-based neighbor detector for ghost layer support
+        setNeighborDetector(new MortonNeighborDetector(this));
     }
 
     // ===== Abstract Method Implementations =====

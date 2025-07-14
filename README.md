@@ -5,8 +5,8 @@
 ## Overview
 
 Luciferase provides spatial indexing for 3D applications:
-- **Octree**: Cubic spatial subdivision using Morton curves
-- **Tetree**: Tetrahedral spatial subdivision
+- **Octree**: Cubic spatial subdivision using Morton curves (21 levels)
+- **Tetree**: Tetrahedral spatial subdivision with 21-level support matching Octree capacity
 - **Entity Management**: Support for entities with IDs, bounds, and spanning
 - **Visualization**: JavaFX-based 3D visualization tools
 

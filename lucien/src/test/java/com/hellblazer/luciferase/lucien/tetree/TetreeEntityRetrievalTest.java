@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
+import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,7 @@ public class TetreeEntityRetrievalTest {
     @Test
     void testEntityInsertionAndRetrieval() {
         byte level = 5;
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level); // 2^15 = 32768
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level); // 2^15 = 32768
         
         // Create a list to store entity IDs and positions
         List<LongEntityID> entityIds = new ArrayList<>();
@@ -98,7 +99,7 @@ public class TetreeEntityRetrievalTest {
     @Test
     void testEntityAtExactTetAnchor() {
         byte level = 5;
-        int cellSize = 1 << (TetreeKey.MAX_REFINEMENT_LEVEL - level);
+        int cellSize = 1 << (MortonCurve.MAX_REFINEMENT_LEVEL - level);
         
         // Insert entity at exact tetrahedron anchor
         Point3f position = new Point3f(cellSize * 10, cellSize * 10, cellSize * 10);

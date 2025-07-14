@@ -16,6 +16,9 @@
  */
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey;
+import com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey;
+
 /**
  * Base interface for all spatial index keys.
  *
@@ -72,4 +75,17 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
      */
     @Override
     String toString();
+
+    // TODO: Re-enable protobuf serialization after testing
+    /*
+    default com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey toProtoSpatialKey() {
+        // Temporarily disabled for testing
+        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
+    }
+
+    static SpatialKey<?> fromProtoSpatialKey(com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
+        // Temporarily disabled for testing
+        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
+    }
+    */
 }
