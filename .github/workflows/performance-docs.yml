@@ -1,0 +1,106 @@
+name: Update Performance Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lucien/src/**/*.java'
+      - 'lucien/pom.xml'
+  schedule:
+    # Run every Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force documentation update even without changes'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  performance-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+        
+    - name: Run OctreeVsTetreeVsPrismBenchmark
+      run: |
+        cd lucien
+        mvn test -Dtest=OctreeVsTetreeVsPrismBenchmark -DfailIfNoTests=false
+        
+    - name: Extract Performance Data
+      run: |
+        cd lucien
+        # Extract data from test output
+        mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.TestResultExtractor" \
+          -Dexec.args="target/surefire-reports target/performance-results.csv"
+          
+    - name: Update Documentation
+      run: |
+        cd lucien
+        mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater" \
+          -Dexec.args="target/performance-results.csv"
+          
+    - name: Check for changes
+      id: verify-changed-files
+      run: |
+        git diff --name-only > changed-files.txt
+        if [ -s changed-files.txt ]; then
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "Changed files:"
+          cat changed-files.txt
+        else
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "No documentation changes detected"
+        fi
+        
+    - name: Commit documentation updates
+      if: steps.verify-changed-files.outputs.has_changes == 'true'
+      run: |
+        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add lucien/doc/PERFORMANCE_METRICS_MASTER.md
+        git add lucien/doc/performance-data/*.csv || true
+        git commit -m "Auto-update performance metrics [skip ci]
+        
+        Updated from commit: ${{ github.sha }}
+        Triggered by: ${{ github.event_name }}"
+        
+    - name: Push changes
+      if: steps.verify-changed-files.outputs.has_changes == 'true'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+        
+    - name: Create Performance Report Issue
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const title = 'Performance Test Failure';
+          const body = `Performance tests failed in commit ${context.sha}.
+          
+          **Workflow Run**: [${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+          **Triggered by**: ${context.eventName}
+          
+          Please investigate the failure and update performance metrics manually if needed.`;
+          
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['performance', 'automated']
+          });

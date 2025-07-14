@@ -59,6 +59,25 @@
             <artifactId>grpc-netty-shaded</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Performance reporting dependencies -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.15.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>2.15.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-math3</artifactId>
+            <version>3.6.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -194,7 +213,7 @@
                                     <goal>java</goal>
                                 </goals>
                                 <configuration>
-                                    <mainClass>com.hellblazer.luciferase.lucien.benchmark.PerformanceDataExtractor
+                                    <mainClass>com.hellblazer.luciferase.lucien.performance.TestResultExtractor
                                     </mainClass>
                                     <includePluginDependencies>false</includePluginDependencies>
                                     <classpathScope>test</classpathScope>
@@ -234,7 +253,7 @@
                                 </goals>
                                 <configuration>
                                     <mainClass>
-                                        com.hellblazer.luciferase.lucien.benchmark.PerformanceDocumentationUpdater
+                                        com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater
                                     </mainClass>
                                     <arguments>
                                         <argument>${project.build.directory}/performance-results</argument>
@@ -306,7 +325,7 @@
                                     <goal>java</goal>
                                 </goals>
                                 <configuration>
-                                    <mainClass>com.hellblazer.luciferase.lucien.benchmark.PerformanceDataExtractor
+                                    <mainClass>com.hellblazer.luciferase.lucien.performance.TestResultExtractor
                                     </mainClass>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
@@ -323,7 +342,7 @@
                                 </goals>
                                 <configuration>
                                     <mainClass>
-                                        com.hellblazer.luciferase.lucien.benchmark.PerformanceDocumentationUpdater
+                                        com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater
                                     </mainClass>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
