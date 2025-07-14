@@ -17,40 +17,47 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   performance-update:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
+    - name: Set up JDK 23
+      uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: '23'
         distribution: 'temurin'
         cache: maven
         
     - name: Run OctreeVsTetreeVsPrismBenchmark
       run: |
         cd lucien
-        mvn test -Dtest=OctreeVsTetreeVsPrismBenchmark -DfailIfNoTests=false
+        mvn test -Dtest=OctreeVsTetreeVsPrismBenchmark -DRun_SPATIAL_INDEX_PERF_TESTS=true -DfailIfNoTests=false
         
     - name: Extract Performance Data
       run: |
         cd lucien
         # Extract data from test output
         mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.TestResultExtractor" \
-          -Dexec.args="target/surefire-reports target/performance-results.csv"
+          -Dexec.args="target/surefire-reports target/performance-results.csv" \
+          -Dexec.classpathScope=test
           
     - name: Update Documentation
       run: |
         cd lucien
-        mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.PerformanceDocumentationUpdater" \
-          -Dexec.args="target/performance-results.csv"
+        mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater" \
+          -Dexec.args="target/performance-results.csv" \
+          -Dexec.classpathScope=test
           
     - name: Check for changes
       id: verify-changed-files
@@ -84,23 +91,10 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         branch: ${{ github.ref }}
         
-    - name: Create Performance Report Issue
+    - name: Log Performance Test Failure
       if: failure()
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const title = 'Performance Test Failure';
-          const body = `Performance tests failed in commit ${context.sha}.
-          
-          **Workflow Run**: [${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
-          **Triggered by**: ${context.eventName}
-          
-          Please investigate the failure and update performance metrics manually if needed.`;
-          
-          github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: title,
-            body: body,
-            labels: ['performance', 'automated']
-          });
+      run: |
+        echo "⚠️ Performance tests failed in commit ${{ github.sha }}"
+        echo "Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        echo "Triggered by: ${{ github.event_name }}"
+        echo "Please check the logs above and update performance metrics manually if needed."
