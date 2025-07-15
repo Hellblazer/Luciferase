@@ -123,6 +123,12 @@ public interface SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, 
      * @return the number of unique entities
      */
     int entityCount();
+    
+    /**
+     * Clear all entities and nodes from the spatial index.
+     * After this operation, the index will be empty.
+     */
+    void clear();
 
     /**
      * Finalize bulk loading mode and process any deferred subdivisions.

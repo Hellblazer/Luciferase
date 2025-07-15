@@ -476,6 +476,23 @@ implements SpatialIndex<Key, ID, Content> {
     }
 
     @Override
+    public void clear() {
+        lock.writeLock().lock();
+        try {
+            spatialIndex.clear();
+            entityManager.clear();
+            if (deferredSubdivisionNodes != null) {
+                deferredSubdivisionNodes.clear();
+            }
+            if (subdivisionManager != null) {
+                subdivisionManager.clear();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
     public void finalizeBulkLoading() {
         lock.writeLock().lock();
         try {
