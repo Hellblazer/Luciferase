@@ -73,6 +73,7 @@ Detailed documentation is available in the `sentry/doc/` directory:
 - [**Sentry Architecture**](doc/SENTRY_ARCHITECTURE.md) - Complete module architecture and design
 - [**Delaunay Algorithms**](doc/DELAUNAY_ALGORITHMS.md) - Detailed algorithm explanations and implementations
 - [**Packed Implementation Guide**](doc/PACKED_IMPLEMENTATION_GUIDE.md) - Memory-efficient implementation details
+- [**Performance Optimization Guide**](doc/perf/README.md) - Comprehensive performance analysis and optimization strategy
 
 ## Module Structure
 
