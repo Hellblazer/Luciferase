@@ -579,6 +579,19 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     /**
+     * Calculate the centroid (center point) of this tetrahedron.
+     *
+     * @return the centroid point
+     */
+    public Point3f centroid() {
+        return new Point3f(
+            (a.x + b.x + c.x + d.x) / 4.0f,
+            (a.y + b.y + c.y + d.y) / 4.0f,
+            (a.z + b.z + c.z + d.z) / 4.0f
+        );
+    }
+    
+    /**
      * Answer the canonical ordinal of the opposite vertex of the neighboring tetrahedron
      *
      * @param neighbor

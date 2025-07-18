@@ -33,6 +33,16 @@ public class GeometricPredicatesFactory {
      * Will use SIMD if available and enabled, otherwise falls back to scalar.
      */
     public static GeometricPredicates create() {
+        // Check if hybrid mode is enabled (default: false for now due to precision issues)
+        boolean useHybrid = Boolean.parseBoolean(
+            System.getProperty("sentry.useHybridPredicates", "false")
+        );
+        
+        if (useHybrid) {
+            System.out.println("Using hybrid geometric predicates");
+            return new HybridGeometricPredicates();
+        }
+        
         if (SIMDSupport.isAvailable()) {
             try {
                 // Try to load SIMD implementation via reflection

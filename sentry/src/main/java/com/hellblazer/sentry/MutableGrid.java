@@ -33,7 +33,8 @@ import static com.hellblazer.sentry.V.*;
 
 public class MutableGrid extends Grid {
     protected Vertex      tail;
-    private   Tetrahedron last;
+    protected Tetrahedron last;  // Changed to protected for testing
+    protected LandmarkIndex landmarkIndex;  // Changed to protected for testing
 
     public MutableGrid() {
         this(getFourCorners());
@@ -42,6 +43,7 @@ public class MutableGrid extends Grid {
     public MutableGrid(Vertex[] fourCorners) {
         super(fourCorners);
         last = TetrahedronPool.getInstance().acquire(fourCorners);
+        landmarkIndex = new LandmarkIndex(new Random());
     }
 
     public void clear() {
@@ -51,9 +53,20 @@ public class MutableGrid extends Grid {
         for (var v : fourCorners) {
             v.reset();
         }
+        if (landmarkIndex != null) {
+            landmarkIndex.clear();
+        }
     }
 
     public Tetrahedron locate(Point3f p, Random entropy) {
+        // Use landmark index for better starting point
+        if (landmarkIndex != null && USE_LANDMARK_INDEX) {
+            Tetrahedron result = landmarkIndex.locate(p, last, entropy);
+            if (result != null) {
+                last = result;  // Update last for next query
+            }
+            return result;
+        }
         return locate(p, last, entropy);
     }
 
@@ -221,6 +234,12 @@ public class MutableGrid extends Grid {
         List<OrientedFace> ears = new ArrayList<>(20);
         last = target.flip1to4(v, ears);
         
+        // Update landmark index with new tetrahedra from initial flip
+        if (landmarkIndex != null && USE_LANDMARK_INDEX) {
+            // The flip1to4 creates 4 new tetrahedra
+            landmarkIndex.addTetrahedron(last, size * 4);
+        }
+        
         // Use optimized flip processing
         if (USE_OPTIMIZED_FLIP) {
             while (!ears.isEmpty()) {
@@ -229,6 +248,10 @@ public class MutableGrid extends Grid {
                 Tetrahedron l = FlipOptimizer.flipOptimized(face, v, ears);
                 if (l != null) {
                     last = l;
+                    // Occasionally update landmarks during cascading flips
+                    if (landmarkIndex != null && USE_LANDMARK_INDEX && ears.size() % 10 == 0) {
+                        landmarkIndex.addTetrahedron(l, size * 4);
+                    }
                 }
             }
         } else {
@@ -237,8 +260,17 @@ public class MutableGrid extends Grid {
                 Tetrahedron l = ears.remove(ears.size() - 1).flip(v, ears);
                 if (l != null) {
                     last = l;
+                    // Occasionally update landmarks during cascading flips
+                    if (landmarkIndex != null && USE_LANDMARK_INDEX && ears.size() % 10 == 0) {
+                        landmarkIndex.addTetrahedron(l, size * 4);
+                    }
                 }
             }
+        }
+        
+        // Periodically clean up deleted landmarks
+        if (landmarkIndex != null && USE_LANDMARK_INDEX && size % 100 == 0) {
+            landmarkIndex.cleanup();
         }
     }
     
@@ -246,4 +278,16 @@ public class MutableGrid extends Grid {
     private static final boolean USE_OPTIMIZED_FLIP = Boolean.parseBoolean(
         System.getProperty("sentry.useOptimizedFlip", "true")
     );
+    
+    // Flag to enable/disable landmark index
+    protected static final boolean USE_LANDMARK_INDEX = Boolean.parseBoolean(
+        System.getProperty("sentry.useLandmarkIndex", "false")
+    );
+    
+    /**
+     * Get performance statistics from the landmark index.
+     */
+    public String getLandmarkStatistics() {
+        return landmarkIndex != null ? landmarkIndex.getStatistics() : "No landmark index";
+    }
 }
