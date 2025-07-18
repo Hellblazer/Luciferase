@@ -28,11 +28,11 @@
   - Results: phase1-2-results-2025-01-18.txt
 
 - [x] **1.3 Implement Object Pooling for Tetrahedra**
-  - Status: ✅ COMPLETE
+  - Status: ✅ COMPLETE (with limitations)
   - Branch: main (no feature branch)
   - Actual Impact: 84.28% object reuse rate, memory reduction
   - Files created:
-    - `TetrahedronPool.java` - Thread-safe object pool implementation
+    - `TetrahedronPool.java` - Single-threaded object pool implementation
   - Files modified:
     - `Tetrahedron.java` - Added reset() and clearForReuse() methods
     - `Vertex.java` - Added removeAdjacent() method
@@ -40,6 +40,9 @@
     - `MutableGrid.java` - Updated to acquire from pool
     - `Grid.java` - Updated to acquire from pool
   - Results: phase1-3-results-2025-01-18.txt
+  - **NOTE**: Pool release disabled due to crashes from premature object reuse.
+    The tetrahedralization maintains neighbor references after delete(),
+    requiring more sophisticated lifecycle management for safe pooling.
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30% improvement)
 - [x] **2.1 Optimize ordinalOf() with Direct Field Comparison**

@@ -89,9 +89,17 @@ public class TetrahedronPool {
     /**
      * Release a Tetrahedron back to the pool.
      * The tetrahedron should be cleaned up before release.
+     * 
+     * WARNING: Only call this when you are certain no other
+     * tetrahedra hold references to this one through neighbor pointers.
      */
     public void release(Tetrahedron t) {
         if (t == null || size >= maxSize) {
+            return;
+        }
+        
+        // Safety check - don't release if it's not truly deleted
+        if (!t.isDeleted()) {
             return;
         }
         

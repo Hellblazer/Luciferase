@@ -186,7 +186,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         delete();
         
         // Release deleted tetrahedron to pool
-        TetrahedronPool.getInstance().release(this);
+        // TODO: Disabled due to premature release causing crashes
+        // TetrahedronPool.getInstance().release(this);
 
         var newFace = t0.getFace(D);
         if (newFace.hasAdjacent()) {

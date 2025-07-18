@@ -31,3 +31,10 @@ Implementation Details:
 - Added reset() and clearForReuse() methods to Tetrahedron
 - Modified all Tetrahedron allocation sites to use pool
 - Added proper cleanup and release back to pool on deletion
+
+UPDATE: Object pool release disabled due to premature release issues.
+The tetrahedralization algorithm maintains neighbor references that
+can persist after delete() is called, causing crashes when pooled
+objects are reused while still referenced. A more sophisticated 
+reference counting or garbage collection approach would be needed
+for safe object pooling in this context.
