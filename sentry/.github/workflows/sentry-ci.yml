@@ -1,0 +1,114 @@
+name: Sentry CI
+
+on:
+  push:
+    paths:
+      - 'sentry/**'
+      - '.github/workflows/sentry-ci.yml'
+  pull_request:
+    paths:
+      - 'sentry/**'
+
+jobs:
+  # Main build - no preview features
+  build:
+    runs-on: ubuntu-latest
+    name: Build and Test (Standard)
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK 23
+        uses: actions/setup-java@v4
+        with:
+          java-version: '23'
+          distribution: 'temurin'
+          
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+          
+      - name: Build and test
+        run: |
+          cd sentry
+          mvn clean test
+          
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-standard
+          path: sentry/target/surefire-reports/
+
+  # Preview features build - SIMD
+  build-preview:
+    runs-on: ubuntu-latest
+    name: Build and Test (SIMD Preview)
+    continue-on-error: true  # Don't fail the overall build
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK 23
+        uses: actions/setup-java@v4
+        with:
+          java-version: '23'
+          distribution: 'temurin'
+          
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+          
+      - name: Build with preview features
+        run: |
+          cd sentry
+          mvn clean compile -Psimd-preview
+          
+      - name: Test with SIMD enabled
+        run: |
+          cd sentry
+          mvn test -Psimd-preview -Dtest="!**/benchmark/**"
+          
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-simd
+          path: sentry/target/surefire-reports/
+
+  # Performance benchmarks (optional, manual trigger)
+  benchmark:
+    runs-on: ubuntu-latest
+    name: Performance Benchmarks
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[benchmark]')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK 23
+        uses: actions/setup-java@v4
+        with:
+          java-version: '23'
+          distribution: 'temurin'
+          
+      - name: Run standard benchmarks
+        run: |
+          cd sentry
+          mvn test -Dtest="**/benchmark/**" -DfailIfNoTests=false
+          
+      - name: Run SIMD benchmarks
+        continue-on-error: true
+        run: |
+          cd sentry
+          mvn test -Psimd-preview -Dtest="**/benchmark/**SIMD**" -DfailIfNoTests=false
+          
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: |
+            sentry/target/benchmark-results/
+            sentry/doc/perf/phase*-results*.txt

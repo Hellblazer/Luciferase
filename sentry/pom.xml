@@ -47,4 +47,89 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    
+    <profiles>
+        <!-- Default profile - no preview features -->
+        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+        </profile>
+        
+        <!-- SIMD preview features profile -->
+        <profile>
+            <id>simd-preview</id>
+            <properties>
+                <sentry.enableSIMD>true</sentry.enableSIMD>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <release>23</release>
+                            <compilerArgs>
+                                <arg>--enable-preview</arg>
+                                <arg>--add-modules</arg>
+                                <arg>jdk.incubator.vector</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <argLine>
+                                --enable-preview 
+                                --add-modules jdk.incubator.vector
+                                -Dsentry.enableSIMD=true
+                                -Xmx512m -Xms256m
+                            </argLine>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        
+        <!-- Benchmark profile with SIMD -->
+        <profile>
+            <id>benchmark-simd</id>
+            <properties>
+                <sentry.enableSIMD>true</sentry.enableSIMD>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <release>23</release>
+                            <compilerArgs>
+                                <arg>--enable-preview</arg>
+                                <arg>--add-modules</arg>
+                                <arg>jdk.incubator.vector</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <configuration>
+                            <mainClass>com.hellblazer.sentry.benchmark.SIMDBenchmark</mainClass>
+                            <commandlineArgs>--enable-preview --add-modules jdk.incubator.vector</commandlineArgs>
+                            <systemProperties>
+                                <systemProperty>
+                                    <key>sentry.enableSIMD</key>
+                                    <value>true</value>
+                                </systemProperty>
+                            </systemProperties>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
