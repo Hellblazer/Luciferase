@@ -41,7 +41,7 @@ public class MutableGrid extends Grid {
 
     public MutableGrid(Vertex[] fourCorners) {
         super(fourCorners);
-        last = new Tetrahedron(fourCorners);
+        last = TetrahedronPool.getInstance().acquire(fourCorners);
     }
 
     public void clear() {
@@ -59,7 +59,7 @@ public class MutableGrid extends Grid {
 
     public void rebuild(Random entropy) {
         clear();
-        last = new Tetrahedron(fourCorners);
+        last = TetrahedronPool.getInstance().acquire(fourCorners);
         if (head == null) {
             return;
         }
@@ -145,7 +145,7 @@ public class MutableGrid extends Grid {
             }
         }
         assert d != null;
-        Tetrahedron t = new Tetrahedron(a, b, c, d);
+        Tetrahedron t = TetrahedronPool.getInstance().acquire(a, b, c, d);
         base.getIncident().patch(base.getIncidentVertex(), t, D);
         if (face.includes(a)) {
             if (face.includes(b)) {

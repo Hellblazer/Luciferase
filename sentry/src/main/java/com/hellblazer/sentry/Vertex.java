@@ -167,6 +167,18 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
     final void setAdjacent(Tetrahedron tetrahedron) {
         adjacent = tetrahedron;
     }
+    
+    /**
+     * Remove the adjacent tetrahedron reference if it matches
+     * <p>
+     *
+     * @param tetrahedron
+     */
+    final void removeAdjacent(Tetrahedron tetrahedron) {
+        if (adjacent == tetrahedron) {
+            adjacent = null;
+        }
+    }
 
     public Point3f getLocation() {
         return new Point3f(x, y, z);

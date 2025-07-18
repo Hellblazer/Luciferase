@@ -168,9 +168,10 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var vertex1 = getVertex(1);
         var vertex2 = getVertex(2);
 
-        var t0 = new Tetrahedron(vertex0, incidentVertex, vertex1, opposingVertex);
-        var t1 = new Tetrahedron(vertex1, incidentVertex, vertex2, opposingVertex);
-        var t2 = new Tetrahedron(vertex0, vertex2, incidentVertex, opposingVertex);
+        var pool = TetrahedronPool.getInstance();
+        var t0 = pool.acquire(vertex0, incidentVertex, vertex1, opposingVertex);
+        var t1 = pool.acquire(vertex1, incidentVertex, vertex2, opposingVertex);
+        var t2 = pool.acquire(vertex0, vertex2, incidentVertex, opposingVertex);
 
         t0.setNeighborA(t1);
         t0.setNeighborC(t2);
@@ -193,6 +194,10 @@ public abstract class OrientedFace implements Iterable<Vertex> {
 
         incident.delete();
         adjacent.delete();
+        
+        // Release deleted tetrahedra to pool
+        TetrahedronPool.getInstance().release(incident);
+        TetrahedronPool.getInstance().release(adjacent);
 
         t0.removeAnyDegenerateTetrahedronPair();
         t1.removeAnyDegenerateTetrahedronPair();
@@ -259,14 +264,15 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var y = getIncidentVertex();
         var z = getAdjacentVertex();
 
+        var pool = TetrahedronPool.getInstance();
         Tetrahedron t0;
         Tetrahedron t1;
         if (top0.orientation(x, y, z) > 0) {
-            t0 = new Tetrahedron(x, y, z, top0);
-            t1 = new Tetrahedron(y, x, z, top1);
+            t0 = pool.acquire(x, y, z, top0);
+            t1 = pool.acquire(y, x, z, top1);
         } else {
-            t0 = new Tetrahedron(x, y, z, top1);
-            t1 = new Tetrahedron(y, x, z, top0);
+            t0 = pool.acquire(x, y, z, top1);
+            t1 = pool.acquire(y, x, z, top0);
         }
 
         t0.setNeighborD(t1);
@@ -285,7 +291,14 @@ public abstract class OrientedFace implements Iterable<Vertex> {
 
         incident.delete();
         adjacent.delete();
+        
+        // Release deleted tetrahedra to pool
+        TetrahedronPool.getInstance().release(incident);
+        TetrahedronPool.getInstance().release(adjacent);
         o2.delete();
+        
+        // Release deleted tetrahedron to pool
+        TetrahedronPool.getInstance().release(o2);
 
         return new Tetrahedron[] { t0, t1 };
     }

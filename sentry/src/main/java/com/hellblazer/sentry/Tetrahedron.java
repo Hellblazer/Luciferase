@@ -94,10 +94,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         c = z;
         d = w;
 
-        a.setAdjacent(this);
-        b.setAdjacent(this);
-        c.setAdjacent(this);
-        d.setAdjacent(this);
+        if (a != null) a.setAdjacent(this);
+        if (b != null) b.setAdjacent(this);
+        if (c != null) c.setAdjacent(this);
+        if (d != null) d.setAdjacent(this);
     }
 
     /**
@@ -106,7 +106,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param vertices
      */
     public Tetrahedron(Vertex[] vertices) {
-        this(vertices[0], vertices[1], vertices[2], vertices[3]);
+        this(vertices != null ? vertices[0] : null, 
+             vertices != null ? vertices[1] : null, 
+             vertices != null ? vertices[2] : null, 
+             vertices != null ? vertices[3] : null);
     }
 
     /**
@@ -153,10 +156,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return one of the four new tetrahedra
      */
     public Tetrahedron flip1to4(Vertex n, List<OrientedFace> ears) {
-        var t0 = new Tetrahedron(a, b, c, n);
-        var t1 = new Tetrahedron(a, d, b, n);
-        var t2 = new Tetrahedron(a, c, d, n);
-        var t3 = new Tetrahedron(b, d, c, n);
+        var pool = TetrahedronPool.getInstance();
+        var t0 = pool.acquire(a, b, c, n);
+        var t1 = pool.acquire(a, d, b, n);
+        var t2 = pool.acquire(a, c, d, n);
+        var t3 = pool.acquire(b, d, c, n);
 
         t0.setNeighborA(t3);
         t0.setNeighborB(t2);
@@ -180,6 +184,9 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         patch(A, t3, D);
 
         delete();
+        
+        // Release deleted tetrahedron to pool
+        TetrahedronPool.getInstance().release(this);
 
         var newFace = t0.getFace(D);
         if (newFace.hasAdjacent()) {
@@ -508,6 +515,47 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * Clean up the pointers
      */
     void delete() {
+        nA = nB = nC = nD = null;
+        a = b = c = d = null;
+    }
+    
+    /**
+     * Reset this tetrahedron with new vertices (for object pooling)
+     */
+    void reset(Vertex x, Vertex y, Vertex z, Vertex w) {
+        // Clear old adjacencies if needed
+        if (a != null) a.removeAdjacent(this);
+        if (b != null) b.removeAdjacent(this);
+        if (c != null) c.removeAdjacent(this);
+        if (d != null) d.removeAdjacent(this);
+        
+        // Set new vertices
+        a = x;
+        b = y;
+        c = z;
+        d = w;
+        
+        // Set adjacencies
+        if (a != null) a.setAdjacent(this);
+        if (b != null) b.setAdjacent(this);
+        if (c != null) c.setAdjacent(this);
+        if (d != null) d.setAdjacent(this);
+        
+        // Clear neighbors
+        nA = nB = nC = nD = null;
+    }
+    
+    /**
+     * Clear this tetrahedron for reuse in the pool
+     */
+    void clearForReuse() {
+        // Clear adjacencies
+        if (a != null) a.removeAdjacent(this);
+        if (b != null) b.removeAdjacent(this);
+        if (c != null) c.removeAdjacent(this);
+        if (d != null) d.removeAdjacent(this);
+        
+        // Clear all fields
         nA = nB = nC = nD = null;
         a = b = c = d = null;
     }
