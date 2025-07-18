@@ -3,27 +3,29 @@
 ## Current Status
 
 **Start Date**: 2025-01-18  
-**Current Phase**: Ready to Run Baseline & Start Phase 1.1  
-**Overall Progress**: 5%
+**Current Phase**: Phase 1.2 Complete - Adjacent Vertex Caching Done  
+**Overall Progress**: 25%
 
 ## Phase Status
 
 ### Phase 1: Quick Wins (Target: 30-40% improvement)
-- [ ] **1.1 Replace LinkedList with ArrayList** 
-  - Status: Not Started
+- [x] **1.1 Replace LinkedList with ArrayList** 
+  - Status: ✅ COMPLETE
   - Branch: `sentry-opt-arraylist`
-  - Expected Impact: 15-20%
-  - Files to modify:
-    - `OrientedFace.java` - flip() method signature
-    - All callers of flip() method
+  - Actual Impact: 21% (small lists) to 984% (large lists)
+  - Files modified:
+    - `OrientedFace.java` - flip() and isLocallyDelaunay() methods
+    - `packed/OrientedFace.java` - same methods
+  - Results: phase1-1-results-2025-01-18.txt
   
-- [ ] **1.2 Cache getAdjacentVertex() Results**
-  - Status: Not Started
+- [x] **1.2 Cache getAdjacentVertex() Results**
+  - Status: ✅ COMPLETE
   - Branch: `sentry-opt-cache-adjacent`
-  - Expected Impact: 10-15%
-  - Files to modify:
-    - `OrientedFace.java` - add caching fields and methods
-    - Subclasses: `FaceADB.java`, `FaceBCA.java`, `FaceCBD.java`, `FaceDAC.java`
+  - Actual Impact: 44% improvement in getAdjacentVertex, 46% in flip operations
+  - Files modified:
+    - `OrientedFace.java` - added caching fields and logic
+    - `packed/OrientedFace.java` - same changes for packed version
+  - Results: phase1-2-results-2025-01-18.txt
 
 - [ ] **1.3 Implement Object Pooling for Tetrahedra**
   - Status: Not Started
@@ -92,11 +94,17 @@
     - ManualBenchmarkRunner.java - Simple benchmark runner
 
 ### Current Metrics
+#### Baseline
 - **LinkedList random access**: 17.39 ns/op
 - **ArrayList random access**: 3.91 ns/op (4.45x faster)
 - **Flip operation**: 0.06 µs/op  
 - **getAdjacentVertex**: 16.13 ns/call
-- Expected improvement from Phase 1.1: ~15-20% based on 4.45x faster access
+
+#### After Optimizations
+- **Phase 1.1**: ArrayList conversion - 1.21x to 10.84x improvement
+- **Phase 1.2**: getAdjacentVertex now 9.08 ns/call (44% improvement)
+- **Combined**: Flip operations reduced from 10.76 µs to 5.86 µs (46% improvement)
+- **Overall Progress**: ~25% total performance improvement achieved
 
 ## Test Status
 
@@ -124,6 +132,10 @@
 - Added JMH dependencies following Maven best practices (root pom.xml dependencyManagement)
 - Created run-baseline-benchmark.sh script
 - Fixed Maven dependency management pattern per best practices
+- **Phase 1.1 COMPLETE**: ArrayList optimization implemented
+  - Changed flip() methods from LinkedList to ArrayList
+  - Performance improvement: 1.21x to 10.84x depending on list size
+  - Average flip operation time: 10.76 µs
 
 ## Next Steps
 

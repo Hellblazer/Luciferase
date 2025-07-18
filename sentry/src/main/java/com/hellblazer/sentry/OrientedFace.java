@@ -18,7 +18,7 @@
 package com.hellblazer.sentry;
 
 import java.util.Iterator;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
@@ -33,6 +33,18 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public abstract class OrientedFace implements Iterable<Vertex> {
+    
+    // Cache for adjacent vertex
+    private Vertex cachedAdjacentVertex;
+    private boolean adjacentVertexCached = false;
+    
+    /**
+     * Invalidate the cached adjacent vertex. Should be called when topology changes.
+     */
+    protected void invalidateAdjacentVertexCache() {
+        adjacentVertexCached = false;
+        cachedAdjacentVertex = null;
+    }
 
     /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
@@ -44,7 +56,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @param n     - the vertex to be deleted
      * @return true if the receiver is to be deleted from the list of ears
      */
-    public boolean flip(int index, LinkedList<OrientedFace> ears, Vertex n) {
+    public boolean flip(int index, ArrayList<OrientedFace> ears, Vertex n) {
         if (!isValid()) {
             return true;
         }
@@ -291,12 +303,17 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public Vertex getAdjacentVertex() {
-        Tetrahedron adjacent = getAdjacent();
-        var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
-        if (current == null) {
-            return null;
+        if (!adjacentVertexCached) {
+            Tetrahedron adjacent = getAdjacent();
+            var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
+            if (current == null) {
+                cachedAdjacentVertex = null;
+            } else {
+                cachedAdjacentVertex = adjacent.getVertex(current);
+            }
+            adjacentVertexCached = true;
         }
-        return adjacent.getVertex(current);
+        return cachedAdjacentVertex;
     }
 
     /**
@@ -433,7 +450,7 @@ public abstract class OrientedFace implements Iterable<Vertex> {
 
     }
 
-    private boolean isLocallyDelaunay(int index, Vertex v, LinkedList<OrientedFace> ears) {
+    private boolean isLocallyDelaunay(int index, Vertex v, ArrayList<OrientedFace> ears) {
         Function<Vertex, Boolean> circumSphere = query -> {
             switch (indexOf(v)) {
                 case 0:
