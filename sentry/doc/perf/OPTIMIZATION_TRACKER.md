@@ -42,10 +42,17 @@
   - Results: phase1-3-results-2025-01-18.txt
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30% improvement)
-- [ ] **2.1 Optimize ordinalOf() with Direct Field Comparison**
-  - Status: Not Started
-  - Branch: `sentry-opt-ordinal`
-  - Expected Impact: 5-10%
+- [x] **2.1 Optimize ordinalOf() with Direct Field Comparison**
+  - Status: ✅ COMPLETE
+  - Branch: main (no feature branch)
+  - Actual Impact: 10.2% improvement
+  - Files modified:
+    - `Tetrahedron.java` - Inlined ordinalOf in patch(), switch expressions
+  - Optimizations:
+    - Inlined ordinalOf() logic in patch(Vertex, Tetrahedron, V)
+    - Reordered null checks in ordinalOf(Tetrahedron)
+    - Converted getNeighbor/setNeighbor to switch expressions
+  - Results: phase2-1-results-2025-01-18.txt
 
 - [ ] **2.2 Batch Geometric Predicate Calculations**
   - Status: Not Started

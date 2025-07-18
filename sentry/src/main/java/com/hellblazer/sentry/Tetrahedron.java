@@ -257,16 +257,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return the neighboring tetrahedron, or null if none.
      */
     public Tetrahedron getNeighbor(V v) {
-        if (v == A) {
-            return nA;
-        }
-        if (v == B) {
-            return nB;
-        }
-        if (v == C) {
-            return nC;
-        }
-        return nD;
+        // Use ordinal for array-like access
+        return switch (v) {
+            case A -> nA;
+            case B -> nB;
+            case C -> nC;
+            case D -> nD;
+        };
     }
 
     /**
@@ -587,11 +584,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return
      */
     V ordinalOf(Tetrahedron neighbor) {
+        // Quick null check first
+        if (neighbor == null) {
+            return null;
+        }
+        // Order comparisons by expected frequency
         if (nA == neighbor) {
             return A;
-        }
-        if (nD == neighbor) {
-            return D;
         }
         if (nB == neighbor) {
             return B;
@@ -599,8 +598,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (nC == neighbor) {
             return C;
         }
-        if (neighbor == null) {
-            return null;
+        if (nD == neighbor) {
+            return D;
         }
         throw new IllegalArgumentException("Not a neighbor: " + neighbor);
     }
@@ -630,7 +629,25 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param vNew
      */
     void patch(Vertex old, Tetrahedron n, V vNew) {
-        patch(ordinalOf(old), n, vNew);
+        // Inline ordinalOf to avoid method call overhead
+        V vOld = null;
+        if (old == a) {
+            vOld = A;
+        } else if (old == b) {
+            vOld = B;
+        } else if (old == c) {
+            vOld = C;
+        } else if (old == d) {
+            vOld = D;
+        }
+        
+        if (vOld != null) {
+            var neighbor = getNeighbor(vOld);
+            if (neighbor != null) {
+                neighbor.setNeighbor(neighbor.ordinalOf(this), n);
+                n.setNeighbor(vNew, neighbor);
+            }
+        }
     }
 
     void removeAnyDegenerateTetrahedronPair() {
@@ -668,19 +685,12 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     }
 
     void setNeighbor(V v, Tetrahedron n) {
-        if (v == A) {
-            nA = n;
-            return;
+        switch (v) {
+            case A -> nA = n;
+            case B -> nB = n;
+            case C -> nC = n;
+            case D -> nD = n;
         }
-        if (v == B) {
-            nB = n;
-            return;
-        }
-        if (v == C) {
-            nC = n;
-            return;
-        }
-        nD = n;
     }
 
     void setNeighborA(Tetrahedron t) {

@@ -4,10 +4,10 @@
 
 ### Current Position
 - **Date/Time**: 2025-01-18
-- **Phase**: Phase 1.3 Complete - Object Pooling Implemented
-- **Last Action**: Implemented Tetrahedron object pooling, achieved 84.28% reuse rate
-- **Next Action**: Move to Phase 2.1 (optimize ordinalOf() method)
-- **Key Finding**: Object pooling reduced insertion time from 13.00µs to 9.90µs (23.8% improvement)
+- **Phase**: Phase 2.1 Complete - ordinalOf() and patch() Optimized
+- **Last Action**: Optimized patch() method and converted to switch expressions
+- **Next Action**: Move to Phase 2.2 (batch geometric predicate calculations)
+- **Key Finding**: Patch optimization reduced insertion time from 9.90µs to 8.89µs (10.2% improvement)
 
 ### Completed Actions
 1. ✅ Created FlipOperationBenchmark.java
@@ -44,6 +44,13 @@
 32. ✅ Measured 84.28% object reuse rate
 33. ✅ Achieved 23.8% improvement in insertions
 34. ✅ Saved results: phase1-3-results-2025-01-18.txt
+35. ✅ Refactored TetrahedronPool for single-threaded use
+36. ✅ Created SimpleOrdinalBenchmark.java
+37. ✅ Optimized patch() method with inlined ordinalOf
+38. ✅ Converted getNeighbor/setNeighbor to switch expressions
+39. ✅ Created PatchOptimizationBenchmark.java
+40. ✅ Achieved 10.2% improvement in insertions
+41. ✅ Saved results: phase2-1-results-2025-01-18.txt
 
 ### Pending Actions
 1. ✅ Run baseline benchmarks
@@ -56,7 +63,8 @@
 8. ✅ Update OPTIMIZATION_TRACKER.md
 9. ✅ Complete Phase 1.2 (cache getAdjacentVertex)
 10. ✅ Complete Phase 1.3 (object pooling for Tetrahedra)
-11. ⏳ Begin Phase 2.1 (optimize ordinalOf() method)
+11. ✅ Complete Phase 2.1 (optimize ordinalOf() method)
+12. ⏳ Begin Phase 2.2 (batch geometric predicate calculations)
 
 ### Performance Results Summary
 #### Baseline
@@ -80,6 +88,12 @@
 - **Insertion time**: 9.90 µs (23.8% improvement over Phase 1.2)
 - **Memory usage**: Significantly reduced
 - **Total Phase 1 improvement**: ~60% faster flip operations
+
+#### After Phase 2.1 (ordinalOf/patch Optimization)
+- **Insertion time**: 8.89 µs (10.2% improvement over Phase 1.3)
+- **ordinalOf performance**: 1.64-2.85 ns/op (already optimal)
+- **Optimizations**: Inlined ordinalOf, switch expressions
+- **Total improvement**: ~65% faster than baseline
 
 ### Key Files Status
 - **Modified**: 
