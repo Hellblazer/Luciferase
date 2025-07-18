@@ -38,6 +38,10 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
     @Serial
     private static final long        serialVersionUID = 1L;
     /**
+     * Geometric predicates implementation (scalar or SIMD)
+     */
+    private static final GeometricPredicates PREDICATES = GeometricPredicatesFactory.getInstance();
+    /**
      * One of the tetrahedra adjacent to the vertex
      */
     private              Tetrahedron adjacent;
@@ -247,7 +251,7 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
      * the five points are cospherical
      */
     public final double inSphere(Tuple3f a, Tuple3f b, Tuple3f c, Tuple3f d) {
-        var result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
+        var result = PREDICATES.inSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
         return Math.signum(result);
     }
 
@@ -314,7 +318,7 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
      * the test point is coplanar
      */
     public final double orientation(Tuple3f a, Tuple3f b, Tuple3f c) {
-        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
+        var result = PREDICATES.orientation(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
         return Math.signum(result);
     }
 
