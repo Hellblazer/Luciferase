@@ -61,6 +61,11 @@ public abstract class OrientedFace implements Iterable<Vertex> {
             return true;
         }
 
+        // Early exit optimization - check common cases first
+        if (isRegular()) {
+            return false;
+        }
+
         int reflexEdge = 0;
         int reflexEdges = 0;
         // Determine how many faces are visible from the tetrahedron
@@ -467,23 +472,41 @@ public abstract class OrientedFace implements Iterable<Vertex> {
     }
 
     private boolean isLocallyDelaunay(int index, Vertex v, ArrayList<OrientedFace> ears) {
-        Function<Vertex, Boolean> circumSphere = query -> {
-            switch (indexOf(v)) {
-                case 0:
-                    return inSphere(query, getVertex(1), getVertex(2), getVertex(0));
-                case 1:
-                    return inSphere(query, getVertex(0), getVertex(2), getVertex(1));
-                default:
-                    return inSphere(query, getVertex(0), getVertex(1), getVertex(2));
-            }
-        };
+        // Early exit if ears list is small
+        if (ears.size() <= 1) {
+            return true;
+        }
+        
+        // Pre-compute vertices for circumsphere test
+        int vIndex = indexOf(v);
+        Vertex v0, v1, v2;
+        switch (vIndex) {
+            case 0:
+                v0 = getVertex(1);
+                v1 = getVertex(2);
+                v2 = getVertex(0);
+                break;
+            case 1:
+                v0 = getVertex(0);
+                v1 = getVertex(2);
+                v2 = getVertex(1);
+                break;
+            default:
+                v0 = getVertex(0);
+                v1 = getVertex(1);
+                v2 = getVertex(2);
+                break;
+        }
+        
+        // Check ears for Delaunay condition
         for (int i = 0; i < ears.size(); i++) {
             if (index != i) {
                 OrientedFace ear = ears.get(i);
                 if (ear != this && ear.isValid()) {
+                    // Check vertices of the ear
                     for (Vertex e : ear) {
-                        if (e != v && circumSphere.apply(e)) {
-                            return false;
+                        if (e != v && inSphere(e, v0, v1, v2)) {
+                            return false;  // Early exit on first violation
                         }
                     }
                 }

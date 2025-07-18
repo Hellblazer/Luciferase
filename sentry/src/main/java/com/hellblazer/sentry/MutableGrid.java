@@ -220,11 +220,30 @@ public class MutableGrid extends Grid {
     private void insert(Vertex v, final Tetrahedron target) {
         List<OrientedFace> ears = new ArrayList<>(20);
         last = target.flip1to4(v, ears);
-        while (!ears.isEmpty()) {
-            Tetrahedron l = ears.remove(ears.size() - 1).flip(v, ears);
-            if (l != null) {
-                last = l;
+        
+        // Use optimized flip processing
+        if (USE_OPTIMIZED_FLIP) {
+            while (!ears.isEmpty()) {
+                int lastIndex = ears.size() - 1;
+                OrientedFace face = ears.remove(lastIndex);
+                Tetrahedron l = FlipOptimizer.flipOptimized(face, v, ears);
+                if (l != null) {
+                    last = l;
+                }
+            }
+        } else {
+            // Original implementation
+            while (!ears.isEmpty()) {
+                Tetrahedron l = ears.remove(ears.size() - 1).flip(v, ears);
+                if (l != null) {
+                    last = l;
+                }
             }
         }
     }
+    
+    // Flag to enable/disable optimized flip for benchmarking
+    private static final boolean USE_OPTIMIZED_FLIP = Boolean.parseBoolean(
+        System.getProperty("sentry.useOptimizedFlip", "true")
+    );
 }
