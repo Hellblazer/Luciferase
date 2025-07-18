@@ -96,6 +96,13 @@ Historical documents (describe unimplemented features):
 
 ## Memories
 
+- **MAVEN DEPENDENCY BEST PRACTICE**: When adding dependencies to a Maven multi-module project:
+  1. For multiple dependencies from the same groupId: Create a version property in root pom.xml (e.g., `<jmh.version>1.37</jmh.version>` for multiple JMH artifacts)
+  2. For single dependencies: Use the version directly in dependencyManagement (no property needed)
+  3. Add all dependencies to the root pom.xml `<dependencyManagement>` section with versions
+  4. In module pom.xml files, reference dependencies WITHOUT version tags
+  5. This ensures consistent versions across modules with centralized management
+  Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jmh.version} property
 - The morton curve calculations are correct. Do not change them. The calculateMortonIndex is correct do not change it
 - Constants.toLevel is correct. do not change it
 - TetrahedralGeometry is fully integrated with TetrahedralSearchBase methods

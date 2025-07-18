@@ -41,6 +41,8 @@ Our optimization plan can achieve 80-90% performance improvement through phased 
 
 ### Optimization Strategy
 - [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) - Phased implementation roadmap
+- [OPTIMIZATION_TRACKER.md](OPTIMIZATION_TRACKER.md) - Progress tracking
+- [OPTIMIZATION_SESSION.md](OPTIMIZATION_SESSION.md) - Session state for resuming work
 
 ## Key Findings
 
