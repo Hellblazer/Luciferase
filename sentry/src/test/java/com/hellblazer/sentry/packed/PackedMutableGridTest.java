@@ -186,9 +186,8 @@ public class PackedMutableGridTest {
         // Insert points in a line
         int numPoints = 10;
         for (int i = 0; i < numPoints; i++) {
-            Point3f p = new Point3f(i * 10, 0, 0);
+            Point3f p = new Point3f(i * 100, 0, 0);
             int v = grid.track(p, random);
-            // Debug output removed
             assertTrue(v >= 0, "Point " + i + " should be tracked");
         }
         

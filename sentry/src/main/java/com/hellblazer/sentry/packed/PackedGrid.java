@@ -219,7 +219,7 @@ public class PackedGrid {
     /**
      * Get vertex coordinates
      */
-    protected void getVertexCoords(int vertexIndex, float[] coords) {
+    public void getVertexCoords(int vertexIndex, float[] coords) {
         int base = vertexIndex * COORDS_PER_VERTEX;
         coords[0] = vertices.getFloat(base);
         coords[1] = vertices.getFloat(base + 1);
