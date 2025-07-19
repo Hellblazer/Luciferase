@@ -1,13 +1,12 @@
 # Sentry Module
 
-The Sentry module implements a 3D Delaunay tetrahedralization data structure optimized for kinetic point tracking and spatial awareness systems within the Luciferase framework. It provides both object-oriented and memory-efficient packed implementations.
+The Sentry module implements a 3D Delaunay tetrahedralization data structure optimized for kinetic point tracking and spatial awareness systems within the Luciferase framework.
 
 ## Features
 
 - **Dynamic Delaunay Tetrahedralization**: Incremental construction with point insertion and deletion
 - **Kinetic Point Tracking**: Efficient updates for moving points in 3D space
 - **Voronoi Dual**: Extract Voronoi diagrams for spatial partitioning
-- **Memory-Efficient Packed Implementation**: ~60 bytes per vertex with primitive arrays
 - **Spatial Publish/Subscribe Framework**: High-level abstractions for spatial awareness
 
 ## Quick Start
@@ -33,23 +32,6 @@ grid.delete(v1);
 Tetrahedron tet = grid.locate(new Point3f(0.5f, 0.5f, 0.5f));
 ```
 
-### Packed Implementation
-
-```java
-import com.hellblazer.sentry.packed.PackedGrid;
-
-// Create memory-efficient packed grid
-PackedGrid packed = new PackedGrid(1000);
-
-// Add points (returns vertex index)
-int vertex = packed.add(0.5f, 0.5f, 0.5f);
-
-// Stream through all tetrahedra
-packed.tetrahedronStream().forEach(tet -> {
-    // Process tetrahedron
-});
-```
-
 ### Spatial Awareness
 
 ```java
@@ -72,7 +54,6 @@ Detailed documentation is available in the `sentry/doc/` directory:
 
 - [**Sentry Architecture**](doc/SENTRY_ARCHITECTURE.md) - Complete module architecture and design
 - [**Delaunay Algorithms**](doc/DELAUNAY_ALGORITHMS.md) - Detailed algorithm explanations and implementations
-- [**Packed Implementation Guide**](doc/PACKED_IMPLEMENTATION_GUIDE.md) - Memory-efficient implementation details
 - [**Performance Optimization Guide**](doc/perf/README.md) - Comprehensive performance analysis and optimization strategy
 
 ## Module Structure
@@ -86,9 +67,6 @@ sentry/
 │   │   ├── SpatialSubscription.java
 │   │   ├── SphericalPublish.java
 │   │   └── SphericalSubscription.java
-│   ├── packed/            # Memory-efficient implementation
-│   │   ├── PackedGrid.java
-│   │   └── OrientedFace.java
 │   └── (core classes)     # Base Delaunay implementation
 │       ├── Grid.java
 │       ├── MutableGrid.java
@@ -124,8 +102,6 @@ The implementation uses a bounded universe {-32768, +32768} with float precision
 
 ### Memory Usage
 - Object-oriented: ~200 bytes per vertex
-- Packed implementation: ~60 bytes per vertex
-- No garbage collection pressure in packed mode
 
 ## Design Decisions
 
@@ -182,7 +158,6 @@ mvn test
 
 Key test classes:
 - `TetrahedralizationTest`: Core algorithm validation
-- `PackedGridTest`: Packed implementation tests
 - `MutableGridTest`: Dynamic operations
 - `OrientedFaceTest`: Bistellar flip operations
 

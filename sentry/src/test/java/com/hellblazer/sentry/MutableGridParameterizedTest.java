@@ -201,8 +201,8 @@ public class MutableGridParameterizedTest {
             float z = (random.nextFloat() - 0.5f) * 1000;
             
             Point3f p = new Point3f(x, y, z);
-            int v = grid.track(p, random);
-            if (grid.isValidVertex(v)) {
+            int v = track(p, random);
+            if (isValidVertex(v)) {
                 tracked++;
             }
         }
@@ -258,8 +258,8 @@ public class MutableGridParameterizedTest {
         
         int trackedCount = 0;
         for (Point3f p : closePoints) {
-            int v = grid.track(p, random);
-            if (grid.isValidVertex(v)) {
+            int v = track(p, random);
+            if (isValidVertex(v)) {
                 trackedCount++;
             }
         }
@@ -281,8 +281,8 @@ public class MutableGridParameterizedTest {
         
         for (int i = 0; i < numPoints; i++) {
             Point3f p = new Point3f(i * 10, 0, 0);
-            int v = grid.track(p, random);
-            if (grid.isValidVertex(v)) {
+            int v = track(p, random);
+            if (isValidVertex(v)) {
                 tracked++;
             }
         }

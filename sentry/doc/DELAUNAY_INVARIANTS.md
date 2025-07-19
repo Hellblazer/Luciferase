@@ -97,15 +97,6 @@ Each invariant can be verified through specific checks:
 4. **Convexity**: Verify no overlaps and complete coverage
 5. **Algorithmic**: Test with known inputs and expected outputs
 
-## Critical Invariants for Packed Implementation
-
-The following invariants are most likely to be violated in a packed implementation:
-
-1. **Bidirectional neighbor updates** - When setting T1.neighbor = T2, must find and update reverse
-2. **Deletion handling** - Must clear all references to deleted tetrahedra
-3. **Index management** - Reused indices must not corrupt existing references
-4. **Atomic updates** - Multiple field updates must maintain consistency
-
 ## Testing Strategy
 
 1. **Unit tests**: Verify each invariant after each operation

@@ -94,10 +94,9 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 
 ## Remaining Opportunities
 
-1. **Debug Packed Implementation**: Fix neighbor tracking to enable SoA benchmarking
-2. **SIMD Batch Operations**: Current SIMD works but needs batch processing
-3. **Landmark Refinement**: Improve spatial index landmark selection
-4. **Memory Pool Enhancement**: Implement proper lifecycle management
+1. **SIMD Batch Operations**: Current SIMD works but needs batch processing
+2. **Landmark Refinement**: Improve spatial index landmark selection
+3. **Memory Pool Enhancement**: Implement proper lifecycle management
 
 ## Conclusion
 

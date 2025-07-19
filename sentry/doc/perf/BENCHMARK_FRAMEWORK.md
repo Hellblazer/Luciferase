@@ -149,15 +149,6 @@ public class TetrahedralizationBenchmark {
         }
         return grid;
     }
-    
-    @Benchmark
-    public PackedGrid benchmarkPacked() {
-        PackedGrid grid = new PackedGrid(pointCount);
-        for (Point3f p : points) {
-            grid.add(p.x, p.y, p.z);
-        }
-        return grid;
-    }
 }
 ```
 
