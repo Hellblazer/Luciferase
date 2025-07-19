@@ -64,27 +64,32 @@ public class PackedFlipOperations {
         
         // Set internal neighbors between the new tetrahedra
         // Each new tetrahedron has the new vertex as vertex D (index 3)
-        // The face opposite D connects to the original neighbors
+        // The face opposite D (face 3) connects to the original external neighbors
         
+        // Internal neighbors (faces opposite A, B, C)
         // t0 neighbors: face opposite A connects to t3, B to t2, C to t1
         grid.setNeighbor(t0, 0, t3); // face opposite A
         grid.setNeighbor(t0, 1, t2); // face opposite B
         grid.setNeighbor(t0, 2, t1); // face opposite C
+        // Face 3 (opposite D) will be set by patchExternalNeighbor
         
         // t1 neighbors: face opposite A connects to t3, B to t0, C to t2
         grid.setNeighbor(t1, 0, t3); // face opposite A
         grid.setNeighbor(t1, 1, t0); // face opposite B
         grid.setNeighbor(t1, 2, t2); // face opposite C
+        // Face 3 (opposite D) will be set by patchExternalNeighbor
         
         // t2 neighbors: face opposite A connects to t3, B to t1, C to t0
         grid.setNeighbor(t2, 0, t3); // face opposite A
         grid.setNeighbor(t2, 1, t1); // face opposite B
         grid.setNeighbor(t2, 2, t0); // face opposite C
+        // Face 3 (opposite D) will be set by patchExternalNeighbor
         
         // t3 neighbors: face opposite A connects to t2, B to t0, C to t1
         grid.setNeighbor(t3, 0, t2); // face opposite A
         grid.setNeighbor(t3, 1, t0); // face opposite B
         grid.setNeighbor(t3, 2, t1); // face opposite C
+        // Face 3 (opposite D) will be set by patchExternalNeighbor
         
         // Patch external neighbors
         // Each new tet inherits one face from the original
@@ -158,93 +163,42 @@ public class PackedFlipOperations {
         int t1 = grid.createTetrahedron(faceVerts[1], incidentOpposite, faceVerts[2], adjacentOpposite);
         int t2 = grid.createTetrahedron(faceVerts[0], faceVerts[2], incidentOpposite, adjacentOpposite);
         
-        // Set internal neighbors
-        grid.setNeighbor(t0, 0, t1); // face opposite first vertex
-        grid.setNeighbor(t0, 2, t2); // face opposite third vertex
+        // Set internal neighbors (matching OO implementation)
+        // t0 neighbors: face opposite A connects to t1, face opposite C connects to t2
+        grid.setNeighbor(t0, 0, t1); // face opposite vertex 0 (faceVerts[0])
+        grid.setNeighbor(t0, 2, t2); // face opposite vertex 2 (faceVerts[1])
         
-        grid.setNeighbor(t1, 0, t2); // face opposite first vertex
-        grid.setNeighbor(t1, 2, t0); // face opposite third vertex
+        // t1 neighbors: face opposite A connects to t2, face opposite C connects to t0
+        grid.setNeighbor(t1, 0, t2); // face opposite vertex 0 (faceVerts[1])
+        grid.setNeighbor(t1, 2, t0); // face opposite vertex 2 (faceVerts[2])
         
-        grid.setNeighbor(t2, 0, t1); // face opposite first vertex
-        grid.setNeighbor(t2, 1, t0); // face opposite second vertex
+        // t2 neighbors: face opposite A connects to t1, face opposite B connects to t0
+        grid.setNeighbor(t2, 0, t1); // face opposite vertex 0 (faceVerts[0])
+        grid.setNeighbor(t2, 1, t0); // face opposite vertex 1 (faceVerts[2])
         
-        // Patch external neighbors from incident tetrahedron
-        for (int i = 0; i < 4; i++) {
-            if (i != faceIndex) {
-                int neighbor = grid.getNeighbor(tetIndex, i);
-                if (neighbor != PackedGrid.INVALID_INDEX) {
-                    // Determine which new tet gets this neighbor
-                    int targetTet = determineTargetTetForNeighbor(i, faceIndex, incidentVerts, t0, t1, t2);
-                    
-                    // Find which face of neighbor pointed to incident
-                    int neighborFace = -1;
-                    for (int f = 0; f < 4; f++) {
-                        if (grid.getNeighbor(neighbor, f) == tetIndex) {
-                            neighborFace = f;
-                            break;
-                        }
-                    }
-                    
-                    if (neighborFace != -1) {
-                        // The face vertices excluding vertex at position i
-                        int[] incidentFaceVerts = new int[3];
-                        int incidentIdx = 0;
-                        for (int v = 0; v < 4; v++) {
-                            if (v != i) {
-                                incidentFaceVerts[incidentIdx++] = incidentVerts[v];
-                            }
-                        }
-                        
-                        // Find which face of targetTet contains these vertices
-                        TetrahedronProxy targetProxy = new TetrahedronProxy(grid, targetTet);
-                        int targetFace = targetProxy.findFaceWithVertices(incidentFaceVerts[0], incidentFaceVerts[1], incidentFaceVerts[2]);
-                        
-                        if (targetFace != -1) {
-                            grid.setNeighbors(targetTet, targetFace, neighbor, neighborFace);
-                        }
-                    }
-                }
-            }
-        }
+        // Patch external neighbors (simplified to match OO implementation)
+        // The OO implementation uses patch(vertex, newTet, ordinal) which:
+        // 1. Finds the neighbor opposite the vertex
+        // 2. Updates that neighbor to point to the new tet
+        // 3. Updates the new tet to point back
         
-        // Patch external neighbors from adjacent tetrahedron
-        for (int i = 0; i < 4; i++) {
-            if (i != adjacentFace) {
-                int neighbor = grid.getNeighbor(adjacent.getIndex(), i);
-                if (neighbor != PackedGrid.INVALID_INDEX) {
-                    // Determine which new tet gets this neighbor
-                    int targetTet = determineTargetTetForNeighbor(i, adjacentFace, adjacentVerts, t0, t1, t2);
-                    
-                    // Find which face of neighbor pointed to adjacent
-                    int neighborFace = -1;
-                    for (int f = 0; f < 4; f++) {
-                        if (grid.getNeighbor(neighbor, f) == adjacent.getIndex()) {
-                            neighborFace = f;
-                            break;
-                        }
-                    }
-                    
-                    if (neighborFace != -1) {
-                        // The face vertices excluding vertex at position i
-                        int[] adjacentFaceVerts = new int[3];
-                        int adjacentIdx = 0;
-                        for (int v = 0; v < 4; v++) {
-                            if (v != i) {
-                                adjacentFaceVerts[adjacentIdx++] = adjacentVerts[v];
-                            }
-                        }
-                        
-                        // Find which face of targetTet contains these vertices
-                        TetrahedronProxy targetProxy = new TetrahedronProxy(grid, targetTet);
-                        int targetFace = targetProxy.findFaceWithVertices(adjacentFaceVerts[0], adjacentFaceVerts[1], adjacentFaceVerts[2]);
-                        
-                        if (targetFace != -1) {
-                            grid.setNeighbors(targetTet, targetFace, neighbor, neighborFace);
-                        }
-                    }
-                }
-            }
-        }
+        // incident.patch(vertex2, t0, D);
+        patchSimple(tetIndex, faceVerts[2], t0, 3); // face 3 is opposite vertex D
+        
+        // incident.patch(vertex0, t1, D);
+        patchSimple(tetIndex, faceVerts[0], t1, 3);
+        
+        // incident.patch(vertex1, t2, D);
+        patchSimple(tetIndex, faceVerts[1], t2, 3);
+        
+        // adjacent.patch(vertex0, t1, B);
+        patchSimple(adjacent.getIndex(), faceVerts[0], t1, 1); // face 1 is opposite vertex B
+        
+        // adjacent.patch(vertex1, t2, C);
+        patchSimple(adjacent.getIndex(), faceVerts[1], t2, 2); // face 2 is opposite vertex C
+        
+        // adjacent.patch(vertex2, t0, B);
+        patchSimple(adjacent.getIndex(), faceVerts[2], t0, 1);
         
         // Delete the original tetrahedra
         grid.deleteTetrahedron(tetIndex);
@@ -539,6 +493,32 @@ public class PackedFlipOperations {
             // Find which face of neighbor points back to oldTet
             for (int i = 0; i < 4; i++) {
                 if (grid.getNeighbor(neighbor, i) == oldTet) {
+                    grid.setNeighbors(newTet, newFace, neighbor, i);
+                    break;
+                }
+            }
+        }
+    }
+    
+    /**
+     * Simple patch method matching OO implementation
+     * Finds the face opposite the given vertex and patches the neighbor
+     */
+    private void patchSimple(int tetIndex, int vertex, int newTet, int newFace) {
+        TetrahedronProxy tet = new TetrahedronProxy(grid, tetIndex);
+        
+        // Find which face is opposite the given vertex
+        int ordinal = tet.ordinalOf(vertex);
+        if (ordinal == -1) {
+            return;
+        }
+        
+        // Get the neighbor opposite this vertex
+        int neighbor = grid.getNeighbor(tetIndex, ordinal);
+        if (neighbor != PackedGrid.INVALID_INDEX) {
+            // Find which face of neighbor points back to tetIndex
+            for (int i = 0; i < 4; i++) {
+                if (grid.getNeighbor(neighbor, i) == tetIndex) {
                     grid.setNeighbors(newTet, newFace, neighbor, i);
                     break;
                 }

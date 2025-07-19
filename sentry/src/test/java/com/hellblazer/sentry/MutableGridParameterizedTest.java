@@ -284,25 +284,11 @@ public class MutableGridParameterizedTest {
             int v = grid.track(p, random);
             if (grid.isValidVertex(v)) {
                 tracked++;
-            } else {
-                System.out.println(grid.getImplementationName() + 
-                    ": Failed to track point " + i + " at " + p);
             }
         }
         
-        // Log the results to see where they differ
-        System.out.println(grid.getImplementationName() + 
-            ": Tracked " + tracked + " out of " + numPoints + " points");
-        
-        // We expect both to track all points, but packed implementation
-        // has issues with close spacing
-        if (grid.getImplementationName().equals("OO")) {
-            assertEquals(numPoints, tracked,
-                "OO implementation should track all points");
-        } else {
-            // Packed implementation has known issue with close points
-            assertTrue(tracked >= 5,
-                "Packed implementation should track at least half the points");
-        }
+        // Both implementations should now track all points
+        assertEquals(numPoints, tracked,
+            grid.getImplementationName() + " implementation should track all points");
     }
 }

@@ -227,6 +227,13 @@ public class PackedGrid {
     }
     
     /**
+     * Get the number of tetrahedra in the grid (including deleted ones)
+     */
+    public int getTetrahedronCount() {
+        return tetrahedra.size() / VERTICES_PER_TET;
+    }
+    
+    /**
      * Add a new vertex
      */
     protected int addVertex(float x, float y, float z) {
@@ -387,7 +394,8 @@ public class PackedGrid {
         // Check if query is inside starting tetrahedron
         int negativeFace = -1;
         for (int face = 0; face < 4; face++) {
-            if (current.orientationWrt(face, query) < 0.0) {
+            double orient = current.orientationWrt(face, query);
+            if (orient < 0.0) {
                 negativeFace = face;
                 break;
             }
@@ -400,17 +408,20 @@ public class PackedGrid {
         }
         
         // Stochastic walk to find containing tetrahedron
+        int stepCount = 0;
         while (true) {
+            stepCount++;
+            
             // Get the tetrahedron on the other side of the negative face
             TetrahedronProxy neighbor = current.getNeighbor(negativeFace);
             if (neighbor == null) {
-                // We've hit the convex hull - query is outside
+                // We've hit a boundary - point is outside convex hull
                 return -1;
             }
             
             // Skip deleted tetrahedra
             if (!isValidTetrahedron(neighbor.getIndex())) {
-                // Neighbor has been deleted, find a different path
+                // Neighbor has been deleted
                 return INVALID_INDEX;
             }
             
@@ -427,7 +438,8 @@ public class PackedGrid {
             
             for (int i = 0; i < 3; i++) {
                 int face = faceOrder[i];
-                if (neighbor.orientationWrt(face, query) < 0.0) {
+                double orient = neighbor.orientationWrt(face, query);
+                if (orient < 0.0) {
                     // Found a face where query is on negative side
                     negativeFace = face;
                     current = neighbor;
@@ -440,6 +452,11 @@ public class PackedGrid {
                 // Query is inside neighbor tetrahedron
                 lastTet = neighbor.getIndex();
                 return neighbor.getIndex();
+            }
+            
+            if (stepCount > 100) {
+                // Prevent infinite loops
+                return -1;
             }
         }
     }

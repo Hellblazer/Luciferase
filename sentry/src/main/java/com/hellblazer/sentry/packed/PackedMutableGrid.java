@@ -68,6 +68,7 @@ public class PackedMutableGrid extends PackedGrid {
         }
         
         int v = addVertex(p.x, p.y, p.z);
+        
         int target = locate(p, -1, entropy);
         if (target == INVALID_INDEX) {
             return INVALID_INDEX;
