@@ -249,6 +249,20 @@ public class PackedGrid {
     }
     
     /**
+     * Find the first valid (non-deleted) tetrahedron.
+     * @return the index of the first valid tetrahedron, or INVALID_INDEX if none found
+     */
+    private int findFirstValidTetrahedron() {
+        int maxTets = tetrahedra.size() / VERTICES_PER_TET;
+        for (int i = 0; i < maxTets; i++) {
+            if (isValidTetrahedron(i)) {
+                return i;
+            }
+        }
+        return INVALID_INDEX;
+    }
+    
+    /**
      * Get the number of vertices
      */
     public int getVertexCount() {
@@ -360,6 +374,14 @@ public class PackedGrid {
             start = lastTet;
         }
         
+        // Make sure we start with a valid tetrahedron
+        while (!isValidTetrahedron(start)) {
+            start = findFirstValidTetrahedron();
+            if (start == INVALID_INDEX) {
+                return INVALID_INDEX;
+            }
+        }
+        
         TetrahedronProxy current = new TetrahedronProxy(this, start);
         
         // Check if query is inside starting tetrahedron
@@ -384,6 +406,12 @@ public class PackedGrid {
             if (neighbor == null) {
                 // We've hit the convex hull - query is outside
                 return -1;
+            }
+            
+            // Skip deleted tetrahedra
+            if (!isValidTetrahedron(neighbor.getIndex())) {
+                // Neighbor has been deleted, find a different path
+                return INVALID_INDEX;
             }
             
             // Find which face of neighbor we came through

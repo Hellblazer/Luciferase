@@ -135,6 +135,11 @@ public class PackedFlipOperations {
             }
         }
         
+        if (adjacentFace == -1) {
+            throw new IllegalStateException("Adjacent tetrahedron " + adjacent.getIndex() + 
+                " does not have incident " + tetIndex + " as neighbor");
+        }
+        
         // Get the vertices of the shared face (3 vertices)
         int[] faceVerts = new int[3];
         int idx = 0;
