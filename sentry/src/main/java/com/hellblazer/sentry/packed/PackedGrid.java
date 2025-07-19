@@ -23,6 +23,7 @@ import com.hellblazer.sentry.Vertex;
 import javax.vecmath.Tuple3f;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Random;
 
 /**
  * Structure-of-Arrays (SoA) implementation of the Delaunay tetrahedralization grid.
@@ -343,5 +344,110 @@ public class PackedGrid {
         return (a1 == b1 || a1 == b2 || a1 == b3) &&
                (a2 == b1 || a2 == b2 || a2 == b3) &&
                (a3 == b1 || a3 == b2 || a3 == b3);
+    }
+    
+    /**
+     * Locate the tetrahedron which contains the query point via a stochastic walk
+     * through the delaunay triangulation. This is based on the jump-and-walk algorithm.
+     * 
+     * @param query the query point
+     * @param start the starting tetrahedron index (-1 to start from lastTet)
+     * @param random source of randomness for the walk
+     * @return the index of the tetrahedron containing the query, or -1 if outside
+     */
+    public int locate(Tuple3f query, int start, Random random) {
+        if (start < 0) {
+            start = lastTet;
+        }
+        
+        TetrahedronProxy current = new TetrahedronProxy(this, start);
+        
+        // Check if query is inside starting tetrahedron
+        int negativeFace = -1;
+        for (int face = 0; face < 4; face++) {
+            if (current.orientationWrt(face, query) < 0.0) {
+                negativeFace = face;
+                break;
+            }
+        }
+        
+        if (negativeFace == -1) {
+            // Query is inside current tetrahedron
+            lastTet = start;
+            return start;
+        }
+        
+        // Stochastic walk to find containing tetrahedron
+        while (true) {
+            // Get the tetrahedron on the other side of the negative face
+            TetrahedronProxy neighbor = current.getNeighbor(negativeFace);
+            if (neighbor == null) {
+                // We've hit the convex hull - query is outside
+                return -1;
+            }
+            
+            // Find which face of neighbor we came through
+            int neighborFace = findSharedFace(current.getIndex(), neighbor.getIndex());
+            if (neighborFace == -1) {
+                // Should not happen if neighbor tracking is correct
+                return -1;
+            }
+            
+            // Check the other three faces of neighbor in random order
+            int[] faceOrder = getRandomFaceOrder(neighborFace, random);
+            boolean found = false;
+            
+            for (int i = 0; i < 3; i++) {
+                int face = faceOrder[i];
+                if (neighbor.orientationWrt(face, query) < 0.0) {
+                    // Found a face where query is on negative side
+                    negativeFace = face;
+                    current = neighbor;
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                // Query is inside neighbor tetrahedron
+                lastTet = neighbor.getIndex();
+                return neighbor.getIndex();
+            }
+        }
+    }
+    
+    /**
+     * Find which face of tet2 is shared with tet1
+     */
+    private int findSharedFace(int tet1, int tet2) {
+        for (int face = 0; face < 4; face++) {
+            if (getNeighbor(tet2, face) == tet1) {
+                return face;
+            }
+        }
+        return -1;
+    }
+    
+    /**
+     * Get a random ordering of the three faces excluding the given face
+     */
+    private int[] getRandomFaceOrder(int excludeFace, Random random) {
+        int[] faces = new int[3];
+        int idx = 0;
+        for (int i = 0; i < 4; i++) {
+            if (i != excludeFace) {
+                faces[idx++] = i;
+            }
+        }
+        
+        // Fisher-Yates shuffle
+        for (int i = 2; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            int temp = faces[i];
+            faces[i] = faces[j];
+            faces[j] = temp;
+        }
+        
+        return faces;
     }
 }
