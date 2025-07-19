@@ -234,6 +234,20 @@ public class PackedGrid {
     }
     
     /**
+     * Get the number of valid (non-deleted) tetrahedra in the grid
+     */
+    public int getValidTetrahedronCount() {
+        int count = 0;
+        int totalTets = tetrahedra.size() / VERTICES_PER_TET;
+        for (int i = 0; i < totalTets; i++) {
+            if (isValidTetrahedron(i)) {
+                count++;
+            }
+        }
+        return count;
+    }
+    
+    /**
      * Add a new vertex
      */
     protected int addVertex(float x, float y, float z) {
@@ -389,6 +403,43 @@ public class PackedGrid {
             }
         }
         
+        // Try the walk from the starting position
+        int result = performWalk(query, start, random);
+        if (result != INVALID_INDEX) {
+            return result;
+        }
+        
+        // If the walk failed, try from multiple random starting points
+        int attempts = 0;
+        while (attempts < 10) {
+            // Pick a random valid tetrahedron as starting point
+            int randomStart = findRandomValidTetrahedron(random);
+            if (randomStart == INVALID_INDEX) {
+                return INVALID_INDEX;
+            }
+            
+            result = performWalk(query, randomStart, random);
+            if (result != INVALID_INDEX) {
+                return result;
+            }
+            
+            attempts++;
+        }
+        
+        // If all attempts failed, do an exhaustive search
+        return exhaustiveLocate(query);
+    }
+    
+    
+    /**
+     * Perform the walking algorithm from a specific starting tetrahedron.
+     * 
+     * @param query the query point
+     * @param start the starting tetrahedron index
+     * @param random source of randomness for the walk
+     * @return the index of the tetrahedron containing the query, or -1 if walk failed
+     */
+    private int performWalk(Tuple3f query, int start, Random random) {
         TetrahedronProxy current = new TetrahedronProxy(this, start);
         
         // Check if query is inside starting tetrahedron
@@ -415,8 +466,8 @@ public class PackedGrid {
             // Get the tetrahedron on the other side of the negative face
             TetrahedronProxy neighbor = current.getNeighbor(negativeFace);
             if (neighbor == null) {
-                // We've hit a boundary - point is outside convex hull
-                return -1;
+                // We've hit a boundary - walk failed
+                return INVALID_INDEX;
             }
             
             // Skip deleted tetrahedra
@@ -429,7 +480,7 @@ public class PackedGrid {
             int neighborFace = findSharedFace(current.getIndex(), neighbor.getIndex());
             if (neighborFace == -1) {
                 // Should not happen if neighbor tracking is correct
-                return -1;
+                return INVALID_INDEX;
             }
             
             // Check the other three faces of neighbor in random order
@@ -456,9 +507,70 @@ public class PackedGrid {
             
             if (stepCount > 100) {
                 // Prevent infinite loops
-                return -1;
+                return INVALID_INDEX;
             }
         }
+    }
+    
+    /**
+     * Find a random valid tetrahedron.
+     */
+    private int findRandomValidTetrahedron(Random random) {
+        int tetCount = tetrahedra.size() / VERTICES_PER_TET;
+        int validCount = 0;
+        for (int i = 0; i < tetCount; i++) {
+            if (isValidTetrahedron(i)) {
+                validCount++;
+            }
+        }
+        
+        if (validCount == 0) {
+            return INVALID_INDEX;
+        }
+        
+        int target = random.nextInt(validCount);
+        int count = 0;
+        for (int i = 0; i < tetCount; i++) {
+            if (isValidTetrahedron(i)) {
+                if (count == target) {
+                    return i;
+                }
+                count++;
+            }
+        }
+        
+        return INVALID_INDEX;
+    }
+    
+    /**
+     * Exhaustive search through all tetrahedra to find the one containing the query point.
+     * This is a fallback when the walking algorithm fails.
+     */
+    private int exhaustiveLocate(Tuple3f query) {
+        int tetCount = tetrahedra.size() / VERTICES_PER_TET;
+        for (int i = 0; i < tetCount; i++) {
+            if (!isValidTetrahedron(i)) {
+                continue;
+            }
+            
+            TetrahedronProxy tet = new TetrahedronProxy(this, i);
+            boolean inside = true;
+            
+            // Check all four faces
+            for (int face = 0; face < 4; face++) {
+                if (tet.orientationWrt(face, query) < 0.0) {
+                    inside = false;
+                    break;
+                }
+            }
+            
+            if (inside) {
+                lastTet = i;
+                return i;
+            }
+        }
+        
+        return INVALID_INDEX;
     }
     
     /**

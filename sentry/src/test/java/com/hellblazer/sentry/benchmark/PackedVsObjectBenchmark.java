@@ -19,7 +19,7 @@
 package com.hellblazer.sentry.benchmark;
 
 import com.hellblazer.sentry.*;
-// import com.hellblazer.sentry.packed.PackedMutableGrid; // TODO: Update for new packed implementation
+import com.hellblazer.sentry.packed.PackedMutableGrid;
 import javax.vecmath.Point3f;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,16 +37,13 @@ public class PackedVsObjectBenchmark {
     
     @Test
     public void runBenchmark() {
-        // TODO: Re-enable once new packed implementation is complete
-        // main(new String[0]);
+        main(new String[0]);
     }
     
     public static void main(String[] args) {
         System.out.println("Sentry Packed vs Object-Oriented Benchmark - Phase 4.2");
         System.out.println("====================================================\n");
-        System.out.println("TODO: Update benchmark for new packed implementation");
         
-        /* TODO: Re-enable once new packed implementation is complete
         // Test with different sizes
         int[] sizes = {100, 500, 1000, 2000, 5000};
         
@@ -58,7 +55,6 @@ public class PackedVsObjectBenchmark {
         // Memory usage comparison
         System.out.println("\n=== Memory Usage Comparison ===");
         measureMemoryUsage();
-        */
     }
     
     private static void benchmarkSize(int vertexCount) {
@@ -120,8 +116,6 @@ public class PackedVsObjectBenchmark {
     }
     
     private static long benchmarkPacked(List<Point3f> points, Random random) {
-        // TODO: Implement with new packed implementation
-        /*
         // Warm up
         for (int i = 0; i < 3; i++) {
             PackedMutableGrid grid = new PackedMutableGrid();
@@ -141,22 +135,18 @@ public class PackedVsObjectBenchmark {
         // Perform some queries
         for (int i = 0; i < 100; i++) {
             Point3f query = points.get(random.nextInt(points.size()));
-            grid.locate(query, random);
+            grid.locate(query, -1, random);
         }
         
         long endTime = System.nanoTime();
         
         // Verify correctness
-        System.out.println("  Packed Tetrahedra: " + grid.tetrahedrons().size());
+        System.out.println("  Packed Tetrahedra: " + grid.getValidTetrahedronCount());
         
         return endTime - startTime;
-        */
-        return 0;
     }
     
     private static void measureMemoryUsage() {
-        // TODO: Implement with new packed implementation
-        /*
         Runtime runtime = Runtime.getRuntime();
         Random random = new Random(42);
         int size = 10000;
@@ -210,12 +200,14 @@ public class PackedVsObjectBenchmark {
         System.out.printf("Memory reduction:       %.1f%%\n", 
             ((double)(ooMemory - packedMemory) / ooMemory) * 100);
         
-        // Per-tetrahedron memory
-        int tetCount = ooGrid != null ? ooGrid.tetrahedrons().size() : 
-                       packedGrid.tetrahedrons().size();
+        // Per-tetrahedron memory - get fresh instances for accurate count
+        ooGrid = new MutableGrid();
+        for (Point3f p : points) {
+            ooGrid.track(p, random);
+        }
+        int tetCount = ooGrid.tetrahedrons().size();
         System.out.printf("\nPer-tetrahedron memory:\n");
         System.out.printf("  Object-Oriented: %d bytes\n", ooMemory / tetCount);
         System.out.printf("  Packed:          %d bytes\n", packedMemory / tetCount);
-        */
     }
 }

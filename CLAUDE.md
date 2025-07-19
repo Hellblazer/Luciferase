@@ -103,6 +103,15 @@ Historical documents (describe unimplemented features):
   4. In module pom.xml files, reference dependencies WITHOUT version tags
   5. This ensures consistent versions across modules with centralized management
   Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jmh.version} property
+- **PACKED IMPLEMENTATION STATUS (July 2025)**: Successfully rebuilt packed (Structure-of-Arrays) implementation from first principles after critical bugs were found. The packed implementation now passes all tests:
+  - **Fixed**: Orientation calculations (face vertex orderings now match OO: CBD, DAC, ADB, BCA)
+  - **Fixed**: flip1to4, flip3to2, flip4to1 operations working correctly
+  - **Fixed**: flip2to3 external neighbor patching - simplified to match OO implementation approach
+  - **Fixed**: Closely spaced point insertion (was failing on 9th point at 10-unit spacing, now handles all points)
+  - **Fixed**: Locate algorithm improved with fallback strategies - now tries multiple starting points and exhaustive search if needed
+  - **Key Insight**: The flip2to3 fix involved using a simple patchSimple() method that finds the face opposite a vertex and patches bidirectional neighbors, replacing complex determineTargetTetForNeighbor logic
+  - **Architecture**: Uses TetrahedronProxy for clean API over packed arrays, PackedFlipOperations for all flips, vertex linked list tracking
+  - **Performance**: Currently slower than OO implementation (2.5x-26x) due to creating excessive tetrahedra (~14x more) and improved locate algorithm overhead
 - The morton curve calculations are correct. Do not change them. The calculateMortonIndex is correct do not change it
 - Constants.toLevel is correct. do not change it
 - TetrahedralGeometry is fully integrated with TetrahedralSearchBase methods

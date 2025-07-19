@@ -208,20 +208,20 @@
                 <version>3.12.0</version>
             </dependency>
 
-
-            <!-- Test Only Dependencies Below This Line-->
+            <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
                 <artifactId>jmh-core</artifactId>
-                <version>1.37</version>
-                <scope>test</scope>
+                <version>${jmh.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
                 <artifactId>jmh-generator-annprocess</artifactId>
-                <version>1.37</version>
-                <scope>test</scope>
+                <version>${jmh.version}</version>
             </dependency>
+
+
+            <!-- Test Only Dependencies Below This Line-->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
@@ -241,18 +241,6 @@
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
                 <version>${logback.version}</version>
-            </dependency>
-            
-            <!-- JMH Benchmarking -->
-            <dependency>
-                <groupId>org.openjdk.jmh</groupId>
-                <artifactId>jmh-core</artifactId>
-                <version>${jmh.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.openjdk.jmh</groupId>
-                <artifactId>jmh-generator-annprocess</artifactId>
-                <version>${jmh.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
