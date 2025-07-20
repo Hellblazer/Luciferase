@@ -34,6 +34,7 @@ public class GeometricPredicatesFactory {
     public enum PredicateMode {
         SCALAR,    // Basic scalar implementation
         SIMD,      // SIMD-accelerated implementation (if available)
+        EXACT,     // Exact implementation using Shewchuk's robust predicates
         HYBRID,    // Hybrid mode with fallback to exact (when implemented)
         ADAPTIVE   // Adaptive mode with exact fallback (future)
     }
@@ -41,7 +42,7 @@ public class GeometricPredicatesFactory {
     /**
      * Create a new GeometricPredicates instance.
      * Mode is controlled by the system property 'sentry.predicates.mode'.
-     * Valid values: scalar, simd, hybrid, adaptive
+     * Valid values: scalar, simd, exact, hybrid, adaptive
      * Default: simd (if available), otherwise scalar
      */
     public static GeometricPredicates create() {
@@ -55,7 +56,7 @@ public class GeometricPredicatesFactory {
                 mode = PredicateMode.valueOf(modeProperty.toUpperCase());
             } catch (IllegalArgumentException e) {
                 System.err.println("Invalid predicate mode: " + modeProperty + 
-                    ". Valid values are: scalar, simd, hybrid, adaptive. Using default.");
+                    ". Valid values are: scalar, simd, exact, hybrid, adaptive. Using default.");
             }
         }
         
@@ -71,6 +72,10 @@ public class GeometricPredicatesFactory {
         
         // Create appropriate implementation based on mode
         switch (mode) {
+            case EXACT:
+                System.out.println("Using exact geometric predicates");
+                return new ExactGeometricPredicates();
+                
             case HYBRID:
                 System.out.println("Using hybrid geometric predicates");
                 return new HybridGeometricPredicates();
@@ -97,8 +102,8 @@ public class GeometricPredicatesFactory {
                 return new ScalarGeometricPredicates();
                 
             case ADAPTIVE:
-                System.out.println("Adaptive predicates not yet implemented, using scalar");
-                return new ScalarGeometricPredicates();
+                System.out.println("Using adaptive geometric predicates");
+                return new AdaptiveGeometricPredicates();
                 
             case SCALAR:
             default:

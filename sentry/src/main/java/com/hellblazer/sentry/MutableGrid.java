@@ -152,28 +152,77 @@ public class MutableGrid extends Grid {
     }
 
     public void rebuild(Random entropy) {
-        clear();
-        last = TetrahedronPool.getInstance().acquire(fourCorners);
-        if (head == null) {
-            return;
+        // Collect all vertices before clearing
+        List<Vertex> vertices = new ArrayList<>();
+        if (head != null) {
+            for (var v : head) {
+                vertices.add(v);
+            }
         }
-        for (var v : head) {
+        
+        // Clear the grid but not the vertex linked list
+        if (head != null) {
+            // Clear adjacent references but preserve linked list structure
+            for (var v : head) {
+                v.setAdjacent(null);
+            }
+        }
+        
+        // Reset tetrahedra
+        for (var v : fourCorners) {
+            v.reset();
+        }
+        if (landmarkIndex != null) {
+            landmarkIndex.clear();
+        }
+        
+        // Reinitialize 
+        last = TetrahedronPool.getInstance().acquire(fourCorners);
+        head = tail = null;
+        size = 0;
+        initialize();
+        
+        // Clear the next pointers before re-insertion
+        for (var v : vertices) {
+            v.clearNext();
+        }
+        
+        // Re-insert all vertices
+        for (var v : vertices) {
             var containedIn = locate(v, last, entropy);
             if (containedIn != null) {
-                insert(v, containedIn);
+                add(v, containedIn);
             }
         }
     }
 
     public void rebuild(List<Vertex> vertices, Random entropy) {
-        clear();
+        // Clear adjacent references and next pointers for all vertices
+        for (var v : vertices) {
+            v.setAdjacent(null);
+            v.clearNext();
+        }
+        
+        // Reset tetrahedra and clear the grid
+        for (var v : fourCorners) {
+            v.reset();
+        }
+        if (landmarkIndex != null) {
+            landmarkIndex.clear();
+        }
+        
+        // Reinitialize
         last = TetrahedronPool.getInstance().acquire(fourCorners);
         head = tail = null;
+        size = 0;
         initialize();
 
+        // Re-insert all vertices
         for (var v : vertices) {
-            v.clear();
-            track(v, entropy);
+            var containedIn = locate(v, last, entropy);
+            if (containedIn != null) {
+                add(v, containedIn);
+            }
         }
     }
 

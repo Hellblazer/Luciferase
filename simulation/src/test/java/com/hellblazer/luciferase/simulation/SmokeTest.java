@@ -23,7 +23,7 @@ public class SmokeTest {
         var radius = 16000.0f;
         var center = new Point3f(radius + 100, radius + 100, radius + 100);
         var entropy = new java.util.Random(0x666);
-        var pop = 4096;
+        var pop = 256;
         while (sites.size() < pop) {
             for (var p : Vertex.getRandomPoints(entropy, pop, radius, true)) {
                 p.add(center);

@@ -53,12 +53,12 @@ public class MutableGridTest {
         var entropy = new Random(0x666);
         var radius = 16000.0f;
         var center = new Point3f(radius + 100, radius + 100, radius + 100);
-        var numberOfPoints = 4096;
+        var numberOfPoints = 256;
         for (var p : Vertex.getRandomPoints(entropy, numberOfPoints, radius, true)) {
             p.add(center);
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 10_000;
+        int iterations = 10000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {

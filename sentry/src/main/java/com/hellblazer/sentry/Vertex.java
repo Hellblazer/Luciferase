@@ -364,6 +364,10 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
         }
         next = null;
     }
+    
+    void clearNext() {
+        next = null;
+    }
 
     void detach(Vertex v) {
         if (v == this) {

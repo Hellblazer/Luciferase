@@ -46,7 +46,7 @@ public class HybridGeometricPredicates implements GeometricPredicates {
     private final GeometricPredicates exactPredicates;
     
     public HybridGeometricPredicates() {
-        this.exactPredicates = new ScalarGeometricPredicates();
+        this.exactPredicates = new ExactGeometricPredicates();
     }
     
     @Override
