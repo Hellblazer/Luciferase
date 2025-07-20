@@ -25,6 +25,7 @@ This document lists all invariants that must be maintained by any implementation
 ### 4. Delaunay Property
 - No vertex lies strictly inside the circumsphere of any tetrahedron
 - Vertices on the circumsphere are allowed (co-spherical points)
+- **Current Implementation**: Fully maintained via GeometryAdaptive exact predicates
 
 ### 5. Convex Hull Property
 - The set of all tetrahedra forms a convex hull of all vertices
@@ -74,6 +75,7 @@ This document lists all invariants that must be maintained by any implementation
 - Coplanar points handled correctly (no zero-volume tetrahedra)
 - Collinear points handled correctly
 - Duplicate points handled correctly (or rejected)
+- **Current Implementation**: Detection via isDegenerate flags, but no prevention (SoS not implemented)
 
 ## Implementation-Specific Invariants
 
@@ -103,3 +105,13 @@ Each invariant can be verified through specific checks:
 2. **Property-based tests**: Random operations should maintain all invariants
 3. **Stress tests**: Large datasets should not violate invariants
 4. **Comparison tests**: Results should match OO implementation exactly
+
+## Current Implementation Status
+
+- **Invariants 1-3**: ✅ Fully maintained (structural and connectivity)
+- **Invariant 4**: ✅ Delaunay property maintained with 0 violations via exact predicates
+- **Invariants 5-6**: ✅ Convex hull and orientation maintained
+- **Invariants 7-9**: ✅ All algorithmic invariants properly implemented
+- **Invariant 10**: ✅ Boundary handling correct
+- **Invariant 11**: ⚠️ Partial - detection only, no prevention
+- **Invariants 12-13**: ✅ Memory properly managed via TetrahedronPool

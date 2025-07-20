@@ -55,10 +55,7 @@ public class ValidationManager {
                     continue;
                 }
 
-                double result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, v.x,
-                                                      v.y, v.z);
-
-                if (result > 0) {
+                if (t.inSphere(v)) {
                     report.delaunayViolations++;
                 }
             }
@@ -201,14 +198,10 @@ public class ValidationManager {
                 }
 
                 // Test if vertex is inside circumsphere
-                double result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, v.x,
-                                                      v.y, v.z);
-
-                if (result > 0) {
+                if (t.inSphere(v)) {
                     violationCount++;
                     if (violationCount == 1) {
-                        System.err.println(
-                        "Delaunay violation detected: vertex " + v + " is inside circumsphere of tetrahedron " + t);
+                        // Silent - no logging in production code without SLF4J dependency
                     }
                 }
             }

@@ -84,8 +84,7 @@ public class GridValidator {
         
         // Optionally log validation results for debugging large repairs only
         if (repairedCount > 50) {
-            System.out.println("Vertex reference validation: " + validatedCount + " valid, " + 
-                repairedCount + " repaired");
+            // Silent - no logging in production code without SLF4J dependency
         }
         
         return new ValidationResult(validatedCount, repairedCount);

@@ -451,7 +451,7 @@ public class MutableGrid extends Grid {
 
         // Optionally log for debugging very large rebuilds only
         if (releasedCount > 10000) {
-            System.out.println("Released " + releasedCount + " tetrahedrons back to pool");
+            // Silent - no logging in production code without SLF4J dependency
         }
     }
 }
