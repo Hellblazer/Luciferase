@@ -126,7 +126,7 @@ public class MutableGrid extends Grid {
      * @param config The configuration to use
      */
     public MutableGrid(Vertex[] fourCorners, SentryConfiguration config) {
-        super(fourCorners, GeometricPredicatesFactory.create(config));
+        super(fourCorners);
         
         // Store configuration
         this.useLandmarkIndex = config.isLandmarkIndexEnabled();

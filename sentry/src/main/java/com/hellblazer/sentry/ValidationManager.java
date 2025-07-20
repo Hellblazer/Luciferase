@@ -18,6 +18,8 @@
  */
 package com.hellblazer.sentry;
 
+import com.hellblazer.luciferase.geometry.Geometry;
+
 /**
  * Validation framework for ensuring invariants are maintained in the Delaunay triangulation.
  * This class can be enabled during testing/debugging to catch violations early.
@@ -28,12 +30,9 @@ public class ValidationManager {
     
     private final MutableGrid grid;
     private boolean validationEnabled = false;
-    private GeometricPredicates predicates;
     
     public ValidationManager(MutableGrid grid) {
         this.grid = grid;
-        // Use the same predicates as the grid for validation
-        this.predicates = grid.getPredicates();
     }
     
     /**
@@ -44,20 +43,6 @@ public class ValidationManager {
         this.validationEnabled = enable;
     }
     
-    /**
-     * Set the geometric predicates to use for validation.
-     * By default, exact predicates are used.
-     */
-    public void setPredicates(GeometricPredicates predicates) {
-        this.predicates = predicates;
-    }
-    
-    /**
-     * Get the geometric predicates being used for validation.
-     */
-    public GeometricPredicates getPredicates() {
-        return predicates;
-    }
     
     /**
      * Validate all invariants of the Delaunay triangulation.
@@ -100,7 +85,7 @@ public class ValidationManager {
                 }
                 
                 // Test if vertex is inside circumsphere
-                double result = predicates.inSphere(
+                double result = Geometry.inSphere(
                     a.x, a.y, a.z,
                     b.x, b.y, b.z,
                     c.x, c.y, c.z,
@@ -267,7 +252,7 @@ public class ValidationManager {
                     continue;
                 }
                 
-                double result = predicates.inSphere(
+                double result = Geometry.inSphere(
                     a.x, a.y, a.z,
                     b.x, b.y, b.z,
                     c.x, c.y, c.z,
