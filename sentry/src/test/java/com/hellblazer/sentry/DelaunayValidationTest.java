@@ -79,8 +79,10 @@ public class DelaunayValidationTest {
             if (tet.isDeleted()) continue;
             
             Set<Vertex> tetVertices = Set.of(tet.getVertices());
-            if (tetVertices.contains(vertex0) && tetVertices.contains(vertex1) &&
-                tetVertices.contains(vertex2) && tetVertices.contains(vertex3)) {
+            if (tetVertices.contains(vertex0)
+            && tetVertices.contains(vertex1) &&
+                tetVertices.contains(vertex2)
+            && tetVertices.contains(vertex3)) {
                 foundOurTet = true;
                 
                 // Validate this tetrahedron

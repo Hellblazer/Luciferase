@@ -19,13 +19,7 @@ package com.hellblazer.sentry;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 import static com.hellblazer.sentry.V.*;
 
@@ -278,7 +272,11 @@ public class MutableGrid extends Grid {
             return null;
         }
         final var v = new Vertex(p);
-        add(v, locate(p, entropy));
+        var located = locate(p, entropy);
+        if (located == null) {
+            throw new IllegalArgumentException("There is no located vertex for " + p);
+        }
+        add(v, located);
         return v;
     }
 
@@ -607,16 +605,18 @@ public class MutableGrid extends Grid {
             return;
         }
         
-        // Collect all tetrahedrons
-        Set<Tetrahedron> allTetrahedrons = tetrahedrons();
-        
         // Release them all back to the pool
         TetrahedronPool pool = TetrahedronPool.getInstance();
         int releasedCount = 0;
-        for (Tetrahedron t : allTetrahedrons) {
-            if (!t.isDeleted()) {
-                t.delete();
-                pool.release(t);
+
+        var stack = new Stack<Tetrahedron>();
+        stack.push(head.getAdjacent());
+        while (!stack.isEmpty()) {
+            var next = stack.pop();
+            if (!next.isDeleted()) {
+                next.children(stack);
+                next.delete();
+                pool.release(next);
                 releasedCount++;
             }
         }
