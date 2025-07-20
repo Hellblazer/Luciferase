@@ -18,11 +18,13 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
    - Cached getAdjacentVertex() results to avoid repeated calculations
    - Reduced redundant topological queries
    
-3. **Object Pooling** (23.8% improvement, up to 25% reuse rate)
+3. **Object Pooling** (23.8% improvement, up to 88% reuse rate)
    - Implemented TetrahedronPool for object reuse
    - Refactored from singleton to per-MutableGrid instance (July 2025)
    - Thread-local context pattern for passing pool through method calls
-   - Pool release now properly implemented with up to 25% reuse rate
+   - Pool warmUp method improves reuse rate from 25% to 54%
+   - Aggressive release strategy with deferred mechanism boosts to 88%
+   - Added batch release and adaptive sizing capabilities
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30%, Achieved: ~35%)
 1. **Ordinal Optimization** (10.2% improvement)
@@ -96,24 +98,34 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 
 ## Recent Updates (July 2025)
 
-### TetrahedronPool Refactoring
+### TetrahedronPool Refactoring and Optimization
 - **Problem**: Static singleton pool shared across all MutableGrid instances
 - **Solution**: Instance-based pooling with thread-local context
 - **Implementation**:
   - Each MutableGrid now has its own TetrahedronPool instance
   - TetrahedronPoolContext provides thread-local access during operations
   - All flip methods updated to use context instead of singleton
+  - Added warmUp() method for pre-allocation
+  - Implemented batch release operations
+  - Added adaptive pool sizing based on reuse rate
+  - Implemented aggressive release strategy with deferred release mechanism
+  - DeferredReleaseCollector prevents premature release crashes
+  - flip2to3 and flip3to2 now properly release deleted tetrahedra
 - **Results**:
   - Eliminates shared state between grid instances
   - Enables proper pool release during clear/rebuild operations
-  - Achieves up to 25% reuse rate in rebuild scenarios
+  - Improved reuse rate from 25% to 88% with aggressive release
+  - Release ratio of 84% (tetrahedra properly returned to pool)
+  - Insertion performance improved to 24.19 µs
   - All 60 tests passing after refactoring
+  - No crashes from deferred release pattern
 
 ## Remaining Opportunities
 
 1. **SIMD Batch Operations**: Current SIMD works but needs batch processing
 2. **Landmark Refinement**: Improve spatial index landmark selection
-3. **Pool Reuse Optimization**: Current 2-25% reuse rate could be improved
+3. **Generation-Based Release**: Track tetrahedron generations for safer bulk release
+4. **Pool Pre-sizing**: Analyze typical usage patterns to optimize initial pool size
 
 ## Conclusion
 

@@ -22,11 +22,13 @@ package com.hellblazer.sentry;
  * Thread-local context for TetrahedronPool access during flip operations.
  * This allows deep method calls to access the appropriate pool without
  * passing it through every method parameter.
+ * Also provides deferred release collection for safer memory management.
  * 
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 public class TetrahedronPoolContext {
     private static final ThreadLocal<TetrahedronPool> CURRENT_POOL = new ThreadLocal<>();
+    private static final ThreadLocal<DeferredReleaseCollector> RELEASE_COLLECTOR = new ThreadLocal<>();
     
     /**
      * Set the current pool for this thread.
@@ -53,19 +55,54 @@ public class TetrahedronPoolContext {
     }
     
     /**
+     * Get the current release collector for this thread.
+     * Returns null if no collector has been set.
+     */
+    public static DeferredReleaseCollector getReleaseCollector() {
+        return RELEASE_COLLECTOR.get();
+    }
+    
+    /**
+     * Mark a tetrahedron for deferred release.
+     * If no collector is active, releases immediately.
+     */
+    public static void deferRelease(Tetrahedron t) {
+        DeferredReleaseCollector collector = RELEASE_COLLECTOR.get();
+        if (collector != null) {
+            collector.markForRelease(t);
+        } else {
+            // No deferred release active, release immediately
+            TetrahedronPool pool = CURRENT_POOL.get();
+            if (pool != null && t != null && t.isDeleted()) {
+                pool.release(t);
+            }
+        }
+    }
+    
+    /**
      * Execute a task with a specific pool context.
      * The pool is automatically cleared after the task completes.
      */
     public static void withPool(TetrahedronPool pool, Runnable task) {
         TetrahedronPool previous = CURRENT_POOL.get();
+        DeferredReleaseCollector collector = new DeferredReleaseCollector(pool);
+        DeferredReleaseCollector previousCollector = RELEASE_COLLECTOR.get();
         try {
             CURRENT_POOL.set(pool);
+            RELEASE_COLLECTOR.set(collector);
             task.run();
+            // Release all deferred tetrahedra after task completes
+            collector.releaseAll();
         } finally {
             if (previous != null) {
                 CURRENT_POOL.set(previous);
             } else {
                 CURRENT_POOL.remove();
+            }
+            if (previousCollector != null) {
+                RELEASE_COLLECTOR.set(previousCollector);
+            } else {
+                RELEASE_COLLECTOR.remove();
             }
         }
     }
@@ -76,14 +113,25 @@ public class TetrahedronPoolContext {
      */
     public static <T> T withPool(TetrahedronPool pool, java.util.function.Supplier<T> task) {
         TetrahedronPool previous = CURRENT_POOL.get();
+        DeferredReleaseCollector collector = new DeferredReleaseCollector(pool);
+        DeferredReleaseCollector previousCollector = RELEASE_COLLECTOR.get();
         try {
             CURRENT_POOL.set(pool);
-            return task.get();
+            RELEASE_COLLECTOR.set(collector);
+            T result = task.get();
+            // Release all deferred tetrahedra after task completes
+            collector.releaseAll();
+            return result;
         } finally {
             if (previous != null) {
                 CURRENT_POOL.set(previous);
             } else {
                 CURRENT_POOL.remove();
+            }
+            if (previousCollector != null) {
+                RELEASE_COLLECTOR.set(previousCollector);
+            } else {
+                RELEASE_COLLECTOR.remove();
             }
         }
     }

@@ -39,6 +39,7 @@ public class TetrahedronPool {
     private int acquireCount = 0;
     private int releaseCount = 0;
     private int createCount = 0;
+    private int adaptCount = 0;
     
     /**
      * Create a new TetrahedronPool with the specified maximum size
@@ -161,5 +162,85 @@ public class TetrahedronPool {
         acquireCount = 0;
         releaseCount = 0;
         createCount = 0;
+    }
+    
+    /**
+     * Warm up the pool by pre-allocating tetrahedra.
+     * Useful before operations that will need many tetrahedra.
+     * 
+     * @param expectedSize the expected number of tetrahedra needed
+     */
+    public void warmUp(int expectedSize) {
+        int toCreate = Math.min(expectedSize, maxSize - size);
+        for (int i = 0; i < toCreate; i++) {
+            Tetrahedron t = new Tetrahedron(null);
+            t.clearForReuse();
+            pool.addLast(t);
+            size++;
+        }
+    }
+    
+    /**
+     * Get the current reuse rate as a percentage
+     */
+    public double getReuseRate() {
+        return acquireCount > 0 ? 
+            (100.0 * (acquireCount - createCount) / acquireCount) : 0.0;
+    }
+    
+    /**
+     * Batch release of tetrahedra with safety checks.
+     * More efficient than individual releases.
+     * 
+     * @param tetrahedra array of tetrahedra to release
+     * @param count number of tetrahedra to release from the array
+     */
+    public void releaseBatch(Tetrahedron[] tetrahedra, int count) {
+        if (tetrahedra == null || count <= 0) {
+            return;
+        }
+        
+        int released = 0;
+        for (int i = 0; i < count && i < tetrahedra.length; i++) {
+            Tetrahedron t = tetrahedra[i];
+            if (t != null && t.isDeleted() && size < maxSize) {
+                t.clearForReuse();
+                pool.addLast(t);
+                size++;
+                released++;
+            }
+        }
+        releaseCount += released;
+        
+        // Check if we need to adapt pool size
+        if (++adaptCount % 100 == 0) {
+            adaptPoolSize();
+        }
+    }
+    
+    /**
+     * Adapt pool size based on reuse rate.
+     * Grows pool if reuse rate is low, shrinks if too high.
+     */
+    private void adaptPoolSize() {
+        double reuseRate = getReuseRate();
+        
+        if (reuseRate < 10 && size < maxSize / 2) {
+            // Low reuse rate - grow the pool
+            int growBy = Math.min(32, maxSize - size);
+            for (int i = 0; i < growBy; i++) {
+                Tetrahedron t = new Tetrahedron(null);
+                t.clearForReuse();
+                pool.addLast(t);
+                size++;
+            }
+        } else if (reuseRate > 90 && size > INITIAL_SIZE * 2) {
+            // Very high reuse rate - we might have too many pooled objects
+            int shrinkBy = Math.min(32, size - INITIAL_SIZE);
+            for (int i = 0; i < shrinkBy && !pool.isEmpty(); i++) {
+                pool.pollLast();
+                size--;
+            }
+        }
     }
 }

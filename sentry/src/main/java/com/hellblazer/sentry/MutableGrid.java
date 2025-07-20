@@ -28,9 +28,8 @@ import static com.hellblazer.sentry.V.*;
  *
  * <h2>Thread Safety Model</h2>
  * <p>
- * MutableGrid is <b>NOT thread-safe</b>. This class is designed for single-threaded use only.
- * All methods that modify the grid structure (insert, delete) must be called from a
- * single thread or with external synchronization.
+ * MutableGrid is <b>NOT thread-safe</b>. This class is designed for single-threaded use only. All methods that modify
+ * the grid structure (insert, delete) must be called from a single thread or with external synchronization.
  * </p>
  *
  * <h3>Design Rationale</h3>
@@ -87,10 +86,10 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public class MutableGrid extends Grid {
-    private final          List<Vertex>  vertices = new ArrayList<>();
-    private final          TetrahedronPool pool = new TetrahedronPool();
-    protected              Tetrahedron   last;  // Changed to protected for testing
-    protected              LandmarkIndex landmarkIndex;  // Changed to protected for testing
+    private final List<Vertex>    vertices = new ArrayList<>();
+    private final TetrahedronPool pool     = new TetrahedronPool();
+    protected     Tetrahedron     last;  // Changed to protected for testing
+    protected     LandmarkIndex   landmarkIndex;  // Changed to protected for testing
 
     public MutableGrid() {
         this(getFourCorners());
@@ -119,7 +118,7 @@ public class MutableGrid extends Grid {
 
         // Clear head reference
         head = null;
-        
+
         // Reset size
         size = 0;
 
@@ -136,6 +135,11 @@ public class MutableGrid extends Grid {
      */
     public String getLandmarkStatistics() {
         return landmarkIndex != null ? landmarkIndex.getStatistics() : "No landmark index";
+    }
+
+    @Override
+    public Iterator<Vertex> iterator() {
+        return vertices.iterator();
     }
 
     public Tetrahedron locate(Tuple3f p, Random entropy) {
@@ -257,6 +261,15 @@ public class MutableGrid extends Grid {
     }
 
     /**
+     * Get an unmodifiable view of the vertices in this grid.
+     *
+     * @return an unmodifiable list of vertices
+     */
+    public List<Vertex> vertices() {
+        return Collections.unmodifiableList(vertices);
+    }
+
+    /**
      * Perform the 4->1 bistellar flip. This flip is the inverse of the 1->4 flip.
      *
      * @param n - the vertex who's star defines the 4 tetrahedron
@@ -265,75 +278,75 @@ public class MutableGrid extends Grid {
     protected Tetrahedron flip4to1(Vertex n) {
         return TetrahedronPoolContext.withPool(pool, () -> {
             Deque<OrientedFace> star = n.getStar();
-        ArrayList<Tetrahedron> deleted = new ArrayList<>();
-        for (OrientedFace f : star) {
-            deleted.add(f.getIncident());
-        }
-        assert star.size() == 4;
-        OrientedFace base = star.pop();
-        Vertex a = base.getVertex(2);
-        Vertex b = base.getVertex(0);
-        Vertex c = base.getVertex(1);
-        Vertex d = null;
-        OrientedFace face = star.pop();
-        for (Vertex v : face) {
-            if (!base.includes(v)) {
-                d = v;
-                break;
+            ArrayList<Tetrahedron> deleted = new ArrayList<>();
+            for (OrientedFace f : star) {
+                deleted.add(f.getIncident());
             }
-        }
-        assert d != null;
-        Tetrahedron t = pool.acquire(a, b, c, d);
-        base.getIncident().patch(base.getIncidentVertex(), t, D);
-        if (face.includes(a)) {
-            if (face.includes(b)) {
-                assert !face.includes(c);
-                face.getIncident().patch(face.getIncidentVertex(), t, C);
-                face = star.pop();
-                if (face.includes(a)) {
-                    assert !face.includes(b);
-                    face.getIncident().patch(face.getIncidentVertex(), t, B);
-                    face = star.pop();
-                    assert !face.includes(a);
-                    face.getIncident().patch(face.getIncidentVertex(), t, A);
-                } else {
-                    face.getIncident().patch(face.getIncidentVertex(), t, A);
-                    face = star.pop();
-                    assert !face.includes(b);
-                    face.getIncident().patch(face.getIncidentVertex(), t, B);
+            assert star.size() == 4;
+            OrientedFace base = star.pop();
+            Vertex a = base.getVertex(2);
+            Vertex b = base.getVertex(0);
+            Vertex c = base.getVertex(1);
+            Vertex d = null;
+            OrientedFace face = star.pop();
+            for (Vertex v : face) {
+                if (!base.includes(v)) {
+                    d = v;
+                    break;
                 }
-            } else {
-                face.getIncident().patch(face.getIncidentVertex(), t, B);
-                face = star.pop();
-                if (face.includes(a)) {
+            }
+            assert d != null;
+            Tetrahedron t = pool.acquire(a, b, c, d);
+            base.getIncident().patch(base.getIncidentVertex(), t, D);
+            if (face.includes(a)) {
+                if (face.includes(b)) {
                     assert !face.includes(c);
                     face.getIncident().patch(face.getIncidentVertex(), t, C);
                     face = star.pop();
-                    assert !face.includes(a);
-                    face.getIncident().patch(face.getIncidentVertex(), t, A);
+                    if (face.includes(a)) {
+                        assert !face.includes(b);
+                        face.getIncident().patch(face.getIncidentVertex(), t, B);
+                        face = star.pop();
+                        assert !face.includes(a);
+                        face.getIncident().patch(face.getIncidentVertex(), t, A);
+                    } else {
+                        face.getIncident().patch(face.getIncidentVertex(), t, A);
+                        face = star.pop();
+                        assert !face.includes(b);
+                        face.getIncident().patch(face.getIncidentVertex(), t, B);
+                    }
                 } else {
-                    face.getIncident().patch(face.getIncidentVertex(), t, A);
+                    face.getIncident().patch(face.getIncidentVertex(), t, B);
+                    face = star.pop();
+                    if (face.includes(a)) {
+                        assert !face.includes(c);
+                        face.getIncident().patch(face.getIncidentVertex(), t, C);
+                        face = star.pop();
+                        assert !face.includes(a);
+                        face.getIncident().patch(face.getIncidentVertex(), t, A);
+                    } else {
+                        face.getIncident().patch(face.getIncidentVertex(), t, A);
+                        face = star.pop();
+                        assert !face.includes(c);
+                        face.getIncident().patch(face.getIncidentVertex(), t, C);
+                    }
+                }
+            } else {
+                face.getIncident().patch(face.getIncidentVertex(), t, A);
+                face = star.pop();
+                if (face.includes(b)) {
+                    assert !face.includes(c);
+                    face.getIncident().patch(face.getIncidentVertex(), t, C);
+                    face = star.pop();
+                    assert !face.includes(b);
+                    face.getIncident().patch(face.getIncidentVertex(), t, B);
+                } else {
+                    face.getIncident().patch(face.getIncidentVertex(), t, B);
                     face = star.pop();
                     assert !face.includes(c);
                     face.getIncident().patch(face.getIncidentVertex(), t, C);
                 }
             }
-        } else {
-            face.getIncident().patch(face.getIncidentVertex(), t, A);
-            face = star.pop();
-            if (face.includes(b)) {
-                assert !face.includes(c);
-                face.getIncident().patch(face.getIncidentVertex(), t, C);
-                face = star.pop();
-                assert !face.includes(b);
-                face.getIncident().patch(face.getIncidentVertex(), t, B);
-            } else {
-                face.getIncident().patch(face.getIncidentVertex(), t, B);
-                face = star.pop();
-                assert !face.includes(c);
-                face.getIncident().patch(face.getIncidentVertex(), t, C);
-            }
-        }
 
             // Release deleted tetrahedra back to pool
             // Use instance pool
@@ -343,6 +356,60 @@ public class MutableGrid extends Grid {
             }
             return t;
         });
+    }
+
+    protected void insert(Vertex v, final Tetrahedron target) {
+        // Set pool context for this operation
+        TetrahedronPoolContext.withPool(pool, () -> {
+            List<OrientedFace> ears = new ArrayList<>(20);
+            last = target.flip1to4(v, ears);
+
+            // Update landmark index with new tetrahedra from initial flip
+            if (landmarkIndex != null) {
+                // The flip1to4 creates 4 new tetrahedra
+                landmarkIndex.addTetrahedron(last, size * 4);
+            }
+
+            // Use optimized flip processing
+            while (!ears.isEmpty()) {
+                int lastIndex = ears.size() - 1;
+                OrientedFace face = ears.remove(lastIndex);
+                Tetrahedron l = FlipOptimizer.flipOptimized(face, v, ears);
+                if (l != null) {
+                    last = l;
+                    // Occasionally update landmarks during cascading flips
+                    if (landmarkIndex != null && ears.size() % 10 == 0) {
+                        landmarkIndex.addTetrahedron(l, size * 4);
+                    }
+                }
+            }
+
+            // Periodically clean up deleted landmarks
+            if (landmarkIndex != null && size % 100 == 0) {
+                landmarkIndex.cleanup();
+            }
+        });
+    }
+
+    /**
+     * Get the last tetrahedron for package-private access. Used by GridValidator.
+     */
+    Tetrahedron getLastTetrahedron() {
+        return last;
+    }
+
+    /**
+     * Get the TetrahedronPool for this grid. Package-private for testing.
+     */
+    TetrahedronPool getPool() {
+        return pool;
+    }
+
+    /**
+     * Get the vertices list for package-private access. Used by GridValidator.
+     */
+    List<Vertex> getVertices() {
+        return vertices;
     }
 
     private void add(Vertex v, final Tetrahedron target) {
@@ -357,84 +424,15 @@ public class MutableGrid extends Grid {
     }
 
     private void initialize() {
+        // Warm up pool for initial operations
+        pool.warmUp(128);
         last = pool.acquire(fourCorners);
         landmarkIndex = new LandmarkIndex(new Random());
     }
 
-    protected void insert(Vertex v, final Tetrahedron target) {
-        // Set pool context for this operation
-        TetrahedronPoolContext.withPool(pool, () -> {
-            List<OrientedFace> ears = new ArrayList<>(20);
-            last = target.flip1to4(v, ears);
-
-        // Update landmark index with new tetrahedra from initial flip
-        if (landmarkIndex != null) {
-            // The flip1to4 creates 4 new tetrahedra
-            landmarkIndex.addTetrahedron(last, size * 4);
-        }
-
-        // Use optimized flip processing
-        while (!ears.isEmpty()) {
-            int lastIndex = ears.size() - 1;
-            OrientedFace face = ears.remove(lastIndex);
-            Tetrahedron l = FlipOptimizer.flipOptimized(face, v, ears);
-            if (l != null) {
-                last = l;
-                // Occasionally update landmarks during cascading flips
-                if (landmarkIndex != null && ears.size() % 10 == 0) {
-                    landmarkIndex.addTetrahedron(l, size * 4);
-                }
-            }
-        }
-
-            // Periodically clean up deleted landmarks
-            if (landmarkIndex != null && size % 100 == 0) {
-                landmarkIndex.cleanup();
-            }
-        });
-    }
-
     /**
-     * Get the vertices list for package-private access.
-     * Used by GridValidator.
-     */
-    List<Vertex> getVertices() {
-        return vertices;
-    }
-    
-    /**
-     * Get the last tetrahedron for package-private access.
-     * Used by GridValidator.
-     */
-    Tetrahedron getLastTetrahedron() {
-        return last;
-    }
-
-    /**
-     * Get an unmodifiable view of the vertices in this grid.
-     * @return an unmodifiable list of vertices
-     */
-    public List<Vertex> vertices() {
-        return Collections.unmodifiableList(vertices);
-    }
-
-    @Override
-    public Iterator<Vertex> iterator() {
-        return vertices.iterator();
-    }
-
-
-    /**
-     * Get the TetrahedronPool for this grid.
-     * Package-private for testing.
-     */
-    TetrahedronPool getPool() {
-        return pool;
-    }
-
-    /**
-     * Release all tetrahedrons in the grid back to the pool.
-     * This should be called before clear() or rebuild() to reuse memory.
+     * Release all tetrahedrons in the grid back to the pool. This should be called before clear() or rebuild() to reuse
+     * memory.
      */
     private void releaseAllTetrahedrons() {
         if (size == 0 || vertices.isEmpty()) {
@@ -459,15 +457,6 @@ public class MutableGrid extends Grid {
                 releasedCount++;
             }
         }
-
-        // Also ensure the 'last' reference is cleared if it was released
-        if (last != null && last.isDeleted()) {
-            last = null;
-        }
-
-        // Optionally log for debugging very large rebuilds only
-        if (releasedCount > 10000) {
-            // Silent - no logging in production code without SLF4J dependency
-        }
+        last = null;
     }
 }

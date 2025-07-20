@@ -203,10 +203,9 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         incident.delete();
         adjacent.delete();
         
-        // Release deleted tetrahedra to pool
-        // TODO: Disabled due to premature release causing crashes
-        // pool.release(incident);
-        // pool.release(adjacent);
+        // Defer release until after all operations complete
+        TetrahedronPoolContext.deferRelease(incident);
+        TetrahedronPoolContext.deferRelease(adjacent);
 
         t0.removeAnyDegenerateTetrahedronPair();
         t1.removeAnyDegenerateTetrahedronPair();
@@ -304,15 +303,13 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         incident.delete();
         adjacent.delete();
         
-        // Release deleted tetrahedra to pool
-        // TODO: Disabled due to premature release causing crashes
-        // pool.release(incident);
-        // pool.release(adjacent);
+        // Defer release until after all operations complete
+        TetrahedronPoolContext.deferRelease(incident);
+        TetrahedronPoolContext.deferRelease(adjacent);
         o2.delete();
         
-        // Release deleted tetrahedron to pool
-        // TODO: Disabled due to premature release causing crashes
-        // TetrahedronPool.getInstance().release(o2);
+        // Defer release until after all operations complete
+        TetrahedronPoolContext.deferRelease(o2);
 
         return new Tetrahedron[] { t0, t1 };
     }
