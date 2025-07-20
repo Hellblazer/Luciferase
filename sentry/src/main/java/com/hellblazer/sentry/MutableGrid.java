@@ -163,8 +163,8 @@ public class MutableGrid extends Grid {
             Tetrahedron result = landmarkIndex.locate(p, last, entropy);
             if (result != null) {
                 last = result;  // Update last for next query
+                return result;
             }
-            return result;
         }
         return locate(p, last, entropy);
     }
@@ -274,6 +274,9 @@ public class MutableGrid extends Grid {
         final var v = new Vertex(p);
         var located = locate(p, entropy);
         if (located == null) {
+            if (contains(p)) {
+                throw new IllegalStateException("This grid should contain: " + p);
+            }
             throw new IllegalArgumentException("There is no located vertex for " + p);
         }
         add(v, located);

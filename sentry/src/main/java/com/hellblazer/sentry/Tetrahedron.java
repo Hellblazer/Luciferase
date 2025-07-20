@@ -164,7 +164,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     public Point3f center() {
         float[] center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         return new Point3f(center[0], center[1], center[2]);
     }
 
@@ -185,7 +185,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public float circumsphereRadius() {
         float[] center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         // Calculate radius as distance from center to any vertex
         float dx = a.x - center[0];
         float dy = a.y - center[1];
@@ -926,7 +926,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             return;
         }
         var center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V next = VORONOI_FACE_NEXT[ordinalOf(from).ordinal()][ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var t = getNeighbor(next);
@@ -948,7 +948,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3f[]> faces) {
         var face = new ArrayList<Point3f>();
         var center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V v = VORONOI_FACE_ORIGIN[ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var next = getNeighbor(v);
