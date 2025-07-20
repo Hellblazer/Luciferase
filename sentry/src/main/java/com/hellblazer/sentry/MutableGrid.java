@@ -25,6 +25,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Random;
+import java.util.Set;
 
 import static com.hellblazer.sentry.V.*;
 
@@ -101,26 +102,49 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public class MutableGrid extends Grid {
-    // Flag to enable/disable landmark index
-    protected static final boolean       USE_LANDMARK_INDEX = Boolean.parseBoolean(
-    System.getProperty("sentry.useLandmarkIndex", "false"));
-    // Flag to enable/disable optimized flip for benchmarking
-    protected static final boolean       USE_OPTIMIZED_FLIP = Boolean.parseBoolean(
-    System.getProperty("sentry.useOptimizedFlip", "true"));
     protected              Vertex        tail;
     protected              Tetrahedron   last;  // Changed to protected for testing
     protected              LandmarkIndex landmarkIndex;  // Changed to protected for testing
+    protected              ValidationManager validationManager;  // Optional validation framework
+    
+    // Configuration flags
+    protected final boolean useLandmarkIndex;
+    protected final boolean useOptimizedFlip;
 
     public MutableGrid() {
         this(getFourCorners());
     }
 
     public MutableGrid(Vertex[] fourCorners) {
-        super(fourCorners);
+        this(fourCorners, SentryConfiguration.getDefault());
+    }
+    
+    /**
+     * Create a new MutableGrid with specific configuration.
+     * 
+     * @param fourCorners The four corner vertices
+     * @param config The configuration to use
+     */
+    public MutableGrid(Vertex[] fourCorners, SentryConfiguration config) {
+        super(fourCorners, GeometricPredicatesFactory.create(config));
+        
+        // Store configuration
+        this.useLandmarkIndex = config.isLandmarkIndexEnabled();
+        this.useOptimizedFlip = config.isOptimizedFlipEnabled();
+        
         initialize();
+        
+        // Create validation manager if validation is enabled
+        if (config.isValidationEnabled()) {
+            validationManager = new ValidationManager(this);
+            validationManager.enableValidation(true);
+        }
     }
 
     public void clear() {
+        // First, collect and release all tetrahedrons back to the pool
+        releaseAllTetrahedrons();
+        
         if (head != null) {
             head.clear();
         }
@@ -141,7 +165,7 @@ public class MutableGrid extends Grid {
 
     public Tetrahedron locate(Tuple3f p, Random entropy) {
         // Use landmark index for better starting point
-        if (landmarkIndex != null && USE_LANDMARK_INDEX) {
+        if (landmarkIndex != null && useLandmarkIndex) {
             Tetrahedron result = landmarkIndex.locate(p, last, entropy);
             if (result != null) {
                 last = result;  // Update last for next query
@@ -160,43 +184,14 @@ public class MutableGrid extends Grid {
             }
         }
         
-        // Clear the grid but not the vertex linked list
-        if (head != null) {
-            // Clear adjacent references but preserve linked list structure
-            for (var v : head) {
-                v.setAdjacent(null);
-            }
-        }
-        
-        // Reset tetrahedra
-        for (var v : fourCorners) {
-            v.reset();
-        }
-        if (landmarkIndex != null) {
-            landmarkIndex.clear();
-        }
-        
-        // Reinitialize 
-        last = TetrahedronPool.getInstance().acquire(fourCorners);
-        head = tail = null;
-        size = 0;
-        initialize();
-        
-        // Clear the next pointers before re-insertion
-        for (var v : vertices) {
-            v.clearNext();
-        }
-        
-        // Re-insert all vertices
-        for (var v : vertices) {
-            var containedIn = locate(v, last, entropy);
-            if (containedIn != null) {
-                add(v, containedIn);
-            }
-        }
+        // Use the list-based rebuild method which properly handles the vertices
+        rebuild(vertices, entropy);
     }
 
     public void rebuild(List<Vertex> vertices, Random entropy) {
+        // Release all tetrahedrons back to the pool before rebuilding
+        releaseAllTetrahedrons();
+        
         // Clear adjacent references and next pointers for all vertices
         for (var v : vertices) {
             v.setAdjacent(null);
@@ -224,6 +219,9 @@ public class MutableGrid extends Grid {
                 add(v, containedIn);
             }
         }
+        
+        // Validate and fix any missing vertex references
+        validateVertexReferences();
     }
 
     /**
@@ -401,8 +399,11 @@ public class MutableGrid extends Grid {
             }
         }
 
+        // Release deleted tetrahedra back to pool
+        TetrahedronPool pool = TetrahedronPool.getInstance();
         for (Tetrahedron tet : deleted) {
             tet.delete();
+            pool.release(tet);
         }
         return t;
     }
@@ -419,6 +420,9 @@ public class MutableGrid extends Grid {
             tail = v;
         }
         size++;
+        
+        // Note: Automatic validation removed to prevent cross-test interference
+        // Validation should be triggered explicitly via getValidationManager().createReport()
     }
 
     private void initialize() {
@@ -431,13 +435,13 @@ public class MutableGrid extends Grid {
         last = target.flip1to4(v, ears);
 
         // Update landmark index with new tetrahedra from initial flip
-        if (landmarkIndex != null && USE_LANDMARK_INDEX) {
+        if (landmarkIndex != null && useLandmarkIndex) {
             // The flip1to4 creates 4 new tetrahedra
             landmarkIndex.addTetrahedron(last, size * 4);
         }
 
         // Use optimized flip processing
-        if (USE_OPTIMIZED_FLIP) {
+        if (useOptimizedFlip) {
             while (!ears.isEmpty()) {
                 int lastIndex = ears.size() - 1;
                 OrientedFace face = ears.remove(lastIndex);
@@ -445,7 +449,7 @@ public class MutableGrid extends Grid {
                 if (l != null) {
                     last = l;
                     // Occasionally update landmarks during cascading flips
-                    if (landmarkIndex != null && USE_LANDMARK_INDEX && ears.size() % 10 == 0) {
+                    if (landmarkIndex != null && useLandmarkIndex && ears.size() % 10 == 0) {
                         landmarkIndex.addTetrahedron(l, size * 4);
                     }
                 }
@@ -457,7 +461,7 @@ public class MutableGrid extends Grid {
                 if (l != null) {
                     last = l;
                     // Occasionally update landmarks during cascading flips
-                    if (landmarkIndex != null && USE_LANDMARK_INDEX && ears.size() % 10 == 0) {
+                    if (landmarkIndex != null && useLandmarkIndex && ears.size() % 10 == 0) {
                         landmarkIndex.addTetrahedron(l, size * 4);
                     }
                 }
@@ -465,8 +469,166 @@ public class MutableGrid extends Grid {
         }
 
         // Periodically clean up deleted landmarks
-        if (landmarkIndex != null && USE_LANDMARK_INDEX && size % 100 == 0) {
+        if (landmarkIndex != null && useLandmarkIndex && size % 100 == 0) {
             landmarkIndex.cleanup();
+        }
+    }
+    
+    /**
+     * Validate that all vertices have valid adjacent tetrahedron references.
+     * If a vertex is missing its adjacent reference, find a valid tetrahedron containing it.
+     * Also validates bidirectional consistency between vertices and tetrahedra.
+     */
+    private void validateVertexReferences() {
+        if (head == null) {
+            return;
+        }
+        
+        int validatedCount = 0;
+        int repairedCount = 0;
+        
+        for (var v : head) {
+            Tetrahedron adjacent = v.getAdjacent();
+            
+            // Check if vertex has no adjacent reference or reference is invalid
+            if (adjacent == null || adjacent.isDeleted()) {
+                adjacent = findTetrahedronContaining(v);
+                if (adjacent != null) {
+                    v.setAdjacent(adjacent);
+                    repairedCount++;
+                }
+            } else {
+                // Verify bidirectional consistency: tetrahedron should contain vertex
+                boolean found = false;
+                for (V vertex : V.values()) {
+                    if (adjacent.getVertex(vertex) == v) {
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if (!found) {
+                    // Adjacent tetrahedron doesn't contain this vertex - find correct one
+                    Tetrahedron correctAdjacent = findTetrahedronContaining(v);
+                    if (correctAdjacent != null) {
+                        v.setAdjacent(correctAdjacent);
+                        repairedCount++;
+                    }
+                } else {
+                    validatedCount++;
+                }
+            }
+        }
+        
+        // Optionally log validation results for debugging large repairs only
+        if (repairedCount > 50) {
+            System.out.println("Vertex reference validation: " + validatedCount + " valid, " + 
+                repairedCount + " repaired");
+        }
+    }
+    
+    /**
+     * Find a tetrahedron that contains the given vertex.
+     * This is used to repair missing vertex-tetrahedron references.
+     */
+    private Tetrahedron findTetrahedronContaining(Vertex v) {
+        // Start from the last tetrahedron and walk the mesh
+        if (last != null && !last.isDeleted()) {
+            // Check if last contains the vertex
+            if (last.includes(v)) {
+                return last;
+            }
+            
+            // Perform a breadth-first search from last
+            List<Tetrahedron> visited = new ArrayList<>();
+            List<Tetrahedron> queue = new ArrayList<>();
+            queue.add(last);
+            visited.add(last);
+            
+            while (!queue.isEmpty()) {
+                Tetrahedron current = queue.remove(0);
+                
+                // Check all neighbors
+                for (V vertex : V.values()) {
+                    Tetrahedron neighbor = current.getNeighbor(vertex);
+                    if (neighbor != null && !neighbor.isDeleted() && !visited.contains(neighbor)) {
+                        if (neighbor.includes(v)) {
+                            return neighbor;
+                        }
+                        visited.add(neighbor);
+                        queue.add(neighbor);
+                    }
+                }
+            }
+        }
+        
+        return null; // Vertex not found in any tetrahedron
+    }
+    
+    /**
+     * Enable or disable validation.
+     * When enabled, validation will be performed after insert/delete operations.
+     */
+    public void enableValidation(boolean enable) {
+        if (enable && validationManager == null) {
+            validationManager = new ValidationManager(this);
+        }
+        if (validationManager != null) {
+            validationManager.enableValidation(enable);
+        }
+    }
+    
+    /**
+     * Get the validation manager for this grid.
+     * Creates one if it doesn't exist.
+     */
+    public ValidationManager getValidationManager() {
+        if (validationManager == null) {
+            validationManager = new ValidationManager(this);
+        }
+        return validationManager;
+    }
+    
+    /**
+     * Perform validation after an operation if validation is enabled.
+     */
+    private void performValidation() {
+        if (validationManager != null) {
+            validationManager.validateInvariants();
+        }
+    }
+    
+    /**
+     * Release all tetrahedrons in the grid back to the pool.
+     * This should be called before clear() or rebuild() to reuse memory.
+     */
+    private void releaseAllTetrahedrons() {
+        if (size == 0 || head == null) {
+            return;
+        }
+        
+        // Collect all tetrahedrons
+        Set<Tetrahedron> allTetrahedrons = tetrahedrons();
+        
+        // Release them all back to the pool
+        TetrahedronPool pool = TetrahedronPool.getInstance();
+        int releasedCount = 0;
+        for (Tetrahedron t : allTetrahedrons) {
+            if (!t.isDeleted()) {
+                t.delete();
+                pool.release(t);
+                releasedCount++;
+            }
+        }
+        
+        // Also ensure the 'last' reference is cleared if it was released
+        if (last != null && last.isDeleted()) {
+            last = null;
+        }
+        
+        // Optionally log for debugging very large rebuilds only
+        if (releasedCount > 10000) {
+            System.out.println("Released " + releasedCount + " tetrahedrons back to pool");
         }
     }
 }

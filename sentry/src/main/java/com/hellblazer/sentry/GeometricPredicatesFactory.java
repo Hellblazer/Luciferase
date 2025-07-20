@@ -40,34 +40,17 @@ public class GeometricPredicatesFactory {
     }
     
     /**
-     * Create a new GeometricPredicates instance.
-     * Mode is controlled by the system property 'sentry.predicates.mode'.
-     * Valid values: scalar, simd, exact, hybrid, adaptive
-     * Default: simd (if available), otherwise scalar
+     * Create a new GeometricPredicates instance using configuration.
+     * 
+     * @param config The configuration to use
+     * @return A new GeometricPredicates instance
      */
-    public static GeometricPredicates create() {
-        // Get predicate mode from system property
-        String modeProperty = System.getProperty("sentry.predicates.mode", "").toLowerCase();
-        PredicateMode mode = null;
+    public static GeometricPredicates create(SentryConfiguration config) {
+        PredicateMode mode = config.getPredicateMode();
         
-        // Parse the mode property
-        if (!modeProperty.isEmpty()) {
-            try {
-                mode = PredicateMode.valueOf(modeProperty.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                System.err.println("Invalid predicate mode: " + modeProperty + 
-                    ". Valid values are: scalar, simd, exact, hybrid, adaptive. Using default.");
-            }
-        }
-        
-        // Legacy property check for backward compatibility
-        if (mode == null && Boolean.parseBoolean(System.getProperty("sentry.useHybridPredicates", "false"))) {
-            mode = PredicateMode.HYBRID;
-        }
-        
-        // If no mode specified, use default (SIMD if available, else SCALAR)
-        if (mode == null) {
-            mode = SIMDSupport.isAvailable() ? PredicateMode.SIMD : PredicateMode.SCALAR;
+        // If mode is SIMD but not available, fall back to SCALAR
+        if (mode == PredicateMode.SIMD && !config.isSIMDEnabled()) {
+            mode = PredicateMode.SCALAR;
         }
         
         // Create appropriate implementation based on mode
@@ -103,13 +86,25 @@ public class GeometricPredicatesFactory {
                 
             case ADAPTIVE:
                 System.out.println("Using adaptive geometric predicates");
-                return new AdaptiveGeometricPredicates();
+                AdaptiveGeometricPredicates adaptive = new AdaptiveGeometricPredicates();
+                if (config.getAdaptiveEpsilon() != null) {
+                    adaptive.setEpsilon(config.getAdaptiveEpsilon());
+                }
+                return adaptive;
                 
             case SCALAR:
             default:
                 System.out.println("Using scalar geometric predicates");
                 return new ScalarGeometricPredicates();
         }
+    }
+    
+    /**
+     * Create a new GeometricPredicates instance using default configuration.
+     * Provided for backward compatibility.
+     */
+    public static GeometricPredicates create() {
+        return create(SentryConfiguration.getDefault());
     }
     
     /**
@@ -129,6 +124,16 @@ public class GeometricPredicatesFactory {
      */
     public static synchronized void reset() {
         instance = null;
+    }
+    
+    /**
+     * Set a custom instance as the singleton.
+     * This is useful for testing with specific predicate implementations.
+     * 
+     * @param predicates The predicates instance to use as singleton
+     */
+    public static synchronized void setInstance(GeometricPredicates predicates) {
+        instance = predicates;
     }
     
     /**

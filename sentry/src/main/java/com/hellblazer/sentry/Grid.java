@@ -83,9 +83,18 @@ public class Grid implements Iterable<Vertex> {
      * The number of points in this Grid
      */
     protected       int      size = 0;
+    /**
+     * The geometric predicates implementation for this grid
+     */
+    protected final GeometricPredicates predicates;
 
     Grid(Vertex[] fourCorners) {
+        this(fourCorners, GeometricPredicatesFactory.getInstance());
+    }
+
+    Grid(Vertex[] fourCorners, GeometricPredicates predicates) {
         this.fourCorners = fourCorners;
+        this.predicates = predicates;
     }
 
     Grid(Vertex[] fourCorners, Vertex head) {
@@ -199,5 +208,12 @@ public class Grid implements Iterable<Vertex> {
 
     void setSize(int size) {
         this.size = size;
+    }
+
+    /**
+     * Get the geometric predicates implementation for this grid.
+     */
+    public GeometricPredicates getPredicates() {
+        return predicates;
     }
 }

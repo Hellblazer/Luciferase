@@ -3,7 +3,6 @@ package com.hellblazer.sentry;
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import java.util.*;
-import static com.hellblazer.sentry.MutableGrid.USE_LANDMARK_INDEX;
 
 /**
  * Benchmark to measure walking distance reduction with landmark index
@@ -22,7 +21,7 @@ public class WalkingDistanceBenchmark {
             
             // Override to count steps
             Tetrahedron start = last;
-            if (landmarkIndex != null && USE_LANDMARK_INDEX) {
+            if (landmarkIndex != null && useLandmarkIndex) {
                 // Let landmark index handle it
                 Tetrahedron result = super.locate(p, entropy);
                 // Get steps from landmark index
@@ -156,7 +155,7 @@ public class WalkingDistanceBenchmark {
         }
         
         // Print landmark statistics for debugging
-        if (USE_LANDMARK_INDEX && grid.landmarkIndex != null) {
+        if (grid.useLandmarkIndex && grid.landmarkIndex != null) {
             System.out.println("  " + grid.getLandmarkStatistics());
         }
         

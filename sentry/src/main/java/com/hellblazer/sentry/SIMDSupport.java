@@ -27,7 +27,7 @@ package com.hellblazer.sentry;
 public class SIMDSupport {
     
     private static final boolean VECTOR_API_AVAILABLE;
-    private static final String SIMD_PROPERTY = "sentry.enableSIMD";
+    private static boolean simdEnabled = true; // Default to enabled if available
     
     static {
         boolean available = false;
@@ -48,11 +48,10 @@ public class SIMDSupport {
     /**
      * Check if SIMD optimizations are available and enabled.
      * 
-     * @return true if Vector API is available and enabled via system property
+     * @return true if Vector API is available and enabled
      */
     public static boolean isAvailable() {
-        return VECTOR_API_AVAILABLE && 
-               "true".equals(System.getProperty(SIMD_PROPERTY));
+        return VECTOR_API_AVAILABLE && simdEnabled;
     }
     
     /**
@@ -70,7 +69,7 @@ public class SIMDSupport {
      * @param enabled true to enable SIMD (if available)
      */
     public static void setEnabled(boolean enabled) {
-        System.setProperty(SIMD_PROPERTY, String.valueOf(enabled));
+        simdEnabled = enabled;
     }
     
     /**

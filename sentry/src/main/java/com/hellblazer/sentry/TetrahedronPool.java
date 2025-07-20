@@ -133,6 +133,13 @@ public class TetrahedronPool {
     }
     
     /**
+     * Get maximum pool size
+     */
+    public int getMaxSize() {
+        return maxSize;
+    }
+    
+    /**
      * Get pool statistics for monitoring
      */
     public String getStatistics() {

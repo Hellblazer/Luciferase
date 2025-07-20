@@ -44,21 +44,22 @@ public class AdaptiveGeometricPredicates implements GeometricPredicates {
     private long inSphereCount = 0;
     
     // Optional custom epsilon for testing (normally not needed)
-    private final double customEpsilon;
+    private double customEpsilon;
     
     public AdaptiveGeometricPredicates() {
-        // Allow custom epsilon override for testing purposes
-        String epsilonStr = System.getProperty("sentry.adaptive.epsilon");
-        double epsilon = -1; // Use default Shewchuk bounds
-        if (epsilonStr != null) {
-            try {
-                epsilon = Double.parseDouble(epsilonStr);
-                System.out.println("Using custom adaptive epsilon: " + epsilon);
-            } catch (NumberFormatException e) {
-                System.err.println("Invalid adaptive epsilon value: " + epsilonStr);
-            }
+        this.customEpsilon = -1;  // Use default Shewchuk bounds
+    }
+    
+    /**
+     * Set a custom epsilon value for adaptive predicates.
+     * 
+     * @param epsilon The epsilon value to use, or negative to use Shewchuk bounds
+     */
+    public void setEpsilon(double epsilon) {
+        this.customEpsilon = epsilon;
+        if (epsilon > 0) {
+            System.out.println("Using custom adaptive epsilon: " + epsilon);
         }
-        customEpsilon = epsilon;
     }
     
     @Override
