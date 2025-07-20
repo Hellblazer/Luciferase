@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.geometry.Geometry;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
+import javax.vecmath.Vector3f;
 import java.util.*;
 
 import static com.hellblazer.sentry.V.*;
@@ -589,6 +590,136 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             (a.y + b.y + c.y + d.y) / 4.0f,
             (a.z + b.z + c.z + d.z) / 4.0f
         );
+    }
+    
+    /**
+     * Calculate the circumsphere radius of this tetrahedron.
+     * Useful for validating Delaunay constraints.
+     *
+     * @return the circumsphere radius
+     */
+    public float circumsphereRadius() {
+        float[] center = new float[3];
+        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        // Calculate radius as distance from center to any vertex
+        float dx = a.x - center[0];
+        float dy = a.y - center[1];
+        float dz = a.z - center[2];
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+    
+    /**
+     * Calculate the volume of this tetrahedron.
+     * Volume = |det(a-d, b-d, c-d)| / 6
+     *
+     * @return the volume
+     */
+    public float volume() {
+        // Vectors from d to other vertices
+        float ax = a.x - d.x, ay = a.y - d.y, az = a.z - d.z;
+        float bx = b.x - d.x, by = b.y - d.y, bz = b.z - d.z;
+        float cx = c.x - d.x, cy = c.y - d.y, cz = c.z - d.z;
+        
+        // Determinant = a·(b×c)
+        float det = ax * (by * cz - bz * cy) - 
+                   ay * (bx * cz - bz * cx) + 
+                   az * (bx * cy - by * cx);
+        
+        return Math.abs(det) / 6.0f;
+    }
+    
+    /**
+     * Check if this tetrahedron is degenerate (zero or near-zero volume).
+     *
+     * @return true if degenerate
+     */
+    public boolean isDegenerate() {
+        return volume() < 1e-6f;
+    }
+    
+    /**
+     * Calculate the minimum dihedral angle in this tetrahedron.
+     * Useful for assessing tetrahedron quality.
+     *
+     * @return the minimum dihedral angle in radians
+     */
+    public float minDihedralAngle() {
+        float minAngle = Float.MAX_VALUE;
+        
+        // Calculate all 6 dihedral angles (between pairs of faces)
+        // Face normals
+        Vector3f n1 = faceNormal(b, c, a); // Face opposite D
+        Vector3f n2 = faceNormal(c, b, d); // Face opposite A
+        Vector3f n3 = faceNormal(d, a, c); // Face opposite B
+        Vector3f n4 = faceNormal(a, d, b); // Face opposite C
+        
+        // Angles between faces
+        minAngle = Math.min(minAngle, angleBetween(n1, n2)); // Edge BC
+        minAngle = Math.min(minAngle, angleBetween(n1, n3)); // Edge AC
+        minAngle = Math.min(minAngle, angleBetween(n1, n4)); // Edge AB
+        minAngle = Math.min(minAngle, angleBetween(n2, n3)); // Edge CD
+        minAngle = Math.min(minAngle, angleBetween(n2, n4)); // Edge BD
+        minAngle = Math.min(minAngle, angleBetween(n3, n4)); // Edge AD
+        
+        return minAngle;
+    }
+    
+    /**
+     * Calculate face normal vector.
+     */
+    private Vector3f faceNormal(Vertex v1, Vertex v2, Vertex v3) {
+        Vector3f e1 = new Vector3f(v2.x - v1.x, v2.y - v1.y, v2.z - v1.z);
+        Vector3f e2 = new Vector3f(v3.x - v1.x, v3.y - v1.y, v3.z - v1.z);
+        Vector3f normal = new Vector3f();
+        normal.cross(e1, e2);
+        normal.normalize();
+        return normal;
+    }
+    
+    /**
+     * Calculate angle between two vectors.
+     */
+    private float angleBetween(Vector3f v1, Vector3f v2) {
+        float dot = v1.dot(v2);
+        // Clamp to avoid numerical issues with acos
+        dot = Math.max(-1.0f, Math.min(1.0f, dot));
+        return (float) Math.acos(dot);
+    }
+    
+    /**
+     * Check if this tetrahedron satisfies the Delaunay property
+     * with respect to a given set of vertices.
+     *
+     * @param vertices the vertices to check against
+     * @return true if Delaunay property is satisfied
+     */
+    public boolean isDelaunay(Iterable<Vertex> vertices) {
+        for (Vertex v : vertices) {
+            if (v == a || v == b || v == c || v == d) {
+                continue; // Skip vertices of this tetrahedron
+            }
+            if (inSphere(v)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    /**
+     * Get detailed validation information for this tetrahedron.
+     *
+     * @return a map of validation metrics
+     */
+    public Map<String, Object> getValidationMetrics() {
+        Map<String, Object> metrics = new HashMap<>();
+        metrics.put("center", center());
+        metrics.put("centroid", centroid());
+        metrics.put("circumsphereRadius", circumsphereRadius());
+        metrics.put("volume", volume());
+        metrics.put("isDegenerate", isDegenerate());
+        metrics.put("minDihedralAngle", Math.toDegrees(minDihedralAngle()));
+        metrics.put("hasAllNeighbors", nA != null && nB != null && nC != null && nD != null);
+        return metrics;
     }
     
     /**

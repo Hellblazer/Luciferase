@@ -18,6 +18,7 @@
 package com.hellblazer.sentry;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
@@ -32,9 +33,15 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public class MutableGrid extends Grid {
-    protected Vertex      tail;
-    protected Tetrahedron last;  // Changed to protected for testing
-    protected LandmarkIndex landmarkIndex;  // Changed to protected for testing
+    // Flag to enable/disable landmark index
+    protected static final boolean       USE_LANDMARK_INDEX = Boolean.parseBoolean(
+    System.getProperty("sentry.useLandmarkIndex", "false"));
+    // Flag to enable/disable optimized flip for benchmarking
+    protected static final boolean       USE_OPTIMIZED_FLIP = Boolean.parseBoolean(
+    System.getProperty("sentry.useOptimizedFlip", "true"));
+    protected              Vertex        tail;
+    protected              Tetrahedron   last;  // Changed to protected for testing
+    protected              LandmarkIndex landmarkIndex;  // Changed to protected for testing
 
     public MutableGrid() {
         this(getFourCorners());
@@ -42,8 +49,7 @@ public class MutableGrid extends Grid {
 
     public MutableGrid(Vertex[] fourCorners) {
         super(fourCorners);
-        last = TetrahedronPool.getInstance().acquire(fourCorners);
-        landmarkIndex = new LandmarkIndex(new Random());
+        initialize();
     }
 
     public void clear() {
@@ -58,7 +64,14 @@ public class MutableGrid extends Grid {
         }
     }
 
-    public Tetrahedron locate(Point3f p, Random entropy) {
+    /**
+     * Get performance statistics from the landmark index.
+     */
+    public String getLandmarkStatistics() {
+        return landmarkIndex != null ? landmarkIndex.getStatistics() : "No landmark index";
+    }
+
+    public Tetrahedron locate(Tuple3f p, Random entropy) {
         // Use landmark index for better starting point
         if (landmarkIndex != null && USE_LANDMARK_INDEX) {
             Tetrahedron result = landmarkIndex.locate(p, last, entropy);
@@ -84,6 +97,18 @@ public class MutableGrid extends Grid {
         }
     }
 
+    public void rebuild(List<Vertex> vertices, Random entropy) {
+        clear();
+        last = TetrahedronPool.getInstance().acquire(fourCorners);
+        head = tail = null;
+        initialize();
+
+        for (var v : vertices) {
+            v.clear();
+            track(v, entropy);
+        }
+    }
+
     /**
      * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
      * Explanation", by Hugo Ledoux
@@ -92,13 +117,12 @@ public class MutableGrid extends Grid {
      * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
      */
-    public Vertex track(Point3f p, Random entropy) {
-        assert p != null;
-        if (!contains(p)) {
+    public Vertex track(Vertex v, Random entropy) {
+        assert v != null;
+        if (!contains(v)) {
             return null;
         }
-        final var v = new Vertex(p);
-        add(v, locate(p, entropy));
+        add(v, locate(v, entropy));
         return v;
     }
 
@@ -122,6 +146,24 @@ public class MutableGrid extends Grid {
             return null;
         }
         add(v, containedIn);
+        return v;
+    }
+
+    /**
+     * Track the point into the tetrahedralization. See "Computing the 3D Voronoi Diagram Robustly: An Easy
+     * Explanation", by Hugo Ledoux
+     * <p>
+     *
+     * @param p - the point to be inserted
+     * @return the Vertex in the tetrahedralization
+     */
+    public Vertex track(Point3f p, Random entropy) {
+        assert p != null;
+        if (!contains(p)) {
+            return null;
+        }
+        final var v = new Vertex(p);
+        add(v, locate(p, entropy));
         return v;
     }
 
@@ -230,16 +272,21 @@ public class MutableGrid extends Grid {
         size++;
     }
 
-    private void insert(Vertex v, final Tetrahedron target) {
+    private void initialize() {
+        last = TetrahedronPool.getInstance().acquire(fourCorners);
+        landmarkIndex = new LandmarkIndex(new Random());
+    }
+
+    protected void insert(Vertex v, final Tetrahedron target) {
         List<OrientedFace> ears = new ArrayList<>(20);
         last = target.flip1to4(v, ears);
-        
+
         // Update landmark index with new tetrahedra from initial flip
         if (landmarkIndex != null && USE_LANDMARK_INDEX) {
             // The flip1to4 creates 4 new tetrahedra
             landmarkIndex.addTetrahedron(last, size * 4);
         }
-        
+
         // Use optimized flip processing
         if (USE_OPTIMIZED_FLIP) {
             while (!ears.isEmpty()) {
@@ -267,27 +314,10 @@ public class MutableGrid extends Grid {
                 }
             }
         }
-        
+
         // Periodically clean up deleted landmarks
         if (landmarkIndex != null && USE_LANDMARK_INDEX && size % 100 == 0) {
             landmarkIndex.cleanup();
         }
-    }
-    
-    // Flag to enable/disable optimized flip for benchmarking
-    private static final boolean USE_OPTIMIZED_FLIP = Boolean.parseBoolean(
-        System.getProperty("sentry.useOptimizedFlip", "true")
-    );
-    
-    // Flag to enable/disable landmark index
-    protected static final boolean USE_LANDMARK_INDEX = Boolean.parseBoolean(
-        System.getProperty("sentry.useLandmarkIndex", "false")
-    );
-    
-    /**
-     * Get performance statistics from the landmark index.
-     */
-    public String getLandmarkStatistics() {
-        return landmarkIndex != null ? landmarkIndex.getStatistics() : "No landmark index";
     }
 }

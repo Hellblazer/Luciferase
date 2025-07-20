@@ -1,6 +1,7 @@
 package com.hellblazer.sentry;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Tuple3f;
 import java.util.*;
 import static com.hellblazer.sentry.MutableGrid.USE_LANDMARK_INDEX;
 
@@ -15,7 +16,7 @@ public class WalkingDistanceBenchmark {
         private int totalQueries = 0;
         
         @Override
-        public Tetrahedron locate(Point3f p, Random entropy) {
+        public Tetrahedron locate(Tuple3f p, Random entropy) {
             totalQueries++;
             int steps = 0;
             

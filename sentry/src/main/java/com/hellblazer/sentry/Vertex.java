@@ -27,6 +27,8 @@ import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
 import java.io.Serial;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -360,6 +362,7 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
             n.adjacent = null;
             n = n.next;
         }
+        next = null;
     }
 
     void detach(Vertex v) {
@@ -381,6 +384,102 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
 
     void reset() {
         adjacent = null;
+    }
+    
+    /**
+     * Calculate the star size (number of tetrahedra incident to this vertex).
+     *
+     * @return the number of incident tetrahedra
+     */
+    public int getStarSize() {
+        if (adjacent == null) return 0;
+        
+        final AtomicInteger count = new AtomicInteger(0);
+        adjacent.visitStar(this, (vertex, t, x, y, z) -> {
+            count.incrementAndGet();
+        });
+        return count.get();
+    }
+    
+    /**
+     * Check if this vertex is on the convex hull of the tetrahedralization.
+     *
+     * @return true if on convex hull
+     */
+    public boolean isOnConvexHull() {
+        if (adjacent == null) return false;
+        
+        // A vertex is on the convex hull if any of its incident faces
+        // has no adjacent tetrahedron
+        final AtomicBoolean onHull = new AtomicBoolean(false);
+        adjacent.visitStar(this, (vertex, t, x, y, z) -> {
+            OrientedFace face = t.getFace(vertex);
+            if (!face.hasAdjacent()) {
+                onHull.set(true);
+            }
+        });
+        return onHull.get();
+    }
+    
+    /**
+     * Get the average edge length from this vertex to its neighbors.
+     *
+     * @return the average edge length
+     */
+    public float getAverageEdgeLength() {
+        Collection<Vertex> neighbors = getNeighbors();
+        if (neighbors.isEmpty()) return 0;
+        
+        float totalLength = 0;
+        for (Vertex neighbor : neighbors) {
+            totalLength += Math.sqrt(distanceSquared(neighbor));
+        }
+        return totalLength / neighbors.size();
+    }
+    
+    /**
+     * Get validation metrics for this vertex.
+     *
+     * @return a map of validation metrics
+     */
+    public Map<String, Object> getValidationMetrics() {
+        Map<String, Object> metrics = new HashMap<>();
+        metrics.put("position", new Point3f(x, y, z));
+        metrics.put("starSize", getStarSize());
+        metrics.put("neighborCount", getNeighbors().size());
+        metrics.put("isOnConvexHull", isOnConvexHull());
+        metrics.put("averageEdgeLength", getAverageEdgeLength());
+        metrics.put("hasAdjacent", adjacent != null);
+        return metrics;
+    }
+    
+    /**
+     * Check if the star of this vertex is valid (all tetrahedra are properly connected).
+     *
+     * @return true if star is valid
+     */
+    public boolean hasValidStar() {
+        if (adjacent == null) return false;
+        
+        final Set<Tetrahedron> starTets = new HashSet<>();
+        final AtomicBoolean allValid = new AtomicBoolean(true);
+        
+        adjacent.visitStar(this, (vertex, t, x, y, z) -> {
+            if (t.isDeleted()) {
+                allValid.set(false);
+                return;
+            }
+            
+            // Check that this vertex is actually in the tetrahedron
+            if (!t.includes(this)) {
+                allValid.set(false);
+                return;
+            }
+            
+            starTets.add(t);
+        });
+        
+        return allValid.get() && !starTets.isEmpty();
     }
 
 }
