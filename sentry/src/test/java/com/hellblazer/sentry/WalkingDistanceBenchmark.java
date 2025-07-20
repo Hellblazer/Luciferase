@@ -21,21 +21,19 @@ public class WalkingDistanceBenchmark {
             
             // Override to count steps
             Tetrahedron start = last;
-            if (landmarkIndex != null && useLandmarkIndex) {
+            if (landmarkIndex != null) {
                 // Let landmark index handle it
                 Tetrahedron result = super.locate(p, entropy);
                 // Get steps from landmark index
-                if (landmarkIndex != null) {
-                    String stats = landmarkIndex.getStatistics();
-                    // Extract average walk steps from stats
-                    if (stats.contains("Avg walk steps:")) {
-                        String avgPart = stats.substring(stats.lastIndexOf("Avg walk steps:") + 15).trim();
-                        try {
-                            double avg = Double.parseDouble(avgPart);
-                            totalWalkSteps = (long)(avg * totalQueries);
-                        } catch (Exception e) {
-                            // Ignore parse errors
-                        }
+                String stats = landmarkIndex.getStatistics();
+                // Extract average walk steps from stats
+                if (stats.contains("Avg walk steps:")) {
+                    String avgPart = stats.substring(stats.lastIndexOf("Avg walk steps:") + 15).trim();
+                    try {
+                        double avg = Double.parseDouble(avgPart);
+                        totalWalkSteps = (long)(avg * totalQueries);
+                    } catch (Exception e) {
+                        // Ignore parse errors
                     }
                 }
                 return result;
@@ -155,7 +153,7 @@ public class WalkingDistanceBenchmark {
         }
         
         // Print landmark statistics for debugging
-        if (grid.useLandmarkIndex && grid.landmarkIndex != null) {
+        if (grid.landmarkIndex != null) {
             System.out.println("  " + grid.getLandmarkStatistics());
         }
         

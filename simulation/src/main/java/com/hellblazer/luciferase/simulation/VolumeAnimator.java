@@ -24,7 +24,6 @@ import com.hellblazer.primeMover.api.Kronos;
 import com.hellblazer.primeMover.controllers.RealTimeController;
 import com.hellblazer.primeMover.runtime.Kairos;
 import com.hellblazer.sentry.MutableGrid;
-import com.hellblazer.sentry.SentryConfiguration;
 import com.hellblazer.sentry.Vertex;
 
 import javax.vecmath.Point3f;
@@ -49,7 +48,7 @@ public class VolumeAnimator {
     public VolumeAnimator(String name, Tet cell, Random entropy) {
         this.controller = new RealTimeController(name);
         this.cell = cell;
-        this.grid = new MutableGrid(Vertex.vertices(cell.vertices()), SentryConfiguration.getPerformanceOptimized());
+        this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
         this.entropy = entropy;
         Kairos.setController(controller);
     }

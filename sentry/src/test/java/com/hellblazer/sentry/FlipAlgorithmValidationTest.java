@@ -372,7 +372,7 @@ public class FlipAlgorithmValidationTest {
             }
             
             // Update landmark index with new tetrahedra from initial flip
-            if (landmarkIndex != null && useLandmarkIndex) {
+            if (landmarkIndex != null) {
                 landmarkIndex.addTetrahedron(last, size * 4);
             }
             
@@ -387,19 +387,17 @@ public class FlipAlgorithmValidationTest {
                     maxEarQueueSize = ears.size();
                 }
                 
-                Tetrahedron l = useOptimizedFlip 
-                    ? FlipOptimizer.flipOptimized(face, v, ears)
-                    : face.flip(v, ears);
+                Tetrahedron l = FlipOptimizer.flipOptimized(face, v, ears);
                 if (l != null) {
                     last = l;
-                    if (landmarkIndex != null && useLandmarkIndex && ears.size() % 10 == 0) {
+                    if (landmarkIndex != null && ears.size() % 10 == 0) {
                         landmarkIndex.addTetrahedron(l, size * 4);
                     }
                 }
             }
             
             // Periodically clean up deleted landmarks
-            if (landmarkIndex != null && useLandmarkIndex && size % 100 == 0) {
+            if (landmarkIndex != null && size % 100 == 0) {
                 landmarkIndex.cleanup();
             }
         }

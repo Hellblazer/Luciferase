@@ -158,27 +158,6 @@ public class MutableGridTest {
     }
     
     @Test
-    @DisplayName("Test vertex removal and untracking")
-    public void testVertexRemoval() {
-        Vertex v1 = grid.track(new Point3f(100, 100, 100), entropy);
-        Vertex v2 = grid.track(new Point3f(200, 200, 200), entropy);
-        Vertex v3 = grid.track(new Point3f(300, 300, 300), entropy);
-        
-        assertEquals(3, grid.size());
-        
-        grid.untrack(v2);
-        assertEquals(2, grid.size(), "Size should decrease after untrack");
-        assertNull(v2.getAdjacent(), "Untracked vertex should have no adjacent tetrahedron");
-        
-        // Test multiple untracks
-        grid.untrack(v1);
-        assertEquals(1, grid.size(), "Size should decrease after second untrack");
-        
-        grid.untrack(v3);
-        assertEquals(0, grid.size(), "Size should be 0 after all vertices untracked");
-    }
-    
-    @Test
     @DisplayName("Test rebuild functionality - documenting known limitations")
     public void testRebuild() {
         // Track initial points - offset to ensure positive coordinates
@@ -567,31 +546,6 @@ public class MutableGridTest {
                 }
             }
         }
-    }
-    
-    @Test
-    @DisplayName("Test concurrent modifications safety")
-    public void testConcurrentModificationSafety() {
-        // Add initial points
-        List<Vertex> vertices = new ArrayList<>();
-        for (int i = 0; i < 50; i++) {
-            Point3f p = Vertex.randomPoint(1000, entropy);
-            p.add(new Point3f(5000, 5000, 5000));
-            vertices.add(grid.track(p, entropy));
-        }
-        
-        // Try to iterate while modifying (should not throw ConcurrentModificationException)
-        AtomicInteger count = new AtomicInteger(0);
-        for (Vertex v : grid) {
-            count.incrementAndGet();
-            if (count.get() == 10) {
-                // Add a new point during iteration
-                Point3f newPoint = new Point3f(6000, 6000, 6000);
-                grid.track(newPoint, entropy);
-            }
-        }
-        
-        assertTrue(count.get() >= 50, "Should have iterated through at least the original vertices");
     }
     
     @Test

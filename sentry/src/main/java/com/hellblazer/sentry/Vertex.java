@@ -18,7 +18,6 @@
 package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
-import com.hellblazer.luciferase.geometry.Geometry;
 import com.hellblazer.luciferase.geometry.GeometryAdaptive;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 
@@ -36,7 +35,7 @@ import java.util.stream.Stream;
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Comparable<Vertex> {
+public class Vertex extends Vector3f implements Cursor, Comparable<Vertex> {
     static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
@@ -44,7 +43,6 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
      * One of the tetrahedra adjacent to the vertex
      */
     private              Tetrahedron adjacent;
-    private              Vertex      next; // linked list o' vertices
 
     public Vertex(float i, float j, float k) {
         x = i;
@@ -254,27 +252,6 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
         return Math.signum(result);
     }
 
-    @Override
-    public final Iterator<Vertex> iterator() {
-        return new Iterator<Vertex>() {
-            private Vertex next = Vertex.this;
-
-            @Override
-            public boolean hasNext() {
-                return next != null;
-            }
-
-            @Override
-            public Vertex next() {
-                if (next == null) {
-                    throw new NoSuchElementException();
-                }
-                var current = next;
-                next = next.next;
-                return current;
-            }
-        };
-    }
 
     /**
      * Locate the tetrahedron encompassing the query point
@@ -347,42 +324,8 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
         adjacent.visitStar(this, visitor);
     }
 
-    void append(Vertex v) {
-        assert next == null : "Next is not null";
-        next = v;
-    }
 
-    void clear() {
-        adjacent = null;
-        var n = next;
-        while (n != null) {
-            n.adjacent = null;
-            n = n.next;
-        }
-        next = null;
-    }
-    
-    void clearNext() {
-        next = null;
-    }
 
-    void detach(Vertex v) {
-        if (v == this) {
-            // Cannot detach self from the head's linked list this way
-            throw new IllegalArgumentException("Cannot detach self");
-        }
-        
-        var current = this;
-        while (current.next != null) {
-            if (current.next == v) {
-                current.next = v.next;
-                v.next = null;
-                return;
-            }
-            current = current.next;
-        }
-        throw new NoSuchElementException("Vertex not found in linked list");
-    }
 
     void freshenAdjacent(Tetrahedron tetrahedron) {
         if (adjacent == null || adjacent.isDeleted()) {

@@ -76,7 +76,8 @@ public class Grid implements Iterable<Vertex> {
      */
     protected final Vertex[] fourCorners;
     /**
-     * the Head of the vertices list
+     * A representative vertex used for tetrahedron traversal.
+     * In MutableGrid, this can be any valid vertex from the vertices list.
      */
     protected       Vertex   head;
     /**
@@ -125,17 +126,24 @@ public class Grid implements Iterable<Vertex> {
 
     @Override
     public Iterator<Vertex> iterator() {
-        return head != null ? head.iterator() : new Iterator<Vertex>() {
-            @Override
-            public boolean hasNext() {
-                return false;
+        if (size == 0 || head == null) {
+            return Collections.emptyIterator();
+        }
+        Set<Vertex> allVertices = new IdentitySet<>(size);
+        Set<Tetrahedron> all = new IdentitySet<>(size);
+        var stack = new Stack<Tetrahedron>();
+        Tetrahedron start = head.getAdjacent();
+        if (start != null) {
+            stack.push(start);
+            while (!stack.isEmpty()) {
+                var next = stack.pop();
+                if (all.add(next)) {
+                    allVertices.addAll(Arrays.asList(next.getVertices()));
+                    next.children(stack, all);
+                }
             }
-
-            @Override
-            public Vertex next() {
-                throw new NoSuchElementException();
-            }
-        };
+        }
+        return allVertices.iterator();
     }
 
     /**
@@ -164,7 +172,7 @@ public class Grid implements Iterable<Vertex> {
      * @return
      */
     public Stream<Vertex> stream() {
-        return StreamSupport.stream(spliterator(), false);
+        return StreamSupport.stream(Spliterators.spliteratorUnknownSize(iterator(), Spliterator.ORDERED), false);
     }
 
     /**
@@ -173,31 +181,22 @@ public class Grid implements Iterable<Vertex> {
      * @return
      */
     public Set<Tetrahedron> tetrahedrons() {
-        if (size == 0) {
+        if (size == 0 || head == null) {
             return Collections.emptySet();
         }
         Set<Tetrahedron> all = new IdentitySet<>(size);
         var stack = new Stack<Tetrahedron>();
-        stack.push(head.getAdjacent());
-        while (!stack.isEmpty()) {
-            var next = stack.pop();
-            if (all.add(next)) {
-                next.children(stack, all);
+        Tetrahedron start = head.getAdjacent();
+        if (start != null) {
+            stack.push(start);
+            while (!stack.isEmpty()) {
+                var next = stack.pop();
+                if (all.add(next)) {
+                    next.children(stack, all);
+                }
             }
         }
         return all;
-    }
-
-    Vertex getHead() {
-        return head;
-    }
-
-    void setHead(Vertex head) {
-        this.head = head;
-    }
-
-    void setSize(int size) {
-        this.size = size;
     }
 
 }
