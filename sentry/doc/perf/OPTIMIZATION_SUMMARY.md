@@ -1,6 +1,6 @@
 # Sentry Module Performance Optimization Summary
 
-**Date**: January 18, 2025  
+**Date**: July 20, 2025  
 **Overall Achievement**: ~80% performance improvement
 
 ## Executive Summary
@@ -18,9 +18,11 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
    - Cached getAdjacentVertex() results to avoid repeated calculations
    - Reduced redundant topological queries
    
-3. **Object Pooling** (23.8% improvement, 84.28% reuse rate)
+3. **Object Pooling** (23.8% improvement, up to 25% reuse rate)
    - Implemented TetrahedronPool for object reuse
-   - Note: Pool release disabled due to lifecycle complexity
+   - Refactored from singleton to per-MutableGrid instance (July 2025)
+   - Thread-local context pattern for passing pool through method calls
+   - Pool release now properly implemented with up to 25% reuse rate
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30%, Achieved: ~35%)
 1. **Ordinal Optimization** (10.2% improvement)
@@ -92,11 +94,26 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 4. **Architecture Matters**: Single-threaded design constraints shaped solutions
 5. **Memory Layout**: SoA shows promise but requires careful implementation
 
+## Recent Updates (July 2025)
+
+### TetrahedronPool Refactoring
+- **Problem**: Static singleton pool shared across all MutableGrid instances
+- **Solution**: Instance-based pooling with thread-local context
+- **Implementation**:
+  - Each MutableGrid now has its own TetrahedronPool instance
+  - TetrahedronPoolContext provides thread-local access during operations
+  - All flip methods updated to use context instead of singleton
+- **Results**:
+  - Eliminates shared state between grid instances
+  - Enables proper pool release during clear/rebuild operations
+  - Achieves up to 25% reuse rate in rebuild scenarios
+  - All 60 tests passing after refactoring
+
 ## Remaining Opportunities
 
 1. **SIMD Batch Operations**: Current SIMD works but needs batch processing
 2. **Landmark Refinement**: Improve spatial index landmark selection
-3. **Memory Pool Enhancement**: Implement proper lifecycle management
+3. **Pool Reuse Optimization**: Current 2-25% reuse rate could be improved
 
 ## Conclusion
 

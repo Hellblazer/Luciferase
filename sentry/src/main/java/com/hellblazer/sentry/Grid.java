@@ -76,14 +76,15 @@ public class Grid implements Iterable<Vertex> {
      */
     protected final Vertex[] fourCorners;
     /**
-     * A representative vertex used for tetrahedron traversal.
-     * In MutableGrid, this can be any valid vertex from the vertices list.
+     * A representative vertex used for tetrahedron traversal. In MutableGrid, this can be any valid vertex from the
+     * vertices list.
      */
     protected       Vertex   head;
     /**
      * The number of points in this Grid
      */
     protected       int      size = 0;
+
     Grid(Vertex[] fourCorners) {
         this.fourCorners = fourCorners;
     }
@@ -108,7 +109,7 @@ public class Grid implements Iterable<Vertex> {
         for (Vertex v : s.extent()) {
             U[i++] = new Vertex(v);
         }
-        return TetrahedronPool.getInstance().acquire(U[0], U[1], U[2], U[3]);
+        return new Tetrahedron(U[0], U[1], U[2], U[3]);
     }
 
     public boolean contains(Tuple3f point) {

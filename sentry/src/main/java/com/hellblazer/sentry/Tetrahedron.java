@@ -204,7 +204,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return one of the four new tetrahedra
      */
     public Tetrahedron flip1to4(Vertex n, List<OrientedFace> ears) {
-        var pool = TetrahedronPool.getInstance();
+        var pool = TetrahedronPoolContext.getPool();
+        if (pool == null) {
+            throw new IllegalStateException("No TetrahedronPool set in context");
+        }
         var t0 = pool.acquire(a, b, c, n);
         var t1 = pool.acquire(a, d, b, n);
         var t2 = pool.acquire(a, c, d, n);
@@ -234,7 +237,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         delete();
 
         // Release deleted tetrahedron to pool
-        TetrahedronPool.getInstance().release(this);
+        pool.release(this);
 
         var newFace = t0.getFace(D);
         if (newFace.hasAdjacent()) {
@@ -656,7 +659,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         return Math.abs(det) / 6.0f;
     }
 
-    void children(Stack<Tetrahedron> stack) {
+    void children(Deque<Tetrahedron> stack) {
         if (nA != null && !nA.isDeleted()) {
             stack.push(nA);
         }
@@ -1077,9 +1080,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         nE.delete();
 
         // Release deleted tetrahedra to pool
-        TetrahedronPool pool = TetrahedronPool.getInstance();
-        pool.release(this);
-        pool.release(nE);
+        var pool = TetrahedronPoolContext.getPool();
+        if (pool != null) {
+            pool.release(this);
+            pool.release(nE);
+        }
 
         e1.freshenAdjacent(nF1_that);
         f2.freshenAdjacent(nF1_that);

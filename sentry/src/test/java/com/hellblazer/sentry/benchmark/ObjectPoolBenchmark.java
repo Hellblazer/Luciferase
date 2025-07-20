@@ -9,12 +9,14 @@ import java.util.*;
  */
 public class ObjectPoolBenchmark {
     
+    private static MutableGrid benchmarkGrid;
+    
     public static void main(String[] args) {
         System.out.println("Sentry Object Pool Benchmark - Phase 1.3");
         System.out.println("========================================\n");
         
-        // Clear pool statistics
-        TetrahedronPool.getInstance().clear();
+        // Create a grid for benchmarking
+        benchmarkGrid = new MutableGrid();
         
         // Warm up
         System.out.println("Warming up...");
@@ -24,9 +26,31 @@ public class ObjectPoolBenchmark {
         System.out.println("\nRunning benchmark...\n");
         runBenchmark(1000, false);
         
-        // Print pool statistics
+        // Print pool statistics (using reflection to access the pool)
         System.out.println("\nPool Statistics:");
-        System.out.println(TetrahedronPool.getInstance().getStatistics());
+        System.out.println(getPoolStats());
+    }
+    
+    private static String getPoolStats() {
+        try {
+            java.lang.reflect.Method getPoolMethod = MutableGrid.class.getDeclaredMethod("getPool");
+            getPoolMethod.setAccessible(true);
+            TetrahedronPool pool = (TetrahedronPool) getPoolMethod.invoke(benchmarkGrid);
+            return pool.getStatistics();
+        } catch (Exception e) {
+            return "Unable to get pool statistics: " + e.getMessage();
+        }
+    }
+    
+    private static String getPoolStatsForGrid(MutableGrid grid) {
+        try {
+            java.lang.reflect.Method getPoolMethod = MutableGrid.class.getDeclaredMethod("getPool");
+            getPoolMethod.setAccessible(true);
+            TetrahedronPool pool = (TetrahedronPool) getPoolMethod.invoke(grid);
+            return pool.getStatistics();
+        } catch (Exception e) {
+            return "Unable to get pool statistics: " + e.getMessage();
+        }
     }
     
     private static void runBenchmark(int iterations, boolean warmup) {
@@ -71,6 +95,10 @@ public class ObjectPoolBenchmark {
                 (double)totalTime / successfulInsertions / 1000);
             System.out.printf("Successful insertions: %d/%d\n", 
                 successfulInsertions, iterations);
+            
+            // Print pool statistics from the grid used in this benchmark
+            System.out.println("\nPool Statistics for this run:");
+            System.out.println(getPoolStatsForGrid(grid));
         }
         
         // Test 2: Memory allocation pressure test

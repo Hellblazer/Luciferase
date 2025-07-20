@@ -88,6 +88,7 @@ import static com.hellblazer.sentry.V.*;
 
 public class MutableGrid extends Grid {
     private final          List<Vertex>  vertices = new ArrayList<>();
+    private final          TetrahedronPool pool = new TetrahedronPool();
     protected              Tetrahedron   last;  // Changed to protected for testing
     protected              LandmarkIndex landmarkIndex;  // Changed to protected for testing
 
@@ -118,6 +119,9 @@ public class MutableGrid extends Grid {
 
         // Clear head reference
         head = null;
+        
+        // Reset size
+        size = 0;
 
         for (var v : fourCorners) {
             v.reset();
@@ -174,7 +178,7 @@ public class MutableGrid extends Grid {
             landmarkIndex.clear();
         }
 
-        last = TetrahedronPool.getInstance().acquire(fourCorners);
+        last = pool.acquire(fourCorners);
         initialize();
 
         // Re-insert all vertices
@@ -193,7 +197,6 @@ public class MutableGrid extends Grid {
      * Explanation", by Hugo Ledoux
      * <p>
      *
-     * @param p - the point to be inserted
      * @return the Vertex in the tetrahedralization
      */
     public Vertex track(Vertex v, Random entropy) {
@@ -260,7 +263,8 @@ public class MutableGrid extends Grid {
      * @return the tetrahedron created from the flip
      */
     protected Tetrahedron flip4to1(Vertex n) {
-        Deque<OrientedFace> star = n.getStar();
+        return TetrahedronPoolContext.withPool(pool, () -> {
+            Deque<OrientedFace> star = n.getStar();
         ArrayList<Tetrahedron> deleted = new ArrayList<>();
         for (OrientedFace f : star) {
             deleted.add(f.getIncident());
@@ -279,7 +283,7 @@ public class MutableGrid extends Grid {
             }
         }
         assert d != null;
-        Tetrahedron t = TetrahedronPool.getInstance().acquire(a, b, c, d);
+        Tetrahedron t = pool.acquire(a, b, c, d);
         base.getIncident().patch(base.getIncidentVertex(), t, D);
         if (face.includes(a)) {
             if (face.includes(b)) {
@@ -331,13 +335,14 @@ public class MutableGrid extends Grid {
             }
         }
 
-        // Release deleted tetrahedra back to pool
-        TetrahedronPool pool = TetrahedronPool.getInstance();
-        for (Tetrahedron tet : deleted) {
-            tet.delete();
-            pool.release(tet);
-        }
-        return t;
+            // Release deleted tetrahedra back to pool
+            // Use instance pool
+            for (Tetrahedron tet : deleted) {
+                tet.delete();
+                pool.release(tet);
+            }
+            return t;
+        });
     }
 
     private void add(Vertex v, final Tetrahedron target) {
@@ -352,13 +357,15 @@ public class MutableGrid extends Grid {
     }
 
     private void initialize() {
-        last = TetrahedronPool.getInstance().acquire(fourCorners);
+        last = pool.acquire(fourCorners);
         landmarkIndex = new LandmarkIndex(new Random());
     }
 
     protected void insert(Vertex v, final Tetrahedron target) {
-        List<OrientedFace> ears = new ArrayList<>(20);
-        last = target.flip1to4(v, ears);
+        // Set pool context for this operation
+        TetrahedronPoolContext.withPool(pool, () -> {
+            List<OrientedFace> ears = new ArrayList<>(20);
+            last = target.flip1to4(v, ears);
 
         // Update landmark index with new tetrahedra from initial flip
         if (landmarkIndex != null) {
@@ -380,10 +387,11 @@ public class MutableGrid extends Grid {
             }
         }
 
-        // Periodically clean up deleted landmarks
-        if (landmarkIndex != null && size % 100 == 0) {
-            landmarkIndex.cleanup();
-        }
+            // Periodically clean up deleted landmarks
+            if (landmarkIndex != null && size % 100 == 0) {
+                landmarkIndex.cleanup();
+            }
+        });
     }
 
     /**
@@ -417,6 +425,14 @@ public class MutableGrid extends Grid {
 
 
     /**
+     * Get the TetrahedronPool for this grid.
+     * Package-private for testing.
+     */
+    TetrahedronPool getPool() {
+        return pool;
+    }
+
+    /**
      * Release all tetrahedrons in the grid back to the pool.
      * This should be called before clear() or rebuild() to reuse memory.
      */
@@ -426,10 +442,10 @@ public class MutableGrid extends Grid {
         }
 
         // Release them all back to the pool
-        TetrahedronPool pool = TetrahedronPool.getInstance();
+        // Use instance pool
         int releasedCount = 0;
 
-        var stack = new Stack<Tetrahedron>();
+        var stack = new ArrayDeque<Tetrahedron>();
         // Start from any vertex's adjacent tetrahedron
         if (!vertices.isEmpty() && vertices.get(0).getAdjacent() != null) {
             stack.push(vertices.get(0).getAdjacent());

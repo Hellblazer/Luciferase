@@ -211,21 +211,27 @@ public class FlipAlgorithmValidationTest {
         // Track the flip operations by using a custom test grid
         TestMutableGrid testGrid = new TestMutableGrid();
         
-        // Add points that will trigger flips
-        testGrid.track(new Point3f(center.x + 500, center.y, center.z), entropy);
-        testGrid.track(new Point3f(center.x - 500, center.y, center.z), entropy);
-        testGrid.track(new Point3f(center.x, center.y + 500, center.z), entropy);
-        testGrid.track(new Point3f(center.x, center.y, center.z + 500), entropy);
+        // Create a TetrahedronPool for the test
+        TetrahedronPool pool = new TetrahedronPool(1024);
         
-        // Add point that triggers flips
-        testGrid.track(center, entropy);
-        
-        // Verify ear processing
-        assertTrue(testGrid.getMaxEarQueueSize() > 0, 
-            "Ear queue should be used during flips");
-        
-        System.out.printf("Max ear queue size: %d, Total ears processed: %d%n",
-            testGrid.getMaxEarQueueSize(), testGrid.getTotalEarsProcessed());
+        // Wrap the test in pool context
+        TetrahedronPoolContext.withPool(pool, () -> {
+            // Add points that will trigger flips
+            testGrid.track(new Point3f(center.x + 500, center.y, center.z), entropy);
+            testGrid.track(new Point3f(center.x - 500, center.y, center.z), entropy);
+            testGrid.track(new Point3f(center.x, center.y + 500, center.z), entropy);
+            testGrid.track(new Point3f(center.x, center.y, center.z + 500), entropy);
+            
+            // Add point that triggers flips
+            testGrid.track(center, entropy);
+            
+            // Verify ear processing
+            assertTrue(testGrid.getMaxEarQueueSize() > 0, 
+                "Ear queue should be used during flips");
+            
+            System.out.printf("Max ear queue size: %d, Total ears processed: %d%n",
+                testGrid.getMaxEarQueueSize(), testGrid.getTotalEarsProcessed());
+        });
     }
     
     @Test

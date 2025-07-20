@@ -42,9 +42,14 @@ public class VertexTest {
 
         List<OrientedFace> unlinkedFacets = new ArrayList<>();
 
-        U.flip1to4(N, unlinkedFacets);
-
-        tetrahedralization.flip4to1(N);
+        // Create a TetrahedronPool for the test
+        TetrahedronPool pool = new TetrahedronPool(1024);
+        
+        // Wrap the flip operations in pool context
+        TetrahedronPoolContext.withPool(pool, () -> {
+            U.flip1to4(N, unlinkedFacets);
+            tetrahedralization.flip4to1(N);
+        });
     }
 
     @Test

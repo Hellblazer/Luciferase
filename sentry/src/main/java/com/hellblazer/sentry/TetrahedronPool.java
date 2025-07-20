@@ -23,7 +23,7 @@ import java.util.Deque;
 
 /**
  * Object pool for Tetrahedron instances to reduce GC pressure during flip operations.
- * Optimized for single-threaded use.
+ * Each MutableGrid instance should have its own pool to avoid interference.
  * 
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
@@ -35,15 +35,15 @@ public class TetrahedronPool {
     private int size = 0;
     private final int maxSize;
     
-    // Singleton instance
-    private static final TetrahedronPool INSTANCE = new TetrahedronPool(DEFAULT_MAX_SIZE);
-    
     // Metrics for monitoring
     private int acquireCount = 0;
     private int releaseCount = 0;
     private int createCount = 0;
     
-    private TetrahedronPool(int maxSize) {
+    /**
+     * Create a new TetrahedronPool with the specified maximum size
+     */
+    public TetrahedronPool(int maxSize) {
         this.maxSize = maxSize;
         // Pre-populate the pool
         for (int i = 0; i < INITIAL_SIZE; i++) {
@@ -53,10 +53,10 @@ public class TetrahedronPool {
     }
     
     /**
-     * Get the singleton instance of the pool
+     * Create a new TetrahedronPool with the default maximum size
      */
-    public static TetrahedronPool getInstance() {
-        return INSTANCE;
+    public TetrahedronPool() {
+        this(DEFAULT_MAX_SIZE);
     }
     
     /**

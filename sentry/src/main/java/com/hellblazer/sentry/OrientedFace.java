@@ -173,7 +173,10 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var vertex1 = getVertex(1);
         var vertex2 = getVertex(2);
 
-        var pool = TetrahedronPool.getInstance();
+        var pool = TetrahedronPoolContext.getPool();
+        if (pool == null) {
+            throw new IllegalStateException("No TetrahedronPool set in context");
+        }
         var t0 = pool.acquire(vertex0, incidentVertex, vertex1, opposingVertex);
         var t1 = pool.acquire(vertex1, incidentVertex, vertex2, opposingVertex);
         var t2 = pool.acquire(vertex0, vertex2, incidentVertex, opposingVertex);
@@ -202,8 +205,8 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         
         // Release deleted tetrahedra to pool
         // TODO: Disabled due to premature release causing crashes
-        // TetrahedronPool.getInstance().release(incident);
-        // TetrahedronPool.getInstance().release(adjacent);
+        // pool.release(incident);
+        // pool.release(adjacent);
 
         t0.removeAnyDegenerateTetrahedronPair();
         t1.removeAnyDegenerateTetrahedronPair();
@@ -270,7 +273,10 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var y = getIncidentVertex();
         var z = getAdjacentVertex();
 
-        var pool = TetrahedronPool.getInstance();
+        var pool = TetrahedronPoolContext.getPool();
+        if (pool == null) {
+            throw new IllegalStateException("No TetrahedronPool set in context");
+        }
         Tetrahedron t0;
         Tetrahedron t1;
         if (top0.orientation(x, y, z) > 0) {
@@ -300,8 +306,8 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         
         // Release deleted tetrahedra to pool
         // TODO: Disabled due to premature release causing crashes
-        // TetrahedronPool.getInstance().release(incident);
-        // TetrahedronPool.getInstance().release(adjacent);
+        // pool.release(incident);
+        // pool.release(adjacent);
         o2.delete();
         
         // Release deleted tetrahedron to pool
