@@ -23,10 +23,11 @@ public class SmokeTest {
         var radius = 16000.0f;
         var center = new Point3f(radius + 100, radius + 100, radius + 100);
         var entropy = new java.util.Random(0x666);
-        while (sites.size() < 256) {
-            for (var p : Vertex.getRandomPoints(entropy, 256, radius, true)) {
+        var pop = 4096;
+        while (sites.size() < pop) {
+            for (var p : Vertex.getRandomPoints(entropy, pop, radius, true)) {
                 p.add(center);
-                if (sites.size() == 256) {
+                if (sites.size() == pop) {
                     break;
                 }
                 var track = animator.track(p);
@@ -45,6 +46,7 @@ public class SmokeTest {
         var duration = 10;
         Thread.sleep(TimeUnit.SECONDS.toMillis(duration));
         var frame = animator.getFrame();
+        System.out.println("Population: " + sites.size());
         System.out.printf("average frame rate: %s", frame.getFrameCount() / duration).println();
         System.out.printf("average frame rebuild: %s ms",
                           (frame.getCumulativeDurations() / frame.getFrameCount()) / 1E6).println();

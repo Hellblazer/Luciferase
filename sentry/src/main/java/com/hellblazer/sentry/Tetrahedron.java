@@ -80,6 +80,22 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * The neighboring tetrahedron opposite of vertex D
      */
     private              Tetrahedron nD;
+    
+    /**
+     * Flag indicating if this tetrahedron is degenerate (volume < threshold)
+     */
+    private              boolean     isDegenerate = false;
+    
+    /**
+     * Flag indicating if this tetrahedron is near-degenerate
+     */
+    private              boolean     isNearDegenerate = false;
+    
+    /**
+     * Thresholds for degenerate detection
+     */
+    private static final float DEGENERATE_THRESHOLD = 1e-10f;
+    private static final float NEAR_DEGENERATE_THRESHOLD = 1e-6f;
 
     /**
      * Construct a tetrahedron from the four vertices
@@ -99,6 +115,9 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (b != null) b.setAdjacent(this);
         if (c != null) c.setAdjacent(this);
         if (d != null) d.setAdjacent(this);
+        
+        // Check degeneracy after construction
+        updateDegeneracy();
     }
 
     /**
@@ -542,6 +561,9 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         
         // Clear neighbors
         nA = nB = nC = nD = null;
+        
+        // Update degeneracy after reset
+        updateDegeneracy();
     }
     
     /**
@@ -634,7 +656,32 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return true if degenerate
      */
     public boolean isDegenerate() {
-        return volume() < 1e-6f;
+        return isDegenerate;
+    }
+    
+    /**
+     * Check if this tetrahedron is near-degenerate.
+     *
+     * @return true if near-degenerate
+     */
+    public boolean isNearDegenerate() {
+        return isNearDegenerate;
+    }
+    
+    /**
+     * Update degeneracy flags based on current volume.
+     * Should be called after construction or modification.
+     */
+    public void updateDegeneracy() {
+        // Skip if any vertex is null (e.g., during pool initialization)
+        if (a == null || b == null || c == null || d == null) {
+            isDegenerate = false;
+            isNearDegenerate = false;
+            return;
+        }
+        float vol = Math.abs(volume());
+        isDegenerate = vol < DEGENERATE_THRESHOLD;
+        isNearDegenerate = vol < NEAR_DEGENERATE_THRESHOLD;
     }
     
     /**

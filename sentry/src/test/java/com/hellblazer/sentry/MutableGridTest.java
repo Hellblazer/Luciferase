@@ -53,11 +53,12 @@ public class MutableGridTest {
         var entropy = new Random(0x666);
         var radius = 16000.0f;
         var center = new Point3f(radius + 100, radius + 100, radius + 100);
-        for (var p : Vertex.getRandomPoints(entropy, 2048, radius, true)) {
+        var numberOfPoints = 4096;
+        for (var p : Vertex.getRandomPoints(entropy, numberOfPoints, radius, true)) {
             p.add(center);
             sites.add(sentinel.track(p, entropy));
         }
-        int iterations = 100;
+        int iterations = 10_000;
         long now = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
             for (var site : sites) {
@@ -166,8 +167,15 @@ public class MutableGridTest {
         assertEquals(3, grid.size());
         
         grid.untrack(v2);
-        // Note: size doesn't decrease with untrack in current implementation
+        assertEquals(2, grid.size(), "Size should decrease after untrack");
         assertNull(v2.getAdjacent(), "Untracked vertex should have no adjacent tetrahedron");
+        
+        // Test multiple untracks
+        grid.untrack(v1);
+        assertEquals(1, grid.size(), "Size should decrease after second untrack");
+        
+        grid.untrack(v3);
+        assertEquals(0, grid.size(), "Size should be 0 after all vertices untracked");
     }
     
     @Test

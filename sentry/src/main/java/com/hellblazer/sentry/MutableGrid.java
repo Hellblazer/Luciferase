@@ -21,13 +21,81 @@ import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Random;
 
 import static com.hellblazer.sentry.V.*;
 
 /**
- * The dynamic, mutable version of the Grid
+ * The dynamic, mutable version of the Grid.
+ * 
+ * <h2>Thread Safety Model</h2>
+ * <p>
+ * MutableGrid is <b>NOT thread-safe</b>. This class is designed for single-threaded use only.
+ * All methods that modify the grid structure (insert, delete, untrack) must be called from a
+ * single thread or with external synchronization.
+ * </p>
+ * 
+ * <h3>Design Rationale</h3>
+ * <p>
+ * The single-threaded design was chosen for performance reasons:
+ * <ul>
+ *   <li>Avoids synchronization overhead in the common single-threaded use case</li>
+ *   <li>Allows for more efficient internal data structures (linked lists, object pooling)</li>
+ *   <li>Simplifies the implementation of complex geometric algorithms</li>
+ * </ul>
+ * </p>
+ * 
+ * <h3>External Synchronization</h3>
+ * <p>
+ * If you need to use MutableGrid from multiple threads, you must provide external synchronization.
+ * Here's a simple example using a ReentrantReadWriteLock:
+ * </p>
+ * <pre>{@code
+ * public class ThreadSafeMutableGrid {
+ *     private final MutableGrid grid = new MutableGrid();
+ *     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+ *     
+ *     public void insert(Point3f point) {
+ *         lock.writeLock().lock();
+ *         try {
+ *             grid.insert(point);
+ *         } finally {
+ *             lock.writeLock().unlock();
+ *         }
+ *     }
+ *     
+ *     public Tetrahedron locate(Point3f point) {
+ *         lock.readLock().lock();
+ *         try {
+ *             return grid.locate(point);
+ *         } finally {
+ *             lock.readLock().unlock();
+ *         }
+ *     }
+ *     
+ *     public void untrack(Vertex vertex) {
+ *         lock.writeLock().lock();
+ *         try {
+ *             grid.untrack(vertex);
+ *         } finally {
+ *             lock.writeLock().unlock();
+ *         }
+ *     }
+ * }
+ * }</pre>
+ * 
+ * <h3>Thread-Safe Alternatives</h3>
+ * <p>
+ * For concurrent scenarios, consider:
+ * <ul>
+ *   <li>Using multiple independent MutableGrid instances (one per thread)</li>
+ *   <li>Batching operations and processing them sequentially</li>
+ *   <li>Using a concurrent spatial data structure if available</li>
+ * </ul>
+ * </p>
  *
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
@@ -168,9 +236,41 @@ public class MutableGrid extends Grid {
     }
 
     public void untrack(Vertex v) {
-        if (head != null) {
-            head.detach(v);
+        if (head == null || v == null) {
+            return;
+        }
+        
+        // Special case: removing the head
+        if (head == v) {
+            // Find the next vertex after head
+            Iterator<Vertex> it = head.iterator();
+            it.next(); // Skip head itself
+            if (it.hasNext()) {
+                head = it.next();
+            } else {
+                head = null;
+                tail = null;
+            }
             v.clear();
+            size--;
+            return;
+        }
+        
+        // General case: find and remove from linked list
+        try {
+            head.detach(v);
+            // If we removed the tail, find the new tail
+            if (tail == v) {
+                Vertex newTail = null;
+                for (Vertex curr : head) {
+                    newTail = curr;
+                }
+                tail = newTail;
+            }
+            v.clear();
+            size--;
+        } catch (NoSuchElementException e) {
+            // Vertex not found in list - ignore
         }
     }
 

@@ -366,14 +366,21 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
     }
 
     void detach(Vertex v) {
-        var n = next;
-        while (n != null) {
-            if (v == next) {
-                next = v.next;
+        if (v == this) {
+            // Cannot detach self from the head's linked list this way
+            throw new IllegalArgumentException("Cannot detach self");
+        }
+        
+        var current = this;
+        while (current.next != null) {
+            if (current.next == v) {
+                current.next = v.next;
+                v.next = null;
                 return;
             }
+            current = current.next;
         }
-        throw new NoSuchElementException();
+        throw new NoSuchElementException("Vertex not found in linked list");
     }
 
     void freshenAdjacent(Tetrahedron tetrahedron) {

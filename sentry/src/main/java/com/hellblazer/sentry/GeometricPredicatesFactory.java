@@ -29,40 +29,82 @@ public class GeometricPredicatesFactory {
     private static GeometricPredicates instance;
     
     /**
+     * Predicate modes available.
+     */
+    public enum PredicateMode {
+        SCALAR,    // Basic scalar implementation
+        SIMD,      // SIMD-accelerated implementation (if available)
+        HYBRID,    // Hybrid mode with fallback to exact (when implemented)
+        ADAPTIVE   // Adaptive mode with exact fallback (future)
+    }
+    
+    /**
      * Create a new GeometricPredicates instance.
-     * Will use SIMD if available and enabled, otherwise falls back to scalar.
+     * Mode is controlled by the system property 'sentry.predicates.mode'.
+     * Valid values: scalar, simd, hybrid, adaptive
+     * Default: simd (if available), otherwise scalar
      */
     public static GeometricPredicates create() {
-        // Check if hybrid mode is enabled (default: false for now due to precision issues)
-        boolean useHybrid = Boolean.parseBoolean(
-            System.getProperty("sentry.useHybridPredicates", "false")
-        );
+        // Get predicate mode from system property
+        String modeProperty = System.getProperty("sentry.predicates.mode", "").toLowerCase();
+        PredicateMode mode = null;
         
-        if (useHybrid) {
-            System.out.println("Using hybrid geometric predicates");
-            return new HybridGeometricPredicates();
-        }
-        
-        if (SIMDSupport.isAvailable()) {
+        // Parse the mode property
+        if (!modeProperty.isEmpty()) {
             try {
-                // Try to load SIMD implementation via reflection
-                // This allows the code to compile without preview features
-                Class<?> simdClass = Class.forName(
-                    "com.hellblazer.sentry.SIMDGeometricPredicates"
-                );
-                GeometricPredicates simd = (GeometricPredicates) simdClass
-                    .getDeclaredConstructor()
-                    .newInstance();
-                System.out.println("Using SIMD geometric predicates");
-                return simd;
-            } catch (Exception e) {
-                System.err.println("Failed to load SIMD implementation: " + e.getMessage());
-                // Fall back to scalar
+                mode = PredicateMode.valueOf(modeProperty.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                System.err.println("Invalid predicate mode: " + modeProperty + 
+                    ". Valid values are: scalar, simd, hybrid, adaptive. Using default.");
             }
         }
         
-        System.out.println("Using scalar geometric predicates");
-        return new ScalarGeometricPredicates();
+        // Legacy property check for backward compatibility
+        if (mode == null && Boolean.parseBoolean(System.getProperty("sentry.useHybridPredicates", "false"))) {
+            mode = PredicateMode.HYBRID;
+        }
+        
+        // If no mode specified, use default (SIMD if available, else SCALAR)
+        if (mode == null) {
+            mode = SIMDSupport.isAvailable() ? PredicateMode.SIMD : PredicateMode.SCALAR;
+        }
+        
+        // Create appropriate implementation based on mode
+        switch (mode) {
+            case HYBRID:
+                System.out.println("Using hybrid geometric predicates");
+                return new HybridGeometricPredicates();
+                
+            case SIMD:
+                if (SIMDSupport.isAvailable()) {
+                    try {
+                        // Try to load SIMD implementation via reflection
+                        // This allows the code to compile without preview features
+                        Class<?> simdClass = Class.forName(
+                            "com.hellblazer.sentry.SIMDGeometricPredicates"
+                        );
+                        GeometricPredicates simd = (GeometricPredicates) simdClass
+                            .getDeclaredConstructor()
+                            .newInstance();
+                        System.out.println("Using SIMD geometric predicates");
+                        return simd;
+                    } catch (Exception e) {
+                        System.err.println("Failed to load SIMD implementation: " + e.getMessage());
+                        // Fall back to scalar
+                    }
+                }
+                System.out.println("SIMD requested but not available, falling back to scalar");
+                return new ScalarGeometricPredicates();
+                
+            case ADAPTIVE:
+                System.out.println("Adaptive predicates not yet implemented, using scalar");
+                return new ScalarGeometricPredicates();
+                
+            case SCALAR:
+            default:
+                System.out.println("Using scalar geometric predicates");
+                return new ScalarGeometricPredicates();
+        }
     }
     
     /**
