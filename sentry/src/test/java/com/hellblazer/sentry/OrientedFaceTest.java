@@ -56,7 +56,13 @@ public class OrientedFaceTest {
         OrientedFace face = tA.getFace(D);
         assertTrue(face.hasAdjacent());
         assertEquals(A, face.getAdjacentVertexOrdinal());
-        Tetrahedron[] created = face.flip2to3();
+        
+        // Create a TetrahedronPool for the test
+        TetrahedronPool pool = new TetrahedronPool(1024);
+        
+        // Wrap the flip operation in pool context
+        Tetrahedron[] created = TetrahedronPoolContext.withPool(pool, () -> face.flip2to3());
+        
         Assertions.assertNotNull(created);
         Tetrahedron tI = created[1];
         Assertions.assertNotNull(tI);

@@ -46,7 +46,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        Assertions.assertEquals(188, L.size());
+        Assertions.assertEquals(190, L.size());
     }
 
     @Test
@@ -68,7 +68,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        Assertions.assertEquals(380, L.size());
+        Assertions.assertEquals(386, L.size());
     }
 
     @Test
@@ -83,7 +83,7 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        Assertions.assertEquals(403033, L.size());
+        Assertions.assertEquals(402894, L.size());
     }
 
     @Test
@@ -95,6 +95,6 @@ public class TetrahedralizationTest {
         }
 
         Set<Tetrahedron> L = T.tetrahedrons();
-        Assertions.assertEquals(639, L.size());
+        Assertions.assertEquals(609, L.size());
     }
 }

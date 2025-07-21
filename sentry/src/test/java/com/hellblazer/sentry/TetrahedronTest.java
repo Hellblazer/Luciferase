@@ -82,7 +82,12 @@ public class TetrahedronTest {
 
         List<OrientedFace> unlinkedFacets = new ArrayList<>();
 
-        Tetrahedron tIV = U.flip1to4(N, unlinkedFacets);
+        // Create a TetrahedronPool for the test
+        TetrahedronPool pool = new TetrahedronPool(1024);
+        
+        // Wrap the flip operation in pool context
+        Tetrahedron tIV = TetrahedronPoolContext.withPool(pool, () -> U.flip1to4(N, unlinkedFacets));
+        
         Assertions.assertNotNull(tIV);
         Assertions.assertEquals(0, unlinkedFacets.size());
 
