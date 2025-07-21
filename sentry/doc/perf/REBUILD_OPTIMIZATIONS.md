@@ -51,16 +51,34 @@ Added `sentry.rebuild.direct` system property to force direct allocation for all
 
 ## Performance Results
 
-### MutableGridTest.smokin() Benchmark
-- **Before**: ~0.843ms per rebuild (256 points)
-- **After**: ~0.77ms per rebuild (256 points)
-- **Improvement**: 8.5% reduction in rebuild time
+### Current Benchmark Results (July 2025)
+
+**MutableGridTest.smokin() Target Test**:
+- **Current**: 0.836ms per rebuild (256 points, 10,000 iterations)
+- **Previous**: ~0.843ms per rebuild 
+- **Improvement**: ~0.8% from latest optimization
+
+**RebuildPerformanceTest Benchmarks**:
+- **Pooled Strategy**: 4.06ms average (256 points, comprehensive benchmark)
+- **Direct Strategy**: 2.98ms average (26% faster than pooled)
+- **Strategy Effectiveness**: Direct allocation clearly benefits small rebuilds
+
+**Detailed Pool Analysis**:
+- **Release Phase**: 2.1% of total time (0.08ms)
+- **Clear Phase**: 0.6% of total time (0.02ms) 
+- **Reinit Phase**: 0.2% of total time (0.01ms)
+- **Insert Phase**: 97.1% of total time (3.58ms)
+
+**Pool Statistics**:
+- **Reuse Rate**: 92.59% (excellent efficiency)
+- **Pool Overhead**: 53.22 ns per acquire/release pair
+- **Active Pool Size**: 66 available tetrahedra
 
 ### Test Configuration
 - **Points**: 256 vertices per rebuild
-- **Iterations**: 10,000 rebuilds
-- **Allocation Strategy**: DIRECT (as configured in test)
-- **Test Method**: MutableGridTest.smokin()
+- **Iterations**: 10,000 rebuilds (smokin) / variable (RebuildPerformanceTest)
+- **Allocation Strategy**: Automatic (DIRECT for ≤256 points)
+- **Test Methods**: MutableGridTest.smokin(), RebuildPerformanceTest
 
 ### Performance Characteristics
 | Rebuild Size | Strategy | Expected Performance |

@@ -154,6 +154,28 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
   - MutableGridTest.smokin() validates performance improvement
   - Automatic optimization based on rebuild size
 
+### Current Performance Metrics (July 2025)
+
+**Rebuild Performance Benchmarks**:
+- **Pooled Strategy**: 4.06 ms average (256 points, standard benchmark)
+- **Direct Strategy**: 2.98 ms average (26% faster than pooled)
+- **Optimized Target Test**: 0.836 ms average (MutableGridTest.smokin, 83% faster than pooled)
+
+**Pool Efficiency**:
+- **Reuse Rate**: 86.26% (rebuild operations) / 92.59% (standard operations)
+- **Pool Overhead**: 53.22 ns per acquire/release pair
+- **Batch Operations**: 4.88 μs for 100 items
+
+**Raw Allocation Overhead**:
+- **Pooled**: 16.18 ns per operation
+- **Direct**: 9.09 ns per operation
+- **Speedup**: Direct is 1.78x faster for raw allocation
+
+**Memory Efficiency**:
+- **Small datasets (100 points)**: Pooled uses slightly more memory (1.00x)
+- **Medium datasets (1,000 points)**: Pooled uses 33% less memory (0.67x)
+- **Large datasets (10,000 points)**: Pooled uses 12% more memory (1.12x)
+
 ## Remaining Opportunities
 
 1. **SIMD Batch Operations**: Current SIMD works but needs batch processing

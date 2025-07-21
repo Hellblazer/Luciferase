@@ -18,10 +18,11 @@ The Sentry module has undergone extensive optimization. Most planned optimizatio
 - **Rebuild Optimization**: Direct allocation for small rebuilds (8.5% improvement)
 
 ### 📊 **Current Performance Metrics**
-- **Average insertion time**: 29.51 µs (with pooling)
-- **Pool reuse rate**: 86.94% (excellent memory efficiency)
-- **Rebuild performance**: 0.771 ms per rebuild (256 points, optimized)
-- **Memory usage**: 54-61% reduction vs. original dual-structure approach
+- **Rebuild performance**: 0.836 ms per rebuild (256 points, MutableGridTest.smokin)
+- **Pool reuse rate**: 92.59% (excellent memory efficiency)
+- **Pool overhead**: 53.22 ns per acquire/release pair
+- **Memory usage**: 33% reduction for medium datasets (1,000 points)
+- **Raw allocation**: Direct 1.78x faster than pooled (9.09ns vs 16.18ns)
 
 ## Documentation Structure
 
