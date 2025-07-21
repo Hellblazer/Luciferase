@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.geometry.Geometry;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;
+import javax.vecmath.Vector3f;
 import java.util.*;
 
 import static com.hellblazer.sentry.V.*;
@@ -47,6 +48,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     private static final V[][]       VORONOI_FACE_ORIGIN = { { null, C, D, B }, { C, null, D, A }, { D, A, null, B },
                                                              { B, C, A, null } };
+    /**
+     * Thresholds for degenerate detection
+     */
+    private static final float DEGENERATE_THRESHOLD      = 1e-10f;
+    private static final float NEAR_DEGENERATE_THRESHOLD = 1e-6f;
     /**
      * Vertex A
      */
@@ -79,6 +85,14 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * The neighboring tetrahedron opposite of vertex D
      */
     private              Tetrahedron nD;
+    /**
+     * Flag indicating if this tetrahedron is degenerate (volume < threshold)
+     */
+    private boolean isDegenerate = false;
+    /**
+     * Flag indicating if this tetrahedron is near-degenerate
+     */
+    private boolean isNearDegenerate = false;
 
     /**
      * Construct a tetrahedron from the four vertices
@@ -94,10 +108,21 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         c = z;
         d = w;
 
-        a.setAdjacent(this);
-        b.setAdjacent(this);
-        c.setAdjacent(this);
-        d.setAdjacent(this);
+        if (a != null) {
+            a.setAdjacent(this);
+        }
+        if (b != null) {
+            b.setAdjacent(this);
+        }
+        if (c != null) {
+            c.setAdjacent(this);
+        }
+        if (d != null) {
+            d.setAdjacent(this);
+        }
+
+        // Check degeneracy after construction
+        updateDegeneracy();
     }
 
     /**
@@ -106,7 +131,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param vertices
      */
     public Tetrahedron(Vertex[] vertices) {
-        this(vertices[0], vertices[1], vertices[2], vertices[3]);
+        this(vertices != null ? vertices[0] : null, vertices != null ? vertices[1] : null,
+             vertices != null ? vertices[2] : null, vertices != null ? vertices[3] : null);
     }
 
     /**
@@ -138,8 +164,33 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     public Point3f center() {
         float[] center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         return new Point3f(center[0], center[1], center[2]);
+    }
+
+    /**
+     * Calculate the centroid (center point) of this tetrahedron.
+     *
+     * @return the centroid point
+     */
+    public Point3f centroid() {
+        return new Point3f((a.x + b.x + c.x + d.x) / 4.0f, (a.y + b.y + c.y + d.y) / 4.0f,
+                           (a.z + b.z + c.z + d.z) / 4.0f);
+    }
+
+    /**
+     * Calculate the circumsphere radius of this tetrahedron. Useful for validating Delaunay constraints.
+     *
+     * @return the circumsphere radius
+     */
+    public float circumsphereRadius() {
+        float[] center = new float[3];
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        // Calculate radius as distance from center to any vertex
+        float dx = a.x - center[0];
+        float dy = a.y - center[1];
+        float dz = a.z - center[2];
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     /**
@@ -153,10 +204,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return one of the four new tetrahedra
      */
     public Tetrahedron flip1to4(Vertex n, List<OrientedFace> ears) {
-        var t0 = new Tetrahedron(a, b, c, n);
-        var t1 = new Tetrahedron(a, d, b, n);
-        var t2 = new Tetrahedron(a, c, d, n);
-        var t3 = new Tetrahedron(b, d, c, n);
+        var allocator = TetrahedronPoolContext.getAllocator();
+        var t0 = allocator.acquire(a, b, c, n);
+        var t1 = allocator.acquire(a, d, b, n);
+        var t2 = allocator.acquire(a, c, d, n);
+        var t3 = allocator.acquire(b, d, c, n);
 
         t0.setNeighborA(t3);
         t0.setNeighborB(t2);
@@ -180,6 +232,9 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         patch(A, t3, D);
 
         delete();
+
+        // Release deleted tetrahedron to allocator
+        allocator.release(this);
 
         var newFace = t0.getFace(D);
         if (newFace.hasAdjacent()) {
@@ -250,16 +305,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return the neighboring tetrahedron, or null if none.
      */
     public Tetrahedron getNeighbor(V v) {
-        if (v == A) {
-            return nA;
-        }
-        if (v == B) {
-            return nB;
-        }
-        if (v == C) {
-            return nC;
-        }
-        return nD;
+        // Use ordinal for array-like access
+        return switch (v) {
+            case A -> nA;
+            case B -> nB;
+            case C -> nC;
+            case D -> nD;
+        };
     }
 
     /**
@@ -271,6 +323,23 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      */
     public Tetrahedron getNeighbor(Vertex vertex) {
         return getNeighbor(ordinalOf(vertex));
+    }
+
+    /**
+     * Get detailed validation information for this tetrahedron.
+     *
+     * @return a map of validation metrics
+     */
+    public Map<String, Object> getValidationMetrics() {
+        Map<String, Object> metrics = new HashMap<>();
+        metrics.put("center", center());
+        metrics.put("centroid", centroid());
+        metrics.put("circumsphereRadius", circumsphereRadius());
+        metrics.put("volume", volume());
+        metrics.put("isDegenerate", isDegenerate());
+        metrics.put("minDihedralAngle", Math.toDegrees(minDihedralAngle()));
+        metrics.put("hasAllNeighbors", nA != null && nB != null && nC != null && nD != null);
+        return metrics;
     }
 
     /**
@@ -316,6 +385,56 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     public boolean includes(Vertex query) {
         return a == query || b == query || c == query || d == query;
+    }
+
+    /**
+     * Check if a point is inside this tetrahedron.
+     *
+     * @param point the point to test
+     * @return true if the point is inside the tetrahedron
+     */
+    public boolean contains(Tuple3f point) {
+        return Geometry.insideTetrahedron(point, a, b, c, d);
+    }
+
+    /**
+     * Check if this tetrahedron is degenerate (zero or near-zero volume).
+     *
+     * @return true if degenerate
+     */
+    public boolean isDegenerate() {
+        return isDegenerate;
+    }
+
+    /**
+     * Check if this tetrahedron satisfies the Delaunay property with respect to a given set of vertices.
+     *
+     * @param vertices the vertices to check against
+     * @return true if Delaunay property is satisfied
+     */
+    public boolean isDelaunay(Iterable<Vertex> vertices) {
+        for (Vertex v : vertices) {
+            if (v == a || v == b || v == c || v == d) {
+                continue; // Skip vertices of this tetrahedron
+            }
+            if (inSphere(v)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean isDeleted() {
+        return a == null;
+    }
+
+    /**
+     * Check if this tetrahedron is near-degenerate.
+     *
+     * @return true if near-degenerate
+     */
+    public boolean isNearDegenerate() {
+        return isNearDegenerate;
     }
 
     /**
@@ -381,6 +500,32 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             }
         }
 
+    }
+
+    /**
+     * Calculate the minimum dihedral angle in this tetrahedron. Useful for assessing tetrahedron quality.
+     *
+     * @return the minimum dihedral angle in radians
+     */
+    public float minDihedralAngle() {
+        float minAngle = Float.MAX_VALUE;
+
+        // Calculate all 6 dihedral angles (between pairs of faces)
+        // Face normals
+        Vector3f n1 = faceNormal(b, c, a); // Face opposite D
+        Vector3f n2 = faceNormal(c, b, d); // Face opposite A
+        Vector3f n3 = faceNormal(d, a, c); // Face opposite B
+        Vector3f n4 = faceNormal(a, d, b); // Face opposite C
+
+        // Angles between faces
+        minAngle = Math.min(minAngle, angleBetween(n1, n2)); // Edge BC
+        minAngle = Math.min(minAngle, angleBetween(n1, n3)); // Edge AC
+        minAngle = Math.min(minAngle, angleBetween(n1, n4)); // Edge AB
+        minAngle = Math.min(minAngle, angleBetween(n2, n3)); // Edge CD
+        minAngle = Math.min(minAngle, angleBetween(n2, n4)); // Edge BD
+        minAngle = Math.min(minAngle, angleBetween(n3, n4)); // Edge AD
+
+        return minAngle;
     }
 
     /**
@@ -489,6 +634,53 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         return buf.toString();
     }
 
+    /**
+     * Update degeneracy flags based on current volume. Should be called after construction or modification.
+     */
+    public void updateDegeneracy() {
+        // Skip if any vertex is null (e.g., during pool initialization)
+        if (a == null || b == null || c == null || d == null) {
+            isDegenerate = false;
+            isNearDegenerate = false;
+            return;
+        }
+        float vol = Math.abs(volume());
+        isDegenerate = vol < DEGENERATE_THRESHOLD;
+        isNearDegenerate = vol < NEAR_DEGENERATE_THRESHOLD;
+    }
+
+    /**
+     * Calculate the volume of this tetrahedron. Volume = |det(a-d, b-d, c-d)| / 6
+     *
+     * @return the volume
+     */
+    public float volume() {
+        // Vectors from d to other vertices
+        float ax = a.x - d.x, ay = a.y - d.y, az = a.z - d.z;
+        float bx = b.x - d.x, by = b.y - d.y, bz = b.z - d.z;
+        float cx = c.x - d.x, cy = c.y - d.y, cz = c.z - d.z;
+
+        // Determinant = a·(b×c)
+        float det = ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+
+        return Math.abs(det) / 6.0f;
+    }
+
+    void children(Deque<Tetrahedron> stack) {
+        if (nA != null && !nA.isDeleted()) {
+            stack.push(nA);
+        }
+        if (nB != null && !nB.isDeleted()) {
+            stack.push(nB);
+        }
+        if (nC != null && !nC.isDeleted()) {
+            stack.push(nC);
+        }
+        if (nD != null && !nD.isDeleted()) {
+            stack.push(nD);
+        }
+    }
+
     void children(Stack<Tetrahedron> stack, Set<Tetrahedron> processed) {
         if (nA != null && !processed.contains(nA)) {
             stack.push(nA);
@@ -502,6 +694,29 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (nD != null && !processed.contains(nD)) {
             stack.push(nD);
         }
+    }
+
+    /**
+     * Clear this tetrahedron for reuse in the pool
+     */
+    void clearForReuse() {
+        // Clear adjacencies
+        if (a != null) {
+            a.removeAdjacent(this);
+        }
+        if (b != null) {
+            b.removeAdjacent(this);
+        }
+        if (c != null) {
+            c.removeAdjacent(this);
+        }
+        if (d != null) {
+            d.removeAdjacent(this);
+        }
+
+        // Clear all fields
+        nA = nB = nC = nD = null;
+        a = b = c = d = null;
     }
 
     /**
@@ -528,10 +743,6 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         return d;
     }
 
-    boolean isDeleted() {
-        return a == null;
-    }
-
     /**
      * Answer the canonical ordinal of the opposite vertex of the neighboring tetrahedron
      *
@@ -539,11 +750,13 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return
      */
     V ordinalOf(Tetrahedron neighbor) {
+        // Quick null check first
+        if (neighbor == null) {
+            return null;
+        }
+        // Order comparisons by expected frequency
         if (nA == neighbor) {
             return A;
-        }
-        if (nD == neighbor) {
-            return D;
         }
         if (nB == neighbor) {
             return B;
@@ -551,8 +764,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         if (nC == neighbor) {
             return C;
         }
-        if (neighbor == null) {
-            return null;
+        if (nD == neighbor) {
+            return D;
         }
         throw new IllegalArgumentException("Not a neighbor: " + neighbor);
     }
@@ -582,7 +795,25 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @param vNew
      */
     void patch(Vertex old, Tetrahedron n, V vNew) {
-        patch(ordinalOf(old), n, vNew);
+        // Inline ordinalOf to avoid method call overhead
+        V vOld = null;
+        if (old == a) {
+            vOld = A;
+        } else if (old == b) {
+            vOld = B;
+        } else if (old == c) {
+            vOld = C;
+        } else if (old == d) {
+            vOld = D;
+        }
+
+        if (vOld != null) {
+            var neighbor = getNeighbor(vOld);
+            if (neighbor != null) {
+                neighbor.setNeighbor(neighbor.ordinalOf(this), n);
+                n.setNeighbor(vNew, neighbor);
+            }
+        }
     }
 
     void removeAnyDegenerateTetrahedronPair() {
@@ -619,20 +850,58 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         }
     }
 
+    /**
+     * Reset this tetrahedron with new vertices (for object pooling)
+     */
+    void reset(Vertex x, Vertex y, Vertex z, Vertex w) {
+        // Clear old adjacencies if needed
+        if (a != null) {
+            a.removeAdjacent(this);
+        }
+        if (b != null) {
+            b.removeAdjacent(this);
+        }
+        if (c != null) {
+            c.removeAdjacent(this);
+        }
+        if (d != null) {
+            d.removeAdjacent(this);
+        }
+
+        // Set new vertices
+        a = x;
+        b = y;
+        c = z;
+        d = w;
+
+        // Set adjacencies
+        if (a != null) {
+            a.setAdjacent(this);
+        }
+        if (b != null) {
+            b.setAdjacent(this);
+        }
+        if (c != null) {
+            c.setAdjacent(this);
+        }
+        if (d != null) {
+            d.setAdjacent(this);
+        }
+
+        // Clear neighbors
+        nA = nB = nC = nD = null;
+
+        // Update degeneracy after reset
+        updateDegeneracy();
+    }
+
     void setNeighbor(V v, Tetrahedron n) {
-        if (v == A) {
-            nA = n;
-            return;
+        switch (v) {
+            case A -> nA = n;
+            case B -> nB = n;
+            case C -> nC = n;
+            case D -> nD = n;
         }
-        if (v == B) {
-            nB = n;
-            return;
-        }
-        if (v == C) {
-            nC = n;
-            return;
-        }
-        nD = n;
     }
 
     void setNeighborA(Tetrahedron t) {
@@ -667,7 +936,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
             return;
         }
         var center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V next = VORONOI_FACE_NEXT[ordinalOf(from).ordinal()][ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var t = getNeighbor(next);
@@ -689,7 +958,7 @@ public class Tetrahedron implements Iterable<OrientedFace> {
     void traverseVoronoiFace(Vertex vC, Vertex axis, List<Tuple3f[]> faces) {
         var face = new ArrayList<Point3f>();
         var center = new float[3];
-        Geometry.centerSphere(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
+        Geometry.centerSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, center);
         face.add(new Point3f(center[0], center[1], center[2]));
         V v = VORONOI_FACE_ORIGIN[ordinalOf(vC).ordinal()][ordinalOf(axis).ordinal()];
         var next = getNeighbor(v);
@@ -779,6 +1048,28 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         }
     }
 
+    /**
+     * Calculate angle between two vectors.
+     */
+    private float angleBetween(Vector3f v1, Vector3f v2) {
+        float dot = v1.dot(v2);
+        // Clamp to avoid numerical issues with acos
+        dot = Math.max(-1.0f, Math.min(1.0f, dot));
+        return (float) Math.acos(dot);
+    }
+
+    /**
+     * Calculate face normal vector.
+     */
+    private Vector3f faceNormal(Vertex v1, Vertex v2, Vertex v3) {
+        Vector3f e1 = new Vector3f(v2.x - v1.x, v2.y - v1.y, v2.z - v1.z);
+        Vector3f e2 = new Vector3f(v3.x - v1.x, v3.y - v1.y, v3.z - v1.z);
+        Vector3f normal = new Vector3f();
+        normal.cross(e1, e2);
+        normal.normalize();
+        return normal;
+    }
+
     private void removeDegenerateTetrahedronPair(V ve1, V ve2, V vf1, V vf2) {
         var nE = getNeighbor(ve1);
         var nF1_that = nE.getNeighbor(getVertex(vf1));
@@ -794,6 +1085,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         delete();
         nE.delete();
+
+        // Release deleted tetrahedra to allocator
+        var allocator = TetrahedronPoolContext.getAllocator();
+        allocator.release(this);
+        allocator.release(nE);
 
         e1.freshenAdjacent(nF1_that);
         f2.freshenAdjacent(nF1_that);

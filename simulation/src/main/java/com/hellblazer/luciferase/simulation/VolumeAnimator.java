@@ -48,7 +48,7 @@ public class VolumeAnimator {
     public VolumeAnimator(String name, Tet cell, Random entropy) {
         this.controller = new RealTimeController(name);
         this.cell = cell;
-        this.grid = new MutableGrid(Vertex.vertices(cell.vertices()));
+        this.grid = new MutableGrid(Vertex.vertices(cell.vertices()), MutableGrid.AllocationStrategy.DIRECT);
         this.entropy = entropy;
         Kairos.setController(controller);
     }

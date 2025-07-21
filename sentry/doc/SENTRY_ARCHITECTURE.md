@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Sentry module implements a 3D Delaunay tetrahedralization data structure optimized for kinetic point tracking and spatial awareness systems. It provides both object-oriented and memory-efficient packed implementations, along with a spatial publish/subscribe framework for higher-level applications.
+The Sentry module implements a 3D Delaunay tetrahedralization data structure optimized for kinetic point tracking and spatial awareness systems. It provides a spatial publish/subscribe framework for higher-level applications.
 
 ## Module Structure
 
@@ -10,7 +10,6 @@ The Sentry module implements a 3D Delaunay tetrahedralization data structure opt
 sentry/
 ├── src/main/java/com/hellblazer/sentry/
 │   ├── cast/              # Spatial publish/subscribe framework
-│   ├── packed/            # Memory-efficient packed implementation
 │   └── (core classes)     # Base Delaunay tetrahedralization
 └── doc/                   # Documentation
 ```
@@ -66,24 +65,7 @@ The Delaunay property is maintained through local topological operations:
 4. Continue until all faces satisfy Delaunay property
 ```
 
-### 3. Packed Implementation
-
-The `packed` package provides a memory-efficient alternative:
-
-#### PackedGrid
-- Stores vertices as packed float arrays (x,y,z sequential)
-- Tetrahedra stored as integer indices (4 per tetrahedron)
-- Adjacent relationships as integer arrays
-- Object pooling for deleted tetrahedron slots
-
-#### Key Optimizations
-- No object allocation for tetrahedra
-- Primitive collections avoid boxing overhead
-- Cache-friendly sequential memory layout
-- Pre-computed traversal tables
-- In-place modification during flips
-
-### 4. Spatial Publish/Subscribe Framework
+### 3. Spatial Publish/Subscribe Framework
 
 The `cast` package provides spatial awareness abstractions:
 
@@ -141,15 +123,7 @@ Uses ear-based algorithm:
 
 ### Space Complexity
 - Object-oriented: O(n) objects, ~200 bytes per vertex
-- Packed: O(n) primitives, ~60 bytes per vertex
-- Neighbor storage: 4 integers per tetrahedron
-
-### Memory Layout (Packed)
-```
-Vertices:    [x0,y0,z0, x1,y1,z1, ...]
-Tetrahedra:  [v0,v1,v2,v3, v0,v1,v2,v3, ...]
-Adjacent:    [n0,n1,n2,n3, n0,n1,n2,n3, ...]
-```
+- Neighbor storage: 4 references per tetrahedron
 
 ## Design Decisions
 
@@ -175,15 +149,6 @@ Adjacent:    [n0,n1,n2,n3, n0,n1,n2,n3, ...]
 MutableGrid grid = new MutableGrid();
 Vertex v = grid.add(new Point3f(x, y, z));
 grid.delete(v);
-```
-
-### Packed Implementation
-```java
-PackedGrid packed = new PackedGrid(1000);
-int vertex = packed.add(x, y, z);
-packed.tetrahedronStream().forEach(tet -> {
-    // Process tetrahedra
-});
 ```
 
 ### Spatial Awareness

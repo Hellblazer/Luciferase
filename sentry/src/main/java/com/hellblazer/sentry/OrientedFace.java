@@ -18,7 +18,7 @@
 package com.hellblazer.sentry;
 
 import java.util.Iterator;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
@@ -33,6 +33,18 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public abstract class OrientedFace implements Iterable<Vertex> {
+    
+    // Cache for adjacent vertex
+    private Vertex cachedAdjacentVertex;
+    private boolean adjacentVertexCached = false;
+    
+    /**
+     * Invalidate the cached adjacent vertex. Should be called when topology changes.
+     */
+    protected void invalidateAdjacentVertexCache() {
+        adjacentVertexCached = false;
+        cachedAdjacentVertex = null;
+    }
 
     /**
      * Perform a flip for deletion of the vertex from the tetrahedralization. The incident and adjacent tetrahedra form
@@ -44,9 +56,14 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @param n     - the vertex to be deleted
      * @return true if the receiver is to be deleted from the list of ears
      */
-    public boolean flip(int index, LinkedList<OrientedFace> ears, Vertex n) {
+    public boolean flip(int index, ArrayList<OrientedFace> ears, Vertex n) {
         if (!isValid()) {
             return true;
+        }
+
+        // Early exit optimization - check common cases first
+        if (isRegular()) {
+            return false;
         }
 
         int reflexEdge = 0;
@@ -156,9 +173,10 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var vertex1 = getVertex(1);
         var vertex2 = getVertex(2);
 
-        var t0 = new Tetrahedron(vertex0, incidentVertex, vertex1, opposingVertex);
-        var t1 = new Tetrahedron(vertex1, incidentVertex, vertex2, opposingVertex);
-        var t2 = new Tetrahedron(vertex0, vertex2, incidentVertex, opposingVertex);
+        var allocator = TetrahedronPoolContext.getAllocator();
+        var t0 = allocator.acquire(vertex0, incidentVertex, vertex1, opposingVertex);
+        var t1 = allocator.acquire(vertex1, incidentVertex, vertex2, opposingVertex);
+        var t2 = allocator.acquire(vertex0, vertex2, incidentVertex, opposingVertex);
 
         t0.setNeighborA(t1);
         t0.setNeighborC(t2);
@@ -181,6 +199,10 @@ public abstract class OrientedFace implements Iterable<Vertex> {
 
         incident.delete();
         adjacent.delete();
+        
+        // Defer release until after all operations complete
+        TetrahedronPoolContext.deferRelease(incident);
+        TetrahedronPoolContext.deferRelease(adjacent);
 
         t0.removeAnyDegenerateTetrahedronPair();
         t1.removeAnyDegenerateTetrahedronPair();
@@ -247,14 +269,15 @@ public abstract class OrientedFace implements Iterable<Vertex> {
         var y = getIncidentVertex();
         var z = getAdjacentVertex();
 
+        var allocator = TetrahedronPoolContext.getAllocator();
         Tetrahedron t0;
         Tetrahedron t1;
         if (top0.orientation(x, y, z) > 0) {
-            t0 = new Tetrahedron(x, y, z, top0);
-            t1 = new Tetrahedron(y, x, z, top1);
+            t0 = allocator.acquire(x, y, z, top0);
+            t1 = allocator.acquire(y, x, z, top1);
         } else {
-            t0 = new Tetrahedron(x, y, z, top1);
-            t1 = new Tetrahedron(y, x, z, top0);
+            t0 = allocator.acquire(x, y, z, top1);
+            t1 = allocator.acquire(y, x, z, top0);
         }
 
         t0.setNeighborD(t1);
@@ -273,7 +296,14 @@ public abstract class OrientedFace implements Iterable<Vertex> {
 
         incident.delete();
         adjacent.delete();
+        
+        // Defer release until after all operations complete
+        TetrahedronPoolContext.deferRelease(incident);
+        TetrahedronPoolContext.deferRelease(adjacent);
         o2.delete();
+        
+        // Defer release until after all operations complete
+        TetrahedronPoolContext.deferRelease(o2);
 
         return new Tetrahedron[] { t0, t1 };
     }
@@ -291,12 +321,17 @@ public abstract class OrientedFace implements Iterable<Vertex> {
      * @return
      */
     public Vertex getAdjacentVertex() {
-        Tetrahedron adjacent = getAdjacent();
-        var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
-        if (current == null) {
-            return null;
+        if (!adjacentVertexCached) {
+            Tetrahedron adjacent = getAdjacent();
+            var current = adjacent == null ? null : adjacent.ordinalOf(getIncident());
+            if (current == null) {
+                cachedAdjacentVertex = null;
+            } else {
+                cachedAdjacentVertex = adjacent.getVertex(current);
+            }
+            adjacentVertexCached = true;
         }
-        return adjacent.getVertex(current);
+        return cachedAdjacentVertex;
     }
 
     /**
@@ -433,24 +468,42 @@ public abstract class OrientedFace implements Iterable<Vertex> {
 
     }
 
-    private boolean isLocallyDelaunay(int index, Vertex v, LinkedList<OrientedFace> ears) {
-        Function<Vertex, Boolean> circumSphere = query -> {
-            switch (indexOf(v)) {
-                case 0:
-                    return inSphere(query, getVertex(1), getVertex(2), getVertex(0));
-                case 1:
-                    return inSphere(query, getVertex(0), getVertex(2), getVertex(1));
-                default:
-                    return inSphere(query, getVertex(0), getVertex(1), getVertex(2));
-            }
-        };
+    private boolean isLocallyDelaunay(int index, Vertex v, ArrayList<OrientedFace> ears) {
+        // Early exit if ears list is small
+        if (ears.size() <= 1) {
+            return true;
+        }
+        
+        // Pre-compute vertices for circumsphere test
+        int vIndex = indexOf(v);
+        Vertex v0, v1, v2;
+        switch (vIndex) {
+            case 0:
+                v0 = getVertex(1);
+                v1 = getVertex(2);
+                v2 = getVertex(0);
+                break;
+            case 1:
+                v0 = getVertex(0);
+                v1 = getVertex(2);
+                v2 = getVertex(1);
+                break;
+            default:
+                v0 = getVertex(0);
+                v1 = getVertex(1);
+                v2 = getVertex(2);
+                break;
+        }
+        
+        // Check ears for Delaunay condition
         for (int i = 0; i < ears.size(); i++) {
             if (index != i) {
                 OrientedFace ear = ears.get(i);
                 if (ear != this && ear.isValid()) {
+                    // Check vertices of the ear
                     for (Vertex e : ear) {
-                        if (e != v && circumSphere.apply(e)) {
-                            return false;
+                        if (e != v && inSphere(e, v0, v1, v2)) {
+                            return false;  // Early exit on first violation
                         }
                     }
                 }

@@ -18,7 +18,7 @@
 package com.hellblazer.sentry;
 
 import com.hellblazer.luciferase.common.IdentitySet;
-import com.hellblazer.luciferase.geometry.Geometry;
+import com.hellblazer.luciferase.geometry.GeometryAdaptive;
 import com.hellblazer.luciferase.geometry.MortonCurve;
 
 import javax.vecmath.Point3f;
@@ -27,13 +27,15 @@ import javax.vecmath.Tuple3i;
 import javax.vecmath.Vector3f;
 import java.io.Serial;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
-public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Comparable<Vertex> {
+public class Vertex extends Vector3f implements Cursor, Comparable<Vertex> {
     static final         Point3f     ORIGIN           = new Point3f(0, 0, 0);
     @Serial
     private static final long        serialVersionUID = 1L;
@@ -41,7 +43,6 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
      * One of the tetrahedra adjacent to the vertex
      */
     private              Tetrahedron adjacent;
-    private              Vertex      next; // linked list o' vertices
 
     public Vertex(float i, float j, float k) {
         x = i;
@@ -167,6 +168,18 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
     final void setAdjacent(Tetrahedron tetrahedron) {
         adjacent = tetrahedron;
     }
+    
+    /**
+     * Remove the adjacent tetrahedron reference if it matches
+     * <p>
+     *
+     * @param tetrahedron
+     */
+    final void removeAdjacent(Tetrahedron tetrahedron) {
+        if (adjacent == tetrahedron) {
+            adjacent = null;
+        }
+    }
 
     public Point3f getLocation() {
         return new Point3f(x, y, z);
@@ -235,31 +248,10 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
      * the five points are cospherical
      */
     public final double inSphere(Tuple3f a, Tuple3f b, Tuple3f c, Tuple3f d) {
-        var result = Geometry.inSphereFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
+        var result = GeometryAdaptive.inSphereAdaptive(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z, x, y, z);
         return Math.signum(result);
     }
 
-    @Override
-    public final Iterator<Vertex> iterator() {
-        return new Iterator<Vertex>() {
-            private Vertex next = Vertex.this;
-
-            @Override
-            public boolean hasNext() {
-                return next != null;
-            }
-
-            @Override
-            public Vertex next() {
-                if (next == null) {
-                    throw new NoSuchElementException();
-                }
-                var current = next;
-                next = next.next;
-                return current;
-            }
-        };
-    }
 
     /**
      * Locate the tetrahedron encompassing the query point
@@ -302,8 +294,21 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
      * the test point is coplanar
      */
     public final double orientation(Tuple3f a, Tuple3f b, Tuple3f c) {
-        var result = Geometry.leftOfPlaneFast(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
+        var result = GeometryAdaptive.leftOfPlaneAdaptive(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, x, y, z);
         return Math.signum(result);
+    }
+
+    /**
+     * Calculate the distance from this vertex to another point.
+     *
+     * @param point the point to measure distance to
+     * @return the Euclidean distance
+     */
+    public double distance(Tuple3f point) {
+        double dx = x - point.x;
+        double dy = y - point.y;
+        double dz = z - point.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     @Override
@@ -332,30 +337,8 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
         adjacent.visitStar(this, visitor);
     }
 
-    void append(Vertex v) {
-        assert next == null : "Next is not null";
-        next = v;
-    }
 
-    void clear() {
-        adjacent = null;
-        var n = next;
-        while (n != null) {
-            n.adjacent = null;
-            n = n.next;
-        }
-    }
 
-    void detach(Vertex v) {
-        var n = next;
-        while (n != null) {
-            if (v == next) {
-                next = v.next;
-                return;
-            }
-        }
-        throw new NoSuchElementException();
-    }
 
     void freshenAdjacent(Tetrahedron tetrahedron) {
         if (adjacent == null || adjacent.isDeleted()) {
@@ -365,6 +348,102 @@ public class Vertex extends Vector3f implements Cursor, Iterable<Vertex>, Compar
 
     void reset() {
         adjacent = null;
+    }
+    
+    /**
+     * Calculate the star size (number of tetrahedra incident to this vertex).
+     *
+     * @return the number of incident tetrahedra
+     */
+    public int getStarSize() {
+        if (adjacent == null) return 0;
+        
+        final AtomicInteger count = new AtomicInteger(0);
+        adjacent.visitStar(this, (vertex, t, x, y, z) -> {
+            count.incrementAndGet();
+        });
+        return count.get();
+    }
+    
+    /**
+     * Check if this vertex is on the convex hull of the tetrahedralization.
+     *
+     * @return true if on convex hull
+     */
+    public boolean isOnConvexHull() {
+        if (adjacent == null) return false;
+        
+        // A vertex is on the convex hull if any of its incident faces
+        // has no adjacent tetrahedron
+        final AtomicBoolean onHull = new AtomicBoolean(false);
+        adjacent.visitStar(this, (vertex, t, x, y, z) -> {
+            OrientedFace face = t.getFace(vertex);
+            if (!face.hasAdjacent()) {
+                onHull.set(true);
+            }
+        });
+        return onHull.get();
+    }
+    
+    /**
+     * Get the average edge length from this vertex to its neighbors.
+     *
+     * @return the average edge length
+     */
+    public float getAverageEdgeLength() {
+        Collection<Vertex> neighbors = getNeighbors();
+        if (neighbors.isEmpty()) return 0;
+        
+        float totalLength = 0;
+        for (Vertex neighbor : neighbors) {
+            totalLength += Math.sqrt(distanceSquared(neighbor));
+        }
+        return totalLength / neighbors.size();
+    }
+    
+    /**
+     * Get validation metrics for this vertex.
+     *
+     * @return a map of validation metrics
+     */
+    public Map<String, Object> getValidationMetrics() {
+        Map<String, Object> metrics = new HashMap<>();
+        metrics.put("position", new Point3f(x, y, z));
+        metrics.put("starSize", getStarSize());
+        metrics.put("neighborCount", getNeighbors().size());
+        metrics.put("isOnConvexHull", isOnConvexHull());
+        metrics.put("averageEdgeLength", getAverageEdgeLength());
+        metrics.put("hasAdjacent", adjacent != null);
+        return metrics;
+    }
+    
+    /**
+     * Check if the star of this vertex is valid (all tetrahedra are properly connected).
+     *
+     * @return true if star is valid
+     */
+    public boolean hasValidStar() {
+        if (adjacent == null) return false;
+        
+        final Set<Tetrahedron> starTets = new HashSet<>();
+        final AtomicBoolean allValid = new AtomicBoolean(true);
+        
+        adjacent.visitStar(this, (vertex, t, x, y, z) -> {
+            if (t.isDeleted()) {
+                allValid.set(false);
+                return;
+            }
+            
+            // Check that this vertex is actually in the tetrahedron
+            if (!t.includes(this)) {
+                allValid.set(false);
+                return;
+            }
+            
+            starTets.add(t);
+        });
+        
+        return allValid.get() && !starTets.isEmpty();
     }
 
 }
