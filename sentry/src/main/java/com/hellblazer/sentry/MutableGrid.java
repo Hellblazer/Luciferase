@@ -86,13 +86,36 @@ import static com.hellblazer.sentry.V.*;
  */
 
 public class MutableGrid extends Grid {
+    // Configuration options
+    public enum AllocationStrategy {
+        POOLED,    // Use TetrahedronPool (default)
+        DIRECT     // Direct allocation without pooling
+    }
+    
+    private static final String ALLOCATION_PROPERTY = "sentry.allocation.strategy";
     private final List<Vertex>    vertices = new ArrayList<>();
-    private final TetrahedronPool pool     = new TetrahedronPool();
+    private final TetrahedronAllocator allocator;
+    private final AllocationStrategy strategy;
     protected     Tetrahedron     last;  // Changed to protected for testing
     protected     LandmarkIndex   landmarkIndex;  // Changed to protected for testing
+    
+    private static AllocationStrategy getDefaultStrategy() {
+        String prop = System.getProperty(ALLOCATION_PROPERTY);
+        if ("direct".equalsIgnoreCase(prop)) {
+            return AllocationStrategy.DIRECT;
+        }
+        return AllocationStrategy.POOLED; // Default
+    }
 
     public MutableGrid() {
-        this(getFourCorners());
+        this(getFourCorners(), getDefaultStrategy());
+    }
+
+    /**
+     * Create with specified allocation strategy.
+     */
+    public MutableGrid(AllocationStrategy strategy) {
+        this(getFourCorners(), strategy);
     }
 
     /**
@@ -101,13 +124,47 @@ public class MutableGrid extends Grid {
      * @param fourCorners The four corner vertices
      */
     public MutableGrid(Vertex[] fourCorners) {
+        this(fourCorners, getDefaultStrategy());
+    }
+    
+    /**
+     * Create with specified allocation strategy.
+     */
+    public MutableGrid(Vertex[] fourCorners, AllocationStrategy strategy) {
         super(fourCorners);
+        this.strategy = strategy;
+        this.allocator = createAllocator(strategy);
         initialize();
         // Note: Validation is now handled externally via GridValidator and ValidationManager
     }
+    
+    private TetrahedronAllocator createAllocator(AllocationStrategy strategy) {
+        switch (strategy) {
+            case POOLED:
+                return new PooledAllocator(new TetrahedronPool());
+            case DIRECT:
+                return new DirectAllocator();
+            default:
+                throw new IllegalArgumentException("Unknown strategy: " + strategy);
+        }
+    }
+    
+    /**
+     * Get the allocation strategy in use.
+     */
+    public AllocationStrategy getAllocationStrategy() {
+        return strategy;
+    }
+    
+    /**
+     * Get the allocator for performance statistics.
+     */
+    TetrahedronAllocator getAllocator() {
+        return allocator;
+    }
 
     public void clear() {
-        // First, collect and release all tetrahedrons back to the pool
+        // First, collect and release all tetrahedrons back to the allocator
         releaseAllTetrahedrons();
 
         // Clear all vertex references
@@ -161,7 +218,7 @@ public class MutableGrid extends Grid {
     }
 
     public void rebuild(List<Vertex> verticesList, Random entropy) {
-        // Release all tetrahedrons back to the pool before rebuilding
+        // Release all tetrahedrons back to the allocator before rebuilding
         releaseAllTetrahedrons();
 
         // Clear vertex references
@@ -182,7 +239,7 @@ public class MutableGrid extends Grid {
             landmarkIndex.clear();
         }
 
-        last = pool.acquire(fourCorners);
+        last = allocator.acquire(fourCorners);
         initialize();
 
         // Re-insert all vertices
@@ -276,7 +333,7 @@ public class MutableGrid extends Grid {
      * @return the tetrahedron created from the flip
      */
     protected Tetrahedron flip4to1(Vertex n) {
-        return TetrahedronPoolContext.withPool(pool, () -> {
+        return TetrahedronPoolContext.withAllocator(allocator, () -> {
             Deque<OrientedFace> star = n.getStar();
             ArrayList<Tetrahedron> deleted = new ArrayList<>();
             for (OrientedFace f : star) {
@@ -296,7 +353,7 @@ public class MutableGrid extends Grid {
                 }
             }
             assert d != null;
-            Tetrahedron t = pool.acquire(a, b, c, d);
+            Tetrahedron t = allocator.acquire(a, b, c, d);
             base.getIncident().patch(base.getIncidentVertex(), t, D);
             if (face.includes(a)) {
                 if (face.includes(b)) {
@@ -348,19 +405,19 @@ public class MutableGrid extends Grid {
                 }
             }
 
-            // Release deleted tetrahedra back to pool
-            // Use instance pool
+            // Release deleted tetrahedra back to allocator
+            // Use instance allocator
             for (Tetrahedron tet : deleted) {
                 tet.delete();
-                pool.release(tet);
+                allocator.release(tet);
             }
             return t;
         });
     }
 
     protected void insert(Vertex v, final Tetrahedron target) {
-        // Set pool context for this operation
-        TetrahedronPoolContext.withPool(pool, () -> {
+        // Set allocator context for this operation
+        TetrahedronPoolContext.withAllocator(allocator, () -> {
             List<OrientedFace> ears = new ArrayList<>(20);
             last = target.flip1to4(v, ears);
 
@@ -400,9 +457,14 @@ public class MutableGrid extends Grid {
 
     /**
      * Get the TetrahedronPool for this grid. Package-private for testing.
+     * @deprecated Use getAllocator() instead
      */
+    @Deprecated
     TetrahedronPool getPool() {
-        return pool;
+        if (allocator instanceof PooledAllocator) {
+            return ((PooledAllocator) allocator).getPool();
+        }
+        return null;
     }
 
     /**
@@ -424,14 +486,14 @@ public class MutableGrid extends Grid {
     }
 
     private void initialize() {
-        // Warm up pool for initial operations
-        pool.warmUp(128);
-        last = pool.acquire(fourCorners);
+        // Warm up allocator for initial operations
+        allocator.warmUp(128);
+        last = allocator.acquire(fourCorners);
         landmarkIndex = new LandmarkIndex(new Random());
     }
 
     /**
-     * Release all tetrahedrons in the grid back to the pool. This should be called before clear() or rebuild() to reuse
+     * Release all tetrahedrons in the grid back to the allocator. This should be called before clear() or rebuild() to reuse
      * memory.
      */
     private void releaseAllTetrahedrons() {
@@ -439,8 +501,8 @@ public class MutableGrid extends Grid {
             return;
         }
 
-        // Release them all back to the pool
-        // Use instance pool
+        // Release them all back to the allocator
+        // Use instance allocator
         int releasedCount = 0;
 
         var stack = new ArrayDeque<Tetrahedron>();
@@ -453,7 +515,7 @@ public class MutableGrid extends Grid {
             if (!next.isDeleted()) {
                 next.children(stack);
                 next.delete();
-                pool.release(next);
+                allocator.release(next);
                 releasedCount++;
             }
         }

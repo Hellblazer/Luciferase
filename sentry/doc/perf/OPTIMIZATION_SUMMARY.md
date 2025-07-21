@@ -120,6 +120,24 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
   - All 60 tests passing after refactoring
   - No crashes from deferred release pattern
 
+## Recent Updates (July 2025) - Phase 2
+
+### Optional Pooling Implementation
+- **Problem**: TetrahedronPool was mandatory, complicating debugging and testing
+- **Solution**: Abstraction layer with pluggable allocation strategies
+- **Implementation**:
+  - Created TetrahedronAllocator interface with acquire/release methods
+  - PooledAllocator wraps existing TetrahedronPool
+  - DirectAllocator creates new instances without pooling
+  - DirectAllocatorSingleton provides fallback when no context set
+  - System property support: `-Dsentry.allocation.strategy=DIRECT`
+  - Backward compatibility maintained with deprecated methods
+- **Results**:
+  - Zero performance impact when using pooled strategy
+  - Simplified debugging with direct allocation option
+  - Comprehensive test coverage for both strategies
+  - Clean separation of concerns between allocation and algorithm
+
 ## Remaining Opportunities
 
 1. **SIMD Batch Operations**: Current SIMD works but needs batch processing

@@ -298,6 +298,19 @@ public class Vertex extends Vector3f implements Cursor, Comparable<Vertex> {
         return Math.signum(result);
     }
 
+    /**
+     * Calculate the distance from this vertex to another point.
+     *
+     * @param point the point to measure distance to
+     * @return the Euclidean distance
+     */
+    public double distance(Tuple3f point) {
+        double dx = x - point.x;
+        double dy = y - point.y;
+        double dz = z - point.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     @Override
     public String toString() {
         return "{" + x + ", " + y + ", " + z + "}";

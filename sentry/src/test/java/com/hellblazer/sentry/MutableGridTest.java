@@ -48,7 +48,7 @@ public class MutableGridTest {
     @Test
     @DisplayName("Basic smoke test - original test preserved")
     public void smokin() throws Exception {
-        var sentinel = new MutableGrid();
+        var sentinel = new MutableGrid(MutableGrid.AllocationStrategy.DIRECT);
         var sites = new ArrayList<Vertex>();
         var entropy = new Random(0x666);
         var radius = 16000.0f;

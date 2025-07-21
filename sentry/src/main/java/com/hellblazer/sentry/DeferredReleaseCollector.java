@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Collects tetrahedra for deferred release to the pool.
+ * Collects tetrahedra for deferred release to the allocator.
  * This allows us to safely delete tetrahedra during flip operations
  * without premature release that could cause crashes.
  * 
@@ -30,10 +30,10 @@ import java.util.List;
  */
 public class DeferredReleaseCollector {
     private final List<Tetrahedron> pendingRelease = new ArrayList<>();
-    private final TetrahedronPool pool;
+    private final TetrahedronAllocator allocator;
     
-    public DeferredReleaseCollector(TetrahedronPool pool) {
-        this.pool = pool;
+    public DeferredReleaseCollector(TetrahedronAllocator allocator) {
+        this.allocator = allocator;
     }
     
     /**
@@ -47,13 +47,13 @@ public class DeferredReleaseCollector {
     }
     
     /**
-     * Release all collected tetrahedra to the pool.
+     * Release all collected tetrahedra to the allocator.
      * This should be called after all flip operations are complete.
      */
     public void releaseAll() {
         if (!pendingRelease.isEmpty()) {
             // Use batch release for efficiency
-            pool.releaseBatch(pendingRelease.toArray(new Tetrahedron[0]), pendingRelease.size());
+            allocator.releaseBatch(pendingRelease.toArray(new Tetrahedron[0]), pendingRelease.size());
             pendingRelease.clear();
         }
     }

@@ -32,6 +32,20 @@ grid.delete(v1);
 Tetrahedron tet = grid.locate(new Point3f(0.5f, 0.5f, 0.5f));
 ```
 
+### Allocation Strategy Configuration
+
+```java
+// Use direct allocation (no pooling) for debugging
+MutableGrid directGrid = new MutableGrid(MutableGrid.AllocationStrategy.DIRECT);
+
+// Use pooled allocation (default) for performance
+MutableGrid pooledGrid = new MutableGrid(MutableGrid.AllocationStrategy.POOLED);
+
+// Configure via system property
+System.setProperty("sentry.allocation.strategy", "DIRECT");
+MutableGrid grid = new MutableGrid(); // Will use direct allocation
+```
+
 ### Spatial Awareness
 
 ```java
@@ -102,6 +116,10 @@ The implementation uses a bounded universe {-32768, +32768} with float precision
 
 ### Memory Usage
 - Object-oriented: ~200 bytes per vertex
+
+### Allocation Strategies
+- **Pooled (default)**: Reuses tetrahedron objects, reduces GC pressure, optimal for long-running applications
+- **Direct**: Creates new objects on demand, simpler debugging, useful for short-lived operations
 
 ## Design Decisions
 

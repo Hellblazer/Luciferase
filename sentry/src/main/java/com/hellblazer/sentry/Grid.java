@@ -109,7 +109,7 @@ public class Grid implements Iterable<Vertex> {
         for (Vertex v : s.extent()) {
             U[i++] = new Vertex(v);
         }
-        return new Tetrahedron(U[0], U[1], U[2], U[3]);
+        return TetrahedronPoolContext.getAllocator().acquire(U[0], U[1], U[2], U[3]);
     }
 
     public boolean contains(Tuple3f point) {

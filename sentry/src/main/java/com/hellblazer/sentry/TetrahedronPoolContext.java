@@ -19,39 +19,38 @@
 package com.hellblazer.sentry;
 
 /**
- * Thread-local context for TetrahedronPool access during flip operations.
- * This allows deep method calls to access the appropriate pool without
+ * Thread-local context for TetrahedronAllocator access during flip operations.
+ * This allows deep method calls to access the appropriate allocator without
  * passing it through every method parameter.
  * Also provides deferred release collection for safer memory management.
  * 
  * @author <a href="mailto:hal.hildebrand@gmail.com">Hal Hildebrand</a>
  */
 public class TetrahedronPoolContext {
-    private static final ThreadLocal<TetrahedronPool> CURRENT_POOL = new ThreadLocal<>();
+    private static final ThreadLocal<TetrahedronAllocator> CURRENT_ALLOCATOR = new ThreadLocal<>();
     private static final ThreadLocal<DeferredReleaseCollector> RELEASE_COLLECTOR = new ThreadLocal<>();
     
     /**
-     * Set the current pool for this thread.
-     * Should be called at the start of operations that need pool access.
+     * Set the current allocator for this thread.
      */
-    public static void setPool(TetrahedronPool pool) {
-        CURRENT_POOL.set(pool);
+    public static void setAllocator(TetrahedronAllocator allocator) {
+        CURRENT_ALLOCATOR.set(allocator);
     }
     
     /**
-     * Get the current pool for this thread.
-     * Returns null if no pool has been set.
+     * Get the current allocator for this thread.
+     * Falls back to direct allocation if none set.
      */
-    public static TetrahedronPool getPool() {
-        return CURRENT_POOL.get();
+    public static TetrahedronAllocator getAllocator() {
+        TetrahedronAllocator allocator = CURRENT_ALLOCATOR.get();
+        return allocator != null ? allocator : DirectAllocatorSingleton.INSTANCE;
     }
     
     /**
-     * Clear the current pool for this thread.
-     * Should be called when operations are complete to avoid memory leaks.
+     * Clear the current allocator for this thread.
      */
-    public static void clearPool() {
-        CURRENT_POOL.remove();
+    public static void clearAllocator() {
+        CURRENT_ALLOCATOR.remove();
     }
     
     /**
@@ -64,40 +63,52 @@ public class TetrahedronPoolContext {
     
     /**
      * Mark a tetrahedron for deferred release.
-     * If no collector is active, releases immediately.
+     * If allocator doesn't support deferred release, releases immediately.
      */
     public static void deferRelease(Tetrahedron t) {
+        if (t == null || !t.isDeleted()) {
+            return;
+        }
+        
         DeferredReleaseCollector collector = RELEASE_COLLECTOR.get();
         if (collector != null) {
             collector.markForRelease(t);
         } else {
             // No deferred release active, release immediately
-            TetrahedronPool pool = CURRENT_POOL.get();
-            if (pool != null && t != null && t.isDeleted()) {
-                pool.release(t);
-            }
+            TetrahedronAllocator allocator = getAllocator();
+            allocator.release(t);
         }
     }
     
     /**
-     * Execute a task with a specific pool context.
-     * The pool is automatically cleared after the task completes.
+     * Execute a task with a specific allocator context.
      */
-    public static void withPool(TetrahedronPool pool, Runnable task) {
-        TetrahedronPool previous = CURRENT_POOL.get();
-        DeferredReleaseCollector collector = new DeferredReleaseCollector(pool);
+    public static void withAllocator(TetrahedronAllocator allocator, Runnable task) {
+        TetrahedronAllocator previous = CURRENT_ALLOCATOR.get();
+        DeferredReleaseCollector collector = null;
         DeferredReleaseCollector previousCollector = RELEASE_COLLECTOR.get();
+        
+        // Only set up deferred release if allocator supports it
+        if (allocator.supportsDeferredRelease()) {
+            collector = new DeferredReleaseCollector(allocator);
+        }
+        
         try {
-            CURRENT_POOL.set(pool);
-            RELEASE_COLLECTOR.set(collector);
+            CURRENT_ALLOCATOR.set(allocator);
+            if (collector != null) {
+                RELEASE_COLLECTOR.set(collector);
+            }
             task.run();
             // Release all deferred tetrahedra after task completes
-            collector.releaseAll();
+            if (collector != null) {
+                collector.releaseAll();
+            }
         } finally {
+            // Restore previous state
             if (previous != null) {
-                CURRENT_POOL.set(previous);
+                CURRENT_ALLOCATOR.set(previous);
             } else {
-                CURRENT_POOL.remove();
+                CURRENT_ALLOCATOR.remove();
             }
             if (previousCollector != null) {
                 RELEASE_COLLECTOR.set(previousCollector);
@@ -108,25 +119,36 @@ public class TetrahedronPoolContext {
     }
     
     /**
-     * Execute a task with a specific pool context and return a result.
-     * The pool is automatically cleared after the task completes.
+     * Execute a task with a specific allocator context and return a result.
      */
-    public static <T> T withPool(TetrahedronPool pool, java.util.function.Supplier<T> task) {
-        TetrahedronPool previous = CURRENT_POOL.get();
-        DeferredReleaseCollector collector = new DeferredReleaseCollector(pool);
+    public static <T> T withAllocator(TetrahedronAllocator allocator, 
+                                      java.util.function.Supplier<T> task) {
+        TetrahedronAllocator previous = CURRENT_ALLOCATOR.get();
+        DeferredReleaseCollector collector = null;
         DeferredReleaseCollector previousCollector = RELEASE_COLLECTOR.get();
+        
+        // Only set up deferred release if allocator supports it
+        if (allocator.supportsDeferredRelease()) {
+            collector = new DeferredReleaseCollector(allocator);
+        }
+        
         try {
-            CURRENT_POOL.set(pool);
-            RELEASE_COLLECTOR.set(collector);
+            CURRENT_ALLOCATOR.set(allocator);
+            if (collector != null) {
+                RELEASE_COLLECTOR.set(collector);
+            }
             T result = task.get();
             // Release all deferred tetrahedra after task completes
-            collector.releaseAll();
+            if (collector != null) {
+                collector.releaseAll();
+            }
             return result;
         } finally {
+            // Restore previous state
             if (previous != null) {
-                CURRENT_POOL.set(previous);
+                CURRENT_ALLOCATOR.set(previous);
             } else {
-                CURRENT_POOL.remove();
+                CURRENT_ALLOCATOR.remove();
             }
             if (previousCollector != null) {
                 RELEASE_COLLECTOR.set(previousCollector);
@@ -134,5 +156,60 @@ public class TetrahedronPoolContext {
                 RELEASE_COLLECTOR.remove();
             }
         }
+    }
+    
+    /**
+     * Clear all thread-local state. Useful for testing.
+     */
+    public static void clear() {
+        CURRENT_ALLOCATOR.remove();
+        RELEASE_COLLECTOR.remove();
+    }
+    
+    // Backward compatibility methods (deprecated)
+    
+    /**
+     * @deprecated Use setAllocator instead
+     */
+    @Deprecated
+    public static void setPool(TetrahedronPool pool) {
+        setAllocator(new PooledAllocator(pool));
+    }
+    
+    /**
+     * @deprecated Use getAllocator instead
+     */
+    @Deprecated
+    public static TetrahedronPool getPool() {
+        TetrahedronAllocator allocator = getAllocator();
+        if (allocator instanceof PooledAllocator) {
+            return ((PooledAllocator) allocator).getPool();
+        }
+        return null;
+    }
+    
+    /**
+     * @deprecated Use clearAllocator instead
+     */
+    @Deprecated
+    public static void clearPool() {
+        clearAllocator();
+    }
+    
+    /**
+     * @deprecated Use withAllocator instead
+     */
+    @Deprecated
+    public static void withPool(TetrahedronPool pool, Runnable task) {
+        withAllocator(new PooledAllocator(pool), task);
+    }
+    
+    /**
+     * @deprecated Use withAllocator instead
+     */
+    @Deprecated
+    public static <T> T withPool(TetrahedronPool pool, 
+                                 java.util.function.Supplier<T> task) {
+        return withAllocator(new PooledAllocator(pool), task);
     }
 }

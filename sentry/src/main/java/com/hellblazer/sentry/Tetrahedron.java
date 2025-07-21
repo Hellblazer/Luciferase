@@ -204,14 +204,11 @@ public class Tetrahedron implements Iterable<OrientedFace> {
      * @return one of the four new tetrahedra
      */
     public Tetrahedron flip1to4(Vertex n, List<OrientedFace> ears) {
-        var pool = TetrahedronPoolContext.getPool();
-        if (pool == null) {
-            throw new IllegalStateException("No TetrahedronPool set in context");
-        }
-        var t0 = pool.acquire(a, b, c, n);
-        var t1 = pool.acquire(a, d, b, n);
-        var t2 = pool.acquire(a, c, d, n);
-        var t3 = pool.acquire(b, d, c, n);
+        var allocator = TetrahedronPoolContext.getAllocator();
+        var t0 = allocator.acquire(a, b, c, n);
+        var t1 = allocator.acquire(a, d, b, n);
+        var t2 = allocator.acquire(a, c, d, n);
+        var t3 = allocator.acquire(b, d, c, n);
 
         t0.setNeighborA(t3);
         t0.setNeighborB(t2);
@@ -236,8 +233,8 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
         delete();
 
-        // Release deleted tetrahedron to pool
-        pool.release(this);
+        // Release deleted tetrahedron to allocator
+        allocator.release(this);
 
         var newFace = t0.getFace(D);
         if (newFace.hasAdjacent()) {
@@ -388,6 +385,16 @@ public class Tetrahedron implements Iterable<OrientedFace> {
 
     public boolean includes(Vertex query) {
         return a == query || b == query || c == query || d == query;
+    }
+
+    /**
+     * Check if a point is inside this tetrahedron.
+     *
+     * @param point the point to test
+     * @return true if the point is inside the tetrahedron
+     */
+    public boolean contains(Tuple3f point) {
+        return Geometry.insideTetrahedron(point, a, b, c, d);
     }
 
     /**
@@ -1079,12 +1086,10 @@ public class Tetrahedron implements Iterable<OrientedFace> {
         delete();
         nE.delete();
 
-        // Release deleted tetrahedra to pool
-        var pool = TetrahedronPoolContext.getPool();
-        if (pool != null) {
-            pool.release(this);
-            pool.release(nE);
-        }
+        // Release deleted tetrahedra to allocator
+        var allocator = TetrahedronPoolContext.getAllocator();
+        allocator.release(this);
+        allocator.release(nE);
 
         e1.freshenAdjacent(nF1_that);
         f2.freshenAdjacent(nF1_that);
