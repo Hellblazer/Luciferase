@@ -218,6 +218,19 @@ public class MutableGrid extends Grid {
     }
 
     public void rebuild(List<Vertex> verticesList, Random entropy) {
+        // Use optimized rebuild for better performance
+        rebuildOptimized(verticesList, entropy);
+    }
+    
+    /**
+     * Optimized rebuild that bypasses pooling context overhead for better performance.
+     * For small rebuilds like 256 points, uses direct allocation to avoid pooling overhead.
+     */
+    private void rebuildOptimized(List<Vertex> verticesList, Random entropy) {
+        // For small rebuilds like 256 points, use direct allocation to avoid pooling overhead
+        boolean useDirectForRebuild = verticesList.size() <= 256 || "true".equals(System.getProperty("sentry.rebuild.direct"));
+        TetrahedronAllocator rebuildAllocator = useDirectForRebuild ? new DirectAllocator() : allocator;
+        
         // Release all tetrahedrons back to the allocator before rebuilding
         releaseAllTetrahedrons();
 
@@ -239,15 +252,29 @@ public class MutableGrid extends Grid {
             landmarkIndex.clear();
         }
 
-        last = allocator.acquire(fourCorners);
-        initialize();
+        last = rebuildAllocator.acquire(fourCorners);
+        allocator.warmUp(128); // Keep original allocator warm
 
-        // Re-insert all vertices
-        for (var v : verticesList) {
-            var containedIn = locate(v, last, entropy);
-            if (containedIn != null) {
-                add(v, containedIn);
+        if (useDirectForRebuild) {
+            // Skip context overhead entirely for direct allocation
+            for (var v : verticesList) {
+                var containedIn = locate(v, last, entropy);
+                if (containedIn != null) {
+                    insertDirectly(v, containedIn, rebuildAllocator);
+                }
             }
+        } else {
+            // Set allocator context once for the entire rebuild operation
+            // This avoids the overhead of multiple context switches
+            TetrahedronPoolContext.withAllocator(rebuildAllocator, () -> {
+                // Re-insert all vertices with optimized insertion
+                for (var v : verticesList) {
+                    var containedIn = locate(v, last, entropy);
+                    if (containedIn != null) {
+                        insertOptimized(v, containedIn);
+                    }
+                }
+            });
         }
 
         // Note: Call GridValidator.validateAndRepairVertexReferences() if needed
@@ -418,6 +445,48 @@ public class MutableGrid extends Grid {
     protected void insert(Vertex v, final Tetrahedron target) {
         // Set allocator context for this operation
         TetrahedronPoolContext.withAllocator(allocator, () -> {
+            insertCore(v, target);
+        });
+    }
+    
+    /**
+     * Optimized insertion for rebuild operations. Assumes allocator context is already set.
+     */
+    private void insertOptimized(Vertex v, final Tetrahedron target) {
+        insertCore(v, target);
+        vertices.add(v);  // Simple append
+        size++;
+
+        // Set head to any valid vertex (per user guidance)
+        head = v;
+    }
+    
+    /**
+     * Direct insertion without any context overhead. Uses provided allocator directly.
+     */
+    private void insertDirectly(Vertex v, final Tetrahedron target, TetrahedronAllocator directAllocator) {
+        insertCoreWithAllocator(v, target, directAllocator);
+        vertices.add(v);  // Simple append
+        size++;
+
+        // Set head to any valid vertex (per user guidance)
+        head = v;
+    }
+    
+    /**
+     * Core insertion logic shared by both regular and optimized insertion.
+     */
+    private void insertCore(Vertex v, final Tetrahedron target) {
+        insertCoreWithAllocator(v, target, TetrahedronPoolContext.getAllocator());
+    }
+    
+    /**
+     * Core insertion logic with explicit allocator (no context lookup).
+     */
+    private void insertCoreWithAllocator(Vertex v, final Tetrahedron target, TetrahedronAllocator allocator) {
+        // Set the allocator in context temporarily for flip operations
+        TetrahedronPoolContext.setAllocator(allocator);
+        try {
             List<OrientedFace> ears = new ArrayList<>(20);
             last = target.flip1to4(v, ears);
 
@@ -445,7 +514,9 @@ public class MutableGrid extends Grid {
             if (landmarkIndex != null && size % 100 == 0) {
                 landmarkIndex.cleanup();
             }
-        });
+        } finally {
+            TetrahedronPoolContext.clearAllocator();
+        }
     }
 
     /**
@@ -472,6 +543,40 @@ public class MutableGrid extends Grid {
      */
     List<Vertex> getVertices() {
         return vertices;
+    }
+    
+    // Profiling methods for performance analysis
+    
+    void releaseAllTetrahedronsForProfiling() {
+        releaseAllTetrahedrons();
+    }
+    
+    void clearVerticesForProfiling() {
+        for (Vertex v : vertices) {
+            v.reset();
+        }
+        vertices.clear();
+        head = null;
+        size = 0;
+    }
+    
+    void reinitializeForProfiling() {
+        for (var v : fourCorners) {
+            v.reset();
+        }
+        if (landmarkIndex != null) {
+            landmarkIndex.clear();
+        }
+        last = allocator.acquire(fourCorners);
+        initialize();
+    }
+    
+    void addForProfiling(Vertex v, Tetrahedron target) {
+        add(v, target);
+    }
+    
+    Tetrahedron getLastTetrahedronForProfiling() {
+        return last;
     }
 
     private void add(Vertex v, final Tetrahedron target) {
