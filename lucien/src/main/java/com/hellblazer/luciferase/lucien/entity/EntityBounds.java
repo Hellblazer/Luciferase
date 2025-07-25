@@ -121,6 +121,16 @@ public class EntityBounds {
         return !(max.x < cubeX || min.x > cubeMaxX || max.y < cubeY || min.y > cubeMaxY || max.z < cubeZ
                  || min.z > cubeMaxZ);
     }
+    
+    /**
+     * Calculate the volume of this bounding box
+     */
+    public float volume() {
+        float width = max.x - min.x;
+        float height = max.y - min.y;
+        float depth = max.z - min.z;
+        return width * height * depth;
+    }
 
     @Override
     public String toString() {

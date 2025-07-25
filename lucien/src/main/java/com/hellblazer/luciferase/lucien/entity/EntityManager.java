@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.lucien.entity;
 
+import com.hellblazer.luciferase.lucien.FrameManager;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 
@@ -39,6 +40,15 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
 
     // ID generation strategy
     private final EntityIDGenerator<ID> idGenerator;
+    
+    // Entity dynamics tracking: Entity ID → EntityDynamics (velocity, acceleration, history)
+    private final Map<ID, EntityDynamics> entityDynamics;
+    
+    // Optional frame manager for consistent time tracking
+    private FrameManager frameManager;
+    
+    // Flag to enable automatic dynamics updates
+    private boolean autoDynamicsEnabled = false;
 
     /**
      * Create an entity manager with thread-safe storage
@@ -46,6 +56,7 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
     public EntityManager(EntityIDGenerator<ID> idGenerator) {
         this.entities = new ConcurrentHashMap<>();
         this.idGenerator = Objects.requireNonNull(idGenerator, "ID generator cannot be null");
+        this.entityDynamics = new ConcurrentHashMap<>();
     }
 
     /**
@@ -54,6 +65,7 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
     public EntityManager(EntityIDGenerator<ID> idGenerator, Map<ID, Entity<Key, Content>> storageMap) {
         this.entities = Objects.requireNonNull(storageMap, "Storage map cannot be null");
         this.idGenerator = Objects.requireNonNull(idGenerator, "ID generator cannot be null");
+        this.entityDynamics = new ConcurrentHashMap<>();
     }
 
     // ===== Entity Creation and Storage =====
@@ -73,6 +85,7 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
      */
     public void clear() {
         entities.clear();
+        entityDynamics.clear();
     }
 
     // ===== Entity Retrieval =====
@@ -106,7 +119,9 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
     public Entity<Key, Content> createOrUpdateEntity(ID entityId, Content content, Point3f position,
                                                      EntityBounds bounds) {
         var entity = entities.get(entityId);
-        if (entity == null) {
+        boolean isNew = (entity == null);
+        
+        if (isNew) {
             entity = bounds != null ? new Entity<>(content, position, bounds) : new Entity<>(content, position);
             entities.put(entityId, entity);
         } else {
@@ -116,6 +131,16 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
                 entity.setBounds(bounds);
             }
         }
+        
+        // Update dynamics if they exist (for existing entities) and auto-dynamics is enabled
+        if (!isNew && autoDynamicsEnabled) {
+            var dynamics = entityDynamics.get(entityId);
+            if (dynamics != null) {
+                long timestamp = frameManager != null ? frameManager.getCurrentFrame() : System.currentTimeMillis();
+                dynamics.updatePosition(position, timestamp);
+            }
+        }
+        
         return entity;
     }
 
@@ -248,6 +273,7 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
      * @return the removed entity, or null if not found
      */
     public Entity<Key, Content> removeEntity(ID entityId) {
+        entityDynamics.remove(entityId);
         return entities.remove(entityId);
     }
 
@@ -292,5 +318,96 @@ public class EntityManager<Key extends SpatialKey<Key>, ID extends EntityID, Con
             throw new IllegalArgumentException("Entity not found: " + entityId);
         }
         entity.setPosition(newPosition);
+        
+        // Also update dynamics if they exist and auto-dynamics is enabled
+        if (autoDynamicsEnabled) {
+            var dynamics = entityDynamics.get(entityId);
+            if (dynamics != null) {
+                long timestamp = frameManager != null ? frameManager.getCurrentFrame() : System.currentTimeMillis();
+                dynamics.updatePosition(newPosition, timestamp);
+            }
+        }
+    }
+
+    // ===== Entity Dynamics Management =====
+
+    /**
+     * Get or create entity dynamics for tracking velocity and acceleration
+     */
+    public EntityDynamics getOrCreateDynamics(ID entityId) {
+        var dynamics = entityDynamics.computeIfAbsent(entityId, k -> new EntityDynamics());
+        var entity = entities.get(entityId);
+        if (entity != null && entity.getDynamics() == null) {
+            entity.setDynamics(dynamics);
+        }
+        return dynamics;
+    }
+
+    /**
+     * Get entity dynamics if available
+     */
+    public EntityDynamics getDynamics(ID entityId) {
+        return entityDynamics.get(entityId);
+    }
+
+    /**
+     * Update entity position with dynamics tracking
+     * @param entityId the entity ID
+     * @param newPosition the new position
+     * @param frameNumber the current frame number for velocity calculation
+     */
+    public void updateEntityPositionWithDynamics(ID entityId, Point3f newPosition, long frameNumber) {
+        updateEntityPosition(entityId, newPosition);
+        var dynamics = getOrCreateDynamics(entityId);
+        dynamics.updatePosition(newPosition, frameNumber);
+    }
+
+    /**
+     * Remove entity dynamics when entity is removed
+     */
+    public void removeDynamics(ID entityId) {
+        entityDynamics.remove(entityId);
+    }
+
+    /**
+     * Clear all dynamics data
+     */
+    public void clearDynamics() {
+        entityDynamics.clear();
+    }
+
+    /**
+     * Get the number of entities with dynamics tracking
+     */
+    public int getDynamicsCount() {
+        return entityDynamics.size();
+    }
+
+    /**
+     * Check if an entity has dynamics tracking
+     */
+    public boolean hasDynamics(ID entityId) {
+        return entityDynamics.containsKey(entityId);
+    }
+
+    /**
+     * Set the frame manager for consistent time tracking
+     */
+    public void setFrameManager(FrameManager frameManager) {
+        this.frameManager = frameManager;
+    }
+
+    /**
+     * Enable or disable automatic dynamics updates during position changes
+     */
+    public void setAutoDynamicsEnabled(boolean enabled) {
+        this.autoDynamicsEnabled = enabled;
+    }
+
+    /**
+     * Check if automatic dynamics updates are enabled
+     */
+    public boolean isAutoDynamicsEnabled() {
+        return autoDynamicsEnabled;
     }
 }

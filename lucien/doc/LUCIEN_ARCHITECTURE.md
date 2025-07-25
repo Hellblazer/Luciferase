@@ -10,7 +10,7 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 172 Java files organized across 14 packages, providing a comprehensive spatial indexing system
+The module consists of 187 Java files organized across 15 packages, providing a comprehensive spatial indexing system
 with advanced features including collision detection, tree balancing, visitor patterns, forest management, and distributed
 ghost support. All core features are complete, including the S0-S5 tetrahedral subdivision, anisotropic prism subdivision,
 and full ghost layer implementation with gRPC communication.
@@ -104,6 +104,15 @@ com.hellblazer.luciferase.lucien/
 │   └── UnorderedPair - Utility for unordered pairs
 ├── geometry/ (1 class)
 │   └── AABBIntersector - AABB intersection utilities
+├── occlusion/ (15 classes)
+│   ├── Core: HierarchicalZBuffer, HierarchicalOcclusionCuller
+│   ├── Configuration: DSOCConfiguration
+│   ├── Management: VisibilityStateManager, FrameManager
+│   ├── TBV: TemporalBoundingVolume, TBVManager
+│   ├── Strategies: TBVStrategy, AdaptiveTBVStrategy, 
+│   │               FixedDurationTBVStrategy, VelocityBasedTBVStrategy
+│   ├── State: VisibilityState, EntityVisibilityInfo, OcclusionType
+│   └── Statistics: OcclusionStatistics
 └── index/ (0 classes)
     └── [Empty directory]
 ```
@@ -321,6 +330,66 @@ The `EntityManager` class provides centralized entity lifecycle:
 - `EntityBounds` - Bounding box for spatial entities
 - `EntityDistance` - Entity-distance pair for k-NN results
 
+## Dynamic Scene Occlusion Culling (DSOC)
+
+The DSOC system provides efficient occlusion culling for dynamic scenes by maintaining Temporal Bounding Volumes (TBVs) for moving entities. DSOC is integrated at the AbstractSpatialIndex level, making it available for all spatial index implementations.
+
+### Core Components
+
+**HierarchicalZBuffer**: Multi-level depth pyramid for efficient occlusion queries
+- Configurable resolution and pyramid levels (typically 6 levels)
+- Thread-safe operations with read-write locking
+- Optimized depth testing with early rejection
+- Camera matrix support for view-space transformations
+
+**HierarchicalOcclusionCuller**: Generic occlusion culling implementation
+- Supports both node-level and entity-level occlusion testing
+- Integration with VisibilityStateManager for TBV handling
+- Comprehensive statistics collection for performance monitoring
+- Configurable occlusion testing strategies
+
+**VisibilityStateManager**: Tracks entity visibility states across frames
+- Manages transitions between VISIBLE, HIDDEN_WITH_TBV, and HIDDEN_EXPIRED states
+- Creates and maintains Temporal Bounding Volumes for occluded entities
+- Implements deferred update strategies for performance optimization
+
+**DSOCConfiguration**: Flexible configuration system with fluent API
+- Pre-configured profiles: defaultConfig(), highPerformance(), highQuality()
+- TBV strategies: Adaptive, Fixed Duration, Velocity-based
+- Fine-grained control over update intervals, quality thresholds, and memory limits
+
+### Integration with AbstractSpatialIndex
+
+DSOC seamlessly integrates with the existing spatial index operations:
+
+```java
+// Enable DSOC on any spatial index
+spatialIndex.enableDSOC(config, bufferWidth, bufferHeight);
+
+// Update camera each frame
+spatialIndex.updateCamera(viewMatrix, projMatrix, cameraPos);
+spatialIndex.nextFrame();
+
+// Frustum culling automatically includes occlusion
+List<FrustumIntersection<ID, Content>> visible = 
+    spatialIndex.frustumCullVisible(frustum, cameraPos);
+```
+
+### Temporal Bounding Volumes (TBVs)
+
+TBVs enable efficient handling of dynamic objects by predicting future positions:
+- Created when entities become occluded
+- Expanded based on velocity and acceleration bounds
+- Tested for visibility without updating spatial structure
+- Expired and refreshed based on quality metrics
+
+### Performance Characteristics
+
+- **Memory overhead**: ~200 bytes per tracked entity, ~300 bytes per TBV
+- **Z-buffer memory**: width × height × levels × 4 bytes
+- **Occlusion test**: O(1) hierarchical depth test
+- **Frame update**: O(visible entities) for Z-buffer updates
+
 ## Key Classes by Package
 
 ### Root Package Classes (26)
@@ -361,6 +430,26 @@ The `EntityManager` class provides centralized entity lifecycle:
 - **EntitySpanningPolicy** - Policy for multi-node entities
 - **LongEntityID**, **UUIDEntityID** - Concrete ID types
 - **SequentialLongIDGenerator**, **UUIDGenerator** - ID generators
+
+### Occlusion Package (15)
+
+Dynamic Scene Occlusion Culling components:
+
+- **HierarchicalZBuffer** - Multi-level depth pyramid for occlusion queries
+- **HierarchicalOcclusionCuller** - Generic occlusion culling implementation
+- **DSOCConfiguration** - Fluent API configuration system
+- **VisibilityStateManager** - Entity visibility state tracking
+- **FrameManager** - Frame counting and synchronization
+- **TemporalBoundingVolume** - TBV representation for occluded entities
+- **TBVManager** - TBV lifecycle management
+- **TBVStrategy** - Abstract strategy for TBV creation
+- **AdaptiveTBVStrategy** - Adapts TBV parameters based on entity behavior
+- **FixedDurationTBVStrategy** - Fixed duration TBVs
+- **VelocityBasedTBVStrategy** - TBVs based on entity velocity
+- **VisibilityState** - Enumeration of visibility states
+- **EntityVisibilityInfo** - Per-entity visibility metadata
+- **OcclusionType** - Types of occlusion (frustum, depth, etc.)
+- **OcclusionStatistics** - Performance metrics collection
 
 ### Lock-Free Package (3) - July 2025
 

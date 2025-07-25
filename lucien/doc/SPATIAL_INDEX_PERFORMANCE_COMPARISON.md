@@ -12,7 +12,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - JVM: Java HotSpot(TM) 64-Bit Server VM 24
 - Processors: 16
 - Memory: 512 MB
-- Date: July 11, 2025 (updated from July 8, 2025)
+- Date: July 25, 2025 (updated from July 11, 2025)
 - Assertions: Disabled (-da flag)
 
 ## Performance Reversal After Concurrent Optimizations
@@ -30,13 +30,13 @@ The July 11, 2025 benchmarks show a complete reversal in insertion performance c
 
 ### Key Findings
 
-1. **Insertion Performance Reversal**: Tetree now outperforms Octree by 2.1x to 6.2x for insertions, a complete reversal from the July 8 results. The ConcurrentSkipListMap appears to favor Tetree's simpler key comparison operations.
+1. **Insertion Performance Reversal Continues**: Tetree outperforms Octree by 1.8x to 5.7x for insertions as of July 25. The ConcurrentSkipListMap continues to favor Tetree's simpler key comparison operations.
 
-2. **Search Performance Moderation**: K-NN search advantages have moderated. Tetree maintains small advantages at lower entity counts but Octree is 1.2x faster at 10K entities.
+2. **Range Query Performance**: Octree dominates range queries with 3.2x to 8.3x better performance across all scales. This represents a significant advantage for spatial range operations.
 
-3. **Memory Trade-off**: Tetree now uses 65-73% of Octree's memory (up from 20-25%), likely due to ConcurrentSkipListMap overhead and consolidated data structures.
+3. **Memory Convergence**: Tetree and Octree memory usage has converged significantly. Tetree now uses 80-99% of Octree's memory, with the difference becoming negligible at larger scales (only 1% difference at 10K entities).
 
-4. **Update Performance**: Results remain mixed, with Tetree performing better at low entity counts but Octree dominating at high counts.
+4. **Update Performance**: Tetree consistently outperforms Octree for updates by 1.7x to 3.0x across all scales, showing strong performance for entity movement operations.
 
 ### Root Cause Analysis
 
@@ -63,18 +63,18 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 ### Use Case Recommendations
 
 **Choose Octree when:**
-- K-NN search performance at scale (>10K entities) is critical
-- Update performance matters at scale
-- Memory usage differences (65-73% vs 100%) are not significant
+- Range query performance is critical (3.2x to 8.3x faster)
+- K-NN search performance at scale (>10K entities) matters
 - Cube-based spatial subdivision fits the problem domain
 - Predictable, consistent performance is required
+- Memory differences are not significant
 
 **Choose Tetree when:**
-- Insertion performance is the primary concern
-- Range query performance is important
+- Insertion performance is the primary concern (1.8x to 5.7x faster)
+- Update/movement performance matters (1.7x to 3.0x faster)
 - Working with concurrent workloads
 - Tetrahedral geometry provides natural fit for problem domain
-- Memory savings of 27-35% are valuable
+- Overall write-heavy workloads dominate
 
 **Choose Prism when:**
 - Data exhibits strong directional bias or anisotropy
@@ -146,6 +146,13 @@ This O(level) degradation was the core reason for Tetree's insertion performance
 - Positioned between Octree and Tetree for most operations
 - Higher memory usage than both alternatives
 - Designed for anisotropic data distributions
+
+### Latest Performance Update (July 25, 2025)
+- Tetree maintains insertion advantage (1.8x to 5.7x faster)
+- Octree shows strong range query performance (3.2x to 8.3x faster)
+- Memory usage nearly converged (only 1-20% difference)
+- Update performance favors Tetree (1.7x to 3.0x faster)
+- DSOC tests fixed to match current implementation behavior
 
 ### Optimization Timeline
 - Parent caching: 17.3x speedup
