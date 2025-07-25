@@ -69,6 +69,12 @@ public class DSOCConfiguration {
     private boolean enableDetailedProfiling = false;
     private int statisticsUpdateInterval = 60; // Frames
     
+    // Core enablement
+    private boolean enabled = true;
+    private float velocityThreshold = 0.1f; // Minimum velocity for TBV creation
+    private boolean alwaysCreateTbv = false; // Force TBV creation regardless of velocity
+    private boolean autoDynamicsEnabled = true; // Enable automatic dynamics tracking
+    
     /**
      * Create a default configuration optimized for general use.
      */
@@ -386,5 +392,48 @@ public class DSOCConfiguration {
     
     public int getStatisticsUpdateInterval() {
         return statisticsUpdateInterval;
+    }
+    
+    public boolean isEnabled() {
+        return enabled;
+    }
+    
+    public DSOCConfiguration withEnabled(boolean enabled) {
+        this.enabled = enabled;
+        return this;
+    }
+    
+    public float getVelocityThreshold() {
+        return velocityThreshold;
+    }
+    
+    public DSOCConfiguration withVelocityThreshold(float threshold) {
+        if (threshold < 0) {
+            throw new IllegalArgumentException("Velocity threshold must be non-negative");
+        }
+        this.velocityThreshold = threshold;
+        return this;
+    }
+    
+    public boolean isAlwaysCreateTbv() {
+        return alwaysCreateTbv;
+    }
+    
+    public DSOCConfiguration withAlwaysCreateTbv(boolean always) {
+        this.alwaysCreateTbv = always;
+        return this;
+    }
+    
+    public boolean isAutoDynamicsEnabled() {
+        return autoDynamicsEnabled;
+    }
+    
+    public DSOCConfiguration withAutoDynamicsEnabled(boolean enabled) {
+        this.autoDynamicsEnabled = enabled;
+        return this;
+    }
+    
+    public boolean isPredictiveUpdates() {
+        return enablePredictiveUpdates;
     }
 }

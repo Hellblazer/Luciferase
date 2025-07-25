@@ -34,9 +34,9 @@ import javax.vecmath.Vector3f;
  *
  * @author hal.hildebrand
  */
-public class TemporalBoundingVolume {
+public class TemporalBoundingVolume<ID> {
     
-    private final Object entityId;
+    private final ID entityId;
     private final EntityBounds originalBounds;
     private final EntityBounds expandedBounds;
     private final int creationFrame;
@@ -54,7 +54,7 @@ public class TemporalBoundingVolume {
      * @param validityDuration The number of frames this TBV remains valid
      * @param expansionFactor Additional expansion factor for conservative estimation
      */
-    public TemporalBoundingVolume(Object entityId, EntityBounds originalBounds, Vector3f velocity, 
+    public TemporalBoundingVolume(ID entityId, EntityBounds originalBounds, Vector3f velocity, 
                                   int creationFrame, int validityDuration, float expansionFactor) {
         this.entityId = entityId;
         this.originalBounds = originalBounds;
@@ -74,7 +74,7 @@ public class TemporalBoundingVolume {
      * @param creationFrame The frame when this TBV was created
      * @param strategy The strategy to determine validity duration and expansion
      */
-    public TemporalBoundingVolume(Object entityId, EntityBounds originalBounds, Vector3f velocity,
+    public TemporalBoundingVolume(ID entityId, EntityBounds originalBounds, Vector3f velocity,
                                   int creationFrame, TBVStrategy strategy) {
         this.entityId = entityId;
         this.originalBounds = originalBounds;
@@ -207,9 +207,16 @@ public class TemporalBoundingVolume {
         return 1.0f - ((float) age / validityDuration);
     }
     
+    /**
+     * Get the maximum velocity used for expansion calculation
+     */
+    public Vector3f getMaxVelocity() {
+        return new Vector3f(velocity);
+    }
+    
     // Getters
     
-    public Object getEntityId() {
+    public ID getEntityId() {
         return entityId;
     }
     
