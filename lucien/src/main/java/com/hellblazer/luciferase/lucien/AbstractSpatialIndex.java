@@ -120,6 +120,16 @@ implements SpatialIndex<Key, ID, Content> {
     protected       ParallelBulkOperations<Key, ID, Content>         parallelOperations;
     protected float[] currentViewMatrix;
     protected float[] currentProjectionMatrix;
+    
+    // DSOC performance monitoring
+    private volatile long dsocFrameCount = 0;
+    private volatile long dsocTotalTime = 0;
+    private volatile long standardFrameCount = 0;
+    private volatile long standardTotalTime = 0;
+    private volatile boolean dsocAutoDisabled = false;
+    private static final int MIN_FRAMES_FOR_EVALUATION = 10;
+    private static final double PERFORMANCE_THRESHOLD_MULTIPLIER = 1.2; // 20% overhead tolerance
+    private static final int EVALUATION_INTERVAL = 50; // Check every 50 frames
     protected       SubdivisionStrategy<Key, ID, Content>            subdivisionStrategy;
     protected       StackBasedTreeBuilder<Key, ID, Content>          treeBuilder;
     // Tree balancing support
@@ -737,63 +747,22 @@ implements SpatialIndex<Key, ID, Content> {
      * @return list of frustum intersections sorted by distance from camera
      */
     public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
-        // Use DSOC if enabled
-        if (isDSOCEnabled() && dsocConfig.isEnableHierarchicalOcclusion()) {
-            return frustumCullVisibleWithDSOC(frustum, cameraPosition);
+        // Check if DSOC should be auto-disabled
+        if (isDSOCEnabled() && !dsocAutoDisabled && shouldEvaluatePerformance()) {
+            if (shouldAutoDisableDSOC()) {
+                log.warn("Auto-disabling DSOC due to performance degradation: {}x overhead", 
+                        getDSOCOverheadMultiplier());
+                dsocAutoDisabled = true;
+            }
         }
         
-        lock.readLock().lock();
-        try {
-            var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
-            var visitedEntities = ObjectPools.<ID>borrowHashSet();
-            try {
-                // Traverse nodes that could intersect with the frustum
-                getFrustumTraversalOrder(frustum, cameraPosition).forEach(nodeIndex -> {
-                    var node = spatialIndex.get(nodeIndex);
-                    if (node == null || node.isEmpty()) {
-                        return;
-                    }
-
-                    // Check if frustum intersects this node
-                    if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
-                        return;
-                    }
-
-                    // Check each entity in the node
-                    for (ID entityId : node.getEntityIds()) {
-                        // Skip if already processed (for spanning entities)
-                        if (!visitedEntities.add(entityId)) {
-                            continue;
-                        }
-
-                        var content = entityManager.getEntityContent(entityId);
-                        if (content == null) {
-                            continue;
-                        }
-
-                        var entityPos = getCachedEntityPosition(entityId);
-                        var bounds = getCachedEntityBounds(entityId);
-
-                        // Calculate frustum-entity intersection
-                        var intersection = calculateFrustumEntityIntersection(frustum, cameraPosition, entityId,
-                                                                              content, entityPos, bounds);
-
-                        if (intersection != null && intersection.isVisible()) {
-                            intersections.add(intersection);
-                        }
-                    }
-                });
-
-                Collections.sort(intersections);
-                // Return a copy to avoid returning pooled object
-                return new ArrayList<>(intersections);
-            } finally {
-                ObjectPools.returnArrayList(intersections);
-                ObjectPools.returnHashSet(visitedEntities);
-            }
-        } finally {
-            lock.readLock().unlock();
+        // Use DSOC if enabled and not auto-disabled
+        if (isDSOCEnabled() && !dsocAutoDisabled && dsocConfig.isEnableHierarchicalOcclusion()) {
+            return measureAndExecute(() -> frustumCullVisibleWithDSOC(frustum, cameraPosition), true);
         }
+        
+        // Use standard frustum culling with performance measurement
+        return measureAndExecute(() -> frustumCullVisibleStandard(frustum, cameraPosition), false);
     }
 
     @Override
@@ -5060,10 +5029,10 @@ implements SpatialIndex<Key, ID, Content> {
     }
     
     /**
-     * Check if DSOC is enabled
+     * Check if DSOC is enabled and not auto-disabled
      */
     public boolean isDSOCEnabled() {
-        return dsocConfig != null && dsocConfig.isEnabled();
+        return dsocConfig != null && dsocConfig.isEnabled() && !dsocAutoDisabled;
     }
     
     /**
@@ -5282,6 +5251,120 @@ implements SpatialIndex<Key, ID, Content> {
         } finally {
             lock.readLock().unlock();
         }
+    }
+    
+    /**
+     * Standard frustum culling without DSOC optimizations
+     */
+    protected List<FrustumIntersection<ID, Content>> frustumCullVisibleStandard(Frustum3D frustum, Point3f cameraPosition) {
+        lock.readLock().lock();
+        try {
+            var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
+            var visitedEntities = ObjectPools.<ID>borrowHashSet();
+            try {
+                // Traverse nodes that could intersect with the frustum
+                getFrustumTraversalOrder(frustum, cameraPosition).forEach(nodeIndex -> {
+                    var node = spatialIndex.get(nodeIndex);
+                    if (node == null || node.isEmpty()) {
+                        return;
+                    }
+
+                    // Check if frustum intersects this node
+                    if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
+                        return;
+                    }
+
+                    // Check each entity in the node
+                    for (ID entityId : node.getEntityIds()) {
+                        // Skip if already processed (for spanning entities)
+                        if (!visitedEntities.add(entityId)) {
+                            continue;
+                        }
+
+                        var content = entityManager.getEntityContent(entityId);
+                        if (content == null) {
+                            continue;
+                        }
+
+                        var entityPos = getCachedEntityPosition(entityId);
+                        var bounds = getCachedEntityBounds(entityId);
+
+                        // Calculate frustum-entity intersection
+                        var intersection = calculateFrustumEntityIntersection(frustum, cameraPosition, entityId,
+                                                                              content, entityPos, bounds);
+
+                        if (intersection != null && intersection.isVisible()) {
+                            intersections.add(intersection);
+                        }
+                    }
+                });
+
+                Collections.sort(intersections);
+                // Return a copy to avoid returning pooled object
+                return new ArrayList<>(intersections);
+            } finally {
+                ObjectPools.returnArrayList(intersections);
+                ObjectPools.returnHashSet(visitedEntities);
+            }
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Performance monitoring wrapper for frustum culling operations
+     */
+    protected List<FrustumIntersection<ID, Content>> measureAndExecute(
+            java.util.function.Supplier<List<FrustumIntersection<ID, Content>>> operation, 
+            boolean isDSOC) {
+        long startTime = System.nanoTime();
+        try {
+            return operation.get();
+        } finally {
+            long duration = System.nanoTime() - startTime;
+            if (isDSOC) {
+                dsocFrameCount++;
+                dsocTotalTime += duration;
+            } else {
+                standardFrameCount++;
+                standardTotalTime += duration;
+            }
+        }
+    }
+    
+    /**
+     * Check if DSOC performance should be evaluated
+     */
+    protected boolean shouldEvaluatePerformance() {
+        return (dsocFrameCount + standardFrameCount) % EVALUATION_INTERVAL == 0;
+    }
+    
+    /**
+     * Determine if DSOC should be auto-disabled due to poor performance
+     */
+    protected boolean shouldAutoDisableDSOC() {
+        if (dsocFrameCount < MIN_FRAMES_FOR_EVALUATION || standardFrameCount < MIN_FRAMES_FOR_EVALUATION) {
+            return false;
+        }
+        
+        double dsocAvgTime = (double) dsocTotalTime / dsocFrameCount;
+        double standardAvgTime = (double) standardTotalTime / standardFrameCount;
+        
+        return dsocAvgTime > PERFORMANCE_THRESHOLD_MULTIPLIER * standardAvgTime;
+    }
+    
+    /**
+     * Get the current DSOC performance overhead multiplier
+     */
+    protected double getDSOCOverheadMultiplier() {
+        if (dsocFrameCount == 0 || standardFrameCount == 0) {
+            return 1.0;
+        }
+        
+        double dsocAvgTime = (double) dsocTotalTime / dsocFrameCount;
+        double standardAvgTime = (double) standardTotalTime / standardFrameCount;
+        
+        return dsocAvgTime / standardAvgTime;
     }
 
 }

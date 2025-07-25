@@ -69,8 +69,8 @@ public class DSOCConfiguration {
     private boolean enableDetailedProfiling = false;
     private int statisticsUpdateInterval = 60; // Frames
     
-    // Core enablement
-    private boolean enabled = true;
+    // Core enablement - DISABLED BY DEFAULT due to performance issues
+    private boolean enabled = false;
     private float velocityThreshold = 0.1f; // Minimum velocity for TBV creation
     private boolean alwaysCreateTbv = false; // Force TBV creation regardless of velocity
     private boolean autoDynamicsEnabled = true; // Enable automatic dynamics tracking
