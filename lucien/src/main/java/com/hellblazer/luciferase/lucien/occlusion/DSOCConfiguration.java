@@ -75,6 +75,15 @@ public class DSOCConfiguration {
     private boolean alwaysCreateTbv = false; // Force TBV creation regardless of velocity
     private boolean autoDynamicsEnabled = true; // Enable automatic dynamics tracking
     
+    // Hierarchical occlusion parameters
+    private boolean enableHierarchicalOcclusion = true;
+    private int zPyramidLevels = 6; // Number of levels in Z-buffer pyramid
+    private boolean enableNodeOcclusion = true; // Test occlusion at node level
+    private boolean enableEntityOcclusion = true; // Test occlusion at entity level
+    private boolean renderNodesAsOccluders = true; // Use nodes as occluders
+    private boolean renderEntitiesAsOccluders = true; // Use entities as occluders
+    private float minOccluderVolume = 100.0f; // Minimum volume to be an occluder
+    
     /**
      * Create a default configuration optimized for general use.
      */
@@ -435,5 +444,76 @@ public class DSOCConfiguration {
     
     public boolean isPredictiveUpdates() {
         return enablePredictiveUpdates;
+    }
+    
+    // Hierarchical occlusion getters
+    
+    public boolean isEnableHierarchicalOcclusion() {
+        return enableHierarchicalOcclusion;
+    }
+    
+    public DSOCConfiguration withEnableHierarchicalOcclusion(boolean enable) {
+        this.enableHierarchicalOcclusion = enable;
+        return this;
+    }
+    
+    public int getZPyramidLevels() {
+        return zPyramidLevels;
+    }
+    
+    public DSOCConfiguration withZPyramidLevels(int levels) {
+        if (levels <= 0) {
+            throw new IllegalArgumentException("Z-pyramid levels must be positive");
+        }
+        this.zPyramidLevels = levels;
+        return this;
+    }
+    
+    public boolean isEnableNodeOcclusion() {
+        return enableNodeOcclusion;
+    }
+    
+    public DSOCConfiguration withEnableNodeOcclusion(boolean enable) {
+        this.enableNodeOcclusion = enable;
+        return this;
+    }
+    
+    public boolean isEnableEntityOcclusion() {
+        return enableEntityOcclusion;
+    }
+    
+    public DSOCConfiguration withEnableEntityOcclusion(boolean enable) {
+        this.enableEntityOcclusion = enable;
+        return this;
+    }
+    
+    public boolean isRenderNodesAsOccluders() {
+        return renderNodesAsOccluders;
+    }
+    
+    public DSOCConfiguration withRenderNodesAsOccluders(boolean enable) {
+        this.renderNodesAsOccluders = enable;
+        return this;
+    }
+    
+    public boolean isRenderEntitiesAsOccluders() {
+        return renderEntitiesAsOccluders;
+    }
+    
+    public DSOCConfiguration withRenderEntitiesAsOccluders(boolean enable) {
+        this.renderEntitiesAsOccluders = enable;
+        return this;
+    }
+    
+    public float getMinOccluderVolume() {
+        return minOccluderVolume;
+    }
+    
+    public DSOCConfiguration withMinOccluderVolume(float volume) {
+        if (volume < 0) {
+            throw new IllegalArgumentException("Min occluder volume must be non-negative");
+        }
+        this.minOccluderVolume = volume;
+        return this;
     }
 }

@@ -68,12 +68,12 @@ public class DSOCAwareSpatialIndexTest {
             }
         }
         
-        public void nextFrame() {
-            frameManager.incrementFrame();
+        public long nextFrame() {
+            return frameManager.incrementFrame();
         }
         
-        public int getCurrentFrame() {
-            return (int) frameManager.getCurrentFrame();
+        public long getCurrentFrame() {
+            return frameManager.getCurrentFrame();
         }
         
         public void forceEntityUpdate(LongEntityID entityId) {

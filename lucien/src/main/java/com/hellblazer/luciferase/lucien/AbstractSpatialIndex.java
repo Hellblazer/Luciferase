@@ -24,6 +24,8 @@ import com.hellblazer.luciferase.lucien.collision.CollisionShape;
 import com.hellblazer.luciferase.lucien.entity.*;
 import com.hellblazer.luciferase.lucien.forest.ghost.*;
 import com.hellblazer.luciferase.lucien.internal.EntityCache;
+import com.hellblazer.luciferase.lucien.occlusion.*;
+import com.hellblazer.luciferase.lucien.FrustumIntersection.VisibilityType;
 import com.hellblazer.luciferase.lucien.internal.ObjectPools;
 import com.hellblazer.luciferase.lucien.internal.UnorderedPair;
 import com.hellblazer.luciferase.lucien.neighbor.NeighborDetector;
@@ -109,7 +111,15 @@ implements SpatialIndex<Key, ID, Content> {
     protected       BulkOperationProcessor<Key, ID, Content>         bulkProcessor;
     protected       DeferredSubdivisionManager<Key, ID>              subdivisionManager;
     protected       SpatialNodePool<ID>                              nodePool;
+    
+    // DSOC fields (optional)
+    protected DSOCConfiguration dsocConfig;
+    protected FrameManager frameManager;
+    protected VisibilityStateManager<ID> visibilityManager;
+    protected HierarchicalOcclusionCuller<Key, ID, Content> occlusionCuller;
     protected       ParallelBulkOperations<Key, ID, Content>         parallelOperations;
+    protected float[] currentViewMatrix;
+    protected float[] currentProjectionMatrix;
     protected       SubdivisionStrategy<Key, ID, Content>            subdivisionStrategy;
     protected       StackBasedTreeBuilder<Key, ID, Content>          treeBuilder;
     // Tree balancing support
@@ -727,6 +737,11 @@ implements SpatialIndex<Key, ID, Content> {
      * @return list of frustum intersections sorted by distance from camera
      */
     public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
+        // Use DSOC if enabled
+        if (isDSOCEnabled() && dsocConfig.isEnableHierarchicalOcclusion()) {
+            return frustumCullVisibleWithDSOC(frustum, cameraPosition);
+        }
+        
         lock.readLock().lock();
         try {
             var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
@@ -2284,6 +2299,33 @@ implements SpatialIndex<Key, ID, Content> {
         lock.writeLock().lock();
         try {
             validateSpatialConstraints(newPosition);
+            
+            // Handle DSOC deferred updates
+            if (isDSOCEnabled() && visibilityManager != null) {
+                long currentFrame = getCurrentFrame();
+                var state = visibilityManager.getState(entityId);
+                if (state == VisibilityStateManager.VisibilityState.HIDDEN_WITH_TBV) {
+                    var tbv = visibilityManager.getTBV(entityId);
+                    if (tbv != null && tbv.isValid((int) currentFrame)) {
+                        // Defer update - just update dynamics
+                        var dynamics = entityManager.getDynamics(entityId);
+                        if (dynamics != null) {
+                            dynamics.updatePosition(newPosition, currentFrame);
+                            
+                            // Check if TBV needs refresh
+                            float quality = tbv.getQuality((int) currentFrame);
+                            if (quality < dsocConfig.getTbvRefreshThreshold()) {
+                                var bounds = entityManager.getEntityBounds(entityId);
+                                if (bounds == null) {
+                                    bounds = new EntityBounds(newPosition, 0.1f);
+                                }
+                                visibilityManager.createTBV(entityId, dynamics, bounds, currentFrame);
+                            }
+                        }
+                        return; // Skip normal update
+                    }
+                }
+            }
 
             // Get the old position to calculate movement delta
             var oldPosition = entityManager.getEntityPosition(entityId);
@@ -2336,6 +2378,11 @@ implements SpatialIndex<Key, ID, Content> {
 
             // Re-insert at new position
             insertAtPosition(entityId, newPosition, level);
+            
+            // Update visibility state if DSOC is enabled
+            if (isDSOCEnabled() && visibilityManager != null) {
+                visibilityManager.updateVisibility(entityId, true, (int) getCurrentFrame());
+            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -2448,6 +2495,9 @@ implements SpatialIndex<Key, ID, Content> {
      * Create a new node instance
      */
     protected SpatialNodeImpl<ID> createNode() {
+        if (isDSOCEnabled()) {
+            return new OcclusionAwareSpatialNode<>(maxEntitiesPerNode);
+        }
         return new SpatialNodeImpl<>(maxEntitiesPerNode);
     }
 
@@ -4961,6 +5011,276 @@ implements SpatialIndex<Key, ID, Content> {
             distributedGhostManager.shutdown();
             distributedGhostManager = null;
             log.info("Distributed ghost management shut down");
+        }
+    }
+    
+    
+    /**
+     * Compute the bounds for a spatial node.
+     * This method should be overridden by subclasses to provide
+     * implementation-specific bounds calculation.
+     * 
+     * @param key the spatial key of the node
+     * @return the entity bounds for the node, or null if not computable
+     */
+    public EntityBounds computeNodeBounds(Key key) {
+        // Default implementation returns null
+        // Subclasses (Octree, Tetree) should override this
+        return null;
+    }
+    
+    /**
+     * Enable Dynamic Scene Occlusion Culling (DSOC) for this spatial index
+     * 
+     * @param config DSOC configuration
+     * @param bufferWidth Z-buffer width
+     * @param bufferHeight Z-buffer height
+     */
+    public void enableDSOC(DSOCConfiguration config, int bufferWidth, int bufferHeight) {
+        this.dsocConfig = config;
+        
+        if (config.isEnabled()) {
+            this.frameManager = new FrameManager();
+            this.visibilityManager = new VisibilityStateManager<>(config);
+            this.occlusionCuller = new HierarchicalOcclusionCuller<>(bufferWidth, bufferHeight, config);
+            
+            // Enable auto-dynamics if configured
+            if (config.isAutoDynamicsEnabled()) {
+                entityManager.setAutoDynamicsEnabled(true);
+                entityManager.setFrameManager(frameManager);
+            }
+        }
+    }
+    
+    /**
+     * Enable DSOC with default buffer size
+     */
+    public void enableDSOC(DSOCConfiguration config) {
+        enableDSOC(config, 1024, 1024);
+    }
+    
+    /**
+     * Check if DSOC is enabled
+     */
+    public boolean isDSOCEnabled() {
+        return dsocConfig != null && dsocConfig.isEnabled();
+    }
+    
+    /**
+     * Update camera matrices for occlusion culling
+     */
+    public void updateCamera(float[] viewMatrix, float[] projectionMatrix, Point3f cameraPosition) {
+        if (isDSOCEnabled() && viewMatrix != null && projectionMatrix != null) {
+            // Store the camera matrices for use in beginFrame
+            this.currentViewMatrix = viewMatrix.clone();
+            this.currentProjectionMatrix = projectionMatrix.clone();
+        }
+    }
+    
+    /**
+     * Advance to next frame (for DSOC)
+     */
+    public long nextFrame() {
+        if (frameManager != null) {
+            return frameManager.incrementFrame();
+        }
+        return 0;
+    }
+    
+    /**
+     * Get current frame number
+     */
+    public long getCurrentFrame() {
+        if (frameManager != null) {
+            return frameManager.getCurrentFrame();
+        }
+        return 0;
+    }
+    
+    /**
+     * Get DSOC statistics
+     * 
+     * @return Map of statistics
+     */
+    public Map<String, Object> getDSOCStatistics() {
+        Map<String, Object> stats = new HashMap<>();
+        
+        if (isDSOCEnabled()) {
+            stats.put("dsocEnabled", true);
+            stats.put("currentFrame", getCurrentFrame());
+            
+            // Add visibility statistics
+            if (visibilityManager != null) {
+                stats.putAll(visibilityManager.getStatistics());
+            }
+            
+            // Add occlusion culler statistics
+            if (occlusionCuller != null) {
+                stats.putAll(occlusionCuller.getStatistics());
+            }
+            
+            // Override totalEntities with the actual entity count from entityManager
+            stats.put("totalEntities", (long) entityManager.getEntityCount());
+        } else {
+            stats.put("dsocEnabled", false);
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * Get entities that need position updates
+     * 
+     * @return Set of entity IDs needing updates
+     */
+    public Set<ID> getEntitiesNeedingUpdate() {
+        if (occlusionCuller != null) {
+            return occlusionCuller.getEntitiesNeedingUpdate();
+        }
+        return new HashSet<>();
+    }
+    
+    /**
+     * Reset DSOC statistics
+     */
+    public void resetDSOCStatistics() {
+        if (occlusionCuller != null) {
+            occlusionCuller.resetStatistics();
+        }
+    }
+    
+    /**
+     * Creates a 4x4 identity matrix
+     */
+    private float[] createIdentityMatrix() {
+        float[] matrix = new float[16];
+        matrix[0] = 1.0f;
+        matrix[5] = 1.0f;
+        matrix[10] = 1.0f;
+        matrix[15] = 1.0f;
+        return matrix;
+    }
+    
+    /**
+     * Perform frustum culling with DSOC
+     */
+    protected List<FrustumIntersection<ID, Content>> frustumCullVisibleWithDSOC(Frustum3D frustum, Point3f cameraPosition) {
+        if (occlusionCuller == null) {
+            throw new IllegalStateException("DSOC not enabled");
+        }
+        
+        lock.readLock().lock();
+        try {
+            var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
+            var visitedEntities = ObjectPools.<ID>borrowHashSet();
+            
+            // Begin occlusion frame
+            // Use stored camera matrices from updateCamera or create identity matrices if not set
+            float[] viewMatrix = currentViewMatrix != null ? currentViewMatrix : createIdentityMatrix();
+            float[] projectionMatrix = currentProjectionMatrix != null ? currentProjectionMatrix : createIdentityMatrix();
+            occlusionCuller.beginFrame(viewMatrix, projectionMatrix, frustum);
+            
+            try {
+                // Get nodes in front-to-back order
+                var frustumNodes = getFrustumTraversalOrder(frustum, cameraPosition).collect(Collectors.toList());
+                
+                // Process nodes with occlusion testing
+                for (Key nodeIndex : frustumNodes) {
+                    var node = spatialIndex.get(nodeIndex);
+                    if (node == null || node.isEmpty()) {
+                        continue;
+                    }
+                    
+                    // Check if frustum intersects this node
+                    if (!doesFrustumIntersectNode(nodeIndex, frustum)) {
+                        continue;
+                    }
+                    
+                    // Test node-level occlusion
+                    EntityBounds nodeBounds = computeNodeBounds(nodeIndex);
+                    if (nodeBounds != null && occlusionCuller.isNodeOccluded(nodeBounds)) {
+                        // Still need to check TBVs even if node is occluded
+                        if (node instanceof OcclusionAwareSpatialNode) {
+                            OcclusionAwareSpatialNode<ID> occNode = (OcclusionAwareSpatialNode<ID>) node;
+                            occNode.markOccluded(getCurrentFrame());
+                            
+                            // Check TBVs
+                            for (var tbv : occNode.getTBVs()) {
+                                occlusionCuller.isTBVVisible(tbv, frustum, getCurrentFrame());
+                            }
+                        }
+                        continue;
+                    }
+                    
+                    // Node is visible - mark it if occlusion-aware
+                    if (node instanceof OcclusionAwareSpatialNode) {
+                        ((OcclusionAwareSpatialNode<ID>) node).markVisible(getCurrentFrame());
+                    }
+                    
+                    // Process entities in the node
+                    for (ID entityId : node.getEntityIds()) {
+                        // Skip if already processed
+                        if (!visitedEntities.add(entityId)) {
+                            continue;
+                        }
+                        
+                        var content = entityManager.getEntityContent(entityId);
+                        if (content == null) {
+                            continue;
+                        }
+                        
+                        var entityPos = getCachedEntityPosition(entityId);
+                        if (entityPos == null) {
+                            continue;
+                        }
+                        
+                        // Frustum test
+                        var entityBounds = entityManager.getEntityBounds(entityId);
+                        if (entityBounds == null) {
+                            entityBounds = new EntityBounds(entityPos, 0.1f);
+                        }
+                        
+                        if (!frustum.intersects(entityBounds)) {
+                            occlusionCuller.incrementFrustumCulled();
+                            continue;
+                        }
+                        
+                        // Occlusion test
+                        if (occlusionCuller.isEntityOccluded(entityBounds)) {
+                            continue;
+                        }
+                        
+                        // Entity is visible
+                        float distance = entityPos.distance(cameraPosition);
+                        var intersection = new FrustumIntersection<>(entityId, content, distance, 
+                                                                    entityPos, VisibilityType.INSIDE, entityBounds);
+                        intersections.add(intersection);
+                        occlusionCuller.incrementEntitiesVisible();
+                        
+                        // Render as occluder if configured
+                        if (dsocConfig.isRenderEntitiesAsOccluders()) {
+                            occlusionCuller.renderOccluder(entityBounds);
+                        }
+                    }
+                    
+                    // Render node as occluder if configured
+                    if (dsocConfig.isRenderNodesAsOccluders() && nodeBounds != null) {
+                        occlusionCuller.renderOccluder(nodeBounds);
+                    }
+                }
+                
+                // Sort by distance
+                intersections.sort(Comparator.comparingDouble(FrustumIntersection::distanceFromCamera));
+                
+                return new ArrayList<>(intersections);
+                
+            } finally {
+                occlusionCuller.endFrame();
+                ObjectPools.returnArrayList(intersections);
+                ObjectPools.returnHashSet(visitedEntities);
+            }
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
