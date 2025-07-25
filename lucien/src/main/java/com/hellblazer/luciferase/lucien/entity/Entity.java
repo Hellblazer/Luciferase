@@ -36,6 +36,7 @@ public class Entity<Key extends SpatialKey<Key>, Content> {
     private       Point3f        position;
     private       EntityBounds   bounds;
     private       CollisionShape collisionShape;
+    private       EntityDynamics dynamics; // Optional dynamics tracking
 
     /**
      * Create an entity with content and position
@@ -167,5 +168,26 @@ public class Entity<Key extends SpatialKey<Key>, Content> {
      */
     public void setPosition(Point3f newPosition) {
         this.position = new Point3f(newPosition);
+    }
+
+    /**
+     * Get the entity's dynamics (may be null)
+     */
+    public EntityDynamics getDynamics() {
+        return dynamics;
+    }
+
+    /**
+     * Set the entity's dynamics
+     */
+    public void setDynamics(EntityDynamics dynamics) {
+        this.dynamics = dynamics;
+    }
+
+    /**
+     * Check if entity has dynamics tracking
+     */
+    public boolean hasDynamics() {
+        return dynamics != null;
     }
 }
