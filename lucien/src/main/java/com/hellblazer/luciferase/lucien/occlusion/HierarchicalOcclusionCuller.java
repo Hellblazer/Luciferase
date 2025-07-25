@@ -40,23 +40,33 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     
-    private final HierarchicalZBuffer zBuffer;
+    private HierarchicalZBuffer zBuffer; // Now lazy-initialized
     private final DSOCConfiguration config;
     private final OcclusionStatistics statistics;
     // Comparator removed - front-to-back sorting handled in AbstractSpatialIndex
     private final Set<ID> entitiesNeedingUpdate = ConcurrentHashMap.newKeySet();
     
+    // Lazy initialization support
+    private final int requestedBufferWidth;
+    private final int requestedBufferHeight;
+    private int occluderCount = 0;
+    private static final int MIN_OCCLUDERS_FOR_ACTIVATION = 3;
+    private static final int MIN_ENTITIES_FOR_ZBUFFER = 100;
+    private boolean zBufferActivated = false;
+    
     /**
-     * Creates a hierarchical occlusion culler
+     * Creates a hierarchical occlusion culler with lazy Z-buffer initialization
      * 
-     * @param bufferWidth Z-buffer width
-     * @param bufferHeight Z-buffer height
+     * @param bufferWidth Z-buffer width (used when activated)
+     * @param bufferHeight Z-buffer height (used when activated)
      * @param config DSOC configuration
      */
     public HierarchicalOcclusionCuller(int bufferWidth, int bufferHeight, DSOCConfiguration config) {
-        this.zBuffer = new HierarchicalZBuffer(bufferWidth, bufferHeight, config.getZPyramidLevels());
+        this.requestedBufferWidth = bufferWidth;
+        this.requestedBufferHeight = bufferHeight;
         this.config = config;
         this.statistics = new OcclusionStatistics();
+        this.zBuffer = null; // Lazy initialization
         // Front-to-back comparator removed - handled in AbstractSpatialIndex
     }
     
@@ -67,7 +77,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      * @return true if the node is occluded
      */
     public boolean isNodeOccluded(EntityBounds nodeBounds) {
-        if (!config.isEnableNodeOcclusion()) {
+        if (!config.isEnableNodeOcclusion() || !isZBufferActive()) {
             return false;
         }
         statistics.nodesTested.incrementAndGet();
@@ -85,7 +95,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      * @return true if the entity is occluded
      */
     public boolean isEntityOccluded(EntityBounds entityBounds) {
-        if (!config.isEnableEntityOcclusion()) {
+        if (!config.isEnableEntityOcclusion() || !isZBufferActive()) {
             return false;
         }
         statistics.entitiesTested.incrementAndGet();
@@ -103,8 +113,17 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      */
     public void renderOccluder(EntityBounds bounds) {
         if (bounds.volume() > config.getMinOccluderVolume()) {
-            zBuffer.renderOccluder(bounds);
-            statistics.occludersRendered.incrementAndGet();
+            occluderCount++;
+            
+            // Initialize Z-buffer when we have enough occluders
+            if (!zBufferActivated && shouldActivateZBuffer()) {
+                activateZBuffer();
+            }
+            
+            if (isZBufferActive()) {
+                zBuffer.renderOccluder(bounds);
+                statistics.occludersRendered.incrementAndGet();
+            }
         }
     }
     
@@ -117,16 +136,25 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
      */
     public void beginFrame(float[] viewMatrix, float[] projectionMatrix, Frustum3D frustum) {
         statistics.beginFrame();
-        zBuffer.updateCamera(viewMatrix, projectionMatrix, 
-                           frustum.getNearPlane(), frustum.getFarPlane());
-        zBuffer.clear();
+        
+        // Only update Z-buffer if it's active
+        if (isZBufferActive()) {
+            zBuffer.updateCamera(viewMatrix, projectionMatrix, 
+                               frustum.getNearPlane(), frustum.getFarPlane());
+            zBuffer.clear();
+        }
+        
+        // Reset occluder count for this frame
+        occluderCount = 0;
     }
     
     /**
      * End the current frame
      */
     public void endFrame() {
-        zBuffer.updateHierarchy();
+        if (isZBufferActive()) {
+            zBuffer.updateHierarchy();
+        }
         statistics.endFrame();
     }
     
@@ -148,8 +176,8 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
             return false;
         }
         
-        // Occlusion test
-        if (zBuffer.isOccluded(tbvBounds)) {
+        // Occlusion test (only if Z-buffer is active)
+        if (isZBufferActive() && zBuffer.isOccluded(tbvBounds)) {
             statistics.tbvsOccluded.incrementAndGet();
             return false;
         }
@@ -216,6 +244,63 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
     }
     
     
+    /**
+     * Check if Z-buffer should be activated based on current conditions
+     */
+    private boolean shouldActivateZBuffer() {
+        return occluderCount >= MIN_OCCLUDERS_FOR_ACTIVATION;
+    }
+    
+    /**
+     * Activate the Z-buffer with adaptive sizing
+     */
+    private void activateZBuffer() {
+        if (zBufferActivated) {
+            return;
+        }
+        
+        // Calculate optimal dimensions based on current scene characteristics
+        double occluderDensity = Math.min(1.0, occluderCount / 100.0); // Estimate density
+        float sceneBounds = 1000.0f; // Default scene bounds - could be made configurable
+        
+        var optimalConfig = AdaptiveZBufferConfig.calculateOptimalDimensions(
+                MIN_ENTITIES_FOR_ZBUFFER, sceneBounds, occluderDensity);
+        
+        this.zBuffer = new HierarchicalZBuffer(optimalConfig);
+        this.zBufferActivated = true;
+        
+        statistics.zBufferActivations.incrementAndGet();
+    }
+    
+    /**
+     * Check if Z-buffer is active and ready for use
+     */
+    private boolean isZBufferActive() {
+        return zBufferActivated && zBuffer != null;
+    }
+    
+    /**
+     * Get Z-buffer activation status for external monitoring
+     */
+    public boolean isActivated() {
+        return zBufferActivated;
+    }
+    
+    /**
+     * Get current memory usage of Z-buffer
+     */
+    public long getMemoryUsage() {
+        return isZBufferActive() ? zBuffer.getMemoryUsage() : 0;
+    }
+    
+    /**
+     * Force Z-buffer activation (for testing or manual control)
+     */
+    public void forceActivate() {
+        if (!zBufferActivated) {
+            activateZBuffer();
+        }
+    }
     
     /**
      * Occlusion statistics tracking
@@ -233,6 +318,7 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
         final AtomicLong tbvsVisible = new AtomicLong();
         final AtomicLong tbvsExpired = new AtomicLong();
         final AtomicLong occludersRendered = new AtomicLong();
+        final AtomicLong zBufferActivations = new AtomicLong();
         
         private long frameStartTime;
         private final AtomicLong totalFrameTime = new AtomicLong();

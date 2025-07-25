@@ -30,11 +30,16 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public class HierarchicalZBuffer {
     
-    private final int width;
-    private final int height;
-    private final int levels;
-    private final float[][] zBuffers;
+    private int width;
+    private int height;
+    private int levels;
+    private float[][] zBuffers;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    
+    // Adaptive sizing support
+    private AdaptiveZBufferConfig.DimensionConfig currentConfig;
+    private long lastAdaptationTime = 0;
+    private static final long ADAPTATION_COOLDOWN_MS = 5000; // 5 seconds between adaptations
     
     // Camera parameters
     private float[] viewMatrix = new float[16];
@@ -51,9 +56,27 @@ public class HierarchicalZBuffer {
      * @param levels Number of hierarchy levels
      */
     public HierarchicalZBuffer(int width, int height, int levels) {
-        this.width = width;
-        this.height = height;
-        this.levels = levels;
+        this.currentConfig = new AdaptiveZBufferConfig.DimensionConfig(width, height, levels);
+        initializeBuffers(currentConfig);
+    }
+    
+    /**
+     * Creates a hierarchical Z-buffer with adaptive configuration
+     * 
+     * @param config Dimension configuration
+     */
+    public HierarchicalZBuffer(AdaptiveZBufferConfig.DimensionConfig config) {
+        this.currentConfig = config;
+        initializeBuffers(config);
+    }
+    
+    /**
+     * Initialize Z-buffers with given configuration
+     */
+    private void initializeBuffers(AdaptiveZBufferConfig.DimensionConfig config) {
+        this.width = config.width;
+        this.height = config.height;
+        this.levels = config.levels;
         
         // Allocate buffers for each level
         this.zBuffers = new float[levels][];
@@ -390,6 +413,75 @@ public class HierarchicalZBuffer {
             }
             result[i] = sum;
         }
+    }
+    
+    /**
+     * Adapt Z-buffer resolution based on effectiveness and memory pressure
+     * 
+     * @param effectiveness Current occlusion effectiveness (0.0 - 1.0)
+     * @param memoryPressure Current memory pressure (0.0 - 1.0)
+     * @return true if buffer was resized
+     */
+    public boolean adaptResolution(double effectiveness, double memoryPressure) {
+        // Check cooldown to prevent thrashing
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastAdaptationTime < ADAPTATION_COOLDOWN_MS) {
+            return false;
+        }
+        
+        // Determine if adaptation is needed
+        var newConfig = AdaptiveZBufferConfig.adaptForEffectiveness(currentConfig, effectiveness, memoryPressure);
+        
+        if (newConfig != null && AdaptiveZBufferConfig.isChangeWorthwhile(currentConfig, newConfig)) {
+            resizeBuffers(newConfig);
+            lastAdaptationTime = currentTime;
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Resize buffers to new configuration
+     * 
+     * @param newConfig New dimension configuration
+     */
+    public void resizeBuffers(AdaptiveZBufferConfig.DimensionConfig newConfig) {
+        lock.writeLock().lock();
+        try {
+            this.currentConfig = newConfig;
+            initializeBuffers(newConfig);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
+    /**
+     * Get current configuration
+     */
+    public AdaptiveZBufferConfig.DimensionConfig getCurrentConfig() {
+        return currentConfig;
+    }
+    
+    /**
+     * Get current memory usage in bytes
+     */
+    public long getMemoryUsage() {
+        return currentConfig.memoryFootprint;
+    }
+    
+    /**
+     * Check if buffer can be downscaled (has room for optimization)
+     */
+    public boolean canDownscale() {
+        return currentConfig != AdaptiveZBufferConfig.MINIMAL;
+    }
+    
+    /**
+     * Check if buffer can be upscaled (has room for better quality)
+     */
+    public boolean canUpscale() {
+        return currentConfig != AdaptiveZBufferConfig.MAXIMUM;
     }
     
     /**

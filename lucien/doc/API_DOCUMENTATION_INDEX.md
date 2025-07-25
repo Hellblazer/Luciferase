@@ -49,7 +49,7 @@ High-performance and specialized operations:
 | **[Tree Balancing API](TREE_BALANCING_API.md)**            | Dynamic tree optimization       | Automatic rebalancing, performance tuning | Maintaining optimal performance |
 | **[Ghost API](GHOST_API.md)**                              | Distributed spatial indexing    | gRPC communication, 5 ghost algorithms    | Distributed simulations         |
 | **[Neighbor Detection API](NEIGHBOR_DETECTION_API.md)**    | Topological neighbor finding    | O(1) for Octree, face/edge/vertex support | Ghost creation, optimization    |
-| **[DSOC API](DSOC_API.md)**                                | Dynamic scene occlusion culling | TBVs, hierarchical Z-buffer, deferred updates | Rendering optimization          |
+| **[DSOC API](dsoc/DSOC_API.md)**                           | Dynamic scene occlusion culling | TBVs, hierarchical Z-buffer, deferred updates | Rendering optimization          |
 
 ### 🌲 **Forest Management**
 
@@ -87,7 +87,7 @@ Multi-tree coordination and specialized forest types:
 
 - Start: [Core Spatial Index](CORE_SPATIAL_INDEX_API.md) + [Entity Management](ENTITY_MANAGEMENT_API.md)
 - Add: [Frustum Culling](FRUSTUM_CULLING_API.md) + [Ray Intersection](RAY_INTERSECTION_API.md)
-- Optimize: [DSOC API](DSOC_API.md) + [Tree Traversal](TREE_TRAVERSAL_API.md)
+- Optimize: [DSOC API](dsoc/DSOC_API.md) + [Tree Traversal](TREE_TRAVERSAL_API.md)
 
 **High-Frequency Trading/Real-Time:**
 
@@ -294,7 +294,7 @@ ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
 - **Benchmark Results**: [SPATIAL_INDEX_PERFORMANCE_COMPARISON.md](SPATIAL_INDEX_PERFORMANCE_COMPARISON.md)
 - **Performance Tracking**: [PERFORMANCE_TRACKING.md](PERFORMANCE_TRACKING.md)
 - **Optimization Guide**: [LAZY_EVALUATION_USAGE_GUIDE.md](LAZY_EVALUATION_USAGE_GUIDE.md)
-- **DSOC Performance Testing**: [DSOC_PERFORMANCE_TESTING_GUIDE.md](DSOC_PERFORMANCE_TESTING_GUIDE.md)
+- **DSOC Performance Testing**: [DSOC Performance Testing Guide](dsoc/DSOC_PERFORMANCE_TESTING_GUIDE.md)
 
 ### Troubleshooting
 

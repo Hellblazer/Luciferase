@@ -756,8 +756,13 @@ implements SpatialIndex<Key, ID, Content> {
             }
         }
         
-        // Use DSOC if enabled and not auto-disabled
+        // Early exit checks for DSOC optimization
         if (isDSOCEnabled() && !dsocAutoDisabled && dsocConfig.isEnableHierarchicalOcclusion()) {
+            // Check if DSOC is worth using for this scenario
+            if (shouldSkipDSOC()) {
+                return measureAndExecute(() -> frustumCullVisibleStandard(frustum, cameraPosition), false);
+            }
+            
             return measureAndExecute(() -> frustumCullVisibleWithDSOC(frustum, cameraPosition), true);
         }
         
@@ -5138,6 +5143,11 @@ implements SpatialIndex<Key, ID, Content> {
             throw new IllegalStateException("DSOC not enabled");
         }
         
+        // Early exit if Z-buffer is not activated (no occluders)
+        if (!occlusionCuller.isActivated()) {
+            return frustumCullVisibleStandard(frustum, cameraPosition);
+        }
+        
         lock.readLock().lock();
         try {
             var intersections = ObjectPools.<FrustumIntersection<ID, Content>>borrowArrayList();
@@ -5366,5 +5376,31 @@ implements SpatialIndex<Key, ID, Content> {
         
         return dsocAvgTime / standardAvgTime;
     }
+    
+    /**
+     * Determine if DSOC should be skipped for this frame due to poor conditions
+     */
+    protected boolean shouldSkipDSOC() {
+        // Skip if entity count is too low (DSOC overhead not worth it)
+        int entityCount = entityManager.getEntityCount();
+        if (entityCount < MIN_ENTITIES_FOR_DSOC) {
+            return true;
+        }
+        
+        // Skip if no meaningful occluders present
+        if (occlusionCuller != null && !occlusionCuller.isActivated()) {
+            return true;
+        }
+        
+        // Skip if recent performance was very poor
+        if (dsocFrameCount >= 5 && getDSOCOverheadMultiplier() > PERFORMANCE_THRESHOLD_MULTIPLIER * 2) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // Early exit thresholds
+    private static final int MIN_ENTITIES_FOR_DSOC = 50;
 
 }
