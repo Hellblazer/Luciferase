@@ -154,17 +154,15 @@ public class Plane3DTest {
         Plane3D plane = Plane3D.parallelToXY(100.0f);
         Point3f negativePoint = new Point3f(-50.0f, 75.0f, 100.0f);
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            plane.distanceToPoint(negativePoint);
-        });
+        // Negative coordinates are now allowed, so these should work
+        float distance = plane.distanceToPoint(negativePoint);
+        assertEquals(0.0f, distance, 1e-6f);
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            plane.absoluteDistanceToPoint(negativePoint);
-        });
+        float absDistance = plane.absoluteDistanceToPoint(negativePoint);
+        assertEquals(0.0f, absDistance, 1e-6f);
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            plane.containsPoint(negativePoint);
-        });
+        boolean contains = plane.containsPoint(negativePoint);
+        assertTrue(contains);
     }
 
     @Test
@@ -180,14 +178,13 @@ public class Plane3DTest {
         Point3f positivePoint1 = new Point3f(100.0f, 100.0f, 100.0f);
         Point3f positivePoint2 = new Point3f(200.0f, 100.0f, 100.0f);
 
-        assertThrows(IllegalArgumentException.class, () -> {
-            Plane3D.fromThreePoints(negativePoint, positivePoint1, positivePoint2);
-        });
+        // Negative coordinates are now allowed, so these should work
+        Plane3D plane1 = Plane3D.fromThreePoints(negativePoint, positivePoint1, positivePoint2);
+        assertNotNull(plane1);
 
         Vector3f normal = new Vector3f(1.0f, 0.0f, 0.0f);
-        assertThrows(IllegalArgumentException.class, () -> {
-            Plane3D.fromPointAndNormal(negativePoint, normal);
-        });
+        Plane3D plane2 = Plane3D.fromPointAndNormal(negativePoint, normal);
+        assertNotNull(plane2);
     }
 
     @Test

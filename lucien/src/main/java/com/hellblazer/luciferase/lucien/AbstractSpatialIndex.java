@@ -747,6 +747,10 @@ implements SpatialIndex<Key, ID, Content> {
      * @return list of frustum intersections sorted by distance from camera
      */
     public List<FrustumIntersection<ID, Content>> frustumCullVisible(Frustum3D frustum, Point3f cameraPosition) {
+        if (frustum == null) {
+            throw new NullPointerException("Frustum cannot be null");
+        }
+        
         // Check if DSOC should be auto-disabled
         if (isDSOCEnabled() && !dsocAutoDisabled && shouldEvaluatePerformance()) {
             if (shouldAutoDisableDSOC()) {
@@ -772,6 +776,10 @@ implements SpatialIndex<Key, ID, Content> {
 
     @Override
     public List<ID> frustumCullVisible(Frustum3D frustum) {
+        if (frustum == null) {
+            throw new NullPointerException("Frustum cannot be null");
+        }
+        
         // For the simple ID-only version, we don't need camera position or distance sorting
         // We just need to find which entities are visible
         lock.readLock().lock();
@@ -5044,7 +5052,16 @@ implements SpatialIndex<Key, ID, Content> {
      * Update camera matrices for occlusion culling
      */
     public void updateCamera(float[] viewMatrix, float[] projectionMatrix, Point3f cameraPosition) {
-        if (isDSOCEnabled() && viewMatrix != null && projectionMatrix != null) {
+        if (isDSOCEnabled()) {
+            if (viewMatrix == null || projectionMatrix == null) {
+                throw new NullPointerException("View and projection matrices cannot be null when DSOC is enabled");
+            }
+            if (viewMatrix.length != 16) {
+                throw new IllegalArgumentException("View matrix must be 4x4 (16 elements), got " + viewMatrix.length);
+            }
+            if (projectionMatrix.length != 16) {
+                throw new IllegalArgumentException("Projection matrix must be 4x4 (16 elements), got " + projectionMatrix.length);
+            }
             // Store the camera matrices for use in beginFrame
             this.currentViewMatrix = viewMatrix.clone();
             this.currentProjectionMatrix = projectionMatrix.clone();
@@ -5120,6 +5137,15 @@ implements SpatialIndex<Key, ID, Content> {
     public void resetDSOCStatistics() {
         if (occlusionCuller != null) {
             occlusionCuller.resetStatistics();
+        }
+    }
+    
+    /**
+     * Force Z-buffer activation for testing
+     */
+    public void forceZBufferActivation() {
+        if (occlusionCuller != null) {
+            occlusionCuller.forceActivate();
         }
     }
     
@@ -5221,11 +5247,19 @@ implements SpatialIndex<Key, ID, Content> {
                         
                         if (!frustum.intersects(entityBounds)) {
                             occlusionCuller.incrementFrustumCulled();
+                            // Update visibility state to hidden
+                            if (visibilityManager != null) {
+                                visibilityManager.updateVisibility(entityId, false, (int) getCurrentFrame());
+                            }
                             continue;
                         }
                         
                         // Occlusion test
                         if (occlusionCuller.isEntityOccluded(entityBounds)) {
+                            // Update visibility state to hidden
+                            if (visibilityManager != null) {
+                                visibilityManager.updateVisibility(entityId, false, (int) getCurrentFrame());
+                            }
                             continue;
                         }
                         
@@ -5235,6 +5269,11 @@ implements SpatialIndex<Key, ID, Content> {
                                                                     entityPos, VisibilityType.INSIDE, entityBounds);
                         intersections.add(intersection);
                         occlusionCuller.incrementEntitiesVisible();
+                        
+                        // Update visibility state
+                        if (visibilityManager != null) {
+                            visibilityManager.updateVisibility(entityId, true, (int) getCurrentFrame());
+                        }
                         
                         // Render as occluder if configured
                         if (dsocConfig.isRenderEntitiesAsOccluders()) {

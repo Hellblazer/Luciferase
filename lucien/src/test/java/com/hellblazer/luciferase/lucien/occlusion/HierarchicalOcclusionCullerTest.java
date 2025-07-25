@@ -48,8 +48,10 @@ public class HierarchicalOcclusionCullerTest {
     
     @BeforeEach
     void setUp() {
-        config = new DSOCConfiguration();
-        // Note: DSOCConfiguration has default values, no setters needed for basic tests
+        config = new DSOCConfiguration()
+            .withEnabled(true)
+            .withEnableHierarchicalOcclusion(true)
+            .withAutoDynamicsEnabled(true);
         
         idGenerator = new SequentialLongIDGenerator();
         octree = new Octree<>(idGenerator);

@@ -57,8 +57,8 @@ public class Frustum3D {
     public static Frustum3D createOrthographic(Point3f cameraPosition, Point3f lookAt, Vector3f up, float left,
                                                float right, float bottom, float top, float nearDistance,
                                                float farDistance) {
-        validatePositiveCoordinates(cameraPosition, "cameraPosition");
-        validatePositiveCoordinates(lookAt, "lookAt");
+        // Camera position and lookAt can be negative as per documentation
+        // "Ray origins can be negative in 3D space - only entities in the spatial index must have positive coordinates"
 
         if (left < 0 || right < 0 || bottom < 0 || top < 0) {
             throw new IllegalArgumentException("All frustum boundaries must be positive");
@@ -204,8 +204,8 @@ public class Frustum3D {
      */
     public static Frustum3D createPerspective(Point3f cameraPosition, Point3f lookAt, Vector3f up, float fovy,
                                               float aspectRatio, float nearDistance, float farDistance) {
-        validatePositiveCoordinates(cameraPosition, "cameraPosition");
-        validatePositiveCoordinates(lookAt, "lookAt");
+        // Camera position and lookAt can be negative as per documentation
+        // "Ray origins can be negative in 3D space - only entities in the spatial index must have positive coordinates"
 
         if (nearDistance <= 0 || farDistance <= 0) {
             throw new IllegalArgumentException("Near and far distances must be positive");

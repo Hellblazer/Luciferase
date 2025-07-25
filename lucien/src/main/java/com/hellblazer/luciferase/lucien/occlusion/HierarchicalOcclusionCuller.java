@@ -319,6 +319,9 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
         final AtomicLong tbvsExpired = new AtomicLong();
         final AtomicLong occludersRendered = new AtomicLong();
         final AtomicLong zBufferActivations = new AtomicLong();
+        final AtomicLong deferredUpdates = new AtomicLong();
+        final AtomicLong tbvUpdates = new AtomicLong();
+        final AtomicLong activeTBVs = new AtomicLong();
         
         private long frameStartTime;
         private final AtomicLong totalFrameTime = new AtomicLong();
@@ -347,6 +350,9 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
             tbvsExpired.set(0);
             occludersRendered.set(0);
             totalFrameTime.set(0);
+            deferredUpdates.set(0);
+            tbvUpdates.set(0);
+            activeTBVs.set(0);
         }
         
         Map<String, Object> getSnapshot() {
@@ -365,6 +371,9 @@ public class HierarchicalOcclusionCuller<Key extends SpatialKey<Key>, ID extends
             stats.put("tbvsVisible", tbvsVisible.get());
             stats.put("tbvsExpired", tbvsExpired.get());
             stats.put("occludersRendered", occludersRendered.get());
+            stats.put("deferredUpdates", deferredUpdates.get());
+            stats.put("tbvUpdates", tbvUpdates.get());
+            stats.put("activeTBVs", activeTBVs.get());
             
             if (frames > 0) {
                 stats.put("avgFrameTimeMs", totalFrameTime.get() / frames / 1_000_000.0);
