@@ -2,7 +2,7 @@
 
 Complete guide to all APIs in the Lucien spatial indexing module.
 
-**Total APIs**: 15 (including Ghost and Neighbor Detection)
+**Total APIs**: 16 (including Ghost, Neighbor Detection, and DSOC)
 
 ## Quick Start Guide
 
@@ -49,6 +49,7 @@ High-performance and specialized operations:
 | **[Tree Balancing API](TREE_BALANCING_API.md)**            | Dynamic tree optimization       | Automatic rebalancing, performance tuning | Maintaining optimal performance |
 | **[Ghost API](GHOST_API.md)**                              | Distributed spatial indexing    | gRPC communication, 5 ghost algorithms    | Distributed simulations         |
 | **[Neighbor Detection API](NEIGHBOR_DETECTION_API.md)**    | Topological neighbor finding    | O(1) for Octree, face/edge/vertex support | Ghost creation, optimization    |
+| **[DSOC API](DSOC_API.md)**                                | Dynamic scene occlusion culling | TBVs, hierarchical Z-buffer, deferred updates | Rendering optimization          |
 
 ### 🌲 **Forest Management**
 
@@ -86,7 +87,7 @@ Multi-tree coordination and specialized forest types:
 
 - Start: [Core Spatial Index](CORE_SPATIAL_INDEX_API.md) + [Entity Management](ENTITY_MANAGEMENT_API.md)
 - Add: [Frustum Culling](FRUSTUM_CULLING_API.md) + [Ray Intersection](RAY_INTERSECTION_API.md)
-- Optimize: [Tree Traversal](TREE_TRAVERSAL_API.md)
+- Optimize: [DSOC API](DSOC_API.md) + [Tree Traversal](TREE_TRAVERSAL_API.md)
 
 **High-Frequency Trading/Real-Time:**
 
@@ -301,6 +302,6 @@ ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
 
 ---
 
-**Last Updated**: July 14, 2025  
-**API Count**: 15 comprehensive APIs covering all spatial indexing functionality  
+**Last Updated**: July 24, 2025  
+**API Count**: 16 comprehensive APIs covering all spatial indexing functionality  
 **Status**: Production Ready ✅
