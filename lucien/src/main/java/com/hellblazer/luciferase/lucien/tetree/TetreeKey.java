@@ -291,6 +291,52 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     public Tet toTet() {
         return Tet.tetrahedron(this);
     }
+    
+    @Override
+    public String toString() {
+        // For fast execution, we'll provide essential info without computing the full Tet
+        StringBuilder sb = new StringBuilder();
+        sb.append(getClass().getSimpleName()).append("[L").append(level);
+        
+        // Add low bits in base64 for compactness
+        sb.append(",tm:").append(longToBase64(getLowBits()));
+        
+        // Add high bits only if non-zero (for ExtendedTetreeKey)
+        if (getHighBits() != 0) {
+            sb.append("/").append(longToBase64(getHighBits()));
+        }
+        
+        // For debugging, optionally add the anchor coordinates by converting to Tet
+        // This is commented out by default for performance, but can be enabled when needed
+        // Tet tet = toTet();
+        // sb.append(",@(").append(tet.x).append(",").append(tet.y).append(",").append(tet.z).append(")");
+        
+        sb.append("]");
+        return sb.toString();
+    }
+    
+    /**
+     * Convert a long to a compact base64 string representation.
+     * Uses URL-safe base64 encoding without padding for compactness.
+     */
+    private static String longToBase64(long value) {
+        // Convert long to byte array
+        byte[] bytes = new byte[8];
+        for (int i = 7; i >= 0; i--) {
+            bytes[i] = (byte) (value & 0xFF);
+            value >>>= 8;
+        }
+        
+        // Use URL-safe base64 encoding without padding
+        String base64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        
+        // Remove leading A's (zeros) for compactness
+        int firstNonA = 0;
+        while (firstNonA < base64.length() - 1 && base64.charAt(firstNonA) == 'A') {
+            firstNonA++;
+        }
+        return base64.substring(firstNonA);
+    }
 
     // ===== Level 21 Special Bit Packing Support =====
 
