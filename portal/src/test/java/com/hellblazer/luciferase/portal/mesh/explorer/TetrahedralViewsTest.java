@@ -28,6 +28,7 @@ import javafx.scene.shape.TriangleMesh;
 import javafx.scene.transform.Affine;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
 import javax.vecmath.Point3i;
 import java.util.Random;
@@ -41,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@DisabledIfSystemProperty(named = "java.awt.headless", matches = "true")
 public class TetrahedralViewsTest {
     
     private static final Random RANDOM = new Random(42); // Fixed seed for reproducibility
