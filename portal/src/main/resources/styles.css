@@ -1,0 +1,44 @@
+/* Styles for Tetree Visualization Demo */
+
+.button {
+    -fx-background-color: #4CAF50;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+    -fx-background-radius: 4;
+    -fx-padding: 8 16 8 16;
+}
+
+.button:hover {
+    -fx-background-color: #45a049;
+}
+
+.button:pressed {
+    -fx-background-color: #357a38;
+}
+
+.check-box {
+    -fx-font-size: 12px;
+    -fx-text-fill: #333333;
+}
+
+.label {
+    -fx-font-size: 12px;
+    -fx-text-fill: #333333;
+}
+
+.slider {
+    -fx-show-tick-labels: true;
+    -fx-show-tick-marks: true;
+}
+
+.separator {
+    -fx-padding: 5 0 5 0;
+}
+
+.status-bar {
+    -fx-background-color: #e0e0e0;
+    -fx-padding: 5;
+    -fx-border-color: #cccccc;
+    -fx-border-width: 1 0 0 0;
+}

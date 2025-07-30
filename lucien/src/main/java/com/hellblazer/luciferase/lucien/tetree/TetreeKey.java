@@ -57,8 +57,8 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     // Bit layout constants
     protected static final int  BITS_PER_LEVEL       = 6;
     protected static final int  MAX_COMPACT_LEVEL    = 10;
-    
-    
+
+
     // Level 21 special bit packing constants
     protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low long for level 21 bits
     protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long for level 21 bits
@@ -99,7 +99,7 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
             return new ExtendedTetreeKey(level, lowBits, highBits);
         }
     }
-    
+
 
     public static TetreeKey<? extends TetreeKey> getRoot() {
         return ROOT;
@@ -260,7 +260,7 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         // Subclasses may add additional validation
         return true;
     }
-    
+
 
     /**
      * Returns the maximum of two TetreeKeys at the same level. This is used for determining the end of a merged range.
@@ -288,8 +288,12 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         return (K) ROOT;
     }
 
+    public Tet toTet() {
+        return Tet.tetrahedron(this);
+    }
+
     // ===== Level 21 Special Bit Packing Support =====
-    
+
     /**
      * Extract coordinate bits for level 21 from split encoding.
      * Level 21 coordinate bits are split: 4 bits in low long (60-63), 2 bits in high long (60-61).
@@ -301,18 +305,18 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         if (level != 21) {
             throw new IllegalStateException("getLevel21CoordBits() can only be called for level 21");
         }
-        
+
         // Extract 4 bits from low long (bits 60-63)
         long lowPart = (getLowBits() >> LEVEL_21_LOW_BITS_SHIFT) & LEVEL_21_LOW_MASK;
-        // Extract 2 bits from high long (bits 60-61) 
+        // Extract 2 bits from high long (bits 60-61)
         long highPart = (getHighBits() >> LEVEL_21_HIGH_BITS_SHIFT) & LEVEL_21_HIGH_MASK;
-        
+
         // Combine: low 4 bits + high 2 bits = 6 bits total
         // Coordinate bits are the upper 3 bits of this 6-bit value
         long combined = lowPart | (highPart << 4);
         return (byte) ((combined >> 3) & 0x7);
     }
-    
+
     /**
      * Extract type bits for level 21 from split encoding.
      * Level 21 type bits are split: 4 bits in low long (60-63), 2 bits in high long (60-61).
@@ -324,18 +328,18 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
         if (level != 21) {
             throw new IllegalStateException("getLevel21TypeBits() can only be called for level 21");
         }
-        
+
         // Extract 4 bits from low long (bits 60-63)
         long lowPart = (getLowBits() >> LEVEL_21_LOW_BITS_SHIFT) & LEVEL_21_LOW_MASK;
         // Extract 2 bits from high long (bits 60-61)
         long highPart = (getHighBits() >> LEVEL_21_HIGH_BITS_SHIFT) & LEVEL_21_HIGH_MASK;
-        
+
         // Combine: low 4 bits + high 2 bits = 6 bits total
         // Type bits are the lower 3 bits of this 6-bit value
         long combined = lowPart | (highPart << 4);
         return (byte) (combined & 0x7);
     }
-    
+
     /**
      * Pack level 21 data (6 bits) into the split encoding.
      * Splits 6 bits across low long (4 bits at position 60-63) and high long (2 bits at position 60-61).
@@ -346,18 +350,18 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     protected static long[] packLevel21Bits(byte level21Bits) {
         // Ensure we only have 6 bits
         long bits = level21Bits & 0x3F;
-        
+
         // Split into 4-bit low part and 2-bit high part
         long lowPart = bits & LEVEL_21_LOW_MASK;           // Lower 4 bits
         long highPart = (bits >> 4) & LEVEL_21_HIGH_MASK; // Upper 2 bits
-        
+
         // Position them correctly in their respective longs
         long lowBits = lowPart << LEVEL_21_LOW_BITS_SHIFT;   // Bits 60-63
         long highBits = highPart << LEVEL_21_HIGH_BITS_SHIFT; // Bits 60-61
-        
+
         return new long[]{lowBits, highBits};
     }
-    
+
 
     // TODO: Re-enable protobuf serialization after testing
     /*

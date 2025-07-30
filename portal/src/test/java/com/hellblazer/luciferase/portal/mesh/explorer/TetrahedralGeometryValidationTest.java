@@ -27,7 +27,6 @@ import javafx.scene.transform.Affine;
 import javafx.scene.transform.Transform;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
 import javax.vecmath.Point3d;
 import javax.vecmath.Point3i;
@@ -45,7 +44,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
-@DisabledIfSystemProperty(named = "java.awt.headless", matches = "true")
+@RequiresJavaFX
 public class TetrahedralGeometryValidationTest {
     
     private static final double EPSILON = 1e-6;
