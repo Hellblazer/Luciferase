@@ -638,10 +638,10 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         } else {
             // Use traditional rendering
             // Show root using subdivision coordinates but with clean rendering
-            Group rootWireframe = createWireframeTetrahedronWithCoords(rootTet, 0, true);
+            Group rootWireframe = createWireframeTetrahedronWithCoords(rootTet, true);
             nodeGroup.getChildren().add(rootWireframe);
 
-            if (showFilledFaces.get() && shouldShowFaceForSubdivision(rootTet, 0, currentRefinementLevel)) {
+            if (showFilledFaces.get() && shouldShowFaceForSubdivision(rootTet, currentRefinementLevel)) {
                 MeshView rootFace = createTransparentTetrahedronWithCoords(rootTet, 0, true);
                 PhongMaterial rootMaterial = new PhongMaterial(Color.DARKGRAY.deriveColor(0, 1, 1, 0.3));
                 rootMaterial.setSpecularColor(Color.WHITE);
@@ -1123,13 +1123,13 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         boolean showFilled = false;
         if (!node.entityIds().isEmpty() && showFilledFaces.get() && shouldShowFaceForNode(node)) {
             showFilled = true;
-            MeshView face = createTransparentTetrahedron(tet, getLevelForKey(key));
+            MeshView face = createTransparentTetrahedron(tet);
             tetGroup.getChildren().add(face);
         }
 
         // Only show wireframe if we're not showing filled faces (to avoid edge interpenetration)
         if (showNodeBoundsProperty().get() && !showFilled) {
-            Group wireframe = createWireframeTetrahedron(tet, getLevelForKey(key));
+            Group wireframe = createWireframeTetrahedron(tet);
             tetGroup.getChildren().add(wireframe);
         }
 
@@ -1207,7 +1207,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     /**
      * Create transparent tetrahedron face.
      */
-    private MeshView createTransparentTetrahedron(Tet tet, int level) {
+    private MeshView createTransparentTetrahedron(Tet tet) {
         // Use standard S0-S5 coordinates for accurate visualization
         // This ensures entities appear within their containing tetrahedra
         Point3i[] tetVertices = tet.coordinates();
@@ -1273,12 +1273,12 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         MeshView meshView = new MeshView(mesh);
 
         // Apply material based on type and level
-        Material material = getMaterialForTet(tet, level);
+        Material material = getMaterialForTet(tet, tet.l);
         meshView.setMaterial(material);
 
         // Adjust opacity based on level for better visibility
         double baseOpacity = nodeOpacityProperty().get();
-        double levelFactor = 1.0 - (level * 0.1); // Reduce opacity by 10% per level
+        double levelFactor = 1.0 - (tet.l * 0.1); // Reduce opacity by 10% per level
         meshView.setOpacity(Math.max(0.1, baseOpacity * levelFactor));
 
         // Enable depth buffer to reduce z-fighting
@@ -1291,14 +1291,6 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         meshView.setDrawMode(javafx.scene.shape.DrawMode.FILL);
 
         return meshView;
-    }
-
-    /**
-     * Create transparent tetrahedron face for subdivision visualization. Uses subdivisionCoordinates() instead of
-     * coordinates().
-     */
-    private MeshView createTransparentTetrahedronForSubdivision(Tet tet, int level) {
-        return createTransparentTetrahedronWithCoords(tet, level, true);
     }
 
     /**
@@ -1375,9 +1367,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     /**
      * Create wireframe tetrahedron for tet bounds.
      */
-    private Group createWireframeTetrahedron(Tet tet, int level) {
+    private Group createWireframeTetrahedron(Tet tet) {
         // Use the shared implementation with standard coordinates
-        return createWireframeTetrahedronWithCoords(tet, level, false);
+        return createWireframeTetrahedronWithCoords(tet, false);
     }
 
     /**
@@ -1385,13 +1377,13 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * coordinates().
      */
     private Group createWireframeTetrahedronForSubdivision(Tet tet, int level) {
-        return createWireframeTetrahedronWithCoords(tet, level, true);
+        return createWireframeTetrahedronWithCoords(tet, true);
     }
 
     /**
      * Create wireframe tetrahedron from vertex coordinates. Shared implementation for both coordinate systems.
      */
-    private Group createWireframeTetrahedronFromVertices(Tet tet, Point3i[] tetVertices, int level) {
+    private Group createWireframeTetrahedronFromVertices(Tet tet, Point3i[] tetVertices) {
         // Increment counter for validation
         traditionalWireframeCount++;
 
@@ -1415,7 +1407,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         edgeMaterial.setSpecularPower(32);
 
         // Edge radius based on level (thicker at root, thinner at deeper levels)
-        double radius = Math.max(500, 2000 - level * 100);
+        double radius = Math.max(500, 2000 - tet.l * 100);
 
         for (int[] edge : edgeIndices) {
             Point3f p1 = vertices[edge[0]];
@@ -1459,15 +1451,14 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Create wireframe tetrahedron with choice of coordinate system.
      *
      * @param tet                  The tetrahedron to render
-     * @param level                The level for coloring
      * @param useSubdivisionCoords If true, use subdivisionCoordinates(), otherwise use coordinates()
      */
-    private Group createWireframeTetrahedronWithCoords(Tet tet, int level, boolean useSubdivisionCoords) {
+    private Group createWireframeTetrahedronWithCoords(Tet tet, boolean useSubdivisionCoords) {
         // Get coordinates based on the flag
         Point3i[] tetVertices = useSubdivisionCoords ? tet.subdivisionCoordinates() : tet.coordinates();
 
         // Use the existing clean rendering method
-        return createWireframeTetrahedronFromVertices(tet, tetVertices, level);
+        return createWireframeTetrahedronFromVertices(tet, tetVertices);
     }
 
     /**
@@ -1699,18 +1690,18 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     /**
      * Check if we should show a face for subdivision visualization based on render mode.
      */
-    private boolean shouldShowFaceForSubdivision(Tet tet, int level, int maxRefinementLevel) {
+    private boolean shouldShowFaceForSubdivision(Tet tet, int maxRefinementLevel) {
         switch (faceRenderMode) {
             case ALL_NODES:
                 return true;
 
             case LEAF_NODES_ONLY:
                 // For subdivision, a leaf is at the max refinement level
-                return level >= maxRefinementLevel;
+                return tet.l >= maxRefinementLevel;
 
             case LARGEST_NODES_ONLY:
                 // Only show faces at level 0 (root)
-                return level == 0;
+                return tet.l == 0;
 
             default:
                 return true;
@@ -1840,11 +1831,11 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             int childLevel = currentLevel + 1;
 
             // Show wireframe
-            Group wireframe = createWireframeTetrahedron(child, childLevel);
+            Group wireframe = createWireframeTetrahedron(child);
             nodeGroup.getChildren().add(wireframe);
 
-            if (showFilledFaces.get() && shouldShowFaceForSubdivision(child, childLevel, currentRefinementLevel)) {
-                MeshView face = createTransparentTetrahedron(child, childLevel);
+            if (showFilledFaces.get() && shouldShowFaceForSubdivision(child,  currentRefinementLevel)) {
+                MeshView face = createTransparentTetrahedron(child);
 
                 // Apply color based on level and index
                 Color childColor = Color.hsb((childLevel * 120 + i * 45) % 360, 0.7, 0.8);
@@ -1913,10 +1904,10 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Tet child = children[i];
 
             // Use clean rendering with subdivision coordinates
-            Group wireframe = createWireframeTetrahedronWithCoords(child, childLevel, true);
+            Group wireframe = createWireframeTetrahedronWithCoords(child,  true);
             nodeGroup.getChildren().add(wireframe);
 
-            if (showFilledFaces.get() && shouldShowFaceForSubdivision(child, childLevel, currentRefinementLevel)) {
+            if (showFilledFaces.get() && shouldShowFaceForSubdivision(child, currentRefinementLevel)) {
                 MeshView face = createTransparentTetrahedronWithCoords(child, childLevel, true);
 
                 // Apply color based on level and index
@@ -1981,7 +1972,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         }
 
         // Show filled face if enabled and should show for this level
-        if (showFilledFaces.get() && shouldShowFaceForSubdivision(tet, level, currentRefinementLevel)) {
+        if (showFilledFaces.get() && shouldShowFaceForSubdivision(tet, currentRefinementLevel)) {
             MeshView mesh = new MeshView(referenceMesh);
             transformBasedMeshCount++;
 
@@ -2014,7 +2005,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         }
 
         // Show filled face if enabled and should show for this level
-        if (showFilledFaces.get() && shouldShowFaceForSubdivision(tet, level, currentRefinementLevel)) {
+        if (showFilledFaces.get() && shouldShowFaceForSubdivision(tet, currentRefinementLevel)) {
             MeshView mesh = new MeshView(referenceMesh);
             transformBasedMeshCount++;
 
