@@ -1114,7 +1114,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     private Node createTetVisual(SpatialNode<TetreeKey<? extends TetreeKey>, ID> node) {
         TetreeKey<? extends TetreeKey> key = node.sfcIndex();
-        Tet tet = tetreeKeyToTet(key);
+        Tet tet = key.toTet();
 
         Group tetGroup = new Group();
         tetGroups.put(key, tetGroup);
@@ -1505,7 +1505,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         TetreeKey<? extends TetreeKey> affectedKey = null;
 
         for (Map.Entry<TetreeKey<? extends TetreeKey>, Node> entry : nodeVisuals.entrySet()) {
-            Tet tet = tetreeKeyToTet(entry.getKey());
+            Tet tet = entry.getKey().toTet();
             if (isPointInTetrahedron(position, tet)) {
                 affectedKey = entry.getKey();
                 break;
@@ -1719,7 +1719,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             case LEAF_NODES_ONLY:
                 // Check if this node has any children by looking for nodes at deeper levels
                 TetreeKey<? extends TetreeKey> key = node.sfcIndex();
-                Tet tet = tetreeKeyToTet(key);
+                Tet tet = key.toTet();
                 int currentLevel = getLevelForKey(key);
 
                 // Check all nodes to see if any are children of this node
@@ -1729,7 +1729,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
                     // If the other node is at a deeper level and within our bounds, it's a child
                     if (otherLevel > currentLevel && !otherNode.entityIds().isEmpty()) {
-                        Tet otherTet = tetreeKeyToTet(otherKey);
+                        Tet otherTet = otherKey.toTet();
                         // Check if otherTet is within our tet's bounds
                         Point3i[] ourCoords = tet.coordinates();
                         Point3i otherAnchor = new Point3i(otherTet.x, otherTet.y, otherTet.z);
@@ -1747,7 +1747,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             case LARGEST_NODES_ONLY:
                 // Check if any parent contains entities by checking all nodes
                 key = node.sfcIndex();
-                tet = tetreeKeyToTet(key);
+                tet = key.toTet();
                 currentLevel = getLevelForKey(key);
                 Point3i myAnchor = new Point3i(tet.x, tet.y, tet.z);
 
@@ -1758,7 +1758,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
                     // If the other node is at a shallower level and has entities
                     if (otherLevel < currentLevel && !otherNode.entityIds().isEmpty()) {
-                        Tet otherTet = tetreeKeyToTet(otherKey);
+                        Tet otherTet = otherKey.toTet();
                         Point3i[] parentCoords = otherTet.coordinates();
 
                         // Check if we're within the parent's bounds
@@ -2049,15 +2049,6 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     /**
-     * Convert ExtendedTetreeKey to Tet for visualization.
-     */
-    private Tet tetreeKeyToTet(TetreeKey<? extends TetreeKey> key) {
-        // Use the tetree's method to properly decode the key
-        // This allows subclasses to provide their own Tet implementations if needed
-        return tetree.tetrahedronFromKey(key);
-    }
-
-    /**
      * Toggle node selection.
      */
     private void toggleNodeSelection(TetreeKey<? extends TetreeKey> key) {
@@ -2079,7 +2070,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             if (visual instanceof final Group group) {
                 group.getChildren().forEach(child -> {
                     if (child instanceof MeshView) {
-                        Tet tet = tetreeKeyToTet(key);
+                        Tet tet = key.toTet();
                         int level = getLevelForKey(key);
                         ((MeshView) child).setMaterial(getMaterialForTet(tet, level));
                     }
@@ -2325,7 +2316,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Highlight nodes that intersect with the query sphere
         tetree.nodes().forEach(node -> {
             TetreeKey<? extends TetreeKey> key = node.sfcIndex();
-            Tet tet = tetreeKeyToTet(key);
+            Tet tet = key.toTet();
 
             // Check if tetrahedron intersects with query sphere
             if (tetIntersectsSphere(tet, query.center, query.radius)) {
@@ -2435,7 +2426,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Highlight tetrahedra that the ray passes through
         tetree.nodes().forEach(node -> {
             TetreeKey<? extends TetreeKey> key = node.sfcIndex();
-            Tet tet = tetreeKeyToTet(key);
+            Tet tet = key.toTet();
 
             // Simple ray-tetrahedron intersection check
             if (rayIntersectsTetrahedron(query.origin, query.direction, tet)) {
