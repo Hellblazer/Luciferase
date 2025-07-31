@@ -99,6 +99,12 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private       boolean        animateModifications   = false;
     // Performance tracking
     private       AnimationTimer performanceTimer;
+    
+    // Transform-based entity system
+    private boolean useTransformBasedEntities = false;
+    private TransformBasedEntity.EntityManager transformEntityManager;
+    private PrimitiveTransformManager primitiveManager;
+    private MaterialPool entityMaterialPool;
     private       long           frameCount             = 0;
     private       long           lastFPSUpdate          = 0;
     private       double         currentFPS             = 0;
@@ -140,10 +146,18 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         if (!animateModifications) {
             return;
         }
+        
+        // Handle transform-based entities differently
+        if (useTransformBasedEntities && transformEntityManager != null) {
+            // For transform-based entities, create a temporary animation entity
+            animateTransformEntityInsertion(entityId, position);
+            return;
+        }
 
         // Create a temporary sphere at the insertion point
         // Make it slightly larger than regular entities for visibility during animation
-        Sphere insertMarker = new Sphere(4000.0);
+        // Entity radius is typically 3276.8, so make this 2x larger
+        Sphere insertMarker = new Sphere(6553.6);
         insertMarker.setTranslateX(position.x);
         insertMarker.setTranslateY(position.y);
         insertMarker.setTranslateZ(position.z);
@@ -190,12 +204,61 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         activeAnimations.add(timeline);
         timeline.play();
     }
+    
+    /**
+     * Animate the insertion of a transform-based entity.
+     */
+    private void animateTransformEntityInsertion(ID entityId, Point3f position) {
+        // Create a temporary animation sphere using the transform system
+        PhongMaterial animMaterial = entityMaterialPool.getMaterial(Color.YELLOW, 1.0, true);
+        MeshView animSphere = primitiveManager.createSphere(position, 6553.6f, animMaterial);
+        animSphere.setOpacity(0.0);
+        queryGroup.getChildren().add(animSphere);
+        
+        // Animate the appearance
+        Timeline timeline = new Timeline();
+        
+        // Fade in and pulse
+        KeyValue fadeIn = new KeyValue(animSphere.opacityProperty(), 0.8);
+        KeyValue scaleUpX = new KeyValue(animSphere.scaleXProperty(), 1.2);
+        KeyValue scaleUpY = new KeyValue(animSphere.scaleYProperty(), 1.2);
+        KeyValue scaleUpZ = new KeyValue(animSphere.scaleZProperty(), 1.2);
+        KeyFrame kf1 = new KeyFrame(Duration.millis(200), fadeIn, scaleUpX, scaleUpY, scaleUpZ);
+        
+        // Shrink to normal size
+        KeyValue scaleDownX = new KeyValue(animSphere.scaleXProperty(), 0.5);
+        KeyValue scaleDownY = new KeyValue(animSphere.scaleYProperty(), 0.5);
+        KeyValue scaleDownZ = new KeyValue(animSphere.scaleZProperty(), 0.5);
+        KeyFrame kf2 = new KeyFrame(Duration.millis(400), scaleDownX, scaleDownY, scaleDownZ);
+        
+        // Fade out
+        KeyValue fadeOut = new KeyValue(animSphere.opacityProperty(), 0.0);
+        KeyFrame kf3 = new KeyFrame(Duration.millis(600), fadeOut);
+        
+        timeline.getKeyFrames().addAll(kf1, kf2, kf3);
+        
+        timeline.setOnFinished(e -> {
+            queryGroup.getChildren().remove(animSphere);
+            activeAnimations.remove(timeline);
+            // Trigger actual entity visualization update
+            updateVisualization();
+        });
+        
+        activeAnimations.add(timeline);
+        timeline.play();
+    }
 
     /**
      * Animate the removal of an entity.
      */
     public void animateEntityRemoval(ID entityId) {
         if (!animateModifications) {
+            return;
+        }
+        
+        // Handle transform-based entities differently
+        if (useTransformBasedEntities && transformEntityManager != null) {
+            animateTransformEntityRemoval(entityId);
             return;
         }
 
@@ -223,6 +286,45 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             timeline.play();
         }
     }
+    
+    /**
+     * Animate the removal of a transform-based entity.
+     */
+    private void animateTransformEntityRemoval(ID entityId) {
+        // Get entity position for the animation
+        Point3f position = tetree.getEntityPosition(entityId);
+        if (position == null) {
+            return;
+        }
+        
+        // Create a temporary removal animation sphere
+        PhongMaterial animMaterial = entityMaterialPool.getMaterial(Color.RED, 0.8, false);
+        MeshView animSphere = primitiveManager.createSphere(position, 3276.8f, animMaterial);
+        queryGroup.getChildren().add(animSphere);
+        
+        // Create removal animation
+        Timeline timeline = new Timeline();
+        
+        // Fade and shrink
+        KeyValue fadeOut = new KeyValue(animSphere.opacityProperty(), 0.0);
+        KeyValue shrinkX = new KeyValue(animSphere.scaleXProperty(), 0.1);
+        KeyValue shrinkY = new KeyValue(animSphere.scaleYProperty(), 0.1);
+        KeyValue shrinkZ = new KeyValue(animSphere.scaleZProperty(), 0.1);
+        KeyFrame kf = new KeyFrame(Duration.millis(500), fadeOut, shrinkX, shrinkY, shrinkZ);
+        
+        timeline.getKeyFrames().add(kf);
+        
+        timeline.setOnFinished(e -> {
+            queryGroup.getChildren().remove(animSphere);
+            activeAnimations.remove(timeline);
+            // Remove the actual entity
+            transformEntityManager.removeEntity(entityId);
+            updateVisualization();
+        });
+        
+        activeAnimations.add(timeline);
+        timeline.play();
+    }
 
     /**
      * Clear collision highlights and restore original entity appearance.
@@ -231,9 +333,14 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Clear collision lines from query group
         queryGroup.getChildren().removeIf(node -> node instanceof Line);
 
-        // Restore entity appearance
-        entityVisuals.forEach((id, visual) -> {
-            if (visual instanceof final Sphere sphere) {
+        if (useTransformBasedEntities && transformEntityManager != null) {
+            // For transform-based entities, trigger a full visualization update
+            // This will restore entities to their normal state
+            updateVisualization();
+        } else {
+            // Restore traditional entity appearance
+            entityVisuals.forEach((id, visual) -> {
+                if (visual instanceof final Sphere sphere) {
 
                 // Restore original size if it was stored
                 if (sphere.getUserData() instanceof Double) {
@@ -241,12 +348,13 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                     sphere.setUserData(null);
                 }
 
-                // Restore default material
-                PhongMaterial defaultMaterial = new PhongMaterial(Color.LIGHTGREEN);
-                defaultMaterial.setSpecularColor(Color.WHITE);
-                sphere.setMaterial(defaultMaterial);
-            }
-        });
+                    // Restore default material
+                    PhongMaterial defaultMaterial = new PhongMaterial(Color.LIGHTGREEN);
+                    defaultMaterial.setSpecularColor(Color.WHITE);
+                    sphere.setMaterial(defaultMaterial);
+                }
+            });
+        }
     }
 
     /**
@@ -442,17 +550,27 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
         // Highlight colliding entities
         for (ID id : collidingEntities) {
-            Node entityVisual = entityVisuals.get(id);
-            if (entityVisual instanceof final Sphere sphere) {
+            if (useTransformBasedEntities && transformEntityManager != null) {
+                // For transform-based entities, update their visual state
+                Point3f pos = tetree.getEntityPosition(id);
+                if (pos != null) {
+                    // Update to collision state (red, larger scale)
+                    transformEntityManager.updateEntity(id, pos, Color.RED, false, false);
+                }
+            } else {
+                // Traditional sphere-based highlighting
+                Node entityVisual = entityVisuals.get(id);
+                if (entityVisual instanceof final Sphere sphere) {
 
-                // Make colliding entities red and larger
-                PhongMaterial collisionMaterial = new PhongMaterial(Color.RED);
-                collisionMaterial.setSpecularColor(Color.WHITE);
-                sphere.setMaterial(collisionMaterial);
-                sphere.setRadius(sphere.getRadius() * 1.5);
+                    // Make colliding entities red and larger
+                    PhongMaterial collisionMaterial = new PhongMaterial(Color.RED);
+                    collisionMaterial.setSpecularColor(Color.WHITE);
+                    sphere.setMaterial(collisionMaterial);
+                    sphere.setRadius(sphere.getRadius() * 1.5);
 
-                // Store original size for restoration
-                sphere.setUserData(sphere.getRadius() / 1.5);
+                    // Store original size for restoration
+                    sphere.setUserData(sphere.getRadius() / 1.5);
+                }
             }
         }
 
@@ -518,6 +636,50 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     public void setAnimateModifications(boolean animate) {
         this.animateModifications = animate;
+    }
+    
+    /**
+     * Enable or disable transform-based entity rendering.
+     */
+    public void setUseTransformBasedEntities(boolean useTransform) {
+        if (this.useTransformBasedEntities == useTransform) {
+            return;
+        }
+        
+        this.useTransformBasedEntities = useTransform;
+        
+        if (useTransform && transformEntityManager == null) {
+            // Initialize transform-based system
+            if (primitiveManager == null) {
+                primitiveManager = new PrimitiveTransformManager();
+            }
+            if (entityMaterialPool == null) {
+                entityMaterialPool = new MaterialPool(1000);
+            }
+            // Entity radius in natural coordinates
+            double entityRadius = 3276.8; // 1/10th of level 5 cell size
+            transformEntityManager = new TransformBasedEntity.EntityManager(
+                primitiveManager, entityMaterialPool, entityRadius, 5000
+            );
+            
+            // Replace entity visuals group
+            entityGroup.getChildren().clear();
+            entityGroup.getChildren().add(transformEntityManager.getEntityGroup());
+        } else if (!useTransform && transformEntityManager != null) {
+            // Switch back to traditional rendering
+            entityGroup.getChildren().clear();
+            transformEntityManager.clearAll();
+        }
+        
+        // Refresh all entity visuals
+        updateVisualization();
+    }
+    
+    /**
+     * Get whether transform-based entity rendering is enabled.
+     */
+    public boolean getUseTransformBasedEntities() {
+        return useTransformBasedEntities;
     }
 
     /**
@@ -779,6 +941,35 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         if (pos == null) {
             return null;
         }
+        
+        // Use transform-based rendering if enabled
+        if (useTransformBasedEntities && transformEntityManager != null) {
+            // Check if this entity has a visible container
+            boolean hasVisibleContainer = false;
+            for (var node : tetree.nodes().toList()) {
+                if (node.entityIds().contains(id) && nodeVisuals.containsKey(node.sfcIndex())) {
+                    hasVisibleContainer = true;
+                    break;
+                }
+            }
+            
+            // Determine color based on selection state and containment
+            Color color;
+            boolean selected = getSelectedEntities().contains(id);
+            if (selected) {
+                color = Color.YELLOW;
+            } else if (!hasVisibleContainer) {
+                color = Color.RED;
+            } else {
+                color = Color.LIME;
+            }
+            
+            // Update transform-based entity
+            transformEntityManager.updateEntity(id, pos, color, selected, hasVisibleContainer);
+            
+            // Return empty node as visual is managed by EntityManager
+            return new Group();
+        }
 
         // Entity size in natural coordinates (scaled by scene transform)
         // For level 5, cell size is 2^15 = 32768
@@ -828,6 +1019,42 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         });
 
         return sphere;
+    }
+    
+    @Override
+    protected void clearVisualization() {
+        super.clearVisualization();
+        
+        // Clear transform-based entities if enabled
+        if (useTransformBasedEntities && transformEntityManager != null) {
+            transformEntityManager.clearAll();
+        }
+    }
+    
+    @Override
+    protected void renderEntities() {
+        if (useTransformBasedEntities && transformEntityManager != null) {
+            // For transform-based rendering, we need to update all entities
+            Set<ID> currentEntities = new HashSet<>();
+            
+            // Collect all entity IDs from the spatial index
+            for (var node : tetree.nodes().toList()) {
+                currentEntities.addAll(node.entityIds());
+            }
+            
+            // Update or add entities
+            for (ID id : currentEntities) {
+                createEntityVisual(id); // This will update the transform-based entity
+                visibleEntityCount++;
+            }
+            
+            // Remove entities that no longer exist
+            // Note: We'll need to track which entities are active
+            // For now, rely on clearVisualization to handle full refreshes
+        } else {
+            // Use traditional rendering
+            super.renderEntities();
+        }
     }
 
     @Override
@@ -2042,10 +2269,66 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             }
         }
 
-        // TODO: Could also check if sphere center is within tetrahedron
-        // or if sphere intersects any edge/face
+        // Check if sphere center is within tetrahedron
+        if (isPointInTetrahedron(new Point3f(center.x, center.y, center.z), tet)) {
+            return true;
+        }
+
+        // Check if sphere intersects any edge of the tetrahedron
+        // Check all 6 edges
+        int[][] edges = {{0, 1}, {0, 2}, {0, 3}, {1, 2}, {1, 3}, {2, 3}};
+        
+        for (int[] edge : edges) {
+            Point3i v1 = vertices[edge[0]];
+            Point3i v2 = vertices[edge[1]];
+            
+            // Calculate closest point on edge to sphere center
+            float t = calculateClosestPointOnSegment(
+                center.x, center.y, center.z,
+                v1.x, v1.y, v1.z,
+                v2.x, v2.y, v2.z
+            );
+            
+            // Calculate distance from sphere center to closest point
+            float closestX = v1.x + t * (v2.x - v1.x);
+            float closestY = v1.y + t * (v2.y - v1.y);
+            float closestZ = v1.z + t * (v2.z - v1.z);
+            
+            float dx = center.x - closestX;
+            float dy = center.y - closestY;
+            float dz = center.z - closestZ;
+            float distSq = dx * dx + dy * dy + dz * dz;
+            
+            if (distSq <= radius * radius) {
+                return true;
+            }
+        }
 
         return false;
+    }
+
+    /**
+     * Calculate the parameter t for the closest point on a line segment to a given point.
+     * The closest point is at position: P = A + t * (B - A)
+     * where t is clamped to [0, 1] to stay on the segment.
+     */
+    private float calculateClosestPointOnSegment(float px, float py, float pz,
+                                                  float ax, float ay, float az,
+                                                  float bx, float by, float bz) {
+        float dx = bx - ax;
+        float dy = by - ay;
+        float dz = bz - az;
+        
+        float lengthSq = dx * dx + dy * dy + dz * dz;
+        if (lengthSq < 1e-6f) {
+            return 0.0f; // Degenerate segment
+        }
+        
+        // Project point onto line
+        float t = ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / lengthSq;
+        
+        // Clamp to segment
+        return Math.max(0.0f, Math.min(1.0f, t));
     }
 
     /**

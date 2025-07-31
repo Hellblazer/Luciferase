@@ -73,19 +73,6 @@ public class TransformBasedVerification {
         Set<TriangleMesh> uniqueMeshes = new HashSet<>();
         countMeshesRecursive(root, uniqueMeshes);
 
-        // Debug: Print mesh details
-        if (uniqueMeshes.size() > 0) {
-            System.out.println("DEBUG: Found " + uniqueMeshes.size() + " unique meshes:");
-            int i = 1;
-            for (TriangleMesh mesh : uniqueMeshes) {
-                System.out.println(
-                "  Mesh " + i++ + ": vertices=" + (mesh.getPoints().size() / 3) + ", faces=" + (mesh.getFaces().size()
-                                                                                                / 6) + ", hash="
-                + System.identityHashCode(mesh));
-            }
-        } else {
-            System.out.println("DEBUG: No meshes found in scene graph");
-        }
 
         return uniqueMeshes.size();
     }

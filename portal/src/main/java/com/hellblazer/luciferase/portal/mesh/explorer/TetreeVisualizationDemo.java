@@ -32,10 +32,12 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.Box;
 import javafx.scene.shape.Cylinder;
 import javafx.scene.shape.MeshView;
+import javafx.scene.shape.Sphere;
 import javafx.scene.shape.TriangleMesh;
 import javafx.scene.transform.Rotate;
 import javafx.scene.transform.Translate;
@@ -44,6 +46,7 @@ import javafx.util.Duration;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
+import javax.vecmath.Vector3f;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -62,10 +65,13 @@ public class TetreeVisualizationDemo extends Application {
     private static final double SCENE_WIDTH     = 1200;
     private static final double SCENE_HEIGHT    = 800;
     private static final double CAMERA_DISTANCE = 5000;  // Distance for viewing scaled scene at 0.001 scale
+    private static final boolean USE_TRANSFORM_BASED_AXES = true; // Feature flag for transform-based axes
 
     private final Rotate    rotateX   = new Rotate(0, Rotate.X_AXIS);
     private final Rotate    rotateY   = new Rotate(0, Rotate.Y_AXIS);
     private final Translate translate = new Translate(0, 0, 0);
+    
+    private PrimitiveTransformManager transformManager; // For transform-based rendering
 
     private TetreeVisualization<LongEntityID, String>               visualization;
     private TransformBasedTetreeVisualization<LongEntityID, String> transformBasedViz;
@@ -91,6 +97,11 @@ public class TetreeVisualizationDemo extends Application {
 
         // Create visualization
         visualization = new TetreeVisualization<>(tetree);
+
+        // Initialize transform manager if using transform-based rendering
+        if (USE_TRANSFORM_BASED_AXES) {
+            transformManager = new PrimitiveTransformManager();
+        }
 
         // Setup 3D scene
         Group root3D = visualization.getSceneRoot();
@@ -178,7 +189,7 @@ public class TetreeVisualizationDemo extends Application {
         byte level = 5;
         float L = (float) Math.pow(2, MortonCurve.MAX_REFINEMENT_LEVEL);
 
-        System.out.println("\n=== Inserting " + count + " entities at level " + level + " ===");
+        // Debug: Entity insertion (minimal output)
 
         // Create root tetrahedron
         Tet rootTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
@@ -199,11 +210,14 @@ public class TetreeVisualizationDemo extends Application {
         Point3f v2 = new Point3f(coords[2].x, coords[2].y, coords[2].z);
         Point3f v3 = new Point3f(coords[3].x, coords[3].y, coords[3].z);
 
-        System.out.println("Using " + boundsType + " tetrahedron bounds:");
-        System.out.println("  V0: " + v0);
-        System.out.println("  V1: " + v1);
-        System.out.println("  V2: " + v2);
-        System.out.println("  V3: " + v3);
+        // Debug: bounds info
+        if (false) { // Set to true to enable bounds debugging
+            System.out.println("Using " + boundsType + " tetrahedron bounds:");
+            System.out.println("  V0: " + v0);
+            System.out.println("  V1: " + v1);
+            System.out.println("  V2: " + v2);
+            System.out.println("  V3: " + v3);
+        }
 
         int inserted = 0;
         int attempts = 0;
@@ -237,24 +251,29 @@ public class TetreeVisualizationDemo extends Application {
 
             // Debug: find the enclosing tetrahedron before insertion
             var enclosingNode = tetree.enclosing(new javax.vecmath.Point3i((int) x, (int) y, (int) z), level);
-            if (enclosingNode != null) {
-                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", inserted, x,
-                                  y, z, level);
-            } else {
-                System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> No enclosing node found%n", inserted, x, y, z);
+            if (false) { // Set to true to debug enclosing nodes
+                if (enclosingNode != null) {
+                    System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> Enclosing node found at level %d%n", inserted, x,
+                                      y, z, level);
+                } else {
+                    System.out.printf("Entity %d at (%.0f, %.0f, %.0f) -> No enclosing node found%n", inserted, x, y, z);
+                }
             }
 
             tetree.insert(position, level, "Entity " + inserted);
             inserted++;
         }
 
-        if (inserted < count) {
+        // Only warn if significantly fewer entities inserted
+        if (inserted < count * 0.9) {
             System.out.printf("Warning: Only inserted %d/%d entities after %d attempts%n", inserted, count, attempts);
         }
 
-        // Verify all entities are in nodes
-        System.out.println("\n=== Verifying entity containment ===");
-        verifyEntityContainment();
+        // Debug: Verify all entities are in nodes
+        if (false) { // Set to true to enable containment verification
+            System.out.println("\n=== Verifying entity containment ===");
+            verifyEntityContainment();
+        }
 
         visualization.updateVisualization();
     }
@@ -287,9 +306,13 @@ public class TetreeVisualizationDemo extends Application {
                 float centerY = (minY + maxY) / 2;
                 float centerZ = (minZ + maxZ) / 2;
 
-                System.out.printf(
-                "Centering on %d entities: bounds [%.1f,%.1f,%.1f] to [%.1f,%.1f,%.1f], center [%.1f,%.1f,%.1f]%n",
-                entityCount, minX, minY, minZ, maxX, maxY, maxZ, centerX, centerY, centerZ);
+                // Debug: camera positioning
+                if (false) { // Set to true to debug camera movement
+                    System.out.printf(
+                    "Centering on %d entities: bounds [%.1f,%.1f,%.1f] to [%.1f,%.1f,%.1f], center [%.1f,%.1f,%.1f]%n",
+                    entityCount, minX, minY, minZ, maxX, maxY, maxZ, centerX, centerY, centerZ);
+                    System.out.printf("Scale: %.6f%n", visualization.rootScaleProperty().get());
+                }
 
                 // Reset rotation to look straight at entities
                 rotateX.setAngle(-20); // Slight downward tilt
@@ -297,7 +320,6 @@ public class TetreeVisualizationDemo extends Application {
 
                 // Apply scale to convert from Tetree coordinates to scene coordinates
                 double scale = visualization.rootScaleProperty().get();
-                System.out.printf("Scale: %.6f%n", scale);
 
                 // Center the view by translating in the opposite direction
                 translate.setX(-centerX * scale);
@@ -310,8 +332,11 @@ public class TetreeVisualizationDemo extends Application {
                 double optimalDistance = scaledSpread * 2.5; // View from 2.5x the spread distance
                 scene3D.getCamera().setTranslateZ(-Math.max(optimalDistance, 1000));
 
-                System.out.printf("Camera position: translate [%.1f,%.1f,%.1f], distance %.1f%n", translate.getX(),
-                                  translate.getY(), translate.getZ(), scene3D.getCamera().getTranslateZ());
+                // Debug: final camera position
+                if (false) { // Set to true to debug camera positioning
+                    System.out.printf("Camera position: translate [%.1f,%.1f,%.1f], distance %.1f%n", translate.getX(),
+                                      translate.getY(), translate.getZ(), scene3D.getCamera().getTranslateZ());
+                }
             }
         }
     }
@@ -342,26 +367,69 @@ public class TetreeVisualizationDemo extends Application {
         double axisLength = (1 << MortonCurve.MAX_REFINEMENT_LEVEL) * 1.1; // 2^20 * 1.1
         double axisRadius = 8192;    // 2^13
 
-        // X axis - Red
-        Cylinder xAxis = new Cylinder(axisRadius, axisLength);
-        xAxis.setMaterial(new PhongMaterial(Color.RED));
-        xAxis.setRotate(90);
-        xAxis.setRotationAxis(Rotate.Z_AXIS);
-        xAxis.setTranslateX(axisLength / 2);
+        if (USE_TRANSFORM_BASED_AXES && transformManager != null) {
+            // Transform-based implementation using PrimitiveTransformManager
+            PhongMaterial redMaterial = new PhongMaterial(Color.RED);
+            PhongMaterial greenMaterial = new PhongMaterial(Color.GREEN);
+            PhongMaterial blueMaterial = new PhongMaterial(Color.BLUE);
+            
+            // X axis - Red (positioned at halfway point along X)
+            MeshView xAxis = transformManager.createCylinder(
+                new Point3f((float)(axisLength / 2), 0, 0),
+                (float)axisRadius,
+                (float)axisLength,
+                new Vector3f(0, 0, 90), // Rotate around Z axis
+                redMaterial
+            );
+            
+            // Y axis - Green (positioned at halfway point along Y)
+            MeshView yAxis = transformManager.createCylinder(
+                new Point3f(0, (float)(axisLength / 2), 0),
+                (float)axisRadius,
+                (float)axisLength,
+                null, // No rotation needed, cylinder default is Y-aligned
+                greenMaterial
+            );
+            
+            // Z axis - Blue (positioned at halfway point along Z)
+            MeshView zAxis = transformManager.createCylinder(
+                new Point3f(0, 0, (float)(axisLength / 2)),
+                (float)axisRadius,
+                (float)axisLength,
+                new Vector3f(90, 0, 0), // Rotate around X axis
+                blueMaterial
+            );
+            
+            axesGroup.getChildren().addAll(xAxis, yAxis, zAxis);
+        } else {
+            // Traditional implementation with individual Cylinder objects
+            // X axis - Red
+            Cylinder xAxis = new Cylinder(axisRadius, axisLength);
+            xAxis.setMaterial(new PhongMaterial(Color.RED));
+            xAxis.setRotate(90);
+            xAxis.setRotationAxis(Rotate.Z_AXIS);
+            xAxis.setTranslateX(axisLength / 2);
 
-        // Y axis - Green
-        Cylinder yAxis = new Cylinder(axisRadius, axisLength);
-        yAxis.setMaterial(new PhongMaterial(Color.GREEN));
-        yAxis.setTranslateY(axisLength / 2);
+            // Y axis - Green
+            Cylinder yAxis = new Cylinder(axisRadius, axisLength);
+            yAxis.setMaterial(new PhongMaterial(Color.GREEN));
+            yAxis.setTranslateY(axisLength / 2);
 
-        // Z axis - Blue
-        Cylinder zAxis = new Cylinder(axisRadius, axisLength);
-        zAxis.setMaterial(new PhongMaterial(Color.BLUE));
-        zAxis.setRotate(90);
-        zAxis.setRotationAxis(Rotate.X_AXIS);
-        zAxis.setTranslateZ(axisLength / 2);
+            // Z axis - Blue
+            Cylinder zAxis = new Cylinder(axisRadius, axisLength);
+            zAxis.setMaterial(new PhongMaterial(Color.BLUE));
+            zAxis.setRotate(90);
+            zAxis.setRotationAxis(Rotate.X_AXIS);
+            zAxis.setTranslateZ(axisLength / 2);
 
-        axesGroup.getChildren().addAll(xAxis, yAxis, zAxis);
+            axesGroup.getChildren().addAll(xAxis, yAxis, zAxis);
+        }
+        
+        // Add origin marker for debugging
+        Sphere originMarker = new Sphere(axisRadius * 2);
+        originMarker.setMaterial(new PhongMaterial(Color.WHITE));
+        axesGroup.getChildren().add(originMarker);
+        
         return axesGroup;
     }
 
@@ -389,8 +457,6 @@ public class TetreeVisualizationDemo extends Application {
         "When checked, entities are generated within subdivision tetrahedron bounds\nWhen unchecked, entities use S0-S5 tetrahedron bounds"));
         useSubdivisionBoundsCheck.setOnAction(_ -> {
             useSubdivisionBounds = useSubdivisionBoundsCheck.isSelected();
-            System.out.println(
-            "Entity generation will use " + (useSubdivisionBounds ? "subdivision" : "S0-S5") + " bounds");
         });
 
         controls.getChildren().addAll(addRandomEntities, clearEntities, useSubdivisionBoundsCheck);
@@ -504,8 +570,6 @@ public class TetreeVisualizationDemo extends Application {
             // Run later to ensure scene graph is updated
             javafx.application.Platform.runLater(() -> {
                 if (useTransformBased.isSelected() && transformBasedViz != null) {
-                    System.out.println("\nDEBUG: Verifying transform-based scene root:");
-                    System.out.println("  Root children: " + transformBasedViz.getSceneRoot().getChildren().size());
                     TransformBasedVerification.printVerificationStats(transformBasedViz.getSceneRoot(),
                                                                       "Transform-Based");
                 } else {
@@ -717,16 +781,54 @@ public class TetreeVisualizationDemo extends Application {
         Button animatedAddBtn = new Button("Add Entity (Animated)");
         animatedAddBtn.setOnAction(_ -> {
             Random rand = new Random();
-            float x = rand.nextFloat() * 800 + 100;
-            float y = rand.nextFloat() * 800 + 100;
-            float z = rand.nextFloat() * 800 + 100;
-            Point3f position = new Point3f(x, y, z);
-
-            // Get the next entity ID
-            LongEntityID newId = tetree.insert(position, (byte) 10, "Animated Entity");
-
-            // Animate the insertion
-            visualization.animateEntityInsertion(newId, position);
+            
+            // Use the same coordinate generation as regular entities
+            // Get bounds of existing entities to add near them
+            if (tetree.size() > 0) {
+                // Calculate bounds of existing entities
+                float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE, minZ = Float.MAX_VALUE;
+                float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE, maxZ = Float.MIN_VALUE;
+                
+                for (var node : tetree.nodes().toList()) {
+                    for (var entityId : node.entityIds()) {
+                        Point3f pos = tetree.getEntityPosition(entityId);
+                        if (pos != null) {
+                            minX = Math.min(minX, pos.x);
+                            minY = Math.min(minY, pos.y);
+                            minZ = Math.min(minZ, pos.z);
+                            maxX = Math.max(maxX, pos.x);
+                            maxY = Math.max(maxY, pos.y);
+                            maxZ = Math.max(maxZ, pos.z);
+                        }
+                    }
+                }
+                
+                // Add new entity within the same range
+                float x = minX + rand.nextFloat() * (maxX - minX);
+                float y = minY + rand.nextFloat() * (maxY - minY);
+                float z = minZ + rand.nextFloat() * (maxZ - minZ);
+                Point3f position = new Point3f(x, y, z);
+                
+                // Insert at level 5 like other entities
+                byte level = 5;
+                LongEntityID newId = tetree.insert(position, level, "Animated Entity");
+                
+                // Animate the insertion
+                visualization.animateEntityInsertion(newId, position);
+            } else {
+                // No entities yet, use default range
+                float scale = (float) Math.pow(2, 18); // Mid-range coordinates
+                float x = rand.nextFloat() * scale + scale;
+                float y = rand.nextFloat() * scale + scale;
+                float z = rand.nextFloat() * scale + scale;
+                Point3f position = new Point3f(x, y, z);
+                
+                byte level = 5;
+                LongEntityID newId = tetree.insert(position, level, "Animated Entity");
+                
+                // Animate the insertion
+                visualization.animateEntityInsertion(newId, position);
+            }
         });
         controls.getChildren().add(animatedAddBtn);
 
@@ -739,6 +841,21 @@ public class TetreeVisualizationDemo extends Application {
         showPerformance.selectedProperty().addListener(
         (_, _, newVal) -> visualization.setShowPerformanceOverlay(newVal));
         controls.getChildren().add(showPerformance);
+        
+        // Transform-based entities
+        CheckBox useTransformBasedEntities = new CheckBox("Transform-Based Entities");
+        useTransformBasedEntities.setTooltip(new Tooltip(
+            "Uses instanced sphere meshes with transforms\nProvides significant memory savings for large entity counts"));
+        useTransformBasedEntities.setSelected(false);
+        useTransformBasedEntities.selectedProperty().addListener(
+            (_, _, newVal) -> {
+                visualization.setUseTransformBasedEntities(newVal);
+                // Refresh characteristic types if they're showing
+                if (!characteristicTypesGroup.getChildren().isEmpty()) {
+                    showCharacteristicTypesVisualization();
+                }
+            });
+        controls.getChildren().add(useTransformBasedEntities);
 
         // Export snapshot
         controls.getChildren().add(new Separator());
@@ -843,6 +960,8 @@ public class TetreeVisualizationDemo extends Application {
         return meshView;
     }
 
+    private static final boolean USE_TRANSFORM_BASED_WIREFRAME = true;
+    
     private Group createWireframeCube(double offset, double size) {
         Group wireframe = new Group();
 
@@ -850,48 +969,115 @@ public class TetreeVisualizationDemo extends Application {
         PhongMaterial edgeMaterial = new PhongMaterial(Color.BLACK);
         double edgeThickness = size * 0.005; // Scale thickness with cube size
 
-        // Helper to create edge
-        var createEdge = new java.util.function.Function<double[], Box>() {
-            @Override
-            public Box apply(double[] params) {
-                Box edge = new Box(params[0], params[1], params[2]);
-                edge.setTranslateX(params[3]);
-                edge.setTranslateY(params[4]);
-                edge.setTranslateZ(params[5]);
-                edge.setMaterial(edgeMaterial);
-                return edge;
-            }
-        };
+        if (USE_TRANSFORM_BASED_WIREFRAME && transformManager != null) {
+            // Transform-based implementation using shared box mesh
+            
+            // Bottom face edges
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size / 2), (float)offset, (float)offset),
+                new Vector3f((float)size, (float)edgeThickness, (float)edgeThickness),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size), (float)(offset + size / 2), (float)offset),
+                new Vector3f((float)edgeThickness, (float)size, (float)edgeThickness),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size / 2), (float)(offset + size), (float)offset),
+                new Vector3f((float)size, (float)edgeThickness, (float)edgeThickness),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)offset, (float)(offset + size / 2), (float)offset),
+                new Vector3f((float)edgeThickness, (float)size, (float)edgeThickness),
+                edgeMaterial));
 
-        // Bottom face edges
-        wireframe.getChildren().add(
-        createEdge.apply(new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset, offset }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { edgeThickness, size, edgeThickness, offset + size, offset + size / 2, offset }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset + size, offset }));
-        wireframe.getChildren().add(
-        createEdge.apply(new double[] { edgeThickness, size, edgeThickness, offset, offset + size / 2, offset }));
+            // Top face edges  
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size / 2), (float)offset, (float)(offset + size)),
+                new Vector3f((float)size, (float)edgeThickness, (float)edgeThickness),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size), (float)(offset + size / 2), (float)(offset + size)),
+                new Vector3f((float)edgeThickness, (float)size, (float)edgeThickness),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size / 2), (float)(offset + size), (float)(offset + size)),
+                new Vector3f((float)size, (float)edgeThickness, (float)edgeThickness),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)offset, (float)(offset + size / 2), (float)(offset + size)),
+                new Vector3f((float)edgeThickness, (float)size, (float)edgeThickness),
+                edgeMaterial));
 
-        // Top face edges
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset, offset + size }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { edgeThickness, size, edgeThickness, offset + size, offset + size / 2, offset + size }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset + size, offset + size }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { edgeThickness, size, edgeThickness, offset, offset + size / 2, offset + size }));
+            // Vertical edges
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)offset, (float)offset, (float)(offset + size / 2)),
+                new Vector3f((float)edgeThickness, (float)edgeThickness, (float)size),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size), (float)offset, (float)(offset + size / 2)),
+                new Vector3f((float)edgeThickness, (float)edgeThickness, (float)size),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)(offset + size), (float)(offset + size), (float)(offset + size / 2)),
+                new Vector3f((float)edgeThickness, (float)edgeThickness, (float)size),
+                edgeMaterial));
+            wireframe.getChildren().add(transformManager.createBox(
+                new Point3f((float)offset, (float)(offset + size), (float)(offset + size / 2)),
+                new Vector3f((float)edgeThickness, (float)edgeThickness, (float)size),
+                edgeMaterial));
+            
+            System.out.println("Created wireframe cube using transform-based rendering:");
+            System.out.println("  - Size: " + size);
+            System.out.println("  - Offset: " + offset);
+            System.out.println("  - Edge thickness: " + edgeThickness);
+            System.out.println("  - 12 box instances sharing 1 reference mesh");
+                
+        } else {
+            // Traditional implementation with individual Box objects
+            
+            // Helper to create edge
+            var createEdge = new java.util.function.Function<double[], Box>() {
+                @Override
+                public Box apply(double[] params) {
+                    Box edge = new Box(params[0], params[1], params[2]);
+                    edge.setTranslateX(params[3]);
+                    edge.setTranslateY(params[4]);
+                    edge.setTranslateZ(params[5]);
+                    edge.setMaterial(edgeMaterial);
+                    return edge;
+                }
+            };
 
-        // Vertical edges
-        wireframe.getChildren().add(
-        createEdge.apply(new double[] { edgeThickness, edgeThickness, size, offset, offset, offset + size / 2 }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { edgeThickness, edgeThickness, size, offset + size, offset, offset + size / 2 }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { edgeThickness, edgeThickness, size, offset + size, offset + size, offset + size / 2 }));
-        wireframe.getChildren().add(createEdge.apply(
-        new double[] { edgeThickness, edgeThickness, size, offset, offset + size, offset + size / 2 }));
+            // Bottom face edges
+            wireframe.getChildren().add(
+            createEdge.apply(new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset, offset }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { edgeThickness, size, edgeThickness, offset + size, offset + size / 2, offset }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset + size, offset }));
+            wireframe.getChildren().add(
+            createEdge.apply(new double[] { edgeThickness, size, edgeThickness, offset, offset + size / 2, offset }));
+
+            // Top face edges
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset, offset + size }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { edgeThickness, size, edgeThickness, offset + size, offset + size / 2, offset + size }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { size, edgeThickness, edgeThickness, offset + size / 2, offset + size, offset + size }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { edgeThickness, size, edgeThickness, offset, offset + size / 2, offset + size }));
+
+            // Vertical edges
+            wireframe.getChildren().add(
+            createEdge.apply(new double[] { edgeThickness, edgeThickness, size, offset, offset, offset + size / 2 }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { edgeThickness, edgeThickness, size, offset + size, offset, offset + size / 2 }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { edgeThickness, edgeThickness, size, offset + size, offset + size, offset + size / 2 }));
+            wireframe.getChildren().add(createEdge.apply(
+            new double[] { edgeThickness, edgeThickness, size, offset, offset + size, offset + size / 2 }));
+        }
 
         return wireframe;
     }
@@ -974,18 +1160,67 @@ public class TetreeVisualizationDemo extends Application {
 
         Color[] colors = { Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW, Color.MAGENTA, Color.CYAN };
 
-        for (int i = 0; i < 6; i++) {
-            double x = baseX + (i % 3) * spacing;
-            double y = baseY + (i < 3 ? 0 : 1) * spacing;
+        // Use the same transform-based flag as entities
+        boolean useTransformBased = visualization.getUseTransformBasedEntities();
+        
+        if (useTransformBased && transformManager != null) {
+            // Transform-based implementation using type-specific tetrahedra
+            for (int i = 0; i < 6; i++) {
+                double x = baseX + (i % 3) * spacing;
+                double y = baseY + (i < 3 ? 0 : 1) * spacing;
+                double z = 0;
+                
+                // Create tetrahedron using the proper S0-S5 type
+                Material material = transformManager.materialPool.getMaterial(
+                    colors[i].deriveColor(0, 1, 1, 0.7));
+                
+                MeshView tet = transformManager.createTetrahedron(
+                    i, // Use type directly (0-5 maps to S0-S5)
+                    new Point3f((float)x, (float)y, (float)z),
+                    (float)size,
+                    material
+                );
+                
+                characteristicTypesGroup.getChildren().add(tet);
+            }
+            
+        } else {
+            // Traditional implementation using actual S0-S5 tetrahedra
+            for (int i = 0; i < 6; i++) {
+                double x = baseX + (i % 3) * spacing;
+                double y = baseY + (i < 3 ? 0 : 1) * spacing;
+                double z = baseY;  // Base Z position
 
-            // Create a standard tetrahedron for each type
-            Point3f v0 = new Point3f((float) x, (float) y, 0);
-            Point3f v1 = new Point3f((float) (x + size), (float) y, 0);
-            Point3f v2 = new Point3f((float) (x + size / 2), (float) (y + size * 0.866), 0);
-            Point3f v3 = new Point3f((float) (x + size / 2), (float) (y + size * 0.289), (float) (size * 0.816));
+                // Create unit cube vertices for this position
+                Point3f[] cubeVerts = new Point3f[8];
+                cubeVerts[0] = new Point3f((float) x, (float) y, (float) z);                    // (0,0,0)
+                cubeVerts[1] = new Point3f((float) (x + size), (float) y, (float) z);          // (1,0,0)
+                cubeVerts[2] = new Point3f((float) x, (float) (y + size), (float) z);          // (0,1,0)
+                cubeVerts[3] = new Point3f((float) (x + size), (float) (y + size), (float) z); // (1,1,0)
+                cubeVerts[4] = new Point3f((float) x, (float) y, (float) (z + size));          // (0,0,1)
+                cubeVerts[5] = new Point3f((float) (x + size), (float) y, (float) (z + size)); // (1,0,1)
+                cubeVerts[6] = new Point3f((float) x, (float) (y + size), (float) (z + size)); // (0,1,1)
+                cubeVerts[7] = new Point3f((float) (x + size), (float) (y + size), (float) (z + size)); // (1,1,1)
 
-            MeshView tet = createTetrahedronMesh(v0, v1, v2, v3, colors[i].deriveColor(0, 1, 1, 0.7));
-            characteristicTypesGroup.getChildren().add(tet);
+                // Use the correct vertex ordering from Tet.coordinates()
+                int[][] tetIndices = { 
+                    { 0, 1, 3, 7 },  // S0: vertices 0, 1, 3, 7 of cube
+                    { 0, 2, 3, 7 },  // S1: vertices 0, 2, 3, 7 of cube
+                    { 0, 4, 5, 7 },  // S2: vertices 0, 4, 5, 7 of cube
+                    { 0, 4, 6, 7 },  // S3: vertices 0, 4, 6, 7 of cube
+                    { 0, 1, 5, 7 },  // S4: vertices 0, 1, 5, 7 of cube
+                    { 0, 2, 6, 7 }   // S5: vertices 0, 2, 6, 7 of cube
+                };
+                
+                // Create the tetrahedron using the correct vertices
+                Point3f v0 = cubeVerts[tetIndices[i][0]];
+                Point3f v1 = cubeVerts[tetIndices[i][1]];
+                Point3f v2 = cubeVerts[tetIndices[i][2]];
+                Point3f v3 = cubeVerts[tetIndices[i][3]];
+
+                MeshView tet = createTetrahedronMesh(v0, v1, v2, v3, colors[i].deriveColor(0, 1, 1, 0.7));
+                characteristicTypesGroup.getChildren().add(tet);
+            }
         }
     }
 
@@ -1077,10 +1312,7 @@ public class TetreeVisualizationDemo extends Application {
         // Make it visible
         transformRoot.setVisible(true);
 
-        System.out.println("DEBUG: Transform-based visualization active");
-        System.out.println("  Transform root children: " + transformRoot.getChildren().size());
-        System.out.println("  Root3D children: " + root3D.getChildren().size());
-        System.out.println("  Root3D transforms: " + root3D.getTransforms());
+        // Transform-based visualization is now active
     }
 
     private void verifyEntityContainment() {
@@ -1093,8 +1325,8 @@ public class TetreeVisualizationDemo extends Application {
         int maxLevel = visualization.maxLevelProperty().get();
         boolean showEmpty = visualization.showEmptyNodesProperty().get();
 
-        System.out.println("\n=== Entity Containment Verification ===");
-        System.out.println("Visibility settings: levels " + minLevel + "-" + maxLevel + ", showEmpty=" + showEmpty);
+        // Entity containment verification
+        // Visibility settings: levels minLevel-maxLevel, showEmpty status
 
         // Track entities outside visible range
         Map<Integer, Integer> entitiesByLevel = new HashMap<>();
@@ -1125,13 +1357,15 @@ public class TetreeVisualizationDemo extends Application {
                             foundInVisibleNode = true;
                         } else {
                             // Debug: show why not visible
-                            if (level < minLevel || level > maxLevel) {
-                                System.out.printf(
-                                "Entity %s at (%.0f,%.0f,%.0f) in node at level %d (outside visible range)%n", entityId,
-                                position.x, position.y, position.z, level);
-                            } else if (!showEmpty && nodeCheck.entityIds().size() == 1) {
-                                System.out.printf("Entity %s at (%.0f,%.0f,%.0f) in 'empty' node (only 1 entity)%n",
-                                                  entityId, position.x, position.y, position.z);
+                            if (false) { // Set to true for verbose entity debugging
+                                if (level < minLevel || level > maxLevel) {
+                                    System.out.printf(
+                                    "Entity %s at (%.0f,%.0f,%.0f) in node at level %d (outside visible range)%n", entityId,
+                                    position.x, position.y, position.z, level);
+                                } else if (!showEmpty && nodeCheck.entityIds().size() == 1) {
+                                    System.out.printf("Entity %s at (%.0f,%.0f,%.0f) in 'empty' node (only 1 entity)%n",
+                                                      entityId, position.x, position.y, position.z);
+                                }
                             }
                         }
                         break;
@@ -1159,13 +1393,8 @@ public class TetreeVisualizationDemo extends Application {
             }
         }
 
-        System.out.println("\nEntity distribution by level:");
-        entitiesByLevel.forEach((level, count) -> System.out.printf("  Level %d: %d entities%s%n", level, count,
-                                                                    (level < minLevel || level > maxLevel)
-                                                                    ? " (not visible)" : ""));
-
-        System.out.printf("\nSummary: %d total entities, %d in visible nodes, %d without visible container%n",
-                          totalEntities, entitiesInVisibleNodes, entitiesWithoutVisibleContainer);
+        // Entity distribution by level and summary would be shown here
+        // Total: totalEntities, visible: entitiesInVisibleNodes, without container: entitiesWithoutVisibleContainer
     }
 
     /**

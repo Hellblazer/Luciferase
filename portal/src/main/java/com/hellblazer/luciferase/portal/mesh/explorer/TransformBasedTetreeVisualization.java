@@ -47,7 +47,7 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
     private static final Color[]                   TYPE_COLORS      = { Color.RED, Color.GREEN, Color.BLUE,
                                                                           Color.YELLOW, Color.MAGENTA, Color.CYAN };
     // Transform manager handles mesh creation and transformations
-    private final        TetrahedralTransformViews transformManager = new TetrahedralTransformViews();
+    private final        PrimitiveTransformManager transformManager = new PrimitiveTransformManager();
     // Scene root
     private final        Group                     sceneRoot        = new Group();
     // Materials for each type
@@ -68,16 +68,24 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
      * @return The transformed mesh view
      */
     public MeshView addTetrahedronInstance(Tet tet, double opacity) {
-        var meshView = transformManager.of(tet);
-
-        // Apply material
+        // Get color and create material
         int type = tet.type();
         Color baseColor = getColorForType(type);
-        PhongMaterial material1 = new PhongMaterial();
-        material1.setDiffuseColor(baseColor.deriveColor(0, 1, 1, opacity));
-        material1.setSpecularColor(baseColor.brighter());
-        PhongMaterial material = material1;
-        meshView.setMaterial(material);
+        PhongMaterial material = new PhongMaterial();
+        material.setDiffuseColor(baseColor.deriveColor(0, 1, 1, opacity));
+        material.setSpecularColor(baseColor.brighter());
+        
+        // Create tetrahedron using PrimitiveTransformManager
+        // Calculate edge length from level (same as Octree - halves at each level)
+        float edgeLength = (float)(1 << (com.hellblazer.luciferase.geometry.MortonCurve.MAX_REFINEMENT_LEVEL - tet.l));
+        
+        MeshView meshView = transformManager.createTetrahedron(
+            type,
+            new javax.vecmath.Point3f(tet.x(), tet.y(), tet.z()),
+            edgeLength,
+            material
+        );
+        
         meshView.setOpacity(opacity);
 
         // Add to scene
@@ -109,36 +117,14 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
         clear();
 
         // Add all tetrahedra from the tetree
-        System.out.println("Tetree has " + tetree.nodes().count() + " nodes");
         tetree.nodes().forEach(node -> {
             TetreeKey<? extends TetreeKey> key = node.sfcIndex();
             Tet tet = Tet.tetrahedron(key);
-
-            System.out.println(
-            "Adding tet: type=" + tet.type() + ", level=" + tet.l() + ", pos=(" + tet.x() + "," + tet.y() + ","
-            + tet.z() + ")");
 
             // All tetrahedra share the same 6 reference meshes
             // Only the transforms are different
             addTetrahedronInstance(tet, 0.3);
         });
-
-        // Print verification info
-        int tetCount = sceneRoot.getChildren().size();
-        Map<String, Integer> stats = transformManager.getStatistics();
-
-        System.out.println("\n=== Transform-Based Rendering Active ===");
-        System.out.println(
-        "Created " + tetCount + " tetrahedra using only " + stats.get("referenceMeshCount") + " reference meshes");
-        System.out.println("Reference meshes: " + stats.get("referenceMeshCount"));
-        System.out.println("Transform cache size: " + stats.get("transformCacheSize"));
-        if (tetCount > 0) {
-            System.out.println("Memory saved: ~" + ((tetCount - stats.get("referenceMeshCount")) * 100 / tetCount)
-                               + "%");
-        } else {
-            System.out.println("No tetrahedra to display - add some entities first!");
-        }
-        System.out.println("=====================================\n");
     }
 
     /**
@@ -161,9 +147,9 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
     /**
      * Get the transform manager for direct access if needed.
      *
-     * @return The tetrahedral transform manager
+     * @return The primitive transform manager
      */
-    public TetrahedralTransformViews getTransformManager() {
+    public PrimitiveTransformManager getTransformManager() {
         return transformManager;
     }
 
