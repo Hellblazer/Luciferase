@@ -2423,24 +2423,20 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             queryGroup.getChildren().add(distanceLabel);
         }
 
-        // Highlight tetrahedra that the ray passes through
-        tetree.nodes().forEach(node -> {
-            TetreeKey<? extends TetreeKey> key = node.sfcIndex();
-            Tet tet = key.toTet();
-
-            // Simple ray-tetrahedron intersection check
-            if (rayIntersectsTetrahedron(query.origin, query.direction, tet)) {
-                Node nodeVisual = nodeVisuals.get(key);
-                if (nodeVisual instanceof final Group group) {
-                    // Highlight the tetrahedron
-                    group.getChildren().forEach(child -> {
-                        if (child instanceof final MeshView mesh) {
-                            PhongMaterial highlightMaterial = new PhongMaterial(Color.PINK.deriveColor(0, 1, 1, 0.5));
-                            mesh.setMaterial(highlightMaterial);
-                            mesh.setOpacity(0.5);
-                        }
-                    });
-                }
+        // Use the spatial index's ray traversal to find intersecting tetrahedra
+        Vector3f directionVec = new Vector3f(query.direction.x, query.direction.y, query.direction.z);
+        Ray3D traversalRay = new Ray3D(query.origin, directionVec, Float.MAX_VALUE);
+        tetree.getRayTraversalOrder(traversalRay).forEach(key -> {
+            Node nodeVisual = nodeVisuals.get(key);
+            if (nodeVisual instanceof final Group group) {
+                // Highlight the tetrahedron
+                group.getChildren().forEach(child -> {
+                    if (child instanceof final MeshView mesh) {
+                        PhongMaterial highlightMaterial = new PhongMaterial(Color.PINK.deriveColor(0, 1, 1, 0.5));
+                        mesh.setMaterial(highlightMaterial);
+                        mesh.setOpacity(0.5);
+                    }
+                });
             }
         });
     }
