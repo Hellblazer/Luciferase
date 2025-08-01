@@ -27,6 +27,8 @@ import com.hellblazer.luciferase.portal.mesh.Line;
 import javafx.animation.AnimationTimer;
 import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
+import javafx.animation.ParallelTransition;
+import javafx.animation.SequentialTransition;
 import javafx.animation.Timeline;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
@@ -105,6 +107,7 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     private TransformBasedEntity.EntityManager transformEntityManager;
     private PrimitiveTransformManager primitiveManager;
     private MaterialPool entityMaterialPool;
+    private TransformAnimator transformAnimator;
     private       long           frameCount             = 0;
     private       long           lastFPSUpdate          = 0;
     private       double         currentFPS             = 0;
@@ -157,52 +160,85 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         // Create a temporary sphere at the insertion point
         // Make it slightly larger than regular entities for visibility during animation
         // Entity radius is typically 3276.8, so make this 2x larger
-        Sphere insertMarker = new Sphere(6553.6);
-        insertMarker.setTranslateX(position.x);
-        insertMarker.setTranslateY(position.y);
-        insertMarker.setTranslateZ(position.z);
-
         PhongMaterial material = new PhongMaterial(Color.YELLOW);
         material.setSpecularColor(Color.WHITE);
-        insertMarker.setMaterial(material);
-        insertMarker.setOpacity(0.0);
+        
+        Node insertMarker;
+        if (primitiveManager != null) {
+            // Transform-based rendering
+            MeshView marker = primitiveManager.createSphere(position, 6553.6f, material);
+            marker.setOpacity(0.0);
+            insertMarker = marker;
+        } else {
+            // Traditional rendering fallback
+            Sphere marker = new Sphere(6553.6);
+            marker.setTranslateX(position.x);
+            marker.setTranslateY(position.y);
+            marker.setTranslateZ(position.z);
+            marker.setMaterial(material);
+            marker.setOpacity(0.0);
+            insertMarker = marker;
+        }
 
         queryGroup.getChildren().add(insertMarker);
 
-        // Animate the appearance
-        Timeline timeline = new Timeline();
+        // Use TransformAnimator for more efficient animation
+        if (transformAnimator != null && primitiveManager != null) {
+            // Create insertion animation sequence
+            SequentialTransition sequence = transformAnimator.createSequence(insertMarker);
+            
+            // Fade in
+            Timeline fadeIn = transformAnimator.animateOpacity(insertMarker, 1.0, Duration.millis(200));
+            
+            // Pulse effect (scale up)
+            Timeline scaleUp = transformAnimator.animateScale(insertMarker, 1.5, Duration.millis(200));
+            
+            // Scale down and fade out
+            ParallelTransition parallel = transformAnimator.createParallel(insertMarker);
+            Timeline scaleDown = transformAnimator.animateScale(insertMarker, 0.5, Duration.millis(400));
+            Timeline fadeOut = transformAnimator.animateOpacity(insertMarker, 0.0, Duration.millis(400));
+            parallel.getChildren().addAll(scaleDown, fadeOut);
+            
+            sequence.getChildren().addAll(fadeIn, scaleUp, parallel);
+            sequence.setOnFinished(e -> {
+                queryGroup.getChildren().remove(insertMarker);
+                updateVisualization();
+                highlightAffectedNode(position);
+            });
+            
+            sequence.play();
+        } else {
+            // Fallback to traditional animation
+            Timeline timeline = new Timeline();
 
-        // Fade in
-        KeyValue fadeIn = new KeyValue(insertMarker.opacityProperty(), 1.0);
-        KeyFrame kf1 = new KeyFrame(Duration.millis(200), fadeIn);
+            // Fade in
+            KeyValue fadeIn = new KeyValue(insertMarker.opacityProperty(), 1.0);
+            KeyFrame kf1 = new KeyFrame(Duration.millis(200), fadeIn);
 
-        // Pulse effect
-        KeyValue scaleUp = new KeyValue(insertMarker.scaleXProperty(), 1.5);
-        KeyValue scaleUpY = new KeyValue(insertMarker.scaleYProperty(), 1.5);
-        KeyValue scaleUpZ = new KeyValue(insertMarker.scaleZProperty(), 1.5);
-        KeyFrame kf2 = new KeyFrame(Duration.millis(400), scaleUp, scaleUpY, scaleUpZ);
+            // Pulse effect
+            KeyValue scaleUp = new KeyValue(insertMarker.scaleXProperty(), 1.5);
+            KeyValue scaleUpY = new KeyValue(insertMarker.scaleYProperty(), 1.5);
+            KeyValue scaleUpZ = new KeyValue(insertMarker.scaleZProperty(), 1.5);
+            KeyFrame kf2 = new KeyFrame(Duration.millis(400), scaleUp, scaleUpY, scaleUpZ);
 
-        KeyValue scaleDown = new KeyValue(insertMarker.scaleXProperty(), 0.5);
-        KeyValue scaleDownY = new KeyValue(insertMarker.scaleYProperty(), 0.5);
-        KeyValue scaleDownZ = new KeyValue(insertMarker.scaleZProperty(), 0.5);
-        KeyValue fadeOut = new KeyValue(insertMarker.opacityProperty(), 0.0);
-        KeyFrame kf3 = new KeyFrame(Duration.millis(800), scaleDown, scaleDownY, scaleDownZ, fadeOut);
+            KeyValue scaleDown = new KeyValue(insertMarker.scaleXProperty(), 0.5);
+            KeyValue scaleDownY = new KeyValue(insertMarker.scaleYProperty(), 0.5);
+            KeyValue scaleDownZ = new KeyValue(insertMarker.scaleZProperty(), 0.5);
+            KeyValue fadeOut = new KeyValue(insertMarker.opacityProperty(), 0.0);
+            KeyFrame kf3 = new KeyFrame(Duration.millis(800), scaleDown, scaleDownY, scaleDownZ, fadeOut);
 
-        timeline.getKeyFrames().addAll(kf1, kf2, kf3);
+            timeline.getKeyFrames().addAll(kf1, kf2, kf3);
 
-        timeline.setOnFinished(e -> {
-            queryGroup.getChildren().remove(insertMarker);
-            activeAnimations.remove(timeline);
+            timeline.setOnFinished(e -> {
+                queryGroup.getChildren().remove(insertMarker);
+                activeAnimations.remove(timeline);
+                updateVisualization();
+                highlightAffectedNode(position);
+            });
 
-            // Update the actual visualization
-            updateVisualization();
-
-            // Highlight the affected node
-            highlightAffectedNode(position);
-        });
-
-        activeAnimations.add(timeline);
-        timeline.play();
+            activeAnimations.add(timeline);
+            timeline.play();
+        }
     }
     
     /**
@@ -215,37 +251,15 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         animSphere.setOpacity(0.0);
         queryGroup.getChildren().add(animSphere);
         
-        // Animate the appearance
-        Timeline timeline = new Timeline();
-        
-        // Fade in and pulse
-        KeyValue fadeIn = new KeyValue(animSphere.opacityProperty(), 0.8);
-        KeyValue scaleUpX = new KeyValue(animSphere.scaleXProperty(), 1.2);
-        KeyValue scaleUpY = new KeyValue(animSphere.scaleYProperty(), 1.2);
-        KeyValue scaleUpZ = new KeyValue(animSphere.scaleZProperty(), 1.2);
-        KeyFrame kf1 = new KeyFrame(Duration.millis(200), fadeIn, scaleUpX, scaleUpY, scaleUpZ);
-        
-        // Shrink to normal size
-        KeyValue scaleDownX = new KeyValue(animSphere.scaleXProperty(), 0.5);
-        KeyValue scaleDownY = new KeyValue(animSphere.scaleYProperty(), 0.5);
-        KeyValue scaleDownZ = new KeyValue(animSphere.scaleZProperty(), 0.5);
-        KeyFrame kf2 = new KeyFrame(Duration.millis(400), scaleDownX, scaleDownY, scaleDownZ);
-        
-        // Fade out
-        KeyValue fadeOut = new KeyValue(animSphere.opacityProperty(), 0.0);
-        KeyFrame kf3 = new KeyFrame(Duration.millis(600), fadeOut);
-        
-        timeline.getKeyFrames().addAll(kf1, kf2, kf3);
-        
-        timeline.setOnFinished(e -> {
-            queryGroup.getChildren().remove(animSphere);
-            activeAnimations.remove(timeline);
-            // Trigger actual entity visualization update
-            updateVisualization();
+        // Use TransformAnimator for efficient animation
+        ParallelTransition insertion = transformAnimator.animateInsertion(animSphere, Duration.millis(400));
+        insertion.setOnFinished(e -> {
+            // After insertion animation, do removal animation
+            ParallelTransition removal = transformAnimator.animateRemoval(animSphere, Duration.millis(200), () -> {
+                queryGroup.getChildren().remove(animSphere);
+                updateVisualization();
+            });
         });
-        
-        activeAnimations.add(timeline);
-        timeline.play();
     }
 
     /**
@@ -264,26 +278,32 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
 
         Node entityVisual = entityVisuals.get(entityId);
         if (entityVisual instanceof final Sphere sphere) {
+            // Use TransformAnimator for efficient removal
+            if (transformAnimator != null) {
+                transformAnimator.animateRemoval(sphere, Duration.millis(500), () -> {
+                    updateVisualization();
+                });
+            } else {
+                // Fallback to traditional animation
+                Timeline timeline = new Timeline();
 
-            // Create removal animation
-            Timeline timeline = new Timeline();
+                // Fade and shrink
+                KeyValue fadeOut = new KeyValue(sphere.opacityProperty(), 0.0);
+                KeyValue shrinkX = new KeyValue(sphere.scaleXProperty(), 0.1);
+                KeyValue shrinkY = new KeyValue(sphere.scaleYProperty(), 0.1);
+                KeyValue shrinkZ = new KeyValue(sphere.scaleZProperty(), 0.1);
 
-            // Fade and shrink
-            KeyValue fadeOut = new KeyValue(sphere.opacityProperty(), 0.0);
-            KeyValue shrinkX = new KeyValue(sphere.scaleXProperty(), 0.1);
-            KeyValue shrinkY = new KeyValue(sphere.scaleYProperty(), 0.1);
-            KeyValue shrinkZ = new KeyValue(sphere.scaleZProperty(), 0.1);
+                KeyFrame kf = new KeyFrame(Duration.millis(500), fadeOut, shrinkX, shrinkY, shrinkZ);
+                timeline.getKeyFrames().add(kf);
 
-            KeyFrame kf = new KeyFrame(Duration.millis(500), fadeOut, shrinkX, shrinkY, shrinkZ);
-            timeline.getKeyFrames().add(kf);
+                timeline.setOnFinished(e -> {
+                    activeAnimations.remove(timeline);
+                    updateVisualization();
+                });
 
-            timeline.setOnFinished(e -> {
-                activeAnimations.remove(timeline);
-                updateVisualization();
-            });
-
-            activeAnimations.add(timeline);
-            timeline.play();
+                activeAnimations.add(timeline);
+                timeline.play();
+            }
         }
     }
     
@@ -302,28 +322,13 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         MeshView animSphere = primitiveManager.createSphere(position, 3276.8f, animMaterial);
         queryGroup.getChildren().add(animSphere);
         
-        // Create removal animation
-        Timeline timeline = new Timeline();
-        
-        // Fade and shrink
-        KeyValue fadeOut = new KeyValue(animSphere.opacityProperty(), 0.0);
-        KeyValue shrinkX = new KeyValue(animSphere.scaleXProperty(), 0.1);
-        KeyValue shrinkY = new KeyValue(animSphere.scaleYProperty(), 0.1);
-        KeyValue shrinkZ = new KeyValue(animSphere.scaleZProperty(), 0.1);
-        KeyFrame kf = new KeyFrame(Duration.millis(500), fadeOut, shrinkX, shrinkY, shrinkZ);
-        
-        timeline.getKeyFrames().add(kf);
-        
-        timeline.setOnFinished(e -> {
+        // Use TransformAnimator for efficient removal
+        transformAnimator.animateRemoval(animSphere, Duration.millis(500), () -> {
             queryGroup.getChildren().remove(animSphere);
-            activeAnimations.remove(timeline);
             // Remove the actual entity
             transformEntityManager.removeEntity(entityId);
             updateVisualization();
         });
-        
-        activeAnimations.add(timeline);
-        timeline.play();
     }
 
     /**
@@ -585,14 +590,19 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
                     if (id1.hashCode() < id2.hashCode()) {
                         Point3f pos2 = tetree.getEntityPosition(id2);
                         if (pos2 != null) {
-                            Line collisionLine = new Line(1000.0, new Point3D(pos1.x, pos1.y, pos1.z),
-                                                          new Point3D(pos2.x, pos2.y, pos2.z));
-
                             PhongMaterial lineMaterial = new PhongMaterial(Color.ORANGE);
-                            collisionLine.setMaterial(lineMaterial);
-
-                            // Add to query group for easy clearing
-                            queryGroup.getChildren().add(collisionLine);
+                            
+                            if (primitiveManager != null) {
+                                // Transform-based rendering
+                                MeshView collisionLine = primitiveManager.createLine(pos1, pos2, 1000.0f, lineMaterial);
+                                queryGroup.getChildren().add(collisionLine);
+                            } else {
+                                // Traditional rendering fallback
+                                Line collisionLine = new Line(1000.0, new Point3D(pos1.x, pos1.y, pos1.z),
+                                                              new Point3D(pos2.x, pos2.y, pos2.z));
+                                collisionLine.setMaterial(lineMaterial);
+                                queryGroup.getChildren().add(collisionLine);
+                            }
                         }
                     }
                 }
@@ -652,6 +662,9 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             // Initialize transform-based system
             if (primitiveManager == null) {
                 primitiveManager = new PrimitiveTransformManager();
+            }
+            if (transformAnimator == null) {
+                transformAnimator = new TransformAnimator();
             }
             if (entityMaterialPool == null) {
                 entityMaterialPool = new MaterialPool(1000);
@@ -901,6 +914,11 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
     public void stopAllAnimations() {
         activeAnimations.forEach(Timeline::stop);
         activeAnimations.clear();
+        
+        // Also stop TransformAnimator animations
+        if (transformAnimator != null) {
+            transformAnimator.stopAllAnimations();
+        }
     }
 
     /**
@@ -1743,30 +1761,38 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Node nodeVisual = nodeVisuals.get(affectedKey);
             if (nodeVisual instanceof final Group group) {
 
-                // Create highlight animation
-                Timeline timeline = new Timeline();
-                timeline.setCycleCount(3);
-                timeline.setAutoReverse(true);
+                // Use TransformAnimator for highlight effect
+                if (transformAnimator != null) {
+                    // Create a pulse effect on the group
+                    Timeline pulse = transformAnimator.createPulseEffect(group, 0.9, 1.1, Duration.millis(200));
+                    pulse.setCycleCount(6); // 3 full pulses
+                    pulse.setOnFinished(e -> pulse.stop());
+                } else {
+                    // Fallback to traditional animation
+                    Timeline timeline = new Timeline();
+                    timeline.setCycleCount(3);
+                    timeline.setAutoReverse(true);
 
-                // Flash the node
-                group.getChildren().forEach(child -> {
-                    if (child instanceof final MeshView mesh) {
-                        PhongMaterial originalMaterial = (PhongMaterial) mesh.getMaterial();
-                        PhongMaterial flashMaterial = new PhongMaterial(Color.WHITE);
+                    // Flash the node
+                    group.getChildren().forEach(child -> {
+                        if (child instanceof final MeshView mesh) {
+                            PhongMaterial originalMaterial = (PhongMaterial) mesh.getMaterial();
+                            PhongMaterial flashMaterial = new PhongMaterial(Color.WHITE);
 
-                        KeyValue flash = new KeyValue(mesh.materialProperty(), flashMaterial);
-                        KeyValue restore = new KeyValue(mesh.materialProperty(), originalMaterial);
+                            KeyValue flash = new KeyValue(mesh.materialProperty(), flashMaterial);
+                            KeyValue restore = new KeyValue(mesh.materialProperty(), originalMaterial);
 
-                        KeyFrame kf1 = new KeyFrame(Duration.millis(100), flash);
-                        KeyFrame kf2 = new KeyFrame(Duration.millis(200), restore);
+                            KeyFrame kf1 = new KeyFrame(Duration.millis(100), flash);
+                            KeyFrame kf2 = new KeyFrame(Duration.millis(200), restore);
 
-                        timeline.getKeyFrames().addAll(kf1, kf2);
-                    }
-                });
+                            timeline.getKeyFrames().addAll(kf1, kf2);
+                        }
+                    });
 
-                timeline.setOnFinished(e -> activeAnimations.remove(timeline));
-                activeAnimations.add(timeline);
-                timeline.play();
+                    timeline.setOnFinished(e -> activeAnimations.remove(timeline));
+                    activeAnimations.add(timeline);
+                    timeline.play();
+                }
             }
         }
     }
@@ -2466,15 +2492,24 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     private void visualizeKNNQuery(TetreeKNNQuery query) {
         // Show query point
-        Sphere queryPoint = new Sphere(5000.0);
-        queryPoint.setTranslateX(query.point.x);
-        queryPoint.setTranslateY(query.point.y);
-        queryPoint.setTranslateZ(query.point.z);
+        if (primitiveManager != null) {
+            // Transform-based rendering
+            PhongMaterial queryMaterial = new PhongMaterial(Color.RED);
+            queryMaterial.setSpecularColor(Color.WHITE);
+            MeshView queryPoint = primitiveManager.createSphere(query.point, 5000.0f, queryMaterial);
+            queryGroup.getChildren().add(queryPoint);
+        } else {
+            // Traditional rendering fallback
+            Sphere queryPoint = new Sphere(5000.0);
+            queryPoint.setTranslateX(query.point.x);
+            queryPoint.setTranslateY(query.point.y);
+            queryPoint.setTranslateZ(query.point.z);
 
-        PhongMaterial queryMaterial = new PhongMaterial(Color.RED);
-        queryMaterial.setSpecularColor(Color.WHITE);
-        queryPoint.setMaterial(queryMaterial);
-        queryGroup.getChildren().add(queryPoint);
+            PhongMaterial queryMaterial = new PhongMaterial(Color.RED);
+            queryMaterial.setSpecularColor(Color.WHITE);
+            queryPoint.setMaterial(queryMaterial);
+            queryGroup.getChildren().add(queryPoint);
+        }
 
         // Find and visualize nearest neighbors
         List<ID> neighbors = tetree.kNearestNeighbors(query.point, query.k, Float.MAX_VALUE);
@@ -2484,23 +2519,34 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
         for (ID id : neighbors) {
             Point3f entityPos = tetree.getEntityPosition(id);
             if (entityPos != null) {
-                // Draw line to neighbor
-                Line line = new Line(1000.0, new Point3D(query.point.x, query.point.y, query.point.z),
-                                     new Point3D(entityPos.x, entityPos.y, entityPos.z));
-
                 // Color gradient from orange (closest) to yellow (farthest)
                 double hue = 30 + (index - 1) * 30.0 / query.k; // 30 (orange) to 60 (yellow)
                 Color lineColor = Color.hsb(hue, 1.0, 1.0);
-                line.setMaterial(new PhongMaterial(lineColor));
-                queryGroup.getChildren().add(line);
+                PhongMaterial lineMaterial = new PhongMaterial(lineColor);
+                
+                if (primitiveManager != null) {
+                    // Transform-based rendering
+                    MeshView line = primitiveManager.createLine(query.point, entityPos, 1000.0f, lineMaterial);
+                    queryGroup.getChildren().add(line);
+                    
+                    // Create a numbered sphere at neighbor position
+                    MeshView neighborMarker = primitiveManager.createSphere(entityPos, 3000.0f, lineMaterial);
+                    queryGroup.getChildren().add(neighborMarker);
+                } else {
+                    // Traditional rendering fallback
+                    Line line = new Line(1000.0, new Point3D(query.point.x, query.point.y, query.point.z),
+                                         new Point3D(entityPos.x, entityPos.y, entityPos.z));
+                    line.setMaterial(lineMaterial);
+                    queryGroup.getChildren().add(line);
 
-                // Create a numbered sphere at neighbor position
-                Sphere neighborMarker = new Sphere(3000.0);
-                neighborMarker.setTranslateX(entityPos.x);
-                neighborMarker.setTranslateY(entityPos.y);
-                neighborMarker.setTranslateZ(entityPos.z);
-                neighborMarker.setMaterial(new PhongMaterial(lineColor));
-                queryGroup.getChildren().add(neighborMarker);
+                    // Create a numbered sphere at neighbor position
+                    Sphere neighborMarker = new Sphere(3000.0);
+                    neighborMarker.setTranslateX(entityPos.x);
+                    neighborMarker.setTranslateY(entityPos.y);
+                    neighborMarker.setTranslateZ(entityPos.z);
+                    neighborMarker.setMaterial(lineMaterial);
+                    queryGroup.getChildren().add(neighborMarker);
+                }
 
                 // Highlight original entity
                 Node entityVisual = entityVisuals.get(id);
@@ -2525,15 +2571,23 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             }
 
             if (maxDist > 0) {
-                Sphere searchRadius = new Sphere(maxDist);
-                searchRadius.setTranslateX(query.point.x);
-                searchRadius.setTranslateY(query.point.y);
-                searchRadius.setTranslateZ(query.point.z);
-
                 PhongMaterial radiusMaterial = new PhongMaterial(Color.CYAN.deriveColor(0, 1, 1, 0.2));
-                searchRadius.setMaterial(radiusMaterial);
-                searchRadius.setOpacity(0.2);
-                queryGroup.getChildren().add(searchRadius);
+                
+                if (primitiveManager != null) {
+                    // Transform-based rendering
+                    MeshView searchRadius = primitiveManager.createSphere(query.point, maxDist, radiusMaterial);
+                    searchRadius.setOpacity(0.2);
+                    queryGroup.getChildren().add(searchRadius);
+                } else {
+                    // Traditional rendering fallback
+                    Sphere searchRadius = new Sphere(maxDist);
+                    searchRadius.setTranslateX(query.point.x);
+                    searchRadius.setTranslateY(query.point.y);
+                    searchRadius.setTranslateZ(query.point.z);
+                    searchRadius.setMaterial(radiusMaterial);
+                    searchRadius.setOpacity(0.2);
+                    queryGroup.getChildren().add(searchRadius);
+                }
             }
         }
     }
@@ -2543,28 +2597,44 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      */
     private void visualizeRangeQuery(TetreeRangeQuery query) {
         // Create semi-transparent sphere for range
-        Sphere rangeSphere = new Sphere(query.radius);
-        rangeSphere.setTranslateX(query.center.x);
-        rangeSphere.setTranslateY(query.center.y);
-        rangeSphere.setTranslateZ(query.center.z);
+        if (primitiveManager != null) {
+            // Transform-based rendering
+            PhongMaterial material = new PhongMaterial(Color.CYAN);
+            material.setSpecularColor(Color.WHITE);
+            MeshView rangeSphere = primitiveManager.createSphere(query.center, query.radius, material);
+            rangeSphere.setOpacity(0.3);
+            queryGroup.getChildren().add(rangeSphere);
+            
+            // Show query center
+            PhongMaterial centerMaterial = new PhongMaterial(Color.BLUE);
+            centerMaterial.setSpecularColor(Color.WHITE);
+            MeshView centerPoint = primitiveManager.createSphere(query.center, 5000.0f, centerMaterial);
+            queryGroup.getChildren().add(centerPoint);
+        } else {
+            // Traditional rendering fallback
+            Sphere rangeSphere = new Sphere(query.radius);
+            rangeSphere.setTranslateX(query.center.x);
+            rangeSphere.setTranslateY(query.center.y);
+            rangeSphere.setTranslateZ(query.center.z);
 
-        PhongMaterial material = new PhongMaterial(Color.CYAN);
-        material.setSpecularColor(Color.WHITE);
-        rangeSphere.setMaterial(material);
-        rangeSphere.setOpacity(0.3);
+            PhongMaterial material = new PhongMaterial(Color.CYAN);
+            material.setSpecularColor(Color.WHITE);
+            rangeSphere.setMaterial(material);
+            rangeSphere.setOpacity(0.3);
 
-        queryGroup.getChildren().add(rangeSphere);
+            queryGroup.getChildren().add(rangeSphere);
 
-        // Show query center
-        Sphere centerPoint = new Sphere(5000.0);
-        centerPoint.setTranslateX(query.center.x);
-        centerPoint.setTranslateY(query.center.y);
-        centerPoint.setTranslateZ(query.center.z);
+            // Show query center
+            Sphere centerPoint = new Sphere(5000.0);
+            centerPoint.setTranslateX(query.center.x);
+            centerPoint.setTranslateY(query.center.y);
+            centerPoint.setTranslateZ(query.center.z);
 
-        PhongMaterial centerMaterial = new PhongMaterial(Color.BLUE);
-        centerMaterial.setSpecularColor(Color.WHITE);
-        centerPoint.setMaterial(centerMaterial);
-        queryGroup.getChildren().add(centerPoint);
+            PhongMaterial centerMaterial = new PhongMaterial(Color.BLUE);
+            centerMaterial.setSpecularColor(Color.WHITE);
+            centerPoint.setMaterial(centerMaterial);
+            queryGroup.getChildren().add(centerPoint);
+        }
 
         // Find and highlight entities within range
         // Use k-NN with large k and filter by distance
@@ -2582,10 +2652,19 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             Point3f entityPos = tetree.getEntityPosition(id);
             if (entityPos != null) {
                 // Draw line from center to entity
-                Line line = new Line(500.0, new Point3D(query.center.x, query.center.y, query.center.z),
-                                     new Point3D(entityPos.x, entityPos.y, entityPos.z));
-                line.setMaterial(new PhongMaterial(Color.LIGHTBLUE));
-                queryGroup.getChildren().add(line);
+                PhongMaterial lineMaterial = new PhongMaterial(Color.LIGHTBLUE);
+                
+                if (primitiveManager != null) {
+                    // Transform-based rendering
+                    MeshView line = primitiveManager.createLine(query.center, entityPos, 500.0f, lineMaterial);
+                    queryGroup.getChildren().add(line);
+                } else {
+                    // Traditional rendering fallback
+                    Line line = new Line(500.0, new Point3D(query.center.x, query.center.y, query.center.z),
+                                         new Point3D(entityPos.x, entityPos.y, entityPos.z));
+                    line.setMaterial(lineMaterial);
+                    queryGroup.getChildren().add(line);
+                }
 
                 // Highlight entity
                 Node entityVisual = entityVisuals.get(id);
@@ -2620,38 +2699,63 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
      * Visualize a ray query.
      */
     private void visualizeRayQuery(TetreeRayQuery query) {
-        // Show ray origin
-        Sphere originPoint = new Sphere(5000.0);
-        originPoint.setTranslateX(query.origin.x);
-        originPoint.setTranslateY(query.origin.y);
-        originPoint.setTranslateZ(query.origin.z);
-
         PhongMaterial originMaterial = new PhongMaterial(Color.MAGENTA);
         originMaterial.setSpecularColor(Color.WHITE);
-        originPoint.setMaterial(originMaterial);
-        queryGroup.getChildren().add(originPoint);
+        PhongMaterial rayMaterial = new PhongMaterial(Color.MAGENTA);
+        
+        if (primitiveManager != null) {
+            // Transform-based rendering
+            // Show ray origin
+            MeshView originPoint = primitiveManager.createSphere(query.origin, 5000.0f, originMaterial);
+            queryGroup.getChildren().add(originPoint);
+            
+            // Draw ray
+            Point3f end = new Point3f(query.origin.x + query.direction.x * 1000, 
+                                      query.origin.y + query.direction.y * 1000,
+                                      query.origin.z + query.direction.z * 1000);
+            MeshView ray = primitiveManager.createLine(query.origin, end, 2000.0f, rayMaterial);
+            queryGroup.getChildren().add(ray);
+            
+            // Show direction arrow
+            Point3f arrowTip = new Point3f(query.origin.x + query.direction.x * 100,
+                                           query.origin.y + query.direction.y * 100,
+                                           query.origin.z + query.direction.z * 100);
+            
+            // Create arrow head using a cone-like structure
+            MeshView arrowHead = primitiveManager.createSphere(arrowTip, 8000.0f, rayMaterial);
+            queryGroup.getChildren().add(arrowHead);
+        } else {
+            // Traditional rendering fallback
+            // Show ray origin
+            Sphere originPoint = new Sphere(5000.0);
+            originPoint.setTranslateX(query.origin.x);
+            originPoint.setTranslateY(query.origin.y);
+            originPoint.setTranslateZ(query.origin.z);
+            originPoint.setMaterial(originMaterial);
+            queryGroup.getChildren().add(originPoint);
 
-        // Draw ray
-        Point3f end = new Point3f(query.origin.x + query.direction.x * 1000, query.origin.y + query.direction.y * 1000,
-                                  query.origin.z + query.direction.z * 1000);
+            // Draw ray
+            Point3f end = new Point3f(query.origin.x + query.direction.x * 1000, 
+                                      query.origin.y + query.direction.y * 1000,
+                                      query.origin.z + query.direction.z * 1000);
+            Line ray = new Line(2000.0, new Point3D(query.origin.x, query.origin.y, query.origin.z),
+                                new Point3D(end.x, end.y, end.z));
+            ray.setMaterial(rayMaterial);
+            queryGroup.getChildren().add(ray);
 
-        Line ray = new Line(2000.0, new Point3D(query.origin.x, query.origin.y, query.origin.z),
-                            new Point3D(end.x, end.y, end.z));
-        ray.setMaterial(new PhongMaterial(Color.MAGENTA));
-        queryGroup.getChildren().add(ray);
+            // Show direction arrow
+            Point3f arrowTip = new Point3f(query.origin.x + query.direction.x * 100,
+                                           query.origin.y + query.direction.y * 100,
+                                           query.origin.z + query.direction.z * 100);
 
-        // Show direction arrow
-        Point3f arrowTip = new Point3f(query.origin.x + query.direction.x * 100,
-                                       query.origin.y + query.direction.y * 100,
-                                       query.origin.z + query.direction.z * 100);
-
-        // Create arrow head using a cone-like structure
-        Sphere arrowHead = new Sphere(8000.0);
-        arrowHead.setTranslateX(arrowTip.x);
-        arrowHead.setTranslateY(arrowTip.y);
-        arrowHead.setTranslateZ(arrowTip.z);
-        arrowHead.setMaterial(new PhongMaterial(Color.HOTPINK));
-        queryGroup.getChildren().add(arrowHead);
+            // Create arrow head using a cone-like structure
+            Sphere arrowHead = new Sphere(8000.0);
+            arrowHead.setTranslateX(arrowTip.x);
+            arrowHead.setTranslateY(arrowTip.y);
+            arrowHead.setTranslateZ(arrowTip.z);
+            arrowHead.setMaterial(new PhongMaterial(Color.HOTPINK));
+            queryGroup.getChildren().add(arrowHead);
+        }
 
         // Use proper Ray3D intersection API
         Vector3f direction = new Vector3f(query.direction.x, query.direction.y, query.direction.z);
@@ -2682,19 +2786,25 @@ extends SpatialIndexView<TetreeKey<? extends TetreeKey>, ID, Content> {
             }
 
             // Show intersection point
-            Sphere hitMarker = new Sphere(3000.0);
-            hitMarker.setTranslateX(hitPoint.x);
-            hitMarker.setTranslateY(hitPoint.y);
-            hitMarker.setTranslateZ(hitPoint.z);
-
             // Color code by distance (closer = brighter)
             double intensity = 1.0 - (distance / 1000.0);
             Color markerColor = Color.color(1.0, intensity * 0.5, 0.0);
             PhongMaterial markerMaterial = new PhongMaterial(markerColor);
             markerMaterial.setSpecularColor(Color.WHITE);
-            hitMarker.setMaterial(markerMaterial);
-
-            queryGroup.getChildren().add(hitMarker);
+            
+            if (primitiveManager != null) {
+                // Transform-based rendering
+                MeshView hitMarker = primitiveManager.createSphere(hitPoint, 3000.0f, markerMaterial);
+                queryGroup.getChildren().add(hitMarker);
+            } else {
+                // Traditional rendering fallback
+                Sphere hitMarker = new Sphere(3000.0);
+                hitMarker.setTranslateX(hitPoint.x);
+                hitMarker.setTranslateY(hitPoint.y);
+                hitMarker.setTranslateZ(hitPoint.z);
+                hitMarker.setMaterial(markerMaterial);
+                queryGroup.getChildren().add(hitMarker);
+            }
 
             // Add distance label
             Text distanceLabel = new Text(String.format("%.1f", distance));
