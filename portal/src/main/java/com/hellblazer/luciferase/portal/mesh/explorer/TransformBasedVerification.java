@@ -81,19 +81,29 @@ public class TransformBasedVerification {
      * Print verification statistics.
      */
     public static void printVerificationStats(Node root, String mode) {
+        String stats = getVerificationStats(root, mode);
+        System.out.println(stats);
+    }
+    
+    /**
+     * Get verification statistics as a string.
+     */
+    public static String getVerificationStats(Node root, String mode) {
         int uniqueMeshes = countUniqueMeshes(root);
         int meshViews = countMeshViews(root);
 
-        System.out.println("\n=== " + mode + " Rendering Statistics ===");
-        System.out.println("Unique TriangleMesh instances: " + uniqueMeshes);
-        System.out.println("Total MeshView instances: " + meshViews);
-        System.out.println(
-        "Memory efficiency ratio: " + (meshViews > 0 ? String.format("%.1f:1", (double) meshViews / uniqueMeshes)
-                                                     : "N/A"));
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n=== ").append(mode).append(" Rendering Statistics ===\n");
+        sb.append("Unique TriangleMesh instances: ").append(uniqueMeshes).append("\n");
+        sb.append("Total MeshView instances found: ").append(meshViews).append("\n");
+        sb.append("Memory efficiency ratio: ");
+        sb.append(meshViews > 0 ? String.format("%.1f:1", (double) meshViews / uniqueMeshes) : "N/A").append("\n");
 
         if (mode.contains("Transform") && uniqueMeshes > 6) {
-            System.out.println("WARNING: More than 6 unique meshes detected!");
+            sb.append("WARNING: More than 6 unique meshes detected!\n");
         }
-        System.out.println("=====================================\n");
+        sb.append("=====================================\n");
+        
+        return sb.toString();
     }
 }

@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
+import javafx.animation.ParallelTransition;
 import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.scene.shape.Sphere;
@@ -181,20 +182,14 @@ public class TransformAnimatorTest {
             Sphere sphere = new Sphere(10);
             
             // Test insertion animation
-            animator.animateInsertion(sphere, Duration.millis(100));
+            ParallelTransition animation = animator.animateInsertion(sphere, Duration.millis(100));
             
             // Initially should be invisible and scaled to 0
             assertEquals(0.0, sphere.getOpacity(), 0.01);
             assertEquals(0.0, sphere.getScaleX(), 0.01);
             
-            // Wait for animation to complete
-            Platform.runLater(() -> {
-                try {
-                    Thread.sleep(150);
-                } catch (InterruptedException e) {
-                    // Ignore
-                }
-                
+            // Set up callback for when animation completes
+            animation.setOnFinished(e -> {
                 // Should be fully visible and scaled
                 assertEquals(1.0, sphere.getOpacity(), 0.1);
                 assertEquals(1.0, sphere.getScaleX(), 0.1);
@@ -215,8 +210,8 @@ public class TransformAnimatorTest {
             Sphere sphere = new Sphere(10);
             sphere.setOpacity(1.0);
             
-            // Test removal animation
-            animator.animateRemoval(sphere, Duration.millis(100), () -> {
+            // Test removal animation - the callback parameter will be used by animateRemoval
+            ParallelTransition animation = animator.animateRemoval(sphere, Duration.millis(100), () -> {
                 // Should be invisible and scaled to 0
                 assertEquals(0.0, sphere.getOpacity(), 0.1);
                 

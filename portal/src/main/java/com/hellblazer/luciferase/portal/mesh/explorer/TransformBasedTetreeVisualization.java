@@ -25,6 +25,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.MeshView;
+import javafx.scene.shape.Sphere;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -45,13 +46,13 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
 
     // Default colors for each tetrahedron type
     private static final Color[]                   TYPE_COLORS      = { Color.RED, Color.GREEN, Color.BLUE,
-                                                                          Color.YELLOW, Color.MAGENTA, Color.CYAN };
+                                                                        Color.YELLOW, Color.MAGENTA, Color.CYAN };
     // Transform manager handles mesh creation and transformations
     private final        PrimitiveTransformManager transformManager = new PrimitiveTransformManager();
     // Scene root
     private final        Group                     sceneRoot        = new Group();
     // Materials for each type
-    private final        Map<Integer, Material>      typeMaterials    = new HashMap<>();
+    private final        Map<Integer, Material>    typeMaterials    = new HashMap<>();
 
     /**
      * Initialize the transform-based visualization.
@@ -74,18 +75,20 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
         PhongMaterial material = new PhongMaterial();
         material.setDiffuseColor(baseColor.deriveColor(0, 1, 1, opacity));
         material.setSpecularColor(baseColor.brighter());
-        
+
         // Create tetrahedron using PrimitiveTransformManager
         // Calculate edge length from level (same as Octree - halves at each level)
-        float edgeLength = (float)(1 << (com.hellblazer.luciferase.geometry.MortonCurve.MAX_REFINEMENT_LEVEL - tet.l));
-        
-        MeshView meshView = transformManager.createTetrahedron(
-            type,
-            new javax.vecmath.Point3f(tet.x(), tet.y(), tet.z()),
-            edgeLength,
-            material
-        );
-        
+        float edgeLength = (float) (1 << (com.hellblazer.luciferase.geometry.MortonCurve.MAX_REFINEMENT_LEVEL - tet.l));
+
+        // Debug output
+        System.out.println(
+        "Adding tetrahedron: type=" + type + ", position=(" + tet.x() + "," + tet.y() + "," + tet.z() + "), level="
+        + tet.l + ", edgeLength=" + edgeLength);
+
+        MeshView meshView = transformManager.createTetrahedron(type,
+                                                               new javax.vecmath.Point3f(tet.x(), tet.y(), tet.z()),
+                                                               edgeLength, material);
+
         meshView.setOpacity(opacity);
 
         // Add to scene
@@ -116,14 +119,42 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
         // Clear existing visualization
         clear();
 
+        // Debug: count nodes
+        long nodeCount = tetree.nodes().count();
+        System.out.println("TransformBasedTetreeVisualization: Processing " + nodeCount + " nodes");
+
         // Add all tetrahedra from the tetree
         tetree.nodes().forEach(node -> {
-            TetreeKey<? extends TetreeKey> key = node.sfcIndex();
-            Tet tet = Tet.tetrahedron(key);
+            TetreeKey key = node.sfcIndex();
+            Tet tet = key.toTet();
 
             // All tetrahedra share the same 6 reference meshes
             // Only the transforms are different
-            addTetrahedronInstance(tet, 0.3);
+            // Use higher opacity for nodes with entities
+            double opacity = node.entityIds().isEmpty() ? 0.3 : 0.7;
+            addTetrahedronInstance(tet, opacity);
+
+            // Add entity spheres for this node
+            for (ID entityId : node.entityIds()) {
+                javax.vecmath.Point3f entityPos = tetree.getEntityPosition(entityId);
+                if (entityPos != null) {
+                    // Calculate sphere size based on tetrahedron level
+                    float tetSize = (float) (1 << (com.hellblazer.luciferase.geometry.MortonCurve.MAX_REFINEMENT_LEVEL
+                                                   - tet.l));
+                    float sphereRadius = tetSize * 0.05f; // 5% of tet size
+
+                    Sphere entitySphere = new Sphere(sphereRadius);
+                    entitySphere.setTranslateX(entityPos.x);
+                    entitySphere.setTranslateY(entityPos.y);
+                    entitySphere.setTranslateZ(entityPos.z);
+
+                    PhongMaterial entityMaterial = new PhongMaterial(Color.YELLOW);
+                    entityMaterial.setSpecularColor(Color.YELLOW.brighter());
+                    entitySphere.setMaterial(entityMaterial);
+
+                    sceneRoot.getChildren().add(entitySphere);
+                }
+            }
         });
     }
 

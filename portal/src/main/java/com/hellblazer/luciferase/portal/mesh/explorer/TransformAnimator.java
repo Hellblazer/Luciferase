@@ -197,10 +197,21 @@ public class TransformAnimator {
         
         ParallelTransition parallel = new ParallelTransition();
         
-        Timeline fadeIn = animateOpacity(node, 1.0, duration);
-        Timeline scaleUp = animateScale(node, 1.0, duration);
+        // Don't play individual animations - they'll be played by the parent
+        Timeline fadeIn = new Timeline();
+        KeyValue fadeKv = new KeyValue(node.opacityProperty(), 1.0, DEFAULT_INTERPOLATOR);
+        KeyFrame fadeKf = new KeyFrame(duration, fadeKv);
+        fadeIn.getKeyFrames().add(fadeKf);
+        
+        Timeline scaleUp = new Timeline();
+        KeyValue scaleKvX = new KeyValue(node.scaleXProperty(), 1.0, DEFAULT_INTERPOLATOR);
+        KeyValue scaleKvY = new KeyValue(node.scaleYProperty(), 1.0, DEFAULT_INTERPOLATOR);
+        KeyValue scaleKvZ = new KeyValue(node.scaleZProperty(), 1.0, DEFAULT_INTERPOLATOR);
+        KeyFrame scaleKf = new KeyFrame(duration, scaleKvX, scaleKvY, scaleKvZ);
+        scaleUp.getKeyFrames().add(scaleKf);
         
         parallel.getChildren().addAll(fadeIn, scaleUp);
+        parallel.play();
         
         return parallel;
     }
@@ -211,14 +222,28 @@ public class TransformAnimator {
     public ParallelTransition animateRemoval(Node node, Duration duration, Runnable onFinished) {
         ParallelTransition parallel = new ParallelTransition();
         
-        Timeline fadeOut = animateOpacity(node, 0.0, duration);
-        Timeline scaleDown = animateScale(node, 0.0, duration);
+        // Don't play individual animations - they'll be played by the parent
+        Timeline fadeOut = new Timeline();
+        KeyValue fadeKv = new KeyValue(node.opacityProperty(), 0.0, DEFAULT_INTERPOLATOR);
+        KeyFrame fadeKf = new KeyFrame(duration, fadeKv);
+        fadeOut.getKeyFrames().add(fadeKf);
+        
+        // Find or create scale transform for animation
+        Scale scale = findOrCreateScale(node);
+        Timeline scaleDown = new Timeline();
+        KeyValue scaleKvX = new KeyValue(scale.xProperty(), 0.0, DEFAULT_INTERPOLATOR);
+        KeyValue scaleKvY = new KeyValue(scale.yProperty(), 0.0, DEFAULT_INTERPOLATOR);
+        KeyValue scaleKvZ = new KeyValue(scale.zProperty(), 0.0, DEFAULT_INTERPOLATOR);
+        KeyFrame scaleKf = new KeyFrame(duration, scaleKvX, scaleKvY, scaleKvZ);
+        scaleDown.getKeyFrames().add(scaleKf);
         
         parallel.getChildren().addAll(fadeOut, scaleDown);
         
         if (onFinished != null) {
             parallel.setOnFinished(e -> onFinished.run());
         }
+        
+        parallel.play();
         
         return parallel;
     }
