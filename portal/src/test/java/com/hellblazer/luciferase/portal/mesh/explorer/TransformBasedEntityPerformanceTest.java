@@ -10,7 +10,8 @@ import java.util.Random;
 
 /**
  * Performance test for transform-based entity system.
- * Measures memory usage and object count reduction.
+ * Meas
+ * @RequiresJavaFXures memory usage and object count reduction.
  */
 public class TransformBasedEntityPerformanceTest {
     

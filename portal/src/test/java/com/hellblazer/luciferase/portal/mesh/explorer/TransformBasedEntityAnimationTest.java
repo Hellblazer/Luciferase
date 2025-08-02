@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Test for transform-based entity animations and collision highlighting.
  */
+@RequiresJavaFX
 public class TransformBasedEntityAnimationTest {
     
     @BeforeAll

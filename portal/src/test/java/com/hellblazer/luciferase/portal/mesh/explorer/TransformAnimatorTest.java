@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@RequiresJavaFX
 public class TransformAnimatorTest {
     
     @BeforeAll

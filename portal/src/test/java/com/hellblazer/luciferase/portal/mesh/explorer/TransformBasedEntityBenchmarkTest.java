@@ -15,6 +15,7 @@ import java.util.*;
  * Comprehensive performance benchmarks for transform-based entity system.
  * Tests memory usage, update performance, and scalability.
  */
+@RequiresJavaFX
 public class TransformBasedEntityBenchmarkTest {
     
     @BeforeAll

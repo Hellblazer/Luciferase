@@ -162,8 +162,9 @@ public class TetreeVisualizationDemo extends Application {
         // Add some initial entities for demonstration
         addRandomEntities(20);
 
-        // Initial visualization
-        visualization.updateVisualization();
+        // Initial visualization - use transform-based by default
+        visualization.updateVisualization(); // Need this to populate the tree structure
+        showTransformBasedVisualization(); // Switch to transform-based rendering
 
         // Center view on entities after initial load
         javafx.application.Platform.runLater(() -> {
@@ -519,6 +520,7 @@ public class TetreeVisualizationDemo extends Application {
         CheckBox useTransformBased = new CheckBox("Transform-Based Rendering");
         useTransformBased.setTooltip(
         new Tooltip("Uses 6 reference meshes with transforms\ninstead of creating individual meshes"));
+        useTransformBased.setSelected(true); // Default to transform-based rendering
         useTransformBased.setOnAction(_ -> {
             if (useTransformBased.isSelected()) {
                 showTransformBasedVisualization();
@@ -549,8 +551,6 @@ public class TetreeVisualizationDemo extends Application {
             }
         });
         controls.getChildren().add(useTransformBased);
-
-        javafx.application.Platform.runLater(() -> useTransformBased.setSelected(true));
         // Add verification button
         Button verifyBtn = new Button("Verify Rendering Mode");
         verifyBtn.setTooltip(new Tooltip("Print statistics about current rendering mode"));
@@ -1269,7 +1269,6 @@ public class TetreeVisualizationDemo extends Application {
         });
 
         // Clear and populate transform-based visualization
-        transformBasedViz.clear();
         transformBasedViz.demonstrateUsage(tetree);
 
         // Add transform-based visualization to the main root

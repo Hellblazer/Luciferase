@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * @author hal.hildebrand
  */
+@RequiresJavaFX
 public class VertexOrderingVerificationTest {
     
     // The correct vertex indices from Tet.coordinates() cube subdivision

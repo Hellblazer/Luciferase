@@ -55,69 +55,12 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
     private final        Map<Integer, Material>    typeMaterials    = new HashMap<>();
 
     /**
-     * Initialize the transform-based visualization.
-     */
-    public TransformBasedTetreeVisualization() {
-        // Initialization is handled by the transform manager
-    }
-
-    /**
-     * Add a tetrahedron instance to the scene using transforms.
-     *
-     * @param tet     The tetrahedron to visualize
-     * @param opacity The opacity for the tetrahedron
-     * @return The transformed mesh view
-     */
-    public MeshView addTetrahedronInstance(Tet tet, double opacity) {
-        // Get color and create material
-        int type = tet.type();
-        Color baseColor = getColorForType(type);
-        PhongMaterial material = new PhongMaterial();
-        material.setDiffuseColor(baseColor.deriveColor(0, 1, 1, opacity));
-        material.setSpecularColor(baseColor.brighter());
-
-        // Create tetrahedron using PrimitiveTransformManager
-        // Calculate edge length from level (same as Octree - halves at each level)
-        float edgeLength = (float) (1 << (com.hellblazer.luciferase.geometry.MortonCurve.MAX_REFINEMENT_LEVEL - tet.l));
-
-        // Debug output
-        System.out.println(
-        "Adding tetrahedron: type=" + type + ", position=(" + tet.x() + "," + tet.y() + "," + tet.z() + "), level="
-        + tet.l + ", edgeLength=" + edgeLength);
-
-        MeshView meshView = transformManager.createTetrahedron(type,
-                                                               new javax.vecmath.Point3f(tet.x(), tet.y(), tet.z()),
-                                                               edgeLength, material);
-
-        meshView.setOpacity(opacity);
-
-        // Add to scene
-        sceneRoot.getChildren().add(meshView);
-
-        return meshView;
-    }
-
-    /**
-     * Clear all tetrahedra from the scene.
-     */
-    public void clear() {
-        sceneRoot.getChildren().clear();
-        // The transform manager keeps reference meshes and materials - they can be reused
-    }
-
-    /**
-     * Clear the transform cache. Useful when switching between different visualizations.
-     */
-    public void clearTransformCache() {
-        transformManager.clearTransformCache();
-    }
-
-    /**
      * Demonstrate the efficiency of this approach.
      */
     public void demonstrateUsage(Tetree<ID, Content> tetree) {
         // Clear existing visualization
-        clear();
+        sceneRoot.getChildren().clear();
+        // The transform manager keeps reference meshes and materials - they can be reused
 
         // Debug: count nodes
         long nodeCount = tetree.nodes().count();
@@ -159,16 +102,6 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
     }
 
     /**
-     * Get the color for a specific tetrahedron type.
-     *
-     * @param type The tetrahedron type (0-5)
-     * @return The color for this type
-     */
-    public Color getColorForType(int type) {
-        return TYPE_COLORS[type % TYPE_COLORS.length];
-    }
-
-    /**
      * Get the scene root.
      */
     public Group getSceneRoot() {
@@ -176,22 +109,36 @@ public class TransformBasedTetreeVisualization<ID extends EntityID, Content> {
     }
 
     /**
-     * Get the transform manager for direct access if needed.
+     * Add a tetrahedron instance to the scene using transforms.
      *
-     * @return The primitive transform manager
+     * @param tet     The tetrahedron to visualize
+     * @param opacity The opacity for the tetrahedron
+     * @return The transformed mesh view
      */
-    public PrimitiveTransformManager getTransformManager() {
-        return transformManager;
-    }
+    private void addTetrahedronInstance(Tet tet, double opacity) {
+        // Get color and create material
+        int type = tet.type();
+        Color baseColor = TYPE_COLORS[type % TYPE_COLORS.length];
+        PhongMaterial material = new PhongMaterial();
+        material.setDiffuseColor(baseColor.deriveColor(0, 1, 1, opacity));
+        material.setSpecularColor(baseColor.brighter());
 
-    /**
-     * Create materials for each tetrahedron type.
-     */
-    private void initializeMaterials() {
-        for (int i = 0; i < TYPE_COLORS.length; i++) {
-            PhongMaterial material = new PhongMaterial(TYPE_COLORS[i].deriveColor(0, 1, 1, 0.3));
-            material.setSpecularColor(TYPE_COLORS[i].brighter());
-            typeMaterials.put(i, material);
-        }
+        // Create tetrahedron using PrimitiveTransformManager
+        // Calculate edge length from level (same as Octree - halves at each level)
+        float edgeLength = (float) (1 << (com.hellblazer.luciferase.geometry.MortonCurve.MAX_REFINEMENT_LEVEL - tet.l));
+
+        // Debug output
+        System.out.println(
+        "Adding tetrahedron: type=" + type + ", position=(" + tet.x() + "," + tet.y() + "," + tet.z() + "), level="
+        + tet.l + ", edgeLength=" + edgeLength);
+
+        MeshView meshView = transformManager.createTetrahedron(type,
+                                                               new javax.vecmath.Point3f(tet.x(), tet.y(), tet.z()),
+                                                               edgeLength, material);
+
+        meshView.setOpacity(opacity);
+
+        // Add to scene
+        sceneRoot.getChildren().add(meshView);
     }
 }

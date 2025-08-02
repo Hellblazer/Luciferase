@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Test for transform-based entity system.
  */
+@RequiresJavaFX
 public class TransformBasedEntityTest {
     
     @BeforeAll
