@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
+import com.hellblazer.luciferase.portal.mesh.spatial.TetrahedralViews;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import javafx.application.Platform;
@@ -35,7 +36,7 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Comprehensive unit tests for TetrahedralTransformViews and TetrahedralWireframeViews.
+ * Comprehensive unit tests for TetrahedralViews.
  * Validates creation, caching, transformations, and rendering aspects using random samples
  * across all levels and types.
  *
@@ -59,7 +60,7 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testTransformViewsCreation() {
-        TetrahedralTransformViews views = new TetrahedralTransformViews();
+        TetrahedralViews views = new TetrahedralViews();
         
         // Test all 6 tetrahedron types
         for (byte type = 0; type < 6; type++) {
@@ -67,7 +68,7 @@ public class TetrahedralViewsTest {
             byte level = 10;
             int cellSize = Constants.lengthAtLevel(level);
             Tet tet = new Tet(cellSize * 2, cellSize * 3, cellSize * 4, level, type);
-            MeshView meshView = views.of(tet);
+            MeshView meshView = views.createMeshView(tet);
             
             assertNotNull(meshView, "MeshView should not be null for type " + type);
             assertNotNull(meshView.getMesh(), "Mesh should not be null");
@@ -87,7 +88,7 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testWireframeViewsCreation() {
-        TetrahedralWireframeViews views = new TetrahedralWireframeViews();
+        TetrahedralViews views = new TetrahedralViews();
         
         // Test all 6 tetrahedron types
         for (byte type = 0; type < 6; type++) {
@@ -95,7 +96,7 @@ public class TetrahedralViewsTest {
             byte level = 10;
             int cellSize = Constants.lengthAtLevel(level);
             Tet tet = new Tet(cellSize * 2, cellSize * 3, cellSize * 4, level, type);
-            Group wireframe = views.of(tet);
+            Group wireframe = views.createWireframe(tet);
             
             assertNotNull(wireframe, "Wireframe should not be null for type " + type);
             assertEquals(6, wireframe.getChildren().size(), "Should have 6 edges");
@@ -116,8 +117,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testComprehensiveRandomSamples() {
-        TetrahedralTransformViews transformViews = new TetrahedralTransformViews();
-        TetrahedralWireframeViews wireframeViews = new TetrahedralWireframeViews();
+        TetrahedralViews transformViews = new TetrahedralViews();
+        TetrahedralViews wireframeViews = new TetrahedralViews();
         
         // Test every level from 0 to 21
         for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
@@ -155,7 +156,7 @@ public class TetrahedralViewsTest {
                     Tet tet = new Tet(x, y, z, level, type);
                     
                     // Test mesh view
-                    MeshView meshView = transformViews.of(tet);
+                    MeshView meshView = transformViews.createMeshView(tet);
                     assertNotNull(meshView, 
                         String.format("MeshView null for level=%d, type=%d, pos=(%d,%d,%d)", 
                                       level, type, x, y, z));
@@ -168,7 +169,7 @@ public class TetrahedralViewsTest {
                         "Incorrect face count at level " + level);
                     
                     // Test wireframe view
-                    Group wireframe = wireframeViews.of(tet);
+                    Group wireframe = wireframeViews.createWireframe(tet);
                     assertNotNull(wireframe, 
                         String.format("Wireframe null for level=%d, type=%d, pos=(%d,%d,%d)", 
                                       level, type, x, y, z));
@@ -196,13 +197,13 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testWireframeGeometryCorrectness() {
-        TetrahedralWireframeViews views = new TetrahedralWireframeViews();
+        TetrahedralViews views = new TetrahedralViews();
         
         // Test each type with detailed geometry validation
         for (byte type = 0; type < 6; type++) {
             byte level = 15;
             Tet tet = new Tet(0, 0, 0, level, type);
-            Group wireframe = views.of(tet);
+            Group wireframe = views.createWireframe(tet);
             
             // Get expected vertices for this type
             Point3i[] expectedVertices = Constants.SIMPLEX_STANDARD[type];
@@ -238,25 +239,26 @@ public class TetrahedralViewsTest {
     @Test
     public void testCustomWireframeMaterial() {
         PhongMaterial redMaterial = new PhongMaterial(Color.RED);
-        TetrahedralWireframeViews views = new TetrahedralWireframeViews(0.02, redMaterial);
+        TetrahedralViews views = new TetrahedralViews(0.02, redMaterial);
         
         // Use level 15 with aligned coordinates
         byte level = 15;
         Tet tet = new Tet(0, 0, 0, level, (byte) 0);
-        Group wireframe = views.of(tet);
+        Group wireframe = views.createWireframe(tet);
         
         // Verify custom material is applied
         for (var child : wireframe.getChildren()) {
             Cylinder cylinder = (Cylinder) child;
-            assertEquals(redMaterial, cylinder.getMaterial(), "Should use custom material");
+            PhongMaterial material = (PhongMaterial) cylinder.getMaterial();
+            assertEquals(Color.RED, material.getDiffuseColor(), "Should use red color");
             assertEquals(0.01, cylinder.getRadius(), 0.001, "Should use custom thickness");
         }
     }
     
     @Test
     public void testTransformCaching() {
-        TetrahedralTransformViews transformViews = new TetrahedralTransformViews();
-        TetrahedralWireframeViews wireframeViews = new TetrahedralWireframeViews();
+        TetrahedralViews transformViews = new TetrahedralViews();
+        TetrahedralViews wireframeViews = new TetrahedralViews();
         
         // Create same tet multiple times with aligned coordinates
         byte level = 8;
@@ -265,10 +267,10 @@ public class TetrahedralViewsTest {
         Tet tet2 = new Tet(cellSize * 10, cellSize * 20, cellSize * 30, level, (byte) 2);
         
         // Get views
-        MeshView mesh1 = transformViews.of(tet1);
-        MeshView mesh2 = transformViews.of(tet2);
-        wireframeViews.of(tet1);
-        wireframeViews.of(tet2);
+        MeshView mesh1 = transformViews.createMeshView(tet1);
+        MeshView mesh2 = transformViews.createMeshView(tet2);
+        wireframeViews.createWireframe(tet1);
+        wireframeViews.createWireframe(tet2);
         
         // Should reuse the same reference mesh
         assertSame(mesh1.getMesh(), mesh2.getMesh(), "Should reuse same mesh");
@@ -286,16 +288,16 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testDifferentLevelsAndPositions() {
-        TetrahedralTransformViews transformViews = new TetrahedralTransformViews();
-        TetrahedralWireframeViews wireframeViews = new TetrahedralWireframeViews();
+        TetrahedralViews transformViews = new TetrahedralViews();
+        TetrahedralViews wireframeViews = new TetrahedralViews();
         
         // Test different levels (sizes)
         for (byte level = 16; level <= 20; level += 2) {
             // Always use origin (0,0,0) which is valid for all levels
             Tet tet = new Tet(0, 0, 0, level, (byte) 0);
             
-            MeshView mesh = transformViews.of(tet);
-            Group wireframe = wireframeViews.of(tet);
+            MeshView mesh = transformViews.createMeshView(tet);
+            Group wireframe = wireframeViews.createWireframe(tet);
             
             assertNotNull(mesh);
             assertNotNull(wireframe);
@@ -315,8 +317,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testAllTypes() {
-        TetrahedralTransformViews transformViews = new TetrahedralTransformViews();
-        TetrahedralWireframeViews wireframeViews = new TetrahedralWireframeViews();
+        TetrahedralViews transformViews = new TetrahedralViews();
+        TetrahedralViews wireframeViews = new TetrahedralViews();
         
         // Verify all 6 types have different orientations
         for (byte type = 0; type < 6; type++) {
@@ -326,8 +328,8 @@ public class TetrahedralViewsTest {
             int anchorCoord = cellSize * 5;
             Tet tet = new Tet(anchorCoord, anchorCoord, anchorCoord, level, type);
             
-            MeshView mesh = transformViews.of(tet);
-            Group wireframe = wireframeViews.of(tet);
+            MeshView mesh = transformViews.createMeshView(tet);
+            Group wireframe = wireframeViews.createWireframe(tet);
             
             assertNotNull(mesh, "Type " + type + " mesh should exist");
             assertNotNull(wireframe, "Type " + type + " wireframe should exist");
@@ -349,8 +351,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testStatistics() {
-        TetrahedralTransformViews transformViews = new TetrahedralTransformViews();
-        TetrahedralWireframeViews wireframeViews = new TetrahedralWireframeViews();
+        TetrahedralViews transformViews = new TetrahedralViews();
+        TetrahedralViews wireframeViews = new TetrahedralViews();
         
         // Check initial statistics
         assertEquals(6, transformViews.getStatistics().get("referenceMeshCount"));
@@ -363,8 +365,8 @@ public class TetrahedralViewsTest {
         int cellSize = Constants.lengthAtLevel(level);
         for (int i = 0; i < 10; i++) {
             Tet tet = new Tet(cellSize * i, cellSize * i * 2, cellSize * i * 3, level, (byte) (i % 6));
-            transformViews.of(tet);
-            wireframeViews.of(tet);
+            transformViews.createMeshView(tet);
+            wireframeViews.createWireframe(tet);
         }
         
         // Check cache has grown
@@ -374,12 +376,12 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testEdgeConnectivity() {
-        TetrahedralWireframeViews views = new TetrahedralWireframeViews();
+        TetrahedralViews views = new TetrahedralViews();
         
         // Use level 15 at origin
         byte level = 15;
         Tet tet = new Tet(0, 0, 0, level, (byte) 0);
-        Group wireframe = views.of(tet);
+        Group wireframe = views.createWireframe(tet);
         
         // Tetrahedron should have exactly 6 edges
         assertEquals(6, wireframe.getChildren().size(), "Tetrahedron should have 6 edges");
@@ -394,21 +396,21 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testBoundaryConditions() {
-        TetrahedralTransformViews transformViews = new TetrahedralTransformViews();
-        TetrahedralWireframeViews wireframeViews = new TetrahedralWireframeViews();
+        TetrahedralViews transformViews = new TetrahedralViews();
+        TetrahedralViews wireframeViews = new TetrahedralViews();
         
         // Test at level 0 (largest tetrahedra)
         Tet largestTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        MeshView largestMesh = transformViews.of(largestTet);
-        Group largestWire = wireframeViews.of(largestTet);
+        MeshView largestMesh = transformViews.createMeshView(largestTet);
+        Group largestWire = wireframeViews.createWireframe(largestTet);
         assertNotNull(largestMesh);
         assertNotNull(largestWire);
         assertEquals(Constants.lengthAtLevel((byte) 0), largestTet.length());
         
         // Test at level 21 (smallest tetrahedra)
         Tet smallestTet = new Tet(0, 0, 0, (byte) 21, (byte) 0);
-        MeshView smallestMesh = transformViews.of(smallestTet);
-        Group smallestWire = wireframeViews.of(smallestTet);
+        MeshView smallestMesh = transformViews.createMeshView(smallestTet);
+        Group smallestWire = wireframeViews.createWireframe(smallestTet);
         assertNotNull(smallestMesh);
         assertNotNull(smallestWire);
         assertEquals(1, smallestTet.length());
@@ -429,10 +431,10 @@ public class TetrahedralViewsTest {
             
             for (int[] coords : testCoords) {
                 Tet tet = new Tet(coords[0], coords[1], coords[2], level, type);
-                assertNotNull(transformViews.of(tet), 
+                assertNotNull(transformViews.createMeshView(tet), 
                     String.format("Failed at coords (%d,%d,%d) type %d", 
                                   coords[0], coords[1], coords[2], type));
-                assertNotNull(wireframeViews.of(tet), 
+                assertNotNull(wireframeViews.createWireframe(tet), 
                     String.format("Failed at coords (%d,%d,%d) type %d", 
                                   coords[0], coords[1], coords[2], type));
             }

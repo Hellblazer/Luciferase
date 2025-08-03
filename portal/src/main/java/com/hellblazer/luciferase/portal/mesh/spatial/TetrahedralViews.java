@@ -21,6 +21,7 @@ import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import javafx.geometry.Point3D;
 import javafx.scene.Group;
+import javafx.scene.paint.Color;
 import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.Cylinder;
@@ -31,6 +32,7 @@ import javafx.scene.transform.Rotate;
 
 import javax.vecmath.Point3i;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -54,6 +56,9 @@ public class TetrahedralViews {
     private final Map<TetreeKey<?>, Affine> transformCache      = new HashMap<>();
     private final double                    edgeThickness;
     private final Material                  edgeMaterial;
+    // Material pooling with LRU eviction
+    private final LinkedHashMap<String, PhongMaterial> materialPool;
+    private final int maxMaterialPoolSize = 1000;
 
     /**
      * Initialize the views manager with default edge thickness and material.
@@ -71,6 +76,14 @@ public class TetrahedralViews {
     public TetrahedralViews(double edgeThickness, Material edgeMaterial) {
         this.edgeThickness = edgeThickness;
         this.edgeMaterial = edgeMaterial;
+        
+        // Initialize material pool with LRU eviction
+        this.materialPool = new LinkedHashMap<String, PhongMaterial>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, PhongMaterial> eldest) {
+                return size() > maxMaterialPoolSize;
+            }
+        };
 
         // Create reference mesh and wireframe for each tetrahedron type
         for (int type = 0; type < 6; type++) {
@@ -159,6 +172,37 @@ public class TetrahedralViews {
     }
 
     /**
+     * Get or create a material with the specified properties.
+     * Materials are pooled and reused based on their visual properties.
+     *
+     * @param baseColor The base color
+     * @param opacity The opacity (0.0 to 1.0)
+     * @param selected Whether the material is for a selected state
+     * @return A PhongMaterial with the specified properties
+     */
+    public synchronized PhongMaterial getMaterial(Color baseColor, double opacity, boolean selected) {
+        // Create a unique key for this material combination
+        String key = String.format("%s_%.2f_%b", 
+            baseColor.toString(), opacity, selected);
+        
+        // Check if we already have this material
+        PhongMaterial material = materialPool.get(key);
+        if (material != null) {
+            return material;
+        }
+        
+        // Create new material
+        Color actualColor = baseColor.deriveColor(0, 1, 1, opacity);
+        material = new PhongMaterial(actualColor);
+        material.setSpecularColor(selected ? Color.WHITE : actualColor.brighter());
+        
+        // Add to pool
+        materialPool.put(key, material);
+        
+        return material;
+    }
+
+    /**
      * Get statistics about the current state of the manager.
      *
      * @return A map containing statistics
@@ -168,6 +212,7 @@ public class TetrahedralViews {
         stats.put("referenceMeshCount", referenceMeshes.length);
         stats.put("referenceWireframeCount", referenceWireframes.length);
         stats.put("transformCacheSize", transformCache.size());
+        stats.put("materialPoolSize", materialPool.size());
         return stats;
     }
 
