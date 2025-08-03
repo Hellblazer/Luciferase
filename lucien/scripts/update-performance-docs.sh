@@ -2,6 +2,9 @@
 
 # Script to update performance documentation
 # Can be run locally or in CI
+#
+# Usage: ./update-performance-docs.sh [--quick]
+#   --quick: Limit tests to 1000 entities max (faster runs)
 
 set -e
 
@@ -10,15 +13,23 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "🚀 Starting performance documentation update..."
 
+# Check for quick mode
+if [ "$1" = "--quick" ]; then
+    echo "🏃 Quick mode: limiting tests to 1000 entities"
+    PERF_MAX_ENTITIES="-Dperformance.max.entities=1000"
+else
+    PERF_MAX_ENTITIES=""
+fi
+
 # Step 1: Run performance tests
 echo "📊 Running performance benchmarks..."
 cd "$PROJECT_DIR"
-mvn clean test -Dtest=OctreeVsTetreeVsPrismBenchmark -DfailIfNoTests=false
+mvn clean test -Dtest=OctreeVsTetreeVsPrismBenchmark -DfailIfNoTests=false $PERF_MAX_ENTITIES
 
 # Step 2: Extract results
 echo "📝 Extracting performance data..."
 mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.TestResultExtractor" \
-    -Dexec.args="target/surefire-reports target/performance-results.csv" \
+    -Dexec.args="target/surefire-reports target/performance-output/performance-data.csv" \
     -Dexec.classpathScope=test
 
 # Step 3: Generate reports
@@ -30,7 +41,7 @@ mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.Per
 # Step 4: Update documentation
 echo "📚 Updating documentation..."
 mvn exec:java -Dexec.mainClass="com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater" \
-    -Dexec.args="target/performance-results.csv" \
+    -Dexec.args="target/performance-output/performance-data.csv" \
     -Dexec.classpathScope=test
 
 # Step 5: Check for changes
@@ -46,7 +57,8 @@ else
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add doc/PERFORMANCE_METRICS_MASTER.md
-        git add doc/performance-data/*.csv || true
+        # Only add performance-results if we've archived there
+        git add performance-results/*.csv 2>/dev/null || true
         git commit -m "Auto-update performance metrics [skip ci]"
         echo "✅ Changes committed"
     else

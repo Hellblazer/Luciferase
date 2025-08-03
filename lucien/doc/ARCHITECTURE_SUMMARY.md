@@ -34,6 +34,7 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 - **Lockfree Package (3 classes)**: Lock-free concurrent operations with atomic protocols
 - **Internal Package (4 classes)**: Entity caching and object pool utilities
 - **Geometry Package (1 class)**: AABB intersection utilities
+- **Occlusion Package**: Dynamic Scene Occlusion Culling (DSOC) with TBVs and hierarchical Z-buffer
 - **Index Package (0 classes)**: Empty directory
 
 ## Key Architecture Components
@@ -116,6 +117,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
 - **[TREE_BALANCING_API.md](./TREE_BALANCING_API.md)**: Dynamic balancing strategies
 - **[PLANE_INTERSECTION_API.md](./PLANE_INTERSECTION_API.md)**: Arbitrary 3D plane queries
 - **[FRUSTUM_CULLING_API.md](./FRUSTUM_CULLING_API.md)**: View frustum visibility
+- **[DSOC_API.md](./DSOC_API.md)**: Dynamic Scene Occlusion Culling for rendering optimization
 
 #### Performance
 

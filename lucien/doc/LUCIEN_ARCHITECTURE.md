@@ -943,8 +943,8 @@ The unified architecture allows easy switching between spatial index types based
 
 **Trade-offs:**
 
-- Higher memory usage (27-35% more than Tetree)
-- Slower insertion performance (2-6x slower than Tetree)
+- Higher memory usage than Tetree
+- Much slower insertion performance vs Prism (60-71x slower)
 
 ### Tetree - Memory-Efficient Advanced Indexing
 
@@ -958,10 +958,10 @@ The unified architecture allows easy switching between spatial index types based
 
 **Advantages:**
 
-- Superior memory efficiency (20-25% of Octree memory usage)
-- Faster k-NN searches (1.6-5.9x faster)
+- Superior memory efficiency
+- Competitive k-NN search performance
 - Advanced tetrahedral geometric operations
-- Better insertion performance (2-6x faster)
+- Better insertion performance than Octree (5-6x faster)
 
 **Trade-offs:**
 
@@ -1004,21 +1004,18 @@ The unified architecture allows easy switching between spatial index types based
 | **Use Case Generality**    | High   | High          | Specialized       |
 | **Geometric Complexity**   | Low    | High          | Medium            |
 
-## Performance Characteristics (July 11, 2025)
+## Performance Characteristics
 
-**Major Performance Reversal**: Concurrent optimizations have completely reversed performance characteristics. Tetree is
-now superior for most operations.
+For current performance metrics and detailed comparisons, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md).
 
-### Individual Operations (Current Metrics)
+**Major Performance Reversal (July 11, 2025)**: Concurrent optimizations completely reversed performance characteristics. Tetree became superior for insertions despite O(level) algorithmic complexity.
 
-| Operation                 | Octree          | Tetree          | Prism           | Winner                                        |
-|---------------------------|-----------------|-----------------|-----------------|-----------------------------------------------|
-| **Insertion**             | 1.5-2.0 μs/op   | 0.24-0.95 μs/op | 0.8-1.3 μs/op   | **Tetree 2-6x faster**                        |
-| **k-NN Query**            | 15.8-18.2 μs/op | 7.8-19.0 μs/op  | 10.5-16.2 μs/op | **Mixed, Tetree better for smaller datasets** |
-| **Range Query**           | 2.1-14.2 μs/op  | 13.0-19.9 μs/op | 5.8-12.1 μs/op  | **Octree fastest, Prism second**              |
-| **Memory Usage**          | 100%            | 65-73%          | 78-85%          | **Tetree 27-35% less memory**                 |
-| **Triangular Queries**    | N/A             | N/A             | 3.2-7.8 μs/op   | **Prism specialized optimization**            |
-| **Height Stratification** | Standard        | Standard        | Optimized       | **Prism for layered data**                    |
+### Key Performance Insights
+
+- **Prism**: Exceptional insertion performance (60-71x faster than Octree at small/medium scales)
+- **Tetree**: Excels at insertions (5-6x faster) and updates (2-3x faster) vs Octree
+- **Octree**: Dominates range queries (3-8x faster than alternatives)
+- **Memory**: Tetree most efficient, Prism uses 4-28% more than alternatives
 
 ### Concurrent Architecture Benefits (July 2025)
 

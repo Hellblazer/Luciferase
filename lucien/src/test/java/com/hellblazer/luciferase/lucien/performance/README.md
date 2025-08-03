@@ -100,7 +100,7 @@ Each test generates `PerformanceMetrics` objects containing:
 - Operations per second
 - Additional custom metrics
 
-Results are automatically exported to CSV files in `target/performance-results/` (created automatically when tests run).
+Results are automatically exported to CSV files in `lucien/performance-results/` (created automatically when tests run) for historical tracking.
 
 ## Extending the Framework
 

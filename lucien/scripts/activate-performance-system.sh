@@ -11,28 +11,28 @@ echo "🚀 Activating Lucien Performance Reporting System..."
 
 # Step 1: Create necessary directories
 echo "📁 Creating directory structure..."
-mkdir -p "$PROJECT_DIR/doc/performance-data"
-mkdir -p "$PROJECT_DIR/target/performance-results"
+mkdir -p "$PROJECT_DIR/performance-results"
+mkdir -p "$PROJECT_DIR/target/performance-output"
 
-# Step 2: Initialize performance data files
+# Step 2: Initialize performance data files in target (for build outputs)
 echo "📊 Initializing performance data files..."
 
-# Create initial CSV files with headers
-cat > "$PROJECT_DIR/doc/performance-data/octree-performance.csv" << EOF
+# Create initial CSV files with headers in target for builds
+cat > "$PROJECT_DIR/target/performance-output/octree-performance.csv" << EOF
 timestamp,commit,operation,entityCount,meanLatency,p95Latency,p99Latency,throughput,memoryPerEntity
 EOF
 
-cat > "$PROJECT_DIR/doc/performance-data/tetree-performance.csv" << EOF
+cat > "$PROJECT_DIR/target/performance-output/tetree-performance.csv" << EOF
 timestamp,commit,operation,entityCount,meanLatency,p95Latency,p99Latency,throughput,memoryPerEntity
 EOF
 
-cat > "$PROJECT_DIR/doc/performance-data/prism-performance.csv" << EOF
+cat > "$PROJECT_DIR/target/performance-output/prism-performance.csv" << EOF
 timestamp,commit,operation,entityCount,meanLatency,p95Latency,p99Latency,throughput,memoryPerEntity
 EOF
 
 # Step 3: Create a baseline performance data file
 echo "📈 Creating baseline performance data..."
-cat > "$PROJECT_DIR/doc/performance-data/baseline.json" << EOF
+cat > "$PROJECT_DIR/target/performance-output/baseline.json" << EOF
 {
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "commit": "$(git rev-parse HEAD 2>/dev/null || echo 'unknown')",
@@ -224,8 +224,15 @@ echo "   3. Test the system: ./scripts/update-performance-docs.sh"
 echo "   4. Verify setup: ./scripts/verify-performance-system.sh"
 echo ""
 echo "🚀 To run a full performance update:"
-echo "   mvn clean verify -P performance-full"
+echo "   mvn clean verify -Pperformance-full"
 echo ""
 echo "📊 To update docs from existing results:"
 echo "   ./scripts/update-performance-docs.sh"
+echo ""
+echo "🗄️ To archive results to permanent storage:"
+echo "   mvn compile -Pperformance-archive"
+echo ""
+echo "📍 Data locations:"
+echo "   - Build output: target/performance-output/"
+echo "   - Permanent archive: performance-results/"
 echo ""

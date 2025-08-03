@@ -17,7 +17,6 @@ import java.util.regex.Pattern;
  */
 public class RobustPerformanceUpdater {
     
-    private static final Path METRICS_DOC = Paths.get("doc/PERFORMANCE_METRICS_MASTER.md");
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("MMMM d, yyyy")
         .withZone(ZoneId.systemDefault());
     
@@ -30,13 +29,37 @@ public class RobustPerformanceUpdater {
         Path resultsFile = Paths.get(args[0]);
         Map<String, String> updates = parseResults(resultsFile);
         
-        String content = Files.readString(METRICS_DOC);
+        // Find the metrics doc relative to the current working directory
+        Path metricsDoc = findMetricsDoc();
+        
+        String content = Files.readString(metricsDoc);
         content = updateTimestamp(content);
         content = applyUpdates(content, updates);
         
-        Files.writeString(METRICS_DOC, content);
+        Files.writeString(metricsDoc, content);
         System.out.println("Documentation updated successfully!");
         System.out.println("Applied " + updates.size() + " updates");
+    }
+    
+    private static Path findMetricsDoc() throws IOException {
+        // Try several common locations
+        Path[] possiblePaths = {
+            Paths.get("doc/PERFORMANCE_METRICS_MASTER.md"),
+            Paths.get("lucien/doc/PERFORMANCE_METRICS_MASTER.md"),
+            Paths.get("../doc/PERFORMANCE_METRICS_MASTER.md"),
+            Paths.get("../../lucien/doc/PERFORMANCE_METRICS_MASTER.md")
+        };
+        
+        for (Path path : possiblePaths) {
+            if (Files.exists(path)) {
+                System.out.println("Found metrics doc at: " + path.toAbsolutePath());
+                return path;
+            }
+        }
+        
+        // If not found, print current directory to help debug
+        System.err.println("Current directory: " + Paths.get("").toAbsolutePath());
+        throw new IOException("Could not find PERFORMANCE_METRICS_MASTER.md in any expected location");
     }
     
     private static String updateTimestamp(String content) {
@@ -131,10 +154,27 @@ public class RobustPerformanceUpdater {
                     // Convert to appropriate format based on operation type
                     switch (opType) {
                         case "insert":
+                            // Convert μs/op to ms for consistency with table
+                            if (!throughput.isEmpty() && throughput.contains("μs/op")) {
+                                try {
+                                    double usPerOp = Double.parseDouble(throughput.replace(" μs/op", ""));
+                                    double msTotal = (usPerOp * Integer.parseInt(entityCount)) / 1000.0;
+                                    updates.put(key, String.format("%.3f ms", msTotal));
+                                } catch (NumberFormatException e) {
+                                    updates.put(key, throughput);
+                                }
+                            }
+                            break;
                         case "update":
                         case "remove":
-                            if (!throughput.isEmpty()) {
-                                updates.put(key, throughput);
+                            // Convert μs/op to ms for consistency with table
+                            if (!throughput.isEmpty() && throughput.contains("μs/op")) {
+                                try {
+                                    double usPerOp = Double.parseDouble(throughput.replace(" μs/op", ""));
+                                    updates.put(key, String.format("%.3f ms", usPerOp / 1000.0));
+                                } catch (NumberFormatException e) {
+                                    updates.put(key, throughput);
+                                }
                             }
                             break;
                         case "knn":
@@ -144,14 +184,9 @@ public class RobustPerformanceUpdater {
                             }
                             break;
                         case "memory":
-                            // Convert bytes to MB
-                            if (!throughput.isEmpty()) {
-                                try {
-                                    double bytes = Double.parseDouble(throughput.replace(" bytes", ""));
-                                    updates.put(key, String.format("%.3f MB", bytes / (1024 * 1024)));
-                                } catch (NumberFormatException e) {
-                                    updates.put(key, throughput);
-                                }
+                            // Already in MB format
+                            if (!throughput.isEmpty() && throughput.contains("MB")) {
+                                updates.put(key, throughput);
                             }
                             break;
                     }
