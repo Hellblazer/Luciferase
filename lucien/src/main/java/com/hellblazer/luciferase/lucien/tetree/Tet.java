@@ -675,6 +675,10 @@ public class Tet {
         return true;
     }
 
+    public Point3i anchor() {
+        return new Point3i(x, y, z);
+    }
+
     /**
      * @param volume - the enclosing volume
      * @return the Stream of TetreeKeys locating the Tets bounded by the volume
@@ -1206,8 +1210,8 @@ public class Tet {
         }
 
         // Check if the neighbor would have negative coordinates or exceed MAX_COORD
-        if (coords[0] < 0 || coords[1] < 0 || coords[2] < 0 ||
-            coords[0] > Constants.MAX_COORD || coords[1] > Constants.MAX_COORD || coords[2] > Constants.MAX_COORD) {
+        if (coords[0] < 0 || coords[1] < 0 || coords[2] < 0 || coords[0] > Constants.MAX_COORD
+        || coords[1] > Constants.MAX_COORD || coords[2] > Constants.MAX_COORD) {
             // Return null to indicate no neighbor exists (boundary of domain)
             return null;
         }
@@ -1275,6 +1279,25 @@ public class Tet {
     }
 
     /**
+     * Find the first tetrahedron that intersects with the given volume.
+     *
+     * @param volume the spatial volume to test for intersection
+     * @return the TetreeKey of the first intersecting tetrahedron, or null if none found
+     */
+    public TetreeKey<?> intersecting(Spatial volume) {
+        // Simple implementation: find first intersecting tetrahedron
+        var bounds = VolumeBounds.from(volume);
+        if (bounds == null) {
+            return null;
+        }
+
+        return spatialRangeQueryKeys(bounds, true).filter(key -> {
+            var tet = Tet.tetrahedron(key);
+            return tetrahedronIntersectsVolume(tet, volume);
+        }).findFirst().orElse(null);
+    }
+
+    /**
      * Check if this tetrahedron is valid according to t8code constraints
      *
      * @return true if the tetrahedron structure is valid
@@ -1331,25 +1354,6 @@ public class Tet {
             current = current.child(7); // Always take the last child
         }
         return current.tmIndex();
-    }
-
-    /**
-     * Find the first tetrahedron that intersects with the given volume.
-     * 
-     * @param volume the spatial volume to test for intersection
-     * @return the TetreeKey of the first intersecting tetrahedron, or null if none found
-     */
-    public TetreeKey<?> intersecting(Spatial volume) {
-        // Simple implementation: find first intersecting tetrahedron
-        var bounds = VolumeBounds.from(volume);
-        if (bounds == null) {
-            return null;
-        }
-
-        return spatialRangeQueryKeys(bounds, true).filter(key -> {
-            var tet = Tet.tetrahedron(key);
-            return tetrahedronIntersectsVolume(tet, volume);
-        }).findFirst().orElse(null);
     }
 
     /**
@@ -1662,6 +1666,16 @@ public class Tet {
         return new TouchedDimensions(mask, lowerSegment, level);
     }
 
+    // Basic SFC range computation without optimization
+    private Stream<SFCRange> computeBasicSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
+        // Find appropriate refinement levels for the query volume
+        byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
+        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
+
+        return IntStream.rangeClosed(minLevel, maxLevel).boxed().flatMap(
+        level -> computeOptimizedSFCRangesAtLevel(bounds, (byte) level.intValue(), includeIntersecting));
+    }
+
     // Compute SFC ranges for all tetrahedra in a grid cell - streaming version
     private Stream<SFCRange> computeCellSFCRanges(Point3f cellOrigin, byte level) {
         // For a grid cell, there can be multiple tetrahedra (6 types)
@@ -1871,16 +1885,6 @@ public class Tet {
         // Use the optimal strategy selector instead of direct computation
         return selectOptimalRangeStrategy(bounds, includeIntersecting);
     }
-    
-    // Basic SFC range computation without optimization
-    private Stream<SFCRange> computeBasicSFCRanges(VolumeBounds bounds, boolean includeIntersecting) {
-        // Find appropriate refinement levels for the query volume
-        byte minLevel = (byte) Math.max(0, findMinimumContainingLevel(bounds) - 2);
-        byte maxLevel = (byte) Math.min(Constants.getMaxRefinementLevel(), findMinimumContainingLevel(bounds) + 3);
-
-        return IntStream.rangeClosed(minLevel, maxLevel).boxed().flatMap(
-        level -> computeOptimizedSFCRangesAtLevel(bounds, (byte) level.intValue(), includeIntersecting));
-    }
 
     /**
      * Compute the absolute coordinates of a specific vertex of this tetrahedron.
@@ -1933,7 +1937,6 @@ public class Tet {
         return new Point3i(coords[0], coords[1], coords[2]);
     }
 
-
     // Find minimum level that can contain the volume
     private byte findMinimumContainingLevel(VolumeBounds bounds) {
         float maxExtent = Math.max(Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
@@ -1965,7 +1968,6 @@ public class Tet {
 
         return findMinimumContainingLevel(bounds);
     }
-
 
     // Hybrid cube/tetrahedral intersection test - preserves SFC cube navigation with tetrahedral geometry
     private boolean hybridCellIntersectsBounds(Point3f cellOrigin, int cellSize, byte level, VolumeBounds bounds,
@@ -2177,39 +2179,37 @@ public class Tet {
         return volumeSize > 1000.0f && maxExtent > 10.0f;
     }
 
+    // Determine if we should use lazy enumeration based on bounds size
+    private boolean shouldUseLazyEnumeration(VolumeBounds bounds) {
+        float volumeSize = (bounds.maxX() - bounds.minX()) * (bounds.maxY() - bounds.minY()) * (bounds.maxZ()
+                                                                                                - bounds.minZ());
+
+        // Use lazy enumeration for large volumes
+        // Also consider the level - deeper levels benefit more from lazy evaluation
+        return volumeSize > 5000.0f || this.l > 15;
+    }
+
     // Efficient spatial range query using tetrahedral space-filling curve properties - optimized version
     private Stream<TetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean includeIntersecting) {
         // Use RangeHandle for lazy evaluation
         var handle = new RangeHandle(this, bounds, includeIntersecting, this.l);
-        
+
         // Option 1: For large volumes, use lazy streaming
         if (shouldUseLazyEnumeration(bounds)) {
             return handle.stream();
         }
-        
+
         // Option 2: For smaller ranges, use the existing range-based approach
         // but with lazy enumeration via LazySFCRangeStream
-        return computeSFCRanges(bounds, includeIntersecting)
-            .flatMap(range -> {
-                if (range.start().equals(range.end())) {
-                    // Single key range
-                    return Stream.of(range.start());
-                } else {
-                    // Use lazy stream for multi-key ranges
-                    return LazySFCRangeStream.stream(range);
-                }
-            });
-    }
-    
-    // Determine if we should use lazy enumeration based on bounds size
-    private boolean shouldUseLazyEnumeration(VolumeBounds bounds) {
-        float volumeSize = (bounds.maxX() - bounds.minX()) * 
-                          (bounds.maxY() - bounds.minY()) * 
-                          (bounds.maxZ() - bounds.minZ());
-        
-        // Use lazy enumeration for large volumes
-        // Also consider the level - deeper levels benefit more from lazy evaluation
-        return volumeSize > 5000.0f || this.l > 15;
+        return computeSFCRanges(bounds, includeIntersecting).flatMap(range -> {
+            if (range.start().equals(range.end())) {
+                // Single key range
+                return Stream.of(range.start());
+            } else {
+                // Use lazy stream for multi-key ranges
+                return LazySFCRangeStream.stream(range);
+            }
+        });
     }
 
     // Recursively split large volumes into smaller manageable pieces
@@ -2270,12 +2270,11 @@ public class Tet {
         }
     }
 
-
     // Record to represent SFC index ranges
     record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
         /**
-         * Checks if this range can be merged with another range.
-         * Ranges can be merged if the end of this range is adjacent to or overlaps with the start of the other range.
+         * Checks if this range can be merged with another range. Ranges can be merged if the end of this range is
+         * adjacent to or overlaps with the start of the other range.
          *
          * @param other the other range to check
          * @return true if ranges can be merged, false otherwise
@@ -2284,19 +2283,55 @@ public class Tet {
             if (other == null) {
                 return false;
             }
-            
+
             // Ranges must be at the same level to be merged
             if (this.end.getLevel() != other.start.getLevel()) {
                 return false;
             }
-            
+
             // Check if ranges are adjacent or overlapping
             return this.end.canMergeWith(other.start) || this.end.compareTo(other.start) >= 0;
         }
-        
+
+        /**
+         * Estimates the size of this range without iterating.
+         *
+         * @return An estimate of the number of keys in the range
+         */
+        long estimateSize() {
+            if (start.equals(end)) {
+                return 1;
+            }
+
+            var startTet = Tet.tetrahedron(start);
+            var endTet = Tet.tetrahedron(end);
+            var iter = new LazyRangeIterator(startTet, endTet);
+            return iter.estimateSize();
+        }
+
+        /**
+         * Checks if this is a single-key range.
+         *
+         * @return true if start equals end
+         */
+        boolean isSingle() {
+            return start.equals(end);
+        }
+
+        /**
+         * Creates a lazy iterator for this range.
+         *
+         * @return An iterator that generates keys on demand
+         */
+        Iterator<TetreeKey<? extends TetreeKey>> iterator() {
+            var startTet = Tet.tetrahedron(start);
+            var endTet = Tet.tetrahedron(end);
+            return new LazyRangeIterator(startTet, endTet);
+        }
+
         /**
          * Merges this range with another range.
-         * 
+         *
          * @param other the range to merge with
          * @return a new SFCRange representing the merged range
          * @throws IllegalArgumentException if ranges cannot be merged
@@ -2305,63 +2340,18 @@ public class Tet {
             if (!canMergeWith(other)) {
                 throw new IllegalArgumentException("Cannot merge non-adjacent ranges");
             }
-            
+
             // The merged range spans from the minimum start to the maximum end
             TetreeKey<?> newStart = this.start.compareTo(other.start) <= 0 ? this.start : other.start;
             TetreeKey<?> newEnd = this.end.max(other.end);
-            
+
             return new SFCRange(newStart, newEnd);
         }
-        
+
         /**
-         * Creates a lazy iterator for this range.
-         * 
-         * @return An iterator that generates keys on demand
-         */
-        Iterator<TetreeKey<? extends TetreeKey>> iterator() {
-            var startTet = Tet.tetrahedron(start);
-            var endTet = Tet.tetrahedron(end);
-            return new LazyRangeIterator(startTet, endTet);
-        }
-        
-        /**
-         * Creates a lazy stream for this range.
-         * 
-         * @return A stream that generates keys on demand
-         */
-        Stream<TetreeKey<? extends TetreeKey>> stream() {
-            return LazySFCRangeStream.stream(this);
-        }
-        
-        /**
-         * Estimates the size of this range without iterating.
-         * 
-         * @return An estimate of the number of keys in the range
-         */
-        long estimateSize() {
-            if (start.equals(end)) {
-                return 1;
-            }
-            
-            var startTet = Tet.tetrahedron(start);
-            var endTet = Tet.tetrahedron(end);
-            var iter = new LazyRangeIterator(startTet, endTet);
-            return iter.estimateSize();
-        }
-        
-        /**
-         * Checks if this is a single-key range.
-         * 
-         * @return true if start equals end
-         */
-        boolean isSingle() {
-            return start.equals(end);
-        }
-        
-        /**
-         * Splits this range into multiple sub-ranges for parallel processing.
-         * Note: This is an approximation since we can't do precise arithmetic on TetreeKeys.
-         * 
+         * Splits this range into multiple sub-ranges for parallel processing. Note: This is an approximation since we
+         * can't do precise arithmetic on TetreeKeys.
+         *
          * @param parts The number of parts to split into
          * @return An array of sub-ranges
          */
@@ -2369,10 +2359,19 @@ public class Tet {
             if (parts <= 1 || isSingle()) {
                 return new SFCRange[] { this };
             }
-            
+
             // For now, return the original range
             // A full implementation would require tree traversal
             return new SFCRange[] { this };
+        }
+
+        /**
+         * Creates a lazy stream for this range.
+         *
+         * @return A stream that generates keys on demand
+         */
+        Stream<TetreeKey<? extends TetreeKey>> stream() {
+            return LazySFCRangeStream.stream(this);
         }
     }
 }

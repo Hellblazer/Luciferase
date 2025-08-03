@@ -1613,7 +1613,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     }
 
     @Override
-    protected Stream<TetreeKey<? extends TetreeKey>> getRayTraversalOrder(Ray3D ray) {
+    public Stream<TetreeKey<? extends TetreeKey>> getRayTraversalOrder(Ray3D ray) {
         // Use the optimized TetreeSFCRayTraversal implementation
         return getRayTraversal().traverseRay(ray);
     }

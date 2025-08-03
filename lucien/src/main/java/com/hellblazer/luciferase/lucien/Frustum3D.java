@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.lucien;
 
+import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
 
@@ -56,8 +57,8 @@ public class Frustum3D {
     public static Frustum3D createOrthographic(Point3f cameraPosition, Point3f lookAt, Vector3f up, float left,
                                                float right, float bottom, float top, float nearDistance,
                                                float farDistance) {
-        validatePositiveCoordinates(cameraPosition, "cameraPosition");
-        validatePositiveCoordinates(lookAt, "lookAt");
+        // Camera position and lookAt can be negative as per documentation
+        // "Ray origins can be negative in 3D space - only entities in the spatial index must have positive coordinates"
 
         if (left < 0 || right < 0 || bottom < 0 || top < 0) {
             throw new IllegalArgumentException("All frustum boundaries must be positive");
@@ -203,8 +204,8 @@ public class Frustum3D {
      */
     public static Frustum3D createPerspective(Point3f cameraPosition, Point3f lookAt, Vector3f up, float fovy,
                                               float aspectRatio, float nearDistance, float farDistance) {
-        validatePositiveCoordinates(cameraPosition, "cameraPosition");
-        validatePositiveCoordinates(lookAt, "lookAt");
+        // Camera position and lookAt can be negative as per documentation
+        // "Ray origins can be negative in 3D space - only entities in the spatial index must have positive coordinates"
 
         if (nearDistance <= 0 || farDistance <= 0) {
             throw new IllegalArgumentException("Near and far distances must be positive");
@@ -428,6 +429,41 @@ public class Frustum3D {
     public boolean intersectsCube(Spatial.Cube cube) {
         return intersectsAABB(cube.originX(), cube.originY(), cube.originZ(), cube.originX() + cube.extent(),
                               cube.originY() + cube.extent(), cube.originZ() + cube.extent());
+    }
+
+    /**
+     * Get the distance to the near plane from the origin
+     * Note: This is an approximation based on the plane's distance from origin
+     * 
+     * @return approximate near plane distance
+     */
+    public float getNearPlane() {
+        // The near plane distance is the absolute value of the plane's distance from origin
+        // For a properly constructed frustum, this should be positive
+        return Math.abs(nearPlane.d());
+    }
+    
+    /**
+     * Get the distance to the far plane from the origin
+     * Note: This is an approximation based on the plane's distance from origin
+     * 
+     * @return approximate far plane distance
+     */
+    public float getFarPlane() {
+        // The far plane distance is the absolute value of the plane's distance from origin
+        // For a properly constructed frustum, this should be positive
+        return Math.abs(farPlane.d());
+    }
+    
+    /**
+     * Test if frustum intersects with entity bounds
+     * 
+     * @param bounds the entity bounds to test
+     * @return true if the bounds intersect the frustum
+     */
+    public boolean intersects(EntityBounds bounds) {
+        return intersectsAABB(bounds.getMinX(), bounds.getMinY(), bounds.getMinZ(),
+                            bounds.getMaxX(), bounds.getMaxY(), bounds.getMaxZ());
     }
 
     @Override

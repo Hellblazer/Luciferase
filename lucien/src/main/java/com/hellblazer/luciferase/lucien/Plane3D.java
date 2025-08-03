@@ -20,7 +20,8 @@ public record Plane3D(float a, float b, float c, float d) {
      * @throws IllegalArgumentException if any coordinate is negative
      */
     public static Plane3D fromPointAndNormal(Point3f point, Vector3f normal) {
-        validatePositiveCoordinates(point, "point");
+        // Points can be negative as per documentation
+        // "Ray origins can be negative in 3D space - only entities in the spatial index must have positive coordinates"
 
         if (normal.length() < 1e-6f) {
             throw new IllegalArgumentException("Normal vector cannot be zero");
@@ -46,9 +47,8 @@ public record Plane3D(float a, float b, float c, float d) {
      * @throws IllegalArgumentException if any coordinate is negative or points are collinear
      */
     public static Plane3D fromThreePoints(Point3f p1, Point3f p2, Point3f p3) {
-        validatePositiveCoordinates(p1, "p1");
-        validatePositiveCoordinates(p2, "p2");
-        validatePositiveCoordinates(p3, "p3");
+        // Points can be negative as per documentation
+        // "Ray origins can be negative in 3D space - only entities in the spatial index must have positive coordinates"
 
         // Calculate two vectors in the plane
         Vector3f v1 = new Vector3f(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
@@ -166,7 +166,7 @@ public record Plane3D(float a, float b, float c, float d) {
      * @throws IllegalArgumentException if any coordinate is negative
      */
     public float distanceToPoint(Point3f point) {
-        validatePositiveCoordinates(point, "point");
+        // Points can be negative as per documentation
         return a * point.x + b * point.y + c * point.z + d;
     }
 
