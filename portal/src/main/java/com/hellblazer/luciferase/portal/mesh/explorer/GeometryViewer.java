@@ -28,9 +28,6 @@ import java.util.Set;
  * @author hal.hildebrand
  */
 public class GeometryViewer extends Abstract3DApp {
-
-    public static final double CUBE_EDGE_LENGTH = Math.sqrt(2) / 2;
-    public static final double TET_EDGE_LENGTH  = 1;
     private final       Group  view             = new Group();
 
     public static void main(String[] args) {

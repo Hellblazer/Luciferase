@@ -43,8 +43,8 @@ class TetreeKeyTest {
         assertEquals(lowBits, key.getLowBits());
         assertEquals(highBits, key.getHighBits());
         assertNotNull(key.toString());
-        assertTrue(key.toString().contains("level=5"));
-        assertTrue(key.toString().contains("tm-index="));
+        assertTrue(key.toString().contains("ExtendedTetreeKey[L5")); // New format
+        assertTrue(key.toString().contains("tm:")); // New format
     }
 
     @Test

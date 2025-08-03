@@ -172,6 +172,47 @@ public final class MortonKey implements SpatialKey<MortonKey> {
 
     @Override
     public String toString() {
-        return String.format("MortonKey[code=%d, level=%d]", mortonCode, level);
+        // Fast toString() that provides essential information
+        StringBuilder sb = new StringBuilder("MortonKey[L");
+        sb.append(level);
+        
+        // Add Morton code in base64 for compactness
+        sb.append(",m:").append(longToBase64(mortonCode));
+        
+        // Optionally decode coordinates for debugging
+        // This is more expensive but useful for understanding spatial position
+        if (mortonCode != 0) {
+            int[] coords = com.hellblazer.luciferase.geometry.MortonCurve.decode(mortonCode);
+            sb.append(",@(").append(coords[0]).append(",")
+              .append(coords[1]).append(",").append(coords[2]).append(")");
+        } else {
+            sb.append(",@origin");
+        }
+        
+        sb.append("]");
+        return sb.toString();
+    }
+    
+    /**
+     * Convert a long to a compact base64 string representation.
+     * Uses URL-safe base64 encoding without padding for compactness.
+     */
+    private static String longToBase64(long value) {
+        // Convert long to byte array
+        byte[] bytes = new byte[8];
+        for (int i = 7; i >= 0; i--) {
+            bytes[i] = (byte) (value & 0xFF);
+            value >>>= 8;
+        }
+        
+        // Use URL-safe base64 encoding without padding
+        String base64 = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        
+        // Remove leading A's (zeros) for compactness
+        int firstNonA = 0;
+        while (firstNonA < base64.length() - 1 && base64.charAt(firstNonA) == 'A') {
+            firstNonA++;
+        }
+        return base64.substring(firstNonA);
     }
 }

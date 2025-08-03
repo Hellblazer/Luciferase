@@ -253,19 +253,7 @@ public class ExtendedTetreeKey extends CompactTetreeKey {
         return combinedLevel21Bits <= 0x3F;
     }
 
-    @Override
-    public String toString() {
-        // For display, show the 128-bit value in a readable format
-        if (level == 0) {
-            return "ExtendedTetreeKey[level=0, tm-index=0]";
-        }
-
-        // For debugging, show hex representation
-        if (highBits == 0L) {
-            return String.format("ExtendedTetreeKey[level=%d, tm-index=0x%X]", level, getLowBits());
-        } else {
-            return String.format("ExtendedTetreeKey[level=%d, tm-index=0x%X%016X]", level, highBits, getLowBits());
-        }
-    }
+    // toString() inherited from TetreeKey base class provides appropriate format
+    // Override only if ExtendedTetreeKey needs special handling
 
 }

@@ -5,7 +5,7 @@ import com.hellblazer.luciferase.portal.mesh.Face;
 
 import javax.vecmath.Vector3d;
 
-import static com.hellblazer.luciferase.lucien.Constants.SIMPLEX;
+import static com.hellblazer.luciferase.lucien.Constants.*;
 
 /**
  * Represents the six Irregular Tetrahedrons that represent the characteristic of the cube
@@ -41,7 +41,7 @@ public class ThreeOrthoscheme extends Polyhedron {
     }
 
     public ThreeOrthoscheme(int simplex, double scale) {
-        var vectors = SIMPLEX[simplex];
+        var vectors = SIMPLEX_STANDARD[simplex];
         var v0 = new Vector3d(vectors[0].x, vectors[0].y, vectors[0].z);
         var v1 = new Vector3d(vectors[1].x, vectors[1].y, vectors[1].z);
         var v2 = new Vector3d(vectors[2].x, vectors[2].y, vectors[2].z);

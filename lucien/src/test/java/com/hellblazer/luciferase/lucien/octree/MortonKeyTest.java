@@ -40,7 +40,7 @@ class MortonKeyTest {
 
         assertEquals(mortonCode, key.getMortonCode());
         assertNotNull(key.toString());
-        assertTrue(key.toString().contains("12345"));
+        assertTrue(key.toString().contains("MortonKey[L"));
     }
 
     @Test
@@ -162,8 +162,8 @@ class MortonKeyTest {
         String str = key.toString();
 
         assertTrue(str.contains("MortonKey"));
-        assertTrue(str.contains("12345"));
-        assertTrue(str.contains("level"));
+        assertTrue(str.contains("m:")); // Now shows morton code in base64
+        assertTrue(str.contains("L")); // Shows level
     }
 
     @Test
