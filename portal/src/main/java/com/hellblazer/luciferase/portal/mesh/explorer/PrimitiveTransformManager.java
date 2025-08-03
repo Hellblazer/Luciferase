@@ -235,6 +235,111 @@ public class PrimitiveTransformManager {
     }
     
     /**
+     * Create a wireframe tetrahedron using edge cylinders.
+     * Uses cached reference edges with transforms for efficiency.
+     *
+     * @param type The tetrahedron type (0-5 for S0-S5)
+     * @param position The position of the tetrahedron anchor
+     * @param size The edge length of the tetrahedron
+     * @param edgeMaterial The material for the edges
+     * @param edgeThickness The thickness of the edge cylinders (relative to size)
+     * @return A Group containing the transformed edge cylinders
+     */
+    public Group createTetrahedronWireframe(int type, Point3f position, float size, 
+                                          Material edgeMaterial, float edgeThickness) {
+        Group wireframe = new Group();
+        
+        // Get reference vertices for this type
+        Point3i[] vertices = getReferenceVerticesForType(type);
+        
+        // Scale vertices to the target size
+        Point3f[] scaledVertices = new Point3f[4];
+        for (int i = 0; i < 4; i++) {
+            scaledVertices[i] = new Point3f(
+                position.x + vertices[i].x * size,
+                position.y + vertices[i].y * size,
+                position.z + vertices[i].z * size
+            );
+        }
+        
+        // Create edge cylinders
+        for (int[] edge : TETRAHEDRON_EDGES) {
+            Point3f start = scaledVertices[edge[0]];
+            Point3f end = scaledVertices[edge[1]];
+            
+            // Create cylinder for this edge
+            MeshView edgeCylinder = createLine(start, end, size * edgeThickness, edgeMaterial);
+            wireframe.getChildren().add(edgeCylinder);
+        }
+        
+        return wireframe;
+    }
+    
+    /**
+     * Create a wireframe tetrahedron with default edge thickness.
+     */
+    public Group createTetrahedronWireframe(int type, Point3f position, float size, Material edgeMaterial) {
+        return createTetrahedronWireframe(type, position, size, edgeMaterial, (float)defaultEdgeThickness);
+    }
+    
+    /**
+     * Create an inset tetrahedron (scaled down from original size).
+     * 
+     * @param type The tetrahedron type (0-5)
+     * @param position The position of the tetrahedron
+     * @param size The edge length of the tetrahedron
+     * @param insetFactor The factor by which to inset (0.0 = no inset, 0.5 = half size)
+     * @param material The material to apply
+     * @return A MeshView representing the inset tetrahedron
+     */
+    public MeshView createInsetTetrahedron(int type, Point3f position, float size, float insetFactor, Material material) {
+        PrimitiveType primType = switch (type) {
+            case 0 -> PrimitiveType.TETRAHEDRON_S0;
+            case 1 -> PrimitiveType.TETRAHEDRON_S1;
+            case 2 -> PrimitiveType.TETRAHEDRON_S2;
+            case 3 -> PrimitiveType.TETRAHEDRON_S3;
+            case 4 -> PrimitiveType.TETRAHEDRON_S4;
+            case 5 -> PrimitiveType.TETRAHEDRON_S5;
+            default -> throw new IllegalArgumentException("Invalid tetrahedron type: " + type);
+        };
+        
+        // Get reference vertices to calculate centroid
+        Point3i[] vertices = getReferenceVerticesForType(type);
+        
+        // Calculate centroid of the tetrahedron
+        float cx = 0, cy = 0, cz = 0;
+        for (Point3i v : vertices) {
+            cx += v.x;
+            cy += v.y;
+            cz += v.z;
+        }
+        cx /= 4.0f;
+        cy /= 4.0f;
+        cz /= 4.0f;
+        
+        // Apply inset scaling
+        float scale = 1.0f - insetFactor;
+        float insetSize = size * scale;
+        
+        // Adjust position to account for scaling toward centroid
+        // The centroid in scaled space is at position + (cx, cy, cz) * size
+        // After scaling, we want the centroid to stay at the same position
+        float centroidOffsetX = cx * size * insetFactor;
+        float centroidOffsetY = cy * size * insetFactor;
+        float centroidOffsetZ = cz * size * insetFactor;
+        
+        Point3f insetPosition = new Point3f(
+            position.x + centroidOffsetX,
+            position.y + centroidOffsetY,
+            position.z + centroidOffsetZ
+        );
+        
+        return createPrimitive(primType, insetPosition,
+                             new Vector3f(insetSize, insetSize, insetSize),
+                             null, material);
+    }
+    
+    /**
      * Clear the transform cache.
      */
     public void clearTransformCache() {
@@ -560,6 +665,41 @@ public class PrimitiveTransformManager {
         );
         
         return mesh;
+    }
+    
+    /**
+     * Get reference vertices for a tetrahedron type.
+     *
+     * @param type The tetrahedron type (0-5 for S0-S5)
+     * @return Array of 4 vertices defining the tetrahedron
+     */
+    private Point3i[] getReferenceVerticesForType(int type) {
+        // S0-S5 tetrahedra are carved from unit cube
+        int[][] tetIndices = {
+            { 0, 1, 3, 7 },  // S0: vertices 0, 1, 3, 7 of cube
+            { 0, 2, 3, 7 },  // S1: vertices 0, 2, 3, 7 of cube
+            { 0, 4, 7, 2 },  // S2: vertices 0, 4, 7, 2 of cube
+            { 0, 4, 6, 7 },  // S3: vertices 0, 4, 6, 7 of cube
+            { 0, 1, 5, 7 },  // S4: vertices 0, 1, 5, 7 of cube
+            { 0, 2, 6, 7 }   // S5: vertices 0, 2, 6, 7 of cube
+        };
+        
+        if (type < 0 || type > 5) {
+            throw new IllegalArgumentException("Invalid tetrahedron type: " + type);
+        }
+        
+        // Create vertices from cube corners using the indices
+        Point3i[] vertices = new Point3i[4];
+        for (int i = 0; i < 4; i++) {
+            int idx = tetIndices[type][i];
+            // Convert cube vertex index to (x,y,z)
+            int x = (idx & 1);
+            int y = (idx >> 1) & 1;
+            int z = (idx >> 2) & 1;
+            vertices[i] = new Point3i(x, y, z);
+        }
+        
+        return vertices;
     }
     
     /**

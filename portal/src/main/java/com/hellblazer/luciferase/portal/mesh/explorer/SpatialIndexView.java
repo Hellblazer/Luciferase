@@ -28,6 +28,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Material;
 import javafx.scene.paint.PhongMaterial;
 import javafx.scene.shape.Box;
+import javafx.scene.shape.Cylinder;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.Sphere;
 
@@ -128,6 +129,15 @@ public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID extends E
                 ((MeshView) visual).setMaterial(highlight);
             } else if (visual instanceof Box) {
                 ((Box) visual).setMaterial(highlight);
+            } else if (visual instanceof Group) {
+                // For transform-based rendering groups
+                ((Group) visual).getChildren().forEach(child -> {
+                    if (child instanceof MeshView) {
+                        ((MeshView) child).setMaterial(highlight);
+                    } else if (child instanceof Cylinder) {
+                        ((Cylinder) child).setMaterial(highlight);
+                    }
+                });
             }
         }
     }

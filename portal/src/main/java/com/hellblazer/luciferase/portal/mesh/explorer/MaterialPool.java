@@ -162,6 +162,27 @@ public class MaterialPool {
     }
     
     /**
+     * Get a material for wireframe rendering.
+     *
+     * @param type The type identifier (e.g., tetrahedron type)
+     * @param color The wireframe color
+     * @return A PhongMaterial for wireframe rendering
+     */
+    public synchronized PhongMaterial getWireframeMaterial(int type, Color color) {
+        // Wireframes are always opaque
+        MaterialKey key = new MaterialKey(color, Color.WHITE, 1.0, false);
+        
+        PhongMaterial material = materials.get(key);
+        if (material == null) {
+            material = createMaterial(color, Color.WHITE);
+            material.setSpecularPower(32); // Add some shine to wireframes
+            materials.put(key, material);
+        }
+        
+        return material;
+    }
+    
+    /**
      * Create a new PhongMaterial with the specified properties.
      */
     private PhongMaterial createMaterial(Color diffuse, Color specular) {
