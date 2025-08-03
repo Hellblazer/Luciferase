@@ -25,6 +25,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -41,10 +46,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * @author hal.hildebrand
  */
 public class OctreeVsTetreeVsPrismBenchmark {
+    
+    private static final String PERFORMANCE_OUTPUT_DIR = System.getProperty("performance.output.dir", "target/performance-output");
 
     private static final int   WARMUP_ITERATIONS    = 100;
     private static final int   BENCHMARK_ITERATIONS = 1000;
-    private static final int[] ENTITY_COUNTS        = { 100, 1000, 10000 };
+    private static final int   MAX_ENTITY_COUNT     = Integer.parseInt(
+        System.getProperty("performance.max.entities", "10000"));
+    private static final int[] ALL_ENTITY_COUNTS    = { 100, 1000, 10000 };
+    private static final int[] ENTITY_COUNTS        = java.util.Arrays.stream(ALL_ENTITY_COUNTS)
+        .filter(size -> size <= MAX_ENTITY_COUNT)
+        .toArray();
     private static final int   K_NEIGHBORS          = 10;
     private static final float SEARCH_RADIUS        = 50.0f;
     private static final byte  TEST_LEVEL           = 10;
@@ -63,7 +75,7 @@ public class OctreeVsTetreeVsPrismBenchmark {
     }
 
     @Test
-    public void compareAllSpatialIndices() {
+    public void compareAllSpatialIndices() throws IOException {
         System.out.println("=== OCTREE vs TETREE vs PRISM PERFORMANCE COMPARISON ===");
         System.out.println("Platform: " + System.getProperty("os.name") + " " + System.getProperty("os.arch"));
         System.out.println("JVM: " + System.getProperty("java.vm.name") + " " + System.getProperty("java.version"));
@@ -71,10 +83,16 @@ public class OctreeVsTetreeVsPrismBenchmark {
         System.out.println("Memory: " + (Runtime.getRuntime().maxMemory() / 1024 / 1024) + " MB");
         System.out.println();
 
+        List<String> csvLines = new ArrayList<>();
+        csvLines.add("operation,throughput,latency");
+
         for (int entityCount : ENTITY_COUNTS) {
             System.out.println("=== Testing with " + entityCount + " entities ===");
-            runThreeWayComparison(entityCount);
+            csvLines.addAll(runThreeWayComparison(entityCount));
         }
+        
+        // Write CSV to performance output directory
+        writeCsvResults(csvLines);
     }
 
     @BeforeEach
@@ -83,23 +101,26 @@ public class OctreeVsTetreeVsPrismBenchmark {
         assumeFalse(CIEnvironmentCheck.isRunningInCI(), CIEnvironmentCheck.getSkipMessage());
     }
 
-    private void runThreeWayComparison(int entityCount) {
+    private List<String> runThreeWayComparison(int entityCount) {
         var entities = generateTestEntities(entityCount);
+        List<String> csvLines = new ArrayList<>();
         
         // Warm up all three implementations
         warmupAllImplementations(entities);
 
         // Test insertion performance
-        testInsertionPerformance(entities);
+        csvLines.addAll(testInsertionPerformance(entities, entityCount));
         
         // Test query performance  
-        testQueryPerformance(entities);
+        csvLines.addAll(testQueryPerformance(entities, entityCount));
         
         // Test memory usage
-        testMemoryUsage(entities);
+        csvLines.addAll(testMemoryUsage(entities, entityCount));
         
         // Test update and removal performance
-        testUpdateAndRemovalPerformance(entities);
+        csvLines.addAll(testUpdateAndRemovalPerformance(entities, entityCount));
+        
+        return csvLines;
     }
 
     private void warmupAllImplementations(List<TestEntity> entities) {
@@ -118,7 +139,7 @@ public class OctreeVsTetreeVsPrismBenchmark {
         }
     }
 
-    private void testInsertionPerformance(List<TestEntity> entities) {
+    private List<String> testInsertionPerformance(List<TestEntity> entities, int entityCount) {
         System.out.println("\n--- INSERTION Performance ---");
         
         // Benchmark Octree insertion
@@ -138,9 +159,20 @@ public class OctreeVsTetreeVsPrismBenchmark {
         System.out.printf("Octree: %.3f ms%n", octreeMs);
         System.out.printf("Tetree: %.3f ms%n", tetreeMs);
         System.out.printf("Prism: %.3f ms%n", prismMs);
+        
+        // Output in format expected by TestResultExtractor
+        double octreeUsPerOp = (octreeMs * 1000.0) / entities.size();
+        double tetreeUsPerOp = (tetreeMs * 1000.0) / entities.size();
+        double prismUsPerOp = (prismMs * 1000.0) / entities.size();
+        System.out.printf("Insertion     | %.1f μs/op | %.1f μs/op | %.1f μs/op%n", 
+                         octreeUsPerOp, tetreeUsPerOp, prismUsPerOp);
+        
+        List<String> csvLines = new ArrayList<>();
+        csvLines.add(String.format("insert-prism-%d,%.1f μs/op,", entityCount, prismUsPerOp));
+        return csvLines;
     }
 
-    private void testQueryPerformance(List<TestEntity> entities) {
+    private List<String> testQueryPerformance(List<TestEntity> entities, int entityCount) {
         System.out.println("\n--- QUERY Performance ---");
         
         // Create populated indices
@@ -164,6 +196,10 @@ public class OctreeVsTetreeVsPrismBenchmark {
         System.out.printf("k-NN Octree: %.0f μs%n", octreeKNN / 1000.0);
         System.out.printf("k-NN Tetree: %.0f μs%n", tetreeKNN / 1000.0);
         System.out.printf("k-NN Prism: %.0f μs%n", prismKNN / 1000.0);
+        
+        // Output in format expected by TestResultExtractor
+        System.out.printf("k-NN Query    | %.1f μs/op | %.1f μs/op | %.1f μs/op%n", 
+                         octreeKNN / 1000.0, tetreeKNN / 1000.0, prismKNN / 1000.0);
 
         // Test range query performance
         long octreeRange = benchmarkRangeQuery(octree, queryPosition);
@@ -173,9 +209,18 @@ public class OctreeVsTetreeVsPrismBenchmark {
         System.out.printf("Range Octree: %.0f μs%n", octreeRange / 1000.0);
         System.out.printf("Range Tetree: %.0f μs%n", tetreeRange / 1000.0);
         System.out.printf("Range Prism: %.0f μs%n", prismRange / 1000.0);
+        
+        // Output in format expected by TestResultExtractor
+        System.out.printf("Range Query   | %.1f μs/op | %.1f μs/op | %.1f μs/op%n", 
+                         octreeRange / 1000.0, tetreeRange / 1000.0, prismRange / 1000.0);
+        
+        List<String> csvLines = new ArrayList<>();
+        csvLines.add(String.format("knn-prism-%d,,%.3f ms", entityCount, prismKNN / 1000000.0));
+        csvLines.add(String.format("range-prism-%d,,%.3f ms", entityCount, prismRange / 1000000.0));
+        return csvLines;
     }
 
-    private void testMemoryUsage(List<TestEntity> entities) {
+    private List<String> testMemoryUsage(List<TestEntity> entities, int entityCount) {
         System.out.println("\n--- MEMORY Usage ---");
         
         Runtime.getRuntime().gc();
@@ -208,9 +253,20 @@ public class OctreeVsTetreeVsPrismBenchmark {
         System.out.printf("Octree Memory: %.3f MB%n", octreeMem / (1024.0 * 1024.0));
         System.out.printf("Tetree Memory: %.3f MB%n", tetreeMem / (1024.0 * 1024.0));
         System.out.printf("Prism Memory: %.3f MB%n", prismMem / (1024.0 * 1024.0));
+        
+        // Output in format expected by TestResultExtractor
+        double octreeBytesPerEntity = (double) octreeMem / entities.size();
+        double tetreeBytesPerEntity = (double) tetreeMem / entities.size();
+        double prismBytesPerEntity = (double) prismMem / entities.size();
+        System.out.printf("Memory per entity | %.1f bytes | %.1f bytes | %.1f bytes%n", 
+                         octreeBytesPerEntity, tetreeBytesPerEntity, prismBytesPerEntity);
+        
+        List<String> csvLines = new ArrayList<>();
+        csvLines.add(String.format("memory-prism-%d,%.3f MB,", entityCount, prismMem / (1024.0 * 1024.0)));
+        return csvLines;
     }
 
-    private void testUpdateAndRemovalPerformance(List<TestEntity> entities) {
+    private List<String> testUpdateAndRemovalPerformance(List<TestEntity> entities, int entityCount) {
         System.out.println("\n--- UPDATE & REMOVAL Performance ---");
         
         // Test update performance
@@ -245,6 +301,11 @@ public class OctreeVsTetreeVsPrismBenchmark {
         System.out.printf("REMOVAL Octree: %.3f ms%n", octreeRemovalTime / 1_000_000.0);
         System.out.printf("REMOVAL Tetree: %.3f ms%n", tetreeRemovalTime / 1_000_000.0);
         System.out.printf("REMOVAL Prism: %.3f ms%n", prismRemovalTime / 1_000_000.0);
+        
+        List<String> csvLines = new ArrayList<>();
+        csvLines.add(String.format("update-prism-%d,%.1f μs/op,", entityCount, prismUpdateTime / 1000.0));
+        csvLines.add(String.format("remove-prism-%d,%.1f μs/op,", entityCount, prismRemovalTime / 1000.0));
+        return csvLines;
     }
 
     // Benchmark helper methods
@@ -389,5 +450,20 @@ public class OctreeVsTetreeVsPrismBenchmark {
     private long getUsedMemory() {
         Runtime runtime = Runtime.getRuntime();
         return runtime.totalMemory() - runtime.freeMemory();
+    }
+    
+    private void writeCsvResults(List<String> csvLines) throws IOException {
+        Path outputDir = Paths.get(PERFORMANCE_OUTPUT_DIR);
+        Files.createDirectories(outputDir);
+        
+        Path csvFile = outputDir.resolve("benchmark-results.csv");
+        try (BufferedWriter writer = Files.newBufferedWriter(csvFile)) {
+            for (String line : csvLines) {
+                writer.write(line);
+                writer.newLine();
+            }
+        }
+        
+        System.out.println("\nPerformance results written to: " + csvFile.toAbsolutePath());
     }
 }

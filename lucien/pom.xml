@@ -87,8 +87,9 @@
             <properties>
                 <skipTests>false</skipTests>
                 <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
-                <performance.output.dir>${project.build.directory}/performance-results</performance.output.dir>
+                <performance.output.dir>${project.build.directory}/performance-output</performance.output.dir>
                 <performance.timestamp>${maven.build.timestamp}</performance.timestamp>
+                <performance.max.entities>10000</performance.max.entities>
             </properties>
 
             <build>
@@ -127,6 +128,7 @@
                             <systemPropertyVariables>
                                 <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
                                 <performance.output.dir>${performance.output.dir}</performance.output.dir>
+                                <performance.max.entities>${performance.max.entities}</performance.max.entities>
                             </systemPropertyVariables>
                             <reportFormat>plain</reportFormat>
                             <useFile>true</useFile>
@@ -202,6 +204,20 @@
             <id>performance-extract</id>
             <build>
                 <plugins>
+                    <!-- Ensure test classes are compiled -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>compile-test-classes</id>
+                                <phase>process-resources</phase>
+                                <goals>
+                                    <goal>testCompile</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
@@ -219,14 +235,8 @@
                                     <classpathScope>test</classpathScope>
                                     <arguments>
                                         <argument>${project.build.directory}/surefire-reports</argument>
-                                        <argument>${project.build.directory}/performance-results</argument>
+                                        <argument>${project.build.directory}/performance-output/performance-data.csv</argument>
                                     </arguments>
-                                    <systemProperties>
-                                        <systemProperty>
-                                            <key>output.format</key>
-                                            <value>csv,markdown</value>
-                                        </systemProperty>
-                                    </systemProperties>
                                 </configuration>
                             </execution>
                         </executions>
@@ -240,6 +250,20 @@
             <id>performance-docs</id>
             <build>
                 <plugins>
+                    <!-- Ensure test classes are compiled -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>compile-test-classes</id>
+                                <phase>process-resources</phase>
+                                <goals>
+                                    <goal>testCompile</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
@@ -255,20 +279,10 @@
                                     <mainClass>
                                         com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater
                                     </mainClass>
+                                    <classpathScope>test</classpathScope>
                                     <arguments>
-                                        <argument>${project.build.directory}/performance-results</argument>
-                                        <argument>${project.basedir}/doc</argument>
+                                        <argument>${project.build.directory}/performance-output/performance-data.csv</argument>
                                     </arguments>
-                                    <systemProperties>
-                                        <systemProperty>
-                                            <key>update.mode</key>
-                                            <value>all</value>
-                                        </systemProperty>
-                                        <systemProperty>
-                                            <key>backup.enabled</key>
-                                            <value>true</value>
-                                        </systemProperty>
-                                    </systemProperties>
                                 </configuration>
                             </execution>
                         </executions>
@@ -283,9 +297,32 @@
             <properties>
                 <skipTests>false</skipTests>
                 <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
+                <performance.output.dir>${project.build.directory}/performance-output</performance.output.dir>
+                <performance.max.entities>10000</performance.max.entities>
             </properties>
             <build>
                 <plugins>
+                    <!-- Create performance output directory -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>create-performance-dir</id>
+                                <phase>initialize</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${performance.output.dir}"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    
                     <!-- First: Run performance tests -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
@@ -306,6 +343,8 @@
                                     <forkedProcessTimeoutInSeconds>1800</forkedProcessTimeoutInSeconds>
                                     <systemPropertyVariables>
                                         <RUN_SPATIAL_INDEX_PERF_TESTS>true</RUN_SPATIAL_INDEX_PERF_TESTS>
+                                        <performance.output.dir>${performance.output.dir}</performance.output.dir>
+                                        <performance.max.entities>${performance.max.entities}</performance.max.entities>
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>
@@ -330,7 +369,7 @@
                                     <classpathScope>test</classpathScope>
                                     <arguments>
                                         <argument>${project.build.directory}/surefire-reports</argument>
-                                        <argument>${project.build.directory}/performance-results</argument>
+                                        <argument>${project.build.directory}/performance-output/performance-data.csv</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
@@ -346,9 +385,121 @@
                                     </mainClass>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
-                                        <argument>${project.build.directory}/performance-results</argument>
-                                        <argument>${project.basedir}/doc</argument>
+                                        <argument>${project.build.directory}/performance-output/performance-data.csv</argument>
                                     </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        
+        <!-- Simple Performance Update Profile - Just Updates Docs from Existing Results -->
+        <profile>
+            <id>performance-update</id>
+            <build>
+                <plugins>
+                    <!-- Ensure test classes are compiled -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>compile-test-classes</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>testCompile</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Extract performance data from existing test results -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>extract-data</id>
+                                <phase>process-resources</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.lucien.performance.TestResultExtractor</mainClass>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>${project.build.directory}/surefire-reports</argument>
+                                        <argument>${project.build.directory}/performance-output/performance-data.csv</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>update-docs</id>
+                                <phase>compile</phase>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.lucien.performance.RobustPerformanceUpdater</mainClass>
+                                    <classpathScope>test</classpathScope>
+                                    <arguments>
+                                        <argument>${project.build.directory}/performance-output/performance-data.csv</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        
+        <!-- Archive Performance Results Profile -->
+        <profile>
+            <id>performance-archive</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <phase>compile</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <!-- Create archive directory if it doesn't exist -->
+                                        <mkdir dir="${project.basedir}/performance-results"/>
+                                        
+                                        <!-- Copy performance data with timestamp -->
+                                        <tstamp>
+                                            <format property="archive.timestamp" pattern="yyyyMMdd_HHmmss"/>
+                                        </tstamp>
+                                        
+                                        <!-- Copy the latest performance data -->
+                                        <copy file="${project.build.directory}/performance-output/performance-data.csv"
+                                              tofile="${project.basedir}/performance-results/performance_${archive.timestamp}.csv"
+                                              failonerror="true"/>
+                                        
+                                        <!-- Also copy as latest for easy reference -->
+                                        <copy file="${project.build.directory}/performance-output/performance-data.csv"
+                                              tofile="${project.basedir}/performance-results/latest.csv"
+                                              failonerror="true"/>
+                                        
+                                        <!-- Copy any test-specific CSV files -->
+                                        <copy todir="${project.basedir}/performance-results" failonerror="false">
+                                            <fileset dir="${project.build.directory}/performance-output">
+                                                <include name="*_*PerformanceTest_*.csv"/>
+                                            </fileset>
+                                        </copy>
+                                        
+                                        <echo message="Performance results archived to: ${project.basedir}/performance-results/"/>
+                                        <echo message="Latest results: performance_${archive.timestamp}.csv"/>
+                                    </target>
                                 </configuration>
                             </execution>
                         </executions>

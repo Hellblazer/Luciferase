@@ -21,7 +21,12 @@ public class OctreeVsTetreeBenchmark {
 
     private static final int   WARMUP_ITERATIONS    = 100;
     private static final int   BENCHMARK_ITERATIONS = 1000;
-    private static final int[] ENTITY_COUNTS        = { 100, 1000, 10000 };
+    private static final int   MAX_ENTITY_COUNT     = Integer.parseInt(
+        System.getProperty("performance.max.entities", "10000"));
+    private static final int[] ALL_ENTITY_COUNTS    = { 100, 1000, 10000 };
+    private static final int[] ENTITY_COUNTS        = java.util.Arrays.stream(ALL_ENTITY_COUNTS)
+        .filter(size -> size <= MAX_ENTITY_COUNT)
+        .toArray();
     private static final int   K_NEIGHBORS          = 10;
     private static final float SEARCH_RADIUS        = 50.0f;
     private static final byte  TEST_LEVEL           = 10;

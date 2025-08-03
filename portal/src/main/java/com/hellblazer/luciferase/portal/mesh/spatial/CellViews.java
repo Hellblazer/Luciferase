@@ -43,27 +43,25 @@ import java.util.Map;
  *
  * @author hal.hildebrand
  */
-public class TetrahedralViews {
+public class CellViews {
     // Standard tetrahedron edges (vertex indices)
-    private static final int[][] EDGES = {
-        {0, 1}, {0, 2}, {0, 3},  // Edges from vertex 0
-        {1, 2}, {1, 3},          // Edges from vertex 1
-        {2, 3}                   // Edge from vertex 2 to 3
+    private static final int[][] EDGES = { { 0, 1 }, { 0, 2 }, { 0, 3 },  // Edges from vertex 0
+                                           { 1, 2 }, { 1, 3 },          // Edges from vertex 1
+                                           { 2, 3 }                   // Edge from vertex 2 to 3
     };
 
-    private final TriangleMesh[]            referenceMeshes     = new TriangleMesh[6];
-    private final Group[]                   referenceWireframes = new Group[6];
-    private final Map<TetreeKey<?>, Affine> transformCache      = new HashMap<>();
-    private final double                    edgeThickness;
-    private final Material                  edgeMaterial;
-    // Material pooling with LRU eviction
+    private final TriangleMesh[]                       referenceMeshes     = new TriangleMesh[6];
+    private final Group[]                              referenceWireframes = new Group[6];
+    private final Map<TetreeKey<?>, Affine>            transformCache      = new HashMap<>();
+    private final double                               edgeThickness;
+    private final Material                             edgeMaterial;
     private final LinkedHashMap<String, PhongMaterial> materialPool;
-    private final int maxMaterialPoolSize = 1000;
+    private final int                                  maxMaterialPoolSize = 1000;
 
     /**
      * Initialize the views manager with default edge thickness and material.
      */
-    public TetrahedralViews() {
+    public CellViews() {
         this(0.01, new PhongMaterial(javafx.scene.paint.Color.BLACK));
     }
 
@@ -73,10 +71,10 @@ public class TetrahedralViews {
      * @param edgeThickness The thickness of the wireframe edges
      * @param edgeMaterial  The material to use for the edges
      */
-    public TetrahedralViews(double edgeThickness, Material edgeMaterial) {
+    public CellViews(double edgeThickness, Material edgeMaterial) {
         this.edgeThickness = edgeThickness;
         this.edgeMaterial = edgeMaterial;
-        
+
         // Initialize material pool with LRU eviction
         this.materialPool = new LinkedHashMap<String, PhongMaterial>(16, 0.75f, true) {
             @Override
@@ -172,33 +170,32 @@ public class TetrahedralViews {
     }
 
     /**
-     * Get or create a material with the specified properties.
-     * Materials are pooled and reused based on their visual properties.
+     * Get or create a material with the specified properties. Materials are pooled and reused based on their visual
+     * properties.
      *
      * @param baseColor The base color
-     * @param opacity The opacity (0.0 to 1.0)
-     * @param selected Whether the material is for a selected state
+     * @param opacity   The opacity (0.0 to 1.0)
+     * @param selected  Whether the material is for a selected state
      * @return A PhongMaterial with the specified properties
      */
     public synchronized PhongMaterial getMaterial(Color baseColor, double opacity, boolean selected) {
         // Create a unique key for this material combination
-        String key = String.format("%s_%.2f_%b", 
-            baseColor.toString(), opacity, selected);
-        
+        String key = String.format("%s_%.2f_%b", baseColor.toString(), opacity, selected);
+
         // Check if we already have this material
         PhongMaterial material = materialPool.get(key);
         if (material != null) {
             return material;
         }
-        
+
         // Create new material
         Color actualColor = baseColor.deriveColor(0, 1, 1, opacity);
         material = new PhongMaterial(actualColor);
         material.setSpecularColor(selected ? Color.WHITE : actualColor.brighter());
-        
+
         // Add to pool
         materialPool.put(key, material);
-        
+
         return material;
     }
 
@@ -294,7 +291,9 @@ public class TetrahedralViews {
             double dz = v2.z - v1.z;
             double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-            if (length < 0.001) continue; // Skip zero-length edges
+            if (length < 0.001) {
+                continue; // Skip zero-length edges
+            }
 
             // Create cylinder
             Cylinder cylinder = new Cylinder(edgeThickness / 2, length);

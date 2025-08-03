@@ -19,27 +19,26 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 ## Choosing the Right Index
 
 ### Use Octree When:
-- **k-NN queries at scale** (>10K entities) are critical
-- **High-frequency updates** at scale (10K+ entities)
-- **Predictable performance** is more important than peak performance
-- **Legacy systems** designed around Octree characteristics
-- Cube-based spatial subdivision fits the problem domain
+- **Range queries** are performance critical (fastest implementation)
+- **Balanced performance** across all operations is required
+- **Traditional cubic subdivision** is preferred
+- **Coordinate constraints** cannot be accommodated (no restrictions)
 
 ### Use Tetree When:
-- **Insertion performance** is the primary concern (2.1x to 6.2x faster)
-- **Range queries** are important (2.5x to 3.8x faster)
-- **Memory efficiency** matters (uses 65-73% of Octree's memory)
-- **Bulk loading** large datasets (35-38% faster)
-- **Concurrent workloads** benefit from simpler key comparisons
+- **Insertion performance** is important (faster than Octree)
+- **Memory efficiency** matters (most memory-efficient implementation)
+- **Update performance** is critical (fastest updates)
+- **Working with large datasets** (10K+ entities)
+- **Tetrahedral space partitioning** is beneficial for your domain
 
 ### Use Prism When:
-- **Anisotropic data distributions** with directional bias
-- **Rectangular subdivision** better matches data patterns
-- **Streaming or columnar data** with natural layering
-- **Custom subdivision strategies** for specific use cases
-- **Performance requirements** are moderate (between Octree and Tetree)
+- **Insertion performance is paramount** (dramatically faster than alternatives)
+- **Data has anisotropic distribution** (fine horizontal, coarse vertical)
+- **Memory usage slightly higher** is acceptable
+- **Working with small to medium datasets** (< 10K entities)
+- **Working with layered/stratified data** (terrain, atmosphere, buildings)
+- **Custom subdivision requirements**
 - **Different query patterns** by axis (frequent horizontal, rare vertical)
-- **Memory efficiency** for stratified data (20-30% better than isotropic indices)
 - **Specialized vertical operations** (layer queries, vertical ray casting)
 
 ## General Optimization Strategies

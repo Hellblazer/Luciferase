@@ -54,7 +54,7 @@ mvn test -Dtest=OctreeVsTetreeBenchmark -DRUN_SPATIAL_INDEX_PERF_TESTS=true
 # For full performance suite (may require 30+ minutes):
 mvn clean test -Pperformance
 
-# Results saved to: target/performance-results/
+# Results saved to: performance-results/
 # Surefire reports: target/surefire-reports/
 ```
 

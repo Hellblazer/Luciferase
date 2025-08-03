@@ -33,12 +33,12 @@ else
     exit 1
 fi
 
-# Check if performance data directory exists
-echo -n "Checking performance data directory... "
-if [ -d "doc/performance-data" ]; then
+# Check if performance results directory exists
+echo -n "Checking performance results directory... "
+if [ -d "performance-results" ]; then
     echo "✓"
 else
-    echo "✗ Missing doc/performance-data directory"
+    echo "✗ Missing performance-results directory"
     exit 1
 fi
 

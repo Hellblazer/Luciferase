@@ -35,7 +35,12 @@ import java.util.Random;
  */
 public class BaselinePerformanceBenchmark {
 
-    private static final int[] ENTITY_COUNTS = { 1_000, 10_000, 50_000, 100_000 };
+    private static final int   MAX_ENTITY_COUNT  = Integer.parseInt(
+        System.getProperty("performance.max.entities", "10000"));
+    private static final int[] ALL_ENTITY_COUNTS = { 1_000, 10_000, 50_000, 100_000 };
+    private static final int[] ENTITY_COUNTS     = java.util.Arrays.stream(ALL_ENTITY_COUNTS)
+        .filter(size -> size <= MAX_ENTITY_COUNT)
+        .toArray();
     private static final byte  LEVEL         = 10;
 
     @Test
