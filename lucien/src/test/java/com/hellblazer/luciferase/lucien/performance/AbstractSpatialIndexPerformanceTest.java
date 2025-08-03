@@ -32,9 +32,14 @@ public abstract class AbstractSpatialIndexPerformanceTest<Key extends com.hellbl
     protected static final boolean RUN_PERF_TESTS = Boolean.parseBoolean(
     System.getenv().getOrDefault("RUN_SPATIAL_INDEX_PERF_TESTS", "false"));
 
-    // Create results directory in target folder for proper cleanup during builds
-    protected static final Path              RESULTS_DIR      = Paths.get("performance-results");
+    // Create results directory in target for temporary performance data
+    protected static final Path              RESULTS_DIR      = Paths.get(
+        System.getProperty("performance.output.dir", "target/performance-output"));
     protected static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+
+    // Maximum entity count for tests (can be overridden by system property)
+    protected static final int MAX_ENTITY_COUNT = Integer.parseInt(
+        System.getProperty("performance.max.entities", "10000"));
 
     // Test data sizes matching C++ scales
     protected static final int[] TEST_SIZES = { 50, 100, 200, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 5000, 6000,
@@ -54,6 +59,15 @@ public abstract class AbstractSpatialIndexPerformanceTest<Key extends com.hellbl
     new ArrayList<>());
     protected static       String                   testRunId;
     protected              Random                   random;
+
+    /**
+     * Get test sizes filtered by MAX_ENTITY_COUNT
+     */
+    protected static int[] getFilteredTestSizes(int[] sizes) {
+        return java.util.Arrays.stream(sizes)
+            .filter(size -> size <= MAX_ENTITY_COUNT)
+            .toArray();
+    }
 
     /**
      * Assert performance doesn't regress beyond threshold

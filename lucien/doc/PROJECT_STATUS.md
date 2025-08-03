@@ -19,6 +19,7 @@ is production-ready with comprehensive test coverage and optimized performance.
 - **Frustum culling**: Camera-based visibility determination
 - **Plane intersection**: Spatial partitioning support
 - **Ghost functionality**: Complete distributed spatial index support with gRPC
+- **DSOC (Dynamic Scene Occlusion Culling)**: 2.0x speedup for high-occlusion scenes with auto-disable protection
 
 ### Architecture
 
@@ -28,6 +29,7 @@ is production-ready with comprehensive test coverage and optimized performance.
 - **Thread-safe operations**: Fine-grained locking for concurrency
 - **Memory pooling**: Efficient node allocation and reuse
 - **Ghost layer**: Complete distributed support with neighbor detection and gRPC communication
+- **DSOC integration**: Temporal Bounding Volumes (TBVs), hierarchical Z-buffer, performance monitoring
 
 ### Performance Characteristics
 

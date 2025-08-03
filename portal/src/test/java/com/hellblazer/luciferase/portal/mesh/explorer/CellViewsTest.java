@@ -16,7 +16,7 @@
  */
 package com.hellblazer.luciferase.portal.mesh.explorer;
 
-import com.hellblazer.luciferase.portal.mesh.spatial.TetrahedralViews;
+import com.hellblazer.luciferase.portal.mesh.spatial.CellViews;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import javafx.application.Platform;
@@ -36,14 +36,14 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Comprehensive unit tests for TetrahedralViews.
+ * Comprehensive unit tests for CellViews.
  * Validates creation, caching, transformations, and rendering aspects using random samples
  * across all levels and types.
  *
  * @author hal.hildebrand
  */
 @RequiresJavaFX
-public class TetrahedralViewsTest {
+public class CellViewsTest {
     
     private static final Random RANDOM = new Random(42); // Fixed seed for reproducibility
     private static final int SAMPLES_PER_LEVEL = 10;
@@ -60,7 +60,7 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testTransformViewsCreation() {
-        TetrahedralViews views = new TetrahedralViews();
+        CellViews views = new CellViews();
         
         // Test all 6 tetrahedron types
         for (byte type = 0; type < 6; type++) {
@@ -88,7 +88,7 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testWireframeViewsCreation() {
-        TetrahedralViews views = new TetrahedralViews();
+        CellViews views = new CellViews();
         
         // Test all 6 tetrahedron types
         for (byte type = 0; type < 6; type++) {
@@ -117,8 +117,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testComprehensiveRandomSamples() {
-        TetrahedralViews transformViews = new TetrahedralViews();
-        TetrahedralViews wireframeViews = new TetrahedralViews();
+        CellViews transformViews = new CellViews();
+        CellViews wireframeViews = new CellViews();
         
         // Test every level from 0 to 21
         for (byte level = 0; level <= Constants.getMaxRefinementLevel(); level++) {
@@ -197,7 +197,7 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testWireframeGeometryCorrectness() {
-        TetrahedralViews views = new TetrahedralViews();
+        CellViews views = new CellViews();
         
         // Test each type with detailed geometry validation
         for (byte type = 0; type < 6; type++) {
@@ -239,7 +239,7 @@ public class TetrahedralViewsTest {
     @Test
     public void testCustomWireframeMaterial() {
         PhongMaterial redMaterial = new PhongMaterial(Color.RED);
-        TetrahedralViews views = new TetrahedralViews(0.02, redMaterial);
+        CellViews views = new CellViews(0.02, redMaterial);
         
         // Use level 15 with aligned coordinates
         byte level = 15;
@@ -257,8 +257,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testTransformCaching() {
-        TetrahedralViews transformViews = new TetrahedralViews();
-        TetrahedralViews wireframeViews = new TetrahedralViews();
+        CellViews transformViews = new CellViews();
+        CellViews wireframeViews = new CellViews();
         
         // Create same tet multiple times with aligned coordinates
         byte level = 8;
@@ -288,8 +288,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testDifferentLevelsAndPositions() {
-        TetrahedralViews transformViews = new TetrahedralViews();
-        TetrahedralViews wireframeViews = new TetrahedralViews();
+        CellViews transformViews = new CellViews();
+        CellViews wireframeViews = new CellViews();
         
         // Test different levels (sizes)
         for (byte level = 16; level <= 20; level += 2) {
@@ -317,8 +317,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testAllTypes() {
-        TetrahedralViews transformViews = new TetrahedralViews();
-        TetrahedralViews wireframeViews = new TetrahedralViews();
+        CellViews transformViews = new CellViews();
+        CellViews wireframeViews = new CellViews();
         
         // Verify all 6 types have different orientations
         for (byte type = 0; type < 6; type++) {
@@ -351,8 +351,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testStatistics() {
-        TetrahedralViews transformViews = new TetrahedralViews();
-        TetrahedralViews wireframeViews = new TetrahedralViews();
+        CellViews transformViews = new CellViews();
+        CellViews wireframeViews = new CellViews();
         
         // Check initial statistics
         assertEquals(6, transformViews.getStatistics().get("referenceMeshCount"));
@@ -376,7 +376,7 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testEdgeConnectivity() {
-        TetrahedralViews views = new TetrahedralViews();
+        CellViews views = new CellViews();
         
         // Use level 15 at origin
         byte level = 15;
@@ -396,8 +396,8 @@ public class TetrahedralViewsTest {
     
     @Test
     public void testBoundaryConditions() {
-        TetrahedralViews transformViews = new TetrahedralViews();
-        TetrahedralViews wireframeViews = new TetrahedralViews();
+        CellViews transformViews = new CellViews();
+        CellViews wireframeViews = new CellViews();
         
         // Test at level 0 (largest tetrahedra)
         Tet largestTet = new Tet(0, 0, 0, (byte) 0, (byte) 0);

@@ -57,6 +57,14 @@ This index guides you to performance-related documentation for the Luciferase sp
 - Optimization strategies
 - Best practices
 
+### [DSOC_PERFORMANCE_TESTING_GUIDE.md](./DSOC_PERFORMANCE_TESTING_GUIDE.md)
+
+**DSOC performance testing**
+
+- Performance test categories
+- JMH benchmarks
+- Gated test execution
+
 ## Quick Reference
 
 ### For Different Workloads
@@ -68,6 +76,7 @@ This index guides you to performance-related documentation for the Luciferase sp
 **Update-Heavy**: Use Tetree (1.7x to 3.0x faster than Octree)
 **Batch Loading**: Use Tetree with bulk operations
 **Anisotropic Data**: Use Prism for directional data patterns
+**High Occlusion Scenes**: Enable DSOC for up to 2.0x speedup
 
 ### Running Benchmarks
 
@@ -86,16 +95,10 @@ mvn test -Dtest=QuickPerformanceTest
 
 # Full suite
 mvn test -Dtest=*PerformanceTest
+
+# DSOC performance tests (gated)
+export RUN_DSOC_PERF_TESTS=true
+mvn test -Dtest=DSOCPerformanceTest
 ```
 
-### [PRISM_PROGRESS_TRACKER.md](PRISM_PROGRESS_TRACKER.md)
-
-**Prism spatial index implementation progress**
-
-- Development phases and milestones
-- Performance optimization tracking
-- Anisotropic subdivision benefits
-- Implementation status updates
-
-## Archived Documents
 

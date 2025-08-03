@@ -71,42 +71,102 @@ public class TestResultExtractor {
         List<PerformanceRecord> records = new ArrayList<>();
         String content = Files.readString(file);
         
-        // Extract insertion performance
-        Matcher insertMatcher = INSERTION_PATTERN.matcher(content);
-        if (insertMatcher.find()) {
-            records.add(new PerformanceRecord("insert-octree", insertMatcher.group(1) + " μs/op", ""));
-            records.add(new PerformanceRecord("insert-tetree", insertMatcher.group(2) + " μs/op", ""));
-            records.add(new PerformanceRecord("insert-prism", insertMatcher.group(3) + " μs/op", ""));
+        // Look for entity count sections
+        Pattern entityCountPattern = Pattern.compile("=== Testing with (\\d+) entities ===");
+        Matcher entityMatcher = entityCountPattern.matcher(content);
+        
+        int currentIndex = 0;
+        while (entityMatcher.find(currentIndex)) {
+            String entityCount = entityMatcher.group(1);
+            int sectionStart = entityMatcher.end();
+            
+            // Find the next entity count section or end of file
+            int sectionEnd = content.length();
+            if (entityMatcher.find(sectionStart)) {
+                sectionEnd = entityMatcher.start();
+                // Reset for next iteration
+                currentIndex = entityMatcher.start();
+            } else {
+                currentIndex = content.length();
+            }
+            
+            String sectionContent = content.substring(sectionStart, sectionEnd);
+            
+            // Extract insertion performance for this entity count
+            Matcher insertMatcher = INSERTION_PATTERN.matcher(sectionContent);
+            if (insertMatcher.find()) {
+                records.add(new PerformanceRecord("insert-octree-" + entityCount, insertMatcher.group(1) + " μs/op", ""));
+                records.add(new PerformanceRecord("insert-tetree-" + entityCount, insertMatcher.group(2) + " μs/op", ""));
+                records.add(new PerformanceRecord("insert-prism-" + entityCount, insertMatcher.group(3) + " μs/op", ""));
+            }
+            
+            // Extract k-NN performance
+            Matcher knnMatcher = KNN_PATTERN.matcher(sectionContent);
+            if (knnMatcher.find()) {
+                records.add(new PerformanceRecord("knn-octree-" + entityCount, "", knnMatcher.group(1) + " μs/op"));
+                records.add(new PerformanceRecord("knn-tetree-" + entityCount, "", knnMatcher.group(2) + " μs/op"));
+                records.add(new PerformanceRecord("knn-prism-" + entityCount, "", knnMatcher.group(3) + " μs/op"));
+            }
+            
+            // Extract range query performance
+            Matcher rangeMatcher = RANGE_PATTERN.matcher(sectionContent);
+            if (rangeMatcher.find()) {
+                records.add(new PerformanceRecord("range-octree-" + entityCount, "", rangeMatcher.group(1) + " μs/op"));
+                records.add(new PerformanceRecord("range-tetree-" + entityCount, "", rangeMatcher.group(2) + " μs/op"));
+                records.add(new PerformanceRecord("range-prism-" + entityCount, "", rangeMatcher.group(3) + " μs/op"));
+            }
+            
+            // Extract memory usage
+            Matcher memoryMatcher = MEMORY_PATTERN.matcher(sectionContent);
+            if (memoryMatcher.find()) {
+                records.add(new PerformanceRecord("memory-octree-" + entityCount, memoryMatcher.group(1) + " bytes", ""));
+                records.add(new PerformanceRecord("memory-tetree-" + entityCount, memoryMatcher.group(2) + " bytes", ""));
+                records.add(new PerformanceRecord("memory-prism-" + entityCount, memoryMatcher.group(3) + " bytes", ""));
+            }
         }
         
-        // Extract k-NN performance
-        Matcher knnMatcher = KNN_PATTERN.matcher(content);
-        if (knnMatcher.find()) {
-            records.add(new PerformanceRecord("knn-octree", "", knnMatcher.group(1) + " μs/op"));
-            records.add(new PerformanceRecord("knn-tetree", "", knnMatcher.group(2) + " μs/op"));
-            records.add(new PerformanceRecord("knn-prism", "", knnMatcher.group(3) + " μs/op"));
-        }
-        
-        // Extract range query performance
-        Matcher rangeMatcher = RANGE_PATTERN.matcher(content);
-        if (rangeMatcher.find()) {
-            records.add(new PerformanceRecord("range-octree", "", rangeMatcher.group(1) + " μs/op"));
-            records.add(new PerformanceRecord("range-tetree", "", rangeMatcher.group(2) + " μs/op"));
-            records.add(new PerformanceRecord("range-prism", "", rangeMatcher.group(3) + " μs/op"));
-        }
-        
-        // Extract memory usage
-        Matcher memoryMatcher = MEMORY_PATTERN.matcher(content);
-        if (memoryMatcher.find()) {
-            records.add(new PerformanceRecord("memory-octree", memoryMatcher.group(1) + " bytes", ""));
-            records.add(new PerformanceRecord("memory-tetree", memoryMatcher.group(2) + " bytes", ""));
-            records.add(new PerformanceRecord("memory-prism", memoryMatcher.group(3) + " bytes", ""));
+        // If no entity count sections found, try extracting without entity counts
+        if (records.isEmpty()) {
+            // Extract insertion performance
+            Matcher insertMatcher = INSERTION_PATTERN.matcher(content);
+            if (insertMatcher.find()) {
+                records.add(new PerformanceRecord("insert-octree", insertMatcher.group(1) + " μs/op", ""));
+                records.add(new PerformanceRecord("insert-tetree", insertMatcher.group(2) + " μs/op", ""));
+                records.add(new PerformanceRecord("insert-prism", insertMatcher.group(3) + " μs/op", ""));
+            }
+            
+            // Extract k-NN performance
+            Matcher knnMatcher = KNN_PATTERN.matcher(content);
+            if (knnMatcher.find()) {
+                records.add(new PerformanceRecord("knn-octree", "", knnMatcher.group(1) + " μs/op"));
+                records.add(new PerformanceRecord("knn-tetree", "", knnMatcher.group(2) + " μs/op"));
+                records.add(new PerformanceRecord("knn-prism", "", knnMatcher.group(3) + " μs/op"));
+            }
+            
+            // Extract range query performance
+            Matcher rangeMatcher = RANGE_PATTERN.matcher(content);
+            if (rangeMatcher.find()) {
+                records.add(new PerformanceRecord("range-octree", "", rangeMatcher.group(1) + " μs/op"));
+                records.add(new PerformanceRecord("range-tetree", "", rangeMatcher.group(2) + " μs/op"));
+                records.add(new PerformanceRecord("range-prism", "", rangeMatcher.group(3) + " μs/op"));
+            }
+            
+            // Extract memory usage
+            Matcher memoryMatcher = MEMORY_PATTERN.matcher(content);
+            if (memoryMatcher.find()) {
+                records.add(new PerformanceRecord("memory-octree", memoryMatcher.group(1) + " bytes", ""));
+                records.add(new PerformanceRecord("memory-tetree", memoryMatcher.group(2) + " bytes", ""));
+                records.add(new PerformanceRecord("memory-prism", memoryMatcher.group(3) + " bytes", ""));
+            }
         }
         
         return records;
     }
     
     private static void writeCsv(List<PerformanceRecord> records, Path outputPath) throws IOException {
+        // Ensure parent directory exists
+        Files.createDirectories(outputPath.getParent());
+        
         try (BufferedWriter writer = Files.newBufferedWriter(outputPath)) {
             // Write CSV header
             writer.write("operation,throughput,latency\n");
