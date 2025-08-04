@@ -379,5 +379,6 @@ Historical documents (describe unimplemented features):
     - **Files Added**: AdaptiveZBufferConfig.java, DSOC_OPTIMIZATION_FINAL_REPORT.md, DSOC_CURRENT_STATUS.md
     - **Validation**: Measured 2.0x speedup in test scenario (1000 entities, 0.1 occlusion)
     - **Usage**: Enable explicitly with DSOCConfiguration.defaultConfig().withEnabled(true)
+- **IDE INTEGRATION MEMORY**: Always use the mcp jetbrains.findProjectProblems to discover compilation errors. no need to compile when you can use the ide for this purpose
 
 [... rest of the file remains unchanged ...]
