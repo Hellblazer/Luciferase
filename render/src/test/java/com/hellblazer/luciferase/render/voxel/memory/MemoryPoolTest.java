@@ -425,9 +425,10 @@ public class MemoryPoolTest {
                             threadSegments.add(segment);
                             allocCounter.incrementAndGet();
                             
-                            // Write test data
-                            segment.set(ValueLayout.JAVA_INT, 0, size);
-                            assertEquals(size, segment.get(ValueLayout.JAVA_INT, 0));
+                            // Write test data - use actual segment size, not requested size
+                            int actualSize = (int) segment.byteSize();
+                            segment.set(ValueLayout.JAVA_INT, 0, actualSize);
+                            assertEquals(actualSize, segment.get(ValueLayout.JAVA_INT, 0));
                             
                         } else {
                             // Deallocate
