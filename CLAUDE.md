@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Initialization
+
+First, read the MCP guide: memory-bank-mcp:memory_bank_read({projectName: 'MCP_Documentation', fileName: 'complete-mcp-guide.md'})
+
 ## Build Commands
 
 - **Build the project**: `mvn clean install`
@@ -380,5 +384,3 @@ Historical documents (describe unimplemented features):
     - **Validation**: Measured 2.0x speedup in test scenario (1000 entities, 0.1 occlusion)
     - **Usage**: Enable explicitly with DSOCConfiguration.defaultConfig().withEnabled(true)
 - **IDE INTEGRATION MEMORY**: Always use the mcp jetbrains.findProjectProblems to discover compilation errors. no need to compile when you can use the ide for this purpose
-
-[... rest of the file remains unchanged ...]
