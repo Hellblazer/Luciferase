@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.myworldllc.webgpu.WebGPU;
-import com.myworldllc.webgpu.WebGPUTypes.*;
-import static com.myworldllc.webgpu.WebGPUTypes.*;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +35,7 @@ public class WebGPUContext {
             // Create WebGPU instance
             InstanceDescriptor instanceDesc = new InstanceDescriptor();
             instanceDesc.setBackends(BackendType.D3D12, BackendType.METAL, BackendType.VULKAN);
-            instance = WebGPU.createInstance(instanceDesc);
+            instance = WebGPUStubs.WebGPU.createInstance(instanceDesc);
             
             if (instance == null) {
                 throw new RuntimeException("Failed to create WebGPU instance");
@@ -137,8 +136,8 @@ public class WebGPUContext {
         AdapterProperties props = adapter.getProperties();
         log.info("WebGPU Adapter Information:");
         log.info("  Name: {}", props.getName());
-        log.info("  Vendor: {} (0x{:04X})", props.getVendorName(), props.getVendorID());
-        log.info("  Device ID: 0x{:04X}", props.getDeviceID());
+        log.info("  Vendor: {} (0x{})", props.getVendorName(), String.format("%04X", props.getVendorID()));
+        log.info("  Device ID: 0x{}", String.format("%04X", props.getDeviceID()));
         log.info("  Backend: {}", props.getBackendType());
         log.info("  Driver: {}", props.getDriverDescription());
         log.info("  Type: {}", props.getAdapterType());

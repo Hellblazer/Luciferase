@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.myworldllc.webgpu.WebGPU;
-import com.myworldllc.webgpu.WebGPUTypes.*;
-import static com.myworldllc.webgpu.WebGPUTypes.*;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -140,6 +140,11 @@ public final class MemoryPool {
      */
     private final ReentrantReadWriteLock defragmentationLock;
     
+    /**
+     * Flag to track if defragmentation is in progress
+     */
+    private volatile boolean defragmentationInProgress = false;
+    
     // ================================================================================
     // Constructors
     // ================================================================================
@@ -241,16 +246,23 @@ public final class MemoryPool {
         
         var address = segment.address();
         
-        // Use atomic remove to prevent double-free in concurrent scenarios  
-        var metadata = allocations.remove(address);
-        if (metadata == null) {
-            // Segment was already freed or never allocated by this pool
-            throw new IllegalArgumentException(
-                "Segment was not allocated by this pool: address=0x" + Long.toHexString(address));
-        }
-        
         defragmentationLock.readLock().lock();
         try {
+            // Use atomic remove to prevent double-free in concurrent scenarios  
+            var metadata = allocations.remove(address);
+            if (metadata == null) {
+                // During defragmentation, segments may be moved or coalesced
+                // Check if this segment was part of a defragmented block
+                if (isDefragmentationInProgress()) {
+                    log.debug("Segment already freed during defragmentation: address=0x{}", 
+                             Long.toHexString(address));
+                    return; // Silently ignore - segment was already handled
+                }
+                // Segment was already freed or never allocated by this pool
+                throw new IllegalArgumentException(
+                    "Segment was not allocated by this pool: address=0x" + Long.toHexString(address));
+            }
+            
             // Update statistics
             updateDeallocationStats(metadata.size);
             
@@ -277,6 +289,7 @@ public final class MemoryPool {
     public int defragment() {
         defragmentationLock.writeLock().lock();
         try {
+            defragmentationInProgress = true;
             var coalesced = 0;
             
             // Process each level from smallest to largest
@@ -288,6 +301,7 @@ public final class MemoryPool {
             return coalesced;
             
         } finally {
+            defragmentationInProgress = false;
             defragmentationLock.writeLock().unlock();
         }
     }
@@ -383,6 +397,15 @@ public final class MemoryPool {
      */
     public int getManagedPageCount() {
         return pages.size();
+    }
+    
+    /**
+     * Returns whether defragmentation is currently in progress.
+     * 
+     * @return true if defragmentation is running
+     */
+    private boolean isDefragmentationInProgress() {
+        return defragmentationInProgress;
     }
     
     /**

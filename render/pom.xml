@@ -28,11 +28,10 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-swing</artifactId>
         </dependency>
-        
-        <!-- WebGPU Java Binding - Note: MyWorldLLC WebGPU-Java requires GitHub Package Registry access
-             For now, we'll use a stub implementation until proper WebGPU binding is configured -->
-        
-        <!-- Future: Add proper WebGPU binding when available in accessible repository -->
+        <dependency>
+            <groupId>com.myworldvw</groupId>
+            <artifactId>webgpu-java</artifactId>
+        </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
         <dependency>

@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.myworldllc.webgpu.WebGPU;
-import com.myworldllc.webgpu.WebGPUTypes.*;
-import static com.myworldllc.webgpu.WebGPUTypes.*;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,7 +37,7 @@ public class GPUBufferManager {
     /**
      * Create a GPU buffer with specific usage flags
      */
-    public Buffer createBuffer(String name, long size, BufferUsage usage) {
+    public Buffer createBuffer(String name, long size, int usage) {
         // Check if named buffer already exists
         Buffer existing = namedBuffers.get(name);
         if (existing != null) {
@@ -67,7 +66,7 @@ public class GPUBufferManager {
     /**
      * Create a GPU buffer from an FFM MemorySegment
      */
-    public Buffer createBufferFromSegment(MemorySegment segment, BufferUsage usage) {
+    public Buffer createBufferFromSegment(MemorySegment segment, int usage) {
         // Check if we already have a buffer for this segment
         Buffer existing = segmentBuffers.get(segment);
         if (existing != null) {
@@ -77,7 +76,7 @@ public class GPUBufferManager {
         long size = segment.byteSize();
         
         // Create buffer with COPY_DST for uploads
-        BufferUsage finalUsage = usage.or(BufferUsage.COPY_DST);
+        int finalUsage = usage | BufferUsage.COPY_DST;
         
         BufferDescriptor desc = new BufferDescriptor();
         desc.setLabel("FFM Buffer");
@@ -136,7 +135,7 @@ public class GPUBufferManager {
         BufferDescriptor stagingDesc = new BufferDescriptor();
         stagingDesc.setLabel("Staging Buffer");
         stagingDesc.setSize(size);
-        stagingDesc.setUsage(BufferUsage.MAP_WRITE.or(BufferUsage.COPY_SRC));
+        stagingDesc.setUsage(BufferUsage.MAP_WRITE | BufferUsage.COPY_SRC);
         stagingDesc.setMappedAtCreation(true);
         
         Buffer staging = device.createBuffer(stagingDesc);
@@ -162,7 +161,7 @@ public class GPUBufferManager {
             
         } finally {
             // Always clean up staging buffer
-            staging.destroy();
+            staging.release();
         }
     }
     
@@ -177,7 +176,7 @@ public class GPUBufferManager {
             BufferDescriptor stagingDesc = new BufferDescriptor();
             stagingDesc.setLabel("Chunk Staging Buffer");
             stagingDesc.setSize(chunkSize);
-            stagingDesc.setUsage(BufferUsage.MAP_WRITE.or(BufferUsage.COPY_SRC));
+            stagingDesc.setUsage(BufferUsage.MAP_WRITE | BufferUsage.COPY_SRC);
             stagingDesc.setMappedAtCreation(true);
             
             Buffer staging = device.createBuffer(stagingDesc);
@@ -198,7 +197,7 @@ public class GPUBufferManager {
                 queue.submit(commands);
                 
             } finally {
-                staging.destroy();
+                staging.release();
             }
             
             offset += chunkSize;
@@ -211,7 +210,7 @@ public class GPUBufferManager {
      */
     public Buffer createOctreeBuffer(MemorySegment octreeData) {
         return createBufferFromSegment(octreeData, 
-            BufferUsage.STORAGE.or(BufferUsage.COPY_SRC));
+            BufferUsage.STORAGE | BufferUsage.COPY_SRC);
     }
     
     /**
@@ -220,7 +219,7 @@ public class GPUBufferManager {
     public Buffer createRayBuffer(int maxRays) {
         long size = maxRays * 32L; // 32 bytes per ray (2 * vec3<f32> + 2 * f32)
         return createBuffer("Ray Buffer", size, 
-            BufferUsage.STORAGE.or(BufferUsage.COPY_DST));
+            BufferUsage.STORAGE | BufferUsage.COPY_DST);
     }
     
     /**
@@ -229,7 +228,7 @@ public class GPUBufferManager {
     public Buffer createResultBuffer(int maxResults) {
         long size = maxResults * 32L; // 32 bytes per result
         return createBuffer("Result Buffer", size,
-            BufferUsage.STORAGE.or(BufferUsage.COPY_SRC));
+            BufferUsage.STORAGE | BufferUsage.COPY_SRC);
     }
     
     /**
@@ -237,7 +236,7 @@ public class GPUBufferManager {
      */
     public Buffer createUniformBuffer(String name, long size) {
         return createBuffer(name, size,
-            BufferUsage.UNIFORM.or(BufferUsage.COPY_DST));
+            BufferUsage.UNIFORM | BufferUsage.COPY_DST);
     }
     
     /**
@@ -250,7 +249,7 @@ public class GPUBufferManager {
         BufferDescriptor stagingDesc = new BufferDescriptor();
         stagingDesc.setLabel("Readback Staging");
         stagingDesc.setSize(size);
-        stagingDesc.setUsage(BufferUsage.MAP_READ.or(BufferUsage.COPY_DST));
+        stagingDesc.setUsage(BufferUsage.MAP_READ | BufferUsage.COPY_DST);
         
         Buffer staging = device.createBuffer(stagingDesc);
         if (staging == null) {
@@ -267,7 +266,7 @@ public class GPUBufferManager {
         // Map and read after GPU completes
         staging.mapAsync(MapMode.READ, 0, size, (status) -> {
             if (status != BufferMapAsyncStatus.SUCCESS) {
-                staging.destroy();
+                staging.release();
                 future.completeExceptionally(new RuntimeException("Buffer mapping failed"));
                 return;
             }
@@ -281,7 +280,7 @@ public class GPUBufferManager {
             } catch (Exception e) {
                 future.completeExceptionally(e);
             } finally {
-                staging.destroy();
+                staging.release();
             }
         });
         
@@ -317,7 +316,7 @@ public class GPUBufferManager {
         bufferBinding.setOffset(offset);
         bufferBinding.setSize(size > 0 ? size : buffer.getSize());
         
-        entry.setBuffer(bufferBinding);
+        entry.setBufferBinding(bufferBinding);
         return entry;
     }
     
@@ -335,7 +334,7 @@ public class GPUBufferManager {
         Buffer buffer = namedBuffers.remove(name);
         if (buffer != null) {
             long size = buffer.getSize();
-            buffer.destroy();
+            buffer.release();
             totalGPUMemory.addAndGet(-size);
             log.debug("Released buffer '{}', freed {} bytes", name, size);
         }
@@ -347,13 +346,13 @@ public class GPUBufferManager {
     public void cleanup() {
         // Release named buffers
         namedBuffers.forEach((name, buffer) -> {
-            buffer.destroy();
+            buffer.release();
             log.debug("Destroyed buffer: {}", name);
         });
         namedBuffers.clear();
         
         // Release segment buffers
-        segmentBuffers.values().forEach(Buffer::destroy);
+        segmentBuffers.values().forEach(Buffer::release);
         segmentBuffers.clear();
         
         totalGPUMemory.set(0);

@@ -24,7 +24,7 @@ The project uses SLF4J for logging with Logback as the implementation:
 
 ## Requirements
 
-- Java 23+ (configured in maven.compiler.source/target)
+- Java 24 (configured in maven.compiler.source/target)
 - Maven 3.91+
 - Project is licensed under AGPL v3.0
 

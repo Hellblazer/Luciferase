@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.myworldllc.webgpu.WebGPU;
-import com.myworldllc.webgpu.WebGPUTypes.*;
-import static com.myworldllc.webgpu.WebGPUTypes.*;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,7 +61,7 @@ public class GPUBufferManagerTest {
         }
         
         Buffer buffer = bufferManager.createBuffer("test_buffer", 1024, 
-            BufferUsage.STORAGE.or(BufferUsage.COPY_DST));
+            BufferUsage.STORAGE | BufferUsage.COPY_DST);
         
         assertNotNull(buffer);
         assertEquals(1024, buffer.getSize());
@@ -103,7 +102,7 @@ public class GPUBufferManagerTest {
         data.fill((byte) 42);
         
         Buffer buffer = bufferManager.createBuffer("direct_upload", 128,
-            BufferUsage.STORAGE.or(BufferUsage.COPY_DST).or(BufferUsage.COPY_SRC));
+            BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC);
         
         assertDoesNotThrow(() -> bufferManager.uploadToBuffer(buffer, data));
     }
@@ -127,7 +126,7 @@ public class GPUBufferManagerTest {
         }
         
         Buffer buffer = bufferManager.createBuffer("staged_upload", size,
-            BufferUsage.STORAGE.or(BufferUsage.COPY_DST));
+            BufferUsage.STORAGE | BufferUsage.COPY_DST);
         
         assertDoesNotThrow(() -> bufferManager.uploadToBuffer(buffer, data));
     }
@@ -178,7 +177,7 @@ public class GPUBufferManagerTest {
         }
         
         Buffer buffer = bufferManager.createBuffer("readback_test", 256,
-            BufferUsage.STORAGE.or(BufferUsage.COPY_DST).or(BufferUsage.COPY_SRC));
+            BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC);
         
         context.getQueue().writeBuffer(buffer, 0, testData, 0, testData.length);
         
@@ -211,7 +210,7 @@ public class GPUBufferManagerTest {
         bufferBinding.setType(BufferBindingType.STORAGE);
         entry.setBuffer(bufferBinding);
         
-        layoutDesc.setEntries(entry);
+        layoutDesc.setEntries(new BindGroupLayoutEntry[] {entry});
         BindGroupLayout layout = context.getDevice().createBindGroupLayout(layoutDesc);
         
         // Create buffer and bind group

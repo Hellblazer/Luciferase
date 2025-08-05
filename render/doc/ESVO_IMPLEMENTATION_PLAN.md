@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This document provides a detailed implementation plan for translating the Efficient Sparse Voxel Octrees (ESVO) system to Java in the render module. The plan follows a phased approach with clear milestones and validation criteria.
+This document provides a detailed implementation plan for translating the Efficient Sparse Voxel Octrees (ESVO) system to Java 24 in the render module. The plan leverages Java 24's Foreign Function & Memory (FFM) API for zero-copy GPU operations and native interop. The implementation follows a phased approach with clear milestones and validation criteria.
 
 ## Implementation Timeline
 

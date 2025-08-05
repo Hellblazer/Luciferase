@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.myworldllc.webgpu.WebGPU;
-import com.myworldllc.webgpu.WebGPUTypes.*;
-import static com.myworldllc.webgpu.WebGPUTypes.*;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -227,7 +226,7 @@ public class ComputeShaderManager {
         infoBuffer.setMinBindingSize(16); // 4 u32 values
         infoEntry.setBuffer(infoBuffer);
         
-        desc.setEntries(octreeEntry, rayEntry, resultEntry, infoEntry);
+        desc.setEntries(new BindGroupLayoutEntry[] {octreeEntry, rayEntry, resultEntry, infoEntry});
         
         BindGroupLayout layout = device.createBindGroupLayout(desc);
         if (layout == null) {

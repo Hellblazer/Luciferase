@@ -1,10 +1,10 @@
-# FFM and WebGPU Integration Summary
+# FFM and WebGPU Integration Summary for Java 24
 
 ## Overview
 
-The ESVO Java implementation has been updated to leverage two modern Java technologies:
-1. **Foreign Function & Memory API (FFM)** - For efficient native memory management
-2. **WebGPU** - For portable, cross-platform GPU compute
+The ESVO Java 24 implementation leverages two powerful technologies:
+1. **Foreign Function & Memory API (FFM)** - Stable in Java 24 for efficient native memory management
+2. **WebGPU** - For portable, cross-platform GPU compute via webgpu-java FFM bindings
 
 ## Key Benefits
 
