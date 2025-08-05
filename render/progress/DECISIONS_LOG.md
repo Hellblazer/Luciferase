@@ -342,7 +342,40 @@ Implement comprehensive testing framework with multiple validation layers:
 - Major decisions reflected in API documentation
 - Architecture decisions documented in design documents
 
+### D010: WebGPU Binding Selection
+**Date**: August 5, 2025  
+**Status**: Decided  
+**Decision**: Use MyWorldLLC WebGPU-Java binding instead of LWJGL  
+
+**Context**:
+- Need WebGPU binding for GPU compute and rendering
+- LWJGL was initially considered but user preferred alternative
+- MyWorldLLC WebGPU-Java provides standalone solution
+
+**Options Considered**:
+1. **LWJGL WebGPU** - Mature ecosystem but adds LWJGL dependency
+2. **Direct FFM Binding** - Maximum control but high implementation effort
+3. **MyWorldLLC WebGPU-Java** - Clean API, automatic native library management
+4. **JWebGPU** - Less mature, limited documentation
+
+**Rationale**:
+- Object-oriented API more idiomatic for Java
+- Automatic native library loading reduces complexity
+- No dependency on LWJGL ecosystem
+- Active development and WebGPU spec compliance
+- Standalone solution focused solely on WebGPU
+
+**Implications**:
+- Simpler dependency management
+- Cleaner integration code
+- Less control over native library loading
+- Potential for API changes as library matures
+
+**References**:
+- GitHub: https://github.com/MyWorldLLC/webgpu-java
+- Integration Plan: `/render/doc/WEBGPU_MYWORLDLLC_INTEGRATION_PLAN.md`
+
 ---
 *Decision log established: August 5, 2025*  
-*Last updated: August 5, 2025 - 18:00*  
+*Last updated: August 5, 2025 - 19:00*  
 *Next review: August 8, 2025*

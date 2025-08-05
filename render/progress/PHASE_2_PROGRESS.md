@@ -18,7 +18,7 @@ Implement WebGPU integration for GPU-accelerated voxel operations, including con
 **Actual Effort**: TBD  
 
 #### Subtasks:
-- [ ] Research WebGPU Java bindings and LWJGL integration
+- [ ] Research WebGPU Java bindings and MyWorldLLC WebGPU-Java integration
 - [ ] Set up WebGPU device and adapter selection
 - [ ] Configure GPU context with proper feature detection
 - [ ] Implement device capability validation
@@ -187,9 +187,9 @@ Implement WebGPU integration for GPU-accelerated voxel operations, including con
 ## Technical Decisions Pending
 
 ### WebGPU Binding Selection
-**Decision Required**: Choose between available Java WebGPU bindings  
-**Evaluation Criteria**: Performance, stability, feature completeness, maintenance  
-**Target Date**: August 7, 2025  
+**Decision Made**: MyWorldLLC WebGPU-Java binding selected  
+**Rationale**: Object-oriented API, automatic native library management, no LWJGL dependency  
+**Decision Date**: August 5, 2025  
 
 ### Compute Shader Architecture
 **Decision Required**: Design compute shader pipeline architecture  
@@ -221,12 +221,12 @@ New phase with unproven technology stack increases risk level.
 ### Blocking Dependencies
 - WebGPU Java bindings availability and stability
 - GPU hardware availability for testing
-- LWJGL compatibility with target WebGPU implementation
+- MyWorldLLC WebGPU-Java native library compatibility
 
 ### External Dependencies
 - WebGPU specification stability
 - GPU driver support for WebGPU features
-- LWJGL updates for WebGPU support
+- MyWorldLLC WebGPU-Java updates and releases
 - Platform-specific GPU development tools
 
 ### Internal Dependencies
