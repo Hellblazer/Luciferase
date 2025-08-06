@@ -41,6 +41,9 @@ public class DXTCompressor {
             throw new IllegalArgumentException("Texture dimensions must be multiples of 4");
         }
         
+        // Ensure input buffer is at the beginning
+        input.rewind();
+        
         int blocksX = width / BLOCK_WIDTH;
         int blocksY = height / BLOCK_HEIGHT;
         int totalBlocks = blocksX * blocksY;
@@ -80,6 +83,9 @@ public class DXTCompressor {
         if (width % BLOCK_WIDTH != 0 || height % BLOCK_HEIGHT != 0) {
             throw new IllegalArgumentException("Texture dimensions must be multiples of 4");
         }
+        
+        // Ensure input buffer is at the beginning
+        input.rewind();
         
         int blocksX = width / BLOCK_WIDTH;
         int blocksY = height / BLOCK_HEIGHT;
@@ -154,11 +160,17 @@ public class DXTCompressor {
                     int srcIndex = (y * BLOCK_WIDTH + x) * 4;
                     
                     if (dstIndex + 3 < output.capacity()) {
-                        // Use absolute put methods to avoid position manipulation
+                        // Use absolute put methods to write at specific indices
                         output.put(dstIndex, block[srcIndex]);         // R
                         output.put(dstIndex + 1, block[srcIndex + 1]); // G
                         output.put(dstIndex + 2, block[srcIndex + 2]); // B
                         output.put(dstIndex + 3, block[srcIndex + 3]); // A
+                        
+                        // Update the limit to track the highest position written
+                        int endPos = dstIndex + 4;
+                        if (endPos > output.position()) {
+                            output.position(endPos);
+                        }
                     }
                 }
             }
@@ -166,9 +178,24 @@ public class DXTCompressor {
     }
     
     private void compressDXT1Block(byte[] block, ByteBuffer output, boolean hasAlpha) {
-        // Find min/max colors
-        int[] minColor = {255, 255, 255};
-        int[] maxColor = {0, 0, 0};
+        // Find two representative colors using principal component analysis approach
+        // First, calculate average color
+        int avgR = 0, avgG = 0, avgB = 0;
+        for (int i = 0; i < 16; i++) {
+            int offset = i * 4;
+            avgR += block[offset] & 0xFF;
+            avgG += block[offset + 1] & 0xFF;
+            avgB += block[offset + 2] & 0xFF;
+        }
+        avgR /= 16;
+        avgG /= 16;
+        avgB /= 16;
+        
+        // Find the colors furthest from average in opposite directions
+        int maxDist = 0;
+        int minDist = 0;
+        int[] maxColor = {avgR, avgG, avgB};
+        int[] minColor = {avgR, avgG, avgB};
         
         for (int i = 0; i < 16; i++) {
             int offset = i * 4;
@@ -176,13 +203,26 @@ public class DXTCompressor {
             int g = block[offset + 1] & 0xFF;
             int b = block[offset + 2] & 0xFF;
             
-            minColor[0] = Math.min(minColor[0], r);
-            minColor[1] = Math.min(minColor[1], g);
-            minColor[2] = Math.min(minColor[2], b);
+            int dr = r - avgR;
+            int dg = g - avgG;
+            int db = b - avgB;
+            int dist = dr * dr + dg * dg + db * db;
             
-            maxColor[0] = Math.max(maxColor[0], r);
-            maxColor[1] = Math.max(maxColor[1], g);
-            maxColor[2] = Math.max(maxColor[2], b);
+            // Use signed distance to separate colors on opposite sides of average
+            int signedDist = dr + dg + db;
+            
+            if (signedDist > maxDist || (signedDist == maxDist && dist > maxDist)) {
+                maxDist = signedDist;
+                maxColor[0] = r;
+                maxColor[1] = g;
+                maxColor[2] = b;
+            }
+            if (signedDist < minDist || (signedDist == minDist && dist > -minDist)) {
+                minDist = signedDist;
+                minColor[0] = r;
+                minColor[1] = g;
+                minColor[2] = b;
+            }
         }
         
         // Convert to RGB565
@@ -190,7 +230,7 @@ public class DXTCompressor {
         short color1 = toRGB565(minColor[0], minColor[1], minColor[2]);
         
         // Ensure color0 > color1 for 4-color mode (unless we need 1-bit alpha)
-        if (!hasAlpha && color0 < color1) {
+        if (!hasAlpha && (color0 & 0xFFFF) < (color1 & 0xFFFF)) {
             short temp = color0;
             color0 = color1;
             color1 = temp;
@@ -266,7 +306,8 @@ public class DXTCompressor {
         colors[0] = fromRGB565(color0);
         colors[1] = fromRGB565(color1);
         
-        if (color0 > color1 || !hasAlpha) {
+        // Compare as unsigned values
+        if ((color0 & 0xFFFF) > (color1 & 0xFFFF) || !hasAlpha) {
             // 4-color mode
             colors[2] = interpolateColor(colors[0], colors[1], 2, 1);
             colors[3] = interpolateColor(colors[0], colors[1], 1, 2);
@@ -295,8 +336,14 @@ public class DXTCompressor {
             int alpha0 = (alphaByte & 0x0F) << 4;
             int alpha1 = alphaByte & 0xF0;
             
-            block[i * 8 + 3] = (byte)alpha0;
-            block[i * 8 + 7] = (byte)alpha1;
+            // Fixed: Each iteration handles 2 pixels
+            int pixelIndex = i * 2;
+            if (pixelIndex * 4 + 3 < block.length) {
+                block[pixelIndex * 4 + 3] = (byte)alpha0;
+            }
+            if ((pixelIndex + 1) * 4 + 3 < block.length) {
+                block[(pixelIndex + 1) * 4 + 3] = (byte)alpha1;
+            }
         }
         
         // Decompress color block
@@ -319,15 +366,19 @@ public class DXTCompressor {
         alphas[1] = alpha1;
         
         if (alpha0 > alpha1) {
-            // 8-alpha mode
-            for (int i = 2; i < 8; i++) {
-                alphas[i] = ((8 - i) * alpha0 + (i - 1) * alpha1) / 7;
-            }
+            // 8-alpha mode: 6 interpolated values
+            alphas[2] = (6 * alpha0 + 1 * alpha1) / 7;
+            alphas[3] = (5 * alpha0 + 2 * alpha1) / 7;
+            alphas[4] = (4 * alpha0 + 3 * alpha1) / 7;
+            alphas[5] = (3 * alpha0 + 4 * alpha1) / 7;
+            alphas[6] = (2 * alpha0 + 5 * alpha1) / 7;
+            alphas[7] = (1 * alpha0 + 6 * alpha1) / 7;
         } else {
-            // 6-alpha mode
-            for (int i = 2; i < 6; i++) {
-                alphas[i] = ((6 - i) * alpha0 + (i - 1) * alpha1) / 5;
-            }
+            // 6-alpha mode: 4 interpolated values + 0 and 255
+            alphas[2] = (4 * alpha0 + 1 * alpha1) / 5;
+            alphas[3] = (3 * alpha0 + 2 * alpha1) / 5;
+            alphas[4] = (2 * alpha0 + 3 * alpha1) / 5;
+            alphas[5] = (1 * alpha0 + 4 * alpha1) / 5;
             alphas[6] = 0;
             alphas[7] = 255;
         }
@@ -350,9 +401,10 @@ public class DXTCompressor {
     }
     
     private int fromRGB565(short rgb565) {
-        int r = ((rgb565 >> 11) & 0x1F) * 255 / 31;
-        int g = ((rgb565 >> 5) & 0x3F) * 255 / 63;
-        int b = (rgb565 & 0x1F) * 255 / 31;
+        int unsigned = rgb565 & 0xFFFF;
+        int r = ((unsigned >> 11) & 0x1F) * 255 / 31;
+        int g = ((unsigned >> 5) & 0x3F) * 255 / 63;
+        int b = (unsigned & 0x1F) * 255 / 31;
         return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
     
@@ -372,7 +424,7 @@ public class DXTCompressor {
         colors[0] = c0;
         colors[1] = c1;
         
-        if (color0 > color1 || !hasAlpha) {
+        if ((color0 & 0xFFFF) > (color1 & 0xFFFF) || !hasAlpha) {
             colors[2] = interpolateColor(c0, c1, 2, 1);
             colors[3] = interpolateColor(c0, c1, 1, 2);
         } else {
@@ -404,13 +456,19 @@ public class DXTCompressor {
         alphas[1] = alpha1;
         
         if (alpha0 > alpha1) {
-            for (int i = 2; i < 8; i++) {
-                alphas[i] = ((8 - i) * alpha0 + (i - 1) * alpha1) / 7;
-            }
+            // 8-alpha mode: 6 interpolated values
+            alphas[2] = (6 * alpha0 + 1 * alpha1) / 7;
+            alphas[3] = (5 * alpha0 + 2 * alpha1) / 7;
+            alphas[4] = (4 * alpha0 + 3 * alpha1) / 7;
+            alphas[5] = (3 * alpha0 + 4 * alpha1) / 7;
+            alphas[6] = (2 * alpha0 + 5 * alpha1) / 7;
+            alphas[7] = (1 * alpha0 + 6 * alpha1) / 7;
         } else {
-            for (int i = 2; i < 6; i++) {
-                alphas[i] = ((6 - i) * alpha0 + (i - 1) * alpha1) / 5;
-            }
+            // 6-alpha mode: 4 interpolated values + 0 and 255
+            alphas[2] = (4 * alpha0 + 1 * alpha1) / 5;
+            alphas[3] = (3 * alpha0 + 2 * alpha1) / 5;
+            alphas[4] = (2 * alpha0 + 3 * alpha1) / 5;
+            alphas[5] = (1 * alpha0 + 4 * alpha1) / 5;
             alphas[6] = 0;
             alphas[7] = 255;
         }

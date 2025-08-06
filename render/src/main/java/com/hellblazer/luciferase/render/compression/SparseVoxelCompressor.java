@@ -334,9 +334,24 @@ public class SparseVoxelCompressor {
             bitCount += bits;
             
             while (bitCount >= 8) {
+                ensureCapacity(1);
                 buffer.put((byte)(bitBuffer & 0xFF));
                 bitBuffer >>= 8;
                 bitCount -= 8;
+            }
+        }
+        
+        private void ensureCapacity(int bytes) {
+            if (buffer.remaining() < bytes) {
+                // Grow the buffer
+                int newSize = Math.max(buffer.capacity() * 2, buffer.capacity() + bytes);
+                ByteBuffer newBuffer = ByteBuffer.allocateDirect(newSize);
+                newBuffer.order(ByteOrder.LITTLE_ENDIAN);
+                
+                // Copy existing data
+                buffer.flip();
+                newBuffer.put(buffer);
+                buffer = newBuffer;
             }
         }
         
@@ -357,11 +372,11 @@ public class SparseVoxelCompressor {
             // Use variable-length encoding based on value
             if (data == 0) {
                 writeBits(0, 1);  // Flag: empty
-            } else if (data < 256) {
+            } else if (data >= 0 && data < 256) {
                 writeBits(1, 1);  // Flag: non-empty
                 writeBits(0, 1);  // Flag: 8-bit
                 writeBits(data, 8);
-            } else if (data < 65536) {
+            } else if (data >= 0 && data < 65536) {
                 writeBits(1, 1);  // Flag: non-empty
                 writeBits(1, 1);  // Flag: not 8-bit
                 writeBits(0, 1);  // Flag: 16-bit
@@ -375,6 +390,7 @@ public class SparseVoxelCompressor {
                     writeBits(0, 1);
                 }
                 flush();
+                ensureCapacity(4);
                 buffer.putInt(data);
             }
         }
@@ -405,6 +421,7 @@ public class SparseVoxelCompressor {
         }
         
         public void writeHeader(OctreeNode root) {
+            ensureCapacity(16);
             buffer.putInt(0x53564F43);        // Magic: "SVOC" first
             buffer.putInt(1);                 // Version
             buffer.putInt(countNodes(root));  // Total node count
@@ -440,6 +457,7 @@ public class SparseVoxelCompressor {
         
         public void flush() {
             if (bitCount > 0) {
+                ensureCapacity(1);
                 buffer.put((byte)bitBuffer);
                 bitBuffer = 0;
                 bitCount = 0;

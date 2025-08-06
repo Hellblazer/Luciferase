@@ -142,6 +142,14 @@ public class VoxelRenderingPipeline implements AutoCloseable {
             return CompletableFuture.completedFuture(null);
         }
         
+        // Check if streaming is enabled for potential background loading
+        if (streamingIO != null && streamingIO.isStreamingEnabled()) {
+            // Trigger background streaming if needed
+            asyncExecutor.execute(() -> {
+                // Background streaming logic would go here
+            });
+        }
+        
         return CompletableFuture.supplyAsync(() -> {
             if (isClosed.get()) return null;
             

@@ -123,7 +123,7 @@ public class VoxelRenderingPipelineTest {
         
         // Verify GPU operations occurred
         verify(mockWebGPU, times(1)).dispatchCompute(any(), anyInt(), anyInt(), eq(1));
-        verify(mockWebGPU, times(1)).readBuffer(any());
+        verify(mockWebGPU, times(1)).readBuffer(any(), anyLong(), anyLong());
     }
     
     @Test
