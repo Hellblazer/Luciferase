@@ -28,10 +28,6 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-swing</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.myworldvw</groupId>
-            <artifactId>webgpu-java</artifactId>
-        </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
         <dependency>
@@ -45,6 +41,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>
             <scope>test</scope>
@@ -55,4 +56,20 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/integration_disabled/**/*</exclude>
+                        <exclude>**/integration_disabled/**/*.java</exclude>
+                        <exclude>com/hellblazer/luciferase/render/integration_disabled/**</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

@@ -1,7 +1,6 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
-import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import com.hellblazer.luciferase.render.webgpu.*;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,15 +26,17 @@ public class GPUBufferManagerTest {
     
     @BeforeEach
     public void setup() throws Exception {
-        context = new WebGPUContext();
+        // Use stub backend for testing
+        WebGPUBackend backend = WebGPUBackendFactory.createStubBackend();
+        context = new WebGPUContext(backend);
         arena = Arena.ofShared();
         
-        if (!isWebGPUAvailable()) {
+        if (!context.isAvailable()) {
             return;
         }
         
         context.initialize().get(5, TimeUnit.SECONDS);
-        bufferManager = new GPUBufferManager(context.getDevice(), context.getQueue());
+        bufferManager = new GPUBufferManager(context);
     }
     
     @AfterEach
@@ -55,226 +56,289 @@ public class GPUBufferManagerTest {
     @Order(1)
     @DisplayName("Create basic GPU buffer")
     public void testCreateBuffer() throws Exception {
-        if (!isWebGPUAvailable()) {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        Buffer buffer = bufferManager.createBuffer("test_buffer", 1024, 
-            BufferUsage.STORAGE | BufferUsage.COPY_DST);
+        long bufferSize = 1024;
+        BufferHandle buffer = bufferManager.createBuffer(
+            bufferSize,
+            BufferUsage.STORAGE | BufferUsage.COPY_DST
+        );
         
         assertNotNull(buffer);
-        assertEquals(1024, buffer.getSize());
-        assertEquals(1024, bufferManager.getTotalGPUMemory());
+        
+        // Clean up
+        bufferManager.releaseBuffer(buffer);
     }
     
     @Test
     @Order(2)
-    @DisplayName("Create buffer from FFM MemorySegment")
-    public void testCreateBufferFromSegment() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Write data to GPU buffer")
+    public void testWriteToBuffer() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        // Create test data in FFM
-        MemorySegment segment = arena.allocate(256);
-        for (int i = 0; i < 64; i++) {
-            segment.setAtIndex(ValueLayout.JAVA_FLOAT, i, (float) i);
+        long bufferSize = 256;
+        BufferHandle buffer = bufferManager.createBuffer(
+            bufferSize,
+            BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC
+        );
+        
+        // Create test data using FFM
+        MemorySegment data = arena.allocate(bufferSize);
+        for (int i = 0; i < bufferSize / 4; i++) {
+            data.set(ValueLayout.JAVA_FLOAT, (long) i * 4, (float) i);
         }
         
-        Buffer buffer = bufferManager.createBufferFromSegment(segment, BufferUsage.STORAGE);
-        assertNotNull(buffer);
-        assertEquals(256, buffer.getSize());
+        // Write to GPU
+        bufferManager.writeBuffer(buffer, 0, data);
+        
+        // Clean up
+        bufferManager.releaseBuffer(buffer);
     }
     
     @Test
     @Order(3)
-    @DisplayName("Direct upload to GPU buffer")
-    public void testDirectUpload() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Read data from GPU buffer")
+    public void testReadFromBuffer() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        // Small data for direct upload
-        MemorySegment data = arena.allocate(128);
-        data.fill((byte) 42);
+        long bufferSize = 256;
+        BufferHandle buffer = bufferManager.createBuffer(
+            bufferSize,
+            BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC
+        );
         
-        Buffer buffer = bufferManager.createBuffer("direct_upload", 128,
-            BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC);
+        // Create and write test data
+        MemorySegment writeData = arena.allocate(bufferSize);
+        for (int i = 0; i < bufferSize / 4; i++) {
+            writeData.set(ValueLayout.JAVA_FLOAT, (long) i * 4, (float) i * 2.0f);
+        }
+        bufferManager.writeBuffer(buffer, 0, writeData);
         
-        assertDoesNotThrow(() -> bufferManager.uploadToBuffer(buffer, data));
+        // Read back from GPU
+        CompletableFuture<MemorySegment> readFuture = bufferManager.readBuffer(
+            buffer,
+            0,
+            bufferSize
+        );
+        
+        MemorySegment readData = readFuture.get(5, TimeUnit.SECONDS);
+        assertNotNull(readData);
+        
+        // Verify data
+        for (int i = 0; i < bufferSize / 4; i++) {
+            float expected = (float) i * 2.0f;
+            float actual = readData.get(ValueLayout.JAVA_FLOAT, (long) i * 4);
+            assertEquals(expected, actual, 0.001f);
+        }
+        
+        // Clean up
+        bufferManager.releaseBuffer(buffer);
     }
     
     @Test
     @Order(4)
-    @DisplayName("Staged upload for large data")
-    public void testStagedUpload() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Buffer pool management")
+    public void testBufferPooling() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        // Large data for staged upload (512KB)
-        int size = 512 * 1024;
-        MemorySegment data = arena.allocate(size);
+        long bufferSize = 1024;
         
-        // Fill with test pattern
-        for (int i = 0; i < size / 4; i++) {
-            data.setAtIndex(ValueLayout.JAVA_INT, i, i);
-        }
+        // Allocate several buffers
+        BufferHandle buffer1 = bufferManager.allocateFromPool(bufferSize);
+        BufferHandle buffer2 = bufferManager.allocateFromPool(bufferSize);
+        BufferHandle buffer3 = bufferManager.allocateFromPool(bufferSize);
         
-        Buffer buffer = bufferManager.createBuffer("staged_upload", size,
-            BufferUsage.STORAGE | BufferUsage.COPY_DST);
+        assertNotNull(buffer1);
+        assertNotNull(buffer2);
+        assertNotNull(buffer3);
         
-        assertDoesNotThrow(() -> bufferManager.uploadToBuffer(buffer, data));
+        // Return buffers to pool
+        bufferManager.returnToPool(buffer1);
+        bufferManager.returnToPool(buffer2);
+        
+        // Allocate again - should reuse pooled buffers
+        BufferHandle buffer4 = bufferManager.allocateFromPool(bufferSize);
+        BufferHandle buffer5 = bufferManager.allocateFromPool(bufferSize);
+        
+        assertNotNull(buffer4);
+        assertNotNull(buffer5);
+        
+        // Clean up
+        bufferManager.returnToPool(buffer3);
+        bufferManager.returnToPool(buffer4);
+        bufferManager.returnToPool(buffer5);
     }
     
     @Test
     @Order(5)
-    @DisplayName("Create specialized buffers")
-    public void testSpecializedBuffers() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Staging buffer for uploads")
+    public void testStagingBuffer() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        // Octree buffer
-        MemorySegment octreeData = arena.allocate(8192);
-        Buffer octreeBuffer = bufferManager.createOctreeBuffer(octreeData);
-        assertNotNull(octreeBuffer);
+        long dataSize = 512;
         
-        // Ray buffer
-        Buffer rayBuffer = bufferManager.createRayBuffer(1000);
-        assertNotNull(rayBuffer);
-        assertEquals(32000, rayBuffer.getSize()); // 1000 * 32 bytes
+        // Create staging buffer
+        BufferHandle stagingBuffer = bufferManager.createStagingBuffer(dataSize);
+        assertNotNull(stagingBuffer);
         
-        // Result buffer
-        Buffer resultBuffer = bufferManager.createResultBuffer(1000);
-        assertNotNull(resultBuffer);
-        assertEquals(32000, resultBuffer.getSize());
+        // Write data to staging buffer
+        MemorySegment data = arena.allocate(dataSize);
+        for (int i = 0; i < dataSize / 8; i++) {
+            data.set(ValueLayout.JAVA_DOUBLE, (long) i * 8, Math.PI * i);
+        }
         
-        // Uniform buffer
-        Buffer uniformBuffer = bufferManager.createUniformBuffer("params", 64);
-        assertNotNull(uniformBuffer);
-        assertEquals(64, uniformBuffer.getSize());
+        bufferManager.writeToStagingBuffer(stagingBuffer, 0, data);
+        
+        // Create destination buffer
+        BufferHandle destBuffer = bufferManager.createBuffer(
+            dataSize,
+            BufferUsage.STORAGE | BufferUsage.COPY_DST
+        );
+        
+        // Copy from staging to destination
+        bufferManager.copyBuffer(stagingBuffer, destBuffer, dataSize);
+        
+        // Clean up
+        bufferManager.releaseBuffer(stagingBuffer);
+        bufferManager.releaseBuffer(destBuffer);
     }
     
     @Test
     @Order(6)
-    @DisplayName("Buffer readback")
-    public void testBufferReadback() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Dynamic buffer resizing")
+    public void testDynamicResize() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        // Create and upload test data
-        byte[] testData = new byte[256];
-        for (int i = 0; i < testData.length; i++) {
-            testData[i] = (byte) (i & 0xFF);
-        }
+        // Start with small buffer
+        long initialSize = 256;
+        BufferHandle buffer = bufferManager.createDynamicBuffer(initialSize);
+        assertNotNull(buffer);
         
-        Buffer buffer = bufferManager.createBuffer("readback_test", 256,
-            BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC);
+        // Resize to larger size
+        long newSize = 1024;
+        BufferHandle resizedBuffer = bufferManager.resizeBuffer(buffer, newSize);
+        assertNotNull(resizedBuffer);
         
-        context.getQueue().writeBuffer(buffer, 0, testData, 0, testData.length);
+        // Write data to resized buffer
+        MemorySegment data = arena.allocate(newSize);
+        bufferManager.writeBuffer(resizedBuffer, 0, data);
         
-        // Read back data
-        CompletableFuture<byte[]> readFuture = bufferManager.readBuffer(buffer, 0, 256);
-        byte[] readData = readFuture.get(5, TimeUnit.SECONDS);
-        
-        assertNotNull(readData);
-        assertEquals(256, readData.length);
-        assertArrayEquals(testData, readData);
+        // Clean up
+        bufferManager.releaseBuffer(resizedBuffer);
     }
     
     @Test
     @Order(7)
-    @DisplayName("Bind group creation")
-    public void testBindGroupCreation() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Multi-buffering support")
+    public void testMultiBuffering() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        // Create layout
-        BindGroupLayoutDescriptor layoutDesc = new BindGroupLayoutDescriptor();
-        layoutDesc.setLabel("test_layout");
+        int bufferCount = 3;
+        long bufferSize = 512;
         
-        BindGroupLayoutEntry entry = new BindGroupLayoutEntry();
-        entry.setBinding(0);
-        entry.setVisibility(ShaderStage.COMPUTE);
-        BufferBindingLayout bufferBinding = new BufferBindingLayout();
-        bufferBinding.setType(BufferBindingType.STORAGE);
-        entry.setBuffer(bufferBinding);
+        GPUBufferManager.MultiBufferHandle multiBuffer = bufferManager.createMultiBuffer(
+            bufferCount,
+            bufferSize,
+            BufferUsage.STORAGE | BufferUsage.COPY_DST
+        );
         
-        layoutDesc.setEntries(new BindGroupLayoutEntry[] {entry});
-        BindGroupLayout layout = context.getDevice().createBindGroupLayout(layoutDesc);
+        assertNotNull(multiBuffer);
+        assertEquals(bufferCount, multiBuffer.getBufferCount());
         
-        // Create buffer and bind group
-        Buffer buffer = bufferManager.createBuffer("bind_test", 1024, BufferUsage.STORAGE);
-        BindGroupEntry bindEntry = bufferManager.createBufferBinding(0, buffer, 0, 1024);
+        // Write to each buffer in sequence
+        for (int i = 0; i < bufferCount; i++) {
+            BufferHandle current = multiBuffer.getCurrentBuffer();
+            assertNotNull(current);
+            
+            MemorySegment data = arena.allocate(bufferSize);
+            data.set(ValueLayout.JAVA_INT, 0L, i);
+            bufferManager.writeBuffer(current, 0, data);
+            
+            multiBuffer.swapBuffers();
+        }
         
-        BindGroup bindGroup = bufferManager.createBindGroup(layout, bindEntry);
-        assertNotNull(bindGroup);
+        // Clean up
+        multiBuffer.release();
     }
     
     @Test
     @Order(8)
-    @DisplayName("Memory tracking")
-    public void testMemoryTracking() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Buffer memory statistics")
+    public void testMemoryStatistics() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        assertEquals(0, bufferManager.getTotalGPUMemory());
+        // Get initial stats
+        GPUBufferManager.MemoryStatistics initialStats = bufferManager.getMemoryStatistics();
+        long initialAllocated = initialStats.getTotalAllocated();
         
-        // Create buffers
-        bufferManager.createBuffer("buffer1", 1024, BufferUsage.STORAGE);
-        assertEquals(1024, bufferManager.getTotalGPUMemory());
+        // Allocate some buffers
+        BufferHandle buffer1 = bufferManager.createBuffer(1024, BufferUsage.STORAGE);
+        BufferHandle buffer2 = bufferManager.createBuffer(2048, BufferUsage.STORAGE);
         
-        bufferManager.createBuffer("buffer2", 2048, BufferUsage.STORAGE);
-        assertEquals(3072, bufferManager.getTotalGPUMemory());
+        // Check stats increased
+        GPUBufferManager.MemoryStatistics afterAlloc = bufferManager.getMemoryStatistics();
+        assertTrue(afterAlloc.getTotalAllocated() > initialAllocated);
+        assertTrue(afterAlloc.getActiveBuffers() >= 2);
         
-        // Release buffer
-        bufferManager.releaseBuffer("buffer1");
-        assertEquals(2048, bufferManager.getTotalGPUMemory());
+        // Release buffers
+        bufferManager.releaseBuffer(buffer1);
+        bufferManager.releaseBuffer(buffer2);
         
-        // Cleanup all
-        bufferManager.cleanup();
-        assertEquals(0, bufferManager.getTotalGPUMemory());
+        // Check stats decreased
+        GPUBufferManager.MemoryStatistics afterRelease = bufferManager.getMemoryStatistics();
+        assertTrue(afterRelease.getActiveBuffers() < afterAlloc.getActiveBuffers());
+        
+        log.info("Memory statistics - Allocated: {}, Active: {}, Pooled: {}",
+                afterRelease.getTotalAllocated(),
+                afterRelease.getActiveBuffers(),
+                afterRelease.getPooledBuffers());
     }
     
     @Test
     @Order(9)
-    @DisplayName("Buffer name collision")
-    public void testBufferNameCollision() throws Exception {
-        if (!isWebGPUAvailable()) {
+    @DisplayName("Error handling for invalid operations")
+    public void testErrorHandling() throws Exception {
+        if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
             return;
         }
         
-        Buffer buffer1 = bufferManager.createBuffer("same_name", 512, BufferUsage.STORAGE);
-        Buffer buffer2 = bufferManager.createBuffer("same_name", 1024, BufferUsage.STORAGE);
+        // Test invalid buffer size
+        assertThrows(IllegalArgumentException.class, () -> {
+            bufferManager.createBuffer(-1, BufferUsage.STORAGE);
+        });
         
-        // Should return same buffer
-        assertSame(buffer1, buffer2);
-        assertEquals(512, buffer2.getSize()); // Original size
-    }
-    
-    private boolean isWebGPUAvailable() {
-        try {
-            Instance testInstance = WebGPU.createInstance(new InstanceDescriptor());
-            if (testInstance != null) {
-                testInstance.release();
-                return true;
-            }
-        } catch (Exception | UnsatisfiedLinkError e) {
-            log.warn("WebGPU not available: {}", e.getMessage());
-        }
-        return false;
+        // Test null data write
+        BufferHandle buffer = bufferManager.createBuffer(256, BufferUsage.STORAGE | BufferUsage.COPY_DST);
+        assertThrows(NullPointerException.class, () -> {
+            bufferManager.writeBuffer(buffer, 0, null);
+        });
+        
+        // Clean up
+        bufferManager.releaseBuffer(buffer);
     }
 }

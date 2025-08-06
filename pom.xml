@@ -209,12 +209,6 @@
                 <version>3.12.0</version>
             </dependency>
 
-            <!-- WebGPU Java Binding -->
-            <dependency>
-                <groupId>com.myworldvw</groupId>
-                <artifactId>webgpu-java</artifactId>
-                <version>25.0.2.1</version>
-            </dependency>
 
             <!-- JMH Benchmarking -->
             <dependency>

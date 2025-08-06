@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.render.voxel.gpu;
 
 import com.hellblazer.luciferase.render.voxel.core.VoxelOctreeNode;
 import com.hellblazer.luciferase.render.voxel.memory.FFMLayouts;
-import com.myworldvw.webgpu.*;
+// import com.hellblazer.luciferase.webgpu.native.*; // TODO: Replace with our FFM bindings
 
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIf;

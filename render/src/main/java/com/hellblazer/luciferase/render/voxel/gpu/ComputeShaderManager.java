@@ -1,7 +1,6 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
-import static com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
+import com.hellblazer.luciferase.render.webgpu.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,300 +18,123 @@ import java.util.concurrent.CompletableFuture;
 public class ComputeShaderManager {
     private static final Logger log = LoggerFactory.getLogger(ComputeShaderManager.class);
     
-    private final Device device;
-    private final Map<String, ShaderModule> shaderCache = new HashMap<>();
-    private final Map<String, ComputePipeline> pipelineCache = new HashMap<>();
-    private final Map<String, BindGroupLayout> layoutCache = new HashMap<>();
+    private final WebGPUContext context;
+    private final Map<String, ShaderHandle> shaderCache = new HashMap<>();
+    private final Map<String, ShaderHandle> pipelineCache = new HashMap<>();
     
-    public ComputeShaderManager(Device device) {
-        this.device = device;
+    public ComputeShaderManager(WebGPUContext context) {
+        this.context = context;
     }
     
     /**
      * Load shader from string source
      */
-    public CompletableFuture<ShaderModule> loadShader(String name, String wgslCode) {
+    public CompletableFuture<ShaderHandle> loadShader(String name, String wgslCode) {
         // Check cache first
-        ShaderModule cached = shaderCache.get(name);
+        ShaderHandle cached = shaderCache.get(name);
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
         }
         
-        CompletableFuture<ShaderModule> future = new CompletableFuture<>();
-        
-        ShaderModuleDescriptor desc = new ShaderModuleDescriptor();
-        desc.setLabel(name);
-        
-        // Create WGSL descriptor
-        ShaderModuleWGSLDescriptor wgslDesc = new ShaderModuleWGSLDescriptor();
-        wgslDesc.setCode(wgslCode);
-        desc.setNextInChain(wgslDesc);
-        
-        ShaderModule module = device.createShaderModule(desc);
-        
-        if (module == null) {
-            future.completeExceptionally(new RuntimeException("Failed to create shader module: " + name));
-            return future;
-        }
-        
-        // Get compilation info for validation
-        module.getCompilationInfo((info) -> {
-            boolean hasErrors = false;
-            for (CompilationMessage msg : info.getMessages()) {
-                String location = String.format("%s:%d:%d", 
-                    name, msg.getLineNum(), msg.getLinePos());
-                
-                switch (msg.getType()) {
-                    case ERROR:
-                        log.error("Shader compilation error at {}: {}", location, msg.getMessage());
-                        hasErrors = true;
-                        break;
-                    case WARNING:
-                        log.warn("Shader compilation warning at {}: {}", location, msg.getMessage());
-                        break;
-                    case INFO:
-                        log.debug("Shader compilation info at {}: {}", location, msg.getMessage());
-                        break;
-                }
-            }
-            
-            if (hasErrors) {
-                module.release();
-                future.completeExceptionally(new RuntimeException(
-                    "Shader compilation failed for: " + name));
-            } else {
-                shaderCache.put(name, module);
-                log.info("Successfully compiled shader: {}", name);
-                future.complete(module);
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                ShaderHandle shader = context.createComputeShader(wgslCode);
+                shaderCache.put(name, shader);
+                log.debug("Loaded shader: {}", name);
+                return shader;
+            } catch (Exception e) {
+                log.error("Failed to load shader: {}", name, e);
+                throw new RuntimeException("Shader compilation failed: " + name, e);
             }
         });
+    }
+    
+    /**
+     * Load shader from resource file
+     */
+    public CompletableFuture<ShaderHandle> loadShaderFromResource(String resourcePath) {
+        String name = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
         
-        return future;
-    }
-    
-    /**
-     * Load shader from resources
-     */
-    public CompletableFuture<ShaderModule> loadShaderFromResource(String resourcePath) {
-        try {
-            String code = loadResourceAsString(resourcePath);
-            String name = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
-            return loadShader(name, code);
-        } catch (IOException e) {
-            CompletableFuture<ShaderModule> future = new CompletableFuture<>();
-            future.completeExceptionally(e);
-            return future;
+        // Check cache first
+        ShaderHandle cached = shaderCache.get(name);
+        if (cached != null) {
+            return CompletableFuture.completedFuture(cached);
         }
+        
+        return CompletableFuture.supplyAsync(() -> {
+            try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+                if (is == null) {
+                    throw new IOException("Resource not found: " + resourcePath);
+                }
+                
+                String wgslCode = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                ShaderHandle shader = context.createComputeShader(wgslCode);
+                shaderCache.put(name, shader);
+                log.debug("Loaded shader from resource: {}", resourcePath);
+                return shader;
+            } catch (IOException e) {
+                log.error("Failed to load shader resource: {}", resourcePath, e);
+                throw new RuntimeException("Failed to load shader resource: " + resourcePath, e);
+            }
+        });
     }
     
     /**
-     * Create a compute pipeline with auto-layout
+     * Create compute pipeline
      */
-    public ComputePipeline createComputePipeline(String name, 
-                                                ShaderModule shader,
-                                                String entryPoint) {
-        // Check cache
-        ComputePipeline cached = pipelineCache.get(name);
+    public ShaderHandle createComputePipeline(String name, ShaderHandle shader, String entryPoint) {
+        String cacheKey = name + ":" + entryPoint;
+        
+        ShaderHandle cached = pipelineCache.get(cacheKey);
         if (cached != null) {
             return cached;
         }
         
-        ComputePipelineDescriptor desc = new ComputePipelineDescriptor();
-        desc.setLabel(name);
-        
-        // Set up compute stage
-        ProgrammableStage computeStage = new ProgrammableStage();
-        computeStage.setModule(shader);
-        computeStage.setEntryPoint(entryPoint);
-        desc.setCompute(computeStage);
-        
-        // Use auto layout for simplicity
-        desc.setLayout(null);
-        
-        ComputePipeline pipeline = device.createComputePipeline(desc);
-        if (pipeline == null) {
-            throw new RuntimeException("Failed to create compute pipeline: " + name);
-        }
-        
-        pipelineCache.put(name, pipeline);
-        log.info("Created compute pipeline: {}", name);
-        
-        return pipeline;
-    }
-    
-    /**
-     * Create a compute pipeline with explicit layout
-     */
-    public ComputePipeline createComputePipeline(String name,
-                                                ShaderModule shader,
-                                                String entryPoint,
-                                                PipelineLayout layout) {
-        // Check cache
-        ComputePipeline cached = pipelineCache.get(name);
-        if (cached != null) {
-            return cached;
-        }
-        
-        ComputePipelineDescriptor desc = new ComputePipelineDescriptor();
-        desc.setLabel(name);
-        desc.setLayout(layout);
-        
-        ProgrammableStage computeStage = new ProgrammableStage();
-        computeStage.setModule(shader);
-        computeStage.setEntryPoint(entryPoint);
-        desc.setCompute(computeStage);
-        
-        ComputePipeline pipeline = device.createComputePipeline(desc);
-        if (pipeline == null) {
-            throw new RuntimeException("Failed to create compute pipeline: " + name);
-        }
-        
-        pipelineCache.put(name, pipeline);
-        log.info("Created compute pipeline with layout: {}", name);
-        
-        return pipeline;
-    }
-    
-    /**
-     * Create a bind group layout for octree traversal
-     */
-    public BindGroupLayout createOctreeTraversalLayout() {
-        String layoutName = "octree_traversal_layout";
-        BindGroupLayout cached = layoutCache.get(layoutName);
-        if (cached != null) {
-            return cached;
-        }
-        
-        BindGroupLayoutDescriptor desc = new BindGroupLayoutDescriptor();
-        desc.setLabel(layoutName);
-        
-        // Entry 0: Octree nodes (read-only storage buffer)
-        BindGroupLayoutEntry octreeEntry = new BindGroupLayoutEntry();
-        octreeEntry.setBinding(0);
-        octreeEntry.setVisibility(ShaderStage.COMPUTE);
-        BufferBindingLayout octreeBuffer = new BufferBindingLayout();
-        octreeBuffer.setType(BufferBindingType.READ_ONLY_STORAGE);
-        octreeBuffer.setHasDynamicOffset(false);
-        octreeBuffer.setMinBindingSize(0);
-        octreeEntry.setBuffer(octreeBuffer);
-        
-        // Entry 1: Rays (read-only storage buffer)
-        BindGroupLayoutEntry rayEntry = new BindGroupLayoutEntry();
-        rayEntry.setBinding(1);
-        rayEntry.setVisibility(ShaderStage.COMPUTE);
-        BufferBindingLayout rayBuffer = new BufferBindingLayout();
-        rayBuffer.setType(BufferBindingType.READ_ONLY_STORAGE);
-        rayBuffer.setHasDynamicOffset(false);
-        rayBuffer.setMinBindingSize(0);
-        rayEntry.setBuffer(rayBuffer);
-        
-        // Entry 2: Results (storage buffer)
-        BindGroupLayoutEntry resultEntry = new BindGroupLayoutEntry();
-        resultEntry.setBinding(2);
-        resultEntry.setVisibility(ShaderStage.COMPUTE);
-        BufferBindingLayout resultBuffer = new BufferBindingLayout();
-        resultBuffer.setType(BufferBindingType.STORAGE);
-        resultBuffer.setHasDynamicOffset(false);
-        resultBuffer.setMinBindingSize(0);
-        resultEntry.setBuffer(resultBuffer);
-        
-        // Entry 3: Octree info (uniform buffer)
-        BindGroupLayoutEntry infoEntry = new BindGroupLayoutEntry();
-        infoEntry.setBinding(3);
-        infoEntry.setVisibility(ShaderStage.COMPUTE);
-        BufferBindingLayout infoBuffer = new BufferBindingLayout();
-        infoBuffer.setType(BufferBindingType.UNIFORM);
-        infoBuffer.setHasDynamicOffset(false);
-        infoBuffer.setMinBindingSize(16); // 4 u32 values
-        infoEntry.setBuffer(infoBuffer);
-        
-        desc.setEntries(new BindGroupLayoutEntry[] {octreeEntry, rayEntry, resultEntry, infoEntry});
-        
-        BindGroupLayout layout = device.createBindGroupLayout(desc);
-        if (layout == null) {
-            throw new RuntimeException("Failed to create bind group layout");
-        }
-        
-        layoutCache.put(layoutName, layout);
-        return layout;
-    }
-    
-    /**
-     * Create a pipeline layout
-     */
-    public PipelineLayout createPipelineLayout(String name, BindGroupLayout... layouts) {
-        PipelineLayoutDescriptor desc = new PipelineLayoutDescriptor();
-        desc.setLabel(name);
-        desc.setBindGroupLayouts(layouts);
-        
-        PipelineLayout layout = device.createPipelineLayout(desc);
-        if (layout == null) {
-            throw new RuntimeException("Failed to create pipeline layout: " + name);
-        }
-        
-        return layout;
+        // For now, return the shader handle directly
+        // In a full implementation, this would create a pipeline with the shader
+        pipelineCache.put(cacheKey, shader);
+        log.debug("Created compute pipeline: {}", name);
+        return shader;
     }
     
     /**
      * Load all ESVO shaders
      */
     public CompletableFuture<Void> loadESVOShaders() {
-        CompletableFuture<?>[] futures = new CompletableFuture[] {
-            loadShaderFromResource("/shaders/octree_traversal.wgsl"),
-            loadShaderFromResource("/shaders/voxelize.wgsl"),
-            loadShaderFromResource("/shaders/filter_mipmap.wgsl")
-        };
-        
-        return CompletableFuture.allOf(futures);
+        return CompletableFuture.allOf(
+            loadShaderFromResource("/shaders/esvo/visibility.wgsl"),
+            loadShaderFromResource("/shaders/esvo/shading.wgsl"),
+            loadShaderFromResource("/shaders/esvo/sparse_octree.wgsl"),
+            loadShaderFromResource("/shaders/esvo/ray_marching.wgsl")
+        );
     }
     
     /**
-     * Get optimal workgroup size for dispatch
+     * Calculate workgroup dispatch dimensions
      */
-    public int[] calculateWorkgroupDispatch(int totalItems, int workgroupSize) {
-        int numWorkgroups = (totalItems + workgroupSize - 1) / workgroupSize;
+    public int[] calculateWorkgroupDispatch(int totalThreads, int workgroupSize) {
+        int x = (totalThreads + workgroupSize - 1) / workgroupSize;
         
-        // Get device limits
-        SupportedLimits limits = device.getLimits();
-        int maxWorkgroups = (int) limits.getLimits().getMaxComputeWorkgroupsPerDimension();
-        
-        if (numWorkgroups <= maxWorkgroups) {
-            return new int[] { numWorkgroups, 1, 1 };
+        // Handle large dispatches that exceed max dimension
+        if (x > 65535) {
+            int y = (x + 65534) / 65535;
+            x = (x + y - 1) / y;
+            return new int[]{x, y, 1};
         }
         
-        // Split into 2D dispatch if needed
-        int sqrtGroups = (int) Math.ceil(Math.sqrt(numWorkgroups));
-        if (sqrtGroups <= maxWorkgroups) {
-            return new int[] { sqrtGroups, sqrtGroups, 1 };
-        }
-        
-        // Split into 3D dispatch for very large workloads
-        int cbrtGroups = (int) Math.ceil(Math.cbrt(numWorkgroups));
-        return new int[] { cbrtGroups, cbrtGroups, cbrtGroups };
+        return new int[]{x, 1, 1};
     }
     
     /**
-     * Release all cached resources
+     * Cleanup resources
      */
     public void cleanup() {
-        pipelineCache.values().forEach(ComputePipeline::release);
-        pipelineCache.clear();
-        
-        shaderCache.values().forEach(ShaderModule::release);
+        // Release all cached shaders
+        shaderCache.values().forEach(ShaderHandle::release);
         shaderCache.clear();
         
-        layoutCache.values().forEach(BindGroupLayout::release);
-        layoutCache.clear();
+        pipelineCache.clear();
         
-        log.info("Shader manager cleanup complete");
-    }
-    
-    private String loadResourceAsString(String resourcePath) throws IOException {
-        try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
-            if (is == null) {
-                throw new IOException("Resource not found: " + resourcePath);
-            }
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        log.debug("ComputeShaderManager cleaned up");
     }
 }

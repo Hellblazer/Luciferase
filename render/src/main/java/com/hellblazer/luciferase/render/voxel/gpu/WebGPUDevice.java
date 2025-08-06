@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.myworldvw.webgpu.*;
+// import com.hellblazer.luciferase.webgpu.native.*; // TODO: Replace with our FFM bindings
 import java.lang.foreign.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -35,7 +35,9 @@ public class WebGPUDevice implements AutoCloseable {
         this.nextBufferId = new AtomicLong(1);
         
         // Get the default queue
-        this.queueHandle = webgpu_h.wgpuDeviceGetQueue(deviceHandle);
+        // TODO: Replace with our FFM bindings
+        // this.queueHandle = WebGPUNative.wgpuDeviceGetQueue(deviceHandle);
+        this.queueHandle = MemorySegment.NULL;
     }
     
     /**
@@ -48,6 +50,8 @@ public class WebGPUDevice implements AutoCloseable {
     public long createBuffer(long size, int usage) {
         ensureNotClosed();
         
+        // TODO: Implement when FFM bindings are available
+        /*
         try (var localArena = Arena.ofConfined()) {
             // Allocate buffer descriptor
             var descriptor = localArena.allocate(WGPUBufferDescriptor.layout());
@@ -57,7 +61,7 @@ public class WebGPUDevice implements AutoCloseable {
             WGPUBufferDescriptor.mappedAtCreation(descriptor, 0);
             
             // Create buffer
-            var bufferHandle = webgpu_h.wgpuDeviceCreateBuffer(deviceHandle, descriptor);
+            var bufferHandle = WebGPUNative.wgpuDeviceCreateBuffer(deviceHandle, descriptor);
             
             // Store buffer handle
             var bufferId = bufferHandle.address();
@@ -65,6 +69,12 @@ public class WebGPUDevice implements AutoCloseable {
             
             return bufferId;
         }
+        */
+        
+        // Temporary stub implementation
+        var bufferId = nextBufferId.getAndIncrement();
+        buffers.put(bufferId, MemorySegment.NULL);
+        return bufferId;
     }
     
     /**
@@ -83,13 +93,14 @@ public class WebGPUDevice implements AutoCloseable {
         }
         
         // Write data to buffer via queue
-        webgpu_h.wgpuQueueWriteBuffer(
+        // TODO: Replace with our FFM bindings
+        /* WebGPUNative.wgpuQueueWriteBuffer(
             queueHandle,
             bufferHandle,
             offset,
             data,
             data.byteSize()
-        );
+        ); */
     }
     
     /**
@@ -118,10 +129,16 @@ public class WebGPUDevice implements AutoCloseable {
     public MemorySegment createCommandEncoder() {
         ensureNotClosed();
         
+        // TODO: Implement when FFM bindings are available
+        /*
         try (var localArena = Arena.ofConfined()) {
             var desc = localArena.allocate(WGPUCommandEncoderDescriptor.layout());
-            return webgpu_h.wgpuDeviceCreateCommandEncoder(deviceHandle, desc);
+            return WebGPUNative.wgpuDeviceCreateCommandEncoder(deviceHandle, desc);
         }
+        */
+        
+        // Temporary stub implementation
+        return MemorySegment.NULL;
     }
     
     /**
@@ -135,7 +152,8 @@ public class WebGPUDevice implements AutoCloseable {
         try (var localArena = Arena.ofConfined()) {
             var commandBuffers = localArena.allocate(ValueLayout.ADDRESS);
             commandBuffers.set(ValueLayout.ADDRESS, 0, commandBuffer);
-            webgpu_h.wgpuQueueSubmit(queueHandle, 1, commandBuffers);
+            // TODO: Replace with our FFM bindings
+            // WebGPUNative.wgpuQueueSubmit(queueHandle, 1, commandBuffers);
         }
     }
     
@@ -147,8 +165,9 @@ public class WebGPUDevice implements AutoCloseable {
     public void destroyBuffer(long bufferId) {
         var bufferHandle = buffers.remove(bufferId);
         if (bufferHandle != null) {
-            webgpu_h.wgpuBufferDestroy(bufferHandle);
-            webgpu_h.wgpuBufferRelease(bufferHandle);
+            // TODO: Replace with our FFM bindings
+            // WebGPUNative.wgpuBufferDestroy(bufferHandle);
+            // WebGPUNative.wgpuBufferRelease(bufferHandle);
         }
     }
     
@@ -171,7 +190,9 @@ public class WebGPUDevice implements AutoCloseable {
      */
     public boolean hasFeature(int feature) {
         ensureNotClosed();
-        return webgpu_h.wgpuDeviceHasFeature(deviceHandle, feature) != 0;
+        // TODO: Replace with our FFM bindings
+        // return WebGPUNative.wgpuDeviceHasFeature(deviceHandle, feature) != 0;
+        return false;
     }
     
     /**
@@ -196,17 +217,20 @@ public class WebGPUDevice implements AutoCloseable {
             
             // Destroy all buffers
             buffers.values().forEach(buffer -> {
-                webgpu_h.wgpuBufferDestroy(buffer);
-                webgpu_h.wgpuBufferRelease(buffer);
+                // TODO: Replace with our FFM bindings
+                // WebGPUNative.wgpuBufferDestroy(buffer);
+                // WebGPUNative.wgpuBufferRelease(buffer);
             });
             buffers.clear();
             
             // Release queue and device
             if (queueHandle != null) {
-                webgpu_h.wgpuQueueRelease(queueHandle);
+                // TODO: Replace with our FFM bindings
+                // WebGPUNative.wgpuQueueRelease(queueHandle);
             }
             if (deviceHandle != null) {
-                webgpu_h.wgpuDeviceRelease(deviceHandle);
+                // TODO: Replace with our FFM bindings
+                // WebGPUNative.wgpuDeviceRelease(deviceHandle);
             }
         }
     }

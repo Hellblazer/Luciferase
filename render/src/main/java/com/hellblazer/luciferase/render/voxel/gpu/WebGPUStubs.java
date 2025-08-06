@@ -9,7 +9,7 @@ package com.hellblazer.luciferase.render.voxel.gpu;
  */
 public class WebGPUStubs {
     
-    // Note: The real implementation should use com.myworldvw.webgpu.webgpu_h FFM bindings
+    // Note: The real implementation will use com.hellblazer.luciferase.webgpu.native FFM bindings
     
     public static class WebGPU {
         public static Instance createInstance(InstanceDescriptor desc) {
@@ -60,7 +60,7 @@ public class WebGPUStubs {
         public void release() {}
     }
     
-    public static class Buffer {
+    public static class Buffer implements AutoCloseable {
         public void mapAsync(int mode, long offset, long size, BufferMapCallback callback) {
             callback.onBufferMapped(BufferMapAsyncStatus.SUCCESS);
         }
@@ -70,6 +70,11 @@ public class WebGPUStubs {
         public void unmap() {}
         public void release() {}
         public long getSize() { return 0; }
+        
+        @Override
+        public void close() {
+            release();
+        }
     }
     
     public static class CommandEncoder {
@@ -89,9 +94,14 @@ public class WebGPUStubs {
         public void end() {}
     }
     
-    public static class ComputePipeline {
+    public static class ComputePipeline implements AutoCloseable {
         public BindGroupLayout getBindGroupLayout(int index) { return new BindGroupLayout(); }
         public void release() {}
+        
+        @Override
+        public void close() {
+            release();
+        }
     }
     
     public static class ShaderModule {
@@ -157,10 +167,21 @@ public class WebGPUStubs {
     }
     
     public static class BufferDescriptor {
-        public void setLabel(String label) {}
-        public void setSize(long size) {}
-        public void setUsage(int usage) {}
-        public void setMappedAtCreation(boolean mapped) {}
+        private String label;
+        private long size;
+        private BufferUsage usage;
+        private boolean mappedAtCreation;
+        
+        public void setLabel(String label) { this.label = label; }
+        public void setSize(long size) { this.size = size; }
+        public void setUsage(BufferUsage usage) { this.usage = usage; }
+        public void setUsage(int usage) { this.usage = new BufferUsage(usage); }
+        public void setMappedAtCreation(boolean mapped) { this.mappedAtCreation = mapped; }
+        
+        public String getLabel() { return label; }
+        public long getSize() { return size; }
+        public BufferUsage getUsage() { return usage; }
+        public boolean isMappedAtCreation() { return mappedAtCreation; }
     }
     
     public static class ShaderModuleDescriptor {
@@ -351,7 +372,7 @@ public class WebGPUStubs {
         void onBufferMapped(BufferMapAsyncStatus status);
     }
     
-    // Constants
+    // Constants and BufferUsage class
     public static class BufferUsage {
         public static final int MAP_READ = 0x0001;
         public static final int MAP_WRITE = 0x0002;
@@ -363,6 +384,32 @@ public class WebGPUStubs {
         public static final int STORAGE = 0x0080;
         public static final int INDIRECT = 0x0100;
         public static final int QUERY_RESOLVE = 0x0200;
+        
+        private final int flags;
+        
+        public BufferUsage(int flags) {
+            this.flags = flags;
+        }
+        
+        public static BufferUsage of(int... usages) {
+            int combined = 0;
+            for (int usage : usages) {
+                combined |= usage;
+            }
+            return new BufferUsage(combined);
+        }
+        
+        public boolean contains(int usage) {
+            return (flags & usage) != 0;
+        }
+        
+        public boolean containsAll(BufferUsage other) {
+            return (flags & other.flags) == other.flags;
+        }
+        
+        public int getFlags() {
+            return flags;
+        }
     }
     
     public static class MapMode {
