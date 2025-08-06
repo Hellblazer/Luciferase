@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <parent>
+        <groupId>com.hellblazer.luciferase</groupId>
+        <artifactId>luciferase.app</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+    
+    <artifactId>webgpu-ffm</artifactId>
+    <name>WebGPU FFM Bindings</name>
+    <description>Java FFM bindings for WebGPU using wgpu-native</description>
+    
+    <properties>
+        <maven.compiler.source>24</maven.compiler.source>
+        <maven.compiler.target>24</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <wgpu.native.version>25.0.2.1</wgpu.native.version>
+    </properties>
+    
+    <dependencies>
+        <!-- SLF4J for logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.16</version>
+        </dependency>
+        
+        <!-- JUnit for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        
+        <!-- Logback for testing -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <!-- Maven Compiler Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>24</source>
+                    <target>24</target>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            
+            <!-- Maven Surefire Plugin for tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.0.0-M9</version>
+                <configuration>
+                    <argLine>
+                        --enable-preview
+                        --enable-native-access=ALL-UNNAMED
+                        -Djava.library.path=${project.basedir}/../render/lib
+                    </argLine>
+                </configuration>
+            </plugin>
+            
+            <!-- Maven Resources Plugin to include native libraries -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-native-libraries</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/natives</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/../render/lib</directory>
+                                    <includes>
+                                        <include>*.dylib</include>
+                                        <include>*.so</include>
+                                        <include>*.dll</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            <!-- jextract Maven Plugin for FFM binding generation -->
+            <!-- Note: This is commented out until jextract supports Java 24 -->
+            <!-- For now, we'll manually create the FFM bindings -->
+            <!--
+            <plugin>
+                <groupId>io.github.coffeelibs</groupId>
+                <artifactId>jextract-maven-plugin</artifactId>
+                <version>0.1.0</version>
+                <executions>
+                    <execution>
+                        <id>generate-webgpu-bindings</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>jextract</goal>
+                        </goals>
+                        <configuration>
+                            <headerFile>${project.basedir}/../render/include/webgpu/webgpu.h</headerFile>
+                            <targetPackage>com.hellblazer.luciferase.webgpu.native</targetPackage>
+                            <className>WebGPUNative</className>
+                            <includePaths>
+                                <includePath>${project.basedir}/../render/include/webgpu</includePath>
+                            </includePaths>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            -->
+        </plugins>
+    </build>
+    
+    <profiles>
+        <!-- Profile for generating FFM bindings with jextract -->
+        <profile>
+            <id>generate-bindings</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>generate-ffm-bindings</id>
+                                <configuration>
+                                    <skip>false</skip>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

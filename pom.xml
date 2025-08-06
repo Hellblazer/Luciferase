@@ -45,6 +45,7 @@
         <module>simulation</module>
         <module>sentry</module>
         <module>render</module>
+        <module>webgpu-ffm</module>
     </modules>
 
     <dependencyManagement>
@@ -78,6 +79,16 @@
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>von</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>render</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>webgpu-ffm</artifactId>
             </dependency>
 
             <dependency>
