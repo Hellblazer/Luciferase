@@ -375,7 +375,74 @@ Implement comprehensive testing framework with multiple validation layers:
 - GitHub: https://github.com/MyWorldLLC/webgpu-java
 - Integration Plan: `/render/doc/WEBGPU_MYWORLDLLC_INTEGRATION_PLAN.md`
 
+### D011: WebGPU-Java v25.0.2.1 Upgrade for Java 24 Compatibility
+**Date**: August 6, 2025  
+**Status**: ✅ Approved and Implemented  
+**Review Date**: August 19, 2025  
+
+**Context**:
+Original WebGPU-Java v22.1.0.1 was incompatible with Java 24 due to preview feature mismatch. User provided updated v25.0.2.1 compiled specifically for Java 24.
+
+**Decision**:
+Upgrade to WebGPU-Java v25.0.2.1 and adapt to new API:
+1. Update Maven dependency to v25.0.2.1
+2. Migrate from `$set` pattern to static methods (e.g., `WGPUBufferDescriptor.label()`)
+3. Maintain stub implementation until Phase 3 GPU activation
+4. Keep tests disabled but ready for future activation
+
+**Rationale**:
+- Ensures Java 24 compatibility without preview feature issues
+- New API uses cleaner static method pattern
+- Aligns with project's Java 24 FFM requirements
+- Maintains stability while preparing for GPU execution
+
+**Alternatives Considered**:
+1. Downgrade to Java 21 - Rejected: Would lose Java 24 FFM benefits
+2. Wait for official release - Rejected: v25.0.2.1 meets current needs
+3. Create custom bindings - Rejected: Unnecessary complexity
+
+**Impact**:
+- All WebGPU wrapper code updated to new API
+- Tests restructured for new method signatures
+- Ready for GPU activation in Phase 3
+- No runtime impact (stub implementation)
+
+---
+
+### D012: GPU Execution Timeline Strategy
+**Date**: August 6, 2025  
+**Status**: ✅ Approved  
+**Review Date**: September 3, 2025  
+
+**Context**:
+Phase 2 WebGPU integration complete with stub implementation. Decision needed on when to activate real GPU execution.
+
+**Decision**:
+Defer real GPU execution to Phase 3 (September 3, 2025) as originally planned:
+1. Keep WebGPU tests disabled with `checkWebGPUAvailability()` returning false
+2. Maintain stub implementation for development stability
+3. Focus current sprint on voxelization algorithm research
+4. Activate GPU when voxelization implementation begins
+
+**Rationale**:
+- Maintains project timeline discipline
+- Avoids premature optimization
+- Allows focus on algorithm design before GPU complexities
+- Reduces CI/CD complexity until necessary
+- Provides time for WebGPU runtime installation planning
+
+**Alternatives Considered**:
+1. Immediate GPU activation - Rejected: Not needed until voxelization
+2. Optional GPU tests - Rejected: Adds CI/CD complexity
+3. Partial activation - Rejected: All-or-nothing approach cleaner
+
+**Impact**:
+- Tests remain disabled but ready
+- Development continues without GPU dependencies
+- Clear activation point at Phase 3 start
+- No impact on current progress
+
 ---
 *Decision log established: August 5, 2025*  
-*Last updated: August 5, 2025 - 19:00*  
-*Next review: August 8, 2025*
+*Last updated: August 6, 2025 - 14:45*  
+*Next review: August 12, 2025*
