@@ -1,7 +1,5 @@
 # Portal Module
 
-![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
-
 JavaFX 3D visualization and mesh handling for Luciferase
 
 ## Overview

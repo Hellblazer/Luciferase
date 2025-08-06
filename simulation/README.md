@@ -1,7 +1,5 @@
 # Simulation Module
 
-[![Build Status](https://github.com/Hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)](https://github.com/Hellblazer/Luciferase/actions)
-
 Advanced physics simulation and animation framework for 3D spatial systems.
 
 ## Overview

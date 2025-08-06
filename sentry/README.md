@@ -1,7 +1,5 @@
 # Sentry Module
 
-![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
-
 Delaunay tetrahedralization and kinetic point tracking for Luciferase
 
 ## Overview

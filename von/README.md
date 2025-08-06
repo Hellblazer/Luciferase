@@ -1,7 +1,5 @@
 # Von Module
 
-![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
-
 Distributed spatial perception framework for Luciferase
 
 ## Overview
