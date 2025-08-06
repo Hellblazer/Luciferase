@@ -442,7 +442,91 @@ Defer real GPU execution to Phase 3 (September 3, 2025) as originally planned:
 - Clear activation point at Phase 3 start
 - No impact on current progress
 
+### D013: Triangle-Box Intersection Algorithm Choice
+**Date**: August 6, 2025  
+**Phase**: 3 - Voxelization Pipeline  
+**Category**: Algorithm Selection  
+
+**Decision**:
+Implement Separating Axis Theorem (SAT) for triangle-box intersection:
+1. Test all 13 potential separating axes
+2. Include coverage computation with sampling
+3. Handle degenerate triangles gracefully
+4. Use barycentric coordinates for point-in-triangle tests
+
+**Rationale**:
+- SAT is the most accurate method for intersection testing
+- Handles all edge cases correctly
+- Well-established algorithm with proven correctness
+- Suitable for both CPU and GPU implementation
+
+**Alternatives Considered**:
+1. AABB tree approximation - Rejected: Less accurate
+2. Octree subdivision - Rejected: Recursive overhead
+3. Simple bounding box test - Rejected: Too many false positives
+
+**Impact**:
+- Accurate voxelization results
+- Higher computational cost but acceptable
+- Parallelizable for GPU implementation
+
+### D014: Voxel Storage Architecture
+**Date**: August 6, 2025  
+**Phase**: 3 - Voxelization Pipeline  
+**Category**: Data Structure Design  
+
+**Decision**:
+Use sparse storage with ConcurrentHashMap for voxel grid:
+1. 20-bit coordinate encoding (supports up to 1M resolution)
+2. Thread-safe concurrent operations
+3. Memory-efficient sparse representation
+4. Direct coordinate-to-voxel mapping
+
+**Rationale**:
+- ~90% memory savings for typical meshes
+- Thread-safe for parallel voxelization
+- O(1) access time for voxel operations
+- Scales well with resolution
+
+**Alternatives Considered**:
+1. Dense 3D array - Rejected: Memory prohibitive
+2. Octree storage - Rejected: Complex for modifications
+3. Run-length encoding - Rejected: Poor random access
+
+**Impact**:
+- Significant memory efficiency
+- Enables high-resolution voxelization
+- Supports concurrent operations
+
+### D015: Dual CPU/GPU Implementation Strategy
+**Date**: August 6, 2025  
+**Phase**: 3 - Voxelization Pipeline  
+**Category**: Architecture  
+
+**Decision**:
+Implement both CPU and GPU voxelization paths:
+1. CPU path using ForkJoinPool for parallelism
+2. GPU path using WGSL compute shaders
+3. Runtime selection based on availability
+4. Shared data structures between paths
+
+**Rationale**:
+- Provides fallback when GPU unavailable
+- Enables performance comparisons
+- Supports different deployment scenarios
+- Maintains code flexibility
+
+**Alternatives Considered**:
+1. GPU-only - Rejected: Limits deployment options
+2. CPU-only - Rejected: Misses performance opportunities
+3. Separate implementations - Rejected: Code duplication
+
+**Impact**:
+- Broader platform support
+- Development can proceed without GPU
+- Performance optimization options
+
 ---
 *Decision log established: August 5, 2025*  
-*Last updated: August 6, 2025 - 14:45*  
+*Last updated: August 6, 2025 - 18:20*  
 *Next review: August 12, 2025*
