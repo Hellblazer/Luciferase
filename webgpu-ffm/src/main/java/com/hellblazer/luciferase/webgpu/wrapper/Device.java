@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.WebGPU;
 import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,31 @@ public class Device implements AutoCloseable {
     private final ConcurrentHashMap<Long, Buffer> buffers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, ShaderModule> shaderModules = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
+    
+    /**
+     * Create a device wrapper from a native handle.
+     * Automatically gets the queue from the device.
+     * 
+     * @param handle the native device handle
+     */
+    public Device(MemorySegment handle) {
+        if (handle == null || handle.equals(MemorySegment.NULL)) {
+            throw new IllegalArgumentException("Invalid device handle");
+        }
+        this.handle = handle;
+        
+        // Get the queue from the native API
+        var queueHandle = WebGPU.getQueue(handle);
+        if (queueHandle != null && !queueHandle.equals(MemorySegment.NULL)) {
+            this.defaultQueue = new Queue(queueHandle, this);
+        } else {
+            // Fall back to mock queue
+            log.warn("Failed to get queue from device - creating mock");
+            this.defaultQueue = new Queue(MemorySegment.ofAddress(System.nanoTime()), this);
+        }
+        
+        log.debug("Created device wrapper: 0x{}", Long.toHexString(handle.address()));
+    }
     
     /**
      * Create a device wrapper from a native handle.
@@ -62,14 +88,31 @@ public class Device implements AutoCloseable {
             nativeDesc.set(ValueLayout.JAVA_LONG, 24, descriptor.getSize()); // size
             nativeDesc.set(ValueLayout.JAVA_INT, 32, descriptor.isMappedAtCreation() ? 1 : 0);
             
-            // TODO: Call wgpuDeviceCreateBuffer when function handle is available
-            // For now, create a mock buffer
-            var bufferId = nextId.getAndIncrement();
-            var buffer = new Buffer(bufferId, descriptor.getSize(), descriptor.getUsage(), this);
-            buffers.put(bufferId, buffer);
+            // Try to call native wgpuDeviceCreateBuffer if WebGPU is initialized
+            MemorySegment bufferHandle = null;
+            if (WebGPU.isInitialized()) {
+                try {
+                    bufferHandle = WebGPU.createBuffer(handle, nativeDesc);
+                } catch (Exception e) {
+                    log.debug("Native buffer creation failed: {}", e.getMessage());
+                }
+            }
             
-            log.debug("Created buffer {} with size {} and usage {}", 
-                bufferId, descriptor.getSize(), descriptor.getUsage());
+            if (bufferHandle == null || bufferHandle.equals(MemorySegment.NULL)) {
+                // Fall back to mock if native call fails or WebGPU not initialized
+                log.debug("Using mock buffer (native not available)");
+                var bufferId = nextId.getAndIncrement();
+                var buffer = new Buffer(bufferId, descriptor.getSize(), descriptor.getUsage(), this);
+                buffers.put(bufferId, buffer);
+                return buffer;
+            }
+            
+            // Create wrapper for native buffer
+            var buffer = new Buffer(bufferHandle, descriptor.getSize(), descriptor.getUsage(), this);
+            buffers.put(bufferHandle.address(), buffer);
+            
+            log.debug("Created native buffer with size {} and usage {}", 
+                descriptor.getSize(), descriptor.getUsage());
             
             return buffer;
         }
@@ -167,7 +210,8 @@ public class Device implements AutoCloseable {
             
             defaultQueue.close();
             
-            // TODO: Call wgpuDeviceRelease when function handle is available
+            // Release the device through native API
+            WebGPU.releaseDevice(handle);
             log.debug("Released device");
         }
     }

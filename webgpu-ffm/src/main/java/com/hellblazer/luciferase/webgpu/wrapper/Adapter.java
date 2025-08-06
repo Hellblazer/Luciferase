@@ -44,10 +44,16 @@ public class Adapter implements AutoCloseable {
         return CompletableFuture.supplyAsync(() -> {
             log.debug("Requesting device with descriptor: {}", descriptor);
             
-            // TODO: Implement actual device request with callbacks
-            // This requires FFM callback implementation
+            // Call the native WebGPU API
+            var deviceHandle = com.hellblazer.luciferase.webgpu.WebGPU.requestDevice(handle, null); // TODO: convert descriptor to native struct
             
-            return null;
+            if (deviceHandle != null && !deviceHandle.equals(MemorySegment.NULL)) {
+                log.debug("Successfully obtained device from native API");
+                return new Device(deviceHandle);
+            } else {
+                log.warn("Failed to obtain device from native API");
+                return null;
+            }
         });
     }
     
@@ -95,7 +101,7 @@ public class Adapter implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            // TODO: Call wgpuAdapterRelease when function handle is available
+            com.hellblazer.luciferase.webgpu.WebGPU.releaseAdapter(handle);
             log.debug("Released adapter");
         }
     }

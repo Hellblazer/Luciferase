@@ -89,7 +89,7 @@ public class Queue implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            // TODO: Call wgpuQueueRelease when available
+            com.hellblazer.luciferase.webgpu.WebGPU.releaseQueue(handle);
             log.debug("Released queue");
         }
     }

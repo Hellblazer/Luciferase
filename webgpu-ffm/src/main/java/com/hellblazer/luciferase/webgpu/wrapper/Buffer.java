@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.WebGPU;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,16 +19,31 @@ public class Buffer implements AutoCloseable {
     private final int usage;
     private final Device device;
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private MemorySegment handle;
+    private final MemorySegment handle;
+    private final boolean isNative;
     
     /**
-     * Create a buffer wrapper.
+     * Create a mock buffer wrapper.
      */
     protected Buffer(long id, long size, int usage, Device device) {
         this.id = id;
         this.size = size;
         this.usage = usage;
         this.device = device;
+        this.handle = null;
+        this.isNative = false;
+    }
+    
+    /**
+     * Create a native buffer wrapper.
+     */
+    protected Buffer(MemorySegment handle, long size, int usage, Device device) {
+        this.id = handle.address();
+        this.size = size;
+        this.usage = usage;
+        this.device = device;
+        this.handle = handle;
+        this.isNative = true;
     }
     
     /**
@@ -103,8 +119,14 @@ public class Buffer implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            device.removeBuffer(id);
-            // TODO: Call wgpuBufferRelease when available
+            if (isNative && handle != null) {
+                // Destroy native buffer
+                WebGPU.destroyBuffer(handle);
+                device.removeBuffer(id);
+            } else {
+                // Mock buffer cleanup
+                device.removeBuffer(id);
+            }
             log.debug("Released buffer {}", id);
         }
     }

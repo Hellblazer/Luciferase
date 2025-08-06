@@ -61,16 +61,19 @@ public class Instance implements AutoCloseable {
             throw new IllegalStateException("Instance is closed");
         }
         
-        // For now, return a completed future with a mock adapter
-        // In a full implementation, this would use callbacks
         return CompletableFuture.supplyAsync(() -> {
             log.debug("Requesting adapter with options: {}", options);
             
-            // TODO: Implement actual adapter request with callbacks
-            // This requires setting up FFM callback mechanisms
+            // Call the native WebGPU API
+            var adapterHandle = WebGPU.requestAdapter(handle, null); // TODO: convert options to native struct
             
-            // For now, return null to indicate no adapter available
-            return null;
+            if (adapterHandle != null && !adapterHandle.equals(MemorySegment.NULL)) {
+                log.debug("Successfully obtained adapter from native API");
+                return new Adapter(adapterHandle);
+            } else {
+                log.warn("No adapter available from native API");
+                return null;
+            }
         });
     }
     
