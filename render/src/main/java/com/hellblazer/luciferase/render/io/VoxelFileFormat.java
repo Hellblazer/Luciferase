@@ -28,7 +28,7 @@ public class VoxelFileFormat {
     // Magic number: "VOXL"
     public static final int MAGIC = 0x564F584C;
     public static final int VERSION = 1;
-    public static final int HEADER_SIZE = 64;
+    public static final int HEADER_SIZE = 72; // 4 + 4 + 4 + 8 + 4 + 8 + 24 + 4 + 4 + 4 + 4
     
     public enum ChunkType {
         METADATA(0x4D455441),      // "META"
