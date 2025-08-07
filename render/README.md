@@ -1,10 +1,10 @@
 # Render Module
 
-GPU-accelerated voxel rendering pipeline using Java 24 FFM and WebGPU
+GPU-accelerated voxel rendering pipeline with streaming I/O and adaptive quality control
 
 ## Overview
 
-The Render module implements an Efficient Sparse Voxel Octree (ESVO) rendering system using Java 24's Foreign Function & Memory (FFM) API for zero-copy GPU transfers and WebGPU for cross-platform GPU compute.
+The Render module provides a voxel rendering system with asynchronous streaming, WebGPU integration, and adaptive quality management. Built for integration with Luciferase's spatial indexing system.
 
 ## Features
 
@@ -39,66 +39,36 @@ The Render module implements an Efficient Sparse Voxel Octree (ESVO) rendering s
 
 ```
 com.hellblazer.luciferase.render/
+├── compression/       # DXT and sparse voxel compression
+├── io/               # Streaming I/O with async loading
+├── rendering/        # VoxelRenderingPipeline and StreamingController
 ├── voxel/
-│   ├── core/          # Voxel octree data structures
-│   ├── gpu/           # WebGPU device abstraction
-│   ├── memory/        # FFM memory management
-│   ├── pipeline/      # Rendering pipeline stages
-│   ├── compression/   # Voxel data compression
-│   └── io/            # File I/O for voxel data
+│   ├── core/        # VoxelOctreeNode data structures
+│   ├── gpu/         # WebGPU context and compute shaders
+│   ├── memory/      # Memory pooling and management
+│   └── pipeline/    # Mesh voxelization pipeline
+└── webgpu/          # WebGPU backend abstraction
 ```
 
 ## Key Components
 
-### FFM Memory Layouts
+### VoxelRenderingPipeline
+Main rendering orchestrator with adaptive quality control and async frame rendering.
 
-```java
-// GPU-compatible voxel node structure (16 bytes)
-public static final StructLayout VOXEL_NODE_LAYOUT = MemoryLayout.structLayout(
-    ValueLayout.JAVA_BYTE.withName("validMask"),
-    ValueLayout.JAVA_BYTE.withName("leafMask"),
-    ValueLayout.JAVA_SHORT.withName("padding"),
-    ValueLayout.JAVA_INT.withName("childPointer"),
-    ValueLayout.JAVA_LONG.withName("attachmentData")
-).withByteAlignment(16);
-```
+### StreamingController
+Manages asynchronous LOD streaming with priority-based loading and memory pressure management.
 
-### WebGPU Integration
+### WebGPU Backend
+Abstraction layer supporting both FFM-based native WebGPU and stub implementations for testing.
 
-```java
-// Create WebGPU device
-var device = new WebGPUDevice(deviceHandle, arena);
+### Compression System
+- **SparseVoxelCompressor**: Octree compression for efficient GPU storage
+- **DXTCompressor**: Texture compression supporting DXT1/DXT5 formats
 
-// Create GPU buffer
-var bufferId = device.createBuffer(
-    bufferSize,
-    BufferUsage.STORAGE | BufferUsage.COPY_DST
-);
-
-// Upload voxel data
-var gpuManager = new VoxelGPUManager(device);
-var nodeCount = gpuManager.uploadOctree(voxelRoot);
-```
-
-### Memory Pool Usage
-
-```java
-// Create memory pool
-var pool = new FFMMemoryPool.Builder()
-    .segmentSize(4096)
-    .maxPoolSize(128)
-    .clearOnRelease(true)
-    .build();
-
-// Acquire and use segment
-var segment = pool.acquire();
-try {
-    // Use segment for GPU data
-    segment.set(ValueLayout.JAVA_INT, 0, value);
-} finally {
-    pool.release(segment);
-}
-```
+### Streaming I/O
+- Async chunk loading with prefetching
+- LRU cache for frequently accessed data
+- Memory-mapped file support for large datasets
 
 ## Performance
 
@@ -120,27 +90,18 @@ try {
 ## Usage Example
 
 ```java
-import com.hellblazer.luciferase.render.voxel.gpu.*;
-import com.hellblazer.luciferase.render.voxel.memory.*;
+// Run the interactive demo
+java -cp render com.hellblazer.luciferase.render.demo.SimpleRenderDemo
 
-// Initialize WebGPU
-var device = WebGPUFactory.createDevice();
-var gpuManager = new VoxelGPUManager(device);
-
-// Load voxel data
-var octree = VoxelLoader.load("model.vox");
-
-// Upload to GPU
-gpuManager.uploadOctree(octree);
-gpuManager.uploadMaterials(materials);
-
-// Prepare ray buffers
-gpuManager.prepareRayBuffers(1024);
-
-// Render frame
-var commandEncoder = device.createCommandEncoder();
-// ... setup render pass ...
-device.submit(commandEncoder.finish());
+// Demo Menu:
+// 1. Demonstrate Async Streaming
+// 2. Demonstrate Rendering Pipeline  
+// 3. Demonstrate Adaptive Quality
+// 4. Demonstrate Voxel Compression
+// 5. Show Performance Metrics
+// 6. Display System Status
+// 7. Run Stress Test
+// Q. Quit
 ```
 
 ## Building
@@ -174,20 +135,25 @@ mvn test -pl render -Dtest=FFMMemoryPoolTest
 mvn test -pl render -Dtest=WebGPUIntegrationTest
 ```
 
+## Current Status
+
+### Working Features
+- ✅ VoxelRenderingPipeline with async frame rendering
+- ✅ StreamingController with priority-based LOD loading  
+- ✅ WebGPU context initialization and buffer management
+- ✅ Synchronous cleanup (exits immediately on quit)
+- ✅ Memory-efficient streaming I/O
+- ✅ Adaptive quality control based on frame timing
+- ✅ SimpleRenderDemo interactive test application
+
+### Known Limitations
+- WebGPU native operations are simulated (returns test data)
+- Some shader references point to non-existent files (will be cleaned up)
+- Full GPU ray marching not yet implemented
+
 ## Documentation
 
-- [Java 24 FFM Plan](doc/JAVA_24_FFM_PLAN.md)
-- [FFM and WebGPU Analysis](doc/FFM_AND_WEBGPU_ANALYSIS.md)
-- [FFM WebGPU Integration Summary](doc/FFM_WEBGPU_INTEGRATION_SUMMARY.md)
-
-## Future Work
-
-- [ ] WGSL compute shader implementation
-- [ ] Texture atlas support
-- [ ] Shadow mapping
-- [ ] Ambient occlusion
-- [ ] Temporal upsampling
-- [ ] Multi-resolution voxel LOD
+See the `doc/` directory for detailed technical documentation.
 
 ## License
 

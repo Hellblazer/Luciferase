@@ -14,17 +14,19 @@ public class WebGPUBackendFactory {
     private static final Object lock = new Object();
     
     /**
-     * Create a WebGPU backend, preferring native FFM implementation.
-     * Falls back to stub implementation if native is unavailable.
+     * Create a smart WebGPU backend that automatically handles platform detection.
+     * This is the recommended way to create a backend.
      */
     public static WebGPUBackend createBackend() {
-        return createBackend(true);
+        return new SmartWebGPUBackend();
     }
     
     /**
      * Create a WebGPU backend with optional native preference.
      * @param preferNative If true, attempts FFM backend first, otherwise uses stub
+     * @deprecated Use createBackend() for automatic platform detection
      */
+    @Deprecated
     public static WebGPUBackend createBackend(boolean preferNative) {
         if (preferNative) {
             // Try FFM backend first
@@ -60,13 +62,13 @@ public class WebGPUBackendFactory {
     
     /**
      * Get the default backend instance (singleton).
-     * Creates a new backend on first call, preferring native implementation.
+     * Creates a smart backend that auto-detects the platform.
      */
     public static WebGPUBackend getDefaultBackend() {
         if (defaultBackend == null) {
             synchronized (lock) {
                 if (defaultBackend == null) {
-                    defaultBackend = createBackend();
+                    defaultBackend = new SmartWebGPUBackend();
                     log.info("Initialized default WebGPU backend: {}", defaultBackend.getBackendName());
                 }
             }

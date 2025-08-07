@@ -35,7 +35,7 @@ public class SimpleRenderDemo {
         var demo = new SimpleRenderDemo();
         demo.run();
     }
-    
+
     public void run() {
         printHeader();
         
@@ -485,59 +485,47 @@ public class SimpleRenderDemo {
     private void cleanup() {
         log.info("Cleaning up...");
         
+        // Force immediate shutdown - don't wait for graceful termination
         try {
-            // Shutdown components in reverse order of initialization
+            // Shutdown streaming controller first (it has background threads)
             if (streamingController != null) {
-                try {
-                    streamingController.shutdown();
-                    log.debug("Streaming controller shut down");
-                } catch (Exception e) {
-                    log.warn("Error shutting down streaming controller", e);
-                }
+                streamingController.shutdown();
+                streamingController = null;
             }
             
+            // Close pipeline
             if (pipeline != null) {
-                try {
-                    pipeline.close();
-                    log.debug("Pipeline closed");
-                } catch (Exception e) {
-                    log.warn("Error closing pipeline", e);
-                }
+                pipeline.close();
+                pipeline = null;
             }
             
+            // Close streaming IO
             if (streamingIO != null) {
-                try {
-                    streamingIO.close();
-                    log.debug("Streaming IO closed");
-                } catch (Exception e) {
-                    log.warn("Error closing streaming IO", e);
-                }
+                streamingIO.close();
+                streamingIO = null;
             }
             
-            // Clean up temp directory after all resources are closed
+            // Clean up temp directory - don't wait
             if (tempDir != null && Files.exists(tempDir)) {
                 try {
-                    // Give a small delay to ensure all file handles are released
-                    Thread.sleep(100);
-                    
                     Files.walk(tempDir)
                         .sorted((a, b) -> -a.compareTo(b))
                         .forEach(path -> {
                             try {
                                 Files.delete(path);
                             } catch (Exception e) {
-                                log.debug("Could not delete {}: {}", path, e.getMessage());
+                                // Ignore - we're shutting down
                             }
                         });
-                    log.debug("Temp directory cleaned up");
                 } catch (Exception e) {
-                    log.warn("Could not clean up temp directory", e);
+                    // Ignore - we're shutting down
                 }
             }
             
             log.info("Cleanup completed");
         } catch (Exception e) {
-            log.error("Cleanup failed", e);
+            log.error("Cleanup error: {}", e.getMessage());
+            // Don't rethrow - we want to exit regardless
         }
     }
     

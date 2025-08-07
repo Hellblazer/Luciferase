@@ -79,12 +79,12 @@ class ComprehensiveRenderingPipelineTest {
     void initializeComponents() throws Exception {
         log.info("Initializing rendering pipeline components...");
         
-        // Try to use real WebGPU if available, fall back to stub
-        var backend = WebGPUBackendFactory.createBackend(true);  // Prefer native
+        // Use smart backend that auto-detects platform
+        var backend = WebGPUBackendFactory.createBackend();
         log.info("Using WebGPU backend: {}", backend.getBackendName());
         webgpuContext = new WebGPUContext(backend);
         
-        // Initialize the WebGPU backend before using it
+        // Initialize the WebGPU backend - it will handle fallback internally
         var initFuture = webgpuContext.initialize();
         initFuture.get(); // Wait for initialization to complete
         
