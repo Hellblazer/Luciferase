@@ -38,9 +38,12 @@ public class Queue implements AutoCloseable {
             throw new IllegalStateException("Queue is closed");
         }
         
-        // TODO: Implement actual buffer writing with wgpuQueueWriteBuffer
-        log.debug("Writing {} bytes to buffer {} at offset {}", 
-            data.length, buffer.getId(), bufferOffset);
+        // Use native queue write buffer
+        com.hellblazer.luciferase.webgpu.WebGPU.writeBuffer(handle, buffer.getHandle(), 
+            bufferOffset, data);
+        
+        log.debug("Wrote {} bytes to buffer at offset {} via native queue", 
+            data.length, bufferOffset);
     }
     
     /**
@@ -70,8 +73,16 @@ public class Queue implements AutoCloseable {
             throw new IllegalStateException("Queue is closed");
         }
         
-        // TODO: Implement actual command submission
-        log.debug("Submitting {} command buffers", commandBuffers.length);
+        // Convert command buffers to native handles
+        var handles = new java.lang.foreign.MemorySegment[commandBuffers.length];
+        for (int i = 0; i < commandBuffers.length; i++) {
+            handles[i] = commandBuffers[i].getHandle();
+        }
+        
+        // Submit to native queue
+        com.hellblazer.luciferase.webgpu.WebGPU.submitToQueue(handle, handles);
+        
+        log.debug("Submitted {} command buffers to native queue", commandBuffers.length);
     }
     
     /**

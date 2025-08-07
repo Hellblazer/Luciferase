@@ -1,43 +1,33 @@
 package com.hellblazer.luciferase.render.webgpu;
 
+import com.hellblazer.luciferase.webgpu.WebGPU;
+import com.hellblazer.luciferase.webgpu.wrapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.foreign.*;
-import java.lang.invoke.MethodHandle;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * WebGPU backend implementation using Foreign Function & Memory (FFM) API.
- * Provides direct access to native WebGPU functionality when available.
+ * WebGPU backend implementation using the high-level wrapper API from webgpu-ffm module.
+ * This ensures proper FFM handle management and avoids direct handle invocation issues.
  */
 public class FFMWebGPUBackend implements WebGPUBackend {
     private static final Logger log = LoggerFactory.getLogger(FFMWebGPUBackend.class);
     
     private final AtomicBoolean initialized = new AtomicBoolean(false);
-    private MemorySegment instance;
-    private MemorySegment adapter;
-    private MemorySegment device;
-    private MemorySegment queue;
+    private Instance instance;
+    private Adapter adapter;
+    private Device device;
+    private Queue queue;
     
-    // Native function handles
-    private MethodHandle wgpuCreateInstance;
-    private MethodHandle wgpuInstanceRequestAdapter;
-    private MethodHandle wgpuAdapterRequestDevice;
-    private MethodHandle wgpuDeviceGetQueue;
-    private MethodHandle wgpuDeviceCreateBuffer;
-    private MethodHandle wgpuQueueWriteBuffer;
-    private MethodHandle wgpuBufferMapAsync;
-    private MethodHandle wgpuBufferGetMappedRange;
-    private MethodHandle wgpuBufferUnmap;
-    private MethodHandle wgpuBufferDestroy;
-    
-    private final AtomicLong nextBufferId = new AtomicLong(1);
-    private Linker linker;
-    private SymbolLookup symbolLookup;
-    private Arena globalArena;
+    private final AtomicLong nextId = new AtomicLong(1);
+    private final ConcurrentHashMap<Long, BufferHandleImpl> buffers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, ShaderHandleImpl> shaders = new ConcurrentHashMap<>();
 
     @Override
     public boolean isAvailable() {
@@ -49,113 +39,56 @@ public class FFMWebGPUBackend implements WebGPUBackend {
         if (initialized.get()) {
             return CompletableFuture.completedFuture(true);
         }
-        
+
         return CompletableFuture.supplyAsync(() -> {
             try {
-                log.info("Initializing FFM WebGPU backend...");
+                log.info("Initializing FFM WebGPU backend using wrapper API");
                 
-                if (!isAvailable()) {
-                    log.warn("WebGPU is not available on this system");
+                // Initialize WebGPU library
+                if (!WebGPU.initialize()) {
+                    log.error("Failed to initialize WebGPU library");
                     return false;
                 }
                 
-                // Get the library path
-                String libraryPath = WebGPUCapabilities.getLibraryPath();
-                if (libraryPath == null) {
-                    log.error("WebGPU native library not found");
+                // Create instance using wrapper API
+                instance = new Instance();
+                log.debug("Created WebGPU instance");
+                
+                // Request adapter
+                CompletableFuture<Adapter> adapterFuture = instance.requestAdapter();
+                adapter = adapterFuture.get();
+                if (adapter == null) {
+                    log.error("Failed to get WebGPU adapter");
                     return false;
                 }
+                log.debug("Got WebGPU adapter");
                 
-                // Load the native library
-                System.load(libraryPath);
-                log.info("Loaded native library: {}", libraryPath);
-                
-                // Initialize FFM components
-                linker = Linker.nativeLinker();
-                symbolLookup = SymbolLookup.loaderLookup();
-                globalArena = Arena.global();
-                
-                // Load WebGPU functions
-                if (!loadNativeFunctions()) {
-                    log.error("Failed to load WebGPU native functions");
+                // Request device
+                CompletableFuture<Device> deviceFuture = adapter.requestDevice();
+                device = deviceFuture.get();
+                if (device == null) {
+                    log.error("Failed to get WebGPU device");
                     return false;
                 }
+                log.debug("Got WebGPU device");
                 
-                // Create WebGPU instance
-                instance = (MemorySegment) wgpuCreateInstance.invoke(MemorySegment.NULL);
-                
-                if (instance == null || instance.equals(MemorySegment.NULL)) {
-                    log.error("Failed to create WebGPU instance");
+                // Get queue
+                queue = device.getQueue();
+                if (queue == null) {
+                    log.error("Failed to get WebGPU queue");
                     return false;
                 }
-                
-                log.info("WebGPU instance created successfully at: 0x{}", Long.toHexString(instance.address()));
-                
-                // Note: For a complete implementation, we'd need to:
-                // 1. Request adapter (enumerate GPUs)
-                // 2. Request device from adapter
-                // 3. Get queue from device
-                // This requires async callbacks which are more complex with FFM
+                log.debug("Got WebGPU queue");
                 
                 initialized.set(true);
                 log.info("FFM WebGPU backend initialized successfully");
                 return true;
                 
-            } catch (UnsatisfiedLinkError | ExceptionInInitializerError e) {
-                log.warn("WebGPU native libraries not available: {}", e.getMessage());
-                return false;
-            } catch (Throwable e) {
-                log.error("Failed to initialize WebGPU backend", e);
+            } catch (Exception e) {
+                log.error("Failed to initialize FFM WebGPU backend", e);
                 return false;
             }
         });
-    }
-    
-    private boolean loadNativeFunctions() {
-        try {
-            // wgpuCreateInstance(const WGPUInstanceDescriptor* descriptor) -> WGPUInstance
-            var createInstanceSymbol = symbolLookup.find("wgpuCreateInstance");
-            if (createInstanceSymbol.isEmpty()) {
-                log.error("Could not find wgpuCreateInstance symbol");
-                return false;
-            }
-            
-            wgpuCreateInstance = linker.downcallHandle(
-                createInstanceSymbol.get(),
-                FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
-            );
-            
-            // Load other essential functions (simplified for now)
-            // In a complete implementation, we'd load all required functions
-            
-            log.debug("Successfully loaded WebGPU native functions");
-            return true;
-            
-        } catch (Exception e) {
-            log.error("Failed to load native functions", e);
-            return false;
-        }
-    }
-
-    @Override
-    public void shutdown() {
-        if (!initialized.get()) {
-            return;
-        }
-        
-        log.info("Shutting down FFM WebGPU backend");
-        
-        // Release WebGPU resources
-        // Note: We'd need to call proper cleanup functions here
-        // wgpuInstanceRelease, wgpuDeviceRelease, etc.
-        
-        initialized.set(false);
-        instance = null;
-        adapter = null;
-        device = null;
-        queue = null;
-        
-        log.info("FFM WebGPU backend shutdown complete");
     }
 
     @Override
@@ -166,108 +99,205 @@ public class FFMWebGPUBackend implements WebGPUBackend {
     @Override
     public BufferHandle createBuffer(long size, int usage) {
         if (!initialized.get()) {
-            throw new IllegalStateException("WebGPU backend not initialized");
+            throw new IllegalStateException("WebGPU not initialized");
         }
         
-        // For now, create a mock buffer handle
-        // In a complete implementation, we'd call wgpuDeviceCreateBuffer
-        log.debug("Creating buffer with size {} and usage {}", size, usage);
-        
-        long bufferId = nextBufferId.getAndIncrement();
-        return new FFMBufferHandle(bufferId, size, usage);
-    }
-
-    @Override
-    public ShaderHandle createComputeShader(String wgslSource) {
-        if (!initialized.get()) {
-            throw new IllegalStateException("WebGPU backend not initialized");
+        try {
+            // Add COPY_DST for writing data
+            int usageFlags = usage | 0x0008;
+            
+            var descriptor = new Device.BufferDescriptor(size, usageFlags);
+            
+            Buffer buffer = device.createBuffer(descriptor);
+            if (buffer == null) {
+                throw new RuntimeException("Failed to create buffer");
+            }
+            
+            long id = nextId.getAndIncrement();
+            var handle = new BufferHandleImpl(id, buffer, size, usage);
+            buffers.put(id, handle);
+            
+            return handle;
+            
+        } catch (Exception e) {
+            log.error("Failed to create buffer", e);
+            throw new RuntimeException("Failed to create buffer", e);
         }
-        
-        // For now, create a mock shader handle
-        // In a complete implementation, we'd:
-        // 1. Call wgpuDeviceCreateShaderModule with WGSL source
-        // 2. Create compute pipeline with the shader module
-        log.debug("Creating compute shader with {} characters of WGSL", wgslSource.length());
-        return new FFMShaderHandle(wgslSource);
     }
 
     @Override
     public void writeBuffer(BufferHandle buffer, byte[] data, long offset) {
         if (!initialized.get()) {
-            throw new IllegalStateException("WebGPU backend not initialized");
+            throw new IllegalStateException("WebGPU not initialized");
         }
         
-        if (!buffer.isValid()) {
+        var bufferImpl = buffers.get(((BufferHandleImpl)buffer).id);
+        if (bufferImpl == null) {
             throw new IllegalArgumentException("Invalid buffer handle");
         }
         
-        // In a complete implementation, we'd call wgpuQueueWriteBuffer
-        log.debug("Writing {} bytes to buffer at offset {}", data.length, offset);
+        try {
+            var byteBuffer = ByteBuffer.allocateDirect(data.length);
+            byteBuffer.put(data);
+            byteBuffer.flip();
+            queue.writeBuffer(bufferImpl.buffer, offset, byteBuffer);
+        } catch (Exception e) {
+            log.error("Failed to write buffer", e);
+            throw new RuntimeException("Failed to write buffer", e);
+        }
     }
 
     @Override
     public byte[] readBuffer(BufferHandle buffer, long size, long offset) {
         if (!initialized.get()) {
-            throw new IllegalStateException("WebGPU backend not initialized");
+            throw new IllegalStateException("WebGPU not initialized");
         }
         
-        if (!buffer.isValid()) {
+        var bufferImpl = buffers.get(((BufferHandleImpl)buffer).id);
+        if (bufferImpl == null) {
             throw new IllegalArgumentException("Invalid buffer handle");
         }
         
-        // In a complete implementation, we'd:
-        // 1. Map the buffer for reading with wgpuBufferMapAsync
-        // 2. Get the mapped range with wgpuBufferGetMappedRange
-        // 3. Copy the data
-        // 4. Unmap with wgpuBufferUnmap
-        log.debug("Reading {} bytes from buffer at offset {}", size, offset);
-        return new byte[(int) size];
+        try {
+            // Map buffer for reading
+            var mapFuture = bufferImpl.buffer.mapAsync(Buffer.MapMode.READ, offset, size);
+            mapFuture.get();
+            
+            // Get mapped range
+            MemorySegment mappedRange = bufferImpl.buffer.getMappedRange(offset, size);
+            
+            // Copy data to byte array
+            byte[] result = new byte[(int)size];
+            mappedRange.asByteBuffer().get(result);
+            
+            // Unmap buffer
+            bufferImpl.buffer.unmap();
+            
+            return result;
+            
+        } catch (Exception e) {
+            log.error("Failed to read buffer", e);
+            throw new RuntimeException("Failed to read buffer", e);
+        }
+    }
+
+    @Override
+    public ShaderHandle createComputeShader(String wgslSource) {
+        if (!initialized.get()) {
+            throw new IllegalStateException("WebGPU not initialized");
+        }
+        
+        try {
+            var descriptor = new Device.ShaderModuleDescriptor(wgslSource);
+            
+            ShaderModule shader = device.createShaderModule(descriptor);
+            if (shader == null) {
+                throw new RuntimeException("Failed to create shader");
+            }
+            
+            long id = nextId.getAndIncrement();
+            var handle = new ShaderHandleImpl(id, shader, wgslSource);
+            shaders.put(id, handle);
+            
+            return handle;
+            
+        } catch (Exception e) {
+            log.error("Failed to create shader", e);
+            throw new RuntimeException("Failed to create shader", e);
+        }
     }
 
     @Override
     public void dispatchCompute(ShaderHandle shader, int workGroupCountX, int workGroupCountY, int workGroupCountZ) {
         if (!initialized.get()) {
-            throw new IllegalStateException("WebGPU backend not initialized");
+            throw new IllegalStateException("WebGPU not initialized");
         }
         
-        if (!shader.isValid()) {
-            throw new IllegalArgumentException("Invalid shader handle");
-        }
-        
-        // In a complete implementation, we'd:
-        // 1. Create command encoder
-        // 2. Begin compute pass
-        // 3. Set pipeline and bind groups
-        // 4. Dispatch work groups
-        // 5. End pass and submit commands
-        log.debug("Dispatching compute with work groups [{}, {}, {}]", workGroupCountX, workGroupCountY, workGroupCountZ);
+        // TODO: Implement compute dispatch
+        // This requires creating compute pipelines and command encoders
+        log.warn("dispatchCompute not yet implemented");
     }
-
+    
     @Override
     public void waitIdle() {
         if (!initialized.get()) {
             return;
         }
         
-        // In a complete implementation, we'd wait for queue to be idle
-        log.debug("Waiting for GPU operations to complete");
+        // TODO: Implement GPU synchronization
+        log.warn("waitIdle not yet implemented");
+    }
+
+    @Override
+    public void shutdown() {
+        if (!initialized.get()) {
+            return;
+        }
+        
+        initialized.set(false);
+        
+        // Clean up buffers
+        for (BufferHandleImpl handle : buffers.values()) {
+            try {
+                handle.release();
+            } catch (Exception e) {
+                log.error("Error destroying buffer", e);
+            }
+        }
+        buffers.clear();
+        
+        // Clean up shaders
+        for (ShaderHandleImpl handle : shaders.values()) {
+            try {
+                handle.release();
+            } catch (Exception e) {
+                log.error("Error destroying shader", e);
+            }
+        }
+        shaders.clear();
+        
+        // Clean up WebGPU resources
+        if (queue != null) {
+            queue.close();
+            queue = null;
+        }
+        
+        if (device != null) {
+            device.close();
+            device = null;
+        }
+        
+        if (adapter != null) {
+            adapter.close();
+            adapter = null;
+        }
+        
+        if (instance != null) {
+            instance.close();
+            instance = null;
+        }
+        
+        log.info("FFM WebGPU backend shut down");
     }
 
     @Override
     public String getBackendName() {
-        return "FFM Native WebGPU";
+        return "FFM WebGPU Backend (using wrapper API)";
     }
     
-    // Internal handle implementations
-    private static class FFMBufferHandle implements BufferHandle {
+    /**
+     * Internal implementation of BufferHandle.
+     */
+    private static class BufferHandleImpl implements BufferHandle {
         private final long id;
+        private final Buffer buffer;
         private final long size;
         private final int usage;
-        private final AtomicBoolean valid = new AtomicBoolean(true);
-        private MemorySegment nativeHandle;
+        private volatile boolean valid = true;
         
-        public FFMBufferHandle(long id, long size, int usage) {
+        BufferHandleImpl(long id, Buffer buffer, long size, int usage) {
             this.id = id;
+            this.buffer = buffer;
             this.size = size;
             this.usage = usage;
         }
@@ -284,29 +314,35 @@ public class FFMWebGPUBackend implements WebGPUBackend {
         
         @Override
         public boolean isValid() {
-            return valid.get();
+            return valid;
         }
         
         @Override
         public void release() {
-            if (valid.compareAndSet(true, false)) {
-                // In a complete implementation, call wgpuBufferDestroy
-                nativeHandle = null;
+            if (valid) {
+                valid = false;
+                buffer.close();
             }
         }
         
         @Override
         public Object getNativeHandle() {
-            return nativeHandle;
+            return buffer;
         }
     }
     
-    private static class FFMShaderHandle implements ShaderHandle {
+    /**
+     * Internal implementation of ShaderHandle.
+     */
+    private static class ShaderHandleImpl implements ShaderHandle {
+        private final long id;
+        private final ShaderModule shader;
         private final String wgslSource;
-        private final AtomicBoolean valid = new AtomicBoolean(true);
-        private MemorySegment nativeHandle;
+        private volatile boolean valid = true;
         
-        public FFMShaderHandle(String wgslSource) {
+        ShaderHandleImpl(long id, ShaderModule shader, String wgslSource) {
+            this.id = id;
+            this.shader = shader;
             this.wgslSource = wgslSource;
         }
         
@@ -317,20 +353,20 @@ public class FFMWebGPUBackend implements WebGPUBackend {
         
         @Override
         public boolean isValid() {
-            return valid.get();
+            return valid;
         }
         
         @Override
         public void release() {
-            if (valid.compareAndSet(true, false)) {
-                // In a complete implementation, release shader module and pipeline
-                nativeHandle = null;
+            if (valid) {
+                valid = false;
+                shader.close();
             }
         }
         
         @Override
         public Object getNativeHandle() {
-            return nativeHandle;
+            return shader;
         }
     }
 }

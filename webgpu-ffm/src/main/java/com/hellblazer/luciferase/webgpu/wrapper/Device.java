@@ -141,6 +141,29 @@ public class Device implements AutoCloseable {
     }
     
     /**
+     * Create a command encoder on this device.
+     * 
+     * @param label optional label for debugging
+     * @return the created command encoder
+     */
+    public CommandEncoder createCommandEncoder(String label) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
+        
+        // Create native command encoder
+        var encoderHandle = WebGPU.createCommandEncoder(handle, null);
+        
+        if (encoderHandle == null || encoderHandle.equals(MemorySegment.NULL)) {
+            log.error("Failed to create native command encoder");
+            throw new RuntimeException("Failed to create command encoder");
+        }
+        
+        log.debug("Created native command encoder with label: {}", label);
+        return new CommandEncoder(this, encoderHandle);
+    }
+    
+    /**
      * Create a compute pipeline on this device.
      * 
      * @param descriptor the compute pipeline descriptor

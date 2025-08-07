@@ -103,6 +103,19 @@ public class Buffer implements AutoCloseable {
     }
     
     /**
+     * Get the native handle.
+     * 
+     * @return the native handle, or mock segment if not native
+     */
+    public MemorySegment getHandle() {
+        if (isNative && handle != null) {
+            return handle;
+        }
+        // Return a mock segment for non-native buffers
+        return MemorySegment.ofAddress(id);
+    }
+    
+    /**
      * Get the buffer size in bytes.
      */
     public long getSize() {

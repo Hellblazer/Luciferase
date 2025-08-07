@@ -24,18 +24,22 @@ public class Instance implements AutoCloseable {
      * Create a new WebGPU instance with default configuration.
      */
     public Instance() {
+        log.info("Instance constructor called");
+        
         if (!WebGPU.isInitialized()) {
+            log.info("WebGPU not initialized, initializing now");
             if (!WebGPU.initialize()) {
                 throw new IllegalStateException("Failed to initialize WebGPU");
             }
         }
         
+        log.info("About to create WebGPU instance handle");
         this.handle = WebGPU.createInstance();
         if (this.handle == null || this.handle.equals(MemorySegment.NULL)) {
             throw new RuntimeException("Failed to create WebGPU instance");
         }
         
-        log.debug("Created WebGPU instance: 0x{}", Long.toHexString(handle.address()));
+        log.info("Created WebGPU instance wrapper: 0x{}", Long.toHexString(handle.address()));
     }
     
     /**
@@ -64,14 +68,17 @@ public class Instance implements AutoCloseable {
         return CompletableFuture.supplyAsync(() -> {
             log.debug("Requesting adapter with options: {}", options);
             
-            // Call the native WebGPU API
-            var adapterHandle = WebGPU.requestAdapter(handle, null); // TODO: convert options to native struct
+            // Use the synchronous enumerateAdapters API to avoid callback issues
+            var adapterHandles = WebGPU.enumerateAdapters(handle, null); // TODO: convert options to native struct
             
-            if (adapterHandle != null && !adapterHandle.equals(MemorySegment.NULL)) {
-                log.debug("Successfully obtained adapter from native API");
+            if (adapterHandles.length > 0) {
+                // Return the first available adapter
+                var adapterHandle = adapterHandles[0];
+                log.debug("Successfully obtained adapter from enumerateAdapters: 0x{}", 
+                         Long.toHexString(adapterHandle.address()));
                 return new Adapter(adapterHandle);
             } else {
-                log.warn("No adapter available from native API");
+                log.warn("No adapters available from enumerateAdapters");
                 return null;
             }
         });

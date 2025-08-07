@@ -33,7 +33,7 @@ class WebGPUBackendTest {
         assertEquals("Stub WebGPU (Development)", stubBackend.getBackendName());
         
         var ffmBackend = WebGPUBackendFactory.createFFMBackend();
-        assertEquals("FFM Native WebGPU", ffmBackend.getBackendName());
+        assertEquals("FFM WebGPU Backend (using wrapper API)", ffmBackend.getBackendName());
         
         var autoBackend = WebGPUBackendFactory.createBackend();
         assertNotNull(autoBackend);

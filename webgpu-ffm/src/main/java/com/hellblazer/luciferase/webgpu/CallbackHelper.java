@@ -44,17 +44,21 @@ public class CallbackHelper {
                     .bindTo(this);
             
                 // Create a function descriptor for the callback
+                // Note: wgpu uses C calling convention with specific alignment
                 var callbackDescriptor = FunctionDescriptor.ofVoid(
-                    ValueLayout.JAVA_INT,      // status
-                    ValueLayout.ADDRESS,        // adapter
-                    ValueLayout.ADDRESS,        // message
-                    ValueLayout.ADDRESS         // userdata
+                    ValueLayout.JAVA_INT,      // status (WGPURequestAdapterStatus)
+                    ValueLayout.ADDRESS,        // adapter (WGPUAdapter)
+                    ValueLayout.ADDRESS,        // message (char const *)
+                    ValueLayout.ADDRESS         // userdata (void *)
                 );
                 
-                // Create the callback stub
+                // Create the callback stub using the provided arena
+                // This ensures the callback stays alive for the duration needed
                 this.callbackStub = Linker.nativeLinker().upcallStub(
                     callbackHandle, callbackDescriptor, arena
                 );
+                
+                log.debug("Created adapter callback stub at: 0x{}", Long.toHexString(callbackStub.address()));
             } catch (Exception e) {
                 throw new RuntimeException("Failed to create callback stub", e);
             }

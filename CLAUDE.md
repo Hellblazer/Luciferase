@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 First, read the MCP guide: memory-bank-mcp:memory_bank_read({projectName: 'MCP_Documentation', fileName: 'complete-mcp-guide.md'})
 
+spawn multiple parallel subtasks of claude whenever applicable. leverage the capabilities of the
+configured mcp servers where applicable.
+
 ## Build Commands
 
 - **Build the project**: `mvn clean install`

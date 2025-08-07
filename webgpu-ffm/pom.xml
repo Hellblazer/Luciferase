@@ -78,7 +78,6 @@
                     <argLine>
                         --enable-preview
                         --enable-native-access=ALL-UNNAMED
-                        -Djava.library.path=${project.basedir}/../render/lib
                     </argLine>
                 </configuration>
             </plugin>
@@ -111,34 +110,6 @@
                     </execution>
                 </executions>
             </plugin>
-            
-            <!-- jextract Maven Plugin for FFM binding generation -->
-            <!-- Note: This is commented out until jextract supports Java 24 -->
-            <!-- For now, we'll manually create the FFM bindings -->
-            <!--
-            <plugin>
-                <groupId>io.github.coffeelibs</groupId>
-                <artifactId>jextract-maven-plugin</artifactId>
-                <version>0.1.0</version>
-                <executions>
-                    <execution>
-                        <id>generate-webgpu-bindings</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>jextract</goal>
-                        </goals>
-                        <configuration>
-                            <headerFile>${project.basedir}/../render/include/webgpu/webgpu.h</headerFile>
-                            <targetPackage>com.hellblazer.luciferase.webgpu.native</targetPackage>
-                            <className>WebGPUNative</className>
-                            <includePaths>
-                                <includePath>${project.basedir}/../render/include/webgpu</includePath>
-                            </includePaths>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            -->
         </plugins>
     </build>
     

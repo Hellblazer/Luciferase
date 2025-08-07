@@ -40,21 +40,7 @@ public class WebGPULoader {
             var libraryName = platform.getLibraryName();
             log.info("Loading native library: {}", libraryName);
             
-            // Try to load from system path first
-            if (tryLoadFromSystemPath(libraryName)) {
-                loaded.set(true);
-                log.info("Loaded WebGPU library from system path");
-                return true;
-            }
-            
-            // Try to load from java.library.path
-            if (tryLoadFromLibraryPath(libraryName)) {
-                loaded.set(true);
-                log.info("Loaded WebGPU library from java.library.path");
-                return true;
-            }
-            
-            // Extract from JAR resources
+            // Load exclusively from JAR resources to ensure self-contained deployment
             if (extractAndLoad(platform, libraryName)) {
                 loaded.set(true);
                 log.info("Loaded WebGPU library from JAR resources");
@@ -88,41 +74,6 @@ public class WebGPULoader {
         return loaded.get();
     }
     
-    private static boolean tryLoadFromSystemPath(String libraryName) {
-        try {
-            // Try without extension
-            var baseName = libraryName.substring(0, libraryName.lastIndexOf('.'));
-            if (baseName.startsWith("lib")) {
-                baseName = baseName.substring(3);
-            }
-            System.loadLibrary(baseName);
-            return true;
-        } catch (UnsatisfiedLinkError e) {
-            log.debug("Library not found in system path: {}", e.getMessage());
-            return false;
-        }
-    }
-    
-    private static boolean tryLoadFromLibraryPath(String libraryName) {
-        var libraryPath = System.getProperty("java.library.path");
-        if (libraryPath == null || libraryPath.isEmpty()) {
-            return false;
-        }
-        
-        for (var path : libraryPath.split(System.getProperty("path.separator"))) {
-            var libPath = Path.of(path, libraryName);
-            if (Files.exists(libPath)) {
-                try {
-                    System.load(libPath.toAbsolutePath().toString());
-                    return true;
-                } catch (UnsatisfiedLinkError e) {
-                    log.debug("Failed to load library from path {}: {}", libPath, e.getMessage());
-                }
-            }
-        }
-        
-        return false;
-    }
     
     private static boolean extractAndLoad(Platform platform, String libraryName) {
         var resourcePath = "/natives/" + platform.getPlatformString() + "/" + libraryName;
