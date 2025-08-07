@@ -28,8 +28,8 @@ import java.util.zip.Inflater;
  */
 public class VoxelStreamingIO {
     
-    private static final int CACHE_SIZE = 256; // MB
-    private static final int CHUNK_SIZE = 65536; // 64KB chunks
+    private static final int CACHE_SIZE = 64; // MB - reduced from 256
+    private static final int CHUNK_SIZE = 8192; // 8KB chunks - reduced from 64KB
     private static final int PREFETCH_DISTANCE = 3;
     
     private final Path filePath;
@@ -153,10 +153,18 @@ public class VoxelStreamingIO {
             return cached.duplicate();
         }
         
-        // Read from file
-        ByteBuffer buffer = ByteBuffer.allocateDirect(size);
-        channel.read(buffer, offset);
+        // Read from file - use heap buffer to avoid direct memory issues
+        ByteBuffer buffer = ByteBuffer.allocate(Math.min(size, CHUNK_SIZE));
+        int actualRead = channel.read(buffer, offset);
         buffer.flip();
+        
+        // If we couldn't read the full size, return what we got
+        if (actualRead < size && actualRead > 0) {
+            ByteBuffer result = ByteBuffer.allocate(actualRead);
+            result.put(buffer);
+            result.flip();
+            buffer = result;
+        }
         
         // Decompress if needed
         VoxelFileFormat.Chunk chunk = findChunkAt(offset);

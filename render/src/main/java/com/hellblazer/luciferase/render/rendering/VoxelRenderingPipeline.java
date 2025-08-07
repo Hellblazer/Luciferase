@@ -366,7 +366,11 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         
         // Shutdown streaming controller
         if (streamingController != null) {
-            streamingController.shutdown();
+            try {
+                streamingController.shutdown();
+            } catch (Exception e) {
+                log.warn("Error shutting down streaming controller", e);
+            }
         }
         
         // Shutdown executor
@@ -380,8 +384,33 @@ public class VoxelRenderingPipeline implements AutoCloseable {
             Thread.currentThread().interrupt();
         }
         
-        // Note: GPU resources would be cleaned up through WebGPUContext
-        // but our test mocks don't have release methods
+        // Release GPU resources
+        try {
+            if (octreeBuffer != null) {
+                octreeBuffer.release();
+            }
+            if (frameBuffer != null) {
+                frameBuffer.release();
+            }
+            if (uniformBuffer != null) {
+                uniformBuffer.release();
+            }
+            if (computeShader != null) {
+                computeShader.release();
+            }
+        } catch (Exception e) {
+            log.warn("Error releasing GPU resources", e);
+        }
+        
+        // Shutdown WebGPU backend if it has a shutdown method
+        if (webgpuContext != null) {
+            try {
+                // Check if WebGPUContext has a close or shutdown method
+                webgpuContext.waitIdle().get(2, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.debug("Could not wait for WebGPU idle", e);
+            }
+        }
         
         log.info("VoxelRenderingPipeline closed");
     }
