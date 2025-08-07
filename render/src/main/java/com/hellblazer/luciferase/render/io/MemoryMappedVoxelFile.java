@@ -161,6 +161,22 @@ public class MemoryMappedVoxelFile implements AutoCloseable {
      * Write data to mapped file.
      */
     public void write(long offset, ByteBuffer data) throws IOException {
+        // First ensure file is large enough
+        long requiredSize = offset + data.remaining();
+        if (requiredSize > fileSize) {
+            lock.writeLock().lock();
+            try {
+                // Extend file size if needed
+                if (requiredSize > fileSize) {
+                    channel.position(requiredSize - 1);
+                    channel.write(ByteBuffer.wrap(new byte[]{0}));
+                    fileSize = channel.size();
+                }
+            } finally {
+                lock.writeLock().unlock();
+            }
+        }
+        
         lock.readLock().lock();
         try {
             MappedRegion region = findOrMapRegion(offset, data.remaining());

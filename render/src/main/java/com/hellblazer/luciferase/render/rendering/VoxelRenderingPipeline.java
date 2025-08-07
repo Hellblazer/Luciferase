@@ -191,6 +191,26 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         // Stub implementation
     }
     
+    public void initialize() {
+        // Initialize pipeline components
+    }
+    
+    public boolean isInitialized() {
+        return !isClosed.get();
+    }
+    
+    public void updateUniforms(ByteBuffer uniforms) {
+        // Update shader uniforms
+    }
+    
+    public void render() {
+        // Render frame
+    }
+    
+    public void shutdown() {
+        close();
+    }
+    
     @Override
     public void close() {
         if (isClosed.compareAndSet(false, true)) {

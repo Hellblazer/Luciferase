@@ -315,6 +315,13 @@ public class VoxelRenderPipeline {
     }
     
     /**
+     * Check if pipeline is ready.
+     */
+    public boolean isReady() {
+        return voxelBuffer != null && octreeBuffer != null;
+    }
+    
+    /**
      * Shutdown and release resources.
      */
     public void shutdown() {

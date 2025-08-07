@@ -94,6 +94,18 @@ public class SparseVoxelCompressor {
     }
     
     /**
+     * Decompress octree from byte array (for test compatibility).
+     */
+    public OctreeNode decompressOctree(byte[] compressedData) {
+        if (compressedData == null || compressedData.length == 0) {
+            return null;
+        }
+        
+        ByteBuffer buffer = ByteBuffer.wrap(compressedData);
+        return decompress(buffer);
+    }
+    
+    /**
      * Compress voxel octree to byte buffer.
      */
     public ByteBuffer compress(OctreeNode root) {

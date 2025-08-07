@@ -411,6 +411,10 @@ public class GPUMemoryManager implements AutoCloseable {
         }
     }
     
+    public void shutdown() {
+        close();
+    }
+    
     @Override
     public void close() {
         isShutdown = true;
@@ -495,6 +499,18 @@ public class GPUMemoryManager implements AutoCloseable {
             this.poolHitRate = poolHitRate;
             this.poolHits = poolHits;
             this.poolMisses = poolMisses;
+        }
+        
+        public long getAllocatedBytes() {
+            return currentMemoryBytes;
+        }
+        
+        public int getActiveBuffers() {
+            return activeBuffers;
+        }
+        
+        public double getPoolHitRate() {
+            return poolHitRate;
         }
         
         public String getFormattedStats() {

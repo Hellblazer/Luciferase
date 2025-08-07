@@ -49,7 +49,12 @@ public class VoxelStreamingIO {
     private final SparseVoxelCompressor svoCompressor;
     
     public VoxelStreamingIO(Path filePath) {
-        this.filePath = filePath;
+        // If given a directory, create a file inside it
+        if (java.nio.file.Files.isDirectory(filePath)) {
+            this.filePath = filePath.resolve("voxel_stream.dat");
+        } else {
+            this.filePath = filePath;
+        }
         this.cache = new LRUCache<>(CACHE_SIZE * 1024 * 1024 / CHUNK_SIZE);
         this.loadExecutor = Executors.newFixedThreadPool(4);
         this.loadService = new ExecutorCompletionService<>(loadExecutor);
@@ -421,6 +426,31 @@ public class VoxelStreamingIO {
      */
     public boolean isStreamingEnabled() {
         return streamingEnabled;
+    }
+    
+    /**
+     * Write a chunk to the file (for test compatibility).
+     */
+    public void writeChunk(ByteBuffer data, int chunkId) throws IOException {
+        if (channel == null) {
+            open();
+        }
+        
+        // Calculate offset for chunk
+        long offset = VoxelFileFormat.HEADER_SIZE + (chunkId * (24 + CHUNK_SIZE));
+        
+        // Write chunk data
+        channel.write(data, offset + 24); // Skip chunk header
+    }
+    
+    /**
+     * Read a chunk by ID (for test compatibility).
+     */
+    public ByteBuffer readChunk(int chunkId) throws IOException {
+        // Calculate offset for chunk
+        long offset = VoxelFileFormat.HEADER_SIZE + (chunkId * (24 + CHUNK_SIZE));
+        
+        return readChunk(offset + 24, CHUNK_SIZE); // Skip chunk header
     }
     
     /**

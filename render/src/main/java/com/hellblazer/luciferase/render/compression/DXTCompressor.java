@@ -36,6 +36,14 @@ public class DXTCompressor {
     /**
      * Compress RGBA texture data to DXT format.
      */
+    public ByteBuffer compressDXT1(ByteBuffer input, int width, int height) {
+        return compress(input, width, height, CompressionFormat.DXT1);
+    }
+    
+    public ByteBuffer compressDXT5(ByteBuffer input, int width, int height) {
+        return compress(input, width, height, CompressionFormat.DXT5);
+    }
+    
     public ByteBuffer compress(ByteBuffer input, int width, int height, CompressionFormat format) {
         if (width % BLOCK_WIDTH != 0 || height % BLOCK_HEIGHT != 0) {
             throw new IllegalArgumentException("Texture dimensions must be multiples of 4");
