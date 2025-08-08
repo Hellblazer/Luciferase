@@ -55,21 +55,6 @@ public class ComputePassEncoder implements AutoCloseable {
         }
     }
     
-    /**
-     * Set a bind group at the specified index.
-     * 
-     * @param index the bind group index
-     * @param bindGroup the bind group
-     * @param dynamicOffsets optional dynamic offsets
-     */
-    public void setBindGroup(int index, BindGroup bindGroup, int... dynamicOffsets) {
-        if (ended.get()) {
-            throw new IllegalStateException("Compute pass already ended");
-        }
-        
-        // TODO: Implement native setBindGroup
-        log.debug("Setting bind group {} at index {}", bindGroup, index);
-    }
     
     /**
      * Dispatch a compute workgroup.

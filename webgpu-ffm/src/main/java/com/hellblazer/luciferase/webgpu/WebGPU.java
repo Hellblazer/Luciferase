@@ -17,6 +17,7 @@ public class WebGPU {
     
     // Native function handles
     private static MethodHandle wgpuCreateInstance;
+    private static MethodHandle wgpuCommandEncoderCopyBufferToBuffer;
     private static MethodHandle wgpuInstanceRelease;
     private static MethodHandle wgpuInstanceEnumerateAdapters;
     private static MethodHandle wgpuInstanceRequestAdapter;
@@ -862,6 +863,22 @@ public class WebGPU {
                 );
             }
             
+            // wgpuCommandEncoderCopyBufferToBuffer
+            var copyBufferToBufferOpt = symbolLookup.find("wgpuCommandEncoderCopyBufferToBuffer");
+            if (copyBufferToBufferOpt.isPresent()) {
+                wgpuCommandEncoderCopyBufferToBuffer = linker.downcallHandle(
+                    copyBufferToBufferOpt.get(),
+                    FunctionDescriptor.ofVoid(
+                        ValueLayout.ADDRESS,  // encoder
+                        ValueLayout.ADDRESS,  // source
+                        ValueLayout.JAVA_LONG, // sourceOffset
+                        ValueLayout.ADDRESS,  // destination
+                        ValueLayout.JAVA_LONG, // destinationOffset
+                        ValueLayout.JAVA_LONG  // size
+                    )
+                );
+            }
+            
             // wgpuComputePassEncoderEnd(WGPUComputePassEncoder encoder) -> void
             var computePassEncoderEndOpt = symbolLookup.find("wgpuComputePassEncoderEnd");
             if (computePassEncoderEndOpt.isPresent()) {
@@ -1450,6 +1467,109 @@ public class WebGPU {
     }
     
     /**
+     * Create a bind group on a device.
+     * 
+     * @param deviceHandle the device to create the bind group on
+     * @param descriptor the bind group descriptor
+     * @return the bind group handle, or NULL if creation failed
+     */
+    public static MemorySegment createBindGroup(MemorySegment deviceHandle, MemorySegment descriptor) {
+        if (!initialized.get() || wgpuDeviceCreateBindGroup == null) {
+            log.warn("wgpuDeviceCreateBindGroup not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var bindGroup = (MemorySegment) wgpuDeviceCreateBindGroup.invoke(deviceHandle, descriptor);
+            
+            if (bindGroup != null && !bindGroup.equals(MemorySegment.NULL)) {
+                log.debug("Created bind group: 0x{}", Long.toHexString(bindGroup.address()));
+                return bindGroup;
+            }
+            
+            log.warn("Failed to create bind group");
+            return MemorySegment.NULL;
+        } catch (Throwable e) {
+            log.error("Failed to create bind group", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Release a bind group.
+     * 
+     * @param bindGroupHandle the bind group to release
+     */
+    public static void releaseBindGroup(MemorySegment bindGroupHandle) {
+        if (!initialized.get() || wgpuBindGroupRelease == null) {
+            return;
+        }
+        
+        try {
+            wgpuBindGroupRelease.invoke(bindGroupHandle);
+            log.debug("Released bind group: 0x{}", Long.toHexString(bindGroupHandle.address()));
+        } catch (Throwable e) {
+            log.error("Failed to release bind group", e);
+        }
+    }
+    
+    /**
+     * Get the mapped range of a buffer.
+     * 
+     * @param bufferHandle the buffer handle
+     * @param offset the offset in bytes
+     * @param size the size in bytes
+     * @return the mapped memory segment, or NULL if not available
+     */
+    public static MemorySegment bufferGetMappedRange(MemorySegment bufferHandle, long offset, long size) {
+        if (!initialized.get() || wgpuBufferGetMappedRange == null) {
+            log.warn("wgpuBufferGetMappedRange not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var mappedPtr = (MemorySegment) wgpuBufferGetMappedRange.invoke(bufferHandle, offset, size);
+            
+            if (mappedPtr != null && !mappedPtr.equals(MemorySegment.NULL)) {
+                // Reinterpret the pointer as a memory segment with the specified size
+                var mappedSegment = mappedPtr.reinterpret(size);
+                log.debug("Got mapped range: offset={}, size={}, addr=0x{}", 
+                    offset, size, Long.toHexString(mappedPtr.address()));
+                return mappedSegment;
+            }
+            
+            log.warn("Failed to get mapped range");
+            return MemorySegment.NULL;
+        } catch (Throwable e) {
+            log.error("Failed to get mapped range", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Poll a device to process completed operations.
+     * 
+     * @param deviceHandle the device to poll
+     * @param wait whether to wait for operations to complete
+     * @return true if polling succeeded
+     */
+    public static boolean devicePoll(MemorySegment deviceHandle, boolean wait) {
+        if (!initialized.get() || wgpuDevicePoll == null) {
+            log.warn("wgpuDevicePoll not available");
+            return false;
+        }
+        
+        try {
+            boolean result = (boolean) wgpuDevicePoll.invoke(deviceHandle, wait, MemorySegment.NULL);
+            log.trace("Device poll: wait={}, result={}", wait, result);
+            return result;
+        } catch (Throwable e) {
+            log.error("Failed to poll device", e);
+            return false;
+        }
+    }
+    
+    /**
      * Map a buffer for reading/writing.
      * 
      * @param bufferHandle the buffer handle
@@ -1547,51 +1667,6 @@ public class WebGPU {
         }
     }
     
-    /**
-     * Create a bind group on a device.
-     * 
-     * @param deviceHandle the device handle
-     * @param descriptor the bind group descriptor
-     * @return the bind group handle, or NULL if creation failed
-     */
-    public static MemorySegment createBindGroup(MemorySegment deviceHandle, MemorySegment descriptor) {
-        if (!initialized.get() || wgpuDeviceCreateBindGroup == null) {
-            log.warn("wgpuDeviceCreateBindGroup not available");
-            return MemorySegment.NULL;
-        }
-        
-        try {
-            var bindGroup = (MemorySegment) wgpuDeviceCreateBindGroup.invoke(deviceHandle, descriptor);
-            
-            if (bindGroup != null && !bindGroup.equals(MemorySegment.NULL)) {
-                log.debug("Created bind group: 0x{}", Long.toHexString(bindGroup.address()));
-                return bindGroup;
-            }
-            
-            return MemorySegment.NULL;
-        } catch (Throwable e) {
-            log.error("Failed to create bind group", e);
-            return MemorySegment.NULL;
-        }
-    }
-    
-    /**
-     * Release a bind group.
-     * 
-     * @param bindGroupHandle the bind group to release
-     */
-    public static void releaseBindGroup(MemorySegment bindGroupHandle) {
-        if (!initialized.get() || wgpuBindGroupRelease == null) {
-            return;
-        }
-        
-        try {
-            wgpuBindGroupRelease.invoke(bindGroupHandle);
-            log.debug("Released bind group: 0x{}", Long.toHexString(bindGroupHandle.address()));
-        } catch (Throwable e) {
-            log.error("Failed to release bind group", e);
-        }
-    }
     
     /**
      * Set a bind group on a compute pass encoder.
@@ -1680,6 +1755,37 @@ public class WebGPU {
         } catch (Throwable e) {
             log.error("Failed to set pipeline for compute pass encoder", e);
             throw new RuntimeException("Failed to set pipeline", e);
+        }
+    }
+    
+    /**
+     * Copy data from one buffer to another using a command encoder.
+     * 
+     * @param encoderHandle the command encoder handle
+     * @param sourceHandle the source buffer handle
+     * @param sourceOffset offset in source buffer
+     * @param destinationHandle the destination buffer handle
+     * @param destinationOffset offset in destination buffer
+     * @param size number of bytes to copy
+     */
+    public static void copyBufferToBuffer(MemorySegment encoderHandle,
+                                          MemorySegment sourceHandle, long sourceOffset,
+                                          MemorySegment destinationHandle, long destinationOffset,
+                                          long size) {
+        if (!initialized.get() || wgpuCommandEncoderCopyBufferToBuffer == null) {
+            log.warn("wgpuCommandEncoderCopyBufferToBuffer not available");
+            return;
+        }
+        
+        try {
+            wgpuCommandEncoderCopyBufferToBuffer.invoke(
+                encoderHandle, sourceHandle, sourceOffset,
+                destinationHandle, destinationOffset, size
+            );
+            log.debug("Copied {} bytes from buffer at offset {} to buffer at offset {}",
+                     size, sourceOffset, destinationOffset);
+        } catch (Throwable e) {
+            log.error("Failed to copy buffer to buffer", e);
         }
     }
     

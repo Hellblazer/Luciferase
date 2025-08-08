@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.WebGPU;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,17 +9,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Wrapper for WebGPU pipeline layout.
- * Defines the bind group layouts that can be used with a pipeline.
+ * Defines the structure of bind groups used by a pipeline.
  */
 public class PipelineLayout implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(PipelineLayout.class);
     
     private final Device device;
     private final MemorySegment handle;
-    private final AtomicBoolean released = new AtomicBoolean(false);
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     
     /**
-     * Create a new pipeline layout.
+     * Create a pipeline layout wrapper.
      * 
      * @param device the device that created this layout
      * @param handle the native handle
@@ -38,10 +39,19 @@ public class PipelineLayout implements AutoCloseable {
         return handle;
     }
     
+    /**
+     * Check if this layout is closed.
+     * 
+     * @return true if closed
+     */
+    public boolean isClosed() {
+        return closed.get();
+    }
+    
     @Override
     public void close() {
-        if (released.compareAndSet(false, true)) {
-            com.hellblazer.luciferase.webgpu.WebGPU.releasePipelineLayout(handle);
+        if (closed.compareAndSet(false, true)) {
+            WebGPU.releasePipelineLayout(handle);
             log.debug("Released pipeline layout");
         }
     }

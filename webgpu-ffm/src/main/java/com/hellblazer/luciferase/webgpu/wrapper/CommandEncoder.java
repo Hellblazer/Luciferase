@@ -85,9 +85,14 @@ public class CommandEncoder implements AutoCloseable {
             throw new IllegalStateException("Command encoder is closed");
         }
         
-        // TODO: Implement native buffer copy
+        // Call native buffer copy
+        WebGPU.copyBufferToBuffer(handle, 
+            source.getHandle(), sourceOffset,
+            destination.getHandle(), destinationOffset,
+            size);
+        
         log.debug("Copying {} bytes from buffer {} to buffer {}", 
-                 size, source, destination);
+                 size, source.getId(), destination.getId());
     }
     
     /**

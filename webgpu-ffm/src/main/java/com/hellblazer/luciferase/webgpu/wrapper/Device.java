@@ -156,6 +156,7 @@ public class Device implements AutoCloseable {
             MemorySegment moduleHandle = null;
             if (WebGPU.isInitialized()) {
                 log.debug("Attempting to create native shader module with {} chars of WGSL", descriptor.getCode().length());
+                log.debug("WGSL Code:\n{}", descriptor.getCode());
                 moduleHandle = WebGPU.createShaderModule(handle, nativeDesc);
             } else {
                 log.debug("WebGPU not initialized, using stub shader module");
@@ -343,6 +344,53 @@ public class Device implements AutoCloseable {
     }
     
     /**
+     * Create a pipeline layout on this device.
+     * 
+     * @param descriptor the pipeline layout descriptor
+     * @return the created pipeline layout
+     */
+    public PipelineLayout createPipelineLayout(PipelineLayoutDescriptor descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
+        
+        try (var arena = Arena.ofConfined()) {
+            // Create native descriptor
+            var nativeDesc = arena.allocate(WebGPUNative.Descriptors.PIPELINE_LAYOUT_DESCRIPTOR);
+            
+            // Set basic fields
+            nativeDesc.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+            var label = descriptor.getLabel() != null ? 
+                WebGPUNative.toCString(descriptor.getLabel(), arena) : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
+            
+            // Set bind group layouts
+            var layouts = descriptor.getBindGroupLayouts();
+            nativeDesc.set(ValueLayout.JAVA_LONG, 16, layouts.size()); // bindGroupLayoutCount
+            
+            if (!layouts.isEmpty()) {
+                var layoutsArray = arena.allocate(ValueLayout.ADDRESS, layouts.size());
+                for (int i = 0; i < layouts.size(); i++) {
+                    layoutsArray.setAtIndex(ValueLayout.ADDRESS, i, layouts.get(i).getHandle());
+                }
+                nativeDesc.set(ValueLayout.ADDRESS, 24, layoutsArray); // bindGroupLayouts
+            } else {
+                nativeDesc.set(ValueLayout.ADDRESS, 24, MemorySegment.NULL);
+            }
+            
+            // Create native pipeline layout
+            var layoutHandle = WebGPU.createPipelineLayout(handle, nativeDesc);
+            
+            if (layoutHandle == null || layoutHandle.equals(MemorySegment.NULL)) {
+                log.error("Failed to create pipeline layout");
+                throw new RuntimeException("Failed to create pipeline layout");
+            }
+            
+            return new PipelineLayout(this, layoutHandle);
+        }
+    }
+    
+    /**
      * Create a compute pipeline on this device.
      * 
      * @param descriptor the compute pipeline descriptor
@@ -362,7 +410,14 @@ public class Device implements AutoCloseable {
             var label = descriptor.getLabel() != null ? 
                 WebGPUNative.toCString(descriptor.getLabel(), arena) : MemorySegment.NULL;
             nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
-            nativeDesc.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // layout (auto layout)
+            
+            // Set layout (explicit or auto)
+            var layout = descriptor.getLayout();
+            if (layout != null) {
+                nativeDesc.set(ValueLayout.ADDRESS, 16, layout.getHandle()); // explicit layout
+            } else {
+                nativeDesc.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // auto layout
+            }
             
             // Set compute stage (embedded struct)
             nativeDesc.set(ValueLayout.ADDRESS, 24, MemorySegment.NULL); // compute.nextInChain
@@ -413,6 +468,16 @@ public class Device implements AutoCloseable {
      */
     public Queue getQueue() {
         return defaultQueue;
+    }
+    
+    /**
+     * Poll the device to process completed operations.
+     * 
+     * @param wait whether to wait for operations to complete
+     * @return true if polling succeeded
+     */
+    public boolean poll(boolean wait) {
+        return WebGPU.devicePoll(handle, wait);
     }
     
     /**
@@ -728,12 +793,39 @@ public class Device implements AutoCloseable {
     }
     
     /**
+     * Pipeline layout descriptor.
+     */
+    public static class PipelineLayoutDescriptor {
+        private String label;
+        private java.util.List<BindGroupLayout> bindGroupLayouts = new java.util.ArrayList<>();
+        
+        public PipelineLayoutDescriptor withLabel(String label) {
+            this.label = label;
+            return this;
+        }
+        
+        public PipelineLayoutDescriptor addBindGroupLayout(BindGroupLayout layout) {
+            this.bindGroupLayouts.add(layout);
+            return this;
+        }
+        
+        public String getLabel() {
+            return label;
+        }
+        
+        public java.util.List<BindGroupLayout> getBindGroupLayouts() {
+            return bindGroupLayouts;
+        }
+    }
+    
+    /**
      * Compute pipeline descriptor.
      */
     public static class ComputePipelineDescriptor {
         private String label;
         private ShaderModule computeModule;
         private String entryPoint = "main";
+        private PipelineLayout layout;
         
         public ComputePipelineDescriptor(ShaderModule module) {
             this.computeModule = module;
@@ -749,6 +841,11 @@ public class Device implements AutoCloseable {
             return this;
         }
         
+        public ComputePipelineDescriptor withLayout(PipelineLayout layout) {
+            this.layout = layout;
+            return this;
+        }
+        
         public String getLabel() {
             return label;
         }
@@ -759,6 +856,10 @@ public class Device implements AutoCloseable {
         
         public String getEntryPoint() {
             return entryPoint;
+        }
+        
+        public PipelineLayout getLayout() {
+            return layout;
         }
     }
 }

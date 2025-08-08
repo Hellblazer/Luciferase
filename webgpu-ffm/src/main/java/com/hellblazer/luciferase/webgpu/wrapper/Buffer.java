@@ -159,7 +159,7 @@ public class Buffer implements AutoCloseable {
                     result == -2 ? maxAttempts : "some");
                 if (result == 0) {
                     // Success - get the mapped range
-                    var mappedRange = com.hellblazer.luciferase.webgpu.WebGPU.getBufferMappedRange(handle, offset, size);
+                    var mappedRange = com.hellblazer.luciferase.webgpu.WebGPU.bufferGetMappedRange(handle, offset, size);
                     if (mappedRange != null && !mappedRange.equals(MemorySegment.NULL)) {
                         log.debug("Successfully mapped native buffer range: {} bytes", size);
                         isMapped.set(true);  // Mark as successfully mapped

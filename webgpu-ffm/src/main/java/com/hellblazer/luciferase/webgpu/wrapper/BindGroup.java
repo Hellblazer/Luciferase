@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.WebGPU;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +42,7 @@ public class BindGroup implements AutoCloseable {
     @Override
     public void close() {
         if (released.compareAndSet(false, true)) {
-            // TODO: Implement native release
+            WebGPU.releaseBindGroup(handle);
             log.debug("Released bind group");
         }
     }
