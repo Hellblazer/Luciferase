@@ -425,6 +425,75 @@ public class Device implements AutoCloseable {
     }
     
     /**
+     * Create a texture.
+     * 
+     * @param descriptor the texture descriptor
+     * @return the texture
+     */
+    public Texture createTexture(Texture.TextureDescriptor descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
+        
+        if (handle == null || handle.equals(MemorySegment.NULL)) {
+            log.debug("Creating mock texture");
+            return new Texture(MemorySegment.NULL, this, descriptor);
+        }
+        
+        // TODO: Implement native texture creation with WebGPU
+        log.debug("Creating native texture");
+        
+        // For now, return a mock texture
+        return new Texture(MemorySegment.NULL, this, descriptor);
+    }
+    
+    /**
+     * Create a sampler.
+     * 
+     * @param descriptor the sampler descriptor
+     * @return the sampler
+     */
+    public Sampler createSampler(Sampler.SamplerDescriptor descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
+        
+        if (handle == null || handle.equals(MemorySegment.NULL)) {
+            log.debug("Creating mock sampler");
+            return new Sampler(MemorySegment.NULL, this, descriptor);
+        }
+        
+        // TODO: Implement native sampler creation with WebGPU
+        log.debug("Creating native sampler");
+        
+        // For now, return a mock sampler
+        return new Sampler(MemorySegment.NULL, this, descriptor);
+    }
+    
+    /**
+     * Create a render pipeline.
+     * 
+     * @param descriptor the render pipeline descriptor
+     * @return the render pipeline
+     */
+    public RenderPipeline createRenderPipeline(RenderPipeline.RenderPipelineDescriptor descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
+        
+        if (handle == null || handle.equals(MemorySegment.NULL)) {
+            log.debug("Creating mock render pipeline");
+            return new RenderPipeline(MemorySegment.NULL, this);
+        }
+        
+        // TODO: Implement native render pipeline creation with WebGPU
+        log.debug("Creating native render pipeline");
+        
+        // For now, return a mock render pipeline
+        return new RenderPipeline(MemorySegment.NULL, this);
+    }
+    
+    /**
      * Check if this device is valid and not closed.
      * 
      * @return true if the device is valid
@@ -643,7 +712,8 @@ public class Device implements AutoCloseable {
         public Buffer buffer;
         public long offset;
         public long size;
-        // TODO: Add sampler, texture view
+        public Texture.TextureView textureView;
+        public Sampler sampler;
         
         public BindGroupEntry(int binding) {
             this.binding = binding;

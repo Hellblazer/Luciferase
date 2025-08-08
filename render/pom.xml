@@ -80,8 +80,6 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>--enable-native-access=ALL-UNNAMED --enable-preview</argLine>
-                    <forkCount>0</forkCount>
-                    <reuseForks>false</reuseForks>
                 </configuration>
             </plugin>
         </plugins>

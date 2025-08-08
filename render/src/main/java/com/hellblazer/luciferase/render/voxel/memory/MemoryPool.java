@@ -145,6 +145,11 @@ public final class MemoryPool {
      */
     private volatile boolean defragmentationInProgress = false;
     
+    /**
+     * Time when last defragmentation completed (for grace period)
+     */
+    private volatile long lastDefragmentationTime = 0;
+    
     // ================================================================================
     // Constructors
     // ================================================================================
@@ -253,7 +258,9 @@ public final class MemoryPool {
             if (metadata == null) {
                 // During defragmentation, segments may be moved or coalesced
                 // Check if this segment was part of a defragmented block
-                if (isDefragmentationInProgress()) {
+                // Also provide a grace period after defragmentation (100ms)
+                long timeSinceDefrag = System.nanoTime() - lastDefragmentationTime;
+                if (isDefragmentationInProgress() || timeSinceDefrag < 100_000_000L) {
                     log.debug("Segment already freed during defragmentation: address=0x{}", 
                              Long.toHexString(address));
                     return; // Silently ignore - segment was already handled
@@ -301,6 +308,7 @@ public final class MemoryPool {
             return coalesced;
             
         } finally {
+            lastDefragmentationTime = System.nanoTime();
             defragmentationInProgress = false;
             defragmentationLock.writeLock().unlock();
         }

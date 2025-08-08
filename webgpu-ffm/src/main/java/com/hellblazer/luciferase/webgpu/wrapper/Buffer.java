@@ -23,6 +23,8 @@ public class Buffer implements AutoCloseable {
     private final MemorySegment handle;
     private final boolean isNative;
     private final AtomicBoolean isMapped = new AtomicBoolean(false);
+    private final AtomicBoolean mappingInProgress = new AtomicBoolean(false);
+    private volatile CompletableFuture<MemorySegment> currentMappingFuture = null;
     
     /**
      * Create a mock buffer wrapper.
@@ -61,7 +63,27 @@ public class Buffer implements AutoCloseable {
             throw new IllegalStateException("Buffer is closed");
         }
         
-        return CompletableFuture.supplyAsync(() -> {
+        // Check if a mapping is already in progress
+        if (!mappingInProgress.compareAndSet(false, true)) {
+            log.warn("Buffer {} already has a mapping in progress, returning existing future", id);
+            if (currentMappingFuture != null) {
+                return currentMappingFuture;
+            }
+            // If somehow the future is null, create a failed one
+            return CompletableFuture.failedFuture(
+                new IllegalStateException("Buffer mapping already in progress but no future available")
+            );
+        }
+        
+        // Check if buffer is already mapped
+        if (isMapped.get()) {
+            mappingInProgress.set(false);
+            return CompletableFuture.failedFuture(
+                new IllegalStateException("Buffer is already mapped. Call unmap() before mapping again.")
+            );
+        }
+        
+        CompletableFuture<MemorySegment> future = CompletableFuture.supplyAsync(() -> {
             if (!isNative || handle == null || handle.equals(MemorySegment.NULL)) {
                 log.warn("Cannot map non-native buffer - returning mock data");
                 // For non-native buffers, return a mock memory segment with the requested size
@@ -164,8 +186,23 @@ public class Buffer implements AutoCloseable {
             } catch (Exception e) {
                 log.error("Exception during buffer mapping", e);
                 return MemorySegment.NULL;
+            } finally {
+                // Always clear mapping in progress flag
+                mappingInProgress.set(false);
+                currentMappingFuture = null;
             }
         });
+        
+        // Store the current mapping future
+        currentMappingFuture = future;
+        
+        // Clean up state when the future completes
+        future.whenComplete((result, error) -> {
+            mappingInProgress.set(false);
+            currentMappingFuture = null;
+        });
+        
+        return future;
     }
     
     /**
@@ -192,6 +229,16 @@ public class Buffer implements AutoCloseable {
             throw new IllegalStateException("Buffer is closed");
         }
         
+        // Wait for any ongoing mapping to complete
+        if (mappingInProgress.get() && currentMappingFuture != null) {
+            log.debug("Waiting for ongoing mapping to complete before unmapping buffer {}", id);
+            try {
+                currentMappingFuture.get(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (Exception e) {
+                log.warn("Timeout or error waiting for mapping to complete: {}", e.getMessage());
+            }
+        }
+        
         // Only unmap if the buffer was actually mapped successfully
         if (isMapped.compareAndSet(true, false)) {
             if (isNative && handle != null && !handle.equals(MemorySegment.NULL)) {
@@ -201,6 +248,10 @@ public class Buffer implements AutoCloseable {
         } else {
             log.debug("Buffer {} was not mapped, skipping unmap", id);
         }
+        
+        // Clear any lingering state
+        mappingInProgress.set(false);
+        currentMappingFuture = null;
     }
     
     /**

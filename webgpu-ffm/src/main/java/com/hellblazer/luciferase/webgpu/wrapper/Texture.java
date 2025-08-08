@@ -109,9 +109,9 @@ public class Texture implements AutoCloseable {
         private String label;
         private TextureUsage usage = TextureUsage.TEXTURE_BINDING;
         private TextureDimension dimension = TextureDimension.D2;
-        private int width = 1;
-        private int height = 1;
-        private int depth = 1;
+        public int width = 1;
+        public int height = 1;
+        public int depth = 1;
         private TextureFormat format = TextureFormat.RGBA8_UNORM;
         private int mipLevelCount = 1;
         private int sampleCount = 1;
