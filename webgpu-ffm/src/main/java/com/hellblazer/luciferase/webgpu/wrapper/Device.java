@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.CallbackBridge;
 import com.hellblazer.luciferase.webgpu.WebGPU;
 import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import org.slf4j.Logger;
@@ -35,6 +36,9 @@ public class Device implements AutoCloseable {
             throw new IllegalArgumentException("Invalid device handle");
         }
         this.handle = handle;
+        
+        // Set up error callback to capture validation errors
+        setupErrorCallback();
         
         // Get the queue from the native API
         var queueHandle = WebGPU.getQueue(handle);
@@ -458,6 +462,25 @@ public class Device implements AutoCloseable {
             log.debug("Created compute pipeline with module: {}", descriptor.getComputeModule());
             
             return pipeline;
+        }
+    }
+    
+    /**
+     * Set up error callback for the device.
+     */
+    private void setupErrorCallback() {
+        try {
+            var errorCallback = CallbackBridge.createErrorCallback(Arena.global(), 
+                (errorType, message, userdata) -> {
+                    log.error("WebGPU Device Error [type={}]: {}", errorType, message);
+                });
+            
+            if (errorCallback != null && !errorCallback.equals(MemorySegment.NULL)) {
+                WebGPU.setDeviceErrorCallback(handle, errorCallback, MemorySegment.NULL);
+                log.debug("Set up device error callback");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to set up error callback", e);
         }
     }
     

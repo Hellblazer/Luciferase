@@ -149,4 +149,49 @@ public class CallbackBridge {
     public interface DeviceCallbackHandler {
         void onDeviceReceived(int status, MemorySegment device, MemorySegment message, MemorySegment userdata);
     }
+    
+    /**
+     * Create an error callback for device uncaptured errors.
+     */
+    public static MemorySegment createErrorCallback(Arena arena, ErrorCallbackHandler handler) {
+        try {
+            var lookup = MethodHandles.lookup();
+            var callbackMethod = lookup.findStatic(CallbackBridge.class, "errorCallbackImpl",
+                MethodType.methodType(void.class, int.class, MemorySegment.class, 
+                                     MemorySegment.class, ErrorCallbackHandler.class));
+            
+            // Use insertArguments instead of bindTo to avoid sealed interface issues
+            var boundMethod = MethodHandles.insertArguments(callbackMethod, 3, handler);
+            
+            var descriptor = FunctionDescriptor.ofVoid(
+                ValueLayout.JAVA_INT,     // error type
+                ValueLayout.ADDRESS,      // message
+                ValueLayout.ADDRESS       // userdata
+            );
+            
+            return Linker.nativeLinker().upcallStub(boundMethod, descriptor, arena);
+            
+        } catch (Exception e) {
+            log.error("Failed to create error callback stub", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Static implementation for error callbacks.
+     */
+    public static void errorCallbackImpl(int errorType, MemorySegment message, 
+                                         MemorySegment userdata, ErrorCallbackHandler handler) {
+        try {
+            String errorMessage = message != null && !message.equals(MemorySegment.NULL) ?
+                message.reinterpret(1024).getString(0) : "Unknown error";
+            handler.onError(errorType, errorMessage, userdata);
+        } catch (Exception e) {
+            log.error("Exception in error callback", e);
+        }
+    }
+    
+    public interface ErrorCallbackHandler {
+        void onError(int errorType, String message, MemorySegment userdata);
+    }
 }

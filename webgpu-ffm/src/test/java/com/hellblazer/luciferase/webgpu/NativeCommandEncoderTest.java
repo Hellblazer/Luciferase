@@ -210,10 +210,10 @@ public class NativeCommandEncoderTest {
         // Create command encoder for buffer operations
         var encoder = device.createCommandEncoder("Buffer Copy");
         
-        // Note: copyBufferToBuffer is TODO in CommandEncoder
-        // This test verifies the infrastructure is in place
+        // copyBufferToBuffer is now implemented - see ComputePipelineTest for usage
+        encoder.copyBufferToBuffer(srcBuffer, 0, dstBuffer, 0, 1024);
         
-        // For now, just create a compute pass to test the encoder
+        // Can also add compute pass for additional testing
         var computePass = encoder.beginComputePass(null);
         // Note: Not dispatching workgroups without pipeline
         computePass.end();

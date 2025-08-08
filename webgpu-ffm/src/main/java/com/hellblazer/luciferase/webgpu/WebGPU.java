@@ -19,6 +19,7 @@ public class WebGPU {
     private static MethodHandle wgpuCreateInstance;
     private static MethodHandle wgpuCommandEncoderCopyBufferToBuffer;
     private static MethodHandle wgpuInstanceRelease;
+    private static MethodHandle wgpuDeviceSetUncapturedErrorCallback;
     private static MethodHandle wgpuInstanceEnumerateAdapters;
     private static MethodHandle wgpuInstanceRequestAdapter;
     private static MethodHandle wgpuAdapterRelease;
@@ -684,6 +685,20 @@ public class WebGPU {
             
             // wgpuDeviceCreateBuffer(WGPUDevice device, const WGPUBufferDescriptor* descriptor) -> WGPUBuffer
             var deviceCreateBufferOpt = symbolLookup.find("wgpuDeviceCreateBuffer");
+            
+            // Device error callback
+            var deviceSetErrorCallbackOpt = symbolLookup.find("wgpuDeviceSetUncapturedErrorCallback");
+            if (deviceSetErrorCallbackOpt.isPresent()) {
+                wgpuDeviceSetUncapturedErrorCallback = linker.downcallHandle(
+                    deviceSetErrorCallbackOpt.get(),
+                    FunctionDescriptor.ofVoid(
+                        ValueLayout.ADDRESS,  // device
+                        ValueLayout.ADDRESS,  // callback
+                        ValueLayout.ADDRESS   // userdata
+                    )
+                );
+                log.debug("Resolved wgpuDeviceSetUncapturedErrorCallback");
+            }
             if (deviceCreateBufferOpt.isPresent()) {
                 wgpuDeviceCreateBuffer = linker.downcallHandle(
                     deviceCreateBufferOpt.get(),
@@ -1566,6 +1581,27 @@ public class WebGPU {
         } catch (Throwable e) {
             log.error("Failed to poll device", e);
             return false;
+        }
+    }
+    
+    /**
+     * Set device error callback to capture validation errors.
+     * 
+     * @param deviceHandle The device handle
+     * @param callback The callback function
+     * @param userdata Optional userdata
+     */
+    public static void setDeviceErrorCallback(MemorySegment deviceHandle, MemorySegment callback, MemorySegment userdata) {
+        if (!initialized.get() || wgpuDeviceSetUncapturedErrorCallback == null) {
+            log.warn("Device error callback not available");
+            return;
+        }
+        
+        try {
+            wgpuDeviceSetUncapturedErrorCallback.invoke(deviceHandle, callback, userdata);
+            log.debug("Set device error callback");
+        } catch (Throwable e) {
+            log.error("Failed to set device error callback", e);
         }
     }
     

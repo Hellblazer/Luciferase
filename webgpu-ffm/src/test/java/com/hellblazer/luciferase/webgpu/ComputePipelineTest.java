@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -170,6 +171,8 @@ public class ComputePipelineTest {
                     // Read back results from staging buffer
                     var mappedSegment = stagingBuffer.mapAsync(Buffer.MapMode.READ, 0, bufferSize).get(5, TimeUnit.SECONDS);
                     ByteBuffer outputData = mappedSegment.asByteBuffer();
+                    // WebGPU uses native byte order (little-endian on most systems)
+                    outputData.order(ByteOrder.LITTLE_ENDIAN);
                     assertNotNull(outputData, "Failed to map output buffer");
                     
                     // Verify results - we expect specific constant values
