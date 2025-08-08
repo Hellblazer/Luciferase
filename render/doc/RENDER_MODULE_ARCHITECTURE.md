@@ -1,12 +1,13 @@
 # Luciferase Render Module Architecture
 
-**Version**: 1.0  
-**Date**: August 7, 2025  
-**Status**: Production Ready (Phase 6 Complete)
+**Version**: 1.1  
+**Date**: January 8, 2025  
+**Branch**: visi  
+**Status**: Active Development (Phase 7 - WebGPU Integration)
 
 ## Executive Summary
 
-The Luciferase Render Module provides a complete ESVO (Efficient Sparse Voxel Octree) rendering system with WebGPU integration, comprehensive testing, and performance optimization. The system is 10-11 weeks ahead of the original schedule and ready for production deployment.
+The Luciferase Render Module provides an ESVO (Efficient Sparse Voxel Octree) rendering system with WebGPU integration through the webgpu-ffm module, comprehensive testing, and performance optimization. The module is in active development with core functionality working and native GPU operations being completed.
 
 ## Architecture Overview
 
@@ -36,8 +37,8 @@ The Luciferase Render Module provides a complete ESVO (Efficient Sparse Voxel Oc
 │  │  │                 │  │                 │  │                 │        │
 │  │  │ • VoxelRender-  │  │ • Frame Stats   │  │ • Device Mgmt   │        │
 │  │  │   ingPipeline   │  │ • Operation     │  │ • Command Queue │        │
-│  │  │ • VoxelRender-  │  │   Profiling     │  │ • Resource      │        │
-│  │  │   Pipeline      │  │ • Bottleneck    │  │   Management    │        │
+│  │  │ • Streaming     │  │   Profiling     │  │ • Resource      │        │
+│  │  │   Controller    │  │ • Bottleneck    │  │   Management    │        │
 │  │  │ • Ray Traversal │  │   Detection     │  │ • Shader Mgmt   │        │
 │  │  └─────────────────┘  └─────────────────┘  └─────────────────┘        │
 │  └─────────────────────────────────────────────────────────────────────────┤
@@ -58,12 +59,12 @@ The Luciferase Render Module provides a complete ESVO (Efficient Sparse Voxel Oc
 │  │                                                                         │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐        │
 │  │  │     Voxel       │  │     WebGPU      │  │     GPU         │        │
-│  │  │   Processing    │  │    Backend      │  │   Computing     │        │
+│  │  │   Processing    │  │   Integration   │  │   Computing     │        │
 │  │  │                 │  │                 │  │                 │        │
-│  │  │ • Mesh          │  │ • FFM Backend   │  │ • Compute       │        │
-│  │  │   Voxelization  │  │ • Stub Backend  │  │   Shaders       │        │
-│  │  │ • Octree Build  │  │ • Factory       │  │ • Buffer Mgmt   │        │
-│  │  │ • Multi-Res     │  │   Pattern       │  │ • Context Mgmt  │        │
+│  │  │ • Mesh          │  │ • webgpu-ffm    │  │ • Compute       │        │
+│  │  │   Voxelization  │  │   module        │  │   Shaders       │        │
+│  │  │ • Octree Build  │  │ • Context Mgmt  │  │ • Buffer Mgmt   │        │
+│  │  │ • Multi-Res     │  │ • Device Mgmt   │  │ • Pipeline Mgmt │        │
 │  │  │   Processing    │  │                 │  │                 │        │
 │  │  └─────────────────┘  └─────────────────┘  └─────────────────┘        │
 │  └─────────────────────────────────────────────────────────────────────────┤
@@ -75,19 +76,19 @@ The Luciferase Render Module provides a complete ESVO (Efficient Sparse Voxel Oc
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐        │
 │  │  │   Data Types    │  │   Native FFM    │  │    Utilities    │        │
 │  │  │                 │  │   Integration   │  │                 │        │
-│  │  │ • VoxelData     │  │ • WebGPU Native │  │ • Test Data     │        │
-│  │  │ • OctreeNode    │  │   Bindings      │  │   Generator     │        │
+│  │  │ • VoxelData     │  │ • Java 24 FFM   │  │ • Test Data     │        │
+│  │  │ • OctreeNode    │  │   API           │  │   Generator     │        │
 │  │  │ • Buffer Types  │  │ • Memory        │  │ • Validation    │        │
-│  │  │ • Handles       │  │   Layouts       │  │   Utilities     │        │
-│  │  │                 │  │ • FFM Memory    │  │                 │        │
-│  │  │                 │  │   Pool          │  │                 │        │
+│  │  │ • Grid Types    │  │   Segments      │  │   Utilities     │        │
+│  │  │                 │  │ • Zero-copy     │  │                 │        │
+│  │  │                 │  │   Transfers     │  │                 │        │
 │  │  └─────────────────┘  └─────────────────┘  └─────────────────┘        │
-│  └─────────────────────────────────────────────────────────────────────────┘
+│  └─────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Module Structure
+## Module Structure (Current State - January 2025)
 
 ### Package Organization
 
@@ -96,22 +97,18 @@ com.hellblazer.luciferase.render/
 ├── compression/              # Data compression systems
 │   ├── DXTCompressor.java           # DXT1/DXT5 texture compression
 │   └── SparseVoxelCompressor.java   # Sparse voxel octree compression
-├── demo/                     # Interactive demonstrations  
-│   └── RenderingPipelineDemo.java   # Complete pipeline demo
-├── integration/              # System integration
-│   ├── DataSynchronizer.java        # Data sync between systems
-│   ├── LuciferaseRenderingBridge.java  # Main integration bridge
-│   └── SpatialToVoxelConverter.java # Spatial data conversion
+├── demo/                     # Interactive demonstrations (in test/java)
+│   └── SimpleRenderDemo.java        # Interactive menu-driven demo
 ├── io/                       # Input/Output systems
 │   ├── MemoryMappedVoxelFile.java   # Memory-mapped file access
 │   ├── VoxelFileFormat.java         # File format definitions
 │   └── VoxelStreamingIO.java        # Streaming I/O operations
-├── memory/                   # Memory management
-│   ├── GPUMemoryManager.java        # GPU memory pool manager
-│   └── StubBufferWrapper.java       # Testing buffer wrapper
+├── memory/                   # GPU memory management
+│   └── GPUMemoryManager.java        # GPU memory pool manager
 ├── performance/              # Performance monitoring
 │   └── RenderingProfiler.java       # Comprehensive profiler
 ├── rendering/                # High-level rendering
+│   ├── StreamingController.java     # LOD streaming with prefetching
 │   ├── VoxelRayTraversal.java       # Ray traversal algorithms
 │   └── VoxelRenderingPipeline.java  # Main rendering pipeline
 ├── testdata/                 # Test data generation
@@ -120,14 +117,14 @@ com.hellblazer.luciferase.render/
 │   ├── VoxelRenderPipeline.java     # Voxel pipeline coordinator
 │   ├── core/                        # Core data structures
 │   │   ├── VoxelData.java           # Voxel data representation
+│   │   ├── VoxelGrid.java           # Grid management
 │   │   └── VoxelOctreeNode.java     # Octree node structure
 │   ├── gpu/                         # GPU integration
-│   │   ├── ComputeShaderManager.java   # Compute shader management
-│   │   ├── GPUBufferManager.java       # GPU buffer operations
-│   │   ├── VoxelGPUManager.java        # Voxel GPU coordination
-│   │   ├── WebGPUContext.java          # WebGPU context management
-│   │   ├── WebGPUDevice.java           # Device abstraction
-│   │   └── WebGPUStubs.java            # Testing stubs
+│   │   ├── ComputeShaderManager.java   # WGSL shader compilation
+│   │   ├── GPUBufferManager.java       # Buffer lifecycle management
+│   │   ├── VoxelGPUManager.java        # Voxel-specific GPU ops
+│   │   ├── WebGPUContext.java          # WebGPU initialization
+│   │   └── WebGPUDevice.java           # Device abstraction
 │   ├── memory/                      # Memory management
 │   │   ├── FFMLayouts.java             # Foreign Function layouts
 │   │   ├── FFMMemoryPool.java          # FFM-based memory pool
@@ -139,46 +136,56 @@ com.hellblazer.luciferase.render/
 │       ├── MultiResolutionVoxelizer.java # Multi-resolution processing
 │       ├── TriangleBoxIntersection.java # Geometric intersection
 │       └── VoxelGrid.java              # Voxel grid management
-└── webgpu/                   # WebGPU integration layer
-    ├── BufferHandle.java             # Buffer handle abstraction
-    ├── BufferUsage.java              # Buffer usage flags
-    ├── FFMWebGPUBackend.java         # FFM-based WebGPU backend
-    ├── ShaderHandle.java             # Shader handle abstraction
-    ├── StubWebGPUBackend.java        # Testing stub backend
-    ├── WebGPUBackend.java            # Backend interface
-    ├── WebGPUBackendFactory.java     # Backend factory pattern
-    ├── WebGPUCapabilities.java       # Capability detection
-    ├── WebGPUExplorer.java           # System exploration
-    ├── WebGPUIntegration.java        # Main integration class
-    └── WebGPURenderBridge.java       # Rendering bridge
+└── (webgpu package removed in August 2025 refactoring)
+    # All WebGPU functionality now provided by webgpu-ffm module
+```
+
+### Shader Resources
+
+```
+src/main/resources/shaders/
+├── esvo/                     # Placeholder for ESVO shaders
+│   └── README.md            # Documentation of planned shaders
+├── rendering/               # Active rendering shaders
+│   └── ray_traversal.wgsl  # Ray-octree traversal
+├── voxelization/           # Voxelization shaders
+│   └── triangle_voxelize.wgsl # Triangle voxelization
+└── archive/                # Archived/unused shaders
+    ├── filter_mipmap.wgsl
+    ├── octree_traversal.wgsl
+    └── voxelize.wgsl
 ```
 
 ## Core Components
 
-### 1. WebGPU Integration Layer
+### 1. WebGPU Integration (via webgpu-ffm module)
 
-**Purpose**: Provides seamless WebGPU integration with both FFM (Foreign Function & Memory) and stub backends.
+**Purpose**: Provides WebGPU integration through the separate webgpu-ffm module.
 
-**Key Classes**:
-- `WebGPURenderBridge`: Main integration point for WebGPU operations
-- `FFMWebGPUBackend`: Production WebGPU backend using native libraries  
-- `StubWebGPUBackend`: Testing backend for CI/development
-- `WebGPUBackendFactory`: Factory pattern for backend creation
+**Key Classes in render module**:
+- `WebGPUContext`: Initializes WebGPU via webgpu-ffm wrapper classes
+- `GPUBufferManager`: Manages buffer lifecycle using webgpu-ffm Buffer class
+- `ComputeShaderManager`: Compiles WGSL shaders using webgpu-ffm ShaderModule
+
+**Key Classes from webgpu-ffm module**:
+- `Instance`, `Adapter`, `Device`, `Queue`: Core WebGPU objects
+- `Buffer`, `Texture`, `Sampler`: GPU resources
+- `ComputePipeline`, `RenderPipeline`: Pipeline states
+- `WebGPU`: Main entry point with native FFM bindings
 
 **Features**:
-- Automatic backend selection (FFM for production, Stub for testing)
-- Resource management (buffers, shaders, textures)
-- Command queue management
-- Asynchronous operation support
-- Native library loading from JAR resources
+- Native WebGPU calls through Java 24 FFM
+- Multi-platform support (Metal, Vulkan, D3D12)
+- Thread-safe buffer mapping with device polling
+- Zero-copy memory transfers
 
 ### 2. Voxel Processing Pipeline
 
 **Purpose**: Converts mesh data to voxel representations with multiple resolution support.
 
 **Key Classes**:
-- `MeshVoxelizer`: Converts triangle meshes to voxel grids
-- `GPUVoxelizer`: GPU-accelerated voxelization
+- `MeshVoxelizer`: Converts triangle meshes to voxel grids using SAT
+- `GPUVoxelizer`: GPU-accelerated voxelization (partial implementation)
 - `MultiResolutionVoxelizer`: Multi-level-of-detail processing
 - `VoxelGrid`: Voxel data management and operations
 
@@ -187,7 +194,7 @@ com.hellblazer.luciferase.render/
 2. **Voxelization**: Convert triangles to voxel grid using triangle-box intersection
 3. **Multi-Resolution**: Generate multiple LOD levels
 4. **Octree Construction**: Build sparse voxel octree structure
-5. **GPU Upload**: Transfer data to GPU buffers
+5. **GPU Upload**: Transfer data to GPU buffers via webgpu-ffm
 
 ### 3. Compression Systems
 
@@ -202,12 +209,12 @@ com.hellblazer.luciferase.render/
   - Node type optimization  
   - Hierarchical compression
   - Lossless round-trip guarantee
-- **Performance**: 2-10x compression ratios depending on data sparsity
+- **Performance**: 60-70% size reduction (2.5-3.3x compression)
 
 #### Texture Compression (`DXTCompressor`)
-- **Formats**: DXT1 (no alpha), DXT5 (with alpha)
+- **Formats**: DXT1 (RGB), DXT5 (RGBA)
 - **Block Size**: 4x4 pixel blocks
-- **Compression**: 4:1 ratio for both formats
+- **Compression**: 6:1 for DXT1, 4:1 for DXT5
 - **Use Cases**: Voxel texturing, surface materials
 
 ### 4. Memory Management
@@ -222,19 +229,28 @@ com.hellblazer.luciferase.render/
   - Background garbage collection
   - Usage compatibility checking
   - Detailed memory statistics
-- **Performance**: 80%+ pool hit rates for common buffer sizes
+- **Performance**: 95%+ pool hit rates in typical usage
 
 #### FFM Memory Pool (`FFMMemoryPool`)
-- **Purpose**: Native memory management using Java 21+ FFM API
+- **Purpose**: Native memory management using Java 24 FFM API
 - **Features**:
-  - Direct memory access
-  - Automatic cleanup via memory sessions
+  - Direct memory segments
+  - Arena-based lifecycle
   - Layout-based access patterns
-  - Performance optimization for native interop
+  - Zero-copy GPU transfers
+- **Performance**: 2.3x faster than ByteBuffer
 
-### 5. I/O Systems
+### 5. Streaming and I/O
 
 **Purpose**: Efficient storage and streaming of voxel data.
+
+#### StreamingController
+- **Features**:
+  - Priority-based LOD loading
+  - Prefetching for anticipated chunks
+  - Memory pressure management
+  - LRU cache for frequently accessed regions
+- **Performance**: Handles real-time streaming requirements
 
 #### Memory-Mapped Files (`MemoryMappedVoxelFile`)
 - **Features**: 
@@ -242,324 +258,231 @@ com.hellblazer.luciferase.render/
   - Efficient random access
   - Automatic memory management
   - Cross-platform compatibility
-- **Use Cases**: Large voxel datasets, streaming applications
 
 #### Streaming I/O (`VoxelStreamingIO`)
 - **Features**:
-  - Chunked data access
-  - LRU caching
+  - Chunked data access with CompletableFuture
   - Asynchronous loading
   - Progress tracking
-- **Performance**: Optimized for real-time streaming scenarios
+  - Error recovery
 
-### 6. Performance Monitoring
+### 6. Rendering Pipeline
 
-**Purpose**: Comprehensive performance analysis and bottleneck detection.
+**Purpose**: Main orchestrator for voxel rendering with adaptive quality.
 
-#### Rendering Profiler (`RenderingProfiler`)
-- **Metrics**:
-  - Frame-level profiling with phase breakdown
-  - Operation-level timing
-  - Statistical analysis (P95, P99 percentiles)
-  - Memory usage tracking
-- **Analysis**:
-  - Bottleneck detection with recommendations
-  - Performance trend analysis
-  - Baseline establishment and regression detection
-- **Output**: Detailed reports with actionable insights
+#### VoxelRenderingPipeline
+- **Features**:
+  - Async frame rendering with CompletableFuture
+  - Concurrent frame management with skipping
+  - Adaptive quality control based on frame timing
+  - WebGPU compute pipeline integration
+  - Resource lifecycle with AutoCloseable
+- **Performance**: Maintains target frame rate through quality adaptation
 
-## Data Flow Architecture
+## Current Implementation Status (January 2025)
 
-### End-to-End Pipeline
+### Working Components
 
-```
-Input Mesh Data
-       ↓
-┌─────────────────┐
-│   Data Prep     │ ← TestDataGenerator (cubes, spheres, bunny)
-└─────────────────┘
-       ↓
-┌─────────────────┐
-│  Voxelization   │ ← MeshVoxelizer, GPUVoxelizer
-└─────────────────┘
-       ↓
-┌─────────────────┐
-│   Compression   │ ← SparseVoxelCompressor, DXTCompressor
-└─────────────────┘
-       ↓
-┌─────────────────┐
-│   Storage/I/O   │ ← MemoryMappedVoxelFile, VoxelStreamingIO
-└─────────────────┘
-       ↓
-┌─────────────────┐
-│  GPU Upload     │ ← GPUMemoryManager, WebGPURenderBridge
-└─────────────────┘
-       ↓
-┌─────────────────┐
-│   Rendering     │ ← VoxelRenderingPipeline, VoxelRayTraversal
-└─────────────────┘
-       ↓
-   Rendered Frame
-```
+✅ **Core Pipeline**
+- VoxelRenderingPipeline with async rendering
+- StreamingController with LOD management
+- VoxelRayTraversal algorithms
+- Adaptive quality control
 
-### Memory Flow
+✅ **Compression**
+- DXT1/DXT5 texture compression
+- Sparse voxel compression (60-70% reduction)
+- Round-trip validation
 
-```
-CPU Memory                    GPU Memory
-    ↓                             ↓
-┌─────────────┐              ┌─────────────┐
-│ Test Data   │              │ GPU Buffers │
-│ Generation  │              │   (Pooled)  │
-└─────────────┘              └─────────────┘
-    ↓                             ↓
-┌─────────────┐              ┌─────────────┐
-│ Compression │              │   Shaders   │
-│  (In-Place) │              │  (Managed)  │
-└─────────────┘              └─────────────┘
-    ↓                             ↓
-┌─────────────┐              ┌─────────────┐
-│   File I/O  │              │  Rendering  │
-│ (Streaming) │              │  Pipeline   │
-└─────────────┘              └─────────────┘
-```
+✅ **Memory Management**
+- FFM-based memory pools (2.3x faster than ByteBuffer)
+- Page allocator with statistics
+- GPU buffer pooling with 95%+ hit rate
+
+✅ **I/O Systems**
+- Memory-mapped file support
+- Async streaming with CompletableFuture
+- Voxel file format
+
+✅ **Voxelization**
+- Triangle-box intersection (SAT algorithm)
+- Multi-resolution support
+- Mesh to voxel conversion
+
+✅ **Testing**
+- Comprehensive integration tests
+- Interactive demo (SimpleRenderDemo)
+- Performance benchmarks
+
+### Partial/Pending Implementation
+
+⚠️ **WebGPU Operations**
+- Native operations return simulated data
+- Full GPU ray marching not implemented
+- Some compute pipelines incomplete
+
+⚠️ **Shaders**
+- ESVO shaders are placeholders
+- Some shader references need updating
+- GPU voxelization partially implemented
+
+### Integration with webgpu-ffm
+
+The render module depends entirely on webgpu-ffm for GPU operations:
+
+**From webgpu-ffm**:
+- Native library loading (multi-platform)
+- FFM-based WebGPU bindings
+- Type-safe wrapper classes
+- Async operation handling
+- Device polling for buffer mapping
+
+**Render adds**:
+- Voxel-specific operations
+- ESVO rendering pipeline
+- Streaming I/O integration
+- Compression pipelines
+- Adaptive quality control
+
+## Performance Characteristics
+
+### FFM vs ByteBuffer Performance
+
+| Operation | FFM (ns) | ByteBuffer (ns) | Speedup |
+|-----------|----------|-----------------|---------|
+| Sequential Write | 125 | 287 | 2.3x |
+| Random Access | 89 | 156 | 1.8x |
+| Bulk Copy | 2,145 | 4,892 | 2.3x |
+| Struct Access | 34 | 78 | 2.3x |
+
+### Compression Performance
+
+| Type | Ratio | Speed | Use Case |
+|------|-------|-------|----------|
+| Sparse Voxel | 60-70% reduction | 20-100ms for 256³ | Octree storage |
+| DXT1 | 6:1 | 2-10ms for 256x256 | RGB textures |
+| DXT5 | 4:1 | 2-10ms for 256x256 | RGBA textures |
+
+### Memory Pool Performance
+
+| Metric | Value |
+|--------|-------|
+| Pool Hit Rate | 95%+ |
+| Allocation Speed | <1μs (from pool) |
+| GC Overhead | <5% with background GC |
+| Memory Efficiency | 85-90% utilization |
 
 ## Testing Architecture
 
-### Test Hierarchy
+### Test Coverage
 
 ```
 Testing Layer
+├── Unit Tests
+│   ├── Compression algorithms
+│   ├── Memory pools
+│   ├── Page allocator
+│   ├── Triangle-box intersection
+│   ├── Voxel data structures
+│   └── WebGPU context
 ├── Integration Tests
 │   ├── ComprehensiveRenderingPipelineTest
-│   │   ├── Data Generation Validation
-│   │   ├── Mesh Voxelization  
-│   │   ├── Compression Round-trip
-│   │   ├── File I/O Operations
-│   │   ├── GPU Memory Management
-│   │   ├── Performance Profiling
-│   │   ├── Full Pipeline Integration
-│   │   ├── Stress Testing
-│   │   └── Error Handling
-│   └── RenderIntegrationTest (WebGPU specific)
+│   ├── VoxelRenderingPipelineTest
+│   └── WebGPUIntegrationTest
 ├── Performance Tests
-│   └── RenderingBenchmarkSuite
-│       ├── Data Generation Benchmarks
-│       ├── Voxelization Benchmarks  
-│       ├── Compression Benchmarks
-│       ├── GPU Memory Benchmarks
-│       ├── End-to-End Benchmarks
-│       └── Memory Usage Analysis
-├── Unit Tests
-│   ├── Component-specific tests
-│   ├── Compression validation
-│   ├── Memory management
-│   └── WebGPU backend tests
-└── Demo Applications
-    └── RenderingPipelineDemo (Interactive)
+│   ├── FFMvsByteBufferBenchmark
+│   └── RenderingBenchmarkSuite (disabled)
+└── Interactive Demo
+    └── SimpleRenderDemo
 ```
 
 ### Test Data Generation
 
 The `TestDataGenerator` provides standardized test data:
-
-- **Geometric Objects**: Cubes, spheres (with subdivision levels), procedural bunny
-- **Voxel Data**: Configurable resolution and fill ratios with interesting patterns
+- **Geometric Objects**: Cubes, spheres, procedural bunny
+- **Voxel Data**: Configurable resolution and patterns
 - **Octree Data**: Predictable structure for validation
-- **Texture Data**: Procedural patterns for compression testing
+- **Texture Data**: Procedural patterns for compression
 
-## Performance Characteristics
+## Future Development
 
-### Benchmarked Operations
+### Immediate Tasks (Phase 7 Completion)
+1. Complete native WebGPU operations (currently simulated)
+2. Implement ESVO shaders in shaders/esvo/
+3. Complete GPU ray marching
+4. Full GPU voxelization
 
-| Operation | Small (64³) | Medium (128³) | Large (256³) | Extra Large (512³) |
-|-----------|-------------|---------------|--------------|-------------------|
-| **Mesh Voxelization** | 0.5-2ms | 2-8ms | 8-35ms | 35-150ms |
-| **Voxel Compression** | 1-5ms | 4-20ms | 20-100ms | 100-500ms |
-| **DXT Compression** | 0.1-0.5ms | 0.5-2ms | 2-10ms | 10-50ms |
-| **GPU Buffer Ops** | 0.01-0.1ms | 0.1-0.5ms | 0.5-2ms | 2-10ms |
-| **End-to-End Pipeline** | 5-15ms | 15-50ms | 50-200ms | 200-800ms |
+### Performance Optimization
+1. GPU memory transfer optimization
+2. Parallel voxelization improvements
+3. Streaming prefetch algorithms
+4. Pipeline state caching
 
-### Memory Usage
-
-| Resolution | Uncompressed | Compressed | Ratio | GPU Memory |
-|------------|-------------|------------|-------|------------|
-| 64³ | 262KB | 50-150KB | 2-5x | 1-5MB |
-| 128³ | 2MB | 200KB-1MB | 2-10x | 5-20MB |
-| 256³ | 16MB | 1-8MB | 2-16x | 20-100MB |
-| 512³ | 128MB | 8-64MB | 2-16x | 100-500MB |
-
-## API Design
-
-### Core Interfaces
-
-#### WebGPU Backend Interface
-```java
-public interface WebGPUBackend {
-    CompletableFuture<Boolean> initialize();
-    BufferHandle createBuffer(long size, int usage);
-    ShaderHandle createShader(String shaderCode);
-    void submitCommands(CommandBuffer commands);
-    void shutdown();
-}
-```
-
-#### Voxel Pipeline Interface
-```java
-public class VoxelRenderingPipeline {
-    public void initialize();
-    public CompletableFuture<Void> voxelizeMesh(FloatBuffer vertices);
-    public CompletableFuture<Void> buildOctree();
-    public void updateUniforms(ByteBuffer uniforms);
-    public void render();
-    public void setVoxelResolution(int resolution);
-}
-```
-
-#### Memory Management Interface
-```java
-public class GPUMemoryManager {
-    public BufferHandle allocateBuffer(long size, int usage);
-    public MemoryStats getMemoryStats();
-    public void configureMemoryLimits(long maxMemory);
-    public void enableBackgroundGC(boolean enabled);
-}
-```
-
-### Usage Examples
-
-#### Basic Pipeline Setup
-```java
-// Initialize systems
-var renderBridge = new WebGPURenderBridge();
-renderBridge.initialize().get();
-
-var voxelPipeline = new VoxelRenderPipeline(renderBridge);
-voxelPipeline.initialize().get();
-
-var profiler = new RenderingProfiler();
-
-// Generate test data
-var vertices = TestDataGenerator.generateSphereVertices(1.0f, 3);
-
-// Process through pipeline
-voxelPipeline.voxelizeMesh(vertices).get();
-voxelPipeline.buildOctree().get();
-
-// Render
-var renderingPipeline = new VoxelRenderingPipeline();
-renderingPipeline.initialize();
-renderingPipeline.render();
-```
-
-#### Performance Monitoring
-```java
-var profiler = new RenderingProfiler();
-
-// Frame-level profiling
-var frameProfiler = profiler.startFrame(1);
-frameProfiler.startPhase("Voxelization");
-// ... do work ...
-frameProfiler.endPhase();
-frameProfiler.endFrame();
-
-// Operation-level profiling
-var opProfiler = profiler.startOperation("Buffer Upload");
-// ... do work ...
-opProfiler.endOperation();
-
-// Get statistics
-var frameStats = profiler.getFrameStats();
-var bottlenecks = profiler.detectBottlenecks();
-```
+### Platform Support
+1. Windows D3D12 backend testing
+2. Linux Vulkan backend validation
+3. Performance profiling across platforms
+4. Multi-GPU support
 
 ## Deployment Guide
 
 ### System Requirements
 
-**Minimum Requirements**:
-- Java 21+ (for FFM support)
+**Minimum**:
+- Java 24 (for FFM API)
 - 4GB RAM
-- DirectX 12/Vulkan/Metal compatible GPU (for WebGPU)
-- 1GB storage space
+- WebGPU-capable GPU
+- 1GB storage
 
-**Recommended Requirements**:
-- Java 21+ with G1GC or ZGC
-- 8GB+ RAM  
+**Recommended**:
+- Java 24 with ZGC
+- 8GB+ RAM
 - Modern GPU with 4GB+ VRAM
-- SSD storage for voxel data
-- Multi-core CPU (4+ cores)
+- SSD storage
 
-### Configuration Options
+### Building and Running
 
-#### GPU Memory Configuration
-```java
-var config = GPUMemoryManager.Configuration.builder()
-    .maxMemoryMB(512)
-    .enableBackgroundGC(true)
-    .gcIntervalSeconds(30)
-    .pressureThresholdMB(400)
-    .build();
-    
-var memoryManager = new GPUMemoryManager(config);
+```bash
+# Build the module
+mvn clean install -pl render
+
+# Run tests
+mvn test -pl render
+
+# Run specific test suite
+mvn test -pl render -Dtest=VoxelRenderingPipelineTest
+
+# Run interactive demo
+java -cp render/target/classes:render/target/test-classes \
+     com.hellblazer.luciferase.render.demo.SimpleRenderDemo
 ```
 
-#### Performance Profiler Configuration  
-```java
-var profiler = new RenderingProfiler()
-    .withFrameBufferSize(1000)
-    .withOperationBufferSize(5000)  
-    .withWarningThresholdMs(33)
-    .withCriticalThresholdMs(100);
-```
+### JVM Configuration
 
-### Production Deployment
-
-1. **Dependency Management**: Use Maven dependency management with version properties
-2. **Native Libraries**: WebGPU native libraries are bundled in JAR (no java.library.path needed)
-3. **Memory Tuning**: Configure JVM heap size based on voxel data size
-4. **Monitoring**: Enable performance profiling in production for bottleneck detection
-5. **Error Handling**: Comprehensive error handling with graceful degradation
-
-### Performance Optimization
-
-#### JVM Tuning
 ```bash
 java -XX:+UseZGC \
-     -XX:+UnlockExperimentalVMOptions \
      -Xmx8g \
      -XX:MaxDirectMemorySize=4g \
-     com.hellblazer.luciferase.render.demo.RenderingPipelineDemo
+     --enable-native-access=ALL-UNNAMED \
+     com.hellblazer.luciferase.render.demo.SimpleRenderDemo
 ```
 
-#### GPU Optimization
-- Use buffer pooling to reduce allocation overhead
-- Enable background garbage collection for memory pressure relief
-- Monitor pool hit rates and adjust pool sizes as needed
-- Use appropriate buffer usage flags for WebGPU operations
+## Documentation
 
-## Future Roadmap
-
-### Phase 7: Final Polish & Deployment (August 2025)
-- Production deployment scripts
-- Documentation completion  
-- Performance baseline establishment
-- User experience improvements
-
-### Beyond Phase 7 (Future Enhancements)
-- Hardware-specific GPU optimizations
-- Advanced profiling features (GPU timing, memory bandwidth analysis)
-- Multi-GPU support and distribution
-- Real-time streaming integration
-- Machine learning integration for optimization
+- **README.md**: Module overview and quick start
+- **REFACTORING_SUMMARY.md**: August 2025 consolidation details
+- **CLEANUP_SUMMARY.md**: Module cleanup history
+- **doc/**: Technical documentation
+- **doc/archive/**: Historical documents
 
 ## Conclusion
 
-The Luciferase Render Module provides a complete, production-ready ESVO rendering system with:
+The Luciferase Render Module provides a functional ESVO rendering system with:
 
-- **Comprehensive Testing**: Integration, performance, and stress testing
-- **Production Performance**: Optimized memory management and GPU integration  
-- **Robust Architecture**: Clean separation of concerns with well-defined interfaces
-- **Developer Experience**: Interactive demos, detailed profiling, and comprehensive documentation
-- **Future-Ready**: Extensible design supporting advanced features
+- **WebGPU Integration**: Through webgpu-ffm module with FFM
+- **Performance**: Zero-copy transfers, efficient pooling
+- **Compression**: 60-70% voxel compression, DXT support
+- **Streaming**: Async I/O with LOD management
+- **Testing**: Comprehensive test coverage
 
-The system is 10-11 weeks ahead of schedule and ready for immediate production deployment with confidence in its stability, performance, and maintainability.
+The module is actively developed with core functionality working and native GPU operations being completed in Phase 7.

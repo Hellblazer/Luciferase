@@ -1,9 +1,10 @@
 # WebGPU FFM Module Implementation Status
 
-## Date: August 6, 2025
-## Latest Update: 2:15 PM PST
+## Date: January 8, 2025
+## Branch: visi
+## Version: 25.0.2.1 (wgpu-native)
 
-## Current Phase: 7 - Render Module Integration (READY TO START)
+## Current Phase: 7 - Render Module Integration (IN PROGRESS)
 
 ## Completed Phases
 
@@ -63,21 +64,23 @@
   - Shader compilation: 3-7 μs per module
 - **Platform Support**: Working on macOS ARM64 with Metal backend
 
-## Phase 7: Render Module Integration (NEXT)
+## Phase 7: Render Module Integration (IN PROGRESS)
 
-### Objectives
-1. Connect WebGPU FFM to the render module
-2. Implement voxel rendering pipeline
-3. Create compute shaders for voxelization
-4. Performance optimization and benchmarking
+### Completed Tasks
+- [x] Update render module to use webgpu-ffm instead of stubs (August 2025)
+- [x] Remove duplicate WebGPU code from render module
+- [x] Implement texture and sampler support
+- [x] Add render pipeline and render pass encoder
+- [x] Create bind group and pipeline layout support
+- [x] Fix buffer mapping with device polling
+- [x] Thread-safe buffer state management
 
-### Tasks
-- [ ] Update render module to use webgpu-ffm instead of stubs
-- [ ] Implement remaining WebGPU functions for rendering
-- [ ] Create voxel data upload pipeline
-- [ ] Implement compute shader for octree traversal
-- [ ] Add render pass and presentation support
+### Remaining Tasks
+- [ ] Complete compute pipeline execution
+- [ ] Implement surface presentation (swap chain)
+- [ ] Add validation layer support
 - [ ] Benchmark against native performance
+- [ ] Multi-GPU adapter selection
 
 ## Key Files
 
@@ -85,32 +88,46 @@
 - `WebGPU.java` - Main entry point with native function calls
 - `CallbackHelper.java` - FFM callback implementation for async ops
 - `WebGPULoader.java` - Native library loading and extraction
-- `WebGPUNative.java` - FFM bindings for WebGPU functions
+- `WebGPUNative.java` - FFM bindings for WebGPU functions (in ffm/ package)
 
-### Wrapper Classes
+### Wrapper Classes (17 total)
 - `Instance.java` - Uses real `requestAdapter` API
 - `Adapter.java` - Uses real `requestDevice` API
 - `Device.java` - Gets real queue, creates native buffers
-- `Buffer.java` - Supports both native and mock implementations
+- `Buffer.java` - Thread-safe mapping with state tracking
 - `Queue.java` - Proper resource cleanup with native release
+- `ShaderModule.java` - WGSL shader compilation
+- `ComputePipeline.java` - Compute pipeline state
+- `RenderPipeline.java` - Graphics pipeline state
+- `RenderPassEncoder.java` - Draw command recording
+- `Texture.java` & `TextureView.java` - Texture resources
+- `Sampler.java` - Texture sampling configuration
+- `BindGroup.java` & `BindGroupLayout.java` - Resource binding
+- `PipelineLayout.java` - Pipeline resource layout
+- `CommandEncoder.java` & `CommandBuffer.java` - Command recording
 
 ### Tests
 - `GPUIntegrationTest.java` - 6 tests, all passing with real GPU
 - `PerformanceBenchmarkTest.java` - 5 benchmarks with real metrics
 - `WrapperTest.java` - 13 wrapper class tests
 - `WebGPUBuilderTest.java` - 8 builder API tests
+- `SynchronousAdapterTest.java` - Synchronous adapter request testing
+- `NativeBufferOperationsTest.java` - Buffer mapping and data transfer
+- `NativeCommandEncoderTest.java` - Command encoding operations
+- **Total**: 40+ tests, all passing
 
 ## Performance Metrics (macOS ARM64)
 
-| Operation | Performance |
-|-----------|------------|
-| Buffer Creation (1KB) | 47.77 MB/s |
-| Buffer Creation (1MB) | 130.8 GB/s |
-| Buffer Creation (16MB) | 2.7 TB/s |
-| Buffer Creation (64MB) | 5.9 TB/s |
-| Shader Compilation (small) | 3.47 μs |
-| Shader Compilation (medium) | 3.56 μs |
-| Shader Compilation (large) | 6.96 μs |
+| Operation | Performance | Notes |
+|-----------|------------|-------|
+| Buffer Creation (1KB) | 47.77 MB/s | Small buffer overhead |
+| Buffer Creation (1MB) | 130.8 GB/s | Optimal size range |
+| Buffer Creation (16MB) | 2.7 TB/s | Large buffer efficiency |
+| Buffer Creation (64MB) | 5.9 TB/s | Peak throughput |
+| Shader Compilation (small) | 3.47 μs | Minimal compilation |
+| Shader Compilation (medium) | 3.56 μs | Consistent performance |
+| Shader Compilation (large) | 6.96 μs | Complex shader overhead |
+| Buffer Mapping | ~0.3s | With device polling (was 5+ seconds) |
 
 ## How to Test
 
@@ -132,10 +149,18 @@ mvn test -pl webgpu-ffm
 - Hybrid approach: native calls with mock fallback
 - All async operations wrapped in synchronous API with timeouts
 
-## Next Steps for Phase 7
-1. Create render module integration tests
-2. Implement texture and sampler support
-3. Add render pipeline creation
-4. Implement command encoder operations
-5. Create presentation surface support
-6. Optimize data transfer between CPU and GPU
+## Next Steps
+
+### Immediate (Phase 7 Completion)
+1. Complete compute pipeline execution
+2. Implement surface presentation (swap chain)
+3. Add WebGPU validation layer support
+4. Create comprehensive integration tests
+5. Performance benchmarking vs native
+
+### Future Enhancements
+1. Multi-GPU support and adapter selection
+2. Advanced error reporting and debugging
+3. GPU timing and profiling metrics
+4. Memory pooling strategies
+5. Pipeline caching and optimization
