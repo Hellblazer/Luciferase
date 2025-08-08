@@ -197,6 +197,62 @@ public class WebGPUNative {
     public static final FunctionDescriptor DESC_wgpuComputePipelineRelease = 
         FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
     
+    /**
+     * wgpuDeviceCreateBindGroupLayout(
+     *     WGPUDevice device,
+     *     const WGPUBindGroupLayoutDescriptor* descriptor
+     * ) -> WGPUBindGroupLayout
+     */
+    public static final FunctionDescriptor DESC_wgpuDeviceCreateBindGroupLayout = 
+        FunctionDescriptor.of(
+            ValueLayout.ADDRESS,  // return: WGPUBindGroupLayout
+            ValueLayout.ADDRESS,  // device
+            ValueLayout.ADDRESS   // descriptor
+        );
+    
+    /**
+     * wgpuBindGroupLayoutRelease(WGPUBindGroupLayout bindGroupLayout) -> void
+     */
+    public static final FunctionDescriptor DESC_wgpuBindGroupLayoutRelease = 
+        FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
+    
+    /**
+     * wgpuDeviceCreateBindGroup(
+     *     WGPUDevice device,
+     *     const WGPUBindGroupDescriptor* descriptor
+     * ) -> WGPUBindGroup
+     */
+    public static final FunctionDescriptor DESC_wgpuDeviceCreateBindGroup = 
+        FunctionDescriptor.of(
+            ValueLayout.ADDRESS,  // return: WGPUBindGroup
+            ValueLayout.ADDRESS,  // device
+            ValueLayout.ADDRESS   // descriptor
+        );
+    
+    /**
+     * wgpuBindGroupRelease(WGPUBindGroup bindGroup) -> void
+     */
+    public static final FunctionDescriptor DESC_wgpuBindGroupRelease = 
+        FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
+    
+    /**
+     * wgpuComputePassEncoderSetBindGroup(
+     *     WGPUComputePassEncoder computePassEncoder,
+     *     uint32_t groupIndex,
+     *     WGPUBindGroup group,
+     *     size_t dynamicOffsetCount,
+     *     const uint32_t* dynamicOffsets
+     * ) -> void
+     */
+    public static final FunctionDescriptor DESC_wgpuComputePassEncoderSetBindGroup = 
+        FunctionDescriptor.ofVoid(
+            ValueLayout.ADDRESS,     // computePassEncoder
+            ValueLayout.JAVA_INT,    // groupIndex
+            ValueLayout.ADDRESS,     // group
+            ValueLayout.JAVA_LONG,   // dynamicOffsetCount
+            ValueLayout.ADDRESS      // dynamicOffsets
+        );
+    
     // Buffer usage flags
     public static final int BUFFER_USAGE_MAP_READ = 0x00000001;
     public static final int BUFFER_USAGE_MAP_WRITE = 0x00000002;
@@ -217,6 +273,16 @@ public class WebGPUNative {
     public static final int POWER_PREFERENCE_UNDEFINED = 0x00000000;
     public static final int POWER_PREFERENCE_LOW_POWER = 0x00000001;
     public static final int POWER_PREFERENCE_HIGH_PERFORMANCE = 0x00000002;
+    
+    // Shader stage flags
+    public static final int SHADER_STAGE_VERTEX = 0x00000001;
+    public static final int SHADER_STAGE_FRAGMENT = 0x00000002;
+    public static final int SHADER_STAGE_COMPUTE = 0x00000004;
+    
+    // Buffer binding types
+    public static final int BUFFER_BINDING_TYPE_UNIFORM = 0x00000001;
+    public static final int BUFFER_BINDING_TYPE_STORAGE = 0x00000002;
+    public static final int BUFFER_BINDING_TYPE_READ_ONLY_STORAGE = 0x00000003;
     
     /**
      * Helper class to build WebGPU descriptors using FFM.
@@ -267,9 +333,14 @@ public class WebGPUNative {
         
         /**
          * Layout for WGPUShaderModuleWGSLDescriptor
+         * Has an embedded ChainedStruct at the beginning
          */
         public static final StructLayout SHADER_MODULE_WGSL_DESCRIPTOR = MemoryLayout.structLayout(
-            ValueLayout.ADDRESS.withName("chain"),
+            // Embedded ChainedStruct
+            ValueLayout.ADDRESS.withName("chain_next"),
+            ValueLayout.JAVA_INT.withName("chain_sType"),
+            ValueLayout.JAVA_INT.withName("padding"),  // Padding for alignment
+            // WGSL-specific field
             ValueLayout.ADDRESS.withName("code")
         ).withByteAlignment(8);
         
@@ -281,6 +352,108 @@ public class WebGPUNative {
             ValueLayout.ADDRESS.withName("label"),
             ValueLayout.JAVA_LONG.withName("hintCount"),
             ValueLayout.ADDRESS.withName("hints")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUProgrammableStageDescriptor
+         */
+        public static final StructLayout PROGRAMMABLE_STAGE_DESCRIPTOR = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.ADDRESS.withName("module"),
+            ValueLayout.ADDRESS.withName("entryPoint"),
+            ValueLayout.JAVA_LONG.withName("constantCount"),
+            ValueLayout.ADDRESS.withName("constants")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUComputePipelineDescriptor
+         * Contains an embedded ProgrammableStageDescriptor for the compute stage
+         */
+        public static final StructLayout COMPUTE_PIPELINE_DESCRIPTOR = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.ADDRESS.withName("label"),
+            ValueLayout.ADDRESS.withName("layout"),
+            // Embedded compute stage (ProgrammableStageDescriptor)
+            ValueLayout.ADDRESS.withName("compute_nextInChain"),
+            ValueLayout.ADDRESS.withName("compute_module"),
+            ValueLayout.ADDRESS.withName("compute_entryPoint"),
+            ValueLayout.JAVA_LONG.withName("compute_constantCount"),
+            ValueLayout.ADDRESS.withName("compute_constants")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUBindGroupLayoutEntry
+         */
+        public static final StructLayout BIND_GROUP_LAYOUT_ENTRY = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.JAVA_INT.withName("binding"),
+            ValueLayout.JAVA_INT.withName("visibility"),
+            // Buffer binding
+            ValueLayout.ADDRESS.withName("buffer_nextInChain"),
+            ValueLayout.JAVA_INT.withName("buffer_type"),
+            ValueLayout.JAVA_INT.withName("buffer_hasDynamicOffset"),
+            ValueLayout.JAVA_LONG.withName("buffer_minBindingSize"),
+            // Sampler binding
+            ValueLayout.ADDRESS.withName("sampler_nextInChain"),
+            ValueLayout.JAVA_INT.withName("sampler_type"),
+            ValueLayout.JAVA_INT.withName("padding1"),
+            // Texture binding  
+            ValueLayout.ADDRESS.withName("texture_nextInChain"),
+            ValueLayout.JAVA_INT.withName("texture_sampleType"),
+            ValueLayout.JAVA_INT.withName("texture_viewDimension"),
+            ValueLayout.JAVA_INT.withName("texture_multisampled"),
+            ValueLayout.JAVA_INT.withName("padding2"),
+            // Storage texture binding
+            ValueLayout.ADDRESS.withName("storageTexture_nextInChain"),
+            ValueLayout.JAVA_INT.withName("storageTexture_access"),
+            ValueLayout.JAVA_INT.withName("storageTexture_format"),
+            ValueLayout.JAVA_INT.withName("storageTexture_viewDimension"),
+            ValueLayout.JAVA_INT.withName("padding3")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUPipelineLayoutDescriptor
+         */
+        public static final StructLayout PIPELINE_LAYOUT_DESCRIPTOR = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.ADDRESS.withName("label"),
+            ValueLayout.JAVA_LONG.withName("bindGroupLayoutCount"),
+            ValueLayout.ADDRESS.withName("bindGroupLayouts")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUBindGroupLayoutDescriptor
+         */
+        public static final StructLayout BIND_GROUP_LAYOUT_DESCRIPTOR = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.ADDRESS.withName("label"),
+            ValueLayout.JAVA_LONG.withName("entryCount"),
+            ValueLayout.ADDRESS.withName("entries")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUBindGroupEntry
+         */
+        public static final StructLayout BIND_GROUP_ENTRY = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.JAVA_INT.withName("binding"),
+            ValueLayout.JAVA_INT.withName("padding"),
+            ValueLayout.ADDRESS.withName("buffer"),
+            ValueLayout.JAVA_LONG.withName("offset"),
+            ValueLayout.JAVA_LONG.withName("size"),
+            ValueLayout.ADDRESS.withName("sampler"),
+            ValueLayout.ADDRESS.withName("textureView")
+        ).withByteAlignment(8);
+        
+        /**
+         * Layout for WGPUBindGroupDescriptor
+         */
+        public static final StructLayout BIND_GROUP_DESCRIPTOR = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),
+            ValueLayout.ADDRESS.withName("label"),
+            ValueLayout.ADDRESS.withName("layout"),
+            ValueLayout.JAVA_LONG.withName("entryCount"),
+            ValueLayout.ADDRESS.withName("entries")
         ).withByteAlignment(8);
     }
     

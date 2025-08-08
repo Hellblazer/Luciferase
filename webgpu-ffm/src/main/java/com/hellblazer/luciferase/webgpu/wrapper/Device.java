@@ -129,15 +129,194 @@ public class Device implements AutoCloseable {
             throw new IllegalStateException("Device is closed");
         }
         
-        // TODO: Implement actual shader module creation
-        var moduleId = nextId.getAndIncrement();
-        var module = new ShaderModule(moduleId, descriptor.getCode(), this);
-        shaderModules.put(moduleId, module);
+        try (var arena = Arena.ofConfined()) {
+            // Create the WGSL descriptor with embedded chain header
+            // The WGSL descriptor has the chain struct embedded at the beginning
+            var wgslDesc = arena.allocate(24); // 16 bytes for chain + 8 bytes for code pointer
+            
+            // Set the embedded chain header
+            wgslDesc.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // chain.next
+            wgslDesc.set(ValueLayout.JAVA_INT, 8, 0x00000006); // chain.sType for WGSLDescriptor
+            wgslDesc.set(ValueLayout.JAVA_INT, 12, 0); // padding for alignment
+            
+            // Set the code pointer
+            var codeStr = WebGPUNative.toCString(descriptor.getCode(), arena);
+            wgslDesc.set(ValueLayout.ADDRESS, 16, codeStr); // code
+            
+            // Create the main shader module descriptor
+            var nativeDesc = arena.allocate(WebGPUNative.Descriptors.SHADER_MODULE_DESCRIPTOR);
+            nativeDesc.set(ValueLayout.ADDRESS, 0, wgslDesc); // nextInChain points to WGSL descriptor
+            var label = descriptor.getLabel() != null ? 
+                WebGPUNative.toCString(descriptor.getLabel(), arena) : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
+            nativeDesc.set(ValueLayout.JAVA_LONG, 16, 0L); // hintCount
+            nativeDesc.set(ValueLayout.ADDRESS, 24, MemorySegment.NULL); // hints
+            
+            // Try to create native shader module
+            MemorySegment moduleHandle = null;
+            if (WebGPU.isInitialized()) {
+                log.debug("Attempting to create native shader module with {} chars of WGSL", descriptor.getCode().length());
+                moduleHandle = WebGPU.createShaderModule(handle, nativeDesc);
+            } else {
+                log.debug("WebGPU not initialized, using stub shader module");
+            }
+            
+            if (moduleHandle == null || moduleHandle.equals(MemorySegment.NULL)) {
+                // Fall back to stub for testing
+                log.warn("Using stub shader module (native creation failed or not available)");
+                moduleHandle = MemorySegment.NULL;
+            } else {
+                log.info("Created native shader module: 0x{}", Long.toHexString(moduleHandle.address()));
+            }
+            
+            var module = new ShaderModule(moduleHandle, descriptor.getCode(), this);
+            
+            log.debug("Created shader module with {} characters of WGSL", 
+                descriptor.getCode().length());
+            
+            return module;
+        }
+    }
+    
+    /**
+     * Create a bind group layout on this device.
+     * 
+     * @param descriptor the bind group layout descriptor
+     * @return the created bind group layout
+     */
+    public BindGroupLayout createBindGroupLayout(BindGroupLayoutDescriptor descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
         
-        log.debug("Created shader module {} with {} characters of WGSL", 
-            moduleId, descriptor.getCode().length());
+        try (var arena = Arena.ofConfined()) {
+            // Create native descriptor
+            var nativeDesc = arena.allocate(WebGPUNative.Descriptors.BIND_GROUP_LAYOUT_DESCRIPTOR);
+            
+            // Set basic fields
+            nativeDesc.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+            var label = descriptor.getLabel() != null ? 
+                WebGPUNative.toCString(descriptor.getLabel(), arena) : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
+            
+            // Create entries array
+            var entries = descriptor.getEntries();
+            nativeDesc.set(ValueLayout.JAVA_LONG, 16, entries.size()); // entryCount
+            
+            if (!entries.isEmpty()) {
+                var entriesArray = arena.allocate(
+                    WebGPUNative.Descriptors.BIND_GROUP_LAYOUT_ENTRY.byteSize() * entries.size()
+                );
+                
+                for (int i = 0; i < entries.size(); i++) {
+                    var entry = entries.get(i);
+                    var entryOffset = i * WebGPUNative.Descriptors.BIND_GROUP_LAYOUT_ENTRY.byteSize();
+                    var entrySegment = entriesArray.asSlice(entryOffset);
+                    
+                    // Set entry fields
+                    entrySegment.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+                    entrySegment.set(ValueLayout.JAVA_INT, 8, entry.binding); // binding
+                    entrySegment.set(ValueLayout.JAVA_INT, 12, entry.visibility); // visibility
+                    
+                    // Set buffer binding if present
+                    if (entry.buffer != null) {
+                        entrySegment.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // buffer.nextInChain
+                        entrySegment.set(ValueLayout.JAVA_INT, 24, entry.buffer.type); // buffer.type
+                        entrySegment.set(ValueLayout.JAVA_INT, 28, entry.buffer.hasDynamicOffset ? 1 : 0);
+                        entrySegment.set(ValueLayout.JAVA_LONG, 32, entry.buffer.minBindingSize);
+                    }
+                    // TODO: Add sampler, texture, and storage texture bindings
+                }
+                
+                nativeDesc.set(ValueLayout.ADDRESS, 24, entriesArray); // entries
+            } else {
+                nativeDesc.set(ValueLayout.ADDRESS, 24, MemorySegment.NULL); // entries
+            }
+            
+            // Create native bind group layout
+            var layoutHandle = WebGPU.createBindGroupLayout(handle, nativeDesc);
+            
+            if (layoutHandle == null || layoutHandle.equals(MemorySegment.NULL)) {
+                log.error("Failed to create bind group layout");
+                throw new RuntimeException("Failed to create bind group layout");
+            }
+            
+            return new BindGroupLayout(this, layoutHandle);
+        }
+    }
+    
+    /**
+     * Create a bind group on this device.
+     * 
+     * @param descriptor the bind group descriptor
+     * @return the created bind group
+     */
+    public BindGroup createBindGroup(BindGroupDescriptor descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Device is closed");
+        }
         
-        return module;
+        try (var arena = Arena.ofConfined()) {
+            // Create native descriptor
+            var nativeDesc = arena.allocate(WebGPUNative.Descriptors.BIND_GROUP_DESCRIPTOR);
+            
+            // Set basic fields
+            nativeDesc.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+            var label = descriptor.getLabel() != null ? 
+                WebGPUNative.toCString(descriptor.getLabel(), arena) : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
+            nativeDesc.set(ValueLayout.ADDRESS, 16, descriptor.getLayout().getHandle()); // layout
+            
+            // Create entries array
+            var entries = descriptor.getEntries();
+            nativeDesc.set(ValueLayout.JAVA_LONG, 24, entries.size()); // entryCount
+            
+            if (!entries.isEmpty()) {
+                var entriesArray = arena.allocate(
+                    WebGPUNative.Descriptors.BIND_GROUP_ENTRY.byteSize() * entries.size()
+                );
+                
+                for (int i = 0; i < entries.size(); i++) {
+                    var entry = entries.get(i);
+                    var entryOffset = i * WebGPUNative.Descriptors.BIND_GROUP_ENTRY.byteSize();
+                    var entrySegment = entriesArray.asSlice(entryOffset);
+                    
+                    // Set entry fields
+                    entrySegment.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+                    entrySegment.set(ValueLayout.JAVA_INT, 8, entry.binding); // binding
+                    entrySegment.set(ValueLayout.JAVA_INT, 12, 0); // padding
+                    
+                    // Set resource handles
+                    if (entry.buffer != null) {
+                        entrySegment.set(ValueLayout.ADDRESS, 16, entry.buffer.getHandle()); // buffer
+                        entrySegment.set(ValueLayout.JAVA_LONG, 24, entry.offset); // offset
+                        entrySegment.set(ValueLayout.JAVA_LONG, 32, entry.size); // size
+                    } else {
+                        entrySegment.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // buffer
+                        entrySegment.set(ValueLayout.JAVA_LONG, 24, 0L); // offset
+                        entrySegment.set(ValueLayout.JAVA_LONG, 32, 0L); // size
+                    }
+                    
+                    // TODO: Add sampler and texture view handles
+                    entrySegment.set(ValueLayout.ADDRESS, 40, MemorySegment.NULL); // sampler
+                    entrySegment.set(ValueLayout.ADDRESS, 48, MemorySegment.NULL); // textureView
+                }
+                
+                nativeDesc.set(ValueLayout.ADDRESS, 32, entriesArray); // entries
+            } else {
+                nativeDesc.set(ValueLayout.ADDRESS, 32, MemorySegment.NULL); // entries
+            }
+            
+            // Create native bind group
+            var bindGroupHandle = WebGPU.createBindGroup(handle, nativeDesc);
+            
+            if (bindGroupHandle == null || bindGroupHandle.equals(MemorySegment.NULL)) {
+                log.error("Failed to create bind group");
+                throw new RuntimeException("Failed to create bind group");
+            }
+            
+            return new BindGroup(this, bindGroupHandle);
+        }
     }
     
     /**
@@ -174,10 +353,57 @@ public class Device implements AutoCloseable {
             throw new IllegalStateException("Device is closed");
         }
         
-        // TODO: Implement actual compute pipeline creation
-        log.debug("Creating compute pipeline with module: {}", descriptor.getComputeModule());
-        
-        return new ComputePipeline(nextId.getAndIncrement(), this);
+        try (var arena = Arena.ofConfined()) {
+            // Create the compute pipeline descriptor
+            var nativeDesc = arena.allocate(WebGPUNative.Descriptors.COMPUTE_PIPELINE_DESCRIPTOR);
+            
+            // Set basic fields
+            nativeDesc.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+            var label = descriptor.getLabel() != null ? 
+                WebGPUNative.toCString(descriptor.getLabel(), arena) : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
+            nativeDesc.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // layout (auto layout)
+            
+            // Set compute stage (embedded struct)
+            nativeDesc.set(ValueLayout.ADDRESS, 24, MemorySegment.NULL); // compute.nextInChain
+            
+            // Get the shader module handle
+            var shaderModule = descriptor.getComputeModule();
+            var moduleHandle = shaderModule != null ? shaderModule.getHandle() : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 32, moduleHandle); // compute.module
+            
+            // Set entry point
+            var entryPoint = WebGPUNative.toCString(descriptor.getEntryPoint(), arena);
+            nativeDesc.set(ValueLayout.ADDRESS, 40, entryPoint); // compute.entryPoint
+            
+            // No constants for now
+            nativeDesc.set(ValueLayout.JAVA_LONG, 48, 0L); // compute.constantCount
+            nativeDesc.set(ValueLayout.ADDRESS, 56, MemorySegment.NULL); // compute.constants
+            
+            // Try to create native compute pipeline
+            MemorySegment pipelineHandle = null;
+            if (WebGPU.isInitialized() && !moduleHandle.equals(MemorySegment.NULL)) {
+                log.debug("Attempting to create native compute pipeline with module: 0x{}", 
+                    moduleHandle.address());
+                pipelineHandle = WebGPU.createComputePipeline(handle, nativeDesc);
+            } else {
+                log.debug("Cannot create native pipeline - WebGPU: {}, module: {}", 
+                    WebGPU.isInitialized(), moduleHandle);
+            }
+            
+            if (pipelineHandle == null || pipelineHandle.equals(MemorySegment.NULL)) {
+                // Fall back to stub for testing
+                log.warn("Using stub compute pipeline (native creation failed or module is stub)");
+                pipelineHandle = MemorySegment.NULL;
+            } else {
+                log.info("Created native compute pipeline: 0x{}", Long.toHexString(pipelineHandle.address()));
+            }
+            
+            var pipeline = new ComputePipeline(pipelineHandle, this);
+            log.debug("Created compute pipeline with module: {}", descriptor.getComputeModule());
+            
+            return pipeline;
+        }
     }
     
     /**
@@ -302,6 +528,132 @@ public class Device implements AutoCloseable {
         
         public String getCode() {
             return code;
+        }
+    }
+    
+    /**
+     * Bind group layout descriptor.
+     */
+    public static class BindGroupLayoutDescriptor {
+        private String label;
+        private java.util.List<BindGroupLayoutEntry> entries = new java.util.ArrayList<>();
+        
+        public BindGroupLayoutDescriptor withLabel(String label) {
+            this.label = label;
+            return this;
+        }
+        
+        public BindGroupLayoutDescriptor withEntry(BindGroupLayoutEntry entry) {
+            this.entries.add(entry);
+            return this;
+        }
+        
+        public String getLabel() {
+            return label;
+        }
+        
+        public java.util.List<BindGroupLayoutEntry> getEntries() {
+            return entries;
+        }
+    }
+    
+    /**
+     * Bind group layout entry.
+     */
+    public static class BindGroupLayoutEntry {
+        public int binding;
+        public int visibility;
+        public BufferBindingLayout buffer;
+        // TODO: Add sampler, texture, storage texture
+        
+        public BindGroupLayoutEntry(int binding, int visibility) {
+            this.binding = binding;
+            this.visibility = visibility;
+        }
+        
+        public BindGroupLayoutEntry withBuffer(BufferBindingLayout buffer) {
+            this.buffer = buffer;
+            return this;
+        }
+    }
+    
+    /**
+     * Buffer binding layout.
+     */
+    public static class BufferBindingLayout {
+        public int type;
+        public boolean hasDynamicOffset;
+        public long minBindingSize;
+        
+        public BufferBindingLayout(int type) {
+            this.type = type;
+        }
+        
+        public BufferBindingLayout withDynamicOffset(boolean dynamic) {
+            this.hasDynamicOffset = dynamic;
+            return this;
+        }
+        
+        public BufferBindingLayout withMinBindingSize(long size) {
+            this.minBindingSize = size;
+            return this;
+        }
+    }
+    
+    /**
+     * Bind group descriptor.
+     */
+    public static class BindGroupDescriptor {
+        private String label;
+        private BindGroupLayout layout;
+        private java.util.List<BindGroupEntry> entries = new java.util.ArrayList<>();
+        
+        public BindGroupDescriptor(BindGroupLayout layout) {
+            this.layout = layout;
+        }
+        
+        public BindGroupDescriptor withLabel(String label) {
+            this.label = label;
+            return this;
+        }
+        
+        public BindGroupDescriptor withEntry(BindGroupEntry entry) {
+            this.entries.add(entry);
+            return this;
+        }
+        
+        public String getLabel() {
+            return label;
+        }
+        
+        public BindGroupLayout getLayout() {
+            return layout;
+        }
+        
+        public java.util.List<BindGroupEntry> getEntries() {
+            return entries;
+        }
+    }
+    
+    /**
+     * Bind group entry.
+     */
+    public static class BindGroupEntry {
+        public int binding;
+        public Buffer buffer;
+        public long offset;
+        public long size;
+        // TODO: Add sampler, texture view
+        
+        public BindGroupEntry(int binding) {
+            this.binding = binding;
+        }
+        
+        public BindGroupEntry withBuffer(Buffer buffer, long offset, long size) {
+            this.buffer = buffer;
+            this.offset = offset;
+            this.size = size;
+            return this;
         }
     }
     

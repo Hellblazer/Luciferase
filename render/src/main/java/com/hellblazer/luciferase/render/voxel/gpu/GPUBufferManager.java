@@ -1,10 +1,11 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.hellblazer.luciferase.render.webgpu.*;
+import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,9 +17,31 @@ import java.util.concurrent.atomic.AtomicLong;
 public class GPUBufferManager {
     private static final Logger log = LoggerFactory.getLogger(GPUBufferManager.class);
     
+    // Buffer usage flags from WebGPU spec
+    public static final int BUFFER_USAGE_MAP_READ = 0x0001;
+    public static final int BUFFER_USAGE_MAP_WRITE = 0x0002;
+    public static final int BUFFER_USAGE_COPY_SRC = 0x0004;
+    public static final int BUFFER_USAGE_COPY_DST = 0x0008;
+    public static final int BUFFER_USAGE_INDEX = 0x0010;
+    public static final int BUFFER_USAGE_VERTEX = 0x0020;
+    public static final int BUFFER_USAGE_UNIFORM = 0x0040;
+    public static final int BUFFER_USAGE_STORAGE = 0x0080;
+    public static final int BUFFER_USAGE_INDIRECT = 0x0100;
+    public static final int BUFFER_USAGE_QUERY_RESOLVE = 0x0200;
+    
+    // Shader stage flags from WebGPU spec
+    public static final int SHADER_STAGE_VERTEX = 0x0001;
+    public static final int SHADER_STAGE_FRAGMENT = 0x0002;
+    public static final int SHADER_STAGE_COMPUTE = 0x0004;
+    
+    // Buffer binding types from WebGPU spec
+    public static final int BUFFER_BINDING_TYPE_UNIFORM = 0x00000001;
+    public static final int BUFFER_BINDING_TYPE_STORAGE = 0x00000002;
+    public static final int BUFFER_BINDING_TYPE_READ_ONLY_STORAGE = 0x00000003;
+    
     private final WebGPUContext context;
-    private final Map<BufferHandle, BufferInfo> bufferRegistry = new ConcurrentHashMap<>();
-    private final Map<Long, Queue<BufferHandle>> bufferPool = new ConcurrentHashMap<>();
+    private final Map<Buffer, BufferInfo> bufferRegistry = new ConcurrentHashMap<>();
+    private final Map<Long, Queue<Buffer>> bufferPool = new ConcurrentHashMap<>();
     private final AtomicLong totalAllocated = new AtomicLong();
     private final AtomicLong activeBuffers = new AtomicLong();
     
@@ -29,12 +52,12 @@ public class GPUBufferManager {
     /**
      * Create a GPU buffer with specified size and usage
      */
-    public BufferHandle createBuffer(long size, int usage) {
+    public Buffer createBuffer(long size, int usage) {
         if (size <= 0) {
             throw new IllegalArgumentException("Buffer size must be positive");
         }
         
-        BufferHandle buffer = context.createBuffer(size, usage);
+        Buffer buffer = context.createBuffer(size, usage);
         bufferRegistry.put(buffer, new BufferInfo(size, usage));
         totalAllocated.addAndGet(size);
         activeBuffers.incrementAndGet();
@@ -46,7 +69,7 @@ public class GPUBufferManager {
     /**
      * Write data to a buffer
      */
-    public void writeBuffer(BufferHandle buffer, long offset, MemorySegment data) {
+    public void writeBuffer(Buffer buffer, long offset, MemorySegment data) {
         if (data == null) {
             throw new NullPointerException("Data cannot be null");
         }
@@ -56,9 +79,33 @@ public class GPUBufferManager {
     }
     
     /**
+     * Write byte array data to a buffer
+     */
+    public void writeBuffer(Buffer buffer, long offset, byte[] data) {
+        if (data == null) {
+            throw new NullPointerException("Data cannot be null");
+        }
+        
+        context.writeBuffer(buffer, data, offset);
+    }
+    
+    /**
+     * Write ByteBuffer data to a buffer
+     */
+    public void writeBuffer(Buffer buffer, long offset, ByteBuffer data) {
+        if (data == null) {
+            throw new NullPointerException("Data cannot be null");
+        }
+        
+        byte[] bytes = new byte[data.remaining()];
+        data.get(bytes);
+        context.writeBuffer(buffer, bytes, offset);
+    }
+    
+    /**
      * Read data from a buffer
      */
-    public CompletableFuture<MemorySegment> readBuffer(BufferHandle buffer, long offset, long size) {
+    public CompletableFuture<MemorySegment> readBuffer(Buffer buffer, long offset, long size) {
         return CompletableFuture.supplyAsync(() -> {
             byte[] data = context.readBuffer(buffer, size, offset);
             // Create a properly aligned MemorySegment for the data
@@ -80,12 +127,21 @@ public class GPUBufferManager {
     }
     
     /**
+     * Read data from a buffer as byte array
+     */
+    public CompletableFuture<byte[]> readBufferBytes(Buffer buffer, long offset, long size) {
+        return CompletableFuture.supplyAsync(() -> 
+            context.readBuffer(buffer, size, offset)
+        );
+    }
+    
+    /**
      * Release a buffer
      */
-    public void releaseBuffer(BufferHandle buffer) {
+    public void releaseBuffer(Buffer buffer) {
         BufferInfo info = bufferRegistry.remove(buffer);
         if (info != null) {
-            buffer.release();
+            buffer.close();
             activeBuffers.decrementAndGet();
             log.debug("Released buffer: size={}", info.size);
         }
@@ -94,10 +150,10 @@ public class GPUBufferManager {
     /**
      * Allocate a buffer from the pool or create new
      */
-    public BufferHandle allocateFromPool(long size) {
-        Queue<BufferHandle> pool = bufferPool.get(size);
+    public Buffer allocateFromPool(long size) {
+        Queue<Buffer> pool = bufferPool.get(size);
         if (pool != null) {
-            BufferHandle buffer = pool.poll();
+            Buffer buffer = pool.poll();
             if (buffer != null) {
                 log.debug("Reused pooled buffer: size={}", size);
                 activeBuffers.incrementAndGet();
@@ -105,13 +161,13 @@ public class GPUBufferManager {
             }
         }
         
-        return createBuffer(size, BufferUsage.STORAGE | BufferUsage.COPY_DST);
+        return createBuffer(size, BUFFER_USAGE_STORAGE | BUFFER_USAGE_COPY_DST);
     }
     
     /**
      * Return a buffer to the pool
      */
-    public void returnToPool(BufferHandle buffer) {
+    public void returnToPool(Buffer buffer) {
         BufferInfo info = bufferRegistry.get(buffer);
         if (info != null) {
             bufferPool.computeIfAbsent(info.size, k -> new LinkedList<>()).offer(buffer);
@@ -123,39 +179,37 @@ public class GPUBufferManager {
     /**
      * Create a staging buffer for uploads
      */
-    public BufferHandle createStagingBuffer(long size) {
-        return createBuffer(size, BufferUsage.MAP_WRITE | BufferUsage.COPY_SRC);
+    public Buffer createStagingBuffer(long size) {
+        return createBuffer(size, BUFFER_USAGE_MAP_WRITE | BUFFER_USAGE_COPY_SRC);
     }
     
     /**
      * Write to a staging buffer
      */
-    public void writeToStagingBuffer(BufferHandle buffer, long offset, MemorySegment data) {
+    public void writeToStagingBuffer(Buffer buffer, long offset, MemorySegment data) {
         writeBuffer(buffer, offset, data);
     }
     
     /**
-     * Copy buffer contents
+     * Copy buffer contents using GPU commands
      */
-    public void copyBuffer(BufferHandle source, BufferHandle dest, long size) {
-        // In a real implementation, this would use GPU command encoder
-        // For now, we simulate with read/write
-        byte[] data = context.readBuffer(source, size, 0);
-        context.writeBuffer(dest, data, 0);
+    public void copyBuffer(Buffer source, Buffer dest, long size) {
+        // Use GPU-side copy via command encoder
+        context.copyBuffer(source, dest, size);
     }
     
     /**
      * Create a dynamic buffer that can be resized
      */
-    public BufferHandle createDynamicBuffer(long initialSize) {
-        return createBuffer(initialSize, BufferUsage.STORAGE | BufferUsage.COPY_DST | BufferUsage.COPY_SRC);
+    public Buffer createDynamicBuffer(long initialSize) {
+        return createBuffer(initialSize, BUFFER_USAGE_STORAGE | BUFFER_USAGE_COPY_DST | BUFFER_USAGE_COPY_SRC);
     }
     
     /**
      * Resize a buffer
      */
-    public BufferHandle resizeBuffer(BufferHandle oldBuffer, long newSize) {
-        BufferHandle newBuffer = createDynamicBuffer(newSize);
+    public Buffer resizeBuffer(Buffer oldBuffer, long newSize) {
+        Buffer newBuffer = createDynamicBuffer(newSize);
         
         // Copy old data if exists
         BufferInfo info = bufferRegistry.get(oldBuffer);
@@ -172,7 +226,7 @@ public class GPUBufferManager {
      * Create a multi-buffer for double/triple buffering
      */
     public MultiBufferHandle createMultiBuffer(int count, long size, int usage) {
-        List<BufferHandle> buffers = new ArrayList<>();
+        List<Buffer> buffers = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             buffers.add(createBuffer(size, usage));
         }
@@ -199,12 +253,12 @@ public class GPUBufferManager {
      */
     public void cleanup() {
         // Release all active buffers
-        bufferRegistry.keySet().forEach(BufferHandle::release);
+        bufferRegistry.keySet().forEach(Buffer::close);
         bufferRegistry.clear();
         
         // Clear pools
         bufferPool.values().forEach(pool -> {
-            pool.forEach(BufferHandle::release);
+            pool.forEach(Buffer::close);
             pool.clear();
         });
         bufferPool.clear();
@@ -232,14 +286,14 @@ public class GPUBufferManager {
      * Multi-buffer handle for double/triple buffering
      */
     public static class MultiBufferHandle {
-        private final List<BufferHandle> buffers;
+        private final List<Buffer> buffers;
         private int currentIndex = 0;
         
-        MultiBufferHandle(List<BufferHandle> buffers) {
+        MultiBufferHandle(List<Buffer> buffers) {
             this.buffers = buffers;
         }
         
-        public BufferHandle getCurrentBuffer() {
+        public Buffer getCurrentBuffer() {
             return buffers.get(currentIndex);
         }
         
@@ -252,7 +306,7 @@ public class GPUBufferManager {
         }
         
         public void release() {
-            buffers.forEach(BufferHandle::release);
+            buffers.forEach(Buffer::close);
         }
     }
     

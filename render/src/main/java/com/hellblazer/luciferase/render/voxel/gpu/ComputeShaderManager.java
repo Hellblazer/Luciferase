@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.hellblazer.luciferase.render.webgpu.*;
+import com.hellblazer.luciferase.webgpu.wrapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,8 +19,8 @@ public class ComputeShaderManager {
     private static final Logger log = LoggerFactory.getLogger(ComputeShaderManager.class);
     
     private final WebGPUContext context;
-    private final Map<String, ShaderHandle> shaderCache = new HashMap<>();
-    private final Map<String, ShaderHandle> pipelineCache = new HashMap<>();
+    private final Map<String, ShaderModule> shaderCache = new HashMap<>();
+    private final Map<String, ComputePipeline> pipelineCache = new HashMap<>();
     
     public ComputeShaderManager(WebGPUContext context) {
         this.context = context;
@@ -29,16 +29,16 @@ public class ComputeShaderManager {
     /**
      * Load shader from string source
      */
-    public CompletableFuture<ShaderHandle> loadShader(String name, String wgslCode) {
+    public CompletableFuture<ShaderModule> loadShader(String name, String wgslCode) {
         // Check cache first
-        ShaderHandle cached = shaderCache.get(name);
+        ShaderModule cached = shaderCache.get(name);
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
         }
         
         return CompletableFuture.supplyAsync(() -> {
             try {
-                ShaderHandle shader = context.createComputeShader(wgslCode);
+                ShaderModule shader = context.createComputeShader(wgslCode);
                 shaderCache.put(name, shader);
                 log.debug("Loaded shader: {}", name);
                 return shader;
@@ -52,11 +52,11 @@ public class ComputeShaderManager {
     /**
      * Load shader from resource file
      */
-    public CompletableFuture<ShaderHandle> loadShaderFromResource(String resourcePath) {
+    public CompletableFuture<ShaderModule> loadShaderFromResource(String resourcePath) {
         String name = resourcePath.substring(resourcePath.lastIndexOf('/') + 1);
         
         // Check cache first
-        ShaderHandle cached = shaderCache.get(name);
+        ShaderModule cached = shaderCache.get(name);
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
         }
@@ -68,7 +68,7 @@ public class ComputeShaderManager {
                 }
                 
                 String wgslCode = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                ShaderHandle shader = context.createComputeShader(wgslCode);
+                ShaderModule shader = context.createComputeShader(wgslCode);
                 shaderCache.put(name, shader);
                 log.debug("Loaded shader from resource: {}", resourcePath);
                 return shader;
@@ -82,19 +82,24 @@ public class ComputeShaderManager {
     /**
      * Create compute pipeline
      */
-    public ShaderHandle createComputePipeline(String name, ShaderHandle shader, String entryPoint) {
+    public ComputePipeline createComputePipeline(String name, ShaderModule shader, String entryPoint) {
         String cacheKey = name + ":" + entryPoint;
         
-        ShaderHandle cached = pipelineCache.get(cacheKey);
+        ComputePipeline cached = pipelineCache.get(cacheKey);
         if (cached != null) {
             return cached;
         }
         
-        // For now, return the shader handle directly
-        // In a full implementation, this would create a pipeline with the shader
-        pipelineCache.put(cacheKey, shader);
+        // Create pipeline descriptor
+        var descriptor = new Device.ComputePipelineDescriptor(shader)
+            .withLabel(name)
+            .withEntryPoint(entryPoint);
+        
+        // Create pipeline
+        ComputePipeline pipeline = context.getDevice().createComputePipeline(descriptor);
+        pipelineCache.put(cacheKey, pipeline);
         log.debug("Created compute pipeline: {}", name);
-        return shader;
+        return pipeline;
     }
     
     /**
@@ -126,13 +131,29 @@ public class ComputeShaderManager {
     }
     
     /**
+     * Get cached shader by name
+     */
+    public ShaderModule getShader(String name) {
+        return shaderCache.get(name);
+    }
+    
+    /**
+     * Get cached pipeline by name
+     */
+    public ComputePipeline getPipeline(String name) {
+        return pipelineCache.get(name);
+    }
+    
+    /**
      * Cleanup resources
      */
     public void cleanup() {
         // Release all cached shaders
-        shaderCache.values().forEach(ShaderHandle::release);
+        shaderCache.values().forEach(ShaderModule::close);
         shaderCache.clear();
         
+        // Release all cached pipelines
+        pipelineCache.values().forEach(ComputePipeline::close);
         pipelineCache.clear();
         
         log.debug("ComputeShaderManager cleaned up");

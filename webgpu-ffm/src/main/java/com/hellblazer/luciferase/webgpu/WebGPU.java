@@ -40,15 +40,24 @@ public class WebGPU {
     private static MethodHandle wgpuComputePassEncoderEnd;
     private static MethodHandle wgpuComputePassEncoderRelease;
     private static MethodHandle wgpuDeviceCreateShaderModule;
+    private static MethodHandle wgpuShaderModuleRelease;
     private static MethodHandle wgpuDeviceCreateComputePipeline;
-    private static MethodHandle wgpuDeviceCreateBindGroupLayout;
-    private static MethodHandle wgpuDeviceCreateBindGroup;
+    private static MethodHandle wgpuComputePipelineRelease;
     private static MethodHandle wgpuDeviceCreatePipelineLayout;
+    private static MethodHandle wgpuPipelineLayoutRelease;
+    private static MethodHandle wgpuDeviceCreateBindGroupLayout;
+    private static MethodHandle wgpuBindGroupLayoutRelease;
+    private static MethodHandle wgpuDeviceCreateBindGroup;
+    private static MethodHandle wgpuBindGroupRelease;
+    private static MethodHandle wgpuBufferMapAsync;
+    private static MethodHandle wgpuBufferGetMappedRange;
+    private static MethodHandle wgpuBufferUnmap;
     private static MethodHandle wgpuDeviceCreateTexture;
     private static MethodHandle wgpuDeviceCreateSampler;
     private static MethodHandle wgpuTextureRelease;
     private static MethodHandle wgpuSamplerRelease;
     private static MethodHandle wgpuTextureCreateView;
+    private static MethodHandle wgpuDevicePoll;
     
     // Linker and symbol lookup
     private static Linker linker;
@@ -334,9 +343,10 @@ public class WebGPU {
             // Call the native function with callback
             // The callback must stay alive until it's invoked by the native code
             try {
+                MemorySegment optionsArg = (options != null) ? options : MemorySegment.NULL;
                 wgpuInstanceRequestAdapter.invokeExact(
                     instanceHandle, 
-                    options != null ? options : MemorySegment.NULL,
+                    optionsArg,
                     callback.getCallbackStub(),
                     MemorySegment.NULL  // userdata
                 );
@@ -870,12 +880,121 @@ public class WebGPU {
                 );
             }
             
+            // wgpuShaderModuleRelease(WGPUShaderModule shaderModule) -> void
+            var shaderModuleReleaseOpt = symbolLookup.find("wgpuShaderModuleRelease");
+            if (shaderModuleReleaseOpt.isPresent()) {
+                wgpuShaderModuleRelease = linker.downcallHandle(
+                    shaderModuleReleaseOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
             // wgpuDeviceCreateComputePipeline(WGPUDevice device, const WGPUComputePipelineDescriptor* descriptor) -> WGPUComputePipeline
             var deviceCreateComputePipelineOpt = symbolLookup.find("wgpuDeviceCreateComputePipeline");
             if (deviceCreateComputePipelineOpt.isPresent()) {
                 wgpuDeviceCreateComputePipeline = linker.downcallHandle(
                     deviceCreateComputePipelineOpt.get(),
                     FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuComputePipelineRelease(WGPUComputePipeline computePipeline) -> void
+            var computePipelineReleaseOpt = symbolLookup.find("wgpuComputePipelineRelease");
+            if (computePipelineReleaseOpt.isPresent()) {
+                wgpuComputePipelineRelease = linker.downcallHandle(
+                    computePipelineReleaseOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuDeviceCreatePipelineLayout(WGPUDevice device, const WGPUPipelineLayoutDescriptor* descriptor) -> WGPUPipelineLayout
+            var deviceCreatePipelineLayoutOpt = symbolLookup.find("wgpuDeviceCreatePipelineLayout");
+            if (deviceCreatePipelineLayoutOpt.isPresent()) {
+                wgpuDeviceCreatePipelineLayout = linker.downcallHandle(
+                    deviceCreatePipelineLayoutOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuPipelineLayoutRelease(WGPUPipelineLayout pipelineLayout) -> void
+            var pipelineLayoutReleaseOpt = symbolLookup.find("wgpuPipelineLayoutRelease");
+            if (pipelineLayoutReleaseOpt.isPresent()) {
+                wgpuPipelineLayoutRelease = linker.downcallHandle(
+                    pipelineLayoutReleaseOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuDeviceCreateBindGroupLayout(WGPUDevice device, const WGPUBindGroupLayoutDescriptor* descriptor) -> WGPUBindGroupLayout
+            var deviceCreateBindGroupLayoutOpt = symbolLookup.find("wgpuDeviceCreateBindGroupLayout");
+            if (deviceCreateBindGroupLayoutOpt.isPresent()) {
+                wgpuDeviceCreateBindGroupLayout = linker.downcallHandle(
+                    deviceCreateBindGroupLayoutOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuBindGroupLayoutRelease(WGPUBindGroupLayout bindGroupLayout) -> void
+            var bindGroupLayoutReleaseOpt = symbolLookup.find("wgpuBindGroupLayoutRelease");
+            if (bindGroupLayoutReleaseOpt.isPresent()) {
+                wgpuBindGroupLayoutRelease = linker.downcallHandle(
+                    bindGroupLayoutReleaseOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuDeviceCreateBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor) -> WGPUBindGroup
+            var deviceCreateBindGroupOpt = symbolLookup.find("wgpuDeviceCreateBindGroup");
+            if (deviceCreateBindGroupOpt.isPresent()) {
+                wgpuDeviceCreateBindGroup = linker.downcallHandle(
+                    deviceCreateBindGroupOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuBindGroupRelease(WGPUBindGroup bindGroup) -> void
+            var bindGroupReleaseOpt = symbolLookup.find("wgpuBindGroupRelease");
+            if (bindGroupReleaseOpt.isPresent()) {
+                wgpuBindGroupRelease = linker.downcallHandle(
+                    bindGroupReleaseOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
+            // Buffer mapping functions
+            var bufferMapAsyncOpt = symbolLookup.find("wgpuBufferMapAsync");
+            if (bufferMapAsyncOpt.isPresent()) {
+                wgpuBufferMapAsync = linker.downcallHandle(
+                    bufferMapAsyncOpt.get(),
+                    FunctionDescriptor.ofVoid(
+                        ValueLayout.ADDRESS, // buffer
+                        ValueLayout.JAVA_INT, // mode
+                        ValueLayout.JAVA_LONG, // offset
+                        ValueLayout.JAVA_LONG, // size
+                        ValueLayout.ADDRESS, // callback
+                        ValueLayout.ADDRESS  // userdata
+                    )
+                );
+            }
+            
+            var bufferGetMappedRangeOpt = symbolLookup.find("wgpuBufferGetMappedRange");
+            if (bufferGetMappedRangeOpt.isPresent()) {
+                wgpuBufferGetMappedRange = linker.downcallHandle(
+                    bufferGetMappedRangeOpt.get(),
+                    FunctionDescriptor.of(
+                        ValueLayout.ADDRESS, // returns void*
+                        ValueLayout.ADDRESS, // buffer
+                        ValueLayout.JAVA_LONG, // offset
+                        ValueLayout.JAVA_LONG  // size
+                    )
+                );
+            }
+            
+            var bufferUnmapOpt = symbolLookup.find("wgpuBufferUnmap");
+            if (bufferUnmapOpt.isPresent()) {
+                wgpuBufferUnmap = linker.downcallHandle(
+                    bufferUnmapOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS) // buffer
                 );
             }
             
@@ -922,6 +1041,18 @@ public class WebGPU {
                     textureCreateViewOpt.get(),
                     FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
                 );
+            }
+            
+            // wgpuDevicePoll(WGPUDevice device, WGPUBool wait, const WGPUWrappedSubmissionIndex* wrappedSubmissionIndex) -> WGPUBool
+            var devicePollOpt = symbolLookup.find("wgpuDevicePoll");
+            if (devicePollOpt.isPresent()) {
+                wgpuDevicePoll = linker.downcallHandle(
+                    devicePollOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS, ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS)
+                );
+                log.debug("Successfully loaded wgpuDevicePoll");
+            } else {
+                log.warn("Could not find wgpuDevicePoll symbol - buffer mapping may not work properly");
             }
             
             log.debug("Successfully loaded WebGPU function handles");
@@ -1179,6 +1310,317 @@ public class WebGPU {
     }
     
     /**
+     * Release a shader module.
+     * 
+     * @param shaderModuleHandle the shader module handle to release
+     */
+    public static void releaseShaderModule(MemorySegment shaderModuleHandle) {
+        if (!initialized.get() || wgpuShaderModuleRelease == null) {
+            log.debug("wgpuShaderModuleRelease not available");
+            return;
+        }
+        
+        if (shaderModuleHandle == null || shaderModuleHandle.equals(MemorySegment.NULL)) {
+            return;
+        }
+        
+        try {
+            wgpuShaderModuleRelease.invoke(shaderModuleHandle);
+            log.debug("Released shader module: 0x{}", Long.toHexString(shaderModuleHandle.address()));
+        } catch (Throwable e) {
+            log.error("Failed to release shader module", e);
+        }
+    }
+    
+    /**
+     * Release a compute pipeline.
+     * 
+     * @param pipelineHandle the compute pipeline handle to release
+     */
+    public static void releaseComputePipeline(MemorySegment pipelineHandle) {
+        if (!initialized.get() || wgpuComputePipelineRelease == null) {
+            log.debug("wgpuComputePipelineRelease not available");
+            return;
+        }
+        
+        if (pipelineHandle == null || pipelineHandle.equals(MemorySegment.NULL)) {
+            return;
+        }
+        
+        try {
+            wgpuComputePipelineRelease.invoke(pipelineHandle);
+            log.debug("Released compute pipeline: 0x{}", Long.toHexString(pipelineHandle.address()));
+        } catch (Throwable e) {
+            log.error("Failed to release compute pipeline", e);
+        }
+    }
+    
+    /**
+     * Create a pipeline layout.
+     * 
+     * @param deviceHandle the device handle
+     * @param descriptor the pipeline layout descriptor
+     * @return the pipeline layout handle, or NULL if creation failed
+     */
+    public static MemorySegment createPipelineLayout(MemorySegment deviceHandle, MemorySegment descriptor) {
+        if (!initialized.get() || wgpuDeviceCreatePipelineLayout == null) {
+            log.warn("wgpuDeviceCreatePipelineLayout not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var layout = (MemorySegment) wgpuDeviceCreatePipelineLayout.invoke(deviceHandle, descriptor);
+            
+            if (layout != null && !layout.equals(MemorySegment.NULL)) {
+                log.debug("Created pipeline layout: 0x{}", Long.toHexString(layout.address()));
+                return layout;
+            } else {
+                log.warn("Failed to create pipeline layout");
+                return MemorySegment.NULL;
+            }
+        } catch (Throwable e) {
+            log.error("Failed to invoke wgpuDeviceCreatePipelineLayout", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Release a pipeline layout.
+     * 
+     * @param pipelineLayoutHandle the pipeline layout handle
+     */
+    public static void releasePipelineLayout(MemorySegment pipelineLayoutHandle) {
+        if (!initialized.get() || wgpuPipelineLayoutRelease == null) {
+            log.warn("wgpuPipelineLayoutRelease not available");
+            return;
+        }
+        
+        try {
+            wgpuPipelineLayoutRelease.invoke(pipelineLayoutHandle);
+            log.debug("Released pipeline layout");
+        } catch (Throwable e) {
+            log.error("Failed to release pipeline layout", e);
+        }
+    }
+    
+    /**
+     * Create a bind group layout on a device.
+     * 
+     * @param deviceHandle the device handle
+     * @param descriptor the bind group layout descriptor
+     * @return the bind group layout handle, or NULL if creation failed
+     */
+    public static MemorySegment createBindGroupLayout(MemorySegment deviceHandle, MemorySegment descriptor) {
+        if (!initialized.get() || wgpuDeviceCreateBindGroupLayout == null) {
+            log.warn("wgpuDeviceCreateBindGroupLayout not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var layout = (MemorySegment) wgpuDeviceCreateBindGroupLayout.invoke(deviceHandle, descriptor);
+            
+            if (layout != null && !layout.equals(MemorySegment.NULL)) {
+                log.debug("Created bind group layout: 0x{}", Long.toHexString(layout.address()));
+                return layout;
+            }
+            
+            return MemorySegment.NULL;
+        } catch (Throwable e) {
+            log.error("Failed to create bind group layout", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Release a bind group layout.
+     * 
+     * @param layoutHandle the bind group layout to release
+     */
+    public static void releaseBindGroupLayout(MemorySegment layoutHandle) {
+        if (!initialized.get() || wgpuBindGroupLayoutRelease == null) {
+            return;
+        }
+        
+        try {
+            wgpuBindGroupLayoutRelease.invoke(layoutHandle);
+            log.debug("Released bind group layout: 0x{}", Long.toHexString(layoutHandle.address()));
+        } catch (Throwable e) {
+            log.error("Failed to release bind group layout", e);
+        }
+    }
+    
+    /**
+     * Map a buffer for reading/writing.
+     * 
+     * @param bufferHandle the buffer handle
+     * @param mode the map mode (read/write)
+     * @param offset the offset in bytes
+     * @param size the size to map
+     * @param callback the callback to invoke when mapping is complete
+     * @param userdata user data for the callback
+     */
+    public static void mapBufferAsync(MemorySegment bufferHandle, int mode, long offset, long size, 
+                                     MemorySegment callback, MemorySegment userdata) {
+        if (!initialized.get() || wgpuBufferMapAsync == null) {
+            log.warn("wgpuBufferMapAsync not available");
+            return;
+        }
+        
+        try {
+            wgpuBufferMapAsync.invoke(bufferHandle, mode, offset, size, callback, userdata);
+            log.debug("Initiated async buffer mapping: mode={}, offset={}, size={}", mode, offset, size);
+        } catch (Throwable e) {
+            log.error("Failed to map buffer async", e);
+        }
+    }
+    
+    /**
+     * Get the mapped range of a buffer.
+     * 
+     * @param bufferHandle the buffer handle
+     * @param offset the offset in bytes
+     * @param size the size to get
+     * @return pointer to mapped memory, or NULL if failed
+     */
+    public static MemorySegment getBufferMappedRange(MemorySegment bufferHandle, long offset, long size) {
+        if (!initialized.get() || wgpuBufferGetMappedRange == null) {
+            log.warn("wgpuBufferGetMappedRange not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var mappedPtr = (MemorySegment) wgpuBufferGetMappedRange.invoke(bufferHandle, offset, size);
+            if (mappedPtr != null && !mappedPtr.equals(MemorySegment.NULL)) {
+                log.debug("Got mapped buffer range: offset={}, size={}", offset, size);
+                return mappedPtr;
+            } else {
+                log.warn("Failed to get mapped buffer range");
+                return MemorySegment.NULL;
+            }
+        } catch (Throwable e) {
+            log.error("Failed to get mapped buffer range", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Unmap a buffer.
+     * 
+     * @param bufferHandle the buffer handle
+     */
+    public static void unmapBuffer(MemorySegment bufferHandle) {
+        if (!initialized.get() || wgpuBufferUnmap == null) {
+            log.warn("wgpuBufferUnmap not available");
+            return;
+        }
+        
+        try {
+            wgpuBufferUnmap.invoke(bufferHandle);
+            log.debug("Unmapped buffer");
+        } catch (Throwable e) {
+            log.error("Failed to unmap buffer", e);
+        }
+    }
+    
+    /**
+     * Poll the device to process pending operations.
+     * This is essential for buffer mapping callbacks and other asynchronous operations.
+     * 
+     * @param deviceHandle the device handle
+     * @param wait whether to wait for operations to complete
+     * @return true if the queue is empty, false if there are still operations in flight
+     */
+    public static boolean pollDevice(MemorySegment deviceHandle, boolean wait) {
+        if (!initialized.get() || wgpuDevicePoll == null) {
+            log.debug("wgpuDevicePoll not available - returning true (mock behavior)");
+            return true;
+        }
+        
+        try {
+            log.debug("Calling wgpuDevicePoll(device=0x{}, wait={})", Long.toHexString(deviceHandle.address()), wait);
+            boolean result = (boolean) wgpuDevicePoll.invoke(deviceHandle, wait, MemorySegment.NULL);
+            log.debug("Device poll completed, queue empty: {}", result);
+            return result;
+        } catch (Throwable e) {
+            log.error("Failed to poll device", e);
+            return false;
+        }
+    }
+    
+    /**
+     * Create a bind group on a device.
+     * 
+     * @param deviceHandle the device handle
+     * @param descriptor the bind group descriptor
+     * @return the bind group handle, or NULL if creation failed
+     */
+    public static MemorySegment createBindGroup(MemorySegment deviceHandle, MemorySegment descriptor) {
+        if (!initialized.get() || wgpuDeviceCreateBindGroup == null) {
+            log.warn("wgpuDeviceCreateBindGroup not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var bindGroup = (MemorySegment) wgpuDeviceCreateBindGroup.invoke(deviceHandle, descriptor);
+            
+            if (bindGroup != null && !bindGroup.equals(MemorySegment.NULL)) {
+                log.debug("Created bind group: 0x{}", Long.toHexString(bindGroup.address()));
+                return bindGroup;
+            }
+            
+            return MemorySegment.NULL;
+        } catch (Throwable e) {
+            log.error("Failed to create bind group", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Release a bind group.
+     * 
+     * @param bindGroupHandle the bind group to release
+     */
+    public static void releaseBindGroup(MemorySegment bindGroupHandle) {
+        if (!initialized.get() || wgpuBindGroupRelease == null) {
+            return;
+        }
+        
+        try {
+            wgpuBindGroupRelease.invoke(bindGroupHandle);
+            log.debug("Released bind group: 0x{}", Long.toHexString(bindGroupHandle.address()));
+        } catch (Throwable e) {
+            log.error("Failed to release bind group", e);
+        }
+    }
+    
+    /**
+     * Set a bind group on a compute pass encoder.
+     * 
+     * @param encoderHandle the compute pass encoder handle
+     * @param groupIndex the bind group index
+     * @param bindGroupHandle the bind group to set
+     */
+    public static void computePassEncoderSetBindGroup(MemorySegment encoderHandle, int groupIndex, MemorySegment bindGroupHandle) {
+        if (!initialized.get() || wgpuComputePassEncoderSetBindGroup == null) {
+            log.debug("wgpuComputePassEncoderSetBindGroup not available - using stub");
+            return;
+        }
+        
+        try {
+            wgpuComputePassEncoderSetBindGroup.invoke(
+                encoderHandle,
+                groupIndex,
+                bindGroupHandle,
+                0L,  // dynamicOffsetCount
+                MemorySegment.NULL  // dynamicOffsets
+            );
+            log.debug("Set bind group {} on compute pass encoder", groupIndex);
+        } catch (Throwable e) {
+            log.error("Failed to set bind group", e);
+        }
+    }
+    
+    /**
      * Set the pipeline for a compute pass encoder.
      * 
      * @param encoderHandle the compute pass encoder handle
@@ -1217,6 +1659,27 @@ public class WebGPU {
             log.debug("Dispatched workgroups: {}x{}x{}", x, y, z);
         } catch (Throwable e) {
             log.error("Failed to dispatch workgroups", e);
+        }
+    }
+    
+    /**
+     * Set the pipeline for a compute pass encoder.
+     * 
+     * @param encoderHandle the compute pass encoder handle
+     * @param pipelineHandle the pipeline handle
+     */
+    public static void computePassEncoderSetPipeline(MemorySegment encoderHandle, MemorySegment pipelineHandle) {
+        if (!initialized.get() || wgpuComputePassEncoderSetPipeline == null) {
+            log.debug("wgpuComputePassEncoderSetPipeline not available - using stub");
+            return;
+        }
+        
+        try {
+            wgpuComputePassEncoderSetPipeline.invoke(encoderHandle, pipelineHandle);
+            log.debug("Set pipeline for compute pass encoder");
+        } catch (Throwable e) {
+            log.error("Failed to set pipeline for compute pass encoder", e);
+            throw new RuntimeException("Failed to set pipeline", e);
         }
     }
     

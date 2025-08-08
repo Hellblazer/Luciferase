@@ -1,8 +1,7 @@
 package com.hellblazer.luciferase.render.memory;
 
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
-import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.*;
-import com.hellblazer.luciferase.render.webgpu.BufferHandle;
+import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -102,7 +101,7 @@ public class GPUMemoryManager implements AutoCloseable {
     /**
      * Allocate a GPU buffer with optimized pooling strategy.
      */
-    public Buffer allocateBuffer(long size, BufferUsage usage, String label) {
+    public Buffer allocateBuffer(long size, int usage, String label) {
         allocationCount.incrementAndGet();
         
         // Try to get from pool first
@@ -174,7 +173,7 @@ public class GPUMemoryManager implements AutoCloseable {
         }
         
         // Free the buffer
-        buffer.release();
+        buffer.close();
         
         if (config.enableDetailedLogging) {
             log.debug("Released buffer {} ({}KB)", metadata.label, metadata.size / 1024);
@@ -235,7 +234,7 @@ public class GPUMemoryManager implements AutoCloseable {
                     // Free buffers that have been pooled for too long
                     if (currentTime - pooled.pooledTime > config.gcInterval) {
                         iterator.remove();
-                        pooled.buffer.release();
+                        pooled.buffer.close();
                         freedBuffers++;
                         freedMemory += entry.getKey();
                     }
@@ -264,7 +263,7 @@ public class GPUMemoryManager implements AutoCloseable {
             while (!queue.isEmpty()) {
                 PooledBuffer pooled = queue.poll();
                 if (pooled != null) {
-                    pooled.buffer.release();
+                    pooled.buffer.close();
                     freedBuffers++;
                 }
             }
@@ -276,7 +275,7 @@ public class GPUMemoryManager implements AutoCloseable {
     /**
      * Get buffer from appropriate pool.
      */
-    private PooledBuffer getFromPool(long requestedSize, BufferUsage usage) {
+    private PooledBuffer getFromPool(long requestedSize, int usage) {
         // Find best matching pool size
         long poolSize = findBestPoolSize(requestedSize);
         if (poolSize == -1) {
@@ -295,7 +294,7 @@ public class GPUMemoryManager implements AutoCloseable {
                 return candidate;
             } else {
                 // Buffer not compatible, release it
-                candidate.buffer.release();
+                candidate.buffer.close();
             }
         }
         
@@ -329,15 +328,9 @@ public class GPUMemoryManager implements AutoCloseable {
     /**
      * Create a new GPU buffer.
      */
-    private Buffer createNewBuffer(long size, BufferUsage usage, String label) {
-        // BufferUsage already contains the flags, just extract them
-        int usageFlags = usage.getFlags();
-        
+    private Buffer createNewBuffer(long size, int usage, String label) {
         // Create buffer using WebGPUContext's abstraction
-        // Note: This returns BufferHandle, but we need Buffer for compatibility
-        // For now, create a stub Buffer wrapper
-        var bufferHandle = context.createBuffer(size, usageFlags);
-        return new StubBufferWrapper(bufferHandle, size);
+        return context.createBuffer(size, usage);
     }
     
     /**
@@ -362,8 +355,9 @@ public class GPUMemoryManager implements AutoCloseable {
         }
         
         // Don't pool mapped buffers
-        if (metadata.usage.contains(BufferUsage.MAP_READ) || 
-            metadata.usage.contains(BufferUsage.MAP_WRITE)) {
+        // Check if buffer has MAP_READ or MAP_WRITE flags
+        if ((metadata.usage & 0x0001) != 0 || // MAP_READ
+            (metadata.usage & 0x0002) != 0) { // MAP_WRITE
             return false;
         }
         
@@ -373,8 +367,8 @@ public class GPUMemoryManager implements AutoCloseable {
     /**
      * Check if pooled buffer is compatible with requested usage.
      */
-    private boolean isBufferCompatible(PooledBuffer pooled, BufferUsage requestedUsage) {
-        return pooled.usage.containsAll(requestedUsage);
+    private boolean isBufferCompatible(PooledBuffer pooled, int requestedUsage) {
+        return pooled.usage == requestedUsage;
     }
     
     /**
@@ -426,7 +420,7 @@ public class GPUMemoryManager implements AutoCloseable {
         
         // Release all active buffers
         for (Buffer buffer : activeBuffers.keySet()) {
-            buffer.release();
+            buffer.close();
         }
         activeBuffers.clear();
         
@@ -435,7 +429,7 @@ public class GPUMemoryManager implements AutoCloseable {
             while (!queue.isEmpty()) {
                 PooledBuffer pooled = queue.poll();
                 if (pooled != null) {
-                    pooled.buffer.release();
+                    pooled.buffer.close();
                 }
             }
             queue.clear();
@@ -449,10 +443,10 @@ public class GPUMemoryManager implements AutoCloseable {
     
     private static class PooledBuffer {
         final Buffer buffer;
-        final BufferUsage usage;
+        final int usage;
         final long pooledTime;
         
-        PooledBuffer(Buffer buffer, BufferUsage usage, long pooledTime) {
+        PooledBuffer(Buffer buffer, int usage, long pooledTime) {
             this.buffer = buffer;
             this.usage = usage;
             this.pooledTime = pooledTime;
@@ -462,12 +456,12 @@ public class GPUMemoryManager implements AutoCloseable {
     private static class BufferMetadata {
         final Buffer buffer;
         final long size;
-        final BufferUsage usage;
+        final int usage;
         final String label;
         final long createTime;
         final boolean fromPool;
         
-        BufferMetadata(Buffer buffer, long size, BufferUsage usage, String label, 
+        BufferMetadata(Buffer buffer, long size, int usage, String label, 
                       long createTime, boolean fromPool) {
             this.buffer = buffer;
             this.size = size;

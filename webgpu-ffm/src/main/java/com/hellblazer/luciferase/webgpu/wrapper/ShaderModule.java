@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.webgpu.wrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.foreign.MemorySegment;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -11,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ShaderModule implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(ShaderModule.class);
     
-    private final long id;
+    private final MemorySegment handle;
     private final String code;
     private final Device device;
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -19,17 +20,17 @@ public class ShaderModule implements AutoCloseable {
     /**
      * Create a shader module wrapper.
      */
-    protected ShaderModule(long id, String code, Device device) {
-        this.id = id;
+    protected ShaderModule(MemorySegment handle, String code, Device device) {
+        this.handle = handle;
         this.code = code;
         this.device = device;
     }
     
     /**
-     * Get the shader module ID.
+     * Get the native handle.
      */
-    public long getId() {
-        return id;
+    public MemorySegment getHandle() {
+        return handle;
     }
     
     /**
@@ -42,9 +43,9 @@ public class ShaderModule implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            device.removeShaderModule(id);
-            // TODO: Call wgpuShaderModuleRelease when available
-            log.debug("Released shader module {}", id);
+            // Release the native shader module
+            com.hellblazer.luciferase.webgpu.WebGPU.releaseShaderModule(handle);
+            log.debug("Released shader module {}", handle);
         }
     }
 }

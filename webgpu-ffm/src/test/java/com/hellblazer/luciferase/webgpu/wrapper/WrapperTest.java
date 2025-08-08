@@ -260,9 +260,10 @@ public class WrapperTest {
                 }
                 """;
             
-            var shader = new ShaderModule(1, wgslCode, device);
+            var shaderHandle = arena.allocate(8);
+            var shader = new ShaderModule(shaderHandle, wgslCode, device);
             
-            assertEquals(1, shader.getId());
+            assertEquals(shaderHandle, shader.getHandle());
             assertEquals(wgslCode, shader.getCode());
             
             // Close shader
@@ -277,9 +278,10 @@ public class WrapperTest {
             var queueHandle = arena.allocate(8);
             var device = new Device(deviceHandle, queueHandle);
             
-            var pipeline = new ComputePipeline(1, device);
+            var pipelineHandle = arena.allocate(8);
+            var pipeline = new ComputePipeline(pipelineHandle, device);
             
-            assertEquals(1, pipeline.getId());
+            assertEquals(pipelineHandle, pipeline.getHandle());
             
             // Close pipeline
             pipeline.close();

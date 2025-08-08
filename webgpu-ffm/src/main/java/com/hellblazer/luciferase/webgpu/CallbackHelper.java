@@ -4,9 +4,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.foreign.*;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +15,45 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class CallbackHelper {
     private static final Logger log = LoggerFactory.getLogger(CallbackHelper.class);
+    
+    /**
+     * Buffer mapping callback implementation.
+     */
+    public static class BufferMapCallback {
+        private final Arena arena;
+        private final MemorySegment callbackStub;
+        private volatile int status = -1; // -1 = pending, 0 = success, >0 = error
+        private final CountDownLatch latch = new CountDownLatch(1);
+        
+        
+        public BufferMapCallback(Arena arena) {
+            this.arena = arena;
+            
+            // Use the new CallbackBridge approach to work around Java 24 FFM sealed interface constraints
+            this.callbackStub = CallbackBridge.createBufferMapCallback(arena, this::handleCallback);
+        }
+        
+        private void handleCallback(int status, MemorySegment userdata) {
+            log.debug("Buffer mapping callback invoked - status: {}", status);
+            this.status = status;
+            latch.countDown();
+        }
+        
+        public MemorySegment getCallbackStub() {
+            return callbackStub;
+        }
+        
+        public int waitForResult(long timeout, TimeUnit unit) throws InterruptedException {
+            log.debug("BufferMapCallback waiting for latch with timeout {} {}", timeout, unit);
+            if (latch.await(timeout, unit)) {
+                log.debug("BufferMapCallback latch completed, returning status: {}", status);
+                return status;
+            } else {
+                log.warn("Buffer mapping callback timed out after {} {}", timeout, unit);
+                return -2; // Timeout
+            }
+        }
+    }
     
     /**
      * Create a callback for adapter request.
@@ -35,33 +71,10 @@ public class CallbackHelper {
         public AdapterCallback(Arena arena) {
             this.arena = arena;
             
-            // Create the callback function
-            try {
-                var callbackHandle = MethodHandles.lookup()
-                    .findVirtual(AdapterCallback.class, "invoke",
-                        MethodType.methodType(void.class, int.class, MemorySegment.class, 
-                                             MemorySegment.class, MemorySegment.class))
-                    .bindTo(this);
+            // Use the new CallbackBridge approach to work around Java 24 FFM sealed interface constraints
+            this.callbackStub = CallbackBridge.createAdapterCallback(arena, this::invoke);
             
-                // Create a function descriptor for the callback
-                // Note: wgpu uses C calling convention with specific alignment
-                var callbackDescriptor = FunctionDescriptor.ofVoid(
-                    ValueLayout.JAVA_INT,      // status (WGPURequestAdapterStatus)
-                    ValueLayout.ADDRESS,        // adapter (WGPUAdapter)
-                    ValueLayout.ADDRESS,        // message (char const *)
-                    ValueLayout.ADDRESS         // userdata (void *)
-                );
-                
-                // Create the callback stub using the provided arena
-                // This ensures the callback stays alive for the duration needed
-                this.callbackStub = Linker.nativeLinker().upcallStub(
-                    callbackHandle, callbackDescriptor, arena
-                );
-                
-                log.debug("Created adapter callback stub at: 0x{}", Long.toHexString(callbackStub.address()));
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to create callback stub", e);
-            }
+            log.debug("Created adapter callback stub: {}", callbackStub);
         }
         
         public void invoke(int status, MemorySegment adapter, MemorySegment message, MemorySegment userdata) {
@@ -115,29 +128,8 @@ public class CallbackHelper {
         public DeviceCallback(Arena arena) {
             this.arena = arena;
             
-            // Create the callback function
-            try {
-                var callbackHandle = MethodHandles.lookup()
-                    .findVirtual(DeviceCallback.class, "invoke",
-                        MethodType.methodType(void.class, int.class, MemorySegment.class,
-                                             MemorySegment.class, MemorySegment.class))
-                    .bindTo(this);
-                
-                // Create a function descriptor for the callback
-                var callbackDescriptor = FunctionDescriptor.ofVoid(
-                    ValueLayout.JAVA_INT,      // status
-                    ValueLayout.ADDRESS,        // device
-                    ValueLayout.ADDRESS,        // message
-                    ValueLayout.ADDRESS         // userdata
-                );
-                
-                // Create the callback stub
-                this.callbackStub = Linker.nativeLinker().upcallStub(
-                    callbackHandle, callbackDescriptor, arena
-                );
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to create callback stub", e);
-            }
+            // Use the new CallbackBridge approach to work around Java 24 FFM sealed interface constraints
+            this.callbackStub = CallbackBridge.createDeviceCallback(arena, this::invoke);
         }
         
         public void invoke(int status, MemorySegment device, MemorySegment message, MemorySegment userdata) {

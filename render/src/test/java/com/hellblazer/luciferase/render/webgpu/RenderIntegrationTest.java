@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.render.webgpu;
 
 import com.hellblazer.luciferase.render.voxel.VoxelRenderPipeline;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import org.junit.jupiter.api.*;
 
 import java.nio.ByteBuffer;
@@ -16,21 +17,22 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class RenderIntegrationTest {
     
-    private static WebGPURenderBridge bridge;
+    private static WebGPUContext context;
     private static VoxelRenderPipeline pipeline;
     private static boolean gpuAvailable = false;
     
     @BeforeAll
     static void setup() {
         try {
-            // Initialize render bridge
-            bridge = new WebGPURenderBridge();
-            var initFuture = bridge.initialize();
-            gpuAvailable = initFuture.get(5, TimeUnit.SECONDS);
+            // Initialize WebGPU context
+            context = new WebGPUContext();
+            var initFuture = context.initialize();
+            initFuture.get(5, TimeUnit.SECONDS);
+            gpuAvailable = context.isInitialized();
             
             if (gpuAvailable) {
                 // Create voxel pipeline
-                pipeline = new VoxelRenderPipeline(bridge);
+                pipeline = new VoxelRenderPipeline(context);
                 var pipelineFuture = pipeline.initialize();
                 assertTrue(pipelineFuture.get(5, TimeUnit.SECONDS), 
                           "Pipeline initialization should succeed");
@@ -48,8 +50,8 @@ public class RenderIntegrationTest {
         if (pipeline != null) {
             pipeline.shutdown();
         }
-        if (bridge != null) {
-            bridge.shutdown();
+        if (context != null) {
+            context.shutdown();
         }
     }
     
@@ -58,10 +60,10 @@ public class RenderIntegrationTest {
     void testBridgeInitialization() {
         assumeTrue(gpuAvailable, "GPU not available - skipping test");
         
-        assertNotNull(bridge, "Bridge should be created");
-        assertTrue(bridge.isReady(), "Bridge should be ready");
-        assertNotNull(bridge.getDevice(), "Device should be available");
-        assertNotNull(bridge.getQueue(), "Queue should be available");
+        assertNotNull(context, "Context should be created");
+        assertTrue(context.isInitialized(), "Context should be initialized");
+        assertNotNull(context.getDevice(), "Device should be available");
+        assertNotNull(context.getQueue(), "Queue should be available");
     }
     
     @Test
@@ -71,7 +73,7 @@ public class RenderIntegrationTest {
         
         // Create a voxel buffer
         int size = 1024 * 1024; // 1MB
-        var buffer = bridge.createVoxelBuffer(size, 0x80); // STORAGE usage
+        var buffer = context.createBuffer(size, 0x80); // STORAGE usage
         
         assertNotNull(buffer, "Buffer should be created");
         assertEquals(size, buffer.getSize(), "Buffer size should match");
@@ -93,7 +95,7 @@ public class RenderIntegrationTest {
             }
             """;
         
-        var shader = bridge.createVoxelShader(shaderCode);
+        var shader = context.createComputeShader(shaderCode);
         assertNotNull(shader, "Shader should be created");
         
         // Clean up

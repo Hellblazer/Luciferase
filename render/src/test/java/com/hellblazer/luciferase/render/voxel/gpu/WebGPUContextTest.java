@@ -1,6 +1,9 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
-import com.hellblazer.luciferase.render.webgpu.*;
+import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
+import com.hellblazer.luciferase.webgpu.wrapper.ShaderModule;
+import com.hellblazer.luciferase.webgpu.wrapper.ComputePipeline;
+import com.hellblazer.luciferase.webgpu.wrapper.Device;
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,9 +24,8 @@ public class WebGPUContextTest {
     
     @BeforeEach
     public void setup() {
-        // Use stub backend for reliable testing
-        WebGPUBackend backend = WebGPUBackendFactory.createStubBackend();
-        context = new WebGPUContext(backend);
+        // Create WebGPU context
+        context = new WebGPUContext();
     }
     
     @AfterEach
@@ -45,7 +47,7 @@ public class WebGPUContextTest {
         
         // Verify initialization
         assertTrue(context.isInitialized());
-        assertEquals("Stub WebGPU (Development)", context.getBackendName());
+        assertEquals("WebGPU-FFM", context.getBackendName());
     }
     
     @Test
@@ -54,14 +56,11 @@ public class WebGPUContextTest {
     public void testBufferCreation() throws Exception {
         context.initialize().get(5, TimeUnit.SECONDS);
         
-        BufferHandle buffer = context.createBuffer(1024, 0x10);
+        Buffer buffer = context.createBuffer(1024, 0x10 | 0x08); // INDEX | COPY_DST
         assertNotNull(buffer);
         assertEquals(1024, buffer.getSize());
-        assertEquals(0x10, buffer.getUsage());
-        assertTrue(buffer.isValid());
         
-        buffer.release();
-        assertFalse(buffer.isValid());
+        buffer.close();
     }
     
     @Test
@@ -71,13 +70,10 @@ public class WebGPUContextTest {
         context.initialize().get(5, TimeUnit.SECONDS);
         
         String wgslSource = "@compute @workgroup_size(1) fn main() {}";
-        ShaderHandle shader = context.createComputeShader(wgslSource);
+        ShaderModule shader = context.createComputeShader(wgslSource);
         assertNotNull(shader);
-        assertEquals(wgslSource, shader.getWgslSource());
-        assertTrue(shader.isValid());
         
-        shader.release();
-        assertFalse(shader.isValid());
+        shader.close();
     }
     
     @Test
@@ -86,7 +82,7 @@ public class WebGPUContextTest {
     public void testBufferOperations() throws Exception {
         context.initialize().get(5, TimeUnit.SECONDS);
         
-        BufferHandle buffer = context.createBuffer(256, 0x10);
+        Buffer buffer = context.createBuffer(256, 0x08 | 0x01); // COPY_DST | MAP_READ
         byte[] testData = "Hello WebGPU".getBytes();
         
         // Write data
@@ -97,7 +93,7 @@ public class WebGPUContextTest {
         assertNotNull(readData);
         assertEquals(testData.length, readData.length);
         
-        buffer.release();
+        buffer.close();
     }
     
     @Test
@@ -106,11 +102,17 @@ public class WebGPUContextTest {
     public void testComputeDispatch() throws Exception {
         context.initialize().get(5, TimeUnit.SECONDS);
         
-        ShaderHandle shader = context.createComputeShader("@compute @workgroup_size(1) fn main() {}");
+        ShaderModule shader = context.createComputeShader("@compute @workgroup_size(1) fn main() {}");
         
-        assertDoesNotThrow(() -> context.dispatchCompute(shader, 1, 1, 1));
+        // Create a compute pipeline first
+        var pipelineDesc = new Device.ComputePipelineDescriptor(shader)
+            .withEntryPoint("main");
+        ComputePipeline pipeline = context.getDevice().createComputePipeline(pipelineDesc);
         
-        shader.release();
+        assertDoesNotThrow(() -> context.dispatchCompute(pipeline, 1, 1, 1));
+        
+        pipeline.close();
+        shader.close();
     }
     
     @Test
@@ -119,8 +121,14 @@ public class WebGPUContextTest {
     public void testQueueSync() throws Exception {
         context.initialize().get(5, TimeUnit.SECONDS);
         
-        ShaderHandle shader = context.createComputeShader("@compute @workgroup_size(1) fn main() {}");
-        context.dispatchCompute(shader, 1, 1, 1);
+        ShaderModule shader = context.createComputeShader("@compute @workgroup_size(1) fn main() {}");
+        
+        // Create a compute pipeline first
+        var pipelineDesc = new Device.ComputePipelineDescriptor(shader)
+            .withEntryPoint("main");
+        ComputePipeline pipeline = context.getDevice().createComputePipeline(pipelineDesc);
+        
+        context.dispatchCompute(pipeline, 1, 1, 1);
         
         // Wait for completion
         CompletableFuture<Void> waitFuture = context.waitIdle();
@@ -128,7 +136,8 @@ public class WebGPUContextTest {
         
         waitFuture.get(5, TimeUnit.SECONDS);
         
-        shader.release();
+        pipeline.close();
+        shader.close();
     }
     
     @Test
@@ -174,21 +183,25 @@ public class WebGPUContextTest {
         context.initialize().get(5, TimeUnit.SECONDS);
         
         // Test legacy buffer creation
-        BufferHandle buffer = context.createBuffer(512, 0x20);
+        Buffer buffer = context.createBuffer(512, 0x08 | 0x01); // COPY_DST | MAP_READ
         assertNotNull(buffer);
         
         // Test legacy buffer operations
-        byte[] data = "Legacy test".getBytes();
+        byte[] data = "Legacy test!".getBytes(); // 12 bytes - aligned to 4
         assertDoesNotThrow(() -> context.writeBuffer((Object) buffer, 0, data));
         
         java.nio.ByteBuffer readBuffer = context.readBuffer((Object) buffer);
         assertNotNull(readBuffer);
         
         // Test legacy compute dispatch
-        ShaderHandle shader = context.createComputeShader("test");
-        assertDoesNotThrow(() -> context.dispatchCompute((Object) shader, 1, 1, 1));
+        ShaderModule shader = context.createComputeShader("@compute @workgroup_size(1) fn main() {}");
+        var pipelineDesc = new Device.ComputePipelineDescriptor(shader)
+            .withEntryPoint("main");
+        ComputePipeline pipeline = context.getDevice().createComputePipeline(pipelineDesc);
+        assertDoesNotThrow(() -> context.dispatchCompute((Object) pipeline, 1, 1, 1));
         
-        buffer.release();
-        shader.release();
+        pipeline.close();
+        shader.close();
+        buffer.close();
     }
 }

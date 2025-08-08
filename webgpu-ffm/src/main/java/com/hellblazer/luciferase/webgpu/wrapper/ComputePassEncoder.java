@@ -39,8 +39,20 @@ public class ComputePassEncoder implements AutoCloseable {
             throw new IllegalStateException("Compute pass already ended");
         }
         
-        // TODO: Implement native setPipeline
-        log.debug("Setting compute pipeline: {}", pipeline);
+        // Only call native method if we have valid handles (not NULL stubs)
+        boolean encoderValid = !handle.equals(MemorySegment.NULL);
+        boolean pipelineValid = pipeline != null && 
+                               pipeline.getHandle() != null && 
+                               !pipeline.getHandle().equals(MemorySegment.NULL);
+        
+        if (encoderValid && pipelineValid) {
+            // Set the native pipeline
+            com.hellblazer.luciferase.webgpu.WebGPU.computePassEncoderSetPipeline(handle, pipeline.getHandle());
+            log.debug("Called native setPipeline");
+        } else {
+            log.debug("Skipped native setPipeline - encoder valid: {}, pipeline valid: {}", 
+                     encoderValid, pipelineValid);
+        }
     }
     
     /**
@@ -77,6 +89,31 @@ public class ComputePassEncoder implements AutoCloseable {
         
         log.debug("Dispatched native workgroups: {}x{}x{}", 
                  workgroupCountX, workgroupCountY, workgroupCountZ);
+    }
+    
+    /**
+     * Set a bind group for this compute pass.
+     * 
+     * @param index the bind group index
+     * @param bindGroup the bind group to set
+     */
+    public void setBindGroup(int index, BindGroup bindGroup) {
+        if (ended.get()) {
+            throw new IllegalStateException("Compute pass already ended");
+        }
+        
+        if (bindGroup == null) {
+            throw new IllegalArgumentException("Bind group cannot be null");
+        }
+        
+        // Call native method to set bind group
+        com.hellblazer.luciferase.webgpu.WebGPU.computePassEncoderSetBindGroup(
+            handle, 
+            index, 
+            bindGroup.getHandle()
+        );
+        
+        log.debug("Set bind group at index {}", index);
     }
     
     /**

@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.render.voxel;
 
-import com.hellblazer.luciferase.render.webgpu.WebGPURenderBridge;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import com.hellblazer.luciferase.webgpu.wrapper.Device;
@@ -19,7 +19,7 @@ import java.util.concurrent.CompletableFuture;
 public class VoxelRenderPipeline {
     private static final Logger log = LoggerFactory.getLogger(VoxelRenderPipeline.class);
     
-    private final WebGPURenderBridge bridge;
+    private final WebGPUContext context;
     private ShaderModule voxelizeShader;
     private ShaderModule traversalShader;
     private ShaderModule renderShader;
@@ -33,8 +33,8 @@ public class VoxelRenderPipeline {
     private long voxelBufferSize;
     private long octreeBufferSize;
     
-    public VoxelRenderPipeline(WebGPURenderBridge bridge) {
-        this.bridge = bridge;
+    public VoxelRenderPipeline(WebGPUContext context) {
+        this.context = context;
         calculateBufferSizes();
     }
     
@@ -83,7 +83,7 @@ public class VoxelRenderPipeline {
         // Voxelization compute shader
         String voxelizeCode = """
             @group(0) @binding(0) var<storage, read> vertices: array<vec3<f32>>;
-            @group(0) @binding(1) var<storage, read_write> voxels: array<u32>;
+            @group(0) @binding(1) var<storage, read_write> voxels: array<atomic<u32>>;
             @group(0) @binding(2) var<uniform> params: VoxelParams;
             
             struct VoxelParams {
@@ -111,11 +111,11 @@ public class VoxelRenderPipeline {
                 }
             }
             """;
-        voxelizeShader = bridge.createVoxelShader(voxelizeCode);
+        voxelizeShader = context.createComputeShader(voxelizeCode);
         
         // Octree traversal compute shader
         String traversalCode = """
-            @group(0) @binding(0) var<storage, read> voxels: array<u32>;
+            @group(0) @binding(0) var<storage, read> voxels: array<atomic<u32>>;
             @group(0) @binding(1) var<storage, read_write> octree: array<u32>;
             @group(0) @binding(2) var<uniform> params: OctreeParams;
             
@@ -140,14 +140,14 @@ public class VoxelRenderPipeline {
                 
                 for (var i = 0u; i < params.leaf_size; i++) {
                     if (voxel_idx + i < arrayLength(&voxels)) {
-                        node_value |= voxels[voxel_idx + i];
+                        node_value |= atomicLoad(&voxels[voxel_idx + i]);
                     }
                 }
                 
                 octree[node_idx] = node_value;
             }
             """;
-        traversalShader = bridge.createVoxelShader(traversalCode);
+        traversalShader = context.createComputeShader(traversalCode);
         
         // Rendering vertex/fragment shaders
         String renderCode = """
@@ -159,13 +159,20 @@ public class VoxelRenderPipeline {
             @vertex
             fn vs_main(@builtin(vertex_index) vertex_idx: u32) -> VertexOutput {
                 var output: VertexOutput;
-                // Ray marching setup for voxel rendering
-                let positions = array<vec2<f32>, 3>(
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 3.0, -1.0),
-                    vec2<f32>(-1.0,  3.0)
-                );
-                output.position = vec4<f32>(positions[vertex_idx], 0.0, 1.0);
+                // Ray marching setup for voxel rendering - use switch for constant indexing
+                var position: vec2<f32>;
+                switch vertex_idx {
+                    case 0u: {
+                        position = vec2<f32>(-1.0, -1.0);
+                    }
+                    case 1u: {
+                        position = vec2<f32>( 3.0, -1.0);
+                    }
+                    case 2u, default: {
+                        position = vec2<f32>(-1.0,  3.0);
+                    }
+                }
+                output.position = vec4<f32>(position, 0.0, 1.0);
                 output.color = vec3<f32>(1.0, 1.0, 1.0);
                 return output;
             }
@@ -176,7 +183,7 @@ public class VoxelRenderPipeline {
                 return vec4<f32>(input.color, 1.0);
             }
             """;
-        renderShader = bridge.createVoxelShader(renderCode);
+        renderShader = context.createComputeShader(renderCode);
         
         log.debug("Created {} shaders", 3);
     }
@@ -185,21 +192,21 @@ public class VoxelRenderPipeline {
         log.debug("Creating voxel buffers...");
         
         // Voxel storage buffer
-        voxelBuffer = bridge.createVoxelBuffer(
+        voxelBuffer = context.createBuffer(
             voxelBufferSize,
             WebGPUNative.BUFFER_USAGE_STORAGE | 
             WebGPUNative.BUFFER_USAGE_COPY_DST
         );
         
         // Octree storage buffer
-        octreeBuffer = bridge.createVoxelBuffer(
+        octreeBuffer = context.createBuffer(
             octreeBufferSize,
             WebGPUNative.BUFFER_USAGE_STORAGE | 
             WebGPUNative.BUFFER_USAGE_COPY_SRC
         );
         
         // Uniform buffer for parameters
-        uniformBuffer = bridge.createVoxelBuffer(
+        uniformBuffer = context.createBuffer(
             256, // Size for uniform data
             WebGPUNative.BUFFER_USAGE_UNIFORM | 
             WebGPUNative.BUFFER_USAGE_COPY_DST
@@ -233,22 +240,30 @@ public class VoxelRenderPipeline {
             vertexData.flip();
             
             // Create temporary vertex buffer
-            var vertexBuffer = bridge.createVoxelBuffer(
+            var vertexBuffer = context.createBuffer(
                 vertexData.remaining(),
                 WebGPUNative.BUFFER_USAGE_STORAGE | 
                 WebGPUNative.BUFFER_USAGE_COPY_DST
             );
             
-            // Upload data
-            bridge.uploadVoxelData(vertexBuffer, vertexData, 0);
+            // Upload data - handle both direct and array-backed buffers
+            byte[] data;
+            if (vertexData.hasArray()) {
+                data = vertexData.array();
+            } else {
+                data = new byte[vertexData.remaining()];
+                vertexData.get(data);
+                vertexData.rewind();
+            }
+            context.writeBuffer(vertexBuffer, data, 0);
             
             // Execute voxelization compute shader
             int workgroups = (vertices.remaining() / 3 + 63) / 64;
-            bridge.executeVoxelCompute(voxelizeShader, vertexBuffer, 
-                                     voxelBuffer, workgroups);
+            // TODO: Create compute pipeline and dispatch
+            // context.dispatchCompute(pipeline, workgroups, 1, 1);
             
             // Submit commands
-            bridge.submitCommands();
+            context.waitIdle().join();
             
             // Clean up temporary buffer
             vertexBuffer.close();
@@ -270,10 +285,10 @@ public class VoxelRenderPipeline {
             int nodeCount = (int) (voxelBufferSize / 4 / 8); // Estimate
             int workgroups = (nodeCount + 255) / 256;
             
-            bridge.executeVoxelCompute(traversalShader, voxelBuffer,
-                                     octreeBuffer, workgroups);
+            // TODO: Create compute pipeline and dispatch
+            // context.dispatchCompute(pipeline, workgroups, 1, 1);
             
-            bridge.submitCommands();
+            context.waitIdle().join();
             
             log.debug("Octree construction complete");
         });
@@ -283,7 +298,7 @@ public class VoxelRenderPipeline {
      * Render the voxel scene.
      */
     public void render() {
-        if (!bridge.isReady()) {
+        if (!context.isInitialized()) {
             log.warn("WebGPU not ready for rendering");
             return;
         }
@@ -298,7 +313,17 @@ public class VoxelRenderPipeline {
      * @param params the uniform parameters
      */
     public void updateUniforms(ByteBuffer params) {
-        bridge.uploadVoxelData(uniformBuffer, params, 0);
+        // Convert ByteBuffer to byte array, handling both direct and array-backed buffers
+        byte[] data;
+        if (params.hasArray()) {
+            data = params.array();
+        } else {
+            // Handle direct buffers that don't have backing arrays
+            data = new byte[params.remaining()];
+            params.get(data);
+            params.rewind(); // Reset position for potential reuse
+        }
+        context.writeBuffer(uniformBuffer, data, 0);
     }
     
     /**

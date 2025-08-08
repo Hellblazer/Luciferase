@@ -11,8 +11,7 @@ import com.hellblazer.luciferase.render.testdata.TestDataGenerator;
 import com.hellblazer.luciferase.render.voxel.core.VoxelGrid;
 import com.hellblazer.luciferase.render.voxel.core.VoxelOctreeNode;
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
-import com.hellblazer.luciferase.render.voxel.gpu.WebGPUStubs.BufferUsage;
-import com.hellblazer.luciferase.render.webgpu.WebGPUBackendFactory;
+import com.hellblazer.luciferase.render.voxel.gpu.GPUBufferManager;
 
 import org.junit.jupiter.api.*;
 import org.slf4j.Logger;
@@ -79,10 +78,9 @@ class ComprehensiveRenderingPipelineTest {
     void initializeComponents() throws Exception {
         log.info("Initializing rendering pipeline components...");
         
-        // Use smart backend that auto-detects platform
-        var backend = WebGPUBackendFactory.createBackend();
-        log.info("Using WebGPU backend: {}", backend.getBackendName());
-        webgpuContext = new WebGPUContext(backend);
+        // Create WebGPU context
+        webgpuContext = new WebGPUContext();
+        log.info("Using WebGPU-FFM backend");
         
         // Initialize the WebGPU backend - it will handle fallback internally
         var initFuture = webgpuContext.initialize();
@@ -343,11 +341,11 @@ class ComprehensiveRenderingPipelineTest {
         
         // Test buffer allocation
         var buffer1 = memoryManager.allocateBuffer(1024, 
-            new BufferUsage(BufferUsage.VERTEX), "test-buffer-1");
+            GPUBufferManager.BUFFER_USAGE_VERTEX, "test-buffer-1");
         var buffer2 = memoryManager.allocateBuffer(4096, 
-            new BufferUsage(BufferUsage.UNIFORM), "test-buffer-2");
+            GPUBufferManager.BUFFER_USAGE_UNIFORM, "test-buffer-2");
         var buffer3 = memoryManager.allocateBuffer(16384, 
-            new BufferUsage(BufferUsage.STORAGE), "test-buffer-3");
+            GPUBufferManager.BUFFER_USAGE_STORAGE, "test-buffer-3");
         
         assertNotNull(buffer1);
         assertNotNull(buffer2);
