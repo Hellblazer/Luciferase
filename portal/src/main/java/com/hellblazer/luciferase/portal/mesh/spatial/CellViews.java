@@ -52,7 +52,7 @@ public class CellViews {
 
     private final TriangleMesh[]                       referenceMeshes     = new TriangleMesh[6];
     private final Group[]                              referenceWireframes = new Group[6];
-    private final Map<TetreeKey<?>, Affine>            transformCache      = new HashMap<>();
+    protected final Map<TetreeKey<?>, Affine>          transformCache      = new HashMap<>();
     private final double                               edgeThickness;
     private final Material                             edgeMaterial;
     private final LinkedHashMap<String, PhongMaterial> materialPool;
@@ -219,7 +219,7 @@ public class CellViews {
      * @param tet The tetrahedron
      * @return The affine transform
      */
-    private Affine calculateTransform(Tet tet) {
+    protected Affine calculateTransform(Tet tet) {
         // Check cache first
         var cacheKey = tet.tmIndex();
         Affine cached = transformCache.get(cacheKey);

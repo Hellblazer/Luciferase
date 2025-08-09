@@ -1,0 +1,205 @@
+package com.hellblazer.luciferase.webgpu.integration;
+
+import com.hellblazer.luciferase.webgpu.surface.SurfaceDescriptor;
+import com.hellblazer.luciferase.webgpu.wrapper.Instance;
+import com.hellblazer.luciferase.webgpu.wrapper.Surface;
+
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.scene.Scene;
+import javafx.scene.layout.StackPane;
+import javafx.stage.Stage;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Method;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * JavaFX integration for WebGPU surface creation.
+ * Provides utilities to extract native window handles from JavaFX windows.
+ */
+public class JavaFXIntegration {
+    private static final Logger log = LoggerFactory.getLogger(JavaFXIntegration.class);
+    
+    /**
+     * Extract the native window handle from a JavaFX Stage.
+     * This uses reflection to access internal JavaFX APIs.
+     * 
+     * @param stage the JavaFX stage
+     * @return native window handle (Metal layer on macOS, HWND on Windows, X11 window on Linux)
+     */
+    public static long getNativeWindowHandle(Stage stage) {
+        if (!stage.isShowing()) {
+            throw new IllegalStateException("Stage must be showing to get native handle");
+        }
+        
+        try {
+            // Get the Glass Window from the JavaFX Stage
+            var tkStage = getToolkitStage(stage);
+            if (tkStage == null) {
+                throw new RuntimeException("Could not get toolkit stage");
+            }
+            
+            // Platform-specific extraction
+            var osName = System.getProperty("os.name").toLowerCase();
+            
+            if (osName.contains("mac")) {
+                return getMacOSMetalLayer(tkStage);
+            } else if (osName.contains("win")) {
+                return getWindowsHWND(tkStage);
+            } else if (osName.contains("linux")) {
+                return getLinuxWindow(tkStage);
+            } else {
+                throw new UnsupportedOperationException("Unsupported platform: " + osName);
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to extract native window handle", e);
+            throw new RuntimeException("Failed to extract native window handle", e);
+        }
+    }
+    
+    /**
+     * Get the toolkit stage from a JavaFX Stage using reflection.
+     */
+    private static Object getToolkitStage(Stage stage) throws Exception {
+        // Access com.sun.javafx.stage.StageHelper.getPeer(stage)
+        var stageHelperClass = Class.forName("com.sun.javafx.stage.StageHelper");
+        var getPeerMethod = stageHelperClass.getDeclaredMethod("getPeer", Stage.class);
+        getPeerMethod.setAccessible(true);
+        return getPeerMethod.invoke(null, stage);
+    }
+    
+    /**
+     * Extract Metal layer from macOS JavaFX window.
+     */
+    private static long getMacOSMetalLayer(Object tkStage) throws Exception {
+        // Get the Glass Window
+        var windowClass = Class.forName("com.sun.glass.ui.Window");
+        var getWindowMethod = tkStage.getClass().getMethod("getPlatformWindow");
+        getWindowMethod.setAccessible(true);
+        var glassWindow = getWindowMethod.invoke(tkStage);
+        
+        // Get the native layer (CAMetalLayer)
+        var getNativeLayerMethod = glassWindow.getClass().getDeclaredMethod("getLayer");
+        getNativeLayerMethod.setAccessible(true);
+        var layer = getNativeLayerMethod.invoke(glassWindow);
+        
+        // Convert to long pointer
+        if (layer instanceof Long) {
+            return (Long) layer;
+        } else {
+            // Try to get the pointer value
+            var getPtrMethod = layer.getClass().getDeclaredMethod("ptr");
+            getPtrMethod.setAccessible(true);
+            return (Long) getPtrMethod.invoke(layer);
+        }
+    }
+    
+    /**
+     * Extract HWND from Windows JavaFX window.
+     */
+    private static long getWindowsHWND(Object tkStage) throws Exception {
+        // Get the Glass Window
+        var getWindowMethod = tkStage.getClass().getMethod("getPlatformWindow");
+        getWindowMethod.setAccessible(true);
+        var glassWindow = getWindowMethod.invoke(tkStage);
+        
+        // Get the HWND
+        var getHWNDMethod = glassWindow.getClass().getDeclaredMethod("getNativeHandle");
+        getHWNDMethod.setAccessible(true);
+        return (Long) getHWNDMethod.invoke(glassWindow);
+    }
+    
+    /**
+     * Extract X11 window ID from Linux JavaFX window.
+     */
+    private static long getLinuxWindow(Object tkStage) throws Exception {
+        // Get the Glass Window
+        var getWindowMethod = tkStage.getClass().getMethod("getPlatformWindow");
+        getWindowMethod.setAccessible(true);
+        var glassWindow = getWindowMethod.invoke(tkStage);
+        
+        // Get the X11 window ID
+        var getWindowMethod2 = glassWindow.getClass().getDeclaredMethod("getNativeWindow");
+        getWindowMethod2.setAccessible(true);
+        return (Long) getWindowMethod2.invoke(glassWindow);
+    }
+    
+    /**
+     * Create a WebGPU surface from a JavaFX Stage.
+     * 
+     * @param instance WebGPU instance
+     * @param stage JavaFX stage
+     * @param arena memory arena for allocations
+     * @return WebGPU surface
+     */
+    public static Surface createSurface(Instance instance, Stage stage, Arena arena) {
+        var windowHandle = getNativeWindowHandle(stage);
+        var descriptor = SurfaceDescriptor.create(arena, windowHandle);
+        
+        // Create surface from instance with the descriptor
+        return instance.createSurface(descriptor.getDescriptor());
+    }
+    
+    /**
+     * Example JavaFX application with WebGPU integration.
+     */
+    public static class WebGPUJavaFXApp extends Application {
+        private static final Logger log = LoggerFactory.getLogger(WebGPUJavaFXApp.class);
+        
+        private Instance instance;
+        private Surface surface;
+        private Arena arena;
+        
+        @Override
+        public void start(Stage primaryStage) {
+            try {
+                arena = Arena.ofConfined();
+                
+                // Create WebGPU instance
+                instance = new Instance();
+                
+                // Setup JavaFX window
+                var root = new StackPane();
+                var scene = new Scene(root, 800, 600);
+                
+                primaryStage.setTitle("WebGPU JavaFX Integration");
+                primaryStage.setScene(scene);
+                primaryStage.show();
+                
+                // Create WebGPU surface from JavaFX window
+                surface = createSurface(instance, primaryStage, arena);
+                
+                log.info("Successfully created WebGPU surface from JavaFX window");
+                
+                // TODO: Setup rendering pipeline and render loop
+                
+            } catch (Exception e) {
+                log.error("Failed to initialize WebGPU with JavaFX", e);
+            }
+        }
+        
+        @Override
+        public void stop() {
+            // Cleanup
+            if (surface != null) {
+                surface.close();
+            }
+            if (instance != null) {
+                instance.close();
+            }
+            if (arena != null) {
+                arena.close();
+            }
+        }
+        
+        public static void launch(String[] args) {
+            Application.launch(WebGPUJavaFXApp.class, args);
+        }
+    }
+}

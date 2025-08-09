@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Initialization
+
+First, read the MCP guide: memory-bank-mcp:memory_bank_read({projectName: 'MCP_Documentation', fileName: 'complete-mcp-guide.md'})
+
+spawn multiple parallel subtasks of claude whenever applicable. leverage the capabilities of the
+configured mcp servers where applicable.
+
 ## Build Commands
 
 - **Build the project**: `mvn clean install`
@@ -20,7 +27,7 @@ The project uses SLF4J for logging with Logback as the implementation:
 
 ## Requirements
 
-- Java 23+ (configured in maven.compiler.source/target)
+- Java 24 (configured in maven.compiler.source/target)
 - Maven 3.91+
 - Project is licensed under AGPL v3.0
 
@@ -379,5 +386,4 @@ Historical documents (describe unimplemented features):
     - **Files Added**: AdaptiveZBufferConfig.java, DSOC_OPTIMIZATION_FINAL_REPORT.md, DSOC_CURRENT_STATUS.md
     - **Validation**: Measured 2.0x speedup in test scenario (1000 entities, 0.1 occlusion)
     - **Usage**: Enable explicitly with DSOCConfiguration.defaultConfig().withEnabled(true)
-
-[... rest of the file remains unchanged ...]
+- **IDE INTEGRATION MEMORY**: Always use the mcp jetbrains.findProjectProblems to discover compilation errors. no need to compile when you can use the ide for this purpose

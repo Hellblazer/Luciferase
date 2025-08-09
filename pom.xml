@@ -44,6 +44,8 @@
         <!--        <module>portal-2</module>-->
         <module>simulation</module>
         <module>sentry</module>
+        <module>render</module>
+        <module>webgpu-ffm</module>
     </modules>
 
     <dependencyManagement>
@@ -77,6 +79,16 @@
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>von</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>render</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>webgpu-ffm</artifactId>
             </dependency>
 
             <dependency>
@@ -208,6 +220,7 @@
                 <version>3.12.0</version>
             </dependency>
 
+
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
@@ -261,7 +274,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <release>23</release>
+                    <release>24</release>
                 </configuration>
             </plugin>
             <plugin>
