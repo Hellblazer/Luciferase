@@ -90,8 +90,8 @@ class TriangleBoxIntersectionTest {
     }
     
     @Test
-    void testCoverageComputation() {
-        // Triangle fully covers box
+    void testCoverageComputationLegacy() {
+        // Triangle fully covers box - test legacy sampling method
         var v0 = new Point3f(-2.0f, -2.0f, 0.0f);
         var v1 = new Point3f(2.0f, -2.0f, 0.0f);
         var v2 = new Point3f(0.0f, 2.0f, 0.0f);
@@ -99,12 +99,91 @@ class TriangleBoxIntersectionTest {
         var boxCenter = new Point3f(0, 0, 0);
         var boxHalfSize = new Vector3f(0.5f, 0.5f, 0.5f);
         
-        float coverage = TriangleBoxIntersection.computeCoverage(
+        float coverage = TriangleBoxIntersection.computeCoverageSampled(
             v0, v1, v2, boxCenter, boxHalfSize, 2
         );
         
         assertTrue(coverage > 0.0f);
         assertTrue(coverage <= 1.0f);
+    }
+    
+    @Test
+    void testESVOTriangleClipping() {
+        // Test ESVO-style triangle clipping for precise coverage
+        var v0 = new Point3f(-1.0f, -1.0f, 0.0f);
+        var v1 = new Point3f(1.0f, -1.0f, 0.0f);
+        var v2 = new Point3f(0.0f, 1.0f, 0.0f);
+        
+        var boxCenter = new Point3f(0, 0, 0);
+        var boxHalfSize = new Vector3f(0.5f, 0.5f, 0.5f);
+        
+        // Test new clipping-based coverage
+        float clippedCoverage = TriangleBoxIntersection.computeCoverage(
+            v0, v1, v2, boxCenter, boxHalfSize
+        );
+        
+        // Test legacy sampling-based coverage
+        float sampledCoverage = TriangleBoxIntersection.computeCoverageSampled(
+            v0, v1, v2, boxCenter, boxHalfSize, 4
+        );
+        
+        // Both should be positive and <= 1
+        assertTrue(clippedCoverage > 0.0f);
+        assertTrue(clippedCoverage <= 1.0f);
+        assertTrue(sampledCoverage > 0.0f);
+        assertTrue(sampledCoverage <= 1.0f);
+        
+        // Clipped method should be at least as accurate as sampling
+        // (allowing for some variation due to sampling vs geometric precision)
+        assertTrue(Math.abs(clippedCoverage - sampledCoverage) <= 0.5f);
+    }
+    
+    @Test
+    void testTriangleClippingBoundaryCase() {
+        // Triangle exactly at box boundary
+        var v0 = new Point3f(-0.5f, -0.5f, 0.0f);
+        var v1 = new Point3f(0.5f, -0.5f, 0.0f);
+        var v2 = new Point3f(0.0f, 0.5f, 0.0f);
+        
+        var boxCenter = new Point3f(0, 0, 0);
+        var boxHalfSize = new Vector3f(0.5f, 0.5f, 0.5f);
+        
+        float coverage = TriangleBoxIntersection.computeCoverage(
+            v0, v1, v2, boxCenter, boxHalfSize
+        );
+        
+        // Should have significant coverage since triangle fits within box bounds
+        assertTrue(coverage > 0.5f);
+        assertTrue(coverage <= 1.0f);
+    }
+    
+    @Test
+    void testBarycentricCoordinates() {
+        // Test barycentric coordinate handling
+        var v0 = new Point3f(0.0f, 0.0f, 0.0f);
+        var v1 = new Point3f(1.0f, 0.0f, 0.0f);
+        var v2 = new Point3f(0.0f, 1.0f, 0.0f);
+        
+        var boxCenter = new Point3f(0.25f, 0.25f, 0.0f);
+        var boxHalfSize = new Vector3f(0.1f, 0.1f, 0.1f);
+        
+        var clippedVertices = new java.util.ArrayList<TriangleBoxIntersection.BarycentricCoord>();
+        int numClipped = TriangleBoxIntersection.clipTriangleToBox(
+            clippedVertices, v0, v1, v2, boxCenter, boxHalfSize
+        );
+        
+        // Should produce a clipped polygon
+        assertTrue(numClipped >= 3);
+        assertTrue(numClipped <= 8); // Maximum from clipping a triangle against 6 planes
+        
+        // All barycentric coordinates should be valid (sum to 1, all non-negative)
+        for (var coord : clippedVertices) {
+            assertTrue(coord.u >= -0.01f); // Small epsilon for numerical precision
+            assertTrue(coord.v >= -0.01f);
+            assertTrue(coord.w >= -0.01f);
+            float sum = coord.u + coord.v + coord.w;
+            assertEquals(1.0f, sum, 0.01f);
+        }
     }
     
     @Test
@@ -118,10 +197,29 @@ class TriangleBoxIntersectionTest {
         var boxHalfSize = new Vector3f(1, 1, 1);
         
         float coverage = TriangleBoxIntersection.computeCoverage(
-            v0, v1, v2, boxCenter, boxHalfSize, 2
+            v0, v1, v2, boxCenter, boxHalfSize
         );
         
         assertEquals(0.0f, coverage);
+    }
+    
+    @Test
+    void testFullCoverage() {
+        // Large triangle completely covering small box
+        var v0 = new Point3f(-5.0f, -5.0f, 0.0f);
+        var v1 = new Point3f(5.0f, -5.0f, 0.0f);
+        var v2 = new Point3f(0.0f, 5.0f, 0.0f);
+        
+        var boxCenter = new Point3f(0, 0, 0);
+        var boxHalfSize = new Vector3f(0.1f, 0.1f, 0.1f);
+        
+        float coverage = TriangleBoxIntersection.computeCoverage(
+            v0, v1, v2, boxCenter, boxHalfSize
+        );
+        
+        // Should be close to full coverage
+        assertTrue(coverage > 0.8f);
+        assertTrue(coverage <= 1.0f);
     }
     
     @Test

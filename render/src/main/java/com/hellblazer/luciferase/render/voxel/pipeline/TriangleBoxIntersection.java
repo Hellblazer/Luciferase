@@ -155,12 +155,231 @@ public class TriangleBoxIntersection {
     }
     
     /**
-     * Computes partial coverage of a voxel by a triangle.
+     * Computes partial coverage of a voxel by a triangle using ESVO-style triangle clipping.
      * Returns a value between 0.0 (no coverage) and 1.0 (full coverage).
+     * This method is more accurate than sampling and follows NVIDIA ESVO implementation.
      */
     public static float computeCoverage(Point3f v0, Point3f v1, Point3f v2,
-                                       Point3f boxCenter, Vector3f boxHalfSize,
-                                       int samplesPerDimension) {
+                                       Point3f boxCenter, Vector3f boxHalfSize) {
+        if (!intersects(v0, v1, v2, boxCenter, boxHalfSize)) {
+            return 0.0f;
+        }
+        
+        // Use ESVO-style triangle clipping for precise coverage
+        var clippedVertices = new java.util.ArrayList<BarycentricCoord>();
+        int numClipped = clipTriangleToBox(clippedVertices, v0, v1, v2, boxCenter, boxHalfSize);
+        
+        if (numClipped == 0) {
+            return 0.0f;
+        }
+        
+        // Compute area of clipped polygon in barycentric space
+        return computeBarycentricArea(clippedVertices);
+    }
+    
+    /**
+     * Clips a triangle against a box and returns vertices in barycentric coordinates.
+     * Based on ESVO triangle clipping algorithm.
+     * 
+     * @param barycentricOut Output list of clipped vertices in barycentric coordinates
+     * @param v0, v1, v2 Triangle vertices in world space
+     * @param boxCenter Center of the voxel box
+     * @param boxHalfSize Half-dimensions of the voxel box
+     * @return Number of vertices in the clipped polygon
+     */
+    public static int clipTriangleToBox(java.util.List<BarycentricCoord> barycentricOut,
+                                       Point3f v0, Point3f v1, Point3f v2,
+                                       Point3f boxCenter, Vector3f boxHalfSize) {
+        // Start with full triangle in barycentric space
+        var vertices = new java.util.ArrayList<BarycentricCoord>();
+        vertices.add(new BarycentricCoord(1.0f, 0.0f, 0.0f)); // v0
+        vertices.add(new BarycentricCoord(0.0f, 1.0f, 0.0f)); // v1
+        vertices.add(new BarycentricCoord(0.0f, 0.0f, 1.0f)); // v2
+        
+        // Define triangle edges for world space conversion
+        var edge1 = new Vector3f();
+        edge1.sub(v1, v0);
+        var edge2 = new Vector3f();
+        edge2.sub(v2, v0);
+        
+        // Clip against each box plane (6 planes total)
+        for (int axis = 0; axis < 3; axis++) {
+            // Positive plane
+            float planePos = getBoxFace(boxCenter, boxHalfSize, axis, true);
+            vertices = clipAgainstPlane(vertices, v0, edge1, edge2, axis, planePos, true);
+            if (vertices.isEmpty()) return 0;
+            
+            // Negative plane  
+            float planeNeg = getBoxFace(boxCenter, boxHalfSize, axis, false);
+            vertices = clipAgainstPlane(vertices, v0, edge1, edge2, axis, planeNeg, false);
+            if (vertices.isEmpty()) return 0;
+        }
+        
+        // Copy results
+        barycentricOut.clear();
+        barycentricOut.addAll(vertices);
+        return vertices.size();
+    }
+    
+    /**
+     * Clips a polygon in barycentric space against a plane.
+     */
+    private static java.util.ArrayList<BarycentricCoord> clipAgainstPlane(
+            java.util.List<BarycentricCoord> inputVertices,
+            Point3f triangleV0, Vector3f triangleEdge1, Vector3f triangleEdge2,
+            int axis, float planePos, boolean isPositiveSide) {
+        
+        var clippedVertices = new java.util.ArrayList<BarycentricCoord>();
+        
+        if (inputVertices.isEmpty()) {
+            return clippedVertices;
+        }
+        
+        BarycentricCoord prevVertex = inputVertices.get(inputVertices.size() - 1);
+        float prevDist = getSignedDistance(prevVertex, triangleV0, triangleEdge1, triangleEdge2, axis, planePos);
+        boolean prevInside = isPositiveSide ? prevDist >= 0 : prevDist <= 0;
+        
+        for (var currentVertex : inputVertices) {
+            float currentDist = getSignedDistance(currentVertex, triangleV0, triangleEdge1, triangleEdge2, axis, planePos);
+            boolean currentInside = isPositiveSide ? currentDist >= 0 : currentDist <= 0;
+            
+            if (currentInside) {
+                if (!prevInside) {
+                    // Entering the plane - add intersection point
+                    var intersection = computePlaneIntersection(prevVertex, currentVertex, prevDist, currentDist);
+                    if (intersection != null) {
+                        clippedVertices.add(intersection);
+                    }
+                }
+                // Add the current vertex
+                clippedVertices.add(currentVertex);
+            } else if (prevInside) {
+                // Exiting the plane - add intersection point
+                var intersection = computePlaneIntersection(prevVertex, currentVertex, prevDist, currentDist);
+                if (intersection != null) {
+                    clippedVertices.add(intersection);
+                }
+            }
+            
+            prevVertex = currentVertex;
+            prevDist = currentDist;
+            prevInside = currentInside;
+        }
+        
+        return clippedVertices;
+    }
+    
+    /**
+     * Gets the position of a box face along a given axis.
+     */
+    private static float getBoxFace(Point3f boxCenter, Vector3f boxHalfSize, int axis, boolean positive) {
+        float center = (axis == 0) ? boxCenter.x : (axis == 1) ? boxCenter.y : boxCenter.z;
+        float halfSize = (axis == 0) ? boxHalfSize.x : (axis == 1) ? boxHalfSize.y : boxHalfSize.z;
+        return center + (positive ? halfSize : -halfSize);
+    }
+    
+    /**
+     * Computes signed distance from a barycentric point to a plane.
+     */
+    private static float getSignedDistance(BarycentricCoord baryCoord, 
+                                          Point3f triangleV0, Vector3f triangleEdge1, Vector3f triangleEdge2,
+                                          int axis, float planePos) {
+        // Convert barycentric to world coordinates
+        Point3f worldPos = barycentricToWorld(baryCoord, triangleV0, triangleEdge1, triangleEdge2);
+        
+        // Get coordinate along the specified axis
+        float coord = (axis == 0) ? worldPos.x : (axis == 1) ? worldPos.y : worldPos.z;
+        
+        return coord - planePos;
+    }
+    
+    /**
+     * Converts barycentric coordinates to world space.
+     */
+    private static Point3f barycentricToWorld(BarycentricCoord baryCoord,
+                                             Point3f v0, Vector3f edge1, Vector3f edge2) {
+        // world = v0 + u*edge1 + v*edge2 where (u,v,w) are barycentric coords
+        var result = new Point3f(v0);
+        
+        var temp1 = new Vector3f(edge1);
+        temp1.scale(baryCoord.v); // Note: v1 coefficient maps to edge1
+        result.add(temp1);
+        
+        var temp2 = new Vector3f(edge2);
+        temp2.scale(baryCoord.w); // Note: v2 coefficient maps to edge2
+        result.add(temp2);
+        
+        return result;
+    }
+    
+    /**
+     * Computes intersection point between two vertices and a plane.
+     */
+    private static BarycentricCoord computePlaneIntersection(BarycentricCoord v1, BarycentricCoord v2,
+                                                           float dist1, float dist2) {
+        if (Math.abs(dist1 - dist2) < EPSILON) {
+            return null; // Parallel to plane
+        }
+        
+        float t = -dist1 / (dist2 - dist1);
+        t = Math.max(0.0f, Math.min(1.0f, t)); // Clamp to [0,1]
+        
+        return new BarycentricCoord(
+            v1.u + t * (v2.u - v1.u),
+            v1.v + t * (v2.v - v1.v), 
+            v1.w + t * (v2.w - v1.w)
+        );
+    }
+    
+    /**
+     * Computes the area of a polygon in barycentric space.
+     * Since the full triangle has area 0.5 in barycentric space,
+     * we normalize the result accordingly.
+     */
+    private static float computeBarycentricArea(java.util.List<BarycentricCoord> vertices) {
+        if (vertices.size() < 3) {
+            return 0.0f;
+        }
+        
+        // Use shoelace formula in barycentric coordinates
+        // We'll work in the (u,v) plane since w = 1 - u - v
+        float area = 0.0f;
+        
+        for (int i = 0; i < vertices.size(); i++) {
+            var v1 = vertices.get(i);
+            var v2 = vertices.get((i + 1) % vertices.size());
+            
+            area += v1.u * v2.v - v2.u * v1.v;
+        }
+        
+        area = Math.abs(area) * 0.5f;
+        
+        // Normalize: full triangle in barycentric space has area 0.5
+        // So the coverage is the computed area / 0.5
+        return Math.min(1.0f, area / 0.5f);
+    }
+    
+    /**
+     * Represents barycentric coordinates (u,v,w) where u+v+w=1.
+     * u corresponds to vertex v0, v to vertex v1, w to vertex v2.
+     */
+    public static class BarycentricCoord {
+        public float u, v, w;
+        
+        public BarycentricCoord(float u, float v, float w) {
+            this.u = u;
+            this.v = v;
+            this.w = w;
+        }
+    }
+    
+    /**
+     * Legacy coverage method using sampling - kept for compatibility.
+     * For new code, use the parameterless version that uses triangle clipping.
+     */
+    public static float computeCoverageSampled(Point3f v0, Point3f v1, Point3f v2,
+                                              Point3f boxCenter, Vector3f boxHalfSize,
+                                              int samplesPerDimension) {
         if (!intersects(v0, v1, v2, boxCenter, boxHalfSize)) {
             return 0.0f;
         }

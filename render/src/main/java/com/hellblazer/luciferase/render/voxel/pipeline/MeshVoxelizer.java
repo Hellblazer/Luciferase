@@ -116,7 +116,7 @@ public class MeshVoxelizer {
                             voxelCenter, voxelHalfSize)) {
                         
                         // Compute coverage for anti-aliasing
-                        float coverage = TriangleBoxIntersection.computeCoverage(
+                        float coverage = TriangleBoxIntersection.computeCoverageSampled(
                             triangle.v0, triangle.v1, triangle.v2,
                             voxelCenter, voxelHalfSize, 2
                         );

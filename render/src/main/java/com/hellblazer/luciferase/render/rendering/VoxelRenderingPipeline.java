@@ -5,6 +5,7 @@ import com.hellblazer.luciferase.render.io.VoxelStreamingIO;
 import com.hellblazer.luciferase.render.voxel.core.VoxelOctreeNode;
 import com.hellblazer.luciferase.render.voxel.gpu.GPUBufferManager;
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
+import com.hellblazer.luciferase.render.voxel.gpu.ComputeShaderManager;
 import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import com.hellblazer.luciferase.webgpu.wrapper.ComputePipeline;
 import com.hellblazer.luciferase.webgpu.wrapper.Device;
@@ -213,20 +214,20 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         uniformBuffer = webgpuContext.createBuffer(uniformBufferSize,
             GPUBufferManager.BUFFER_USAGE_UNIFORM | GPUBufferManager.BUFFER_USAGE_COPY_DST);
         
-        // Create compute shader for ray marching
-        String shaderCode = createRayMarchingShader();
-        var shaderModule = webgpuContext.createComputeShader(shaderCode);
+        // Create compute shader for ray marching using ComputeShaderManager
+        var shaderManager = new ComputeShaderManager(webgpuContext);
+        try {
+            var rayTraversalShader = shaderManager.loadShaderFromResource("/shaders/rendering/ray_traversal.wgsl").get();
+            computePipeline = shaderManager.createComputePipeline("RayTraversalPipeline", rayTraversalShader, "main");
+        } catch (Exception e) {
+            log.error("Failed to create ray traversal compute pipeline", e);
+            throw new RuntimeException("Pipeline creation failed", e);
+        }
         
         // For now, don't create explicit bind group layout - let pipeline use auto-layout
         // and skip bind groups to get basic pipeline working
         bindGroupLayout = null;
         bindGroup = null;
-        
-        // Create compute pipeline
-        var pipelineDesc = new Device.ComputePipelineDescriptor(shaderModule)
-            .withLabel("RayMarchingPipeline")
-            .withEntryPoint("main");
-        computePipeline = webgpuContext.getDevice().createComputePipeline(pipelineDesc);
         
         log.debug("GPU resources initialized: {} buffers, 1 compute shader, 1 bind group", 3);
     }
@@ -554,17 +555,4 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         });
     }
     
-    /**
-     * Create ray marching compute shader code.
-     */
-    private String createRayMarchingShader() {
-        // Simplified WGSL shader without bind groups for basic testing
-        return """
-            @compute @workgroup_size(8, 8, 1)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                // Basic compute shader test - no resources needed
-                // Just verify the pipeline can dispatch workgroups
-            }
-            """;
-    }
 }

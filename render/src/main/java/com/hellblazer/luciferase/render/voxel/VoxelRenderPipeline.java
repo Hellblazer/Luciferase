@@ -90,114 +90,27 @@ public class VoxelRenderPipeline {
     }
     
     private void createShaders() {
-        log.debug("Creating voxel shaders...");
+        log.debug("Creating voxel shaders from resources...");
         
-        // Voxelization compute shader
-        String voxelizeCode = """
-            @group(0) @binding(0) var<storage, read> vertices: array<vec3<f32>>;
-            @group(0) @binding(1) var<storage, read_write> voxels: array<atomic<u32>>;
-            @group(0) @binding(2) var<uniform> params: VoxelParams;
+        try {
+            // Create shader manager
+            var shaderManager = new ComputeShaderManager(context);
             
-            struct VoxelParams {
-                resolution: vec3<u32>,
-                bounds_min: vec3<f32>,
-                bounds_max: vec3<f32>,
-                voxel_size: f32
-            }
+            // Load shaders from resources - these have proper implementations
+            var voxelizeFuture = shaderManager.loadShaderFromResource("/shaders/esvo/voxelization.wgsl");
+            var octreeFuture = shaderManager.loadShaderFromResource("/shaders/esvo/sparse_octree.wgsl");
+            var rayMarchFuture = shaderManager.loadShaderFromResource("/shaders/esvo/ray_marching.wgsl");
             
-            @compute @workgroup_size(64)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                let idx = id.x;
-                if (idx >= arrayLength(&vertices)) {
-                    return;
-                }
-                
-                let vertex = vertices[idx];
-                let voxel_pos = (vertex - params.bounds_min) / params.voxel_size;
-                let voxel_idx = u32(voxel_pos.x) + 
-                               u32(voxel_pos.y) * params.resolution.x +
-                               u32(voxel_pos.z) * params.resolution.x * params.resolution.y;
-                
-                if (voxel_idx < arrayLength(&voxels)) {
-                    atomicOr(&voxels[voxel_idx], 1u);
-                }
-            }
-            """;
-        voxelizeShader = context.createComputeShader(voxelizeCode);
-        
-        // Octree traversal compute shader
-        String traversalCode = """
-            @group(0) @binding(0) var<storage, read> voxels: array<atomic<u32>>;
-            @group(0) @binding(1) var<storage, read_write> octree: array<u32>;
-            @group(0) @binding(2) var<uniform> params: OctreeParams;
+            // Wait for all shaders to load
+            voxelizeShader = voxelizeFuture.get();
+            traversalShader = octreeFuture.get();
+            renderShader = rayMarchFuture.get();
             
-            struct OctreeParams {
-                max_depth: u32,
-                node_count: u32,
-                leaf_size: u32
-            }
-            
-            @compute @workgroup_size(256)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                // Octree construction logic
-                let node_idx = id.x;
-                if (node_idx >= params.node_count) {
-                    return;
-                }
-                
-                // Simplified octree node processing
-                // Real implementation would build hierarchical structure
-                let voxel_idx = node_idx * params.leaf_size;
-                var node_value = 0u;
-                
-                for (var i = 0u; i < params.leaf_size; i++) {
-                    if (voxel_idx + i < arrayLength(&voxels)) {
-                        node_value |= atomicLoad(&voxels[voxel_idx + i]);
-                    }
-                }
-                
-                octree[node_idx] = node_value;
-            }
-            """;
-        traversalShader = context.createComputeShader(traversalCode);
-        
-        // Rendering vertex/fragment shaders
-        String renderCode = """
-            struct VertexOutput {
-                @builtin(position) position: vec4<f32>,
-                @location(0) color: vec3<f32>
-            }
-            
-            @vertex
-            fn vs_main(@builtin(vertex_index) vertex_idx: u32) -> VertexOutput {
-                var output: VertexOutput;
-                // Ray marching setup for voxel rendering - use switch for constant indexing
-                var position: vec2<f32>;
-                switch vertex_idx {
-                    case 0u: {
-                        position = vec2<f32>(-1.0, -1.0);
-                    }
-                    case 1u: {
-                        position = vec2<f32>( 3.0, -1.0);
-                    }
-                    case 2u, default: {
-                        position = vec2<f32>(-1.0,  3.0);
-                    }
-                }
-                output.position = vec4<f32>(position, 0.0, 1.0);
-                output.color = vec3<f32>(1.0, 1.0, 1.0);
-                return output;
-            }
-            
-            @fragment
-            fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-                // Ray marching through voxel grid
-                return vec4<f32>(input.color, 1.0);
-            }
-            """;
-        renderShader = context.createComputeShader(renderCode);
-        
-        log.debug("Created {} shaders", 3);
+            log.debug("Loaded {} shaders from resources", 3);
+        } catch (Exception e) {
+            log.error("Failed to load shaders from resources", e);
+            throw new RuntimeException("Shader loading failed", e);
+        }
     }
     
     private void createBuffers() {
@@ -234,25 +147,16 @@ public class VoxelRenderPipeline {
         var shaderManager = new ComputeShaderManager(context);
         
         try {
-            // Load shaders from resources
-            var voxelShaderFuture = shaderManager.loadShaderFromResource("/shaders/esvo/voxelization.wgsl");
-            var octreeShaderFuture = shaderManager.loadShaderFromResource("/shaders/esvo/sparse_octree.wgsl");
-            
-            // Wait for shader loading
-            var voxelShaderModule = voxelShaderFuture.get();
-            var octreeShaderModule = octreeShaderFuture.get();
-            
-            // Create voxelization compute pipeline
+            // Create compute pipelines using the already loaded shaders
             voxelizationPipeline = shaderManager.createComputePipeline(
                 "voxelization_pipeline",
-                voxelShaderModule,
+                voxelizeShader,
                 "main"
             );
             
-            // Create octree compute pipeline
             octreePipeline = shaderManager.createComputePipeline(
                 "octree_pipeline",
-                octreeShaderModule,
+                traversalShader,
                 "main"
             );
             
@@ -299,61 +203,6 @@ public class VoxelRenderPipeline {
         bindGroup = context.getDevice().createBindGroup(bindGroupDesc);
     }
     
-    private String loadShaderSource(String filename) {
-        // For now, return a simple compute shader template
-        // In production, load from resources
-        if (filename.contains("voxelization")) {
-            return """
-                @group(0) @binding(0) var<storage, read> vertices: array<vec3<f32>>;
-                @group(0) @binding(1) var<storage, read_write> voxels: array<u32>;
-                @group(0) @binding(2) var<uniform> params: VoxelParams;
-                
-                struct VoxelParams {
-                    resolution: u32,
-                    scale: f32,
-                    offset: vec3<f32>,
-                };
-                
-                @compute @workgroup_size(64)
-                fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                    let idx = id.x;
-                    if (idx >= arrayLength(&vertices) / 3u) {
-                        return;
-                    }
-                    
-                    // Simple voxelization logic
-                    let v0 = vertices[idx * 3u];
-                    let v1 = vertices[idx * 3u + 1u];
-                    let v2 = vertices[idx * 3u + 2u];
-                    
-                    // Voxelize triangle
-                    // ... implementation details ...
-                }
-                """;
-        } else {
-            return """
-                @group(0) @binding(0) var<storage, read> voxels: array<u32>;
-                @group(0) @binding(1) var<storage, read_write> octree: array<u32>;
-                @group(0) @binding(2) var<uniform> params: OctreeParams;
-                
-                struct OctreeParams {
-                    nodeCount: u32,
-                    maxDepth: u32,
-                };
-                
-                @compute @workgroup_size(256)
-                fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                    let idx = id.x;
-                    if (idx >= params.nodeCount) {
-                        return;
-                    }
-                    
-                    // Build octree node
-                    // ... implementation details ...
-                }
-                """;
-        }
-    }
     
     /**
      * Voxelize a mesh into the voxel grid.
