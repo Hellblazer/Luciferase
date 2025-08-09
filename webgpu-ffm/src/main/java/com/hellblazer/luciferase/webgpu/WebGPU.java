@@ -21,6 +21,14 @@ public class WebGPU {
     private static MethodHandle wgpuInstanceRelease;
     private static MethodHandle wgpuDeviceSetUncapturedErrorCallback;
     private static MethodHandle wgpuInstanceEnumerateAdapters;
+    
+    // Surface function handles
+    private static MethodHandle wgpuInstanceCreateSurface;
+    private static MethodHandle wgpuSurfaceConfigure;
+    private static MethodHandle wgpuSurfaceGetCurrentTexture;
+    private static MethodHandle wgpuSurfacePresent;
+    private static MethodHandle wgpuSurfaceRelease;
+    private static MethodHandle wgpuSurfaceGetPreferredFormat;
     private static MethodHandle wgpuInstanceRequestAdapter;
     private static MethodHandle wgpuAdapterRelease;
     private static MethodHandle wgpuAdapterRequestDevice;
@@ -1087,6 +1095,62 @@ public class WebGPU {
                 log.warn("Could not find wgpuDevicePoll symbol - buffer mapping may not work properly");
             }
             
+            // Surface functions
+            // wgpuInstanceCreateSurface(WGPUInstance instance, const WGPUSurfaceDescriptor* descriptor) -> WGPUSurface
+            var instanceCreateSurfaceOpt = symbolLookup.find("wgpuInstanceCreateSurface");
+            if (instanceCreateSurfaceOpt.isPresent()) {
+                wgpuInstanceCreateSurface = linker.downcallHandle(
+                    instanceCreateSurfaceOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+                log.debug("Successfully loaded wgpuInstanceCreateSurface");
+            }
+            
+            // wgpuSurfaceConfigure(WGPUSurface surface, const WGPUSurfaceConfiguration* config) -> void
+            var surfaceConfigureOpt = symbolLookup.find("wgpuSurfaceConfigure");
+            if (surfaceConfigureOpt.isPresent()) {
+                wgpuSurfaceConfigure = linker.downcallHandle(
+                    surfaceConfigureOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuSurfaceGetCurrentTexture(WGPUSurface surface, WGPUSurfaceTexture* surfaceTexture) -> void
+            var surfaceGetCurrentTextureOpt = symbolLookup.find("wgpuSurfaceGetCurrentTexture");
+            if (surfaceGetCurrentTextureOpt.isPresent()) {
+                wgpuSurfaceGetCurrentTexture = linker.downcallHandle(
+                    surfaceGetCurrentTextureOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuSurfacePresent(WGPUSurface surface) -> void
+            var surfacePresentOpt = symbolLookup.find("wgpuSurfacePresent");
+            if (surfacePresentOpt.isPresent()) {
+                wgpuSurfacePresent = linker.downcallHandle(
+                    surfacePresentOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuSurfaceRelease(WGPUSurface surface) -> void
+            var surfaceReleaseOpt = symbolLookup.find("wgpuSurfaceRelease");
+            if (surfaceReleaseOpt.isPresent()) {
+                wgpuSurfaceRelease = linker.downcallHandle(
+                    surfaceReleaseOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+            }
+            
+            // wgpuSurfaceGetPreferredFormat(WGPUSurface surface, WGPUAdapter adapter) -> WGPUTextureFormat
+            var surfaceGetPreferredFormatOpt = symbolLookup.find("wgpuSurfaceGetPreferredFormat");
+            if (surfaceGetPreferredFormatOpt.isPresent()) {
+                wgpuSurfaceGetPreferredFormat = linker.downcallHandle(
+                    surfaceGetPreferredFormatOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+            }
+            
             log.debug("Successfully loaded WebGPU function handles");
             return true;
             
@@ -1841,6 +1905,138 @@ public class WebGPU {
             log.debug("Ended compute pass");
         } catch (Throwable e) {
             log.error("Failed to end compute pass", e);
+        }
+    }
+    
+    // Surface functions
+    
+    /**
+     * Create a surface for presentation.
+     * 
+     * @param instanceHandle the instance handle
+     * @param descriptor the surface descriptor
+     * @return the surface handle, or NULL if creation failed
+     */
+    public static MemorySegment createSurface(MemorySegment instanceHandle, MemorySegment descriptor) {
+        if (!initialized.get() || wgpuInstanceCreateSurface == null) {
+            log.warn("wgpuInstanceCreateSurface not available");
+            return MemorySegment.NULL;
+        }
+        
+        try {
+            var surface = (MemorySegment) wgpuInstanceCreateSurface.invoke(
+                instanceHandle,
+                descriptor != null ? descriptor : MemorySegment.NULL
+            );
+            
+            if (surface != null && !surface.equals(MemorySegment.NULL)) {
+                log.debug("Created surface: 0x{}", Long.toHexString(surface.address()));
+                return surface;
+            }
+            
+            return MemorySegment.NULL;
+        } catch (Throwable e) {
+            log.error("Failed to create surface", e);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Configure a surface for presentation.
+     * 
+     * @param surfaceHandle the surface handle
+     * @param configuration the surface configuration
+     */
+    public static void configureSurface(MemorySegment surfaceHandle, MemorySegment configuration) {
+        if (!initialized.get() || wgpuSurfaceConfigure == null) {
+            log.warn("wgpuSurfaceConfigure not available");
+            return;
+        }
+        
+        try {
+            wgpuSurfaceConfigure.invoke(surfaceHandle, configuration);
+            log.debug("Configured surface");
+        } catch (Throwable e) {
+            log.error("Failed to configure surface", e);
+        }
+    }
+    
+    /**
+     * Get the current texture from a surface.
+     * 
+     * @param surfaceHandle the surface handle
+     * @param surfaceTexture the surface texture struct to fill
+     */
+    public static void getCurrentTexture(MemorySegment surfaceHandle, MemorySegment surfaceTexture) {
+        if (!initialized.get() || wgpuSurfaceGetCurrentTexture == null) {
+            log.warn("wgpuSurfaceGetCurrentTexture not available");
+            return;
+        }
+        
+        try {
+            wgpuSurfaceGetCurrentTexture.invoke(surfaceHandle, surfaceTexture);
+            log.debug("Got current texture from surface");
+        } catch (Throwable e) {
+            log.error("Failed to get current texture", e);
+        }
+    }
+    
+    /**
+     * Present a surface.
+     * 
+     * @param surfaceHandle the surface handle
+     */
+    public static void presentSurface(MemorySegment surfaceHandle) {
+        if (!initialized.get() || wgpuSurfacePresent == null) {
+            log.warn("wgpuSurfacePresent not available");
+            return;
+        }
+        
+        try {
+            wgpuSurfacePresent.invoke(surfaceHandle);
+            log.debug("Presented surface");
+        } catch (Throwable e) {
+            log.error("Failed to present surface", e);
+        }
+    }
+    
+    /**
+     * Get the preferred texture format for a surface.
+     * 
+     * @param surfaceHandle the surface handle
+     * @param adapterHandle the adapter handle
+     * @return the texture format ID
+     */
+    public static int getPreferredFormat(MemorySegment surfaceHandle, MemorySegment adapterHandle) {
+        if (!initialized.get() || wgpuSurfaceGetPreferredFormat == null) {
+            log.warn("wgpuSurfaceGetPreferredFormat not available");
+            return 0;
+        }
+        
+        try {
+            return (int) wgpuSurfaceGetPreferredFormat.invoke(surfaceHandle, adapterHandle);
+        } catch (Throwable e) {
+            log.error("Failed to get preferred format", e);
+            return 0;
+        }
+    }
+    
+    /**
+     * Release a surface.
+     * 
+     * @param surfaceHandle the surface handle
+     */
+    public static void releaseSurface(MemorySegment surfaceHandle) {
+        if (!initialized.get() || wgpuSurfaceRelease == null) {
+            log.warn("wgpuSurfaceRelease not available");
+            return;
+        }
+        
+        try {
+            wgpuSurfaceRelease.invoke(surfaceHandle);
+            log.debug("Released surface");
+        } catch (Throwable e) {
+            log.error("Failed to release surface", e);
         }
     }
 }

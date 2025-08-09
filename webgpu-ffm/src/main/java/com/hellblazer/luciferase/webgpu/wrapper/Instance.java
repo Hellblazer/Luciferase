@@ -129,6 +129,26 @@ public class Instance implements AutoCloseable {
     }
     
     /**
+     * Create a surface from a platform-specific descriptor.
+     * 
+     * @param descriptor platform-specific surface descriptor
+     * @return new Surface instance
+     */
+    public Surface createSurface(MemorySegment descriptor) {
+        if (closed.get()) {
+            throw new IllegalStateException("Instance is closed");
+        }
+        
+        // Call wgpuInstanceCreateSurface
+        var surfaceHandle = WebGPU.createSurface(handle, descriptor);
+        if (surfaceHandle == MemorySegment.NULL) {
+            throw new RuntimeException("Failed to create surface");
+        }
+        
+        return new Surface(surfaceHandle);
+    }
+    
+    /**
      * Options for requesting an adapter.
      */
     public static class AdapterOptions {

@@ -284,6 +284,43 @@ public class WebGPUNative {
     public static final int BUFFER_BINDING_TYPE_STORAGE = 0x00000002;
     public static final int BUFFER_BINDING_TYPE_READ_ONLY_STORAGE = 0x00000003;
     
+    // Texture formats (common ones)
+    public static final int TEXTURE_FORMAT_UNDEFINED = 0x00000000;
+    public static final int TEXTURE_FORMAT_R8_UNORM = 0x00000001;
+    public static final int TEXTURE_FORMAT_R8_SNORM = 0x00000002;
+    public static final int TEXTURE_FORMAT_R8_UINT = 0x00000003;
+    public static final int TEXTURE_FORMAT_R8_SINT = 0x00000004;
+    public static final int TEXTURE_FORMAT_RGBA8_UNORM = 0x00000018;
+    public static final int TEXTURE_FORMAT_RGBA8_UNORM_SRGB = 0x00000019;
+    public static final int TEXTURE_FORMAT_BGRA8_UNORM = 0x0000001C;
+    public static final int TEXTURE_FORMAT_BGRA8_UNORM_SRGB = 0x0000001D;
+    
+    // Texture usage flags
+    public static final int TEXTURE_USAGE_COPY_SRC = 0x00000001;
+    public static final int TEXTURE_USAGE_COPY_DST = 0x00000002;
+    public static final int TEXTURE_USAGE_TEXTURE_BINDING = 0x00000004;
+    public static final int TEXTURE_USAGE_STORAGE_BINDING = 0x00000008;
+    public static final int TEXTURE_USAGE_RENDER_ATTACHMENT = 0x00000010;
+    
+    // Present modes
+    public static final int PRESENT_MODE_FIFO = 0x00000001;         // VSync (default)
+    public static final int PRESENT_MODE_FIFO_RELAXED = 0x00000002; // Adaptive VSync
+    public static final int PRESENT_MODE_IMMEDIATE = 0x00000003;    // No VSync
+    public static final int PRESENT_MODE_MAILBOX = 0x00000004;      // Triple buffering
+    
+    // Composite alpha modes
+    public static final int COMPOSITE_ALPHA_MODE_AUTO = 0x00000000;
+    public static final int COMPOSITE_ALPHA_MODE_OPAQUE = 0x00000001;
+    public static final int COMPOSITE_ALPHA_MODE_PREMULTIPLIED = 0x00000002;
+    public static final int COMPOSITE_ALPHA_MODE_UNPREMULTIPLIED = 0x00000003;
+    public static final int COMPOSITE_ALPHA_MODE_INHERIT = 0x00000004;
+    
+    // Surface get current texture status
+    public static final int SURFACE_GET_CURRENT_TEXTURE_STATUS_SUCCESS = 0x00000000;
+    public static final int SURFACE_GET_CURRENT_TEXTURE_STATUS_TIMEOUT = 0x00000001;
+    public static final int SURFACE_GET_CURRENT_TEXTURE_STATUS_OUTDATED = 0x00000002;
+    public static final int SURFACE_GET_CURRENT_TEXTURE_STATUS_LOST = 0x00000003;
+    
     /**
      * Helper class to build WebGPU descriptors using FFM.
      */
@@ -455,6 +492,93 @@ public class WebGPUNative {
             ValueLayout.JAVA_LONG.withName("entryCount"),
             ValueLayout.ADDRESS.withName("entries")
         ).withByteAlignment(8);
+        
+        /**
+         * Surface configuration structure for swap chain setup.
+         * typedef struct WGPUSurfaceConfiguration {
+         *     WGPUChainedStruct const * nextInChain;
+         *     WGPUDevice device;
+         *     WGPUTextureFormat format;
+         *     WGPUTextureUsageFlags usage;
+         *     size_t viewFormatCount;
+         *     WGPUTextureFormat const * viewFormats;
+         *     WGPUCompositeAlphaMode alphaMode;
+         *     uint32_t width;
+         *     uint32_t height;
+         *     WGPUPresentMode presentMode;
+         * } WGPUSurfaceConfiguration;
+         */
+        public static final StructLayout SURFACE_CONFIGURATION = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("nextInChain"),             // 0-7
+            ValueLayout.ADDRESS.withName("device"),                  // 8-15
+            ValueLayout.JAVA_INT.withName("format"),                 // 16-19
+            ValueLayout.JAVA_INT.withName("usage"),                  // 20-23
+            MemoryLayout.paddingLayout(8),                          // 24-31 (padding for 8-byte alignment)
+            ValueLayout.JAVA_LONG.withName("viewFormatCount"),      // 32-39 (8-byte aligned)
+            ValueLayout.ADDRESS.withName("viewFormats"),            // 40-47
+            ValueLayout.JAVA_INT.withName("alphaMode"),             // 48-51
+            ValueLayout.JAVA_INT.withName("width"),                 // 52-55
+            ValueLayout.JAVA_INT.withName("height"),                // 56-59
+            ValueLayout.JAVA_INT.withName("presentMode")            // 60-63
+        ).withName("WGPUSurfaceConfiguration");
+        
+        /**
+         * Surface texture structure returned by getCurrentTexture.
+         * typedef struct WGPUSurfaceTexture {
+         *     WGPUTexture texture;
+         *     WGPUBool suboptimal;
+         *     WGPUSurfaceGetCurrentTextureStatus status;
+         * } WGPUSurfaceTexture;
+         */
+        public static final StructLayout SURFACE_TEXTURE = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("texture"),                 // 0
+            ValueLayout.JAVA_INT.withName("status"),                 // 8
+            ValueLayout.JAVA_BOOLEAN.withName("suboptimal"),        // 12
+            MemoryLayout.paddingLayout(3)                           // 13 (padding)
+        ).withName("WGPUSurfaceTexture");
+        
+        /**
+         * Surface descriptor for Metal on macOS.
+         */
+        public static final StructLayout SURFACE_DESCRIPTOR_FROM_METAL_LAYER = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("next"),
+            ValueLayout.JAVA_INT.withName("sType"),
+            MemoryLayout.paddingLayout(4),
+            ValueLayout.ADDRESS.withName("layer")
+        ).withName("WGPUSurfaceDescriptorFromMetalLayer");
+        
+        /**
+         * Surface descriptor for Windows HWND.
+         */
+        public static final StructLayout SURFACE_DESCRIPTOR_FROM_WINDOWS_HWND = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("next"),
+            ValueLayout.JAVA_INT.withName("sType"),
+            MemoryLayout.paddingLayout(4),
+            ValueLayout.ADDRESS.withName("hinstance"),
+            ValueLayout.ADDRESS.withName("hwnd")
+        ).withName("WGPUSurfaceDescriptorFromWindowsHWND");
+        
+        /**
+         * Surface descriptor for X11 Window.
+         */
+        public static final StructLayout SURFACE_DESCRIPTOR_FROM_XLIB_WINDOW = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("next"),
+            ValueLayout.JAVA_INT.withName("sType"),
+            MemoryLayout.paddingLayout(4),
+            ValueLayout.ADDRESS.withName("display"),
+            ValueLayout.JAVA_LONG.withName("window")
+        ).withName("WGPUSurfaceDescriptorFromXlibWindow");
+        
+        /**
+         * Surface descriptor for Wayland Surface.
+         */
+        public static final StructLayout SURFACE_DESCRIPTOR_FROM_WAYLAND_SURFACE = MemoryLayout.structLayout(
+            ValueLayout.ADDRESS.withName("next"),
+            ValueLayout.JAVA_INT.withName("sType"),
+            MemoryLayout.paddingLayout(4),
+            ValueLayout.ADDRESS.withName("display"),
+            ValueLayout.ADDRESS.withName("surface")
+        ).withName("WGPUSurfaceDescriptorFromWaylandSurface");
     }
     
     /**

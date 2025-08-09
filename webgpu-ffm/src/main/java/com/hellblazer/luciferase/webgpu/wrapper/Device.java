@@ -569,16 +569,151 @@ public class Device implements AutoCloseable {
             throw new IllegalStateException("Device is closed");
         }
         
-        if (handle == null || handle.equals(MemorySegment.NULL)) {
-            log.debug("Creating mock render pipeline");
+        try (var arena = Arena.ofConfined()) {
+            // Allocate render pipeline descriptor
+            var nativeDesc = arena.allocate(256); // Estimated size for render pipeline descriptor
+            
+            // Set basic fields
+            nativeDesc.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL); // nextInChain
+            var label = descriptor.label != null ? 
+                WebGPUNative.toCString(descriptor.label, arena) : MemorySegment.NULL;
+            nativeDesc.set(ValueLayout.ADDRESS, 8, label); // label
+            
+            // Set layout
+            if (descriptor.layout != null) {
+                nativeDesc.set(ValueLayout.ADDRESS, 16, descriptor.layout.getHandle());
+            } else {
+                nativeDesc.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // auto layout
+            }
+            
+            // Set vertex state
+            if (descriptor.vertex != null) {
+                var vertexOffset = 24;
+                nativeDesc.set(ValueLayout.ADDRESS, vertexOffset, MemorySegment.NULL); // nextInChain
+                nativeDesc.set(ValueLayout.ADDRESS, vertexOffset + 8, descriptor.vertex.module.getHandle());
+                var entryPoint = WebGPUNative.toCString(descriptor.vertex.entryPoint, arena);
+                nativeDesc.set(ValueLayout.ADDRESS, vertexOffset + 16, entryPoint);
+                
+                // Set vertex buffers if present
+                if (descriptor.vertex.buffers != null && descriptor.vertex.buffers.length > 0) {
+                    var buffersArray = createVertexBufferLayouts(descriptor.vertex.buffers, arena);
+                    nativeDesc.set(ValueLayout.JAVA_LONG, vertexOffset + 24, descriptor.vertex.buffers.length);
+                    nativeDesc.set(ValueLayout.ADDRESS, vertexOffset + 32, buffersArray);
+                } else {
+                    nativeDesc.set(ValueLayout.JAVA_LONG, vertexOffset + 24, 0L);
+                    nativeDesc.set(ValueLayout.ADDRESS, vertexOffset + 32, MemorySegment.NULL);
+                }
+            }
+            
+            // Set primitive state
+            if (descriptor.primitive != null) {
+                var primitiveOffset = 64;
+                nativeDesc.set(ValueLayout.ADDRESS, primitiveOffset, MemorySegment.NULL); // nextInChain
+                nativeDesc.set(ValueLayout.JAVA_INT, primitiveOffset + 8, descriptor.primitive.topology.getValue());
+                if (descriptor.primitive.stripIndexFormat != null) {
+                    nativeDesc.set(ValueLayout.JAVA_INT, primitiveOffset + 12, descriptor.primitive.stripIndexFormat.getValue());
+                }
+                nativeDesc.set(ValueLayout.JAVA_INT, primitiveOffset + 16, descriptor.primitive.frontFace.getValue());
+                nativeDesc.set(ValueLayout.JAVA_INT, primitiveOffset + 20, descriptor.primitive.cullMode.getValue());
+            }
+            
+            // Set fragment state if present
+            if (descriptor.fragment != null) {
+                var fragmentOffset = 88;
+                nativeDesc.set(ValueLayout.ADDRESS, fragmentOffset, MemorySegment.NULL); // nextInChain
+                nativeDesc.set(ValueLayout.ADDRESS, fragmentOffset + 8, descriptor.fragment.module.getHandle());
+                var entryPoint = WebGPUNative.toCString(descriptor.fragment.entryPoint, arena);
+                nativeDesc.set(ValueLayout.ADDRESS, fragmentOffset + 16, entryPoint);
+                
+                // Set color targets
+                if (descriptor.fragment.targets != null && descriptor.fragment.targets.length > 0) {
+                    var targetsArray = createColorTargets(descriptor.fragment.targets, arena);
+                    nativeDesc.set(ValueLayout.JAVA_LONG, fragmentOffset + 24, descriptor.fragment.targets.length);
+                    nativeDesc.set(ValueLayout.ADDRESS, fragmentOffset + 32, targetsArray);
+                }
+            }
+            
+            // TODO: Call native wgpuDeviceCreateRenderPipeline when available
+            log.debug("Creating render pipeline (stub implementation)");
             return new RenderPipeline(MemorySegment.NULL, this);
         }
+    }
+    
+    /**
+     * Create vertex buffer layouts for native API.
+     */
+    private MemorySegment createVertexBufferLayouts(RenderPipeline.VertexBufferLayout[] buffers, Arena arena) {
+        var layoutSize = 32; // Estimated size per vertex buffer layout
+        var array = arena.allocate(layoutSize * buffers.length);
         
-        // TODO: Implement native render pipeline creation with WebGPU
-        log.debug("Creating native render pipeline");
+        for (int i = 0; i < buffers.length; i++) {
+            var buffer = buffers[i];
+            var offset = i * layoutSize;
+            
+            array.set(ValueLayout.JAVA_LONG, offset, buffer.arrayStride);
+            array.set(ValueLayout.JAVA_INT, offset + 8, buffer.stepMode.getValue());
+            
+            // Set attributes
+            if (buffer.attributes != null && buffer.attributes.length > 0) {
+                var attrsArray = createVertexAttributes(buffer.attributes, arena);
+                array.set(ValueLayout.JAVA_LONG, offset + 12, buffer.attributes.length);
+                array.set(ValueLayout.ADDRESS, offset + 20, attrsArray);
+            }
+        }
         
-        // For now, return a mock render pipeline
-        return new RenderPipeline(MemorySegment.NULL, this);
+        return array;
+    }
+    
+    /**
+     * Create vertex attributes for native API.
+     */
+    private MemorySegment createVertexAttributes(RenderPipeline.VertexAttribute[] attributes, Arena arena) {
+        var attrSize = 16; // Size per vertex attribute
+        var array = arena.allocate(attrSize * attributes.length);
+        
+        for (int i = 0; i < attributes.length; i++) {
+            var attr = attributes[i];
+            var offset = i * attrSize;
+            
+            array.set(ValueLayout.JAVA_INT, offset, attr.format.getValue());
+            array.set(ValueLayout.JAVA_LONG, offset + 4, attr.offset);
+            array.set(ValueLayout.JAVA_INT, offset + 12, attr.shaderLocation);
+        }
+        
+        return array;
+    }
+    
+    /**
+     * Create color targets for native API.
+     */
+    private MemorySegment createColorTargets(RenderPipeline.ColorTargetState[] targets, Arena arena) {
+        var targetSize = 32; // Estimated size per color target
+        var array = arena.allocate(targetSize * targets.length);
+        
+        for (int i = 0; i < targets.length; i++) {
+            var target = targets[i];
+            var offset = i * targetSize;
+            
+            array.set(ValueLayout.ADDRESS, offset, MemorySegment.NULL); // nextInChain
+            array.set(ValueLayout.JAVA_INT, offset + 8, target.format.getValue());
+            
+            // Set blend state if present
+            if (target.blend != null) {
+                // Color blend
+                array.set(ValueLayout.JAVA_INT, offset + 12, target.blend.color.operation.getValue());
+                array.set(ValueLayout.JAVA_INT, offset + 16, target.blend.color.srcFactor.getValue());
+                array.set(ValueLayout.JAVA_INT, offset + 20, target.blend.color.dstFactor.getValue());
+                
+                // Alpha blend
+                array.set(ValueLayout.JAVA_INT, offset + 24, target.blend.alpha.operation.getValue());
+                array.set(ValueLayout.JAVA_INT, offset + 28, target.blend.alpha.srcFactor.getValue());
+                array.set(ValueLayout.JAVA_INT, offset + 32, target.blend.alpha.dstFactor.getValue());
+            }
+            
+            array.set(ValueLayout.JAVA_INT, offset + 36, target.writeMask);
+        }
+        
+        return array;
     }
     
     /**

@@ -62,13 +62,13 @@ public class RenderPipeline implements AutoCloseable {
      * Render pipeline descriptor for creating render pipelines.
      */
     public static class RenderPipelineDescriptor {
-        private String label;
-        private PipelineLayout layout;
-        private VertexState vertex;
-        private PrimitiveState primitive = new PrimitiveState();
-        private DepthStencilState depthStencil;
-        private MultisampleState multisample = new MultisampleState();
-        private FragmentState fragment;
+        public String label;
+        public PipelineLayout layout;
+        public VertexState vertex;
+        public PrimitiveState primitive = new PrimitiveState();
+        public DepthStencilState depthStencil;
+        public MultisampleState multisample = new MultisampleState();
+        public FragmentState fragment;
         
         public RenderPipelineDescriptor withLabel(String label) {
             this.label = label;

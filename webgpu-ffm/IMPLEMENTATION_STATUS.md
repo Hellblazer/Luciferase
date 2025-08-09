@@ -1,156 +1,106 @@
 # WebGPU FFM Module Implementation Status
 
-## Date: January 8, 2025
-## Branch: visi
-## Version: 25.0.2.1 (wgpu-native)
+## Overview
+The WebGPU FFM (Foreign Function & Memory) module provides Java bindings for the wgpu-native library using Java 24's FFM API. This module enables GPU compute and graphics operations through WebGPU in Java applications.
 
-## Current Phase: 7 - Render Module Integration (COMPLETED)
+## Current Status
+- **Branch**: visi  
+- **Date**: January 8, 2025
+- **Version**: wgpu-native 25.0.2.1
+- **Phase**: 8 - Surface Presentation & Rendering (IN PROGRESS)
+- **Overall Completion**: ~85%
 
-## Completed Phases
+## Architecture
 
-### ✅ Phase 1: FFM Infrastructure Setup
-- Project structure with Maven
-- Java 24 FFM API integration
-- Basic build configuration
+### Module Structure
+```
+webgpu-ffm/
+├── src/main/java/com/hellblazer/luciferase/webgpu/
+│   ├── WebGPU.java              # Main API entry point with native functions
+│   ├── CallbackHelper.java      # FFM callback implementations
+│   ├── CallbackBridge.java      # Device error callbacks
+│   ├── WebGPULoader.java        # Native library loading
+│   ├── ffm/
+│   │   └── WebGPUNative.java    # FFM bindings and descriptors
+│   ├── platform/                # Platform detection
+│   ├── wrapper/                 # Type-safe wrapper classes (18 total)
+│   └── builder/                 # Fluent builder API
+└── src/main/resources/natives/  # Platform-specific native libraries
+```
 
-### ✅ Phase 2: Native Library Management
+### Key Components
+
+#### Core Infrastructure
+- **WebGPU.java**: Native function calls through FFM
+- **CallbackHelper.java**: Async operation callbacks with CompletableFuture
+- **WebGPULoader.java**: Multi-platform native library management
+- **WebGPUNative.java**: Memory layouts and function descriptors
+
+#### Wrapper Classes (18 total)
+- **Instance**: WebGPU instance management
+- **Adapter**: GPU adapter selection
+- **Device**: GPU device and resource creation
+- **Queue**: Command submission
+- **Buffer**: GPU memory with thread-safe mapping
+- **ShaderModule**: WGSL shader compilation
+- **ComputePipeline**: Compute shader execution
+- **RenderPipeline**: Graphics rendering (partial)
+- **CommandEncoder** & **CommandBuffer**: Command recording
+- **ComputePassEncoder**: Compute operations
+- **RenderPassEncoder**: Draw operations (partial)
+- **Texture** & **TextureView**: Texture resources
+- **Sampler**: Texture sampling
+- **BindGroup** & **BindGroupLayout**: Resource binding
+- **PipelineLayout**: Pipeline configuration
+- **Surface**: Presentation to screen (new)
+
+## Completed Features
+
+### ✅ Phase 1-5: Foundation (100%)
+- FFM infrastructure setup
 - Multi-platform native library loading (Windows, Linux, macOS)
-- Resource extraction from JAR
-- Platform detection logic
-- Native library bundling (wgpu-native v25.0.2.1)
+- Core FFM bindings with proper memory management
+- Type-safe builder pattern API
+- High-level wrapper API with AutoCloseable resources
 
-### ✅ Phase 3: Core FFM Bindings
-- WebGPUNative class with type definitions
-- Memory layout specifications
-- Function descriptor templates
-- Constant definitions from webgpu.h
+### ✅ Phase 6: GPU Integration (100%)
+- Real WebGPU API calls (not mocks)
+- Async adapter and device requests
+- Buffer creation and management
+- Queue operations
+- Performance benchmarking
 
-### ✅ Phase 4: Type-Safe Builder Pattern
-- WebGPUBuilder for fluent API construction
-- Instance, adapter, and device builders
-- Buffer and shader builders
-- Compute pipeline builder framework
+### ✅ Phase 7: Compute Pipeline (100%)
+- Complete compute shader execution
+- Bind groups and pipeline layouts
+- Buffer copy operations
+- Command encoding and submission
+- Workgroup dispatch
+- Device polling for synchronization
+- **Critical Fix**: ByteBuffer little-endian byte order
 
-### ✅ Phase 5: High-Level Wrapper API
-- Instance management with async adapter requests
-- Adapter wrapper with device creation
-- Device wrapper with resource management
-- Buffer lifecycle management
-- Queue operations wrapper
-- Shader module compilation
-- AutoCloseable resource management
+### 🚧 Phase 8: Surface Presentation (40%)
+#### Completed
+- Surface function bindings in WebGPU.java
+- Surface wrapper class with configuration
+- Texture format and present mode constants
+- Surface configuration structures
+- Basic surface presentation test
 
-### ✅ Phase 6: GPU Integration Testing (COMPLETED August 6, 2025)
-**Major Achievement: Tests now use real platform WebGPU API, not mocks**
+#### Remaining
+- [ ] Platform-specific surface descriptors (Metal, Vulkan, D3D12)
+- [ ] Render pipeline for graphics
+- [ ] Frame presentation loop example
+- [ ] Window system integration (JavaFX/AWT/GLFW)
 
-#### Native API Integration
-- Implemented real WebGPU function calls through FFM
-- Created CallbackHelper for async operations with FFM upcall stubs
-- Successfully bridged WebGPU's async API with Java's CompletableFuture
-
-#### Functions Implemented
-- `wgpuCreateInstance` - Create WebGPU instance
-- `wgpuInstanceRequestAdapter` - Request GPU adapter with callbacks
-- `wgpuAdapterRequestDevice` - Request GPU device with callbacks
-- `wgpuDeviceGetQueue` - Get device queue
-- `wgpuDeviceCreateBuffer` - Create GPU buffers
-- `wgpuBufferGetSize` - Get buffer size
-- All resource release functions (instance, adapter, device, queue, buffer)
-
-#### Test Results
-- **GPU Integration Tests**: All 6 tests passing with real GPU hardware
-- **Performance Benchmarks**: Getting real GPU metrics
-  - Buffer creation: 47.77 MB/s to 5.9 TB/s throughput
-  - Shader compilation: 3-7 μs per module
-- **Platform Support**: Working on macOS ARM64 with Metal backend
-
-## Phase 7: Render Module Integration (COMPLETED - January 8, 2025)
-
-### Completed Tasks
-- [x] Update render module to use webgpu-ffm instead of stubs (August 2025)
-- [x] Remove duplicate WebGPU code from render module
-- [x] Implement texture and sampler support
-- [x] Add render pipeline and render pass encoder
-- [x] Create bind group and pipeline layout support
-- [x] Fix buffer mapping with device polling
-- [x] Thread-safe buffer state management
-- [x] Complete compute pipeline execution
-  - [x] Basic compute pipeline creation
-  - [x] Shader module compilation 
-  - [x] Buffer creation with proper usage flags
-  - [x] Command encoder and compute pass creation
-  - [x] Buffer copy operations (copyBufferToBuffer)
-  - [x] Bind group and pipeline layout configuration
-  - [x] Fix descriptor memory layout issues
-  - [x] Proper workgroup dispatch working
-  - [x] Fix byte order handling for buffer reads (little-endian)
-  - [x] Verify compute shaders execute correctly on GPU
-
-### Remaining Tasks (Phase 8)
-- [ ] Implement surface presentation (swap chain)
-- [ ] Add validation layer support
-- [ ] Benchmark against native performance
-- [ ] Multi-GPU adapter selection
-
-## Recent Progress (January 8, 2025)
-
-### Compute Pipeline Implementation COMPLETED
-- Created `ComputePipelineTest.java` to test compute shader execution
-- Fixed buffer usage flag validation errors (MAP_READ requires COPY_SRC)
-- Implemented staging buffer pattern for reading compute results
-- Added `copyBufferToBuffer` native function to WebGPU.java
-- Successfully creating and submitting compute commands to GPU
-- Fixed native crash caused by incorrect descriptor references
-- Implemented complete bind group and pipeline layout infrastructure
-- Added `PipelineLayout.java` wrapper class
-- Fixed WebGPUNative.Descriptors references in Device.java
-- **FIXED**: Compute shaders now execute correctly on GPU
-- **FIXED**: Byte order issue - WebGPU uses little-endian format
-- Added error callback support for better debugging
-- Infrastructure is fully functional for GPU compute operations
-
-### Key Fixes Applied
-- Corrected descriptor memory layout references (WebGPUNative.Descriptors.*)
-- Implemented proper bind group entry configuration
-- Added pipeline layout descriptor support
-- Fixed buffer mapping with proper FFM memory segments
-- Set ByteOrder.LITTLE_ENDIAN on ByteBuffers for correct float reading
-
-## Key Files
-
-### Core Infrastructure
-- `WebGPU.java` - Main entry point with native function calls
-- `CallbackHelper.java` - FFM callback implementation for async ops
-- `WebGPULoader.java` - Native library loading and extraction
-- `WebGPUNative.java` - FFM bindings for WebGPU functions (in ffm/ package)
-
-### Wrapper Classes (17 total)
-- `Instance.java` - Uses real `requestAdapter` API
-- `Adapter.java` - Uses real `requestDevice` API
-- `Device.java` - Gets real queue, creates native buffers
-- `Buffer.java` - Thread-safe mapping with state tracking
-- `Queue.java` - Proper resource cleanup with native release
-- `ShaderModule.java` - WGSL shader compilation
-- `ComputePipeline.java` - Compute pipeline state
-- `RenderPipeline.java` - Graphics pipeline state
-- `RenderPassEncoder.java` - Draw command recording
-- `Texture.java` & `TextureView.java` - Texture resources
-- `Sampler.java` - Texture sampling configuration
-- `BindGroup.java` & `BindGroupLayout.java` - Resource binding
-- `PipelineLayout.java` - Pipeline resource layout
-- `CommandEncoder.java` & `CommandBuffer.java` - Command recording
-
-### Tests
-- `GPUIntegrationTest.java` - 6 tests, all passing with real GPU
-- `PerformanceBenchmarkTest.java` - 5 benchmarks with real metrics
-- `WrapperTest.java` - 13 wrapper class tests
-- `WebGPUBuilderTest.java` - 8 builder API tests
-- `SynchronousAdapterTest.java` - Synchronous adapter request testing
-- `NativeBufferOperationsTest.java` - Buffer mapping and data transfer
-- `NativeCommandEncoderTest.java` - Command encoding operations
-- `ComputePipelineTest.java` - Compute shader execution with real GPU
-- `MinimalComputeTest.java` - Focused compute shader debugging
-- **Total**: 45+ tests, all passing
+## Test Coverage
+- **Total Tests**: 47+ (all passing)
+- **Key Test Files**:
+  - GPUIntegrationTest: Real GPU operations
+  - PerformanceBenchmarkTest: Performance metrics
+  - ComputePipelineTest: Compute shader execution
+  - NativeBufferOperationsTest: Buffer operations
+  - SurfacePresentationTest: Surface API validation
 
 ## Performance Metrics (macOS ARM64)
 
@@ -160,43 +110,72 @@
 | Buffer Creation (1MB) | 130.8 GB/s | Optimal size range |
 | Buffer Creation (16MB) | 2.7 TB/s | Large buffer efficiency |
 | Buffer Creation (64MB) | 5.9 TB/s | Peak throughput |
-| Shader Compilation (small) | 3.47 μs | Minimal compilation |
-| Shader Compilation (medium) | 3.56 μs | Consistent performance |
-| Shader Compilation (large) | 6.96 μs | Complex shader overhead |
-| Buffer Mapping | ~0.3s | With device polling (was 5+ seconds) |
+| Shader Compilation | 3-7 μs | Fast compilation |
+| Buffer Mapping | ~0.3s | With device polling |
+| Compute Dispatch | < 1ms | Simple kernels |
 
-## How to Test
+## Platform Support
 
+| Platform | Architecture | Status | Library |
+|----------|-------------|--------|---------|
+| macOS | aarch64 | ✅ Tested | libwgpu_native.dylib |
+| macOS | x86_64 | ✅ Included | libwgpu_native.dylib |
+| Linux | x86_64 | ✅ Included | libwgpu_native.so |
+| Windows | x86_64 | ✅ Included | wgpu_native.dll |
+
+## Known Issues & Limitations
+
+1. **Surface Presentation**: Requires platform-specific window handles
+2. **Render Pipeline**: Graphics rendering partially implemented
+3. **Validation Layers**: Not yet implemented
+4. **Multi-GPU**: Single adapter selection only
+
+## Technical Notes
+
+### Critical Implementation Details
+- **FFM API**: Uses Java 24 Foreign Function & Memory API
+- **Byte Order**: GPU buffers use little-endian format
+- **Memory Management**: AutoCloseable wrappers prevent leaks
+- **Thread Safety**: Buffer mapping uses atomic state tracking
+- **Async Operations**: Callbacks wrapped in CompletableFuture
+- **Device Polling**: Required for buffer mapping completion
+
+### Build & Test
 ```bash
-# Run GPU integration tests (requires GPU)
-mvn test -pl webgpu-ffm -Dtest=GPUIntegrationTest
-
-# Run performance benchmarks (requires GPU)
-mvn test -pl webgpu-ffm -Dtest=PerformanceBenchmarkTest
+# Build module
+mvn clean install -pl webgpu-ffm
 
 # Run all tests
 mvn test -pl webgpu-ffm
-```
 
-## Technical Notes
-- Using Java 24 with FFM API for native interop
-- wgpu-native v25.0.2.1 from gfx-rs project
-- Callback mechanism uses FFM upcall stubs
-- All async operations wrapped in synchronous API with timeouts
-- ByteBuffer byte order must be set to LITTLE_ENDIAN for GPU data
+# Run specific test
+mvn test -pl webgpu-ffm -Dtest=ComputePipelineTest
+
+# Run benchmarks
+mvn test -pl webgpu-ffm -Dtest=PerformanceBenchmarkTest
+```
 
 ## Next Steps
 
-### Phase 8: Surface Presentation & Rendering
-1. Implement surface presentation (swap chain)
-2. Add WebGPU validation layer support
-3. Create render pipeline tests
-4. Performance benchmarking vs native
+### Immediate (Phase 8 Completion)
+1. Implement platform-specific surface descriptors
+2. Complete render pipeline implementation
+3. Create window integration example
+4. Add frame presentation loop
 
 ### Future Enhancements
-1. Multi-GPU support and adapter selection
-2. Advanced error reporting and debugging
-3. GPU timing and profiling metrics
-4. Memory pooling strategies
-5. Pipeline caching and optimization
-6. Matrix multiplication compute shader example
+1. WebGPU validation layer support
+2. Multi-GPU adapter selection
+3. Pipeline caching
+4. Memory pooling optimizations
+5. Comprehensive error reporting
+6. GPU profiling metrics
+
+## Dependencies
+- Java 24 (FFM API)
+- wgpu-native 25.0.2.1
+- Maven 3.9+
+- SLF4J for logging
+
+## License
+Part of the Luciferase project under AGPL v3.0
