@@ -107,10 +107,11 @@ public class ComputeShaderManager {
      */
     public CompletableFuture<Void> loadESVOShaders() {
         return CompletableFuture.allOf(
-            loadShaderFromResource("/shaders/esvo/visibility.wgsl"),
-            loadShaderFromResource("/shaders/esvo/shading.wgsl"),
+            loadShaderFromResource("/shaders/esvo/voxelization.wgsl"),
             loadShaderFromResource("/shaders/esvo/sparse_octree.wgsl"),
-            loadShaderFromResource("/shaders/esvo/ray_marching.wgsl")
+            loadShaderFromResource("/shaders/esvo/ray_marching.wgsl"),
+            loadShaderFromResource("/shaders/esvo/visibility.wgsl"),
+            loadShaderFromResource("/shaders/esvo/shading.wgsl")
         );
     }
     

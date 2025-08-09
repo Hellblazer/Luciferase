@@ -1,8 +1,12 @@
 package com.hellblazer.luciferase.render.voxel;
 
+import com.hellblazer.luciferase.render.voxel.gpu.ComputeShaderManager;
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
+import com.hellblazer.luciferase.webgpu.wrapper.BindGroup;
+import com.hellblazer.luciferase.webgpu.wrapper.BindGroupLayout;
+import com.hellblazer.luciferase.webgpu.wrapper.ComputePipeline;
 import com.hellblazer.luciferase.webgpu.wrapper.Device;
 import com.hellblazer.luciferase.webgpu.wrapper.ShaderModule;
 import org.slf4j.Logger;
@@ -26,6 +30,14 @@ public class VoxelRenderPipeline {
     private Buffer voxelBuffer;
     private Buffer octreeBuffer;
     private Buffer uniformBuffer;
+    
+    // Compute pipelines
+    private ComputePipeline voxelizationPipeline;
+    private ComputePipeline octreePipeline;
+    
+    // Bind groups
+    private BindGroupLayout bindGroupLayout;
+    private BindGroup bindGroup;
     
     // Pipeline configuration
     private int voxelResolution = 256;
@@ -218,10 +230,129 @@ public class VoxelRenderPipeline {
     private void createPipelineLayouts() {
         log.debug("Creating pipeline layouts...");
         
-        // TODO: Implement bind group layouts and pipeline creation
-        // This requires additional WebGPU functions to be implemented
+        // Create compute shader manager
+        var shaderManager = new ComputeShaderManager(context);
         
-        log.debug("Pipeline layouts created");
+        try {
+            // Load shaders from resources
+            var voxelShaderFuture = shaderManager.loadShaderFromResource("/shaders/esvo/voxelization.wgsl");
+            var octreeShaderFuture = shaderManager.loadShaderFromResource("/shaders/esvo/sparse_octree.wgsl");
+            
+            // Wait for shader loading
+            var voxelShaderModule = voxelShaderFuture.get();
+            var octreeShaderModule = octreeShaderFuture.get();
+            
+            // Create voxelization compute pipeline
+            voxelizationPipeline = shaderManager.createComputePipeline(
+                "voxelization_pipeline",
+                voxelShaderModule,
+                "main"
+            );
+            
+            // Create octree compute pipeline
+            octreePipeline = shaderManager.createComputePipeline(
+                "octree_pipeline",
+                octreeShaderModule,
+                "main"
+            );
+            
+            // Create bind group layout for buffers
+            createBindGroups();
+            
+            log.debug("Pipeline layouts created with compute pipelines");
+        } catch (Exception e) {
+            log.error("Failed to create pipeline layouts", e);
+            throw new RuntimeException("Pipeline creation failed", e);
+        }
+    }
+    
+    private void createBindGroups() {
+        // Create bind group layout descriptor
+        var layoutDesc = new Device.BindGroupLayoutDescriptor()
+            .withLabel("VoxelBindGroupLayout");
+        
+        // Add buffer bindings using proper API
+        // Create bind group layout entries for each buffer
+        var entry0 = new Device.BindGroupLayoutEntry(0, WebGPUNative.SHADER_STAGE_COMPUTE)
+            .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_STORAGE));
+        var entry1 = new Device.BindGroupLayoutEntry(1, WebGPUNative.SHADER_STAGE_COMPUTE)
+            .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_STORAGE));
+        var entry2 = new Device.BindGroupLayoutEntry(2, WebGPUNative.SHADER_STAGE_COMPUTE)
+            .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_UNIFORM));
+        
+        layoutDesc.withEntry(entry0);
+        layoutDesc.withEntry(entry1);
+        layoutDesc.withEntry(entry2);
+        
+        // Create bind group layout
+        bindGroupLayout = context.getDevice().createBindGroupLayout(layoutDesc);
+        
+        // Create bind group with proper constructor
+        var bindGroupDesc = new Device.BindGroupDescriptor(bindGroupLayout)
+            .withLabel("VoxelBindGroup");
+        
+        // Add buffer entries with proper API
+        bindGroupDesc.withEntry(new Device.BindGroupEntry(0).withBuffer(voxelBuffer, 0, voxelBuffer.getSize()));
+        bindGroupDesc.withEntry(new Device.BindGroupEntry(1).withBuffer(octreeBuffer, 0, octreeBuffer.getSize()));
+        bindGroupDesc.withEntry(new Device.BindGroupEntry(2).withBuffer(uniformBuffer, 0, uniformBuffer.getSize()));
+        
+        bindGroup = context.getDevice().createBindGroup(bindGroupDesc);
+    }
+    
+    private String loadShaderSource(String filename) {
+        // For now, return a simple compute shader template
+        // In production, load from resources
+        if (filename.contains("voxelization")) {
+            return """
+                @group(0) @binding(0) var<storage, read> vertices: array<vec3<f32>>;
+                @group(0) @binding(1) var<storage, read_write> voxels: array<u32>;
+                @group(0) @binding(2) var<uniform> params: VoxelParams;
+                
+                struct VoxelParams {
+                    resolution: u32,
+                    scale: f32,
+                    offset: vec3<f32>,
+                };
+                
+                @compute @workgroup_size(64)
+                fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+                    let idx = id.x;
+                    if (idx >= arrayLength(&vertices) / 3u) {
+                        return;
+                    }
+                    
+                    // Simple voxelization logic
+                    let v0 = vertices[idx * 3u];
+                    let v1 = vertices[idx * 3u + 1u];
+                    let v2 = vertices[idx * 3u + 2u];
+                    
+                    // Voxelize triangle
+                    // ... implementation details ...
+                }
+                """;
+        } else {
+            return """
+                @group(0) @binding(0) var<storage, read> voxels: array<u32>;
+                @group(0) @binding(1) var<storage, read_write> octree: array<u32>;
+                @group(0) @binding(2) var<uniform> params: OctreeParams;
+                
+                struct OctreeParams {
+                    nodeCount: u32,
+                    maxDepth: u32,
+                };
+                
+                @compute @workgroup_size(256)
+                fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+                    let idx = id.x;
+                    if (idx >= params.nodeCount) {
+                        return;
+                    }
+                    
+                    // Build octree node
+                    // ... implementation details ...
+                }
+                """;
+        }
     }
     
     /**
@@ -259,10 +390,11 @@ public class VoxelRenderPipeline {
             
             // Execute voxelization compute shader
             int workgroups = (vertices.remaining() / 3 + 63) / 64;
-            // TODO: Create compute pipeline and dispatch
-            // context.dispatchCompute(pipeline, workgroups, 1, 1);
             
-            // Submit commands
+            // Dispatch compute shader with bind group
+            context.dispatchCompute(voxelizationPipeline, bindGroup, workgroups, 1, 1);
+            
+            // Submit commands and wait for completion
             context.waitIdle().join();
             
             // Clean up temporary buffer
@@ -285,9 +417,10 @@ public class VoxelRenderPipeline {
             int nodeCount = (int) (voxelBufferSize / 4 / 8); // Estimate
             int workgroups = (nodeCount + 255) / 256;
             
-            // TODO: Create compute pipeline and dispatch
-            // context.dispatchCompute(pipeline, workgroups, 1, 1);
+            // Dispatch octree construction compute shader
+            context.dispatchCompute(octreePipeline, bindGroup, workgroups, 1, 1);
             
+            // Wait for completion
             context.waitIdle().join();
             
             log.debug("Octree construction complete");
