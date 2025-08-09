@@ -3,17 +3,23 @@
 
 struct VoxelParams {
     resolution: vec3<u32>,
+    padding1: u32,
     voxelSize: f32,
+    padding2: f32,
+    padding3: f32,
+    padding4: f32,
     boundsMin: vec3<f32>,
+    padding5: f32,
     boundsMax: vec3<f32>,
+    padding6: f32,
 }
 
 struct Triangle {
-    v0: vec3<f32>,
-    v1: vec3<f32>,
-    v2: vec3<f32>,
-    normal: vec3<f32>,
-    color: vec4<f32>,
+    v0: vec4<f32>,      // xyz + padding
+    v1: vec4<f32>,      // xyz + padding  
+    v2: vec4<f32>,      // xyz + padding
+    normal: vec4<f32>,  // xyz + padding
+    color: vec4<f32>,   // rgba
 }
 
 @group(0) @binding(0) var<storage, read> triangles: array<Triangle>;
@@ -66,9 +72,9 @@ fn triangleBoxIntersection(
     let boxHalfSize = (boxMax - boxMin) * 0.5;
     
     // Translate triangle to box center coordinate system
-    let v0 = tri.v0 - boxCenter;
-    let v1 = tri.v1 - boxCenter;
-    let v2 = tri.v2 - boxCenter;
+    let v0 = tri.v0.xyz - boxCenter;
+    let v1 = tri.v1.xyz - boxCenter;
+    let v2 = tri.v2.xyz - boxCenter;
     
     // Test box normals (x, y, z axes)
     let minV = min(min(v0, v1), v2);
@@ -104,8 +110,8 @@ fn voxelizeTriangle(triangleIdx: u32) {
     let tri = triangles[triangleIdx];
     
     // Calculate triangle bounding box in voxel space
-    let minWorld = min(min(tri.v0, tri.v1), tri.v2);
-    let maxWorld = max(max(tri.v0, tri.v1), tri.v2);
+    let minWorld = min(min(tri.v0.xyz, tri.v1.xyz), tri.v2.xyz);
+    let maxWorld = max(max(tri.v0.xyz, tri.v1.xyz), tri.v2.xyz);
     
     let minVoxel = worldToVoxel(minWorld);
     let maxVoxel = worldToVoxel(maxWorld);
@@ -230,7 +236,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     
     // Choose voxelization method based on triangle characteristics
     let tri = triangles[triangleIdx];
-    let area = length(cross(tri.v1 - tri.v0, tri.v2 - tri.v0)) * 0.5;
+    let area = length(cross(tri.v1.xyz - tri.v0.xyz, tri.v2.xyz - tri.v0.xyz)) * 0.5;
     
     if (area < params.voxelSize * params.voxelSize) {
         // Small triangle - use simple method
