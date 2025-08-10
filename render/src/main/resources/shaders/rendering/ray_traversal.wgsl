@@ -118,12 +118,12 @@ fn traverse_hierarchical(ray: Ray, hit: ptr<function, Hit>) {
                 // Leaf node - check for voxel hit
                 let voxel_value = voxel_data[node.data_offset];
                 if (voxel_value != 0u) {
-                    hit.hit = 1.0;
-                    hit.distance = max(t_enter, t);
-                    hit.position = ray.origin + hit.distance * ray.direction;
-                    hit.normal = calculate_box_normal(hit.position, node_min, node_max);
-                    hit.voxel_value = f32(voxel_value);
-                    hit.material_id = f32(node.material_id);
+                    (*hit).hit = 1.0;
+                    (*hit).distance = max(t_enter, t);
+                    (*hit).position = ray.origin + (*hit).distance * ray.direction;
+                    (*hit).normal = calculate_box_normal((*hit).position, node_min, node_max);
+                    (*hit).voxel_value = f32(voxel_value);
+                    (*hit).material_id = f32(node.material_id);
                     return;
                 }
             } else if (node.children_mask != 0u) {
@@ -158,12 +158,12 @@ fn traverse_uniform_grid(ray: Ray, hit: ptr<function, Hit>) {
         let voxel_value = sample_voxel_direct(pos);
         
         if (voxel_value != 0u) {
-            hit.hit = 1.0;
-            hit.distance = t;
-            hit.position = pos;
-            hit.normal = calculate_gradient_normal(pos);
-            hit.voxel_value = f32(voxel_value);
-            hit.material_id = f32(voxel_value);
+            (*hit).hit = 1.0;
+            (*hit).distance = t;
+            (*hit).position = pos;
+            (*hit).normal = calculate_gradient_normal(pos);
+            (*hit).voxel_value = f32(voxel_value);
+            (*hit).material_id = f32(voxel_value);
             break;
         }
         

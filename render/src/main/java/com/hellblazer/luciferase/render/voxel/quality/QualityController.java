@@ -2,6 +2,9 @@ package com.hellblazer.luciferase.render.voxel.quality;
 
 import javax.vecmath.Vector3f;
 import javax.vecmath.Color3f;
+import javax.vecmath.Point3f;
+import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Quality-driven subdivision controller for ESVO-style octree building.
@@ -74,14 +77,27 @@ public class QualityController {
         // Surface approximation
         private boolean hasContour = false;
         private float contourError = 0.0f;
+        private ContourExtractor.Contour contour = null;
+        
+        // Triangle data for contour extraction
+        private List<ContourExtractor.Triangle> triangles = new ArrayList<>();
         
         // Spatial information
         private float voxelSize = 1.0f;
         private int sampleCount = 0;
         private int normalSampleCount = 0;
+        private ContourExtractor.AABB voxelBounds = null;
         
         public VoxelData(float voxelSize) {
             this.voxelSize = voxelSize;
+        }
+        
+        public VoxelData(float voxelSize, Point3f voxelCenter) {
+            this.voxelSize = voxelSize;
+            this.voxelBounds = new ContourExtractor.AABB(
+                voxelCenter,
+                new Vector3f(voxelSize/2, voxelSize/2, voxelSize/2)
+            );
         }
         
         /**
@@ -137,6 +153,46 @@ public class QualityController {
         }
         
         /**
+         * Add a triangle for contour extraction.
+         */
+        public void addTriangle(Point3f v0, Point3f v1, Point3f v2) {
+            triangles.add(new ContourExtractor.Triangle(v0, v1, v2));
+        }
+        
+        /**
+         * Set the extracted contour.
+         */
+        public void setContour(ContourExtractor.Contour contour) {
+            this.contour = contour;
+            this.hasContour = contour != null;
+            if (contour != null) {
+                // Contour error will be calculated separately if needed
+                this.contourError = 0.0f;
+            }
+        }
+        
+        /**
+         * Get the list of triangles.
+         */
+        public List<ContourExtractor.Triangle> getTriangles() {
+            return new ArrayList<>(triangles);
+        }
+        
+        /**
+         * Get the voxel bounds.
+         */
+        public ContourExtractor.AABB getVoxelBounds() {
+            return voxelBounds;
+        }
+        
+        /**
+         * Set the voxel bounds.
+         */
+        public void setVoxelBounds(ContourExtractor.AABB bounds) {
+            this.voxelBounds = bounds;
+        }
+        
+        /**
          * Calculate color range (maximum difference across RGB channels).
          */
         public float getColorRange() {
@@ -165,6 +221,7 @@ public class QualityController {
         public int getNormalSampleCount() { return normalSampleCount; }
         public boolean hasContour() { return hasContour; }
         public float getContourError() { return contourError; }
+        public ContourExtractor.Contour getContour() { return contour; }
         
         public Color3f getColorMin() { return new Color3f(colorMin); }
         public Color3f getColorMax() { return new Color3f(colorMax); }
@@ -212,13 +269,42 @@ public class QualityController {
     }
     
     private final QualityMetrics metrics;
+    private final ContourExtractor contourExtractor;
     
     public QualityController(QualityMetrics metrics) {
         this.metrics = metrics;
+        this.contourExtractor = new ContourExtractor();
     }
     
     public QualityController() {
         this(QualityMetrics.mediumQuality());
+    }
+    
+    /**
+     * Extract and analyze contour for a voxel.
+     * Updates the voxel data with contour information and error metrics.
+     */
+    public void extractAndAnalyzeContour(VoxelData voxel) {
+        if (voxel.getTriangles().isEmpty() || voxel.getVoxelBounds() == null) {
+            return;
+        }
+        
+        // Extract contour
+        var contour = contourExtractor.extractContour(
+            voxel.getTriangles(), 
+            voxel.getVoxelBounds()
+        );
+        
+        if (contour != null) {
+            // Calculate error
+            float error = contourExtractor.evaluateContourError(
+                contour, 
+                voxel.getTriangles()
+            );
+            
+            voxel.setContour(contour);
+            voxel.setContourError(error);
+        }
     }
     
     /**
