@@ -95,7 +95,7 @@ fn traverse_hierarchical(ray: Ray, hit: ptr<function, Hit>) {
         let node = voxel_octree[node_index];
         
         // Calculate node bounds (simplified for uniform octree)
-        let level_size = f32(1 << (config.octree_max_depth - i32(node.level)));
+        let level_size = f32(1u << u32(config.octree_max_depth - i32(node.level)));
         let node_pos = decode_morton_position(node_index, i32(node.level));
         let node_min = node_pos * level_size;
         let node_max = node_min + vec3<f32>(level_size);

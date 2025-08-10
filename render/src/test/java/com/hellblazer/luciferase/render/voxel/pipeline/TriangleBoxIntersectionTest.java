@@ -153,7 +153,8 @@ class TriangleBoxIntersectionTest {
         );
         
         // Should have significant coverage since triangle fits within box bounds
-        assertTrue(coverage > 0.5f);
+        // Triangle area is 0.5, box face area is 1.0, so coverage should be 0.5
+        assertTrue(coverage >= 0.5f);
         assertTrue(coverage <= 1.0f);
     }
     

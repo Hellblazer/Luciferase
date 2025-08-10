@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.render.voxel.pipeline;
 
-import com.hellblazer.luciferase.render.voxel.gpu.WebGPUDevice;
+import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import com.hellblazer.luciferase.render.voxel.memory.MemoryPool;
 
 import javax.vecmath.Point3f;
@@ -22,7 +22,7 @@ public class GPUVoxelizer {
     private static final int WORKGROUP_SIZE = 64;
     private static final int MAX_VOXELS_PER_BATCH = 1_000_000;
     
-    private final WebGPUDevice device;
+    private final WebGPUContext context;
     private final MemoryPool memoryPool;
     private ComputePipeline voxelizePipeline;
     private boolean initialized = false;
@@ -52,8 +52,8 @@ public class GPUVoxelizer {
         MemoryLayout.paddingLayout(12)
     );
     
-    public GPUVoxelizer(WebGPUDevice device, MemoryPool memoryPool) {
-        this.device = device;
+    public GPUVoxelizer(WebGPUContext context, MemoryPool memoryPool) {
+        this.context = context;
         this.memoryPool = memoryPool;
     }
     

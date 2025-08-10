@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class VoxelGPUManager implements AutoCloseable {
     
-    private final WebGPUDevice device;
+    private final WebGPUContext context;
     private final Arena arena;
     private final FFMMemoryPool nodePool;
     private final AtomicLong nextBufferId;
@@ -35,10 +35,10 @@ public class VoxelGPUManager implements AutoCloseable {
     /**
      * Creates a new voxel GPU manager.
      * 
-     * @param device The WebGPU device to use
+     * @param context The WebGPU context to use
      */
-    public VoxelGPUManager(WebGPUDevice device) {
-        this.device = device;
+    public VoxelGPUManager(WebGPUContext context) {
+        this.context = context;
         this.arena = Arena.ofShared();
         this.nodePool = new FFMMemoryPool(
             FFMLayouts.VOXEL_NODE_LAYOUT.byteSize() * 1024, // 1024 nodes per segment
@@ -70,17 +70,17 @@ public class VoxelGPUManager implements AutoCloseable {
         // Create or resize GPU buffer
         if (octreeBufferId == 0 || currentOctreeSize < bufferSize) {
             if (octreeBufferId != 0) {
-                device.destroyBuffer(octreeBufferId);
+                context.destroyBuffer(octreeBufferId);
             }
-            octreeBufferId = device.createBuffer(
+            octreeBufferId = context.createBuffer(
                 bufferSize,
-                WebGPUDevice.BufferUsage.STORAGE | WebGPUDevice.BufferUsage.COPY_DST
+                WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST
             );
             currentOctreeSize = bufferSize;
         }
         
         // Upload to GPU with zero-copy
-        device.writeBuffer(octreeBufferId, octreeData, 0);
+        context.writeBuffer(octreeBufferId, octreeData, 0);
         
         return nodeCount;
     }
@@ -117,17 +117,17 @@ public class VoxelGPUManager implements AutoCloseable {
         // Create or resize GPU buffer
         if (materialBufferId == 0 || currentMaterialSize < bufferSize) {
             if (materialBufferId != 0) {
-                device.destroyBuffer(materialBufferId);
+                context.destroyBuffer(materialBufferId);
             }
-            materialBufferId = device.createBuffer(
+            materialBufferId = context.createBuffer(
                 bufferSize,
-                WebGPUDevice.BufferUsage.STORAGE | WebGPUDevice.BufferUsage.COPY_DST
+                WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST
             );
             currentMaterialSize = bufferSize;
         }
         
         // Upload to GPU
-        device.writeBuffer(materialBufferId, materialData, 0);
+        context.writeBuffer(materialBufferId, materialData, 0);
     }
     
     /**
@@ -152,16 +152,16 @@ public class VoxelGPUManager implements AutoCloseable {
         // Single GPU upload
         if (octreeBufferId == 0 || currentOctreeSize < totalSize) {
             if (octreeBufferId != 0) {
-                device.destroyBuffer(octreeBufferId);
+                context.destroyBuffer(octreeBufferId);
             }
-            octreeBufferId = device.createBuffer(
+            octreeBufferId = context.createBuffer(
                 totalSize,
-                WebGPUDevice.BufferUsage.STORAGE | WebGPUDevice.BufferUsage.COPY_DST
+                WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST
             );
             currentOctreeSize = totalSize;
         }
         
-        device.writeBuffer(octreeBufferId, batchBuffer, 0);
+        context.writeBuffer(octreeBufferId, batchBuffer, 0);
         
         return totalNodes;
     }
@@ -177,20 +177,20 @@ public class VoxelGPUManager implements AutoCloseable {
         
         // Create ray input buffer
         if (rayBufferId != 0) {
-            device.destroyBuffer(rayBufferId);
+            context.destroyBuffer(rayBufferId);
         }
-        rayBufferId = device.createBuffer(
+        rayBufferId = context.createBuffer(
             rayBufferSize,
-            WebGPUDevice.BufferUsage.STORAGE | WebGPUDevice.BufferUsage.COPY_DST
+            WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST
         );
         
         // Create hit result buffer
         if (hitResultBufferId != 0) {
-            device.destroyBuffer(hitResultBufferId);
+            context.destroyBuffer(hitResultBufferId);
         }
-        hitResultBufferId = device.createBuffer(
+        hitResultBufferId = context.createBuffer(
             hitBufferSize,
-            WebGPUDevice.BufferUsage.STORAGE | WebGPUDevice.BufferUsage.COPY_SRC
+            WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_SRC
         );
     }
     
@@ -248,10 +248,10 @@ public class VoxelGPUManager implements AutoCloseable {
     @Override
     public void close() {
         // Destroy GPU buffers
-        if (octreeBufferId != 0) device.destroyBuffer(octreeBufferId);
-        if (materialBufferId != 0) device.destroyBuffer(materialBufferId);
-        if (rayBufferId != 0) device.destroyBuffer(rayBufferId);
-        if (hitResultBufferId != 0) device.destroyBuffer(hitResultBufferId);
+        if (octreeBufferId != 0) context.destroyBuffer(octreeBufferId);
+        if (materialBufferId != 0) context.destroyBuffer(materialBufferId);
+        if (rayBufferId != 0) context.destroyBuffer(rayBufferId);
+        if (hitResultBufferId != 0) context.destroyBuffer(hitResultBufferId);
         
         // Close memory pool and arena
         nodePool.close();

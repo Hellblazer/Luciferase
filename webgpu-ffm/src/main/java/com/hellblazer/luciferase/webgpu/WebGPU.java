@@ -1178,20 +1178,20 @@ public class WebGPU {
      */
     public static boolean isAvailable() {
         try {
-            // Try to detect platform
-            var platform = com.hellblazer.luciferase.webgpu.platform.PlatformDetector.detectPlatform();
-            log.debug("Platform detected: {}", platform);
-            
-            // Check if we can load the library (without actually loading it)
-            var libraryPath = System.getProperty("java.library.path");
-            if (libraryPath != null && !libraryPath.isEmpty()) {
-                // Check if library exists in path
+            // If already initialized, we know it's available
+            if (initialized.get() && wgpuCreateInstance != null) {
                 return true;
             }
             
-            // Check if library is in resources
-            var resourcePath = "/natives/" + platform.getPlatformString() + "/" + platform.getLibraryName();
-            return WebGPU.class.getResourceAsStream(resourcePath) != null;
+            // Try to actually initialize WebGPU
+            // This is the only reliable way to know if it's available
+            boolean result = initialize();
+            if (result) {
+                log.debug("WebGPU is available - initialization successful");
+            } else {
+                log.debug("WebGPU is not available - initialization failed");
+            }
+            return result;
             
         } catch (Exception e) {
             log.debug("WebGPU availability check failed: {}", e.getMessage());

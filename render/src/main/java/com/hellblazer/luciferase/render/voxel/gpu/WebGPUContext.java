@@ -178,6 +178,68 @@ public class WebGPUContext {
     }
     
     /**
+     * Create a pipeline layout for organizing bind groups.
+     */
+    public PipelineLayout createPipelineLayout() {
+        if (!isInitialized()) {
+            throw new IllegalStateException("WebGPU context not initialized");
+        }
+        
+        // Create an empty pipeline layout (auto layout)
+        var descriptor = new Device.PipelineLayoutDescriptor()
+            .withLabel("PipelineLayout");
+        
+        return device.createPipelineLayout(descriptor);
+    }
+    
+    /**
+     * Create a compute pipeline with shader and layout.
+     */
+    public ComputePipeline createComputePipeline(ShaderModule shader, String entryPoint, PipelineLayout layout) {
+        if (!isInitialized()) {
+            throw new IllegalStateException("WebGPU context not initialized");
+        }
+        
+        var descriptor = new Device.ComputePipelineDescriptor()
+            .withLabel("ComputePipeline")
+            .withLayout(layout)
+            .withCompute(new Device.ComputePipelineDescriptor.ComputeState()
+                .withModule(shader)
+                .withEntryPoint(entryPoint));
+        
+        return device.createComputePipeline(descriptor);
+    }
+    
+    /**
+     * Create a bind group for binding resources to a pipeline.
+     */
+    public BindGroup createBindGroup(PipelineLayout layout, Buffer[] buffers) {
+        if (!isInitialized()) {
+            throw new IllegalStateException("WebGPU context not initialized");
+        }
+        
+        // Create bind group layout from pipeline layout
+        var bindGroupLayout = layout.getBindGroupLayout(0);
+        
+        // Create bind group entries for each buffer
+        var entries = new BindGroup.Entry[buffers.length];
+        for (int i = 0; i < buffers.length; i++) {
+            entries[i] = new BindGroup.Entry()
+                .withBinding(i)
+                .withBuffer(buffers[i])
+                .withOffset(0)
+                .withSize(buffers[i].getSize());
+        }
+        
+        var descriptor = new Device.BindGroupDescriptor()
+            .withLabel("BindGroup")
+            .withLayout(bindGroupLayout)
+            .withEntries(entries);
+        
+        return device.createBindGroup(descriptor);
+    }
+    
+    /**
      * Dispatch compute work.
      */
     public void dispatchCompute(ComputePipeline pipeline, int workGroupCountX, int workGroupCountY, int workGroupCountZ) {

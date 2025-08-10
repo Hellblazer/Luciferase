@@ -3,7 +3,6 @@ package com.hellblazer.luciferase.render.voxel.pipeline;
 import com.hellblazer.luciferase.render.voxel.core.EnhancedVoxelOctreeNode;
 import com.hellblazer.luciferase.render.voxel.gpu.ComputeShaderManager;
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
-import com.hellblazer.luciferase.render.voxel.gpu.WebGPUDevice;
 import com.hellblazer.luciferase.render.voxel.memory.MemoryPool;
 import com.hellblazer.luciferase.render.voxel.memory.PageAllocator;
 import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;

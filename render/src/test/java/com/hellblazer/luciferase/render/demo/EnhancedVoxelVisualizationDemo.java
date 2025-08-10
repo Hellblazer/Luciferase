@@ -4,6 +4,8 @@ import com.hellblazer.luciferase.render.voxel.core.EnhancedVoxelOctreeNode;
 import com.hellblazer.luciferase.render.voxel.gpu.ComputeShaderManager;
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import com.hellblazer.luciferase.render.voxel.pipeline.GPUOctreeBuilder;
+import com.hellblazer.luciferase.render.voxel.parallel.SliceBasedOctreeBuilder;
+import com.hellblazer.luciferase.render.voxel.quality.QualityController;
 import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import com.hellblazer.luciferase.webgpu.wrapper.CommandEncoder;
 import com.hellblazer.luciferase.webgpu.wrapper.Device;
@@ -67,6 +69,10 @@ public class EnhancedVoxelVisualizationDemo extends Application {
     private ComputeShaderManager shaderManager;
     private GPUOctreeBuilder octreeBuilder;
     private ShaderModule voxelizationShader;
+    
+    // ESVO components
+    private SliceBasedOctreeBuilder sliceBuilder;
+    private QualityController qualityController;
     
     // JavaFX components
     private Group denseVoxelGroup;
@@ -401,11 +407,15 @@ public class EnhancedVoxelVisualizationDemo extends Application {
             octreeBuilder = new GPUOctreeBuilder(context);
             octreeBuilder.initialize().join();
             
+            // Initialize ESVO components
+            sliceBuilder = new SliceBasedOctreeBuilder(QualityController.QualityMetrics.mediumQuality());
+            qualityController = new QualityController(QualityController.QualityMetrics.mediumQuality());
+            
             Platform.runLater(() -> {
                 statusLabel.setText("WebGPU Ready - Click Voxelize to generate geometry");
                 generateTestVoxels();
             });
-            log.info("WebGPU initialization complete");
+            log.info("WebGPU and ESVO initialization complete");
             
         } catch (Exception e) {
             log.error("Failed to initialize WebGPU", e);
@@ -698,6 +708,37 @@ public class EnhancedVoxelVisualizationDemo extends Application {
     }
     
     private void buildOctreeFromDenseGrid() {
+        long startTime = System.nanoTime();
+        
+        float[] boundsMin = {0, 0, 0};
+        float[] boundsMax = {1, 1, 1};
+        
+        if (sliceBuilder != null && countFilledVoxels() > 100) {
+            // Use ESVO slice-based parallel builder for larger datasets
+            try {
+                octreeRoot = sliceBuilder.buildOctree(
+                    denseVoxelGrid, 
+                    voxelColors, 
+                    currentGridSize, 
+                    boundsMin,
+                    boundsMax
+                );
+                
+                long buildTime = (System.nanoTime() - startTime) / 1_000_000; // ms
+                log.info("ESVO parallel octree build completed in {} ms", buildTime);
+                updateBuildTimeMetric(buildTime);
+                
+            } catch (Exception e) {
+                log.warn("ESVO builder failed, falling back to serial: {}", e.getMessage());
+                buildOctreeSerial(startTime);
+            }
+        } else {
+            // Use original serial approach for small datasets
+            buildOctreeSerial(startTime);
+        }
+    }
+    
+    private void buildOctreeSerial(long startTime) {
         float[] boundsMin = {0, 0, 0};
         float[] boundsMax = {1, 1, 1};
         
@@ -730,6 +771,18 @@ public class EnhancedVoxelVisualizationDemo extends Application {
         
         // Compute average colors for internal nodes
         octreeRoot.computeAverageColors();
+        
+        long buildTime = (System.nanoTime() - startTime) / 1_000_000; // ms
+        log.info("Serial octree build completed in {} ms", buildTime);
+        updateBuildTimeMetric(buildTime);
+    }
+    
+    private void updateBuildTimeMetric(long buildTimeMs) {
+        if (metricsTable != null && metricsTable.getItems() != null && metricsTable.getItems().size() > 6) {
+            Platform.runLater(() -> {
+                metricsTable.getItems().get(6).value.set(buildTimeMs + " ms");
+            });
+        }
     }
     
     private void updateDisplays() {

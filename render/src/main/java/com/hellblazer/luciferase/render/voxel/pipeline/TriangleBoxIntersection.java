@@ -173,8 +173,8 @@ public class TriangleBoxIntersection {
             return 0.0f;
         }
         
-        // Compute area of clipped polygon in barycentric space
-        return computeBarycentricArea(clippedVertices);
+        // Compute area of clipped polygon in world space
+        return computeWorldSpaceCoverage(clippedVertices, v0, v1, v2, boxHalfSize);
     }
     
     /**
@@ -237,11 +237,15 @@ public class TriangleBoxIntersection {
         
         BarycentricCoord prevVertex = inputVertices.get(inputVertices.size() - 1);
         float prevDist = getSignedDistance(prevVertex, triangleV0, triangleEdge1, triangleEdge2, axis, planePos);
-        boolean prevInside = isPositiveSide ? prevDist >= 0 : prevDist <= 0;
+        // For positive side plane: inside means on negative side (distance <= 0)
+        // For negative side plane: inside means on positive side (distance >= 0)
+        boolean prevInside = isPositiveSide ? prevDist <= 0 : prevDist >= 0;
         
         for (var currentVertex : inputVertices) {
             float currentDist = getSignedDistance(currentVertex, triangleV0, triangleEdge1, triangleEdge2, axis, planePos);
-            boolean currentInside = isPositiveSide ? currentDist >= 0 : currentDist <= 0;
+            // For positive side plane: inside means on negative side (distance <= 0)
+            // For negative side plane: inside means on positive side (distance >= 0)
+            boolean currentInside = isPositiveSide ? currentDist <= 0 : currentDist >= 0;
             
             if (currentInside) {
                 if (!prevInside) {
@@ -357,6 +361,80 @@ public class TriangleBoxIntersection {
         // Normalize: full triangle in barycentric space has area 0.5
         // So the coverage is the computed area / 0.5
         return Math.min(1.0f, area / 0.5f);
+    }
+    
+    /**
+     * Computes coverage by converting clipped polygon to world space and computing area.
+     * Returns fraction of box face covered by the clipped polygon.
+     */
+    private static float computeWorldSpaceCoverage(java.util.List<BarycentricCoord> clippedVertices,
+                                                  Point3f v0, Point3f v1, Point3f v2,
+                                                  Vector3f boxHalfSize) {
+        if (clippedVertices.size() < 3) {
+            return 0.0f;
+        }
+        
+        // Convert barycentric vertices to world space
+        var worldVertices = new java.util.ArrayList<Point3f>();
+        var edge1 = new Vector3f();
+        edge1.sub(v1, v0);
+        var edge2 = new Vector3f();
+        edge2.sub(v2, v0);
+        
+        for (var baryCoord : clippedVertices) {
+            worldVertices.add(barycentricToWorld(baryCoord, v0, edge1, edge2));
+        }
+        
+        // Compute triangle normal to determine dominant axis
+        var normal = new Vector3f();
+        normal.cross(edge1, edge2);
+        normal.normalize();
+        
+        // Find dominant axis (largest component of normal)
+        float absX = Math.abs(normal.x);
+        float absY = Math.abs(normal.y);
+        float absZ = Math.abs(normal.z);
+        
+        int dominantAxis;
+        float boxFaceArea;
+        
+        if (absX >= absY && absX >= absZ) {
+            // Project onto YZ plane
+            dominantAxis = 0;
+            boxFaceArea = 4.0f * boxHalfSize.y * boxHalfSize.z;
+        } else if (absY >= absX && absY >= absZ) {
+            // Project onto XZ plane
+            dominantAxis = 1;
+            boxFaceArea = 4.0f * boxHalfSize.x * boxHalfSize.z;
+        } else {
+            // Project onto XY plane
+            dominantAxis = 2;
+            boxFaceArea = 4.0f * boxHalfSize.x * boxHalfSize.y;
+        }
+        
+        // Compute area of projected polygon using shoelace formula
+        float polygonArea = 0.0f;
+        
+        for (int i = 0; i < worldVertices.size(); i++) {
+            var p1 = worldVertices.get(i);
+            var p2 = worldVertices.get((i + 1) % worldVertices.size());
+            
+            if (dominantAxis == 0) {
+                // YZ plane
+                polygonArea += p1.y * p2.z - p2.y * p1.z;
+            } else if (dominantAxis == 1) {
+                // XZ plane
+                polygonArea += p1.x * p2.z - p2.x * p1.z;
+            } else {
+                // XY plane
+                polygonArea += p1.x * p2.y - p2.x * p1.y;
+            }
+        }
+        
+        polygonArea = Math.abs(polygonArea) * 0.5f;
+        
+        // Return coverage as fraction of box face area
+        return Math.min(1.0f, polygonArea / boxFaceArea);
     }
     
     /**
