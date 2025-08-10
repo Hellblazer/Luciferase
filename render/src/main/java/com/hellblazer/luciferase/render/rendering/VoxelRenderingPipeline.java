@@ -6,11 +6,13 @@ import com.hellblazer.luciferase.render.voxel.core.VoxelOctreeNode;
 import com.hellblazer.luciferase.render.voxel.gpu.GPUBufferManager;
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import com.hellblazer.luciferase.render.voxel.gpu.ComputeShaderManager;
+import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import com.hellblazer.luciferase.webgpu.wrapper.ComputePipeline;
 import com.hellblazer.luciferase.webgpu.wrapper.Device;
 import com.hellblazer.luciferase.webgpu.wrapper.BindGroup;
 import com.hellblazer.luciferase.webgpu.wrapper.BindGroupLayout;
+import com.hellblazer.luciferase.webgpu.wrapper.PipelineLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,9 @@ public class VoxelRenderingPipeline implements AutoCloseable {
     
     // GPU resources
     private Buffer octreeBuffer;
+    private Buffer voxelDataBuffer;
+    private Buffer raysBuffer;
+    private Buffer hitsBuffer;
     private Buffer frameBuffer;
     private Buffer readbackBuffer;  // Separate buffer for reading GPU data
     private Buffer uniformBuffer;
@@ -196,14 +201,31 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         
         // Calculate buffer sizes
         long octreeBufferSize = 128 * 1024 * 1024; // 128MB for octree (max allowed by WebGPU)
+        long voxelDataBufferSize = 64 * 1024 * 1024; // 64MB for voxel data
         long frameBufferSize = (long)config.screenWidth * config.screenHeight * 4; // RGBA
         long uniformBufferSize = 256; // Small uniform buffer for matrices
         
-        // Create buffers
+        // Calculate rays/hits buffer size (one ray and hit per pixel)
+        int numRays = config.screenWidth * config.screenHeight;
+        // Ray struct: origin (3xf32) + direction (3xf32) + tmin (f32) + tmax (f32) = 32 bytes
+        long raysBufferSize = numRays * 32L;
+        // Hit struct: hit + distance + position + normal + voxel_value + material_id = 48 bytes
+        long hitsBufferSize = numRays * 48L;
+        
+        // Create buffers matching shader expectations
         octreeBuffer = webgpuContext.createBuffer(octreeBufferSize, 
             GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST);
         
-        // Frame buffer for compute shader output (STORAGE + COPY_SRC for copying to readback)
+        voxelDataBuffer = webgpuContext.createBuffer(voxelDataBufferSize,
+            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST);
+        
+        raysBuffer = webgpuContext.createBuffer(raysBufferSize,
+            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST);
+        
+        hitsBuffer = webgpuContext.createBuffer(hitsBufferSize,
+            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
+        
+        // Frame buffer for final output (can be derived from hits buffer)
         frameBuffer = webgpuContext.createBuffer(frameBufferSize,
             GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
         
@@ -214,22 +236,119 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         uniformBuffer = webgpuContext.createBuffer(uniformBufferSize,
             GPUBufferManager.BUFFER_USAGE_UNIFORM | GPUBufferManager.BUFFER_USAGE_COPY_DST);
         
+        // Initialize rays with screen-space rays
+        initializeRays();
+        
         // Create compute shader for ray marching using ComputeShaderManager
         var shaderManager = new ComputeShaderManager(webgpuContext);
         try {
             var rayTraversalShader = shaderManager.loadShaderFromResource("/shaders/rendering/ray_traversal.wgsl").get();
-            computePipeline = shaderManager.createComputePipeline("RayTraversalPipeline", rayTraversalShader, "main");
+            
+            // Create proper bind group layout matching the shader
+            bindGroupLayout = createBindGroupLayout();
+            
+            // Create pipeline with the bind group layout
+            var pipelineLayout = webgpuContext.getDevice().createPipelineLayout(
+                new Device.PipelineLayoutDescriptor()
+                    .withLabel("RayTraversalPipelineLayout")
+                    .addBindGroupLayout(bindGroupLayout)
+            );
+            
+            computePipeline = webgpuContext.createComputePipeline(rayTraversalShader, "main", pipelineLayout);
+            
+            // Create bind group with all required buffers
+            bindGroup = createBindGroup();
+            
         } catch (Exception e) {
             log.error("Failed to create ray traversal compute pipeline", e);
             throw new RuntimeException("Pipeline creation failed", e);
         }
         
-        // For now, don't create explicit bind group layout - let pipeline use auto-layout
-        // and skip bind groups to get basic pipeline working
-        bindGroupLayout = null;
-        bindGroup = null;
+        log.debug("GPU resources initialized: {} buffers, 1 compute shader, 1 bind group", 7);
+    }
+    
+    /**
+     * Create bind group layout matching the shader's expectations.
+     */
+    private BindGroupLayout createBindGroupLayout() {
+        var device = webgpuContext.getDevice();
         
-        log.debug("GPU resources initialized: {} buffers, 1 compute shader, 1 bind group", 3);
+        return device.createBindGroupLayout(
+            new Device.BindGroupLayoutDescriptor()
+                .withLabel("RayTraversalBindGroupLayout")
+                // @binding(0) rays array - storage buffer (read-only)
+                .withEntry(new Device.BindGroupLayoutEntry(0, WebGPUNative.SHADER_STAGE_COMPUTE)
+                    .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_READ_ONLY_STORAGE)))
+                // @binding(1) hits array - storage buffer (read-write)
+                .withEntry(new Device.BindGroupLayoutEntry(1, WebGPUNative.SHADER_STAGE_COMPUTE)
+                    .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_STORAGE)))
+                // @binding(2) voxel_octree array - storage buffer (read-only)
+                .withEntry(new Device.BindGroupLayoutEntry(2, WebGPUNative.SHADER_STAGE_COMPUTE)
+                    .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_READ_ONLY_STORAGE)))
+                // @binding(3) voxel_data array - storage buffer (read-only)
+                .withEntry(new Device.BindGroupLayoutEntry(3, WebGPUNative.SHADER_STAGE_COMPUTE)
+                    .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_READ_ONLY_STORAGE)))
+                // @binding(4) config uniform - uniform buffer
+                .withEntry(new Device.BindGroupLayoutEntry(4, WebGPUNative.SHADER_STAGE_COMPUTE)
+                    .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_UNIFORM)))
+        );
+    }
+    
+    /**
+     * Create bind group with actual buffers.
+     */
+    private BindGroup createBindGroup() {
+        var device = webgpuContext.getDevice();
+        
+        return device.createBindGroup(
+            new Device.BindGroupDescriptor(bindGroupLayout)
+                .withLabel("RayTraversalBindGroup")
+                .withEntry(new Device.BindGroupEntry(0).withBuffer(raysBuffer, 0, raysBuffer.getSize()))
+                .withEntry(new Device.BindGroupEntry(1).withBuffer(hitsBuffer, 0, hitsBuffer.getSize()))
+                .withEntry(new Device.BindGroupEntry(2).withBuffer(octreeBuffer, 0, octreeBuffer.getSize()))
+                .withEntry(new Device.BindGroupEntry(3).withBuffer(voxelDataBuffer, 0, voxelDataBuffer.getSize()))
+                .withEntry(new Device.BindGroupEntry(4).withBuffer(uniformBuffer, 0, 256))
+        );
+    }
+    
+    /**
+     * Initialize rays buffer with screen-space rays.
+     */
+    private void initializeRays() {
+        int numRays = config.screenWidth * config.screenHeight;
+        ByteBuffer raysData = ByteBuffer.allocateDirect(numRays * 32);
+        raysData.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        
+        // Generate a ray for each pixel
+        for (int y = 0; y < config.screenHeight; y++) {
+            for (int x = 0; x < config.screenWidth; x++) {
+                // Normalize screen coordinates to [-1, 1]
+                float ndcX = (2.0f * x / config.screenWidth) - 1.0f;
+                float ndcY = 1.0f - (2.0f * y / config.screenHeight); // Flip Y
+                
+                // Simple orthographic rays for now (can be upgraded to perspective)
+                // Origin
+                raysData.putFloat(ndcX * 10.0f);  // x
+                raysData.putFloat(ndcY * 10.0f);  // y
+                raysData.putFloat(-50.0f);        // z (camera distance)
+                
+                // Direction (pointing forward)
+                raysData.putFloat(0.0f);   // x
+                raysData.putFloat(0.0f);   // y
+                raysData.putFloat(1.0f);   // z
+                
+                // tmin and tmax
+                raysData.putFloat(0.1f);   // tmin
+                raysData.putFloat(1000.0f); // tmax
+            }
+        }
+        
+        raysData.rewind();
+        byte[] raysBytes = new byte[raysData.remaining()];
+        raysData.get(raysBytes);
+        
+        // Upload rays to GPU
+        webgpuContext.writeBuffer(raysBuffer, raysBytes, 0);
     }
     
     /**
@@ -276,14 +395,26 @@ public class VoxelRenderingPipeline implements AutoCloseable {
                 // Update uniforms
                 updateUniforms(state);
                 
-                // Dispatch compute shader for ray marching (without bind groups for now)
-                int workgroupsX = (config.screenWidth + 7) / 8;
-                int workgroupsY = (config.screenHeight + 7) / 8;
-                webgpuContext.dispatchCompute(computePipeline, workgroupsX, workgroupsY, 1);
+                // Dispatch compute shader for ray marching with bind groups
+                // Calculate total rays and workgroups for 1D dispatch
+                int totalRays = config.screenWidth * config.screenHeight;
+                int workgroupsX = (totalRays + 63) / 64;  // 64 is WORKGROUP_SIZE from shader
+                int workgroupsY = 1;  // 1D dispatch since shader uses 1D workgroup
+                int workgroupsZ = 1;
+                
+                // Use the overload that accepts bind groups
+                webgpuContext.dispatchCompute(computePipeline, bindGroup, workgroupsX, workgroupsY, workgroupsZ);
                 
                 // Copy frameBuffer to readbackBuffer for CPU access
                 long bufferSize = (long)config.screenWidth * config.screenHeight * 4;
                 webgpuContext.copyBuffer(frameBuffer, readbackBuffer, bufferSize);
+                
+                // Wait for GPU operations to complete before reading buffer
+                try {
+                    webgpuContext.waitIdle().get(2, TimeUnit.SECONDS);
+                } catch (InterruptedException | java.util.concurrent.ExecutionException | TimeoutException e) {
+                    log.warn("GPU synchronization timeout or error", e);
+                }
                 
                 // Read back rendered frame from readback buffer
                 byte[] imageData = webgpuContext.readBuffer(readbackBuffer, bufferSize, 0);
@@ -418,6 +549,15 @@ public class VoxelRenderingPipeline implements AutoCloseable {
             if (octreeBuffer != null) {
                 octreeBuffer.close();
             }
+            if (voxelDataBuffer != null) {
+                voxelDataBuffer.close();
+            }
+            if (raysBuffer != null) {
+                raysBuffer.close();
+            }
+            if (hitsBuffer != null) {
+                hitsBuffer.close();
+            }
             if (frameBuffer != null) {
                 frameBuffer.close();
             }
@@ -426,6 +566,12 @@ public class VoxelRenderingPipeline implements AutoCloseable {
             }
             if (uniformBuffer != null) {
                 uniformBuffer.close();
+            }
+            if (bindGroup != null) {
+                bindGroup.close();
+            }
+            if (bindGroupLayout != null) {
+                bindGroupLayout.close();
             }
             if (computePipeline != null) {
                 computePipeline.close();
