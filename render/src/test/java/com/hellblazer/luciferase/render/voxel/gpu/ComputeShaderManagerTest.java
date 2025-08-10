@@ -166,7 +166,6 @@ public class ComputeShaderManagerTest {
     @Test
     @Order(6)
     @DisplayName("Load ESVO shaders from resources")
-    @Disabled("Shader resources not yet available in test environment")
     public void testLoadESVOShaders() throws Exception {
         if (!context.isAvailable()) {
             log.warn("WebGPU not available, skipping test");
@@ -176,8 +175,15 @@ public class ComputeShaderManagerTest {
         CompletableFuture<Void> future = shaderManager.loadESVOShaders();
         future.get(5, TimeUnit.SECONDS);
         
-        // Shaders should be loaded
-        assertTrue(true);
+        // Verify shaders are loaded and cached
+        assertNotNull(shaderManager.getShader("morton_octree_build.wgsl"));
+        assertNotNull(shaderManager.getShader("voxelization.wgsl"));
+        assertNotNull(shaderManager.getShader("sparse_octree.wgsl"));
+        assertNotNull(shaderManager.getShader("ray_marching.wgsl"));
+        assertNotNull(shaderManager.getShader("visibility.wgsl"));
+        assertNotNull(shaderManager.getShader("shading.wgsl"));
+        
+        log.info("Successfully loaded all ESVO shaders");
     }
     
     // Removed isWebGPUAvailable() - now using context.isAvailable()

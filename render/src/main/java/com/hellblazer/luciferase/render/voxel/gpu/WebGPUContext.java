@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.render.voxel.gpu;
 
 import com.hellblazer.luciferase.webgpu.WebGPU;
+import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import com.hellblazer.luciferase.webgpu.wrapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,22 @@ public class WebGPUContext {
     private Device device;
     private Queue queue;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
+    
+    /**
+     * Buffer usage flags from WebGPUNative
+     */
+    public static class BufferUsage {
+        public static final int MAP_READ = WebGPUNative.BUFFER_USAGE_MAP_READ;
+        public static final int MAP_WRITE = WebGPUNative.BUFFER_USAGE_MAP_WRITE;
+        public static final int COPY_SRC = WebGPUNative.BUFFER_USAGE_COPY_SRC;
+        public static final int COPY_DST = WebGPUNative.BUFFER_USAGE_COPY_DST;
+        public static final int INDEX = WebGPUNative.BUFFER_USAGE_INDEX;
+        public static final int VERTEX = WebGPUNative.BUFFER_USAGE_VERTEX;
+        public static final int UNIFORM = WebGPUNative.BUFFER_USAGE_UNIFORM;
+        public static final int STORAGE = WebGPUNative.BUFFER_USAGE_STORAGE;
+        public static final int INDIRECT = WebGPUNative.BUFFER_USAGE_INDIRECT;
+        public static final int QUERY_RESOLVE = WebGPUNative.BUFFER_USAGE_QUERY_RESOLVE;
+    }
     
     /**
      * Create WebGPU context with automatic backend selection.
@@ -137,6 +154,27 @@ public class WebGPUContext {
     }
     
     /**
+     * Write data to a buffer from a memory segment.
+     * For VoxelGPUManager compatibility.
+     */
+    public void writeBuffer(long bufferId, java.lang.foreign.MemorySegment data, long offset) {
+        // This is a stub for VoxelGPUManager compatibility
+        // In a real implementation, we'd need to map bufferId to actual Buffer objects
+        log.debug("Write buffer stub: bufferId={}, offset={}, size={}", 
+                 bufferId, offset, data.byteSize());
+    }
+    
+    /**
+     * Destroy a buffer.
+     * For VoxelGPUManager compatibility.
+     */
+    public void destroyBuffer(long bufferId) {
+        // This is a stub for VoxelGPUManager compatibility
+        // In a real implementation, we'd need to map bufferId to actual Buffer objects
+        log.debug("Destroy buffer stub: bufferId={}", bufferId);
+    }
+    
+    /**
      * Read data from a buffer.
      */
     public byte[] readBuffer(Buffer buffer, long size, long offset) {
@@ -200,12 +238,10 @@ public class WebGPUContext {
             throw new IllegalStateException("WebGPU context not initialized");
         }
         
-        var descriptor = new Device.ComputePipelineDescriptor()
+        var descriptor = new Device.ComputePipelineDescriptor(shader)
             .withLabel("ComputePipeline")
             .withLayout(layout)
-            .withCompute(new Device.ComputePipelineDescriptor.ComputeState()
-                .withModule(shader)
-                .withEntryPoint(entryPoint));
+            .withEntryPoint(entryPoint);
         
         return device.createComputePipeline(descriptor);
     }
@@ -218,23 +254,32 @@ public class WebGPUContext {
             throw new IllegalStateException("WebGPU context not initialized");
         }
         
-        // Create bind group layout from pipeline layout
-        var bindGroupLayout = layout.getBindGroupLayout(0);
+        // For now, create a simple bind group layout
+        // In a real implementation, we'd need to properly define the layout
+        var bindGroupLayoutDesc = new Device.BindGroupLayoutDescriptor()
+            .withLabel("BindGroupLayout");
         
-        // Create bind group entries for each buffer
-        var entries = new BindGroup.Entry[buffers.length];
+        // Add entries for each buffer
         for (int i = 0; i < buffers.length; i++) {
-            entries[i] = new BindGroup.Entry()
-                .withBinding(i)
-                .withBuffer(buffers[i])
-                .withOffset(0)
-                .withSize(buffers[i].getSize());
+            bindGroupLayoutDesc.withEntry(new Device.BindGroupLayoutEntry(i, WebGPUNative.SHADER_STAGE_COMPUTE)
+                .withBuffer(new Device.BufferBindingLayout(WebGPUNative.BUFFER_BINDING_TYPE_STORAGE)));
         }
         
-        var descriptor = new Device.BindGroupDescriptor()
-            .withLabel("BindGroup")
-            .withLayout(bindGroupLayout)
-            .withEntries(entries);
+        var bindGroupLayout = device.createBindGroupLayout(bindGroupLayoutDesc);
+        
+        // Create bind group entries for each buffer
+        var entries = new Device.BindGroupEntry[buffers.length];
+        for (int i = 0; i < buffers.length; i++) {
+            entries[i] = new Device.BindGroupEntry(i)
+                .withBuffer(buffers[i], 0, buffers[i].getSize());
+        }
+        
+        var descriptor = new Device.BindGroupDescriptor(bindGroupLayout)
+            .withLabel("BindGroup");
+        
+        for (var entry : entries) {
+            descriptor.withEntry(entry);
+        }
         
         return device.createBindGroup(descriptor);
     }

@@ -107,6 +107,7 @@ public class ComputeShaderManager {
      */
     public CompletableFuture<Void> loadESVOShaders() {
         return CompletableFuture.allOf(
+            loadShaderFromResource("/shaders/esvo/morton_octree_build.wgsl"),
             loadShaderFromResource("/shaders/esvo/voxelization.wgsl"),
             loadShaderFromResource("/shaders/esvo/sparse_octree.wgsl"),
             loadShaderFromResource("/shaders/esvo/ray_marching.wgsl"),

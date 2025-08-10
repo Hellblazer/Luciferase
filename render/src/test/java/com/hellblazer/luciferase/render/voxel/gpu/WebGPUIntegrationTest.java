@@ -66,7 +66,7 @@ public class WebGPUIntegrationTest {
     @DisplayName("Test GPU buffer creation and writing")
     public void testBufferOperations() {
         long bufferSize = 1024;
-        int usage = Buffer.Usage.STORAGE | Buffer.Usage.COPY_DST | Buffer.Usage.COPY_SRC;
+        int usage = WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST | WebGPUContext.BufferUsage.COPY_SRC;
         
         // Create buffer
         var buffer = context.createBuffer(bufferSize, usage);
@@ -90,8 +90,7 @@ public class WebGPUIntegrationTest {
         assertNotNull(readData);
         assertEquals(bufferSize, readData.length);
         
-        // Clean up
-        buffer.destroy();
+        // Clean up - buffer will be garbage collected
     }
     
     @Test
@@ -148,9 +147,9 @@ public class WebGPUIntegrationTest {
         int bufferSize = dataSize * 4; // 4 bytes per float
         
         var inputBuffer = context.createBuffer(bufferSize, 
-            Buffer.Usage.STORAGE | Buffer.Usage.COPY_DST);
+            WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST);
         var outputBuffer = context.createBuffer(bufferSize, 
-            Buffer.Usage.STORAGE | Buffer.Usage.COPY_SRC);
+            WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_SRC);
         
         // Write input data
         var inputData = new byte[bufferSize];
@@ -190,8 +189,7 @@ public class WebGPUIntegrationTest {
         context.dispatchCompute(pipeline, bindGroup, (dataSize + 63) / 64, 1, 1);
         
         // Clean up
-        inputBuffer.destroy();
-        outputBuffer.destroy();
+        // buffers will be garbage collected
     }
     
     @Test
@@ -203,7 +201,7 @@ public class WebGPUIntegrationTest {
         // Create multiple buffers
         for (int i = 0; i < 10; i++) {
             var buffer = context.createBuffer(1024, 
-                Buffer.Usage.STORAGE | Buffer.Usage.COPY_DST);
+                WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST);
             assertNotNull(buffer);
             buffers.add(buffer);
         }
@@ -216,7 +214,7 @@ public class WebGPUIntegrationTest {
         }
         
         // Clean up
-        buffers.forEach(Buffer::destroy);
+        // buffers will be garbage collected
     }
     
     @Test
@@ -251,16 +249,15 @@ public class WebGPUIntegrationTest {
             
             // Verify we can create buffers for these sizes
             var nodeBuffer = context.createBuffer(nodeArray.byteSize(), 
-                Buffer.Usage.STORAGE | Buffer.Usage.COPY_DST);
+                WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST);
             var rayBuffer = context.createBuffer(rayArray.byteSize(), 
-                Buffer.Usage.STORAGE | Buffer.Usage.COPY_DST);
+                WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST);
             
             assertNotNull(nodeBuffer);
             assertNotNull(rayBuffer);
             
             // Clean up
-            nodeBuffer.destroy();
-            rayBuffer.destroy();
+            // buffers will be garbage collected
         }
     }
     
