@@ -128,7 +128,7 @@ class ComprehensiveRenderingPipelineTest {
             memoryManager.close();
         }
         if (webgpuContext != null) {
-            // WebGPUContext doesn't have close() method - handled by AutoCloseable pattern
+            webgpuContext.shutdown();
         }
         
         log.info("Component cleanup complete");

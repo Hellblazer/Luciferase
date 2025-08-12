@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.CallbackBridge;
+import com.hellblazer.luciferase.webgpu.WebGPU;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,12 +12,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Type-safe wrapper for WebGPU Adapter.
  * Represents a physical graphics/compute device.
+ * 
+ * Now uses Dawn library which properly handles callbacks without crashing.
  */
 public class Adapter implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(Adapter.class);
     
     private final MemorySegment handle;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private Instance instance; // Reference to the instance for event processing
     
     /**
      * Create an adapter wrapper from a native handle.
@@ -23,17 +28,29 @@ public class Adapter implements AutoCloseable {
      * @param handle the native adapter handle
      */
     public Adapter(MemorySegment handle) {
+        this(handle, null);
+    }
+    
+    /**
+     * Create an adapter wrapper from a native handle with an instance reference.
+     * 
+     * @param handle the native adapter handle
+     * @param instance the WebGPU instance for event processing
+     */
+    public Adapter(MemorySegment handle, Instance instance) {
         if (handle == null || handle.equals(MemorySegment.NULL)) {
             throw new IllegalArgumentException("Invalid adapter handle");
         }
         this.handle = handle;
+        this.instance = instance;
         log.debug("Created adapter wrapper: 0x{}", Long.toHexString(handle.address()));
     }
     
     /**
      * Request a device from this adapter.
+     * Uses Dawn's working callback mechanism.
      * 
-     * @param descriptor the device descriptor
+     * @param descriptor the device descriptor  
      * @return a future that completes with the device
      */
     public CompletableFuture<Device> requestDevice(DeviceDescriptor descriptor) {
@@ -41,20 +58,11 @@ public class Adapter implements AutoCloseable {
             throw new IllegalStateException("Adapter is closed");
         }
         
-        return CompletableFuture.supplyAsync(() -> {
-            log.debug("Requesting device with descriptor: {}", descriptor);
-            
-            // Call the native WebGPU API
-            var deviceHandle = com.hellblazer.luciferase.webgpu.WebGPU.requestDevice(handle, null); // TODO: convert descriptor to native struct
-            
-            if (deviceHandle != null && !deviceHandle.equals(MemorySegment.NULL)) {
-                log.debug("Successfully obtained device from native API");
-                return new Device(deviceHandle);
-            } else {
-                log.warn("Failed to obtain device from native API");
-                return null;
-            }
-        });
+        log.debug("Requesting device with descriptor: {}", descriptor);
+        
+        // Use the callback bridge to request device
+        // Dawn handles callbacks correctly without crashing
+        return CallbackBridge.requestDevice(handle, descriptor, instance);
     }
     
     /**
@@ -87,6 +95,24 @@ public class Adapter implements AutoCloseable {
      */
     public MemorySegment getHandle() {
         return handle;
+    }
+    
+    /**
+     * Set the instance reference for event processing.
+     * 
+     * @param instance the WebGPU instance
+     */
+    public void setInstance(Instance instance) {
+        this.instance = instance;
+    }
+    
+    /**
+     * Get the instance reference.
+     * 
+     * @return the instance, or null if not set
+     */
+    public Instance getInstance() {
+        return instance;
     }
     
     /**

@@ -34,6 +34,19 @@ public class Texture implements AutoCloseable {
     }
     
     /**
+     * Create a texture wrapper for a surface texture.
+     * Surface textures don't have a descriptor since they're created by the surface.
+     * 
+     * @param handle the native texture handle
+     */
+    public Texture(MemorySegment handle) {
+        this.handle = handle;
+        this.device = null;
+        this.descriptor = null;
+        log.debug("Created surface texture wrapper: 0x{}", Long.toHexString(handle.address()));
+    }
+    
+    /**
      * Get the native handle.
      * 
      * @return the native handle
@@ -45,37 +58,37 @@ public class Texture implements AutoCloseable {
     /**
      * Get the texture width.
      * 
-     * @return the width in pixels
+     * @return the width in pixels, or 0 for surface textures
      */
     public int getWidth() {
-        return descriptor.width;
+        return descriptor != null ? descriptor.width : 0;
     }
     
     /**
      * Get the texture height.
      * 
-     * @return the height in pixels
+     * @return the height in pixels, or 0 for surface textures
      */
     public int getHeight() {
-        return descriptor.height;
+        return descriptor != null ? descriptor.height : 0;
     }
     
     /**
      * Get the texture depth.
      * 
-     * @return the depth in pixels
+     * @return the depth in pixels, or 1 for surface textures
      */
     public int getDepth() {
-        return descriptor.depth;
+        return descriptor != null ? descriptor.depth : 1;
     }
     
     /**
      * Get the texture format.
      * 
-     * @return the texture format
+     * @return the texture format, or null for surface textures
      */
     public TextureFormat getFormat() {
-        return descriptor.format;
+        return descriptor != null ? descriptor.format : null;
     }
     
     /**

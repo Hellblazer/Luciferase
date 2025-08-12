@@ -292,8 +292,8 @@ public class WebGPUNative {
     public static final int TEXTURE_FORMAT_R8_SINT = 0x00000004;
     public static final int TEXTURE_FORMAT_RGBA8_UNORM = 0x00000018;
     public static final int TEXTURE_FORMAT_RGBA8_UNORM_SRGB = 0x00000019;
-    public static final int TEXTURE_FORMAT_BGRA8_UNORM = 0x0000001C;
-    public static final int TEXTURE_FORMAT_BGRA8_UNORM_SRGB = 0x0000001D;
+    public static final int TEXTURE_FORMAT_BGRA8_UNORM = 0x00000017; // Dawn: BGRA8Unorm
+    public static final int TEXTURE_FORMAT_BGRA8_UNORM_SRGB = 0x00000018; // Dawn: BGRA8UnormSrgb
     
     // Texture usage flags
     public static final int TEXTURE_USAGE_COPY_SRC = 0x00000001;
@@ -303,10 +303,10 @@ public class WebGPUNative {
     public static final int TEXTURE_USAGE_RENDER_ATTACHMENT = 0x00000010;
     
     // Present modes
-    public static final int PRESENT_MODE_FIFO = 0x00000001;         // VSync (default)
-    public static final int PRESENT_MODE_FIFO_RELAXED = 0x00000002; // Adaptive VSync
-    public static final int PRESENT_MODE_IMMEDIATE = 0x00000003;    // No VSync
-    public static final int PRESENT_MODE_MAILBOX = 0x00000004;      // Triple buffering
+    public static final int PRESENT_MODE_FIFO = 0x00000000;         // VSync (default)
+    public static final int PRESENT_MODE_FIFO_RELAXED = 0x00000001; // Adaptive VSync
+    public static final int PRESENT_MODE_IMMEDIATE = 0x00000002;    // No VSync
+    public static final int PRESENT_MODE_MAILBOX = 0x00000003;      // Triple buffering
     
     // Composite alpha modes
     public static final int COMPOSITE_ALPHA_MODE_AUTO = 0x00000000;

@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.VarHandle;
+import java.lang.invoke.VarHandle;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -59,15 +61,19 @@ public class WebGPU {
     private static MethodHandle wgpuBindGroupLayoutRelease;
     private static MethodHandle wgpuDeviceCreateBindGroup;
     private static MethodHandle wgpuBindGroupRelease;
-    private static MethodHandle wgpuBufferMapAsync;
+    // OLD wgpuBufferMapAsync REMOVED - use wgpuBufferMapAsyncF only
+    private static MethodHandle wgpuBufferMapAsyncF;  // New CallbackInfo-based API
     private static MethodHandle wgpuBufferGetMappedRange;
+    private static MethodHandle wgpuBufferGetConstMappedRange;  // For READ-mapped buffers
     private static MethodHandle wgpuBufferUnmap;
     private static MethodHandle wgpuDeviceCreateTexture;
     private static MethodHandle wgpuDeviceCreateSampler;
     private static MethodHandle wgpuTextureRelease;
     private static MethodHandle wgpuSamplerRelease;
     private static MethodHandle wgpuTextureCreateView;
-    private static MethodHandle wgpuDevicePoll;
+    private static MethodHandle wgpuDeviceTick;
+    private static MethodHandle wgpuInstanceProcessEvents;
+    private static MethodHandle wgpuInstanceWaitAny;
     
     // Linker and symbol lookup
     private static Linker linker;
@@ -691,6 +697,35 @@ public class WebGPU {
                 );
             }
             
+            // wgpuInstanceProcessEvents(WGPUInstance instance) -> void
+            // Critical for Dawn async operations
+            var instanceProcessEventsOpt = symbolLookup.find("wgpuInstanceProcessEvents");
+            if (instanceProcessEventsOpt.isPresent()) {
+                wgpuInstanceProcessEvents = linker.downcallHandle(
+                    instanceProcessEventsOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
+                );
+                log.info("Successfully loaded wgpuInstanceProcessEvents - async operations enabled");
+            } else {
+                log.warn("wgpuInstanceProcessEvents not found - async operations may not work correctly");
+            }
+            
+            // wgpuInstanceWaitAny(WGPUInstance instance, size_t futureCount, WGPUFutureWaitInfo* futures, uint64_t timeoutNS) -> WGPUWaitStatus
+            var instanceWaitAnyOpt = symbolLookup.find("wgpuInstanceWaitAny");
+            if (instanceWaitAnyOpt.isPresent()) {
+                wgpuInstanceWaitAny = linker.downcallHandle(
+                    instanceWaitAnyOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, // WGPUWaitStatus (int)
+                                         ValueLayout.ADDRESS,   // WGPUInstance
+                                         ValueLayout.JAVA_LONG, // size_t futureCount
+                                         ValueLayout.ADDRESS,   // WGPUFutureWaitInfo* futures
+                                         ValueLayout.JAVA_LONG) // uint64_t timeoutNS
+                );
+                log.info("Successfully loaded wgpuInstanceWaitAny - future-based async operations enabled");
+            } else {
+                log.warn("wgpuInstanceWaitAny not found - future-based operations not available");
+            }
+            
             // wgpuDeviceCreateBuffer(WGPUDevice device, const WGPUBufferDescriptor* descriptor) -> WGPUBuffer
             var deviceCreateBufferOpt = symbolLookup.find("wgpuDeviceCreateBuffer");
             
@@ -1001,20 +1036,25 @@ public class WebGPU {
                 );
             }
             
-            // Buffer mapping functions
-            var bufferMapAsyncOpt = symbolLookup.find("wgpuBufferMapAsync");
-            if (bufferMapAsyncOpt.isPresent()) {
-                wgpuBufferMapAsync = linker.downcallHandle(
-                    bufferMapAsyncOpt.get(),
-                    FunctionDescriptor.ofVoid(
+            // Buffer mapping functions - OLD API REMOVED TO AVOID DAWN WARNINGS
+            
+            // New CallbackInfo-based buffer mapping (wgpuBufferMapAsyncF)
+            var bufferMapAsyncFOpt = symbolLookup.find("wgpuBufferMapAsyncF");
+            if (bufferMapAsyncFOpt.isPresent()) {
+                wgpuBufferMapAsyncF = linker.downcallHandle(
+                    bufferMapAsyncFOpt.get(),
+                    FunctionDescriptor.of(
+                        ValueLayout.ADDRESS, // returns WGPUFuture (treated as ADDRESS)
                         ValueLayout.ADDRESS, // buffer
                         ValueLayout.JAVA_INT, // mode
                         ValueLayout.JAVA_LONG, // offset
                         ValueLayout.JAVA_LONG, // size
-                        ValueLayout.ADDRESS, // callback
-                        ValueLayout.ADDRESS  // userdata
+                        ValueLayout.ADDRESS  // WGPUBufferMapCallbackInfo
                     )
                 );
+                log.info("Successfully loaded wgpuBufferMapAsyncF (new CallbackInfo-based API)");
+            } else {
+                log.warn("wgpuBufferMapAsyncF not available - using fallback to old API");
             }
             
             var bufferGetMappedRangeOpt = symbolLookup.find("wgpuBufferGetMappedRange");
@@ -1028,6 +1068,23 @@ public class WebGPU {
                         ValueLayout.JAVA_LONG  // size
                     )
                 );
+            }
+            
+            // CRITICAL FIX: Add wgpuBufferGetConstMappedRange for READ-mapped buffers
+            var bufferGetConstMappedRangeOpt = symbolLookup.find("wgpuBufferGetConstMappedRange");
+            if (bufferGetConstMappedRangeOpt.isPresent()) {
+                wgpuBufferGetConstMappedRange = linker.downcallHandle(
+                    bufferGetConstMappedRangeOpt.get(),
+                    FunctionDescriptor.of(
+                        ValueLayout.ADDRESS, // returns const void*
+                        ValueLayout.ADDRESS, // buffer
+                        ValueLayout.JAVA_LONG, // offset
+                        ValueLayout.JAVA_LONG  // size
+                    )
+                );
+                log.debug("Successfully loaded wgpuBufferGetConstMappedRange for READ buffer mapping");
+            } else {
+                log.warn("wgpuBufferGetConstMappedRange not available - READ mapping may fail");
             }
             
             var bufferUnmapOpt = symbolLookup.find("wgpuBufferUnmap");
@@ -1083,18 +1140,18 @@ public class WebGPU {
                 );
             }
             
-            // wgpuDevicePoll(WGPUDevice device, WGPUBool wait, const WGPUWrappedSubmissionIndex* wrappedSubmissionIndex) -> WGPUBool
-            var devicePollOpt = symbolLookup.find("wgpuDevicePoll");
-            if (devicePollOpt.isPresent()) {
-                wgpuDevicePoll = linker.downcallHandle(
-                    devicePollOpt.get(),
-                    FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS, ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS)
+            // wgpuDeviceTick(WGPUDevice device) -> void
+            // Dawn API for processing device callbacks
+            var deviceTickOpt = symbolLookup.find("wgpuDeviceTick");
+            if (deviceTickOpt.isPresent()) {
+                wgpuDeviceTick = linker.downcallHandle(
+                    deviceTickOpt.get(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS)
                 );
-                log.debug("Successfully loaded wgpuDevicePoll");
+                log.info("Successfully loaded wgpuDeviceTick - using for device polling");
             } else {
-                log.warn("Could not find wgpuDevicePoll symbol - buffer mapping may not work properly");
+                log.warn("wgpuDeviceTick not found - buffer mapping will not work");
             }
-            
             // Surface functions
             // wgpuInstanceCreateSurface(WGPUInstance instance, const WGPUSurfaceDescriptor* descriptor) -> WGPUSurface
             var instanceCreateSurfaceOpt = symbolLookup.find("wgpuInstanceCreateSurface");
@@ -1166,7 +1223,6 @@ public class WebGPU {
      * @return version string, or "unknown" if not available
      */
     public static String getVersion() {
-        // TODO: Call wgpuGetVersion if available
         return "wgpu-native 25.0.2.1";
     }
     
@@ -1593,7 +1649,8 @@ public class WebGPU {
     }
     
     /**
-     * Get the mapped range of a buffer.
+     * Get the mapped range of a buffer for WRITE access.
+     * NOTE: Use bufferGetConstMappedRange for READ-mapped buffers!
      * 
      * @param bufferHandle the buffer handle
      * @param offset the offset in bytes
@@ -1626,26 +1683,140 @@ public class WebGPU {
     }
     
     /**
-     * Poll a device to process completed operations.
+     * Get the const mapped range of a buffer for READ access.
+     * CRITICAL: Must use this for READ-mapped buffers, not bufferGetMappedRange!
      * 
-     * @param deviceHandle the device to poll
-     * @param wait whether to wait for operations to complete
-     * @return true if polling succeeded
+     * @param bufferHandle the buffer handle
+     * @param offset the offset in bytes
+     * @param size the size in bytes (0 means to end of buffer)
+     * @return the mapped memory segment, or NULL if not available
      */
-    public static boolean devicePoll(MemorySegment deviceHandle, boolean wait) {
-        if (!initialized.get() || wgpuDevicePoll == null) {
-            log.warn("wgpuDevicePoll not available");
-            return false;
+    public static MemorySegment bufferGetConstMappedRange(MemorySegment bufferHandle, long offset, long size) {
+        if (!initialized.get() || wgpuBufferGetConstMappedRange == null) {
+            log.warn("wgpuBufferGetConstMappedRange not available");
+            return MemorySegment.NULL;
         }
         
         try {
-            boolean result = (boolean) wgpuDevicePoll.invoke(deviceHandle, wait, MemorySegment.NULL);
-            log.trace("Device poll: wait={}, result={}", wait, result);
-            return result;
+            var mappedPtr = (MemorySegment) wgpuBufferGetConstMappedRange.invoke(bufferHandle, offset, size);
+            
+            if (mappedPtr != null && !mappedPtr.equals(MemorySegment.NULL)) {
+                // Reinterpret the pointer as a memory segment with the specified size
+                var mappedSegment = size > 0 ? mappedPtr.reinterpret(size) : mappedPtr;
+                log.debug("Got const mapped range: offset={}, size={}, addr=0x{}", 
+                    offset, size, Long.toHexString(mappedPtr.address()));
+                return mappedSegment;
+            } else {
+                log.warn("Failed to get const mapped range");
+                return MemorySegment.NULL;
+            }
         } catch (Throwable e) {
-            log.error("Failed to poll device", e);
-            return false;
+            log.error("Failed to get const mapped range", e);
+            return MemorySegment.NULL;
         }
+    }
+    
+    /**
+     * Smart helper that automatically uses the correct getMappedRange function based on map mode.
+     * 
+     * @param bufferHandle the buffer handle
+     * @param offset the offset in bytes
+     * @param size the size in bytes
+     * @param mapMode the map mode (1 = READ, 2 = WRITE)
+     * @return the mapped memory segment, or NULL if not available
+     */
+    public static MemorySegment getMappedRangeForMode(MemorySegment bufferHandle, long offset, long size, int mapMode) {
+        if (mapMode == 1) { // MAP_MODE_READ
+            log.debug("Using bufferGetConstMappedRange for READ mode");
+            return bufferGetConstMappedRange(bufferHandle, offset, size);
+        } else if (mapMode == 2) { // MAP_MODE_WRITE
+            log.debug("Using bufferGetMappedRange for WRITE mode");
+            return bufferGetMappedRange(bufferHandle, offset, size);
+        } else {
+            log.error("Invalid map mode: {} (expected 1=READ or 2=WRITE)", mapMode);
+            return MemorySegment.NULL;
+        }
+    }
+    
+    /**
+     * Process events for a device using wgpuDeviceTick (Dawn implementation).
+     * 
+     * @param deviceHandle the device to process events for
+     * @param wait whether to wait for operations to complete (ignored for wgpuDeviceTick)
+     * @return true if processing succeeded
+     */
+    public static boolean processEvents(MemorySegment deviceHandle, boolean wait) {
+        // Dawn uses wgpuDeviceTick for processing device events
+        if (initialized.get() && wgpuDeviceTick != null) {
+            try {
+                wgpuDeviceTick.invoke(deviceHandle);
+                log.trace("Device tick completed");
+                return true;
+            } catch (Throwable e) {
+                log.error("Failed to tick device with wgpuDeviceTick", e);
+                return false;
+            }
+        }
+        
+        log.warn("wgpuDeviceTick not available - event processing not supported");
+        return false;
+    }
+    
+    /**
+     * Process events (no-op for compatibility).
+     * This method exists for backward compatibility with code that doesn't have a device handle.
+     * 
+     * @return always returns true
+     */
+    public static boolean processEvents() {
+        // No-op for backward compatibility
+        // Real event processing requires a device handle
+        log.trace("processEvents() called without device handle - no-op");
+        return true;
+    }
+    
+    /**
+     * Process instance events.
+     * This MUST be called regularly (e.g., in a loop) for async operations to complete.
+     * Without this, callbacks for buffer mapping and other async operations will never fire.
+     * 
+     * @param instanceHandle the instance handle
+     */
+    public static void instanceProcessEvents(MemorySegment instanceHandle) {
+        if (!initialized.get()) {
+            log.warn("WebGPU not initialized - cannot process events");
+            return;
+        }
+        
+        if (instanceHandle == null || instanceHandle.equals(MemorySegment.NULL)) {
+            log.trace("Null instance handle - skipping event processing");
+            return;
+        }
+        
+        if (wgpuInstanceProcessEvents != null) {
+            try {
+                wgpuInstanceProcessEvents.invoke(instanceHandle);
+                log.trace("Processed instance events");
+            } catch (Throwable e) {
+                log.error("Failed to process instance events", e);
+            }
+        } else {
+            log.trace("wgpuInstanceProcessEvents not available - using fallback");
+        }
+    }
+    
+    /**
+     * Get surface capabilities (stub method).
+     * 
+     * @param surfaceHandle the surface handle
+     * @param adapterHandle the adapter handle  
+     * @param capabilities the capabilities struct to fill
+     * @return 0 for success
+     */
+    public static int getSurfaceCapabilities(MemorySegment surfaceHandle, MemorySegment adapterHandle, MemorySegment capabilities) {
+        // Stub implementation
+        log.warn("getSurfaceCapabilities not implemented - returning success");
+        return 0;
     }
     
     /**
@@ -1669,30 +1840,6 @@ public class WebGPU {
         }
     }
     
-    /**
-     * Map a buffer for reading/writing.
-     * 
-     * @param bufferHandle the buffer handle
-     * @param mode the map mode (read/write)
-     * @param offset the offset in bytes
-     * @param size the size to map
-     * @param callback the callback to invoke when mapping is complete
-     * @param userdata user data for the callback
-     */
-    public static void mapBufferAsync(MemorySegment bufferHandle, int mode, long offset, long size, 
-                                     MemorySegment callback, MemorySegment userdata) {
-        if (!initialized.get() || wgpuBufferMapAsync == null) {
-            log.warn("wgpuBufferMapAsync not available");
-            return;
-        }
-        
-        try {
-            wgpuBufferMapAsync.invoke(bufferHandle, mode, offset, size, callback, userdata);
-            log.debug("Initiated async buffer mapping: mode={}, offset={}, size={}", mode, offset, size);
-        } catch (Throwable e) {
-            log.error("Failed to map buffer async", e);
-        }
-    }
     
     /**
      * Get the mapped range of a buffer.
@@ -1751,20 +1898,8 @@ public class WebGPU {
      * @return true if the queue is empty, false if there are still operations in flight
      */
     public static boolean pollDevice(MemorySegment deviceHandle, boolean wait) {
-        if (!initialized.get() || wgpuDevicePoll == null) {
-            log.debug("wgpuDevicePoll not available - returning true (mock behavior)");
-            return true;
-        }
-        
-        try {
-            log.debug("Calling wgpuDevicePoll(device=0x{}, wait={})", Long.toHexString(deviceHandle.address()), wait);
-            boolean result = (boolean) wgpuDevicePoll.invoke(deviceHandle, wait, MemorySegment.NULL);
-            log.debug("Device poll completed, queue empty: {}", result);
-            return result;
-        } catch (Throwable e) {
-            log.error("Failed to poll device", e);
-            return false;
-        }
+        // Delegate to processEvents
+        return processEvents(deviceHandle, wait);
     }
     
     

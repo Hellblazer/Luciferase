@@ -4,24 +4,24 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    
+
     <parent>
         <groupId>com.hellblazer.luciferase</groupId>
         <artifactId>luciferase.app</artifactId>
         <version>0.0.1-SNAPSHOT</version>
     </parent>
-    
+
     <artifactId>webgpu-ffm</artifactId>
     <name>WebGPU FFM Bindings</name>
     <description>Java FFM bindings for WebGPU using wgpu-native</description>
-    
+
     <properties>
         <maven.compiler.source>24</maven.compiler.source>
         <maven.compiler.target>24</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <wgpu.native.version>25.0.2.1</wgpu.native.version>
     </properties>
-    
+
     <dependencies>
         <!-- SLF4J for logging -->
         <dependency>
@@ -29,7 +29,7 @@
             <artifactId>slf4j-api</artifactId>
             <version>2.0.16</version>
         </dependency>
-        
+
         <!-- JUnit for testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -43,7 +43,7 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
-        
+
         <!-- Logback for testing -->
         <dependency>
             <groupId>ch.qos.logback</groupId>
@@ -51,8 +51,46 @@
             <version>${logback.version}</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- JavaFX for testing surface creation with real windows -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- LWJGL core -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl</artifactId>
+            <scope>test</scope>
+            <classifier>${lwjgl.natives}</classifier>
+        </dependency>
+
+        <!-- GLFW bindings -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-glfw</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-glfw</artifactId>
+            <scope>test</scope>
+            <classifier>${lwjgl.natives}</classifier>
+        </dependency>
     </dependencies>
-    
+
     <build>
         <plugins>
             <!-- Maven Compiler Plugin -->
@@ -68,7 +106,7 @@
                     </compilerArgs>
                 </configuration>
             </plugin>
-            
+
             <!-- Maven Surefire Plugin for tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -81,7 +119,7 @@
                     </argLine>
                 </configuration>
             </plugin>
-            
+
             <!-- Maven Resources Plugin to include native libraries -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -112,7 +150,7 @@
             </plugin>
         </plugins>
     </build>
-    
+
     <profiles>
         <!-- Profile for generating FFM bindings with jextract -->
         <profile>

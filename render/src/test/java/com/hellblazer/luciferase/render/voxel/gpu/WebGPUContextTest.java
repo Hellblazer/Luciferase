@@ -82,18 +82,19 @@ public class WebGPUContextTest {
     public void testBufferOperations() throws Exception {
         context.initialize().get(5, TimeUnit.SECONDS);
         
-        Buffer buffer = context.createBuffer(256, 0x08 | 0x01); // COPY_DST | MAP_READ
+        // Test copy-based buffer reading with GPU-writable buffer
+        Buffer gpuBuffer = context.createBuffer(256, 0x08 | 0x04 | 0x80); // COPY_DST | COPY_SRC | STORAGE
         byte[] testData = "Hello WebGPU".getBytes();
         
-        // Write data
-        assertDoesNotThrow(() -> context.writeBuffer(buffer, testData, 0));
+        // Write data to GPU buffer
+        assertDoesNotThrow(() -> context.writeBuffer(gpuBuffer, testData, 0));
         
-        // Read data
-        byte[] readData = context.readBuffer(buffer, testData.length, 0);
+        // Read data using copy-based approach (this should work without mock fallbacks)
+        byte[] readData = context.readBuffer(gpuBuffer, testData.length, 0);
         assertNotNull(readData);
         assertEquals(testData.length, readData.length);
         
-        buffer.close();
+        gpuBuffer.close();
     }
     
     @Test
@@ -182,8 +183,8 @@ public class WebGPUContextTest {
     public void testLegacyCompatibility() throws Exception {
         context.initialize().get(5, TimeUnit.SECONDS);
         
-        // Test legacy buffer creation
-        Buffer buffer = context.createBuffer(512, 0x08 | 0x01); // COPY_DST | MAP_READ
+        // Test legacy buffer creation with proper GPU buffer flags
+        Buffer buffer = context.createBuffer(512, 0x08 | 0x04 | 0x80); // COPY_DST | COPY_SRC | STORAGE
         assertNotNull(buffer);
         
         // Test legacy buffer operations

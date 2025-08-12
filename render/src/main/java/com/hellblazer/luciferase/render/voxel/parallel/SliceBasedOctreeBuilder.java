@@ -237,11 +237,11 @@ public class SliceBasedOctreeBuilder implements AutoCloseable {
         double voxelsPerMs = voxelsProcessed / buildTimeMs;
         double subdivisionRate = subdivisions / (double) voxelsProcessed * 100.0;
         
-        log.info("Octree build completed in {:.2f}ms:", buildTimeMs);
+        log.info("Octree build completed in {} ms", String.format("%.2f", buildTimeMs));
         log.info("  Grid size: {}^3 ({} total voxels)", gridSize, gridSize * gridSize * gridSize);
-        log.info("  Voxels processed: {} ({:.1f} voxels/ms)", voxelsProcessed, voxelsPerMs);
+        log.info("  Voxels processed: {} ({} voxels/ms)", voxelsProcessed, String.format("%.1f", voxelsPerMs));
         log.info("  Nodes created: {}", nodesCreated);
-        log.info("  Quality subdivisions: {} ({:.1f}%)", subdivisions, subdivisionRate);
+        log.info("  Quality subdivisions: {} ({}%)", subdivisions, String.format("%.1f", subdivisionRate));
         log.info("  Threads used: {}", threadPoolSize);
     }
     

@@ -24,13 +24,25 @@ public class CallbackHelper {
         private final MemorySegment callbackStub;
         private volatile int status = -1; // -1 = pending, 0 = success, >0 = error
         private final CountDownLatch latch = new CountDownLatch(1);
+        private final boolean useV2;
         
         
         public BufferMapCallback(Arena arena) {
+            this(arena, false); // Default to old callback for compatibility
+        }
+        
+        public BufferMapCallback(Arena arena, boolean useV2) {
             this.arena = arena;
+            this.useV2 = useV2;
             
-            // Use the new CallbackBridge approach to work around Java 24 FFM sealed interface constraints
-            this.callbackStub = CallbackBridge.createBufferMapCallback(arena, this::handleCallback);
+            if (useV2) {
+                // Use V2 callback with TWO userdatas for Dawn's new API
+                this.callbackStub = CallbackBridge.createBufferMapCallbackV2(arena, this::handleCallback);
+                log.debug("Created BufferMapCallback V2 with TWO userdatas for Dawn");
+            } else {
+                // Use the old single-userdata callback
+                this.callbackStub = CallbackBridge.createBufferMapCallback(arena, this::handleCallback);
+            }
         }
         
         private void handleCallback(int status, MemorySegment userdata) {

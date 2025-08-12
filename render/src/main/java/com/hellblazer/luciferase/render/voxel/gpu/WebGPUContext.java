@@ -183,33 +183,23 @@ public class WebGPUContext {
         }
         
         try {
-            // Map buffer for reading
-            var mappedSegment = buffer.mapAsync(Buffer.MapMode.READ, offset, size).get();
+            // Check if buffer has MAP_READ usage - these cannot use readDataSync
+            // because they cannot have COPY_SRC flag (WebGPU constraint)
+            int usage = buffer.getUsage();
+            boolean hasMapRead = (usage & WebGPUNative.BUFFER_USAGE_MAP_READ) != 0;
             
-            // Convert to ByteBuffer
-            var byteBuffer = mappedSegment.asByteBuffer();
-            
-            // Check actual available size
-            int availableBytes = byteBuffer.remaining();
-            int bytesToRead = Math.min((int)size, availableBytes);
-            
-            // Copy data - only read what's available
-            byte[] result = new byte[bytesToRead];
-            byteBuffer.get(result);
-            
-            // If we got less than requested, pad with zeros (mock data case)
-            if (bytesToRead < size) {
-                log.debug("Buffer mapping returned {} bytes but {} were requested - padding with zeros", 
-                         bytesToRead, size);
-                byte[] paddedResult = new byte[(int)size];
-                System.arraycopy(result, 0, paddedResult, 0, bytesToRead);
-                result = paddedResult;
+            if (hasMapRead) {
+                // Direct mapping for MAP_READ buffers
+                var mappedSegment = buffer.mapAsync(Buffer.MapMode.READ, offset, size).get();
+                var byteBuffer = mappedSegment.asByteBuffer();
+                byte[] result = new byte[(int) size];
+                byteBuffer.get(result);
+                buffer.unmap();
+                return result;
+            } else {
+                // Use copy-based approach for other buffers
+                return buffer.readDataSync(device, offset, size);
             }
-            
-            // Unmap buffer
-            buffer.unmap();
-            
-            return result;
         } catch (Exception e) {
             throw new RuntimeException("Failed to read buffer", e);
         }

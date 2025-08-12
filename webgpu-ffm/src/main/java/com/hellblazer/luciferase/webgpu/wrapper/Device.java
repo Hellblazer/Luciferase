@@ -24,6 +24,7 @@ public class Device implements AutoCloseable {
     private final ConcurrentHashMap<Long, Buffer> buffers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, ShaderModule> shaderModules = new ConcurrentHashMap<>();
     private final AtomicLong nextId = new AtomicLong(1);
+    private Instance instance; // Reference to the instance for event processing
     
     /**
      * Create a device wrapper from a native handle.
@@ -32,10 +33,21 @@ public class Device implements AutoCloseable {
      * @param handle the native device handle
      */
     public Device(MemorySegment handle) {
+        this(handle, (Instance) null);
+    }
+    
+    /**
+     * Create a device wrapper from a native handle with an instance reference.
+     * 
+     * @param handle the native device handle
+     * @param instance the WebGPU instance for event processing
+     */
+    public Device(MemorySegment handle, Instance instance) {
         if (handle == null || handle.equals(MemorySegment.NULL)) {
             throw new IllegalArgumentException("Invalid device handle");
         }
         this.handle = handle;
+        this.instance = instance;
         
         // Set up error callback to capture validation errors
         setupErrorCallback();
@@ -500,7 +512,7 @@ public class Device implements AutoCloseable {
      * @return true if polling succeeded
      */
     public boolean poll(boolean wait) {
-        return WebGPU.devicePoll(handle, wait);
+        return WebGPU.processEvents(handle, wait);
     }
     
     /**
@@ -737,6 +749,41 @@ public class Device implements AutoCloseable {
      */
     void removeShaderModule(long moduleId) {
         shaderModules.remove(moduleId);
+    }
+    
+    /**
+     * Set the instance reference for event processing.
+     * 
+     * @param instance the WebGPU instance
+     */
+    public void setInstance(Instance instance) {
+        this.instance = instance;
+    }
+    
+    /**
+     * Get the instance reference.
+     * 
+     * @return the instance, or null if not set
+     */
+    public Instance getInstance() {
+        return instance;
+    }
+    
+    /**
+     * Process events for this device.
+     * This calls wgpuInstanceProcessEvents which is required for async operations.
+     * 
+     * @return true if events were processed successfully
+     */
+    public boolean processEvents() {
+        if (instance != null) {
+            instance.processEvents();
+            return true;
+        } else {
+            log.warn("No instance set for device - cannot process events. " +
+                    "Set instance with setInstance() for proper async operation support.");
+            return false;
+        }
     }
     
     @Override

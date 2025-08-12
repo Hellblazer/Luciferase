@@ -18,18 +18,18 @@ import org.slf4j.LoggerFactory;
 public abstract class SurfaceDescriptor {
     private static final Logger log = LoggerFactory.getLogger(SurfaceDescriptor.class);
     
-    // S_TYPE constants for surface descriptors
-    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_METAL_LAYER = 0x00000009;
-    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_WINDOWS_HWND = 0x00000008;
-    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_XLIB_WINDOW = 0x0000000A;
-    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_WAYLAND_SURFACE = 0x0000000B;
+    // Dawn S_TYPE constants for surface descriptors (verified against Dawn)
+    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_METAL_LAYER = 0x00000001;
+    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_WINDOWS_HWND = 0x00000002;
+    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_XLIB_WINDOW = 0x00000003;
+    private static final int S_TYPE_SURFACE_DESCRIPTOR_FROM_WAYLAND_SURFACE = 0x00000007;
     
     protected final Arena arena;
-    protected final MemorySegment descriptor;
+    protected MemorySegment descriptor;
     
     protected SurfaceDescriptor(Arena arena) {
         this.arena = arena;
-        this.descriptor = createDescriptor();
+        // Don't call createDescriptor() here - let subclasses do it after their fields are initialized
     }
     
     /**
@@ -41,6 +41,9 @@ public abstract class SurfaceDescriptor {
      * Get the descriptor memory segment.
      */
     public MemorySegment getDescriptor() {
+        if (descriptor == null) {
+            descriptor = createDescriptor();
+        }
         return descriptor;
     }
     
@@ -75,6 +78,8 @@ public abstract class SurfaceDescriptor {
         
         @Override
         protected MemorySegment createDescriptor() {
+            log.debug("Creating Metal surface descriptor with layer: 0x{}", Long.toHexString(metalLayer));
+            
             // Allocate SURFACE_DESCRIPTOR_FROM_METAL_LAYER structure
             var descriptor = arena.allocate(WebGPUNative.Descriptors.SURFACE_DESCRIPTOR_FROM_METAL_LAYER);
             
@@ -83,7 +88,15 @@ public abstract class SurfaceDescriptor {
             descriptor.set(ValueLayout.JAVA_INT, 8, S_TYPE_SURFACE_DESCRIPTOR_FROM_METAL_LAYER); // sType
             descriptor.set(ValueLayout.ADDRESS, 16, MemorySegment.ofAddress(metalLayer)); // layer
             
-            log.debug("Created Metal surface descriptor with layer: 0x{}", Long.toHexString(metalLayer));
+            // Debug: verify the values were set correctly
+            var nextPtr = descriptor.get(ValueLayout.ADDRESS, 0);
+            var sType = descriptor.get(ValueLayout.JAVA_INT, 8);
+            var layerPtr = descriptor.get(ValueLayout.ADDRESS, 16);
+            
+            log.debug("Metal surface descriptor created:");
+            log.debug("  - next: {}", nextPtr);
+            log.debug("  - sType: 0x{} (expected: 0x{})", Integer.toHexString(sType), Integer.toHexString(S_TYPE_SURFACE_DESCRIPTOR_FROM_METAL_LAYER));
+            log.debug("  - layer: 0x{} at offset 16", Long.toHexString(layerPtr.address()));
             return descriptor;
         }
     }

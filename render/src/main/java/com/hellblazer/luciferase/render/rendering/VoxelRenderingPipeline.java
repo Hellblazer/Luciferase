@@ -214,13 +214,13 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         
         // Create buffers matching shader expectations
         octreeBuffer = webgpuContext.createBuffer(octreeBufferSize, 
-            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST);
+            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
         
         voxelDataBuffer = webgpuContext.createBuffer(voxelDataBufferSize,
-            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST);
+            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
         
         raysBuffer = webgpuContext.createBuffer(raysBufferSize,
-            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST);
+            GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_DST | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
         
         hitsBuffer = webgpuContext.createBuffer(hitsBufferSize,
             GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
@@ -229,7 +229,7 @@ public class VoxelRenderingPipeline implements AutoCloseable {
         frameBuffer = webgpuContext.createBuffer(frameBufferSize,
             GPUBufferManager.BUFFER_USAGE_STORAGE | GPUBufferManager.BUFFER_USAGE_COPY_SRC);
         
-        // Separate readback buffer for CPU access (MAP_READ + COPY_DST only)
+        // Separate readback buffer for CPU access (MAP_READ + COPY_DST + COPY_SRC for copy-based reads)
         readbackBuffer = webgpuContext.createBuffer(frameBufferSize,
             GPUBufferManager.BUFFER_USAGE_MAP_READ | GPUBufferManager.BUFFER_USAGE_COPY_DST);
             
@@ -416,8 +416,19 @@ public class VoxelRenderingPipeline implements AutoCloseable {
                     log.warn("GPU synchronization timeout or error", e);
                 }
                 
-                // Read back rendered frame from readback buffer
-                byte[] imageData = webgpuContext.readBuffer(readbackBuffer, bufferSize, 0);
+                // Read back rendered frame from readback buffer using direct mapping
+                // Since readbackBuffer has MAP_READ, use direct mapping instead of copy-based read
+                byte[] imageData;
+                try {
+                    var mappedSegment = readbackBuffer.mapAsync(Buffer.MapMode.READ, 0, bufferSize).get();
+                    var byteBuffer = mappedSegment.asByteBuffer();
+                    imageData = new byte[(int) bufferSize];
+                    byteBuffer.get(imageData);
+                    readbackBuffer.unmap();
+                } catch (Exception e) {
+                    log.warn("Failed to map readback buffer, using fallback", e);
+                    imageData = webgpuContext.readBuffer(readbackBuffer, bufferSize, 0);
+                }
                 
                 long renderTime = System.nanoTime() - startTime;
                 

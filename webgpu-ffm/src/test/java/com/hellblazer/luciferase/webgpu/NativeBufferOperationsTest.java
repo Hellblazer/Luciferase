@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Verifies that the render module uses real native WebGPU buffer operations.
  * Currently disabled due to FFM callback issues in Java 24.
  */
-@Disabled("Native WebGPU callbacks not yet working with Java 24 FFM - see CallbackHelper.java")
+// @Disabled("Testing buffer mapping fix with device polling")
 public class NativeBufferOperationsTest {
     private static final Logger log = LoggerFactory.getLogger(NativeBufferOperationsTest.class);
     private static Instance instance;

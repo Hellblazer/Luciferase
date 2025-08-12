@@ -175,11 +175,15 @@ public class GPUOctreeBuilder {
                 
                 Buffer voxelGridBuffer = context.createBuffer(
                     voxelBufferSize,
-                    WebGPUNative.BUFFER_USAGE_STORAGE
+                    WebGPUNative.BUFFER_USAGE_STORAGE | 
+                    WebGPUNative.BUFFER_USAGE_COPY_DST | 
+                    WebGPUNative.BUFFER_USAGE_COPY_SRC
                 );
                 Buffer voxelColorBuffer = context.createBuffer(
                     colorBufferSize,
-                    WebGPUNative.BUFFER_USAGE_STORAGE
+                    WebGPUNative.BUFFER_USAGE_STORAGE | 
+                    WebGPUNative.BUFFER_USAGE_COPY_DST | 
+                    WebGPUNative.BUFFER_USAGE_COPY_SRC
                 );
                 
                 // Then build octree from voxel grid
@@ -398,10 +402,10 @@ public class GPUOctreeBuilder {
             context.getDevice().getQueue().submit(commands);
             context.getDevice().getQueue().onSubmittedWorkDone();
             
-            var allocatorSegment = allocatorStaging.mapAsync(Buffer.MapMode.READ, 0, 4).get();
-            ByteBuffer allocatorData = allocatorSegment.asByteBuffer();
+            // Use copy-based buffer read to work around Dawn getMappedRange NULL issue
+            byte[] allocatorBytes = allocatorStaging.readDataSync(context.getDevice(), 0, 4);
+            ByteBuffer allocatorData = ByteBuffer.wrap(allocatorBytes);
             int nodeCount = allocatorData.getInt();
-            allocatorStaging.unmap();
             
             log.debug("Reading {} octree nodes from GPU", nodeCount);
             
@@ -420,10 +424,11 @@ public class GPUOctreeBuilder {
             context.getDevice().getQueue().submit(commands);
             context.getDevice().getQueue().onSubmittedWorkDone();
             
-            var mappedSegment = stagingBuffer.mapAsync(Buffer.MapMode.READ, 0, bufferSize).get();
+            // Use copy-based buffer read to work around Dawn getMappedRange NULL issue
+            byte[] nodeBytes = stagingBuffer.readDataSync(context.getDevice(), 0, bufferSize);
             
             // Parse nodes and build tree structure
-            ByteBuffer nodeData = mappedSegment.asByteBuffer();
+            ByteBuffer nodeData = ByteBuffer.wrap(nodeBytes);
             nodeData.order(ByteOrder.LITTLE_ENDIAN);
             
             // Create root node (assumed to be at index 0)
@@ -437,8 +442,6 @@ public class GPUOctreeBuilder {
             int data3 = nodeData.getInt(12);
             
             root.setValidMask((byte)(data0 & 0xFF));
-            
-            stagingBuffer.unmap();
             
             return root;
             
@@ -460,8 +463,9 @@ public class GPUOctreeBuilder {
             context.getDevice().getQueue().submit(commands);
             context.getDevice().getQueue().onSubmittedWorkDone();
             
-            var mappedSegment = stagingBuffer.mapAsync(Buffer.MapMode.READ, 0, 32).get();
-            ByteBuffer stats = mappedSegment.asByteBuffer();
+            // Use copy-based buffer read to work around Dawn getMappedRange NULL issue
+            byte[] statsBytes = stagingBuffer.readDataSync(context.getDevice(), 0, 32);
+            ByteBuffer stats = ByteBuffer.wrap(statsBytes);
             stats.order(ByteOrder.LITTLE_ENDIAN);
             
             totalNodes.set(stats.getInt(0));
@@ -470,8 +474,6 @@ public class GPUOctreeBuilder {
             // maxDepth at offset 12
             // totalVoxels at offset 16
             compressedSize.set(stats.getInt(20));
-            
-            stagingBuffer.unmap();
             
         } catch (Exception e) {
             log.error("Failed to gather statistics", e);

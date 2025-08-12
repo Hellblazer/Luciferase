@@ -68,40 +68,17 @@ fn triangleBoxIntersection(
     boxMin: vec3<f32>,
     boxMax: vec3<f32>
 ) -> bool {
-    let boxCenter = (boxMin + boxMax) * 0.5;
-    let boxHalfSize = (boxMax - boxMin) * 0.5;
+    // Simple and reliable test: check if triangle AABB overlaps box AABB
+    let triMin = min(min(tri.v0.xyz, tri.v1.xyz), tri.v2.xyz);
+    let triMax = max(max(tri.v0.xyz, tri.v1.xyz), tri.v2.xyz);
     
-    // Translate triangle to box center coordinate system
-    let v0 = tri.v0.xyz - boxCenter;
-    let v1 = tri.v1.xyz - boxCenter;
-    let v2 = tri.v2.xyz - boxCenter;
-    
-    // Test box normals (x, y, z axes)
-    let minV = min(min(v0, v1), v2);
-    let maxV = max(max(v0, v1), v2);
-    
-    if (any(maxV < -boxHalfSize) || any(minV > boxHalfSize)) {
+    // Check for AABB overlap
+    if (any(triMax < boxMin) || any(triMin > boxMax)) {
         return false;
     }
     
-    // Test triangle normal
-    let e0 = v1 - v0;
-    let e1 = v2 - v1;
-    let e2 = v0 - v2;
-    let normal = cross(e0, -e2);
-    
-    let r = boxHalfSize.x * abs(normal.x) + 
-            boxHalfSize.y * abs(normal.y) + 
-            boxHalfSize.z * abs(normal.z);
-    let s = dot(normal, v0);
-    
-    if (abs(s) > r) {
-        return false;
-    }
-    
-    // Test cross products of edges with box axes
-    // This is simplified - full SAT test would check all 9 cross products
-    
+    // For conservative voxelization, AABB overlap is sufficient
+    // This may over-voxelize but ensures we don't miss intersections
     return true;
 }
 
@@ -126,10 +103,11 @@ fn voxelizeTriangle(triangleIdx: u32) {
             for (var x = expandedMin.x; x <= expandedMax.x; x++) {
                 let voxelCoord = vec3<i32>(x, y, z);
                 
-                // Calculate voxel bounds in world space
+                // Calculate voxel bounds in world space  
+                let voxelSize = (params.boundsMax - params.boundsMin) / vec3<f32>(params.resolution);
                 let voxelMin = params.boundsMin + 
-                    vec3<f32>(voxelCoord) * params.voxelSize;
-                let voxelMax = voxelMin + vec3<f32>(params.voxelSize);
+                    vec3<f32>(voxelCoord) * voxelSize;
+                let voxelMax = voxelMin + voxelSize;
                 
                 // Check triangle-voxel intersection
                 if (triangleBoxIntersection(tri, voxelMin, voxelMax)) {

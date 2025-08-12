@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.webgpu.wrapper;
 
+import com.hellblazer.luciferase.webgpu.CallbackBridge;
 import com.hellblazer.luciferase.webgpu.WebGPU;
 import com.hellblazer.luciferase.webgpu.ffm.WebGPUNative;
 import org.slf4j.Logger;
@@ -7,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.lang.ref.Cleaner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -16,9 +18,36 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class Instance implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(Instance.class);
+    private static final Cleaner cleaner = Cleaner.create();
     
     private final MemorySegment handle;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final Cleaner.Cleanable cleanable;
+    
+    /**
+     * State for cleanup when instance is garbage collected.
+     */
+    private static class State implements Runnable {
+        private final MemorySegment handle;
+        private final String instanceId;
+        private final AtomicBoolean explicitlyClosed;
+        
+        State(MemorySegment handle, AtomicBoolean explicitlyClosed) {
+            this.handle = handle;
+            this.instanceId = "0x" + Long.toHexString(handle != null ? handle.address() : 0);
+            this.explicitlyClosed = explicitlyClosed;
+        }
+        
+        @Override
+        public void run() {
+            if (handle != null && !handle.equals(MemorySegment.NULL)) {
+                if (!explicitlyClosed.get()) {
+                    log.warn("Instance {} not properly closed, releasing in cleanup", instanceId);
+                }
+                WebGPU.releaseInstance(handle);
+            }
+        }
+    }
     
     /**
      * Create a new WebGPU instance with default configuration.
@@ -39,6 +68,9 @@ public class Instance implements AutoCloseable {
             throw new RuntimeException("Failed to create WebGPU instance");
         }
         
+        // Register cleanup for garbage collection
+        this.cleanable = cleaner.register(this, new State(this.handle, this.closed));
+        
         log.info("Created WebGPU instance wrapper: 0x{}", Long.toHexString(handle.address()));
     }
     
@@ -52,6 +84,8 @@ public class Instance implements AutoCloseable {
             throw new IllegalArgumentException("Invalid instance handle");
         }
         this.handle = handle;
+        // Register cleanup for garbage collection
+        this.cleanable = cleaner.register(this, new State(this.handle, this.closed));
     }
     
     /**
@@ -65,23 +99,12 @@ public class Instance implements AutoCloseable {
             throw new IllegalStateException("Instance is closed");
         }
         
-        return CompletableFuture.supplyAsync(() -> {
-            log.debug("Requesting adapter with options: {}", options);
-            
-            // Use the synchronous enumerateAdapters API to avoid callback issues
-            var adapterHandles = WebGPU.enumerateAdapters(handle, null); // TODO: convert options to native struct
-            
-            if (adapterHandles.length > 0) {
-                // Return the first available adapter
-                var adapterHandle = adapterHandles[0];
-                log.debug("Successfully obtained adapter from enumerateAdapters: 0x{}", 
-                         Long.toHexString(adapterHandle.address()));
-                return new Adapter(adapterHandle);
-            } else {
-                log.warn("No adapters available from enumerateAdapters");
-                return null;
-            }
-        });
+        log.debug("Requesting adapter with options: {}", options);
+        
+        // Dawn uses callback-based API, not enumerate
+        // Use CallbackBridge to handle the adapter request with Dawn's callback mechanism
+        // Pass 'this' so adapter and device can reference the instance for event processing
+        return CallbackBridge.requestAdapter(handle, options, this);
     }
     
     /**
@@ -111,21 +134,29 @@ public class Instance implements AutoCloseable {
         return !closed.get() && handle != null && !handle.equals(MemorySegment.NULL);
     }
     
-    @Override
-    public void close() {
-        if (closed.compareAndSet(false, true)) {
-            WebGPU.releaseInstance(handle);
-            log.debug("Released WebGPU instance");
+    /**
+     * Process pending events for this instance.
+     * This should be called regularly to process buffer mapping callbacks and other async operations.
+     */
+    public void processEvents() {
+        if (!isValid()) {
+            log.debug("Cannot process events - instance is not valid");
+            return;
         }
+        WebGPU.instanceProcessEvents(handle);
     }
     
     @Override
-    protected void finalize() throws Throwable {
-        if (!closed.get()) {
-            log.warn("Instance not properly closed, releasing in finalizer");
-            close();
+    public void close() {
+        if (closed.compareAndSet(false, true)) {
+            // Clean up the cleaner registration to prevent unnecessary cleanup
+            if (cleanable != null) {
+                cleanable.clean();
+            }
+            // Note: cleanable.clean() already called WebGPU.releaseInstance(handle)
+            // Don't call it again to avoid double-release
+            log.debug("Released WebGPU instance");
         }
-        super.finalize();
     }
     
     /**

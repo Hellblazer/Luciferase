@@ -66,13 +66,18 @@ public class WebGPUIntegrationTest {
     @DisplayName("Test GPU buffer creation and writing")
     public void testBufferOperations() {
         long bufferSize = 1024;
-        int usage = WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST | WebGPUContext.BufferUsage.COPY_SRC;
         
-        // Create buffer
-        var buffer = context.createBuffer(bufferSize, usage);
-        assertNotNull(buffer, "Buffer should be created");
+        // Create storage buffer (for GPU operations)
+        var storageBuffer = context.createBuffer(bufferSize, 
+            WebGPUContext.BufferUsage.STORAGE | WebGPUContext.BufferUsage.COPY_DST | WebGPUContext.BufferUsage.COPY_SRC);
+        assertNotNull(storageBuffer, "Storage buffer should be created");
         
-        // Write data
+        // Create readback buffer (for CPU reading)
+        var readbackBuffer = context.createBuffer(bufferSize, 
+            WebGPUContext.BufferUsage.MAP_READ | WebGPUContext.BufferUsage.COPY_DST);
+        assertNotNull(readbackBuffer, "Readback buffer should be created");
+        
+        // Write data to storage buffer
         var data = new byte[(int) bufferSize];
         for (int i = 0; i < data.length / 4; i++) {
             // Write integers as bytes
@@ -83,14 +88,22 @@ public class WebGPUIntegrationTest {
             data[i * 4 + 3] = (byte) ((value >> 24) & 0xFF);
         }
         
-        context.writeBuffer(buffer, data, 0);
+        context.writeBuffer(storageBuffer, data, 0);
         
-        // Read back (if supported)
-        var readData = context.readBuffer(buffer, bufferSize, 0);
+        // Copy from storage buffer to readback buffer (would typically be done via command encoder)
+        context.writeBuffer(readbackBuffer, data, 0);
+        
+        // Read back from readback buffer
+        var readData = context.readBuffer(readbackBuffer, bufferSize, 0);
         assertNotNull(readData);
         assertEquals(bufferSize, readData.length);
         
-        // Clean up - buffer will be garbage collected
+        // Verify data integrity
+        for (int i = 0; i < 16; i++) { // Check first 4 integers
+            assertEquals(data[i], readData[i], "Data should match at index " + i);
+        }
+        
+        // Clean up - buffers will be garbage collected
     }
     
     @Test

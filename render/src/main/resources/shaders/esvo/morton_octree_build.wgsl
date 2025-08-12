@@ -183,25 +183,30 @@ fn buildOctreeBottom(@builtin(global_invocation_id) gid: vec3<u32>,
     let endIdx = min((threadId + 1u) * voxelsPerThread, 
                      params.resolution.x * params.resolution.y * params.resolution.z);
     
-    for (var idx = startIdx; idx < endIdx; idx++) {
-        let z = idx / (params.resolution.x * params.resolution.y);
-        let y = (idx % (params.resolution.x * params.resolution.y)) / params.resolution.x;
-        let x = idx % params.resolution.x;
-        
-        if (isVoxelOccupied(x, y, z)) {
-            let morton = morton3D(vec3<u32>(x, y, z));
-            mortonCodes[idx] = morton;
+    // All threads must participate in the work phase to ensure uniform control flow
+    let totalVoxels = params.resolution.x * params.resolution.y * params.resolution.z;
+    if (threadId < (totalVoxels + voxelsPerThread - 1u) / voxelsPerThread) {
+        for (var idx = startIdx; idx < endIdx; idx++) {
+            let z = idx / (params.resolution.x * params.resolution.y);
+            let y = (idx % (params.resolution.x * params.resolution.y)) / params.resolution.x;
+            let x = idx % params.resolution.x;
             
-            // Create leaf node
-            let nodeIdx = allocateNode();
-            if (nodeIdx < params.nodePoolSize) {
-                octreeNodes[nodeIdx] = createLeafNode(idx, 0u);
+            if (isVoxelOccupied(x, y, z)) {
+                let morton = morton3D(vec3<u32>(x, y, z));
+                mortonCodes[idx] = morton;
+                
+                // Create leaf node
+                let nodeIdx = allocateNode();
+                if (nodeIdx < params.nodePoolSize) {
+                    octreeNodes[nodeIdx] = createLeafNode(idx, 0u);
+                }
+            } else {
+                mortonCodes[idx] = 0xFFFFFFFFu; // Invalid marker
             }
-        } else {
-            mortonCodes[idx] = 0xFFFFFFFFu; // Invalid marker
         }
     }
     
+    // All threads in workgroup must reach this barrier together
     workgroupBarrier();
     
     // Phase 2: Build internal nodes level by level
@@ -267,19 +272,21 @@ fn compactOctree(@builtin(global_invocation_id) gid: vec3<u32>,
                  @builtin(local_invocation_id) lid: vec3<u32>) {
     let nodeIdx = gid.x;
     let localId = lid.x;
+    let totalNodes = atomicLoad(&nodeAllocator);
     
-    if (nodeIdx >= atomicLoad(&nodeAllocator)) {
-        return;
+    // Initialize shared memory and ensure all threads participate
+    var childMask = 0u;
+    if (nodeIdx < totalNodes) {
+        let node = octreeNodes[nodeIdx];
+        childMask = node.data0 & 0xFFu;
     }
     
-    let node = octreeNodes[nodeIdx];
-    let childMask = node.data0 & 0xFFu;
-    
     // Use parallel prefix sum to compute compacted indices
+    // All threads must participate in shared memory operations
     sharedReduction[localId] = select(0u, 1u, childMask != 0u);
     workgroupBarrier();
     
-    // Parallel reduction for prefix sum
+    // Parallel reduction for prefix sum - all threads participate
     for (var stride = 1u; stride < 256u; stride *= 2u) {
         let temp = select(0u, sharedReduction[localId - stride], localId >= stride);
         workgroupBarrier();
@@ -287,8 +294,8 @@ fn compactOctree(@builtin(global_invocation_id) gid: vec3<u32>,
         workgroupBarrier();
     }
     
-    // Write compacted node if non-empty
-    if (childMask != 0u) {
+    // Write compacted node if valid and non-empty
+    if (nodeIdx < totalNodes && childMask != 0u) {
         let compactedIdx = sharedReduction[localId] - 1u;
         // Would write to compacted buffer here
         atomicAdd(&buildStats.compressedSize, 16u); // Size of PackedOctreeNode

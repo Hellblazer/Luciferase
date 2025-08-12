@@ -2,6 +2,7 @@ package com.hellblazer.luciferase.render.webgpu;
 
 import com.hellblazer.luciferase.render.voxel.gpu.WebGPUContext;
 import com.hellblazer.luciferase.render.voxel.gpu.GPUBufferManager;
+import com.hellblazer.luciferase.webgpu.wrapper.Buffer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
@@ -84,7 +85,19 @@ public class WebGPUIntegrationTest {
                     // Copy from storage buffer to readback buffer (would normally be done via command encoder)
                     // For this basic test, we'll just write directly to readback buffer
                     context.writeBuffer(readbackBuffer, new byte[]{1, 2, 3, 4}, 0);
-                    var data = context.readBuffer(readbackBuffer, 4, 0);
+                    
+                    // Read using direct mapping since this is a MAP_READ buffer
+                    byte[] data;
+                    try {
+                        var mappedSegment = readbackBuffer.mapAsync(Buffer.MapMode.READ, 0, 4).get();
+                        var byteBuffer = mappedSegment.asByteBuffer();
+                        data = new byte[4];
+                        byteBuffer.get(data);
+                        readbackBuffer.unmap();
+                    } catch (Exception mappingException) {
+                        // Fallback to copy-based read if mapping fails
+                        data = context.readBuffer(readbackBuffer, 4, 0);
+                    }
                     
                     // Note: In real usage, you'd copy storageBuffer -> readbackBuffer via command encoder
                 });
