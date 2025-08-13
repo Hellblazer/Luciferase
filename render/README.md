@@ -2,9 +2,9 @@
 
 GPU-accelerated voxel rendering pipeline with streaming I/O and adaptive quality control
 
-**Last Updated**: January 8, 2025  
+**Last Updated**: August 12, 2025  
 **Branch**: visi  
-**Status**: Active Development
+**Status**: WebGPU Integration Complete
 
 ## Overview
 
@@ -46,6 +46,10 @@ com.hellblazer.luciferase.render/
 ├── compression/       # DXT and sparse voxel compression
 ├── io/               # Streaming I/O with async loading
 ├── rendering/        # VoxelRenderingPipeline and StreamingController
+├── webgpu/           # Native WebGPU integration
+│   ├── platform/    # Platform-specific surface creation
+│   ├── resources/   # Buffer and uniform management
+│   └── shaders/     # Shader compilation and caching
 ├── voxel/
 │   ├── core/        # VoxelOctreeNode data structures
 │   ├── gpu/         # WebGPU context and compute shaders

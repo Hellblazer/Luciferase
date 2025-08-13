@@ -309,8 +309,15 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
         });
     }
 
+    /**
+     * Get the spatial bounds of a node at the given Morton index.
+     * Made public to support visualization and external processing.
+     * 
+     * @param mortonIndex the Morton index
+     * @return the spatial bounds as a Cube
+     */
     @Override
-    protected Spatial getNodeBounds(MortonKey mortonIndex) {
+    public Spatial getNodeBounds(MortonKey mortonIndex) {
         var coords = MortonCurve.decode(mortonIndex.getMortonCode());
         var level = mortonIndex.getLevel();
         var cellSize = Constants.lengthAtLevel(level);

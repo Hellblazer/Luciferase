@@ -655,21 +655,39 @@ public class Device implements AutoCloseable {
      * Create vertex buffer layouts for native API.
      */
     private MemorySegment createVertexBufferLayouts(RenderPipeline.VertexBufferLayout[] buffers, Arena arena) {
-        var layoutSize = 32; // Estimated size per vertex buffer layout
-        var array = arena.allocate(layoutSize * buffers.length);
+        // WGPUVertexBufferLayout structure layout:
+        // arrayStride: uint64 (8 bytes) at offset 0
+        // stepMode: uint32 (4 bytes) at offset 8
+        // attributeCount: size_t (8 bytes) at offset 16 (must be 8-byte aligned)
+        // attributes: pointer (8 bytes) at offset 24
+        // Total size: 32 bytes
+        
+        var layoutSize = 32; // Size per vertex buffer layout
+        var totalSize = layoutSize * buffers.length;
+        // Allocate with 8-byte alignment
+        var array = arena.allocate(totalSize, 8);
         
         for (int i = 0; i < buffers.length; i++) {
             var buffer = buffers[i];
-            var offset = i * layoutSize;
+            var baseOffset = i * layoutSize;
             
-            array.set(ValueLayout.JAVA_LONG, offset, buffer.arrayStride);
-            array.set(ValueLayout.JAVA_INT, offset + 8, buffer.stepMode.getValue());
+            // Write arrayStride at offset 0
+            array.set(ValueLayout.JAVA_LONG, baseOffset, buffer.arrayStride);
+            // Write stepMode at offset 8
+            array.set(ValueLayout.JAVA_INT, baseOffset + 8, buffer.stepMode.getValue());
+            // Skip 4 bytes of padding (offset 12-15)
             
-            // Set attributes
+            // Set attributes if present
             if (buffer.attributes != null && buffer.attributes.length > 0) {
                 var attrsArray = createVertexAttributes(buffer.attributes, arena);
-                array.set(ValueLayout.JAVA_LONG, offset + 12, buffer.attributes.length);
-                array.set(ValueLayout.ADDRESS, offset + 20, attrsArray);
+                // Write attributeCount at offset 16 (8-byte aligned)
+                array.set(ValueLayout.JAVA_LONG, baseOffset + 16, (long) buffer.attributes.length);
+                // Write attributes pointer at offset 24
+                array.set(ValueLayout.ADDRESS, baseOffset + 24, attrsArray);
+            } else {
+                // Write zero count and null pointer
+                array.set(ValueLayout.JAVA_LONG, baseOffset + 16, 0L);
+                array.set(ValueLayout.ADDRESS, baseOffset + 24, MemorySegment.NULL);
             }
         }
         
@@ -680,16 +698,29 @@ public class Device implements AutoCloseable {
      * Create vertex attributes for native API.
      */
     private MemorySegment createVertexAttributes(RenderPipeline.VertexAttribute[] attributes, Arena arena) {
-        var attrSize = 16; // Size per vertex attribute
-        var array = arena.allocate(attrSize * attributes.length);
+        // WGPUVertexAttribute structure layout:
+        // format: uint32 (4 bytes) at offset 0
+        // offset: uint64 (8 bytes) at offset 8 (must be 8-byte aligned)
+        // shaderLocation: uint32 (4 bytes) at offset 16
+        // Total size: 20 bytes, but we need to align to 24 for array alignment
+        
+        var attrSize = 24; // Size per vertex attribute with padding
+        var totalSize = attrSize * attributes.length;
+        // Allocate with 8-byte alignment
+        var array = arena.allocate(totalSize, 8);
         
         for (int i = 0; i < attributes.length; i++) {
             var attr = attributes[i];
-            var offset = i * attrSize;
+            var baseOffset = i * attrSize;
             
-            array.set(ValueLayout.JAVA_INT, offset, attr.format.getValue());
-            array.set(ValueLayout.JAVA_LONG, offset + 4, attr.offset);
-            array.set(ValueLayout.JAVA_INT, offset + 12, attr.shaderLocation);
+            // Write format at offset 0
+            array.set(ValueLayout.JAVA_INT, baseOffset, attr.format.getValue());
+            // Skip 4 bytes of padding (offset 4-7)
+            // Write offset at offset 8 (8-byte aligned)
+            array.set(ValueLayout.JAVA_LONG, baseOffset + 8, attr.offset);
+            // Write shaderLocation at offset 16
+            array.set(ValueLayout.JAVA_INT, baseOffset + 16, attr.shaderLocation);
+            // Remaining padding (offset 20-23) is left as zeros
         }
         
         return array;
@@ -699,30 +730,46 @@ public class Device implements AutoCloseable {
      * Create color targets for native API.
      */
     private MemorySegment createColorTargets(RenderPipeline.ColorTargetState[] targets, Arena arena) {
-        var targetSize = 32; // Estimated size per color target
-        var array = arena.allocate(targetSize * targets.length);
+        // WGPUColorTargetState structure layout:
+        // nextInChain: pointer (8 bytes) at offset 0
+        // format: uint32 (4 bytes) at offset 8
+        // blend: optional blend state
+        //   - color.operation: uint32 (4 bytes) at offset 12
+        //   - color.srcFactor: uint32 (4 bytes) at offset 16
+        //   - color.dstFactor: uint32 (4 bytes) at offset 20
+        //   - alpha.operation: uint32 (4 bytes) at offset 24
+        //   - alpha.srcFactor: uint32 (4 bytes) at offset 28
+        //   - alpha.dstFactor: uint32 (4 bytes) at offset 32
+        // writeMask: uint32 (4 bytes) at offset 36
+        // Total size: 40 bytes
+        
+        var targetSize = 40; // Size per color target with blend state
+        var totalSize = targetSize * targets.length;
+        var array = arena.allocate(totalSize, 8); // Align to 8 bytes
         
         for (int i = 0; i < targets.length; i++) {
             var target = targets[i];
-            var offset = i * targetSize;
+            var baseOffset = i * targetSize;
             
-            array.set(ValueLayout.ADDRESS, offset, MemorySegment.NULL); // nextInChain
-            array.set(ValueLayout.JAVA_INT, offset + 8, target.format.getValue());
+            array.set(ValueLayout.ADDRESS, baseOffset, MemorySegment.NULL); // nextInChain
+            array.set(ValueLayout.JAVA_INT, baseOffset + 8, target.format.getValue());
             
             // Set blend state if present
             if (target.blend != null) {
                 // Color blend
-                array.set(ValueLayout.JAVA_INT, offset + 12, target.blend.color.operation.getValue());
-                array.set(ValueLayout.JAVA_INT, offset + 16, target.blend.color.srcFactor.getValue());
-                array.set(ValueLayout.JAVA_INT, offset + 20, target.blend.color.dstFactor.getValue());
+                array.set(ValueLayout.JAVA_INT, baseOffset + 12, target.blend.color.operation.getValue());
+                array.set(ValueLayout.JAVA_INT, baseOffset + 16, target.blend.color.srcFactor.getValue());
+                array.set(ValueLayout.JAVA_INT, baseOffset + 20, target.blend.color.dstFactor.getValue());
                 
                 // Alpha blend
-                array.set(ValueLayout.JAVA_INT, offset + 24, target.blend.alpha.operation.getValue());
-                array.set(ValueLayout.JAVA_INT, offset + 28, target.blend.alpha.srcFactor.getValue());
-                array.set(ValueLayout.JAVA_INT, offset + 32, target.blend.alpha.dstFactor.getValue());
+                array.set(ValueLayout.JAVA_INT, baseOffset + 24, target.blend.alpha.operation.getValue());
+                array.set(ValueLayout.JAVA_INT, baseOffset + 28, target.blend.alpha.srcFactor.getValue());
+                array.set(ValueLayout.JAVA_INT, baseOffset + 32, target.blend.alpha.dstFactor.getValue());
+            } else {
+                // Fill with defaults (0s are already there from allocation)
             }
             
-            array.set(ValueLayout.JAVA_INT, offset + 36, target.writeMask);
+            array.set(ValueLayout.JAVA_INT, baseOffset + 36, target.writeMask);
         }
         
         return array;
