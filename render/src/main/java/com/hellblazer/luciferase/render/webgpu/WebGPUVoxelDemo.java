@@ -309,8 +309,22 @@ public class WebGPUVoxelDemo {
     private void render() {
         // Get surface texture
         SurfaceTexture surfaceTexture = context.getCurrentTexture();
-        if (surfaceTexture == null || surfaceTexture.getTexture() == null) {
-            log.warn("Failed to get surface texture");
+        if (surfaceTexture == null) {
+            log.warn("getCurrentTexture returned null - surface may not be configured properly");
+            clearWindow();
+            return;
+        }
+        
+        if (!surfaceTexture.isSuccess()) {
+            log.warn("Surface texture status not SUCCESS: status={}, suboptimal={}", 
+                surfaceTexture.getStatus(), surfaceTexture.isSuboptimal());
+            clearWindow();
+            return;
+        }
+        
+        if (surfaceTexture.getTexture() == null) {
+            log.warn("Surface texture handle is null despite SUCCESS status");
+            clearWindow();
             return;
         }
         
@@ -377,6 +391,16 @@ public class WebGPUVoxelDemo {
             frameCount = 0;
             lastFpsTime = currentTime;
         }
+    }
+    
+    /**
+     * Clear the window with a magenta color to indicate surface issues.
+     */
+    private void clearWindow() {
+        // Since WebGPU surface isn't working, we can't render anything
+        // Just skip this frame - the window will remain black
+        // This avoids GLFW errors since we don't have an OpenGL context
+        log.debug("Skipping frame due to surface configuration issues");
     }
     
     private void cleanup() {

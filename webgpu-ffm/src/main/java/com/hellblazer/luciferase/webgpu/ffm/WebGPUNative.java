@@ -290,10 +290,10 @@ public class WebGPUNative {
     public static final int TEXTURE_FORMAT_R8_SNORM = 0x00000002;
     public static final int TEXTURE_FORMAT_R8_UINT = 0x00000003;
     public static final int TEXTURE_FORMAT_R8_SINT = 0x00000004;
-    public static final int TEXTURE_FORMAT_RGBA8_UNORM = 0x00000018;
-    public static final int TEXTURE_FORMAT_RGBA8_UNORM_SRGB = 0x00000019;
-    public static final int TEXTURE_FORMAT_BGRA8_UNORM = 0x00000017; // Dawn: BGRA8Unorm
-    public static final int TEXTURE_FORMAT_BGRA8_UNORM_SRGB = 0x00000018; // Dawn: BGRA8UnormSrgb
+    public static final int TEXTURE_FORMAT_RGBA8_UNORM = 18; // Dawn: WGPUTextureFormat_RGBA8Unorm
+    public static final int TEXTURE_FORMAT_RGBA8_UNORM_SRGB = 19; // Dawn: WGPUTextureFormat_RGBA8UnormSrgb
+    public static final int TEXTURE_FORMAT_BGRA8_UNORM = 23; // Dawn: WGPUTextureFormat_BGRA8Unorm
+    public static final int TEXTURE_FORMAT_BGRA8_UNORM_SRGB = 24; // Dawn: WGPUTextureFormat_BGRA8UnormSrgb
     
     // Texture usage flags
     public static final int TEXTURE_USAGE_COPY_SRC = 0x00000001;
@@ -513,13 +513,12 @@ public class WebGPUNative {
             ValueLayout.ADDRESS.withName("device"),                  // 8-15
             ValueLayout.JAVA_INT.withName("format"),                 // 16-19
             ValueLayout.JAVA_INT.withName("usage"),                  // 20-23
-            MemoryLayout.paddingLayout(8),                          // 24-31 (padding for 8-byte alignment)
-            ValueLayout.JAVA_LONG.withName("viewFormatCount"),      // 32-39 (8-byte aligned)
-            ValueLayout.ADDRESS.withName("viewFormats"),            // 40-47
-            ValueLayout.JAVA_INT.withName("alphaMode"),             // 48-51
-            ValueLayout.JAVA_INT.withName("width"),                 // 52-55
-            ValueLayout.JAVA_INT.withName("height"),                // 56-59
-            ValueLayout.JAVA_INT.withName("presentMode")            // 60-63
+            ValueLayout.JAVA_LONG.withName("viewFormatCount"),      // 24-31
+            ValueLayout.ADDRESS.withName("viewFormats"),            // 32-39
+            ValueLayout.JAVA_INT.withName("alphaMode"),             // 40-43
+            ValueLayout.JAVA_INT.withName("width"),                 // 44-47
+            ValueLayout.JAVA_INT.withName("height"),                // 48-51
+            ValueLayout.JAVA_INT.withName("presentMode")            // 52-55
         ).withName("WGPUSurfaceConfiguration");
         
         /**

@@ -4,6 +4,8 @@
 
 The primary demonstration application that shows the complete WebGPU rendering pipeline with surface creation, window management, and voxel rendering.
 
+⚠️ **CRITICAL: This demo REQUIRES the `-XstartOnFirstThread` flag on macOS!** Without this flag, the surface configuration will fail and you'll see only a black canvas.
+
 ### Location
 `render/src/main/java/com/hellblazer/luciferase/render/webgpu/WebGPUVoxelDemo.java`
 

@@ -1,6 +1,5 @@
 package com.hellblazer.luciferase.render.webgpu.platform;
 
-// import com.hellblazer.luciferase.render.demo.GLFWMetalHelperV2; // TODO: Move from test to main
 import com.hellblazer.luciferase.webgpu.surface.SurfaceDescriptorV3;
 import com.hellblazer.luciferase.webgpu.wrapper.Instance;
 import com.hellblazer.luciferase.webgpu.wrapper.Surface;
@@ -19,27 +18,25 @@ public class MetalSurfaceFactory implements PlatformSurfaceFactory {
         log.info("Creating Metal surface for window handle: {}", windowHandle);
         
         try {
-            // TODO: Implement Metal layer creation
-            // Need to move GLFWMetalHelperV2 from test to main or implement native Metal layer creation
-            
             // Create CAMetalLayer for the window
-            // long metalLayer = GLFWMetalHelperV2.createMetalLayerForWindow(windowHandle);
-            // if (metalLayer == 0) {
-            //     throw new RuntimeException("Failed to create CAMetalLayer");
-            // }
+            long metalLayer = GLFWMetalHelperV2.createMetalLayerForWindow(windowHandle);
+            if (metalLayer == 0) {
+                throw new RuntimeException("Failed to create CAMetalLayer");
+            }
             
-            // Create surface descriptor for Metal
-            SurfaceDescriptorV3 descriptor = new SurfaceDescriptorV3();
-            // descriptor.setMetalLayer(metalLayer);
+            log.info("Created CAMetalLayer: 0x{}", Long.toHexString(metalLayer));
             
-            // Create WebGPU surface
-            // Surface surface = instance.createSurfaceFromMetalLayer(descriptor);
-            // if (surface == null) {
-            //     throw new RuntimeException("Failed to create WebGPU surface from Metal layer");
-            // }
+            // Create persistent surface descriptor for Metal layer
+            var descriptor = SurfaceDescriptorV3.createPersistent(metalLayer);
             
-            log.warn("Metal surface creation not yet fully implemented");
-            return null; // temporary
+            // Create WebGPU surface using the descriptor
+            Surface surface = instance.createSurface(descriptor);
+            if (surface == null) {
+                throw new RuntimeException("Failed to create WebGPU surface from Metal layer");
+            }
+            
+            log.info("Successfully created Metal surface");
+            return surface;
             
         } catch (Exception e) {
             log.error("Failed to create Metal surface", e);

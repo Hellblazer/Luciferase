@@ -57,13 +57,12 @@
             <artifactId>joml</artifactId>
             <version>1.10.5</version>
         </dependency>
-
-        <!-- Test Only Dependencies Below This Line-->
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <scope>test</scope>
         </dependency>
+
+        <!-- Test Only Dependencies Below This Line-->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -106,6 +105,22 @@
                 <configuration>
                     <argLine>--enable-native-access=ALL-UNNAMED --enable-preview</argLine>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <mainClass>com.hellblazer.luciferase.render.webgpu.WebGPUVoxelDemo</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>webgpu-demo</id>
+                        <configuration>
+                            <commandlineArgs>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</commandlineArgs>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -1,4 +1,4 @@
-package com.hellblazer.luciferase.render.demo;
+package com.hellblazer.luciferase.render.webgpu.platform;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

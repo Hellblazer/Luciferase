@@ -27,6 +27,7 @@ public class WebGPU {
     // Surface function handles
     private static MethodHandle wgpuInstanceCreateSurface;
     private static MethodHandle wgpuSurfaceConfigure;
+    private static MethodHandle wgpuSurfaceGetCapabilities;
     private static MethodHandle wgpuSurfaceGetCurrentTexture;
     private static MethodHandle wgpuSurfacePresent;
     private static MethodHandle wgpuSurfaceRelease;
@@ -1199,6 +1200,18 @@ public class WebGPU {
                 );
             }
             
+            // wgpuSurfaceGetCapabilities(WGPUSurface surface, WGPUAdapter adapter, WGPUSurfaceCapabilities* capabilities) -> WGPUStatus
+            var surfaceGetCapabilitiesOpt = symbolLookup.find("wgpuSurfaceGetCapabilities");
+            if (surfaceGetCapabilitiesOpt.isPresent()) {
+                wgpuSurfaceGetCapabilities = linker.downcallHandle(
+                    surfaceGetCapabilitiesOpt.get(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+                );
+                log.debug("Successfully loaded wgpuSurfaceGetCapabilities");
+            } else {
+                log.warn("Could not find wgpuSurfaceGetCapabilities symbol");
+            }
+            
             // wgpuSurfaceGetPreferredFormat(WGPUSurface surface, WGPUAdapter adapter) -> WGPUTextureFormat
             var surfaceGetPreferredFormatOpt = symbolLookup.find("wgpuSurfaceGetPreferredFormat");
             if (surfaceGetPreferredFormatOpt.isPresent()) {
@@ -1806,17 +1819,26 @@ public class WebGPU {
     }
     
     /**
-     * Get surface capabilities (stub method).
+     * Get surface capabilities.
      * 
      * @param surfaceHandle the surface handle
      * @param adapterHandle the adapter handle  
      * @param capabilities the capabilities struct to fill
-     * @return 0 for success
+     * @return status code (0 for success)
      */
     public static int getSurfaceCapabilities(MemorySegment surfaceHandle, MemorySegment adapterHandle, MemorySegment capabilities) {
-        // Stub implementation
-        log.warn("getSurfaceCapabilities not implemented - returning success");
-        return 0;
+        if (wgpuSurfaceGetCapabilities == null) {
+            log.debug("wgpuSurfaceGetCapabilities not available - caller must provide defaults");
+            // Return special status to indicate defaults needed
+            return -1;
+        }
+        
+        try {
+            return (int) wgpuSurfaceGetCapabilities.invoke(surfaceHandle, adapterHandle, capabilities);
+        } catch (Throwable e) {
+            log.error("Failed to get surface capabilities", e);
+            return 1; // Error status
+        }
     }
     
     /**
@@ -2088,9 +2110,13 @@ public class WebGPU {
             return;
         }
         
+        log.info("Configuring surface with handle: 0x{}, config: 0x{}", 
+                 Long.toHexString(surfaceHandle.address()),
+                 Long.toHexString(configuration.address()));
+        
         try {
             wgpuSurfaceConfigure.invoke(surfaceHandle, configuration);
-            log.debug("Configured surface");
+            log.info("Successfully configured surface");
         } catch (Throwable e) {
             log.error("Failed to configure surface", e);
         }

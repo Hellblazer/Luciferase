@@ -209,12 +209,12 @@ public class ShaderManager {
                 
                 // Apply lighting to color
                 var finalColor = input.color;
-                finalColor.rgb = finalColor.rgb * lighting;
+                finalColor = vec4<f32>(finalColor.rgb * lighting, finalColor.a);
                 
                 // Add some edge highlighting for better voxel definition
                 let edgeFactor = 1.0 - abs(dot(normal, normalize(input.worldPos)));
                 let edgeHighlight = pow(edgeFactor, 2.0) * 0.1;
-                finalColor.rgb = finalColor.rgb + vec3<f32>(edgeHighlight);
+                finalColor = vec4<f32>(finalColor.rgb + vec3<f32>(edgeHighlight), finalColor.a);
                 
                 return finalColor;
             }
