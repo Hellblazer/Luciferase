@@ -48,6 +48,7 @@
         <module>sentry</module>
         <module>render</module>
         <module>webgpu-ffm</module>
+        <module>web-gpu</module>
     </modules>
 
     <dependencyManagement>
