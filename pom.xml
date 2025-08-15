@@ -20,7 +20,7 @@
         <javafx.version>24</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
         <jmh.version>1.37</jmh.version>
-        <lwjgl.version>3.3.3</lwjgl.version>
+        <lwjgl.version>3.3.6</lwjgl.version>
         <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
     </properties>
 
