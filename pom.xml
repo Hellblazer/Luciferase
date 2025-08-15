@@ -47,8 +47,6 @@
         <module>simulation</module>
         <module>sentry</module>
         <module>render</module>
-        <module>webgpu-ffm</module>
-        <module>web-gpu</module>
     </modules>
 
     <dependencyManagement>
@@ -88,12 +86,6 @@
                 <version>${project.version}</version>
                 <artifactId>render</artifactId>
             </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <version>${project.version}</version>
-                <artifactId>webgpu-ffm</artifactId>
-            </dependency>
-
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>runtime</artifactId>
@@ -232,6 +224,19 @@
             <dependency>
                 <groupId>org.lwjgl</groupId>
                 <artifactId>lwjgl</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- OpenGL bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opengl</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opengl</artifactId>
                 <version>${lwjgl.version}</version>
                 <classifier>${lwjgl.natives}</classifier>
             </dependency>

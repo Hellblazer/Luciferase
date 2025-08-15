@@ -363,7 +363,7 @@ public class DXTNormalCompressor {
     /**
      * Create a GPU-optimized shader string for normal decompression.
      * 
-     * @return WGSL shader code for GPU decompression
+     * @return GLSL shader code for GPU decompression
      */
     public static String generateDecompressionShader() {
         return """

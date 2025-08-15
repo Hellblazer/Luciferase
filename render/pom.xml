@@ -17,10 +17,6 @@
             <artifactId>lucien</artifactId>
         </dependency>
         <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>webgpu-ffm</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
         </dependency>
@@ -33,7 +29,7 @@
             <artifactId>javafx-swing</artifactId>
         </dependency>
         
-        <!-- WebGPU Dependencies -->
+        <!-- OpenGL/LWJGL Dependencies -->
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl</artifactId>
@@ -50,6 +46,15 @@
         <dependency>
             <groupId>org.lwjgl</groupId>
             <artifactId>lwjgl-glfw</artifactId>
+            <classifier>${lwjgl.natives}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-opengl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-opengl</artifactId>
             <classifier>${lwjgl.natives}</classifier>
         </dependency>
         <dependency>
@@ -111,11 +116,11 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.1</version>
                 <configuration>
-                    <mainClass>com.hellblazer.luciferase.render.webgpu.WebGPUVoxelDemo</mainClass>
+                    <mainClass>com.hellblazer.luciferase.render.lwjgl.demo.SimpleDemo</mainClass>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>webgpu-demo</id>
+                        <id>lwjgl-demo</id>
                         <configuration>
                             <commandlineArgs>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</commandlineArgs>
                         </configuration>
