@@ -67,6 +67,24 @@ public class EnhancedVoxelOctreeNode {
     }
     
     /**
+     * Creates a new enhanced octree node with explicit bounds.
+     * 
+     * @param minX Minimum X coordinate
+     * @param minY Minimum Y coordinate
+     * @param minZ Minimum Z coordinate
+     * @param maxX Maximum X coordinate
+     * @param maxY Maximum Y coordinate
+     * @param maxZ Maximum Z coordinate
+     * @param depth Depth in the octree (0 = root)
+     * @param mortonCode Morton code for spatial addressing
+     */
+    public EnhancedVoxelOctreeNode(float minX, float minY, float minZ,
+                                   float maxX, float maxY, float maxZ,
+                                   int depth, int mortonCode) {
+        this(new float[]{minX, minY, minZ}, new float[]{maxX, maxY, maxZ}, depth, mortonCode);
+    }
+    
+    /**
      * Creates a node from GPU memory segment.
      */
     public static EnhancedVoxelOctreeNode fromMemorySegment(MemorySegment segment, long offset,
@@ -175,6 +193,35 @@ public class EnhancedVoxelOctreeNode {
         if (currentChildren == null) {
             subdivide();
             currentChildren = children.get();
+        }
+        
+        currentChildren[index] = child;
+        
+        // Update valid mask
+        if (child != null) {
+            baseNode.setChild(index, true);
+        } else {
+            baseNode.setChild(index, false);
+        }
+    }
+    
+    /**
+     * Sets a child node without triggering subdivision.
+     * Used for deserialization to preserve exact structure.
+     * 
+     * @param index Child index (0-7)
+     * @param child Child node to set
+     */
+    public void setChildDirect(int index, EnhancedVoxelOctreeNode child) {
+        if (index < 0 || index >= 8) {
+            throw new IllegalArgumentException("Child index must be 0-7");
+        }
+        
+        EnhancedVoxelOctreeNode[] currentChildren = children.get();
+        if (currentChildren == null) {
+            // Create minimal array with only the specified child
+            currentChildren = new EnhancedVoxelOctreeNode[8];
+            children.set(currentChildren);
         }
         
         currentChildren[index] = child;
@@ -457,10 +504,65 @@ public class EnhancedVoxelOctreeNode {
     // Getters
     public float[] getBoundsMin() { return boundsMin.clone(); }
     public float[] getBoundsMax() { return boundsMax.clone(); }
+    
+    /**
+     * Get bounds as a single array [minX, minY, minZ, maxX, maxY, maxZ].
+     */
+    public float[] getBounds() {
+        return new float[] {
+            boundsMin[0], boundsMin[1], boundsMin[2],
+            boundsMax[0], boundsMax[1], boundsMax[2]
+        };
+    }
+    
+    /**
+     * Get voxel data for this node.
+     */
+    public VoxelData getVoxelData() {
+        // Extract RGB and opacity from packed color
+        int red = (packedColor >> 16) & 0xFF;
+        int green = (packedColor >> 8) & 0xFF;
+        int blue = packedColor & 0xFF;
+        int opacity = (packedColor >> 24) & 0xFF;
+        return new VoxelData(red, green, blue, opacity, materialId);
+    }
+    
+    /**
+     * Set voxel data for this node.
+     */
+    public void setVoxelData(VoxelData data) {
+        // Pack color with opacity in bits 24-31 (ARGB format)
+        int rgb = data.getPackedColor();  // RGB in bits 0-23
+        int opacity = data.getOpacity();  // Opacity 0-255
+        this.packedColor = (opacity << 24) | (rgb & 0x00FFFFFF);
+        this.materialId = data.getMaterialId();
+        // Density is derived from voxel count, not stored separately
+    }
+    
+    /**
+     * Get the node type.
+     */
+    public int getNodeType() {
+        if (children.get() != null) {
+            return NODE_TYPE_INTERNAL;
+        } else if (voxelCount == 0) {
+            return NODE_TYPE_EMPTY;
+        } else {
+            return NODE_TYPE_LEAF;
+        }
+    }
+    
+    /**
+     * Set the material ID for this node.
+     */
+    public void setMaterialId(int materialId) {
+        this.materialId = materialId;
+    }
     public int getDepth() { return depth; }
     public int getMortonCode() { return mortonCode; }
     public int getPackedColor() { return packedColor; }
     public int getVoxelCount() { return voxelCount; }
+    public void setVoxelCount(int count) { this.voxelCount = count; }
     
     public boolean isLeaf() {
         return children.get() == null;
