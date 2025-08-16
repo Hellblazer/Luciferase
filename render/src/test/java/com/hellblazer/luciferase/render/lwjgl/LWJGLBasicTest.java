@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.lwjgl.glfw.*;
 import static org.lwjgl.glfw.GLFW.*;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
 /**
  * Basic LWJGL functionality tests.
  */
@@ -27,22 +30,9 @@ public class LWJGLBasicTest {
     }
     
     @Test
-    public void testShaderCreation() {
-        String vertexSource = """
-            #version 460 core
-            layout(location = 0) in vec3 aPos;
-            void main() {
-                gl_Position = vec4(aPos, 1.0);
-            }
-            """;
-            
-        String fragmentSource = """
-            #version 460 core
-            out vec4 FragColor;
-            void main() {
-                FragColor = vec4(1.0, 0.5, 0.2, 1.0);
-            }
-            """;
+    public void testShaderCreation() throws IOException {
+        String vertexSource = loadShaderFromResource("/shaders/test/basic.vert");
+        String fragmentSource = loadShaderFromResource("/shaders/test/basic.frag");
         
         // In headless mode, we can't actually create shaders
         // Just verify the shader strings are valid
@@ -53,23 +43,27 @@ public class LWJGLBasicTest {
     }
     
     @Test
-    public void testComputeShaderSource() {
-        String computeSource = """
-            #version 460 core
-            layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
-            
-            layout(std430, binding = 0) buffer OutputBuffer {
-                uint data[];
-            };
-            
-            void main() {
-                uint idx = gl_GlobalInvocationID.x;
-                data[idx] = idx + 1;
-            }
-            """;
+    public void testComputeShaderSource() throws IOException {
+        String computeSource = loadShaderFromResource("/shaders/test/compute.comp");
         
         assertNotNull(computeSource);
         assertTrue(computeSource.contains("layout(local_size_x"));
         assertTrue(computeSource.contains("gl_GlobalInvocationID"));
+    }
+    
+    /**
+     * Load shader source code from a test resource file.
+     * 
+     * @param resourcePath Path to the shader resource
+     * @return Shader source code as a string
+     * @throws IOException if the resource cannot be read
+     */
+    private String loadShaderFromResource(String resourcePath) throws IOException {
+        try (var stream = getClass().getResourceAsStream(resourcePath)) {
+            if (stream == null) {
+                throw new IOException("Shader resource not found: " + resourcePath);
+            }
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 }

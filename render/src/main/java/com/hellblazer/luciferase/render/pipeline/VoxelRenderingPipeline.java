@@ -29,7 +29,9 @@ import org.joml.Vector3f;
 import org.lwjgl.system.MemoryStack;
 
 import javax.vecmath.Point3f;
+import java.io.IOException;
 import java.nio.FloatBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -291,117 +293,37 @@ public class VoxelRenderingPipeline<ID extends EntityID, Content> {
     // ===== Private Helper Methods =====
     
     private void loadShaders() {
-        // Voxel rendering shader
-        var voxelVertexShader = """
-            #version 450 core
+        try {
+            // Load voxel rendering shaders
+            var voxelVertexShader = loadShaderFromResource("/shaders/voxel/voxel.vert");
+            var voxelFragmentShader = loadShaderFromResource("/shaders/voxel/voxel.frag");
+            shaders.put("voxel", new Shader(voxelVertexShader, voxelFragmentShader));
             
-            layout(location = 0) in vec3 aPos;
-            layout(location = 1) in vec3 aNormal;
-            layout(location = 2) in vec2 aTexCoord;
-            layout(location = 3) in int aVoxelData;
+            // Load post-processing shaders
+            var postVertexShader = loadShaderFromResource("/shaders/postprocessing/postprocess.vert");
+            var postFragmentShader = loadShaderFromResource("/shaders/postprocessing/postprocess.frag");
+            shaders.put("postprocess", new Shader(postVertexShader, postFragmentShader));
             
-            uniform mat4 uProjection;
-            uniform mat4 uView;
-            uniform mat4 uModel;
-            
-            out vec3 FragPos;
-            out vec3 Normal;
-            out vec3 VoxelColor;
-            out float VoxelDensity;
-            
-            void main() {
-                FragPos = vec3(uModel * vec4(aPos, 1.0));
-                Normal = mat3(transpose(inverse(uModel))) * aNormal;
-                
-                // Unpack voxel data
-                VoxelColor = vec3(
-                    float((aVoxelData >> 16) & 0xFF) / 255.0,
-                    float((aVoxelData >> 8) & 0xFF) / 255.0,
-                    float(aVoxelData & 0xFF) / 255.0
-                );
-                VoxelDensity = float((aVoxelData >> 24) & 0xFF) / 255.0;
-                
-                gl_Position = uProjection * uView * vec4(FragPos, 1.0);
+            log.info("Shaders loaded successfully from resources");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load shaders", e);
+        }
+    }
+    
+    /**
+     * Load shader source code from a resource file.
+     * 
+     * @param resourcePath Path to the shader resource
+     * @return Shader source code as a string
+     * @throws IOException if the resource cannot be read
+     */
+    private String loadShaderFromResource(String resourcePath) throws IOException {
+        try (var stream = getClass().getResourceAsStream(resourcePath)) {
+            if (stream == null) {
+                throw new IOException("Shader resource not found: " + resourcePath);
             }
-            """;
-        
-        var voxelFragmentShader = """
-            #version 450 core
-            
-            in vec3 FragPos;
-            in vec3 Normal;
-            in vec3 VoxelColor;
-            in float VoxelDensity;
-            
-            uniform vec3 uCameraPos;
-            uniform vec3 uLightPos;
-            uniform vec3 uLightColor;
-            
-            out vec4 FragColor;
-            
-            void main() {
-                // Ambient
-                vec3 ambient = 0.15 * VoxelColor;
-                
-                // Diffuse
-                vec3 norm = normalize(Normal);
-                vec3 lightDir = normalize(uLightPos - FragPos);
-                float diff = max(dot(norm, lightDir), 0.0);
-                vec3 diffuse = diff * uLightColor * VoxelColor;
-                
-                // Specular
-                vec3 viewDir = normalize(uCameraPos - FragPos);
-                vec3 reflectDir = reflect(-lightDir, norm);
-                float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
-                vec3 specular = spec * uLightColor * 0.5;
-                
-                vec3 result = ambient + diffuse + specular;
-                FragColor = vec4(result, VoxelDensity);
-            }
-            """;
-        
-        shaders.put("voxel", new Shader(voxelVertexShader, voxelFragmentShader));
-        
-        // Post-processing shader
-        var postVertexShader = """
-            #version 450 core
-            
-            layout(location = 0) in vec2 aPos;
-            layout(location = 1) in vec2 aTexCoord;
-            
-            out vec2 TexCoord;
-            
-            void main() {
-                TexCoord = aTexCoord;
-                gl_Position = vec4(aPos, 0.0, 1.0);
-            }
-            """;
-        
-        var postFragmentShader = """
-            #version 450 core
-            
-            in vec2 TexCoord;
-            
-            uniform sampler2D uColorTexture;
-            uniform float uExposure;
-            uniform float uGamma;
-            
-            out vec4 FragColor;
-            
-            void main() {
-                vec3 color = texture(uColorTexture, TexCoord).rgb;
-                
-                // Tone mapping
-                color = vec3(1.0) - exp(-color * uExposure);
-                
-                // Gamma correction
-                color = pow(color, vec3(1.0 / uGamma));
-                
-                FragColor = vec4(color, 1.0);
-            }
-            """;
-        
-        shaders.put("postprocess", new Shader(postVertexShader, postFragmentShader));
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
     
     private void createRenderTargets() {

@@ -3,6 +3,9 @@ package com.hellblazer.luciferase.render.lwjgl.demo;
 import com.hellblazer.luciferase.render.lwjgl.*;
 import org.joml.Matrix4f;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
 import static org.lwjgl.opengl.GL41.*;
 
 /**
@@ -25,41 +28,14 @@ public class SimpleDemo extends LWJGLRenderer {
     public void init() {
         super.init();
         
-        // Create shader
-        String vertexShader = """
-            #version 410 core
-            layout(location = 0) in vec3 aPos;
-            layout(location = 1) in vec3 aNormal;
-            layout(location = 2) in vec2 aTexCoord;
-            
-            uniform mat4 uMVP;
-            
-            out vec3 FragPos;
-            out vec3 Normal;
-            
-            void main() {
-                FragPos = aPos;
-                Normal = aNormal;
-                gl_Position = uMVP * vec4(aPos, 1.0);
-            }
-            """;
-            
-        String fragmentShader = """
-            #version 410 core
-            in vec3 FragPos;
-            in vec3 Normal;
-            
-            out vec4 FragColor;
-            
-            void main() {
-                vec3 lightDir = normalize(vec3(1, 1, 1));
-                float diff = max(dot(normalize(Normal), lightDir), 0.0);
-                vec3 color = vec3(0.5, 0.7, 1.0) * (0.3 + 0.7 * diff);
-                FragColor = vec4(color, 1.0);
-            }
-            """;
-        
-        shader = new Shader(vertexShader, fragmentShader);
+        try {
+            // Load shaders from resources
+            String vertexShader = loadShaderFromResource("/shaders/demo/simple.vert");
+            String fragmentShader = loadShaderFromResource("/shaders/demo/simple.frag");
+            shader = new Shader(vertexShader, fragmentShader);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load shaders", e);
+        }
         
         // Create cube mesh
         float[] vertices = {
@@ -117,5 +93,21 @@ public class SimpleDemo extends LWJGLRenderer {
     
     public static void main(String[] args) {
         new SimpleDemo().run();
+    }
+    
+    /**
+     * Load shader source code from a resource file.
+     * 
+     * @param resourcePath Path to the shader resource
+     * @return Shader source code as a string
+     * @throws IOException if the resource cannot be read
+     */
+    private String loadShaderFromResource(String resourcePath) throws IOException {
+        try (var stream = getClass().getResourceAsStream(resourcePath)) {
+            if (stream == null) {
+                throw new IOException("Shader resource not found: " + resourcePath);
+            }
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 }
