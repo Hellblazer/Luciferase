@@ -388,6 +388,20 @@ public class ESVOPage {
         return getNodeCount() == 0;
     }
     
+    /**
+     * Serialize page to bytes for GPU upload or file I/O
+     * 
+     * @return byte array containing full page data
+     */
+    public byte[] serialize() {
+        syncToMemory();
+        byte[] data = new byte[PAGE_BYTES];
+        for (int i = 0; i < PAGE_BYTES; i++) {
+            data[i] = memory.get(ValueLayout.JAVA_BYTE, i);
+        }
+        return data;
+    }
+    
     @Override
     public String toString() {
         syncToMemory();

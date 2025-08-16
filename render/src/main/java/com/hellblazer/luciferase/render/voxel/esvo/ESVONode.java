@@ -301,6 +301,17 @@ public class ESVONode {
         return Integer.bitCount(getContourMask() & 0xFF);
     }
     
+    /**
+     * Serialize node to bytes for GPU upload
+     */
+    public byte[] toBytes() {
+        ByteBuffer buffer = ByteBuffer.allocate(8);
+        buffer.order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(word0);
+        buffer.putInt(word1);
+        return buffer.array();
+    }
+    
     @Override
     public String toString() {
         return String.format("ESVONode[valid=%02X, nonLeaf=%02X, ptr=%04X%s, contour=%02X, cPtr=%06X]",
