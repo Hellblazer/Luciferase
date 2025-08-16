@@ -1,0 +1,237 @@
+#version 460 core
+
+// ESVO Beam Traversal Compute Shader
+// Optimized traversal for coherent ray groups
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+// Node structure
+struct Node {
+    uint word0;
+    uint word1;
+};
+
+// Beam structure
+struct Beam {
+    vec3 origin_min;
+    vec3 origin_max;
+    vec3 dir_min;
+    vec3 dir_max;
+    uint ray_mask;      // Active rays in beam
+    uint ray_count;
+};
+
+// Shared traversal state
+struct BeamState {
+    uint node_index;
+    float t_min;
+    float t_max;
+    uint child_mask;
+};
+
+// Constants
+const uint MAX_STACK_DEPTH = 23;
+const uint WARP_SIZE = 32;
+const float EPSILON = 0.00001;
+
+// Buffers
+layout(std430, binding = 0) readonly buffer NodeBuffer {
+    Node nodes[];
+} nodeBuffer;
+
+// Beam input
+layout(std430, binding = 1) readonly buffer BeamInputBuffer {
+    Beam beams[];
+} beamInput;
+
+// Ray results
+layout(std430, binding = 2) writeonly buffer ResultBuffer {
+    vec4 results[];
+} resultBuffer;
+
+// Shared memory for warp-wide operations
+shared BeamState sharedStack[WARP_SIZE * MAX_STACK_DEPTH];
+shared uint sharedStackPtr[WARP_SIZE];
+shared uint activeThreadMask;
+
+// Uniforms
+uniform vec3 octreeMin;
+uniform vec3 octreeMax;
+uniform uint rootNode;
+
+// Extract node fields
+uint getValidMask(Node node) {
+    return (node.word0 >> 24) & 0xFF;
+}
+
+uint getLeafMask(Node node) {
+    return (node.word0 >> 16) & 0xFF;
+}
+
+uint getChildPointer(Node node) {
+    return node.word0 & 0x7FFF;
+}
+
+// Beam-box intersection test
+bool beamIntersectsBox(Beam beam, vec3 boxMin, vec3 boxMax, out float tMin, out float tMax) {
+    // Conservative beam-box test using beam bounds
+    vec3 invDirMin = 1.0 / (beam.dir_min + vec3(EPSILON));
+    vec3 invDirMax = 1.0 / (beam.dir_max + vec3(EPSILON));
+    
+    // Test all corners of beam against box
+    vec3 t0Min = (boxMin - beam.origin_max) * invDirMin;
+    vec3 t0Max = (boxMin - beam.origin_min) * invDirMax;
+    vec3 t1Min = (boxMax - beam.origin_max) * invDirMin;
+    vec3 t1Max = (boxMax - beam.origin_min) * invDirMax;
+    
+    vec3 tNear = min(min(t0Min, t0Max), min(t1Min, t1Max));
+    vec3 tFar = max(max(t0Min, t0Max), max(t1Min, t1Max));
+    
+    tMin = max(max(tNear.x, tNear.y), tNear.z);
+    tMax = min(min(tFar.x, tFar.y), tFar.z);
+    
+    return tMin <= tMax && tMax >= 0.0;
+}
+
+// Get child bounds
+void getChildBounds(vec3 parentMin, vec3 parentMax, uint childIndex,
+                   out vec3 childMin, out vec3 childMax) {
+    vec3 center = (parentMin + parentMax) * 0.5;
+    
+    childMin = mix(parentMin, center, vec3(
+        (childIndex & 1) != 0,
+        (childIndex & 2) != 0,
+        (childIndex & 4) != 0
+    ));
+    
+    childMax = mix(center, parentMax, vec3(
+        (childIndex & 1) != 0,
+        (childIndex & 2) != 0,
+        (childIndex & 4) != 0
+    ));
+}
+
+// Compute child traversal order for beam
+uint computeChildOrder(Beam beam, vec3 nodeCenter) {
+    // Determine octant order based on beam direction
+    vec3 avgDir = (beam.dir_min + beam.dir_max) * 0.5;
+    
+    uint order = 0;
+    if (avgDir.x > 0) order |= 1;
+    if (avgDir.y > 0) order |= 2;
+    if (avgDir.z > 0) order |= 4;
+    
+    return order;
+}
+
+// Main beam traversal
+void traverseBeam(uint beamIndex) {
+    Beam beam = beamInput.beams[beamIndex];
+    uint threadId = gl_LocalInvocationIndex;
+    uint stackBase = threadId * MAX_STACK_DEPTH;
+    
+    // Initialize stack
+    sharedStackPtr[threadId] = 0;
+    
+    // Check root intersection
+    float rootTMin, rootTMax;
+    if (!beamIntersectsBox(beam, octreeMin, octreeMax, rootTMin, rootTMax)) {
+        return;
+    }
+    
+    // Push root
+    sharedStack[stackBase].node_index = rootNode;
+    sharedStack[stackBase].t_min = rootTMin;
+    sharedStack[stackBase].t_max = rootTMax;
+    sharedStack[stackBase].child_mask = 0xFF;
+    sharedStackPtr[threadId] = 1;
+    
+    float nearestHit = rootTMax;
+    vec4 hitResult = vec4(0.0);
+    
+    // Traversal loop
+    while (sharedStackPtr[threadId] > 0) {
+        // Pop from stack
+        uint stackIdx = stackBase + --sharedStackPtr[threadId];
+        BeamState state = sharedStack[stackIdx];
+        
+        // Skip if beyond nearest hit
+        if (state.t_min > nearestHit) continue;
+        
+        // Load node
+        Node node = nodeBuffer.nodes[state.node_index];
+        uint validMask = getValidMask(node);
+        uint leafMask = getLeafMask(node);
+        uint childPtr = getChildPointer(node);
+        
+        // Compute bounds for this node
+        vec3 nodeMin = octreeMin; // TODO: Track actual bounds
+        vec3 nodeMax = octreeMax;
+        vec3 nodeCenter = (nodeMin + nodeMax) * 0.5;
+        
+        // Determine child traversal order
+        uint childOrder = computeChildOrder(beam, nodeCenter);
+        
+        // Process children in optimal order
+        for (uint i = 0; i < 8; i++) {
+            // Front-to-back traversal
+            uint childIdx = i ^ childOrder;
+            uint childBit = 1u << childIdx;
+            
+            // Skip invalid children
+            if ((validMask & childBit) == 0) continue;
+            
+            // Get child bounds
+            vec3 childMin, childMax;
+            getChildBounds(nodeMin, nodeMax, childIdx, childMin, childMax);
+            
+            // Test beam-child intersection
+            float childTMin, childTMax;
+            if (beamIntersectsBox(beam, childMin, childMax, childTMin, childTMax)) {
+                if (childTMin <= nearestHit) {
+                    if ((leafMask & childBit) != 0) {
+                        // Leaf hit - update result
+                        if (childTMin < nearestHit) {
+                            nearestHit = childTMin;
+                            hitResult = vec4(childMin, 1.0);
+                        }
+                    } else {
+                        // Internal node - push to stack
+                        uint newStackIdx = stackBase + sharedStackPtr[threadId]++;
+                        sharedStack[newStackIdx].node_index = childPtr + childIdx;
+                        sharedStack[newStackIdx].t_min = childTMin;
+                        sharedStack[newStackIdx].t_max = childTMax;
+                        sharedStack[newStackIdx].child_mask = 0xFF;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Write results for all rays in beam
+    uint baseRayIdx = beamIndex * WARP_SIZE;
+    for (uint i = 0; i < beam.ray_count; i++) {
+        if ((beam.ray_mask & (1u << i)) != 0) {
+            resultBuffer.results[baseRayIdx + i] = hitResult;
+        }
+    }
+}
+
+// Persistent thread execution
+void persistentThreadExecution() {
+    uint threadId = gl_LocalInvocationIndex;
+    uint beamIndex = gl_WorkGroupID.x;
+    
+    // Continue processing beams while available
+    while (beamIndex < beamInput.beams.length()) {
+        traverseBeam(beamIndex);
+        
+        // Get next beam (in real implementation, would use atomic counter)
+        beamIndex += gl_NumWorkGroups.x;
+    }
+}
+
+void main() {
+    // Persistent thread model for better GPU utilization
+    persistentThreadExecution();
+}
