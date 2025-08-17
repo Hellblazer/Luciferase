@@ -1,0 +1,300 @@
+#version 430 core
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+// Import common structures
+struct ESVONode {
+    uint validMask;
+    uint nonLeafMask;
+    uint farPointerFlag;
+    uint childPointer;
+    uint contourMask;
+    uint contourPointer;
+};
+
+struct HitInfo {
+    vec3 position;
+    vec3 normal;
+    vec4 color;
+    float distance;
+    uint nodeIndex;
+    bool hit;
+};
+
+struct Light {
+    vec3 position;
+    vec3 direction;
+    vec3 color;
+    float intensity;
+    uint type;       // 0=point, 1=directional, 2=spot
+    float range;
+    float spotAngle;
+};
+
+struct ShadowRay {
+    vec3 origin;
+    vec3 direction;
+    float tMin;
+    float tMax;
+    uint lightIndex;
+    uint pixelIndex;
+};
+
+// Buffers
+layout(std430, binding = 0) readonly buffer NodeBuffer {
+    ESVONode nodes[];
+} nodeBuffer;
+
+layout(std430, binding = 1) readonly buffer ShadowRayBuffer {
+    ShadowRay shadowRays[];
+} shadowRayBuffer;
+
+layout(std430, binding = 2) writeonly buffer ShadowResultBuffer {
+    float shadowFactors[];
+} shadowResultBuffer;
+
+layout(std430, binding = 3) readonly buffer HitBuffer {
+    HitInfo hits[];
+} hitBuffer;
+
+layout(std430, binding = 4) readonly buffer LightBuffer {
+    Light lights[];
+} lightBuffer;
+
+layout(std430, binding = 5) readonly buffer PageBuffer {
+    uint pages[];
+} pageBuffer;
+
+// Uniforms
+uniform vec3 voxelOrigin;
+uniform float voxelSize;
+uniform uint rootNodeIndex;
+uniform float shadowBias = 0.001;
+uniform uint maxShadowSamples = 16;
+
+// Shadow configuration
+#ifdef ENABLE_SOFT_SHADOWS
+    uniform float shadowSoftness = 0.1;
+    uniform uint softShadowSamples = 4;
+#endif
+
+#ifdef ENABLE_VOLUMETRIC_SHADOWS
+    uniform float volumetricDensity = 0.1;
+    uniform uint volumetricSamples = 8;
+#endif
+
+// Stack for shadow ray traversal
+#define MAX_SHADOW_STACK_DEPTH 20
+struct ShadowStackEntry {
+    uint nodeIndex;
+    float tEnter;
+    float tExit;
+    vec3 cellMin;
+    vec3 cellMax;
+};
+
+// Utility functions
+vec3 safe_inverse(vec3 v) {
+    return vec3(
+        abs(v.x) > 1e-6 ? 1.0 / v.x : 1e6 * sign(v.x),
+        abs(v.y) > 1e-6 ? 1.0 / v.y : 1e6 * sign(v.y),
+        abs(v.z) > 1e-6 ? 1.0 / v.z : 1e6 * sign(v.z)
+    );
+}
+
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 boxMin, vec3 boxMax, out float tEnter, out float tExit) {
+    vec3 invDir = safe_inverse(rayDir);
+    vec3 t1 = (boxMin - rayOrigin) * invDir;
+    vec3 t2 = (boxMax - rayOrigin) * invDir;
+    
+    vec3 tMin = min(t1, t2);
+    vec3 tMax = max(t1, t2);
+    
+    tEnter = max(max(tMin.x, tMin.y), tMin.z);
+    tExit = min(min(tMax.x, tMax.y), tMax.z);
+    
+    return tEnter <= tExit && tExit > 0.0;
+}
+
+uint computeChildIndex(ESVONode node, uint octant) {
+    uint mask = node.validMask & ((1u << octant) - 1u);
+    uint offset = bitCount(mask);
+    
+    if ((node.farPointerFlag & 1u) != 0u) {
+        return pageBuffer.pages[node.childPointer + offset];
+    } else {
+        return node.childPointer + offset;
+    }
+}
+
+vec3 computeChildMin(vec3 parentMin, vec3 parentMax, uint octant) {
+    vec3 center = (parentMin + parentMax) * 0.5;
+    return vec3(
+        (octant & 1u) != 0u ? center.x : parentMin.x,
+        (octant & 2u) != 0u ? center.y : parentMin.y,
+        (octant & 4u) != 0u ? center.z : parentMin.z
+    );
+}
+
+vec3 computeChildMax(vec3 parentMin, vec3 parentMax, uint octant) {
+    vec3 center = (parentMin + parentMax) * 0.5;
+    return vec3(
+        (octant & 1u) != 0u ? parentMax.x : center.x,
+        (octant & 2u) != 0u ? parentMax.y : center.y,
+        (octant & 4u) != 0u ? parentMax.z : center.z
+    );
+}
+
+bool traceShadowRay(ShadowRay ray) {
+    // Stack-based traversal optimized for early termination
+    ShadowStackEntry stack[MAX_SHADOW_STACK_DEPTH];
+    int stackPtr = 0;
+    
+    // Initialize with root node
+    vec3 rootMin = voxelOrigin;
+    vec3 rootMax = voxelOrigin + vec3(voxelSize);
+    
+    float tEnter, tExit;
+    if (!intersectAABB(ray.origin, ray.direction, rootMin, rootMax, tEnter, tExit)) {
+        return false; // No intersection with octree
+    }
+    
+    tEnter = max(tEnter, ray.tMin);
+    tExit = min(tExit, ray.tMax);
+    
+    if (tEnter >= tExit) {
+        return false;
+    }
+    
+    // Push root onto stack
+    stack[stackPtr].nodeIndex = rootNodeIndex;
+    stack[stackPtr].tEnter = tEnter;
+    stack[stackPtr].tExit = tExit;
+    stack[stackPtr].cellMin = rootMin;
+    stack[stackPtr].cellMax = rootMax;
+    stackPtr++;
+    
+    while (stackPtr > 0) {
+        ShadowStackEntry entry = stack[--stackPtr];
+        ESVONode node = nodeBuffer.nodes[entry.nodeIndex];
+        
+        // Check if leaf node
+        if (node.nonLeafMask == 0u) {
+            // Hit something - shadow ray is blocked
+            return true;
+        }
+        
+        // Process interior node - add intersecting children
+        for (uint octant = 0; octant < 8; octant++) {
+            if ((node.validMask & (1u << octant)) == 0u) continue;
+            
+            vec3 childMin = computeChildMin(entry.cellMin, entry.cellMax, octant);
+            vec3 childMax = computeChildMax(entry.cellMin, entry.cellMax, octant);
+            
+            float childTEnter, childTExit;
+            if (!intersectAABB(ray.origin, ray.direction, childMin, childMax, childTEnter, childTExit)) {
+                continue;
+            }
+            
+            childTEnter = max(childTEnter, entry.tEnter);
+            childTExit = min(childTExit, entry.tExit);
+            
+            if (childTEnter >= childTExit) continue;
+            
+            uint childIndex = computeChildIndex(node, octant);
+            
+            if (stackPtr < MAX_SHADOW_STACK_DEPTH) {
+                stack[stackPtr].nodeIndex = childIndex;
+                stack[stackPtr].tEnter = childTEnter;
+                stack[stackPtr].tExit = childTExit;
+                stack[stackPtr].cellMin = childMin;
+                stack[stackPtr].cellMax = childMax;
+                stackPtr++;
+            }
+        }
+    }
+    
+    return false; // No occlusion found
+}
+
+#ifdef ENABLE_SOFT_SHADOWS
+float traceSoftShadowRay(vec3 origin, vec3 lightPos, float lightRadius) {
+    float shadow = 0.0;
+    
+    // Generate multiple shadow rays in a disc around the light
+    for (uint i = 0; i < softShadowSamples; i++) {
+        // Generate random point on disc
+        float angle = float(i) * 2.0 * 3.14159265359 / float(softShadowSamples);
+        float radius = sqrt(float(i) / float(softShadowSamples)) * lightRadius;
+        
+        vec3 offset = vec3(cos(angle) * radius, sin(angle) * radius, 0.0);
+        vec3 sampleLightPos = lightPos + offset;
+        
+        vec3 direction = normalize(sampleLightPos - origin);
+        float distance = length(sampleLightPos - origin);
+        
+        ShadowRay ray;
+        ray.origin = origin + direction * shadowBias;
+        ray.direction = direction;
+        ray.tMin = shadowBias;
+        ray.tMax = distance - shadowBias;
+        
+        if (traceShadowRay(ray)) {
+            shadow += 1.0;
+        }
+    }
+    
+    return shadow / float(softShadowSamples);
+}
+#endif
+
+#ifdef ENABLE_VOLUMETRIC_SHADOWS
+float traceVolumetricShadow(vec3 origin, vec3 direction, float distance) {
+    float shadow = 0.0;
+    float stepSize = distance / float(volumetricSamples);
+    
+    for (uint i = 0; i < volumetricSamples; i++) {
+        float t = float(i) * stepSize + stepSize * 0.5;
+        vec3 samplePos = origin + direction * t;
+        
+        ShadowRay ray;
+        ray.origin = samplePos;
+        ray.direction = direction;
+        ray.tMin = 0.0;
+        ray.tMax = stepSize;
+        
+        if (traceShadowRay(ray)) {
+            shadow += volumetricDensity;
+        }
+    }
+    
+    return min(shadow, 1.0);
+}
+#endif
+
+void main() {
+    uint rayIndex = gl_GlobalInvocationID.x;
+    if (rayIndex >= shadowRayBuffer.shadowRays.length()) return;
+    
+    ShadowRay shadowRay = shadowRayBuffer.shadowRays[rayIndex];
+    
+    float shadowFactor = 0.0;
+    
+    #ifdef ENABLE_SOFT_SHADOWS
+        // Soft shadows
+        Light light = lightBuffer.lights[shadowRay.lightIndex];
+        float lightRadius = light.range * shadowSoftness;
+        shadowFactor = traceSoftShadowRay(shadowRay.origin, light.position, lightRadius);
+    #elif defined(ENABLE_VOLUMETRIC_SHADOWS)
+        // Volumetric shadows
+        float distance = length(shadowRay.direction) * shadowRay.tMax;
+        shadowFactor = traceVolumetricShadow(shadowRay.origin, normalize(shadowRay.direction), distance);
+    #else
+        // Hard shadows
+        if (traceShadowRay(shadowRay)) {
+            shadowFactor = 1.0;
+        }
+    #endif
+    
+    shadowResultBuffer.shadowFactors[rayIndex] = shadowFactor;
+}

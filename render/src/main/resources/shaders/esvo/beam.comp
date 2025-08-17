@@ -1,0 +1,404 @@
+#version 430 core
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Import common structures
+struct ESVONode {
+    uint validMask;
+    uint nonLeafMask;
+    uint farPointerFlag;
+    uint childPointer;
+    uint contourMask;
+    uint contourPointer;
+};
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float tMin;
+    float tMax;
+    uint pixelX;
+    uint pixelY;
+};
+
+struct HitInfo {
+    vec3 position;
+    vec3 normal;
+    vec4 color;
+    float distance;
+    uint nodeIndex;
+    bool hit;
+};
+
+// Beam structure for coherent ray groups
+struct Beam {
+    vec3 origin;
+    vec3 directions[4];  // Corner rays of beam frustum
+    float tMin;
+    float tMax;
+    vec3 beamMin;       // AABB of beam
+    vec3 beamMax;
+    float coherence;    // Coherence measure [0,1]
+    uint rayStartIndex;
+    uint rayCount;
+};
+
+struct BeamHit {
+    bool hit;
+    float minDistance;
+    float maxDistance;
+    vec3 avgNormal;
+    vec4 avgColor;
+    uint hitCount;
+};
+
+// Buffers
+layout(std430, binding = 0) readonly buffer NodeBuffer {
+    ESVONode nodes[];
+} nodeBuffer;
+
+layout(std430, binding = 1) readonly buffer BeamBuffer {
+    Beam beams[];
+} beamBuffer;
+
+layout(std430, binding = 2) writeonly buffer BeamResultBuffer {
+    BeamHit beamResults[];
+} beamResultBuffer;
+
+layout(std430, binding = 3) readonly buffer RayBuffer {
+    Ray rays[];
+} rayBuffer;
+
+layout(std430, binding = 4) writeonly buffer RayResultBuffer {
+    HitInfo rayResults[];
+} rayResultBuffer;
+
+layout(std430, binding = 5) readonly buffer PageBuffer {
+    uint pages[];
+} pageBuffer;
+
+// Shared memory for workgroup cooperation
+shared uint sharedNodeStack[256];
+shared uint sharedStackPtr;
+shared float sharedCoherence[64];
+shared bool sharedShouldSplit[64];
+
+// Uniforms
+uniform mat4 worldToVoxel;
+uniform vec3 voxelOrigin;
+uniform float voxelSize;
+uniform uint rootNodeIndex;
+uniform float coherenceThreshold = 0.7;
+uniform float splitThreshold = 0.3;
+
+// Configuration
+#define MAX_BEAM_STACK_DEPTH 20
+#define COHERENCE_THRESHOLD 0.7
+#define SPLIT_THRESHOLD 0.3
+#define MAX_RAYS_PER_BEAM 64
+
+// Beam stack entry
+struct BeamStackEntry {
+    uint nodeIndex;
+    float tEnter;
+    float tExit;
+    vec3 cellMin;
+    vec3 cellMax;
+    uint level;
+};
+
+// Utility functions
+vec3 safe_inverse(vec3 v) {
+    return vec3(
+        abs(v.x) > 1e-6 ? 1.0 / v.x : 1e6 * sign(v.x),
+        abs(v.y) > 1e-6 ? 1.0 / v.y : 1e6 * sign(v.y),
+        abs(v.z) > 1e-6 ? 1.0 / v.z : 1e6 * sign(v.z)
+    );
+}
+
+bool intersectAABB(vec3 rayOrigin, vec3 rayDir, vec3 boxMin, vec3 boxMax, out float tEnter, out float tExit) {
+    vec3 invDir = safe_inverse(rayDir);
+    vec3 t1 = (boxMin - rayOrigin) * invDir;
+    vec3 t2 = (boxMax - rayOrigin) * invDir;
+    
+    vec3 tMin = min(t1, t2);
+    vec3 tMax = max(t1, t2);
+    
+    tEnter = max(max(tMin.x, tMin.y), tMin.z);
+    tExit = min(min(tMax.x, tMax.y), tMax.z);
+    
+    return tEnter <= tExit && tExit > 0.0;
+}
+
+float analyzeBeamCoherence(Beam beam) {
+    // Analyze directional coherence of corner rays
+    vec3 avgDir = normalize(beam.directions[0] + beam.directions[1] + beam.directions[2] + beam.directions[3]);
+    
+    float maxDot = 0.0;
+    for (int i = 0; i < 4; i++) {
+        float dotProduct = dot(normalize(beam.directions[i]), avgDir);
+        maxDot = max(maxDot, 1.0 - dotProduct);
+    }
+    
+    return 1.0 - maxDot; // Higher values = more coherent
+}
+
+bool beamIntersectsAABB(Beam beam, vec3 boxMin, vec3 boxMax) {
+    // Test if beam frustum intersects AABB
+    // For simplicity, test beam AABB against node AABB
+    return !(beam.beamMax.x < boxMin.x || beam.beamMin.x > boxMax.x ||
+             beam.beamMax.y < boxMin.y || beam.beamMin.y > boxMax.y ||
+             beam.beamMax.z < boxMin.z || beam.beamMin.z > boxMax.z);
+}
+
+uint computeChildIndex(ESVONode node, uint octant) {
+    uint mask = node.validMask & ((1u << octant) - 1u);
+    uint offset = bitCount(mask);
+    
+    if ((node.farPointerFlag & 1u) != 0u) {
+        return pageBuffer.pages[node.childPointer + offset];
+    } else {
+        return node.childPointer + offset;
+    }
+}
+
+vec3 computeChildMin(vec3 parentMin, vec3 parentMax, uint octant) {
+    vec3 center = (parentMin + parentMax) * 0.5;
+    return vec3(
+        (octant & 1u) != 0u ? center.x : parentMin.x,
+        (octant & 2u) != 0u ? center.y : parentMin.y,
+        (octant & 4u) != 0u ? center.z : parentMin.z
+    );
+}
+
+vec3 computeChildMax(vec3 parentMin, vec3 parentMax, uint octant) {
+    vec3 center = (parentMin + parentMax) * 0.5;
+    return vec3(
+        (octant & 1u) != 0u ? parentMax.x : center.x,
+        (octant & 2u) != 0u ? parentMax.y : center.y,
+        (octant & 4u) != 0u ? parentMax.z : center.z
+    );
+}
+
+BeamHit processBeamLeaf(Beam beam, ESVONode node, vec3 cellMin, vec3 cellMax) {
+    BeamHit result;
+    result.hit = true;
+    result.hitCount = 0;
+    result.minDistance = 1e6;
+    result.maxDistance = 0.0;
+    result.avgNormal = vec3(0.0);
+    result.avgColor = vec4(0.0);
+    
+    // Process each ray in the beam individually for leaf intersection
+    for (uint i = 0; i < beam.rayCount; i++) {
+        uint rayIndex = beam.rayStartIndex + i;
+        if (rayIndex >= rayBuffer.rays.length()) continue;
+        
+        Ray ray = rayBuffer.rays[rayIndex];
+        
+        float tEnter, tExit;
+        if (intersectAABB(ray.origin, ray.direction, cellMin, cellMax, tEnter, tExit)) {
+            tEnter = max(tEnter, ray.tMin);
+            tExit = min(tExit, ray.tMax);
+            
+            if (tEnter < tExit) {
+                result.hitCount++;
+                result.minDistance = min(result.minDistance, tEnter);
+                result.maxDistance = max(result.maxDistance, tEnter);
+                
+                // Compute normal
+                vec3 hitPos = ray.origin + ray.direction * tEnter;
+                vec3 center = (cellMin + cellMax) * 0.5;
+                vec3 hitLocal = hitPos - center;
+                vec3 absHit = abs(hitLocal);
+                
+                vec3 normal;
+                if (absHit.x >= absHit.y && absHit.x >= absHit.z) {
+                    normal = vec3(sign(hitLocal.x), 0.0, 0.0);
+                } else if (absHit.y >= absHit.z) {
+                    normal = vec3(0.0, sign(hitLocal.y), 0.0);
+                } else {
+                    normal = vec3(0.0, 0.0, sign(hitLocal.z));
+                }
+                
+                result.avgNormal += normal;
+                result.avgColor += vec4(normal * 0.5 + 0.5, 1.0);
+                
+                // Store individual ray result
+                HitInfo rayHit;
+                rayHit.hit = true;
+                rayHit.position = hitPos;
+                rayHit.normal = normal;
+                rayHit.color = vec4(normal * 0.5 + 0.5, 1.0);
+                rayHit.distance = tEnter;
+                rayHit.nodeIndex = 0; // Will be set by caller
+                
+                rayResultBuffer.rayResults[rayIndex] = rayHit;
+            }
+        }
+    }
+    
+    if (result.hitCount > 0) {
+        result.avgNormal = normalize(result.avgNormal);
+        result.avgColor /= float(result.hitCount);
+    } else {
+        result.hit = false;
+    }
+    
+    return result;
+}
+
+void splitBeam(Beam beam, out Beam subBeams[4]) {
+    // Split beam into 4 sub-beams (2x2 subdivision)
+    uint raysPerSubBeam = beam.rayCount / 4;
+    uint remainder = beam.rayCount % 4;
+    
+    for (int i = 0; i < 4; i++) {
+        subBeams[i].origin = beam.origin;
+        subBeams[i].tMin = beam.tMin;
+        subBeams[i].tMax = beam.tMax;
+        
+        // Distribute rays
+        subBeams[i].rayStartIndex = beam.rayStartIndex + i * raysPerSubBeam;
+        subBeams[i].rayCount = raysPerSubBeam + (i < remainder ? 1 : 0);
+        
+        // Compute new beam bounds - simplified for now
+        subBeams[i].beamMin = beam.beamMin;
+        subBeams[i].beamMax = beam.beamMax;
+        
+        // Copy corner directions - should be refined based on subdivision
+        for (int j = 0; j < 4; j++) {
+            subBeams[i].directions[j] = beam.directions[j];
+        }
+        
+        subBeams[i].coherence = analyzeBeamCoherence(subBeams[i]);
+    }
+}
+
+BeamHit traverseBeam(Beam beam) {
+    BeamHit result;
+    result.hit = false;
+    
+    // Check beam coherence
+    float coherence = analyzeBeamCoherence(beam);
+    
+    if (coherence < splitThreshold && beam.rayCount > 4) {
+        // Split beam and process sub-beams
+        Beam subBeams[4];
+        splitBeam(beam, subBeams);
+        
+        result.hitCount = 0;
+        result.minDistance = 1e6;
+        result.maxDistance = 0.0;
+        result.avgNormal = vec3(0.0);
+        result.avgColor = vec4(0.0);
+        
+        for (int i = 0; i < 4; i++) {
+            BeamHit subResult = traverseBeam(subBeams[i]);
+            if (subResult.hit) {
+                result.hit = true;
+                result.hitCount += subResult.hitCount;
+                result.minDistance = min(result.minDistance, subResult.minDistance);
+                result.maxDistance = max(result.maxDistance, subResult.maxDistance);
+                result.avgNormal += subResult.avgNormal * float(subResult.hitCount);
+                result.avgColor += subResult.avgColor * float(subResult.hitCount);
+            }
+        }
+        
+        if (result.hitCount > 0) {
+            result.avgNormal = normalize(result.avgNormal);
+            result.avgColor /= float(result.hitCount);
+        }
+        
+        return result;
+    }
+    
+    // Traverse as coherent beam
+    BeamStackEntry stack[MAX_BEAM_STACK_DEPTH];
+    int stackPtr = 0;
+    
+    // Initialize with root
+    vec3 rootMin = voxelOrigin;
+    vec3 rootMax = voxelOrigin + vec3(voxelSize);
+    
+    if (!beamIntersectsAABB(beam, rootMin, rootMax)) {
+        return result;
+    }
+    
+    stack[stackPtr].nodeIndex = rootNodeIndex;
+    stack[stackPtr].tEnter = beam.tMin;
+    stack[stackPtr].tExit = beam.tMax;
+    stack[stackPtr].cellMin = rootMin;
+    stack[stackPtr].cellMax = rootMax;
+    stack[stackPtr].level = 0;
+    stackPtr++;
+    
+    while (stackPtr > 0) {
+        BeamStackEntry entry = stack[--stackPtr];
+        ESVONode node = nodeBuffer.nodes[entry.nodeIndex];
+        
+        if (node.nonLeafMask == 0u) {
+            // Process leaf
+            result = processBeamLeaf(beam, node, entry.cellMin, entry.cellMax);
+            break;
+        } else {
+            // Process interior node - push intersecting children
+            for (uint octant = 0; octant < 8; octant++) {
+                if ((node.validMask & (1u << octant)) == 0u) continue;
+                
+                vec3 childMin = computeChildMin(entry.cellMin, entry.cellMax, octant);
+                vec3 childMax = computeChildMax(entry.cellMin, entry.cellMax, octant);
+                
+                if (!beamIntersectsAABB(beam, childMin, childMax)) continue;
+                
+                uint childIndex = computeChildIndex(node, octant);
+                
+                if (stackPtr < MAX_BEAM_STACK_DEPTH) {
+                    stack[stackPtr].nodeIndex = childIndex;
+                    stack[stackPtr].tEnter = entry.tEnter;
+                    stack[stackPtr].tExit = entry.tExit;
+                    stack[stackPtr].cellMin = childMin;
+                    stack[stackPtr].cellMax = childMax;
+                    stack[stackPtr].level = entry.level + 1;
+                    stackPtr++;
+                }
+            }
+        }
+    }
+    
+    return result;
+}
+
+void main() {
+    uint beamIndex = gl_GlobalInvocationID.x;
+    if (beamIndex >= beamBuffer.beams.length()) return;
+    
+    Beam beam = beamBuffer.beams[beamIndex];
+    
+    // Initialize shared memory
+    uint localIndex = gl_LocalInvocationIndex;
+    if (localIndex == 0) {
+        sharedStackPtr = 0;
+    }
+    
+    if (localIndex < 64) {
+        sharedCoherence[localIndex] = 0.0;
+        sharedShouldSplit[localIndex] = false;
+    }
+    
+    barrier();
+    
+    // Analyze beam coherence
+    float coherence = analyzeBeamCoherence(beam);
+    if (localIndex < 64) {
+        sharedCoherence[localIndex] = coherence;
+        sharedShouldSplit[localIndex] = coherence < coherenceThreshold;
+    }
+    
+    barrier();
+    
+    // Process beam
+    BeamHit result = traverseBeam(beam);
+    
+    beamResultBuffer.beamResults[beamIndex] = result;
+}

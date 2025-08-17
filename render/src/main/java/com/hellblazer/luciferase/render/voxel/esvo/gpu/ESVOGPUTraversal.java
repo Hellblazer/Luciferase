@@ -3,13 +3,12 @@ package com.hellblazer.luciferase.render.voxel.esvo.gpu;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,12 +18,15 @@ import com.hellblazer.luciferase.render.voxel.esvo.ESVOPage;
 /**
  * GPU-accelerated ray traversal for ESVO using GLSL compute shaders.
  * Manages shader compilation, buffer uploads, and dispatch.
+ * Now integrated with ESVOShaderManager for advanced shader variants.
  */
 public class ESVOGPUTraversal {
+    private static final Logger log = LoggerFactory.getLogger(ESVOGPUTraversal.class);
     
-    // Shader handles
-    private int computeProgram;
-    private int computeShader;
+    // Shader management
+    private final ESVOShaderManager shaderManager;
+    private int currentProgram;
+    private String currentVariant = "basic";
     
     // Buffer objects
     private int nodeBufferSSBO;
@@ -50,8 +52,13 @@ public class ESVOGPUTraversal {
     private final List<ESVOPage> pages = new ArrayList<>();
     
     public ESVOGPUTraversal(int width, int height) {
+        this(width, height, new ESVOShaderManager("shaders/esvo/", true));
+    }
+    
+    public ESVOGPUTraversal(int width, int height, ESVOShaderManager shaderManager) {
         this.width = width;
         this.height = height;
+        this.shaderManager = shaderManager;
         initialize();
     }
     
@@ -70,37 +77,12 @@ public class ESVOGPUTraversal {
     }
     
     private void compileShader() {
-        try {
-            // Load shader source
-            String shaderSource = Files.readString(
-                Path.of("src/main/resources/shaders/esvo/ray_traversal.comp")
-            );
-            
-            // Create and compile shader
-            computeShader = GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);
-            GL20.glShaderSource(computeShader, shaderSource);
-            GL20.glCompileShader(computeShader);
-            
-            // Check compilation
-            if (GL20.glGetShaderi(computeShader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-                String log = GL20.glGetShaderInfoLog(computeShader);
-                throw new RuntimeException("Shader compilation failed: " + log);
-            }
-            
-            // Create and link program
-            computeProgram = GL20.glCreateProgram();
-            GL20.glAttachShader(computeProgram, computeShader);
-            GL20.glLinkProgram(computeProgram);
-            
-            // Check linking
-            if (GL20.glGetProgrami(computeProgram, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-                String log = GL20.glGetProgramInfoLog(computeProgram);
-                throw new RuntimeException("Program linking failed: " + log);
-            }
-            
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load shader", e);
+        // Use shader manager to compile basic traversal shader
+        currentProgram = ESVOShaderManager.Presets.basicTraversal(shaderManager).compile();
+        if (currentProgram == 0) {
+            throw new RuntimeException("Failed to compile basic traversal shader");
         }
+        log.info("Compiled basic traversal shader: {}", currentProgram);
     }
     
     private void createBuffers() {
@@ -142,11 +124,11 @@ public class ESVOGPUTraversal {
     }
     
     private void getUniformLocations() {
-        GL20.glUseProgram(computeProgram);
-        octreeMinLoc = GL20.glGetUniformLocation(computeProgram, "octreeMin");
-        octreeMaxLoc = GL20.glGetUniformLocation(computeProgram, "octreeMax");
-        octreeScaleLoc = GL20.glGetUniformLocation(computeProgram, "octreeScale");
-        rootNodeLoc = GL20.glGetUniformLocation(computeProgram, "rootNode");
+        GL20.glUseProgram(currentProgram);
+        octreeMinLoc = GL20.glGetUniformLocation(currentProgram, "voxelOrigin");
+        octreeMaxLoc = GL20.glGetUniformLocation(currentProgram, "voxelSize");
+        octreeScaleLoc = GL20.glGetUniformLocation(currentProgram, "worldToVoxel");
+        rootNodeLoc = GL20.glGetUniformLocation(currentProgram, "rootNodeIndex");
     }
     
     /**
@@ -226,19 +208,32 @@ public class ESVOGPUTraversal {
      */
     public void setOctreeBounds(float minX, float minY, float minZ,
                                 float maxX, float maxY, float maxZ) {
-        GL20.glUseProgram(computeProgram);
+        GL20.glUseProgram(currentProgram);
         GL20.glUniform3f(octreeMinLoc, minX, minY, minZ);
-        GL20.glUniform3f(octreeMaxLoc, maxX, maxY, maxZ);
         
         float scale = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
-        GL20.glUniform1f(octreeScaleLoc, scale);
+        GL20.glUniform1f(octreeMaxLoc, scale);
+        
+        // Set world to voxel transformation matrix (identity for now)
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FloatBuffer matrix = stack.mallocFloat(16);
+            // Identity matrix
+            matrix.put(new float[]{
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f
+            });
+            matrix.flip();
+            GL20.glUniformMatrix4fv(octreeScaleLoc, false, matrix);
+        }
     }
     
     /**
      * Execute ray traversal on GPU
      */
     public void traverse(int rootNodeIndex) {
-        GL20.glUseProgram(computeProgram);
+        GL20.glUseProgram(currentProgram);
         
         // Set root node (using glUniform1i for unsigned int)
         GL20.glUniform1i(rootNodeLoc, rootNodeIndex);
@@ -276,15 +271,51 @@ public class ESVOGPUTraversal {
     }
     
     /**
+     * Switches to a different shader variant.
+     */
+    public void useVariant(String variantName) {
+        int newProgram = 0;
+        
+        switch (variantName) {
+            case "basic":
+                newProgram = ESVOShaderManager.Presets.basicTraversal(shaderManager).compile();
+                break;
+            case "shadow":
+                newProgram = ESVOShaderManager.Presets.shadowTraversal(shaderManager).compile();
+                break;
+            case "lod":
+                newProgram = ESVOShaderManager.Presets.lodTraversal(shaderManager, 1.0f, 100.0f).compile();
+                break;
+            case "statistics":
+                newProgram = ESVOShaderManager.Presets.statisticsTraversal(shaderManager).compile();
+                break;
+            default:
+                log.warn("Unknown shader variant: {}", variantName);
+                return;
+        }
+        
+        if (newProgram != 0) {
+            currentProgram = newProgram;
+            currentVariant = variantName;
+            getUniformLocations();
+            log.info("Switched to shader variant: {}", variantName);
+        } else {
+            log.error("Failed to compile shader variant: {}", variantName);
+        }
+    }
+    
+    /**
+     * Gets the current shader variant name.
+     */
+    public String getCurrentVariant() {
+        return currentVariant;
+    }
+    
+    /**
      * Clean up GPU resources
      */
     public void dispose() {
-        if (computeProgram != 0) {
-            GL20.glDeleteProgram(computeProgram);
-        }
-        if (computeShader != 0) {
-            GL20.glDeleteShader(computeShader);
-        }
+        // Shaders are managed by ESVOShaderManager, no need to delete here
         if (nodeBufferSSBO != 0) {
             GL15.glDeleteBuffers(nodeBufferSSBO);
         }
@@ -299,6 +330,24 @@ public class ESVOGPUTraversal {
         }
         if (hitResultTexture != 0) {
             GL11.glDeleteTextures(hitResultTexture);
+        }
+        
+        // Shutdown shader manager if we own it
+        shaderManager.shutdown();
+    }
+    
+    /**
+     * Creates a custom shader variant with specific defines.
+     */
+    public void useCustomVariant(String name, ESVOShaderManager.ShaderVariant variant) {
+        int program = variant.compile();
+        if (program != 0) {
+            currentProgram = program;
+            currentVariant = name;
+            getUniformLocations();
+            log.info("Using custom shader variant: {}", name);
+        } else {
+            log.error("Failed to compile custom shader variant: {}", name);
         }
     }
 }
