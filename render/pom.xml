@@ -108,7 +108,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>--enable-native-access=ALL-UNNAMED --enable-preview</argLine>
+                    <!-- Base configuration will be overridden by profiles based on OS -->
+                    <argLine>${surefire.argLine}</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -129,4 +130,84 @@
             </plugin>
         </plugins>
     </build>
+    
+    <profiles>
+        <!-- Profile for macOS - automatically activated on Mac systems -->
+        <profile>
+            <id>macos</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <properties>
+                <!-- Add -XstartOnFirstThread for macOS GLFW requirement -->
+                <surefire.argLine>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</surefire.argLine>
+            </properties>
+        </profile>
+        
+        <!-- Profile for non-macOS systems -->
+        <profile>
+            <id>non-macos</id>
+            <activation>
+                <os>
+                    <family>!mac</family>
+                </os>
+            </activation>
+            <properties>
+                <!-- Standard args without -XstartOnFirstThread -->
+                <surefire.argLine>--enable-native-access=ALL-UNNAMED --enable-preview</surefire.argLine>
+            </properties>
+        </profile>
+        
+        <!-- Profile to skip GPU tests if needed -->
+        <profile>
+            <id>skip-gpu-tests</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/*GPU*Test.java</exclude>
+                                <exclude>**/*OpenGL*Test.java</exclude>
+                                <exclude>**/*LWJGL*Test.java</exclude>
+                                <exclude>**/ESVODemo.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        
+        <!-- Profile for running demos with proper flags -->
+        <profile>
+            <id>run-demo</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.1</version>
+                        <executions>
+                            <execution>
+                                <id>run-esvo-demo</id>
+                                <goals>
+                                    <goal>java</goal>
+                                </goals>
+                                <configuration>
+                                    <mainClass>com.hellblazer.luciferase.render.voxel.esvo.demo.ESVODemo</mainClass>
+                                    <commandlineArgs>${demo.args}</commandlineArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <properties>
+                <demo.args>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</demo.args>
+            </properties>
+        </profile>
+    </profiles>
 </project>

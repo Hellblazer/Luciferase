@@ -200,6 +200,7 @@ public class OctreeBuilder {
         int nodeCount = 0;
         int leafCount = 0;
         int maxDepth = 0;
+        int treeDepth = calculateTreeDepth(root);  // Calculate actual tree depth
         
         while (!queue.isEmpty()) {
             OctreeNode node = queue.poll();
@@ -209,10 +210,11 @@ public class OctreeBuilder {
             // Create ESVO node
             byte validMask = 0;
             byte nonLeafMask = 0;
-            int childPointer = nodes.size() + 1; // Next available slot
+            int childPointer = 0; // Will be set if node has children
             
             // Process children
             int validChildren = 0;
+            int nonLeafChildren = 0;
             for (int i = 0; i < 8; i++) {
                 if (node.children[i] != null) {
                     validMask |= (1 << i);
@@ -220,6 +222,7 @@ public class OctreeBuilder {
                     
                     if (!node.children[i].isLeaf) {
                         nonLeafMask |= (1 << i);
+                        nonLeafChildren++;
                         queue.offer(node.children[i]);
                     } else {
                         leafCount++;
@@ -227,21 +230,41 @@ public class OctreeBuilder {
                 }
             }
             
+            // Set child pointer if there are any valid children
+            // In ESVO, child pointer points to the first child regardless of leaf status
+            if (validChildren > 0 && !node.isLeaf) {
+                childPointer = nodes.size() + 1; // Points to where children will be in the array
+            }
+            
+            // Create ESVO node
+            ESVONode esvoNode = new ESVONode();
+            
             // Handle leaf node
             if (node.isLeaf) {
                 leafCount++;
-                nonLeafMask = 0;
-                childPointer = 0;
+                // For leaf nodes: compute validMask based on which octants contain voxels
+                if (!node.voxels.isEmpty()) {
+                    // Mark octants that contain voxels
+                    validMask = 0;
+                    int halfSize = node.size / 2;
+                    if (halfSize > 0) {
+                        for (Voxel v : node.voxels) {
+                            int octant = getOctant(v.x - node.x, v.y - node.y, v.z - node.z, halfSize);
+                            validMask |= (1 << octant);
+                        }
+                    } else {
+                        // Node size is 1, can't subdivide further
+                        // Mark the single octant as occupied
+                        validMask = (byte) 0x01;  // Just octant 0
+                    }
+                }
+                nonLeafMask = 0;  // Leaf nodes have no internal children
+                childPointer = 0; // Leaf nodes have no child pointer
                 
                 // Add to leaf list
-                ESVONode esvoNode = new ESVONode();
-                esvoNode.setValidMask(validMask);
-                esvoNode.setNonLeafMask(nonLeafMask);
-                esvoNode.setChildPointer(childPointer, false);
                 octree.addLeafNode(esvoNode);
             }
             
-            ESVONode esvoNode = new ESVONode();
             esvoNode.setValidMask(validMask);
             esvoNode.setNonLeafMask(nonLeafMask);
             esvoNode.setChildPointer(childPointer, false);
@@ -258,7 +281,9 @@ public class OctreeBuilder {
         
         octree.setNodeCount(nodeCount);
         octree.setLeafCount(leafCount);
-        octree.setMaxDepth(Math.max(maxDepth, 1)); // Ensure at least depth 1
+        
+        // Use the actual tree depth calculated from structure
+        octree.setMaxDepth(treeDepth);
         
         // Set LOD count if configured
         if (config.getLODLevels() > 0) {
@@ -361,5 +386,29 @@ public class OctreeBuilder {
         
         return Math.abs(a.getRoughness() - b.getRoughness()) < 0.01f &&
                Math.abs(a.getMetallic() - b.getMetallic()) < 0.01f;
+    }
+    
+    private int calculateTreeDepth(OctreeNode node) {
+        return calculateTreeDepthRecursive(node, 0);
+    }
+    
+    private int calculateTreeDepthRecursive(OctreeNode node, int currentDepth) {
+        if (node == null) {
+            return currentDepth - 1;
+        }
+        
+        if (node.isLeaf) {
+            return currentDepth;
+        }
+        
+        int maxDepth = currentDepth;
+        for (int i = 0; i < 8; i++) {
+            if (node.children[i] != null) {
+                int childDepth = calculateTreeDepthRecursive(node.children[i], currentDepth + 1);
+                maxDepth = Math.max(maxDepth, childDepth);
+            }
+        }
+        
+        return maxDepth;
     }
 }

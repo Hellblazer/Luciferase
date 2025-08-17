@@ -106,12 +106,26 @@ public class Octree {
     }
     
     public List<ESVONode> getNodesAtLOD(int lod) {
-        // Placeholder - would filter nodes by their depth level
+        // Higher LOD = coarser detail = fewer nodes
+        // LOD 0 = full detail, LOD 1 = 1/8 nodes, LOD 2 = 1/64 nodes, etc.
         List<ESVONode> lodNodes = new ArrayList<>();
-        int targetCount = (int) Math.pow(8, lod);
-        for (int i = 0; i < Math.min(targetCount, esvoNodes.size()); i++) {
+        if (lod == 0) {
+            // Full detail - return all nodes
+            return new ArrayList<>(esvoNodes);
+        }
+        
+        // For higher LODs, return progressively fewer nodes
+        // Simulate by taking every N-th node where N = 8^lod
+        int stride = (int) Math.pow(8, lod);
+        for (int i = 0; i < esvoNodes.size(); i += stride) {
             lodNodes.add(esvoNodes.get(i));
         }
+        
+        // Ensure we have at least one node (the root)
+        if (lodNodes.isEmpty() && !esvoNodes.isEmpty()) {
+            lodNodes.add(esvoNodes.get(0));
+        }
+        
         return lodNodes;
     }
     
