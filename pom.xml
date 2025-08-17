@@ -254,6 +254,39 @@
                 <classifier>${lwjgl.natives}</classifier>
             </dependency>
 
+            <!-- BGFX bindings for Metal backend -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bgfx</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bgfx</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- ShaderC bindings for shader compilation -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-shaderc</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-shaderc</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- JOML Math Library -->
+            <dependency>
+                <groupId>org.joml</groupId>
+                <artifactId>joml</artifactId>
+                <version>1.10.5</version>
+            </dependency>
+
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>

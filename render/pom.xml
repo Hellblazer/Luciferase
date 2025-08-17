@@ -57,10 +57,29 @@
             <artifactId>lwjgl-opengl</artifactId>
             <classifier>${lwjgl.natives}</classifier>
         </dependency>
+        
+        <!-- BGFX Dependencies for Metal backend -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-bgfx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-bgfx</artifactId>
+            <classifier>${lwjgl.natives}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+            <classifier>${lwjgl.natives}</classifier>
+        </dependency>
         <dependency>
             <groupId>org.joml</groupId>
             <artifactId>joml</artifactId>
-            <version>1.10.5</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
@@ -130,7 +149,7 @@
                     <execution>
                         <id>lwjgl-demo</id>
                         <configuration>
-                            <commandlineArgs>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</commandlineArgs>
+                            <commandlineArgs>--enable-native-access=ALL-UNNAMED --enable-preview</commandlineArgs>
                         </configuration>
                     </execution>
                 </executions>
@@ -138,34 +157,12 @@
         </plugins>
     </build>
     
+    <properties>
+        <!-- Standard args for all platforms -->
+        <surefire.argLine>--enable-native-access=ALL-UNNAMED --enable-preview</surefire.argLine>
+    </properties>
+    
     <profiles>
-        <!-- Profile for macOS - automatically activated on Mac systems -->
-        <profile>
-            <id>macos</id>
-            <activation>
-                <os>
-                    <family>mac</family>
-                </os>
-            </activation>
-            <properties>
-                <!-- Add -XstartOnFirstThread for macOS GLFW requirement -->
-                <surefire.argLine>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</surefire.argLine>
-            </properties>
-        </profile>
-        
-        <!-- Profile for non-macOS systems -->
-        <profile>
-            <id>non-macos</id>
-            <activation>
-                <os>
-                    <family>!mac</family>
-                </os>
-            </activation>
-            <properties>
-                <!-- Standard args without -XstartOnFirstThread -->
-                <surefire.argLine>--enable-native-access=ALL-UNNAMED --enable-preview</surefire.argLine>
-            </properties>
-        </profile>
         
         <!-- Profile to skip GPU tests if needed -->
         <profile>
@@ -213,7 +210,7 @@
                 </plugins>
             </build>
             <properties>
-                <demo.args>-XstartOnFirstThread --enable-native-access=ALL-UNNAMED --enable-preview</demo.args>
+                <demo.args>--enable-native-access=ALL-UNNAMED --enable-preview</demo.args>
             </properties>
         </profile>
     </profiles>
