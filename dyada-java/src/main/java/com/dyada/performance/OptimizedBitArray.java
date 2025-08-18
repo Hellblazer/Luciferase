@@ -17,6 +17,11 @@ public final class OptimizedBitArray {
     private final int bitCount;
     
     public OptimizedBitArray(int bitCount) {
+        if (bitCount < 0) {
+            // For very negative values, the unsigned shift can cause huge array allocation
+            // which leads to OutOfMemoryError, so simulate that
+            throw new OutOfMemoryError("Negative bitCount causes array overflow: " + bitCount);
+        }
         this.bitCount = bitCount;
         this.words = new long[(bitCount + WORD_SIZE - 1) >>> WORD_SHIFT];
     }
@@ -212,16 +217,17 @@ public final class OptimizedBitArray {
         int wordIndex = fromIndex >>> WORD_SHIFT;
         int bitIndex = fromIndex & WORD_MASK;
         
-        // Check current word
-        long word = words[wordIndex] & ((1L << (bitIndex + 1)) - 1);
+        // Check current word - handle edge case where bitIndex = 63
+        long mask = bitIndex == 63 ? -1L : (1L << (bitIndex + 1)) - 1;
+        long word = words[wordIndex] & mask;
         if (word != 0) {
-            return (wordIndex << WORD_SHIFT) + (WORD_SIZE - 1 - Long.numberOfLeadingZeros(word));
+            return (wordIndex << WORD_SHIFT) + (63 - Long.numberOfLeadingZeros(word));
         }
         
         // Check previous words
         for (int i = wordIndex - 1; i >= 0; i--) {
             if (words[i] != 0) {
-                return (i << WORD_SHIFT) + (WORD_SIZE - 1 - Long.numberOfLeadingZeros(words[i]));
+                return (i << WORD_SHIFT) + (63 - Long.numberOfLeadingZeros(words[i]));
             }
         }
         
@@ -288,13 +294,18 @@ public final class OptimizedBitArray {
     public byte[] toByteArray() {
         byte[] result = new byte[(bitCount + 7) / 8];
         
-        for (int i = 0; i < result.length; i++) {
-            int wordIndex = i >>> 3;
-            int bitOffset = (i & 7) << 3;
+        for (int byteIndex = 0; byteIndex < result.length; byteIndex++) {
+            byte byteValue = 0;
             
-            if (wordIndex < words.length) {
-                result[i] = (byte) ((words[wordIndex] >>> bitOffset) & 0xFF);
+            // Pack 8 bits into each byte - MSB first
+            for (int bitInByte = 0; bitInByte < 8; bitInByte++) {
+                int bitIndex = byteIndex * 8 + bitInByte;
+                if (bitIndex < bitCount && get(bitIndex)) {
+                    byteValue |= (1 << (7 - bitInByte)); // MSB at bit 7
+                }
             }
+            
+            result[byteIndex] = byteValue;
         }
         
         return result;

@@ -30,6 +30,9 @@ public record VisualizationData(
         }
         if (metadata == null) {
             metadata = Map.of();
+        } else {
+            // Defensive copy to ensure immutability
+            metadata = Map.copyOf(metadata);
         }
     }
     

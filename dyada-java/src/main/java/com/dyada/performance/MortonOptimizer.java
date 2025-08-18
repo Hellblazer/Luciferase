@@ -220,4 +220,44 @@ public final class MortonOptimizer {
         if (level <= 0) return 0;
         return (1L << (level * 2)) - 1;
     }
+    
+    /**
+     * Morton encoding cache for frequently accessed coordinates
+     */
+    private static final DyAdaCache<Long, Long> MORTON_CACHE_2D = DyAdaCache.createLRU(1000);
+    private static final DyAdaCache<Long, Long> MORTON_CACHE_3D = DyAdaCache.createLRU(1000);
+    
+    /**
+     * Cached Morton encoding for 2D coordinates
+     * Uses LRU cache to store recently computed values
+     */
+    public static long encode2DCached(int x, int y) {
+        long key = ((long) x << 32) | (y & 0xFFFFFFFFL);
+        return MORTON_CACHE_2D.get(key, k -> encode2D(x, y));
+    }
+    
+    /**
+     * Cached Morton encoding for 3D coordinates
+     * Uses LRU cache to store recently computed values
+     */
+    public static long encode3DCached(int x, int y, int z) {
+        long key = ((long) x << 42) | ((long) y << 21) | (z & 0x1FFFFFL);
+        return MORTON_CACHE_3D.get(key, k -> encode3D(x, y, z));
+    }
+    
+    /**
+     * Clear the Morton encoding caches
+     */
+    public static void clearCaches() {
+        MORTON_CACHE_2D.clear();
+        MORTON_CACHE_3D.clear();
+    }
+    
+    /**
+     * Get cache statistics for performance monitoring
+     */
+    public static String getCacheStats() {
+        return String.format("Morton2D cache: %d entries, Morton3D cache: %d entries",
+                MORTON_CACHE_2D.size(), MORTON_CACHE_3D.size());
+    }
 }

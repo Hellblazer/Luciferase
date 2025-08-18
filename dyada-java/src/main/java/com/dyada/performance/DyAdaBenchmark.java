@@ -221,7 +221,7 @@ public final class DyAdaBenchmark {
         // Morton cache benchmark
         suite.runBenchmark("Morton Cache 2D", 1000, () -> {
             for (int i = 0; i < 100; i++) {
-                MortonCache.encode2DCached(random.nextInt(1000), random.nextInt(1000));
+                MortonOptimizer.encode2DCached(random.nextInt(1000), random.nextInt(1000));
             }
         });
     }

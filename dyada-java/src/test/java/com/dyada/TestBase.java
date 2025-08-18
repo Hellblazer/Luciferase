@@ -148,6 +148,29 @@ public abstract class TestBase {
         }
     }
     
+    protected void assertArrayEquals(double[][] expected, double[][] actual) {
+        if (expected.length != actual.length) {
+            throw new AssertionError("Array lengths differ: expected " + expected.length + 
+                                   " but was " + actual.length);
+        }
+        
+        for (int i = 0; i < expected.length; i++) {
+            if (expected[i].length != actual[i].length) {
+                throw new AssertionError("Sub-array lengths differ at index " + i + 
+                                       ": expected " + expected[i].length + 
+                                       " but was " + actual[i].length);
+            }
+            
+            for (int j = 0; j < expected[i].length; j++) {
+                if (Math.abs(expected[i][j] - actual[i][j]) > 1e-10) {
+                    throw new AssertionError("Arrays differ at [" + i + "][" + j + 
+                                           "]: expected " + expected[i][j] + 
+                                           " but was " + actual[i][j]);
+                }
+            }
+        }
+    }
+    
     protected void assertCoordinateEquals(Coordinate expected, Coordinate actual, double delta) {
         assertArrayEquals(expected.values(), actual.values(), delta);
     }

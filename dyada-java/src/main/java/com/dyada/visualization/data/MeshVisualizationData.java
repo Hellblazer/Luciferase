@@ -71,7 +71,7 @@ public record MeshVisualizationData(
      */
     public MeshVisualizationData withScalarField(String name, double[] values) {
         var newFields = new java.util.HashMap<>(scalarFields);
-        newFields.put(name, values);
+        newFields.put(name, values.clone()); // Defensive copy
         return new MeshVisualizationData(
             id, timestamp, dimensions, bounds, metadata,
             vertices, cells, newFields, vectorFields
@@ -83,7 +83,12 @@ public record MeshVisualizationData(
      */
     public MeshVisualizationData withVectorField(String name, double[][] vectors) {
         var newFields = new java.util.HashMap<>(vectorFields);
-        newFields.put(name, vectors);
+        // Deep copy of 2D array
+        double[][] vectorsCopy = new double[vectors.length][];
+        for (int i = 0; i < vectors.length; i++) {
+            vectorsCopy[i] = vectors[i].clone();
+        }
+        newFields.put(name, vectorsCopy);
         return new MeshVisualizationData(
             id, timestamp, dimensions, bounds, metadata,
             vertices, cells, scalarFields, newFields

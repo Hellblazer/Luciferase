@@ -21,9 +21,15 @@ public record GridVisualizationData(
     public GridVisualizationData {
         if (gridCells == null) {
             gridCells = List.of();
+        } else {
+            // Defensive copy to ensure immutability
+            gridCells = List.copyOf(gridCells);
         }
         if (cellData == null) {
             cellData = Map.of();
+        } else {
+            // Defensive copy to ensure immutability
+            cellData = Map.copyOf(cellData);
         }
         if (structure == null) {
             throw new IllegalArgumentException("Grid structure cannot be null");
