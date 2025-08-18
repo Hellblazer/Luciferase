@@ -327,4 +327,34 @@ public class MockGPUContext implements IGPUContext {
             // Mock cleanup
         }
     }
+    
+    @Override
+    public boolean dispatchCompute(IGPUShader shader, int groupsX, int groupsY, int groupsZ) {
+        if (!valid.get()) {
+            return false;
+        }
+        
+        if (shader == null) {
+            return false;
+        }
+        
+        // Validate work group sizes
+        if (groupsX <= 0 || groupsY <= 0 || groupsZ <= 0) {
+            return false;
+        }
+        
+        // Simulate dispatch execution - always succeeds in mock
+        return true;
+    }
+    
+    @Override
+    public void waitForCompletion() {
+        // Mock implementation - no actual GPU work to wait for
+        // Just simulate a brief delay
+        try {
+            Thread.sleep(1);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 }

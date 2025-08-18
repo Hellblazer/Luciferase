@@ -265,9 +265,8 @@ public class MockGPUContextTest {
         
         // Test invalid OpenGL shader (missing version)
         var invalidShader = context.createShader("#version 330\nlayout(local_size_x = 64) in; void main() {}", Map.of());
-        assertFalse(invalidShader.compile("", Map.of()));
-        
         var mockShader = (MockShader) invalidShader;
+        assertFalse(mockShader.compile());
         assertFalse(mockShader.isCompiled());
         assertNotNull(mockShader.getCompilationError());
         assertTrue(mockShader.getCompilationError().contains("430"));

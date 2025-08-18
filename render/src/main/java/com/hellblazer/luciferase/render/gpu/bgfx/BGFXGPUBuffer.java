@@ -49,11 +49,11 @@ public class BGFXGPUBuffer implements IGPUBuffer {
                 // Clear initial data
                 MemoryUtil.memSet(initialData, 0);
                 
-                // Create BGFX dynamic vertex buffer as compute buffer substitute
-                bgfxHandle = BGFX.bgfx_create_dynamic_vertex_buffer(
-                    size / 4, // Number of vertices (assuming 4 bytes per vertex)
-                    null, // No vertex layout for compute  
-                    getBGFXBufferFlags()
+                // Create BGFX dynamic index buffer as compute buffer substitute
+                // Index buffers have better compute support than vertex buffers
+                bgfxHandle = BGFX.bgfx_create_dynamic_index_buffer(
+                    size / 4, // Number of 32-bit indices
+                    getBGFXBufferFlags() | BGFX.BGFX_BUFFER_COMPUTE_READ_WRITE
                 );
                 
                 if (bgfxHandle == BGFX.BGFX_INVALID_HANDLE) {
@@ -89,8 +89,8 @@ public class BGFXGPUBuffer implements IGPUBuffer {
             throw new IllegalArgumentException("Data exceeds buffer size");
         }
         
-        // Update buffer data
-        BGFX.bgfx_update_dynamic_vertex_buffer(bgfxHandle, offset, BGFX.bgfx_make_ref(data));
+        // Update buffer data using index buffer update
+        BGFX.bgfx_update_dynamic_index_buffer(bgfxHandle, offset / 4, BGFX.bgfx_make_ref(data));
     }
     
     @Override
@@ -206,7 +206,7 @@ public class BGFXGPUBuffer implements IGPUBuffer {
         
         // Destroy BGFX buffer
         if (bgfxHandle != BGFX.BGFX_INVALID_HANDLE) {
-            BGFX.bgfx_destroy_dynamic_vertex_buffer(bgfxHandle);
+            BGFX.bgfx_destroy_dynamic_index_buffer(bgfxHandle);
             bgfxHandle = BGFX.BGFX_INVALID_HANDLE;
         }
     }

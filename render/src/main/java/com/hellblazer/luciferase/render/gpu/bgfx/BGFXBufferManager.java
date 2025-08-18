@@ -35,6 +35,27 @@ public class BGFXBufferManager {
     }
     
     /**
+     * Create a buffer with specified type, size and usage pattern.
+     * This is the core buffer creation method used by other factory methods.
+     */
+    public IGPUBuffer createBuffer(BufferType type, int size, BufferUsage usage) {
+        if (!context.isValid()) {
+            throw new IllegalStateException("GPU context not initialized");
+        }
+        
+        var buffer = context.createBuffer(type, size, usage);
+        if (buffer == null) {
+            throw new RuntimeException("Failed to create buffer with type " + type + ", size " + size);
+        }
+        
+        // Update statistics
+        totalBuffersCreated++;
+        totalMemoryAllocated += size;
+        
+        return buffer;
+    }
+    
+    /**
      * Create a buffer optimized for the specified slot's typical usage pattern.
      */
     public IGPUBuffer createBufferForSlot(BufferSlot slot, int size) {
@@ -47,14 +68,10 @@ public class BGFXBufferManager {
         var usage = getUsageForSlot(slot);
         
         // Create the buffer
-        var buffer = context.createBuffer(bufferType, size, usage);
+        var buffer = createBuffer(bufferType, size, usage);
         if (buffer == null) {
             throw new RuntimeException("Failed to create buffer for slot " + slot);
         }
-        
-        // Update statistics
-        totalBuffersCreated++;
-        totalMemoryAllocated += size;
         
         return buffer;
     }

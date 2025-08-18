@@ -76,6 +76,22 @@ public interface IGPUContext {
     void cleanup();
     
     /**
+     * Dispatch compute shader execution with return value indicating success.
+     * @param shader Compute shader to execute
+     * @param groupsX Number of work groups in X dimension
+     * @param groupsY Number of work groups in Y dimension
+     * @param groupsZ Number of work groups in Z dimension
+     * @return true if dispatch successful, false otherwise
+     */
+    boolean dispatchCompute(IGPUShader shader, int groupsX, int groupsY, int groupsZ);
+    
+    /**
+     * Wait for all pending GPU operations to complete.
+     * Provides synchronization between GPU and CPU execution.
+     */
+    void waitForCompletion();
+    
+    /**
      * Check if the context is valid and ready for use.
      * @return true if context is valid
      */

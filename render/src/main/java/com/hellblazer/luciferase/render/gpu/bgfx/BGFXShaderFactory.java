@@ -71,6 +71,10 @@ public class BGFXShaderFactory implements IShaderFactory {
     
     @Override
     public CompilationResult compileComputeShader(String shaderName, String source, Map<String, String> defines) {
+        if (source == null) {
+            throw new IllegalArgumentException("Shader source cannot be null for shader: " + shaderName);
+        }
+        
         try {
             String processedSource = preprocessShader(source, defines != null ? defines : Map.of(), Set.of());
             String metalSource = translateGLSLToMetal(processedSource);

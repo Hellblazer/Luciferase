@@ -167,6 +167,16 @@ class GPUAbstractionTest {
         public IGPUShader createShader(String shaderSource, Map<String, String> defines) {
             return createComputeShader(shaderSource, defines);
         }
+        
+        @Override
+        public boolean dispatchCompute(IGPUShader shader, int groupsX, int groupsY, int groupsZ) {
+            return valid; // Mock implementation returns validity status
+        }
+        
+        @Override
+        public void waitForCompletion() {
+            // Mock implementation - no actual work to wait for
+        }
     }
 
     private static class MockGPUBuffer implements IGPUBuffer {

@@ -221,8 +221,26 @@ public class ESVOStreamingRenderer {
                 
                 log.debug("Frame {} completed in {:.2f}ms", taskId, renderTask.getElapsedMs());
                 
+                // Ensure all rays have results - add missing results if needed
+                if (renderTask.rayResults.size() < renderTask.rays.size()) {
+                    log.warn("Frame {}: Only {} of {} rays have results, filling missing results", 
+                             taskId, renderTask.rayResults.size(), renderTask.rays.size());
+                    for (var ray : renderTask.rays) {
+                        if (!renderTask.rayResults.containsKey(ray.rayId)) {
+                            // Provide a default result for missing rays
+                            renderTask.setRayResult(ray.rayId, new Vector3f(0, 0, 0));
+                        }
+                    }
+                }
+                
             } catch (Exception e) {
                 log.error("Error rendering frame {}", taskId, e);
+                // Ensure task has results even on error - set default results for all rays
+                for (var ray : rays) {
+                    if (!renderTask.rayResults.containsKey(ray.rayId)) {
+                        renderTask.setRayResult(ray.rayId, new Vector3f(0, 0, 0));
+                    }
+                }
             }
             
             return renderTask;

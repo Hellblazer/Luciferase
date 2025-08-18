@@ -28,6 +28,13 @@ public abstract class LWJGLTestBase {
     void initializeOpenGL() {
         if (!globalInitialized) {
             try {
+                // Check if we're in a headless environment
+                if (isHeadlessEnvironment()) {
+                    log.info("Skipping GLFW initialization in headless environment");
+                    handleInitializationFailure();
+                    return;
+                }
+                
                 // Use the centralized initializer
                 boolean success = GLFWInitializer.initializeForTesting();
                 if (!success) {
@@ -38,14 +45,17 @@ public abstract class LWJGLTestBase {
                 globalInitialized = true;
                 log.info("GLFW initialized for testing");
                 
-            } catch (GLFWInitializer.GLFWInitializationException e) {
+            } catch (Exception e) {
+                log.warning("GLFW initialization failed: " + e.getMessage());
                 handleInitializationFailure();
                 return;
             }
         }
         
-        // Create test window
-        createTestWindow();
+        // Create test window only if initialized
+        if (globalInitialized) {
+            createTestWindow();
+        }
     }
     
     @AfterAll
@@ -131,5 +141,34 @@ public abstract class LWJGLTestBase {
         if (testWindow != 0) {
             glfwMakeContextCurrent(testWindow);
         }
+    }
+    
+    /**
+     * Check if we're running in a headless environment where GLFW should be skipped.
+     */
+    private boolean isHeadlessEnvironment() {
+        // Check various indicators of headless/CI environments
+        String ci = System.getProperty("CI");
+        String headlessProperty = System.getProperty("java.awt.headless");
+        String noNativeGpu = System.getProperty("no.native.gpu");
+        String testEnv = System.getenv("TEST_ENV");
+        
+        return "true".equals(ci) || 
+               "true".equals(headlessProperty) ||
+               "true".equals(noNativeGpu) ||
+               "headless".equals(testEnv) ||
+               isRunningInCI();
+    }
+    
+    /**
+     * Detect if we're running in a CI environment.
+     */
+    private boolean isRunningInCI() {
+        // Common CI environment variables
+        return System.getenv("CI") != null ||
+               System.getenv("GITHUB_ACTIONS") != null ||
+               System.getenv("JENKINS_URL") != null ||
+               System.getenv("TRAVIS") != null ||
+               System.getenv("CIRCLECI") != null;
     }
 }
