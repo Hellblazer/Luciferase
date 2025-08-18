@@ -3,11 +3,12 @@ package com.hellblazer.luciferase.render.bgfx;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.ByteBuffer;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.lwjgl.util.shaderc.Shaderc;
 
-import com.hellblazer.luciferase.render.gpu.ShaderType;
+import com.hellblazer.luciferase.render.gpu.bgfx.BGFXGPUShader;
 
 /**
  * Incremental validation test for BGFX shader compilation pipeline.
@@ -62,7 +63,8 @@ public class BGFXShaderCompilationValidationTest {
             """;
 
         // Create a BGFXGPUShader to test compilation
-        BGFXGPUShader shader = new BGFXGPUShader("test_shader", computeShaderSource, ShaderType.COMPUTE);
+        BGFXGPUShader shader = new BGFXGPUShader(1);
+        boolean compiled = shader.compile(computeShaderSource, Map.of());
         
         // The constructor should have attempted compilation
         System.out.printf("Shader handle: %d%n", shader.getHandle());
@@ -166,12 +168,12 @@ public class BGFXShaderCompilationValidationTest {
 
         // Test the shader without requiring full BGFX context
         assertDoesNotThrow(() -> {
-            BGFXGPUShader shader = new BGFXGPUShader("test_methods", testShader, ShaderType.COMPUTE);
+            BGFXGPUShader shader = new BGFXGPUShader(2);
+            boolean compiled = shader.compile(testShader, Map.of());
             System.out.println("BGFXGPUShader instance created successfully");
             
-            // Test that we can get basic info
-            assertNotNull(shader.getName(), "Shader should have a name");
-            assertEquals("test_methods", shader.getName(), "Shader name should match");
+            // Test that we can get basic info (ID is what we have, not name)
+            assertEquals(2, shader.getId(), "Shader ID should match");
             
         }, "BGFXGPUShader creation should not throw exceptions");
         
