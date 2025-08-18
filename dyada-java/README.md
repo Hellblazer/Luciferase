@@ -320,7 +320,7 @@ import com.dyada.core.bitarray.*;
 
 // Create and manipulate bit arrays
 var bitArray1 = BitArray.of(true, false, true, true, false);
-var bitArray2 = BitArray.zeros(5).set(1, true).set(3, true);
+var bitArray2 = BitArray.of(5).set(1, true).set(3, true);
 
 // Bitwise operations (all operations return new immutable instances)
 var andResult = bitArray1.and(bitArray2);
