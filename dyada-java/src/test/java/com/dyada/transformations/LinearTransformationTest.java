@@ -7,7 +7,49 @@ import org.junit.jupiter.api.DisplayName;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Linear Transformation Tests")
-class LinearTransformationTest {
+class LinearTransformationTest extends InvertibleTransformationTestBase {
+
+    @Override
+    protected CoordinateTransformation createSampleTransformation() {
+        // 2D scaling transformation
+        var matrix = new double[][]{
+            {2.0, 0.0},
+            {0.0, 3.0}
+        };
+        return new LinearTransformation(matrix);
+    }
+
+    @Override
+    protected CoordinateTransformation createDifferentTransformation() {
+        // 2D rotation transformation (90 degrees)
+        var matrix = new double[][]{
+            {0.0, -1.0},
+            {1.0, 0.0}
+        };
+        return new LinearTransformation(matrix);
+    }
+
+    @Override
+    protected CoordinateTransformation createInvalidTransformation() {
+        // LinearTransformation doesn't have invalid construction states
+        // Invalid matrices are still valid transformations, just non-invertible
+        return null;
+    }
+
+    @Override
+    protected CoordinateTransformation createNonInvertibleTransformation() {
+        // Singular matrix (non-invertible)
+        var matrix = new double[][]{
+            {1.0, 2.0},
+            {2.0, 4.0} // Linearly dependent rows
+        };
+        return new LinearTransformation(matrix);
+    }
+
+    @Override
+    protected Coordinate getValidInputCoordinate() {
+        return new Coordinate(new double[]{1.0, 1.0});
+    }
     
     @Test
     @DisplayName("2D identity transformation")
@@ -96,18 +138,7 @@ class LinearTransformationTest {
         assertArrayEquals(new double[]{5.0, 5.0, 4.0}, result.values(), 1e-10);
     }
     
-    @Test
-    @DisplayName("Dimension mismatch error")
-    void testDimensionMismatch() {
-        var matrix = new double[][]{
-            {1.0, 0.0},
-            {0.0, 1.0}
-        };
-        var transformation = new LinearTransformation(matrix);
-        var point = new Coordinate(new double[]{1.0, 2.0, 3.0}); // 3D point, 2D transformation
-        
-        assertThrows(TransformationException.class, () -> transformation.transform(point));
-    }
+    // Dimension mismatch testing now handled by base class
     
     @Test
     @DisplayName("Singular matrix detection")

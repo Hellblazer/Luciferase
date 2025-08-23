@@ -10,7 +10,24 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class TranslationTransformationTest {
+class TranslationTransformationTest extends InvertibleTransformationTestBase {
+    
+    @Override
+    protected CoordinateTransformation createSampleTransformation() {
+        return new TranslationTransformation(1.0, 2.0, 3.0);
+    }
+    
+    @Override
+    protected CoordinateTransformation createDifferentTransformation() {
+        return new TranslationTransformation(2.0, 3.0, 4.0);
+    }
+    
+    @Override
+    protected Coordinate getValidInputCoordinate() {
+        return new Coordinate(new double[]{1.0, 2.0, 3.0});
+    }
+    
+    // TranslationTransformation-specific tests (not covered by base classes)
     
     @Test
     void testConstructorWithTranslationArray() {
@@ -18,7 +35,7 @@ class TranslationTransformationTest {
         
         assertEquals(3, translation.getSourceDimension());
         assertEquals(3, translation.getTargetDimension());
-        assertArrayEquals(new double[]{1.0, 2.0, 3.0}, translation.getTranslation());
+        assertArrayEquals(new double[]{1.0, 2.0, 3.0}, translation.getTranslation(), 1e-10);
     }
     
     @Test
@@ -28,7 +45,7 @@ class TranslationTransformationTest {
         
         assertEquals(3, translation.getSourceDimension());
         assertEquals(3, translation.getTargetDimension());
-        assertArrayEquals(new double[]{1.0, 2.0, 3.0}, translation.getTranslation());
+        assertArrayEquals(new double[]{1.0, 2.0, 3.0}, translation.getTranslation(), 1e-10);
     }
     
     @Test
@@ -98,7 +115,7 @@ class TranslationTransformationTest {
         var translation = TranslationTransformation.fromTo(from, to);
         
         assertEquals(2, translation.getSourceDimension());
-        assertArrayEquals(new double[]{3.0, 4.0}, translation.getTranslation());
+        assertArrayEquals(new double[]{3.0, 4.0}, translation.getTranslation(), 1e-10);
     }
     
     @Test
@@ -117,7 +134,7 @@ class TranslationTransformationTest {
         assertEquals(3, translation.getSourceDimension());
         assertEquals(3, translation.getTargetDimension());
         assertTrue(translation.isIdentity());
-        assertArrayEquals(new double[]{0.0, 0.0, 0.0}, translation.getTranslation());
+        assertArrayEquals(new double[]{0.0, 0.0, 0.0}, translation.getTranslation(), 1e-10);
     }
     
     @Test
@@ -269,7 +286,7 @@ class TranslationTransformationTest {
         var translation = new TranslationTransformation(1.0, 2.0, 3.0);
         var coord = translation.getTranslationAsCoordinate();
         
-        assertArrayEquals(new double[]{1.0, 2.0, 3.0}, coord.values());
+        assertArrayEquals(new double[]{1.0, 2.0, 3.0}, coord.values(), 1e-10);
     }
     
     @Test
@@ -404,38 +421,6 @@ class TranslationTransformationTest {
         assertNotNull(string);
         assertTrue(string.contains("TranslationTransformation"));
         assertTrue(string.contains("magnitude="));
-    }
-    
-    @Test
-    void testEquals() {
-        var translation1 = new TranslationTransformation(1.0, 2.0);
-        var translation2 = new TranslationTransformation(1.0, 2.0);
-        var translation3 = new TranslationTransformation(1.0, 3.0);
-        
-        assertEquals(translation1, translation2);
-        assertEquals(translation1.hashCode(), translation2.hashCode());
-        assertNotEquals(translation1, translation3);
-        assertNotEquals(translation1, null);
-        assertNotEquals(translation1, "not a translation transformation");
-    }
-    
-    @Test
-    void testHashCode() {
-        var translation1 = new TranslationTransformation(1.0, 2.0);
-        var translation2 = new TranslationTransformation(1.0, 2.0);
-        
-        assertEquals(translation1.hashCode(), translation2.hashCode());
-    }
-    
-    @Test
-    void testRoundTripTransformation() throws Exception {
-        var translation = new TranslationTransformation(2.0, 3.0, 4.0);
-        var original = new Coordinate(new double[]{5.0, 6.0, 7.0});
-        
-        var transformed = translation.transform(original);
-        var backTransformed = translation.inverseTransform(transformed);
-        
-        assertArrayEquals(original.values(), backTransformed.values(), 1e-10);
     }
     
     @Test

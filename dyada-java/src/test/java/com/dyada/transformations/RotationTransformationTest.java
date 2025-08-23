@@ -7,9 +7,36 @@ import org.junit.jupiter.api.DisplayName;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Rotation Transformation Tests")
-class RotationTransformationTest {
+class RotationTransformationTest extends InvertibleTransformationTestBase {
     
     private static final double EPSILON = 1e-10;
+    
+    @Override
+    protected CoordinateTransformation createSampleTransformation() {
+        return RotationTransformation.rotation2D(Math.PI / 4); // 45 degrees
+    }
+    
+    @Override
+    protected CoordinateTransformation createDifferentTransformation() {
+        return RotationTransformation.rotation2D(Math.PI / 2); // 90 degrees
+    }
+    
+    @Override
+    protected CoordinateTransformation createInvalidTransformation() {
+        // All rotations are valid, so return null to indicate no invalid case
+        return null;
+    }
+    
+    @Override
+    protected CoordinateTransformation createNonInvertibleTransformation() {
+        // All rotations are invertible, so return null to indicate no non-invertible case
+        return null;
+    }
+    
+    @Override
+    protected Coordinate getValidInputCoordinate() {
+        return new Coordinate(new double[]{1.0, 0.0});
+    }
     
     @Test
     @DisplayName("2D rotation - 90 degrees")
@@ -21,7 +48,7 @@ class RotationTransformationTest {
         assertArrayEquals(new double[]{0.0, 1.0}, result.values(), EPSILON);
         assertTrue(rotation.isLinear());
         assertTrue(rotation.isInvertible());
-        assertEquals(1.0, rotation.computeJacobianDeterminant(point), EPSILON);
+        assertEquals(1.0, rotation.determinant(), EPSILON);
     }
     
     @Test
@@ -175,20 +202,6 @@ class RotationTransformationTest {
         assertArrayEquals(new double[]{-1.0, 0.0, 0.0}, result.values(), EPSILON);
     }
     
-    @Test
-    @DisplayName("Rotation inverse")
-    void testRotationInverse() throws TransformationException {
-        var rotation = RotationTransformation.rotation2D(Math.PI / 4);
-        var inverse = rotation.inverse();
-        
-        assertTrue(inverse.isPresent());
-        
-        var point = new Coordinate(new double[]{1.0, 1.0});
-        var rotated = rotation.transform(point);
-        var restored = inverse.get().transform(rotated);
-        
-        assertArrayEquals(point.values(), restored.values(), EPSILON);
-    }
     
     @Test
     @DisplayName("Rotation determinant is always 1")
@@ -199,8 +212,8 @@ class RotationTransformationTest {
         var point2D = new Coordinate(new double[]{1.0, 1.0});
         var point3D = new Coordinate(new double[]{1.0, 1.0, 1.0});
         
-        assertEquals(1.0, rotation2D.computeJacobianDeterminant(point2D), EPSILON);
-        assertEquals(1.0, rotation3D.computeJacobianDeterminant(point3D), EPSILON);
+        assertEquals(1.0, rotation2D.determinant(), EPSILON);
+        assertEquals(1.0, rotation3D.determinant(), EPSILON);
     }
     
     @Test
@@ -232,17 +245,4 @@ class RotationTransformationTest {
                     () -> RotationTransformation.alignVectors(from4D, to4D));
     }
     
-    @Test
-    @DisplayName("Rotation composition")
-    void testRotationComposition() throws TransformationException {
-        var rotation1 = RotationTransformation.rotation2D(Math.PI / 4);
-        var rotation2 = RotationTransformation.rotation2D(Math.PI / 4);
-        var composed = rotation1.compose(rotation2);
-        
-        var point = new Coordinate(new double[]{1.0, 0.0});
-        var result1 = rotation2.transform(rotation1.transform(point));
-        var result2 = composed.transform(point);
-        
-        assertArrayEquals(result1.values(), result2.values(), EPSILON);
-    }
 }

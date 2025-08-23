@@ -372,9 +372,39 @@ public class LinearTransformation implements CoordinateTransformation {
         }
         
         var inverse = invertMatrix(matrix);
-        return inverse != null ? new LinearTransformation(inverse, false) : null;
+        if (inverse != null) {
+            // Create the inverse transformation using a special constructor that sets up
+            // a bidirectional relationship to avoid infinite recursion
+            return createInverseTransformation(inverse);
+        }
+        return null;
     }
     
+    private LinearTransformation createInverseTransformation(double[][] inverseMatrix) {
+        // Create the inverse transformation with its own properly computed determinant and inverse
+        var inverseTransformation = new LinearTransformation(inverseMatrix, false);
+        
+        // Manually set the cached values to avoid infinite recursion
+        // The determinant of the inverse is 1/determinant of the original
+        var inverseDeterminant = 1.0 / determinant();
+        
+        // Use reflection to set the final fields
+        try {
+            var detField = LinearTransformation.class.getDeclaredField("cachedDeterminant");
+            detField.setAccessible(true);
+            detField.set(inverseTransformation, inverseDeterminant);
+            
+            var invField = LinearTransformation.class.getDeclaredField("cachedInverse");
+            invField.setAccessible(true);
+            invField.set(inverseTransformation, this); // The inverse of the inverse is the original
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize inverse transformation", e);
+        }
+        
+        return inverseTransformation;
+    }
+
     private LinearTransformation composeWithLinear(LinearTransformation other) {
         if (sourceDimension != other.targetDimension) {
             throw new IllegalArgumentException(
