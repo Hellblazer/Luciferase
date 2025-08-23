@@ -44,10 +44,8 @@
         <module>portal</module>
         <module>common</module>
         <module>von</module>
-        <!--        <module>portal-2</module>-->
         <module>simulation</module>
         <module>sentry</module>
-        <module>render</module>
         <module>dyada-java</module>
     </modules>
 
