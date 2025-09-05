@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.benchmark.CIEnvironmentCheck;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,7 @@ import javax.vecmath.Point3f;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Comprehensive test suite for the new Tetree.locate() method with distance-based S0-S5 classification.
@@ -228,9 +230,11 @@ public class TetreeLocateMethodTest {
         
         System.out.println("✓ All S0-S5 types are properly used");
     }
-    
+
     @Test
     void testPerformanceImprovement() {
+        // Skip if running in any CI environment
+        assumeFalse(CIEnvironmentCheck.isRunningInCI(), CIEnvironmentCheck.getSkipMessage());
         System.out.println("\n=== Testing Performance Improvement ===");
         
         Tetree<LongEntityID, String> tetree = 
