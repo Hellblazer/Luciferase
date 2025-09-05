@@ -16,6 +16,8 @@ package com.hellblazer.luciferase.portal.mesh.explorer;
 
 import com.hellblazer.luciferase.portal.RDGCS;
 import com.hellblazer.luciferase.portal.Tetrahedral;
+import com.hellblazer.luciferase.portal.mesh.Edge;
+import com.hellblazer.luciferase.portal.mesh.Line;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.Polyhedron;
 import com.hellblazer.luciferase.portal.mesh.polyhedra.archimedes.RhombicDodecahedron;
 import javafx.scene.Group;
