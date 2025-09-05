@@ -23,8 +23,6 @@
         <jqwik.version>1.8.4</jqwik.version>
         <lwjgl.version>3.3.6</lwjgl.version>
         <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
-        <lwjgl.version>3.3.6</lwjgl.version>
-        <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
     </properties>
 
     <licenses>
@@ -217,6 +215,45 @@
                 <version>3.12.0</version>
             </dependency>
 
+            <!-- LWJGL core -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- OpenGL bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opengl</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opengl</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- GLFW bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-glfw</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-glfw</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
@@ -242,9 +279,19 @@
                 <version>${junit.version}</version>
             </dependency>
             <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${jqwik.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-core</artifactId>
                 <version>4.8.1</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>2.0.16</version>
             </dependency>
             <dependency>
                 <groupId>ch.qos.logback</groupId>
@@ -270,7 +317,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <release>23</release>
+                    <release>24</release>
                 </configuration>
             </plugin>
             <plugin>
