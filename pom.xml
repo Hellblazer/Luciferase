@@ -20,6 +20,8 @@
         <javafx.version>24</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
         <jmh.version>1.37</jmh.version>
+        <lwjgl.version>3.3.6</lwjgl.version>
+        <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
     </properties>
 
     <licenses>
@@ -41,7 +43,6 @@
         <module>portal</module>
         <module>common</module>
         <module>von</module>
-        <!--        <module>portal-2</module>-->
         <module>simulation</module>
         <module>sentry</module>
     </modules>
@@ -78,7 +79,11 @@
                 <version>${project.version}</version>
                 <artifactId>von</artifactId>
             </dependency>
-
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>render</artifactId>
+            </dependency>
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>runtime</artifactId>
@@ -208,6 +213,78 @@
                 <version>3.12.0</version>
             </dependency>
 
+            <!-- LWJGL core -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- OpenGL bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opengl</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opengl</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- GLFW bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-glfw</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-glfw</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- BGFX bindings for Metal backend -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bgfx</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bgfx</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- ShaderC bindings for shader compilation -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-shaderc</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-shaderc</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
+            <!-- JOML Math Library -->
+            <dependency>
+                <groupId>org.joml</groupId>
+                <artifactId>joml</artifactId>
+                <version>1.10.5</version>
+            </dependency>
+
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
@@ -238,6 +315,11 @@
                 <version>4.8.1</version>
             </dependency>
             <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>2.0.16</version>
+            </dependency>
+            <dependency>
                 <groupId>ch.qos.logback</groupId>
                 <artifactId>logback-classic</artifactId>
                 <version>${logback.version}</version>
@@ -261,7 +343,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <release>23</release>
+                    <release>24</release>
                 </configuration>
             </plugin>
             <plugin>

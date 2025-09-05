@@ -67,13 +67,19 @@ public final class CameraView extends ImageView {
     private       double             mousePosX;
     private       double mousePosY;
     private final Rotate rx = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
-    private final Rotate ry = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
-    private final Rotate rz = new Rotate(0, 0, 0, 0, Rotate.X_AXIS);
+    private final Rotate ry = new Rotate(0, 0, 0, 0, Rotate.Y_AXIS);
+    private final Rotate rz = new Rotate(0, 0, 0, 0, Rotate.Z_AXIS);
     private final double startX = 0;
     private final double startY = 0;
     private final Translate t      = new Translate(0, 0, 0);
     private       AnimationTimer viewTimer = null;
     private final Group          worldToView;
+    
+    // Enhanced navigation state
+    private boolean isPanning = false;
+    private double panSpeed = 1.0;
+    private double rotateSpeed = 1.0;
+    private double zoomSpeed = 10.0;
 
     public CameraView(SubScene scene) {
         // Make sure "world" is a group
@@ -87,8 +93,8 @@ public final class CameraView extends ImageView {
         camera.setNearClip(0.1);
         camera.setFarClip(15000.0);
         camera.setTranslateZ(-1500);
-        //        cameraTransform.ry.setAngle(-45.0);
-        //        cameraTransform.rx.setAngle(-10.0);
+        cameraTransform.ry.setAngle(-45.0);
+        cameraTransform.rx.setAngle(-10.0);
 
         params.setCamera(camera);
 
@@ -132,28 +138,58 @@ public final class CameraView extends ImageView {
             // Navigation
             setMouseTransparent(false);
 
-            // First person shooter keyboard movement
+            // Enhanced keyboard movement with panning
             setOnKeyPressed(event -> {
-                double change = 10.0;
+                double moveSpeed = 10.0;
+                double verticalSpeed = 10.0;
+                
                 // Add shift modifier to simulate "Running Speed"
                 if (event.isShiftDown()) {
-                    change = 50.0;
+                    moveSpeed = 50.0;
+                    verticalSpeed = 50.0;
                 }
+                
+                // Add ctrl modifier for fine control
+                if (event.isControlDown()) {
+                    moveSpeed = 2.0;
+                    verticalSpeed = 2.0;
+                }
+                
                 // What key did the user press?
                 KeyCode keycode = event.getCode();
-                // Step 2c: Add Zoom controls
+                
+                // Forward/Backward movement (Z-axis)
                 if (keycode == KeyCode.W) {
-                    camera.setTranslateZ(camera.getTranslateZ() + change);
+                    camera.setTranslateZ(camera.getTranslateZ() + moveSpeed);
                 }
                 if (keycode == KeyCode.S) {
-                    camera.setTranslateZ(camera.getTranslateZ() - change);
+                    camera.setTranslateZ(camera.getTranslateZ() - moveSpeed);
                 }
-                // Step 2d: Add Strafe controls
+                
+                // Left/Right strafe (X-axis)
                 if (keycode == KeyCode.A) {
-                    camera.setTranslateX(camera.getTranslateX() - change);
+                    camera.setTranslateX(camera.getTranslateX() - moveSpeed);
                 }
                 if (keycode == KeyCode.D) {
-                    camera.setTranslateX(camera.getTranslateX() + change);
+                    camera.setTranslateX(camera.getTranslateX() + moveSpeed);
+                }
+                
+                // Up/Down movement (Y-axis)
+                if (keycode == KeyCode.Q) {
+                    camera.setTranslateY(camera.getTranslateY() - verticalSpeed);
+                }
+                if (keycode == KeyCode.E) {
+                    camera.setTranslateY(camera.getTranslateY() + verticalSpeed);
+                }
+                
+                // Reset camera position
+                if (keycode == KeyCode.R) {
+                    resetCamera();
+                }
+                
+                // Pan mode toggle
+                if (keycode == KeyCode.SPACE) {
+                    isPanning = !isPanning;
                 }
             });
 
@@ -182,23 +218,41 @@ public final class CameraView extends ImageView {
                     modifier = 50.0;
                 }
                 if (me.isPrimaryButtonDown()) {
-                    cameraTransform.ry.setAngle(
-                    ((cameraTransform.ry.getAngle() + mouseDeltaX * modifierFactor * modifier * 2.0) % 360 + 540) % 360
-                    - 180); // +
+                    if (isPanning) {
+                        // Pan mode - move camera in XY plane
+                        camera.setTranslateX(camera.getTranslateX() - mouseDeltaX * modifierFactor * modifier * panSpeed);
+                        camera.setTranslateY(camera.getTranslateY() - mouseDeltaY * modifierFactor * modifier * panSpeed);
+                    } else {
+                        // Rotate mode - rotate camera view
+                        cameraTransform.ry.setAngle(
+                        ((cameraTransform.ry.getAngle() + mouseDeltaX * modifierFactor * modifier * rotateSpeed * 2.0) % 360 + 540) % 360
+                        - 180);
 
-                    cameraTransform.rx.setAngle(
-                    ((cameraTransform.rx.getAngle() - mouseDeltaY * modifierFactor * modifier * 2.0) % 360 + 540) % 360
-                    - 180); // -
+                        cameraTransform.rx.setAngle(
+                        ((cameraTransform.rx.getAngle() - mouseDeltaY * modifierFactor * modifier * rotateSpeed * 2.0) % 360 + 540) % 360
+                        - 180);
+                    }
                 } else if (me.isSecondaryButtonDown()) {
+                    // Right button - zoom
                     double z = camera.getTranslateZ();
-                    double newZ = z + mouseDeltaX * modifierFactor * modifier;
+                    double newZ = z + mouseDeltaY * modifierFactor * modifier * zoomSpeed;
                     camera.setTranslateZ(newZ);
                 } else if (me.isMiddleButtonDown()) {
-                    cameraTransform.t.setX(
-                    cameraTransform.t.getX() + mouseDeltaX * modifierFactor * modifier * 0.3); // -
-                    cameraTransform.t.setY(
-                    cameraTransform.t.getY() + mouseDeltaY * modifierFactor * modifier * 0.3); // -
-
+                    // Middle button - pan in XY plane (alternative to space+drag)
+                    camera.setTranslateX(camera.getTranslateX() - mouseDeltaX * modifierFactor * modifier * panSpeed);
+                    camera.setTranslateY(camera.getTranslateY() - mouseDeltaY * modifierFactor * modifier * panSpeed);
+                }
+            });
+            
+            // Mouse wheel for zoom
+            setOnScroll(event -> {
+                double zoomFactor = 1.05;
+                double deltaY = event.getDeltaY();
+                
+                if (deltaY < 0) {
+                    camera.setTranslateZ(camera.getTranslateZ() / zoomFactor);
+                } else {
+                    camera.setTranslateZ(camera.getTranslateZ() * zoomFactor);
                 }
             });
 
@@ -216,7 +270,6 @@ public final class CameraView extends ImageView {
     }
 
     private void redraw() {
-
         params.setViewport(new Rectangle2D(0, 0, getFitWidth(), getFitHeight()));
         if (image == null || image.getWidth() != getFitWidth() || image.getHeight() != getFitHeight()) {
             image = worldToView.snapshot(params, null);
@@ -224,6 +277,44 @@ public final class CameraView extends ImageView {
             worldToView.snapshot(params, image);
         }
         setImage(image);
+    }
+    
+    /**
+     * Reset camera to default position and orientation
+     */
+    public void resetCamera() {
+        camera.setTranslateX(0);
+        camera.setTranslateY(0);
+        camera.setTranslateZ(-1500);
+        cameraTransform.rx.setAngle(-10.0);
+        cameraTransform.ry.setAngle(-45.0);
+        cameraTransform.rz.setAngle(0);
+        cameraTransform.t.setX(0);
+        cameraTransform.t.setY(0);
+        cameraTransform.t.setZ(0);
+    }
+    
+    /**
+     * Set camera navigation speeds
+     */
+    public void setNavigationSpeeds(double pan, double rotate, double zoom) {
+        this.panSpeed = pan;
+        this.rotateSpeed = rotate;
+        this.zoomSpeed = zoom;
+    }
+    
+    /**
+     * Get current pan mode state
+     */
+    public boolean isPanning() {
+        return isPanning;
+    }
+    
+    /**
+     * Set pan mode
+     */
+    public void setPanning(boolean panning) {
+        this.isPanning = panning;
     }
 
 }
