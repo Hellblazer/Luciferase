@@ -20,6 +20,7 @@
         <javafx.version>24</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
         <jmh.version>1.37</jmh.version>
+        <jqwik.version>1.8.4</jqwik.version>
         <lwjgl.version>3.3.6</lwjgl.version>
         <lwjgl.natives>natives-macos-arm64</lwjgl.natives>
     </properties>
@@ -46,6 +47,7 @@
         <module>simulation</module>
         <module>sentry</module>
         <module>gpu-test-framework</module>
+        <module>dyada-java</module>
     </modules>
 
     <dependencyManagement>
@@ -83,7 +85,7 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
-                <artifactId>render</artifactId>
+                <artifactId>dyada-java</artifactId>
             </dependency>
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
@@ -253,39 +255,6 @@
                 <classifier>${lwjgl.natives}</classifier>
             </dependency>
 
-            <!-- BGFX bindings for Metal backend -->
-            <dependency>
-                <groupId>org.lwjgl</groupId>
-                <artifactId>lwjgl-bgfx</artifactId>
-                <version>${lwjgl.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.lwjgl</groupId>
-                <artifactId>lwjgl-bgfx</artifactId>
-                <version>${lwjgl.version}</version>
-                <classifier>${lwjgl.natives}</classifier>
-            </dependency>
-
-            <!-- ShaderC bindings for shader compilation -->
-            <dependency>
-                <groupId>org.lwjgl</groupId>
-                <artifactId>lwjgl-shaderc</artifactId>
-                <version>${lwjgl.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.lwjgl</groupId>
-                <artifactId>lwjgl-shaderc</artifactId>
-                <version>${lwjgl.version}</version>
-                <classifier>${lwjgl.natives}</classifier>
-            </dependency>
-
-            <!-- JOML Math Library -->
-            <dependency>
-                <groupId>org.joml</groupId>
-                <artifactId>joml</artifactId>
-                <version>1.10.5</version>
-            </dependency>
-
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
@@ -309,6 +278,11 @@
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${jqwik.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.mockito</groupId>
