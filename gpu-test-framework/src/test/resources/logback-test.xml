@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender for test output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File appender for test logs -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>target/test.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Performance test appender for benchmarks -->
+    <appender name="PERFORMANCE" class="ch.qos.logback.core.FileAppender">
+        <file>target/performance.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} PERF - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <!-- Turn off verbose logging for JMH benchmarks -->
+    <logger name="org.openjdk.jmh" level="WARN"/>
+
+    <!-- Turn off verbose logging for test framework -->
+    <logger name="org.junit" level="WARN"/>
+</configuration>

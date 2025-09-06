@@ -1,0 +1,271 @@
+#version 430 core
+
+// ESVO GPU Compute Shader for Ray-Octree Traversal
+// Implements the 3 critical GLSL shader bug fixes:
+// 1. Single stack read only (no double reads)
+// 2. Proper coordinate space transformation to [1,2]
+// 3. Conditional iteration limit
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Output texture
+layout(binding = 0, rgba8) uniform writeonly image2D outputTexture;
+
+// Octree buffer (8 bytes per node: childDesc + contourDesc)
+layout(std430, binding = 1) readonly buffer OctreeBuffer {
+    uvec2 nodes[];
+} octreeBuffer;
+
+// Camera uniforms
+layout(std140, binding = 2) uniform CameraUBO {
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    mat4 objectToWorld;
+    mat4 octreeToObject;
+    vec4 cameraPos;     // xyz = position, w = nearPlane
+    vec4 cameraDir;     // xyz = direction, w = farPlane
+} camera;
+
+// Constants matching Java implementation
+const int CAST_STACK_DEPTH = 23;
+const int MAX_RAYCAST_ITERATIONS = 0; // 0 = unlimited
+const float OCTREE_MIN = 1.0;
+const float OCTREE_MAX = 2.0;
+const float OCTREE_SIZE = 1.0;
+
+// Stack entry structure
+struct StackEntry {
+    int nodeIndex;
+    float tMax;
+    vec3 pos;
+    int scale;
+};
+
+// Ray structure
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    vec3 invDirection;
+    int octantMask;
+};
+
+// Node access functions
+int getValidMask(uvec2 node) {
+    return int((node.x >> 8) & 0xFFu);
+}
+
+int getNonLeafMask(uvec2 node) {
+    return int(node.x & 0xFFu);
+}
+
+bool isFar(uvec2 node) {
+    return (node.x & 0x10000u) != 0u;
+}
+
+int getChildPointer(uvec2 node) {
+    return int(node.x >> 17);
+}
+
+// Critical: popc8 - count bits in lower 8 bits only
+int popc8(int mask) {
+    return bitCount(mask & 0xFF);
+}
+
+// Calculate child offset using popc8
+int getChildOffset(int validMask, int childIndex) {
+    int mask = validMask & ((1 << childIndex) - 1);
+    return popc8(mask);
+}
+
+// Critical Bug Fix #2: Transform world coordinates to octree space [1,2]
+vec3 worldToOctree(vec3 worldPos) {
+    vec4 objPos = camera.octreeToObject * vec4(worldPos, 1.0);
+    vec3 normalized = (objPos.xyz + 1.0) * 0.5; // [-1,1] to [0,1]
+    return normalized + vec3(OCTREE_MIN); // [0,1] to [1,2]
+}
+
+// Calculate octant mask for ray direction
+int calculateOctantMask(vec3 direction) {
+    int mask = 7;
+    if (direction.x > 0.0) mask ^= 1;
+    if (direction.y > 0.0) mask ^= 2;
+    if (direction.z > 0.0) mask ^= 4;
+    return mask;
+}
+
+// Apply octant mirroring to ensure negative ray directions
+vec3 applyOctantMirroring(vec3 direction, int octantMask) {
+    vec3 mirrored = direction;
+    if ((octantMask & 1) == 0) mirrored.x = -mirrored.x;
+    if ((octantMask & 2) == 0) mirrored.y = -mirrored.y;
+    if ((octantMask & 4) == 0) mirrored.z = -mirrored.z;
+    return mirrored;
+}
+
+// Ray-box intersection test
+vec2 intersectAABB(vec3 rayOrigin, vec3 invRayDir, vec3 boxMin, vec3 boxMax) {
+    vec3 t0 = (boxMin - rayOrigin) * invRayDir;
+    vec3 t1 = (boxMax - rayOrigin) * invRayDir;
+    
+    vec3 tMin = min(t0, t1);
+    vec3 tMax = max(t0, t1);
+    
+    float tNear = max(max(tMin.x, tMin.y), tMin.z);
+    float tFar = min(min(tMax.x, tMax.y), tMax.z);
+    
+    return vec2(tNear, tFar);
+}
+
+// Main ray traversal function
+vec4 traverseOctree(Ray ray) {
+    // Stack for traversal (Critical Bug Fix #1: Single stack read)
+    StackEntry stack[CAST_STACK_DEPTH];
+    int stackPtr = 0;
+    
+    // Initialize traversal
+    int currentNode = 0; // Root node
+    vec3 currentPos = vec3(1.5); // Center of [1,2] space
+    int currentScale = 0;
+    float tMax = 1e30;
+    
+    int iterations = 0;
+    bool hit = false;
+    vec3 hitPoint = vec3(0.0);
+    vec3 hitNormal = vec3(0.0);
+    float hitDistance = 0.0;
+    
+    // Critical Bug Fix #3: Conditional iteration limit
+    while (stackPtr < CAST_STACK_DEPTH && 
+           (MAX_RAYCAST_ITERATIONS == 0 || iterations < MAX_RAYCAST_ITERATIONS)) {
+        
+        if (MAX_RAYCAST_ITERATIONS > 0) iterations++;
+        
+        // Read current node
+        uvec2 node = octreeBuffer.nodes[currentNode];
+        int validMask = getValidMask(node);
+        int nonLeafMask = getNonLeafMask(node);
+        
+        // Check if node has children
+        if (validMask == 0) {
+            // Empty node - pop from stack
+            if (stackPtr == 0) break;
+            
+            // Critical Bug Fix #1: Single stack read only
+            stackPtr--;
+            StackEntry entry = stack[stackPtr];
+            currentNode = entry.nodeIndex;
+            tMax = entry.tMax;
+            currentPos = entry.pos;
+            currentScale = entry.scale;
+            continue;
+        }
+        
+        // Check if leaf node
+        if (nonLeafMask == 0) {
+            // Leaf node - we hit geometry
+            hit = true;
+            hitPoint = ray.origin + ray.direction * hitDistance;
+            hitNormal = vec3(0, 1, 0); // Placeholder normal
+            break;
+        }
+        
+        // Internal node - traverse children
+        float cellSize = OCTREE_SIZE / float(1 << (currentScale + 1));
+        int childPointer = getChildPointer(node);
+        
+        // Test intersection with each valid child
+        for (int i = 0; i < 8; i++) {
+            if ((validMask & (1 << i)) == 0) continue;
+            
+            // Calculate child bounds
+            vec3 childOffset = vec3(
+                float((i & 1) != 0),
+                float((i & 2) != 0),
+                float((i & 4) != 0)
+            );
+            vec3 childMin = currentPos - vec3(cellSize * 0.5) + childOffset * cellSize;
+            vec3 childMax = childMin + vec3(cellSize);
+            
+            // Test ray-child intersection
+            vec2 t = intersectAABB(ray.origin, ray.invDirection, childMin, childMax);
+            
+            if (t.x <= t.y && t.y > 0.0) {
+                // Child intersects ray
+                if ((nonLeafMask & (1 << i)) != 0) {
+                    // Non-leaf child - push to stack for later
+                    if (stackPtr < CAST_STACK_DEPTH - 1) {
+                        stack[stackPtr].nodeIndex = childPointer + getChildOffset(validMask, i);
+                        stack[stackPtr].tMax = t.y;
+                        stack[stackPtr].pos = childMin + vec3(cellSize * 0.5);
+                        stack[stackPtr].scale = currentScale + 1;
+                        stackPtr++;
+                    }
+                } else {
+                    // Leaf child - potential hit
+                    if (t.x < hitDistance || hitDistance == 0.0) {
+                        hit = true;
+                        hitDistance = t.x;
+                        hitPoint = ray.origin + ray.direction * t.x;
+                    }
+                }
+            }
+        }
+        
+        // Pop next node from stack
+        if (stackPtr == 0) break;
+        
+        stackPtr--;
+        StackEntry entry = stack[stackPtr];
+        currentNode = entry.nodeIndex;
+        tMax = entry.tMax;
+        currentPos = entry.pos;
+        currentScale = entry.scale;
+    }
+    
+    // Return color based on hit
+    if (hit) {
+        // Encode depth as color
+        float depth = hitDistance / 10.0; // Normalize depth
+        return vec4(1.0 - depth, depth * 0.5, depth, 1.0);
+    } else {
+        // Background color
+        return vec4(0.1, 0.1, 0.2, 1.0);
+    }
+}
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputTexture);
+    
+    // Check bounds
+    if (pixelCoord.x >= imageSize.x || pixelCoord.y >= imageSize.y) {
+        return;
+    }
+    
+    // Generate ray for this pixel
+    vec2 uv = (vec2(pixelCoord) + 0.5) / vec2(imageSize);
+    vec2 ndc = uv * 2.0 - 1.0; // Normalized device coordinates
+    
+    // Transform from NDC to world space
+    vec4 rayClip = vec4(ndc, -1.0, 1.0);
+    vec4 rayEye = inverse(camera.projMatrix) * rayClip;
+    rayEye = vec4(rayEye.xy, -1.0, 0.0);
+    vec3 rayWorld = normalize((inverse(camera.viewMatrix) * rayEye).xyz);
+    
+    // Critical Bug Fix #2: Transform to octree coordinate space [1,2]
+    Ray ray;
+    ray.origin = worldToOctree(camera.cameraPos.xyz);
+    ray.direction = normalize(rayWorld);
+    ray.invDirection = 1.0 / ray.direction;
+    ray.octantMask = calculateOctantMask(ray.direction);
+    
+    // Apply octant mirroring for optimization
+    ray.direction = applyOctantMirroring(ray.direction, ray.octantMask);
+    ray.invDirection = 1.0 / ray.direction;
+    
+    // Traverse octree and get color
+    vec4 color = traverseOctree(ray);
+    
+    // Write to output texture
+    imageStore(outputTexture, pixelCoord, color);
+}
