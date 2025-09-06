@@ -26,43 +26,6 @@ public final class BasicRayTraversal {
     private static final int NUM_OCTANTS = 8;
     private static final float EPSILON = (float) Math.pow(2, -23); // exp2(-23.0) from GLSL
     
-    /**
-     * Legacy Ray structure for traversal operations
-     * @deprecated Use EnhancedRay for C++ compliance
-     */
-    @Deprecated
-    public static class Ray {
-        public final Vector3f origin;
-        public final Vector3f direction;
-        public float tmin;
-        public float tmax;
-        
-        public Ray(Vector3f origin, Vector3f direction) {
-            this.origin = new Vector3f(origin);
-            this.direction = new Vector3f(direction);
-            this.direction.normalize();
-            this.tmin = 0.0f;
-            this.tmax = Float.POSITIVE_INFINITY;
-        }
-        
-        public Ray(Vector3f origin, Vector3f direction, float tmin, float tmax) {
-            this.origin = new Vector3f(origin);
-            this.direction = new Vector3f(direction);
-            this.direction.normalize();
-            this.tmin = tmin;
-            this.tmax = tmax;
-        }
-        
-        /**
-         * Get point along ray at parameter t
-         */
-        public Vector3f pointAt(float t) {
-            Vector3f point = new Vector3f(direction);
-            point.scale(t);
-            point.add(origin);
-            return point;
-        }
-    }
     
     /**
      * Result of ray traversal operation
@@ -143,15 +106,15 @@ public final class BasicRayTraversal {
      * @param octree Simple single-level octree
      * @return Traversal result with hit information
      */
-    public static TraversalResult traverse(Ray ray, SimpleOctree octree) {
+    public static TraversalResult traverse(EnhancedRay ray, SimpleOctree octree) {
         // Calculate intersection with octree bounds [1,2]
         float[] intersection = CoordinateSpace.calculateOctreeIntersection(ray.origin, ray.direction);
         if (intersection == null) {
             return new TraversalResult();
         }
         
-        float tEnter = Math.max(intersection[0], ray.tmin);
-        float tExit = Math.min(intersection[1], ray.tmax);
+        float tEnter = Math.max(intersection[0], 0.0f);
+        float tExit = Math.min(intersection[1], Float.POSITIVE_INFINITY);
         
         if (tEnter > tExit || tExit < 0) {
             return new TraversalResult();
@@ -245,8 +208,8 @@ public final class BasicRayTraversal {
      * @param fov Field of view in radians
      * @return Ray in octree coordinate space [1,2]
      */
-    public static Ray generateRay(int screenX, int screenY, int screenWidth, int screenHeight,
-                                 Vector3f cameraPos, Vector3f cameraDir, float fov) {
+    public static EnhancedRay generateRay(int screenX, int screenY, int screenWidth, int screenHeight,
+                                        Vector3f cameraPos, Vector3f cameraDir, float fov) {
         
         // Convert screen coordinates to NDC [-1, 1]
         float ndcX = (2.0f * screenX + 1.0f) / screenWidth - 1.0f;
@@ -275,7 +238,7 @@ public final class BasicRayTraversal {
             octreeDirection.set(1.0f, 0.0f, 0.0f); // Point right toward octree
         }
         
-        return new Ray(octreeOrigin, octreeDirection);
+        return new EnhancedRay(octreeOrigin, 0.001f, octreeDirection, 0.001f);
     }
     
     /**
@@ -307,7 +270,7 @@ public final class BasicRayTraversal {
      */
     public static double measureTraversalPerformance(SimpleOctree octree, int rayCount) {
         // Generate test rays
-        Ray[] testRays = new Ray[rayCount];
+        EnhancedRay[] testRays = new EnhancedRay[rayCount];
         Vector3f cameraPos = new Vector3f(0.5f, 1.5f, 1.5f);
         Vector3f cameraDir = new Vector3f(1.0f, 0.0f, 0.0f);
         
@@ -325,7 +288,7 @@ public final class BasicRayTraversal {
         // Measure performance
         long startTime = System.nanoTime();
         
-        for (Ray ray : testRays) {
+        for (EnhancedRay ray : testRays) {
             traverse(ray, octree);
         }
         
@@ -341,20 +304,15 @@ public final class BasicRayTraversal {
     public static TraversalResult traverseEnhanced(EnhancedRay ray, SimpleOctree octree) {
         log.debug("Starting enhanced traversal with ray: {}", ray);
         
-        // Transform to octree space [1,2] if needed
-        EnhancedRay octreeRay = ray;
-        if (needsCoordinateTransform(ray.origin)) {
-            octreeRay = EnhancedRay.transformToOctreeSpace(ray);
-        }
+        // Get actual octree bounds
+        var center = octree.getCenter();
+        var halfSize = octree.getHalfSize();
+        var minBounds = new Vector3f(center.x - halfSize, center.y - halfSize, center.z - halfSize);
+        var maxBounds = new Vector3f(center.x + halfSize, center.y + halfSize, center.z + halfSize);
         
-        // Apply octant mirroring for optimization
-        int octantMask = octreeRay.calculateOctantMask();
-        EnhancedRay mirroredRay = octreeRay.applyOctantMirroring(octantMask);
-        
-        // Ray-box intersection with [1,2] octree bounds
-        float[] intersection = calculateRayBoxIntersection(mirroredRay.origin, mirroredRay.direction,
-                                                          new Vector3f(1.0f, 1.0f, 1.0f),
-                                                          new Vector3f(2.0f, 2.0f, 2.0f));
+        // Simple ray-box intersection with actual octree bounds
+        float[] intersection = calculateRayBoxIntersection(ray.origin, ray.direction,
+                                                          minBounds, maxBounds);
         
         if (intersection == null) {
             var result = new TraversalResult();
@@ -369,37 +327,16 @@ public final class BasicRayTraversal {
             return result;
         }
         
-        float t = Math.max(tEnter, 0.001f);
-        Vector3f hitPoint = mirroredRay.pointAt(t);
-        
-        // Check termination condition using size parameters
-        float scaleExp2 = 1.0f; // Root level
-        if (mirroredRay.shouldTerminate(tExit, scaleExp2)) {
-            // Hit point is large enough to terminate immediately
-            
-            // Undo mirroring for final result
-            if ((octantMask & 1) == 0) hitPoint.x = 3.0f - hitPoint.x;
-            if ((octantMask & 2) == 0) hitPoint.y = 3.0f - hitPoint.y;
-            if ((octantMask & 4) == 0) hitPoint.z = 3.0f - hitPoint.z;
-            
-            int octant = calculateChildOctant(hitPoint, octree.center);
-            var result = new TraversalResult();
-            result.hit = true;
-            result.t = t;
-            result.hitPoint = hitPoint;
-            result.octant = octant;
-            return result;
-        }
+        // Calculate hit point at entrance to octree
+        float t = Math.max(tEnter, 0.0f);
+        Vector3f hitPoint = ray.pointAt(t);
         
         // Find which octant the ray hits
-        int octant = calculateChildOctant(hitPoint, octree.center);
+        int octant = calculateChildOctant(hitPoint, center);
         
-        // Undo mirroring for final result
-        if ((octantMask & 1) == 0) hitPoint.x = 3.0f - hitPoint.x;
-        if ((octantMask & 2) == 0) hitPoint.y = 3.0f - hitPoint.y;
-        if ((octantMask & 4) == 0) hitPoint.z = 3.0f - hitPoint.z;
-        
+        // Check if that octant has geometry
         boolean hasGeometry = octree.hasGeometry(octant);
+        
         var result = new TraversalResult();
         result.hit = hasGeometry;
         result.t = t;
@@ -455,23 +392,47 @@ public final class BasicRayTraversal {
      */
     private static float[] calculateRayBoxIntersection(Vector3f origin, Vector3f direction, 
                                                       Vector3f boxMin, Vector3f boxMax) {
-        // Simple AABB intersection test
-        float txMin = (boxMin.x - origin.x) / direction.x;
-        float txMax = (boxMax.x - origin.x) / direction.x;
-        if (txMin > txMax) { float temp = txMin; txMin = txMax; txMax = temp; }
+        // Simple AABB intersection test with proper handling of axis-aligned rays
+        float txMin, txMax;
+        if (Math.abs(direction.x) < 1e-6f) {
+            // Ray is parallel to YZ plane
+            if (origin.x < boxMin.x || origin.x > boxMax.x) return null;
+            txMin = Float.NEGATIVE_INFINITY;
+            txMax = Float.POSITIVE_INFINITY;
+        } else {
+            txMin = (boxMin.x - origin.x) / direction.x;
+            txMax = (boxMax.x - origin.x) / direction.x;
+            if (txMin > txMax) { float temp = txMin; txMin = txMax; txMax = temp; }
+        }
         
-        float tyMin = (boxMin.y - origin.y) / direction.y;
-        float tyMax = (boxMax.y - origin.y) / direction.y;
-        if (tyMin > tyMax) { float temp = tyMin; tyMin = tyMax; tyMax = temp; }
+        float tyMin, tyMax;
+        if (Math.abs(direction.y) < 1e-6f) {
+            // Ray is parallel to XZ plane
+            if (origin.y < boxMin.y || origin.y > boxMax.y) return null;
+            tyMin = Float.NEGATIVE_INFINITY;
+            tyMax = Float.POSITIVE_INFINITY;
+        } else {
+            tyMin = (boxMin.y - origin.y) / direction.y;
+            tyMax = (boxMax.y - origin.y) / direction.y;
+            if (tyMin > tyMax) { float temp = tyMin; tyMin = tyMax; tyMax = temp; }
+        }
         
-        float tzMin = (boxMin.z - origin.z) / direction.z;
-        float tzMax = (boxMax.z - origin.z) / direction.z;
-        if (tzMin > tzMax) { float temp = tzMin; tzMin = tzMax; tzMax = temp; }
+        float tzMin, tzMax;
+        if (Math.abs(direction.z) < 1e-6f) {
+            // Ray is parallel to XY plane
+            if (origin.z < boxMin.z || origin.z > boxMax.z) return null;
+            tzMin = Float.NEGATIVE_INFINITY;
+            tzMax = Float.POSITIVE_INFINITY;
+        } else {
+            tzMin = (boxMin.z - origin.z) / direction.z;
+            tzMax = (boxMax.z - origin.z) / direction.z;
+            if (tzMin > tzMax) { float temp = tzMin; tzMin = tzMax; tzMax = temp; }
+        }
         
         float tMin = Math.max(Math.max(txMin, tyMin), tzMin);
         float tMax = Math.min(Math.min(txMax, tyMax), tzMax);
         
-        if (tMin > tMax) return null; // No intersection
+        if (tMin > tMax || tMax < 0) return null; // No intersection or behind ray
         
         return new float[]{tMin, tMax};
     }

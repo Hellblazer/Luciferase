@@ -40,35 +40,6 @@ public class StackBasedRayTraversal {
     // Maximum iterations (must match C++ MAX_RAYCAST_ITERATIONS)
     public static final int MAX_RAYCAST_ITERATIONS = 10000;
     
-    /**
-     * Legacy Ray class - deprecated in favor of EnhancedRay
-     * @deprecated Use EnhancedRay for C++ compliance
-     */
-    @Deprecated
-    public static class Ray {
-        public final Vector3f origin;
-        public final Vector3f direction;
-        
-        public Ray(Vector3f origin, Vector3f direction) {
-            this.origin = new Vector3f(origin);
-            this.direction = new Vector3f(direction);
-            this.direction.normalize();
-        }
-        
-        public Vector3f pointAt(float t) {
-            var point = new Vector3f(direction);
-            point.scale(t);
-            point.add(origin);
-            return point;
-        }
-        
-        /**
-         * Convert to EnhancedRay with default size parameters
-         */
-        public EnhancedRay toEnhancedRay() {
-            return new EnhancedRay(origin, 0.0f, direction, 0.0f);
-        }
-    }
     
     /**
      * Result of deep stack-based traversal
@@ -233,7 +204,7 @@ public class StackBasedRayTraversal {
      * Perform deep stack-based octree traversal
      * Implements the 3 critical GLSL shader bug fixes
      */
-    public static DeepTraversalResult traverse(Ray ray, MultiLevelOctree octree) {
+    public static DeepTraversalResult traverse(EnhancedRay ray, MultiLevelOctree octree) {
         // Calculate intersection with octree bounds [1,2]
         var intersection = CoordinateSpace.calculateOctreeIntersection(ray.origin, ray.direction);
         if (intersection == null) {
@@ -251,7 +222,7 @@ public class StackBasedRayTraversal {
         var octantMask = CoordinateSpace.calculateOctantMask(ray.direction);
         var mirroredOrigin = CoordinateSpace.applyOctantMirroringToOrigin(ray.origin, octantMask);
         var mirroredDirection = CoordinateSpace.applyOctantMirroring(ray.direction, octantMask);
-        var mirroredRay = new Ray(mirroredOrigin, mirroredDirection);
+        var mirroredRay = new EnhancedRay(mirroredOrigin, ray.originSize, mirroredDirection, ray.directionSize);
         
         // Initialize traversal state
         var stack = new StackEntry[CAST_STACK_DEPTH];
@@ -368,7 +339,7 @@ public class StackBasedRayTraversal {
     /**
      * Calculate t_max for entering a child octant
      */
-    private static float calculateChildTMax(Ray ray, Vector3f[] bounds) {
+    private static float calculateChildTMax(EnhancedRay ray, Vector3f[] bounds) {
         var tMax = Float.MAX_VALUE;
         
         // Calculate intersection with each face of the child bounds
@@ -436,8 +407,8 @@ public class StackBasedRayTraversal {
      * Generate ray for pixel coordinates (with coordinate space transformation)
      * Critical Bug Fix #2: Transform rays to octree space [1,2]
      */
-    public static Ray generateRay(int x, int y, int width, int height, 
-                                Vector3f cameraPos, Vector3f cameraDir, float fov) {
+    public static EnhancedRay generateRay(int x, int y, int width, int height, 
+                                        Vector3f cameraPos, Vector3f cameraDir, float fov) {
         
         // Generate ray in world space
         var aspectRatio = (float) width / height;
@@ -453,7 +424,8 @@ public class StackBasedRayTraversal {
         var octreeOrigin = CoordinateSpace.worldToOctree(cameraPos);
         var octreeDirection = CoordinateSpace.worldToOctreeDirection(worldDir);
         
-        return new Ray(octreeOrigin, octreeDirection);
+        // Use default size parameters for legacy compatibility
+        return new EnhancedRay(octreeOrigin, 0.001f, octreeDirection, 0.001f);
     }
     
     /**

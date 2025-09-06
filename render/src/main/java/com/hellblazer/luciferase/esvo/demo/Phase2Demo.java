@@ -27,7 +27,7 @@ import org.lwjgl.system.MemoryStack;
 import javax.vecmath.Vector3f;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.MultiLevelOctree;
-import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.Ray;
+import com.hellblazer.luciferase.esvo.traversal.EnhancedRay;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
 
 import java.nio.ByteBuffer;

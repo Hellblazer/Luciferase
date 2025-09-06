@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.esvo;
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
 import com.hellblazer.luciferase.esvo.core.OctreeNode;
 import com.hellblazer.luciferase.esvo.traversal.BasicRayTraversal;
+import com.hellblazer.luciferase.esvo.traversal.EnhancedRay;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,7 +56,7 @@ public class ESVOPhase1Tests {
         float fov = (float) Math.PI / 4; // 45 degrees
         
         // Generate ray for center pixel
-        BasicRayTraversal.Ray ray = BasicRayTraversal.generateRay(
+        EnhancedRay ray = BasicRayTraversal.generateRay(
             128, 128, 256, 256, cameraPos, cameraDir, fov);
         
         // Verify ray is properly oriented toward octree
@@ -86,7 +87,7 @@ public class ESVOPhase1Tests {
         // Test ray that hits octant 1 (which has geometry per our valid mask 0xAA)
         Vector3f rayOrigin = new Vector3f(0.5f, 1.25f, 1.25f); // Left of octree, lower quadrant
         Vector3f rayDirection = new Vector3f(1.0f, 0.0f, 0.0f); // Point right
-        BasicRayTraversal.Ray ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        EnhancedRay ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         BasicRayTraversal.TraversalResult result = BasicRayTraversal.traverse(ray, testOctree);
         
@@ -126,7 +127,7 @@ public class ESVOPhase1Tests {
         // Create ray that passes through the target point in the specified octant
         Vector3f rayOrigin = new Vector3f(0.5f, targetPoint.y, targetPoint.z);
         Vector3f rayDirection = new Vector3f(1.0f, 0.0f, 0.0f);
-        BasicRayTraversal.Ray ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        EnhancedRay ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         BasicRayTraversal.TraversalResult result = BasicRayTraversal.traverse(ray, testOctree);
         
@@ -153,7 +154,7 @@ public class ESVOPhase1Tests {
         // Test ray with positive direction (will be mirrored)
         Vector3f rayOrigin = new Vector3f(0.5f, 1.5f, 1.5f);
         Vector3f rayDirection = new Vector3f(1.0f, 1.0f, 1.0f); // All positive
-        BasicRayTraversal.Ray ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        EnhancedRay ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         // Calculate octant mask for mirroring
         int octantMask = CoordinateSpace.calculateOctantMask(rayDirection);
@@ -202,7 +203,7 @@ public class ESVOPhase1Tests {
         // Test ray that misses octree entirely
         Vector3f rayOrigin = new Vector3f(0.5f, 0.5f, 0.5f); // Below octree
         Vector3f rayDirection = new Vector3f(0.0f, -1.0f, 0.0f); // Point down (away)
-        BasicRayTraversal.Ray ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        EnhancedRay ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         BasicRayTraversal.TraversalResult result = BasicRayTraversal.traverse(ray, testOctree);
         assertFalse(result.hit, "Ray pointing away from octree should not hit");
@@ -210,7 +211,7 @@ public class ESVOPhase1Tests {
         // Test ray that starts inside octree
         rayOrigin = new Vector3f(1.5f, 1.5f, 1.5f); // Center of octree
         rayDirection = new Vector3f(1.0f, 0.0f, 0.0f); // Point right
-        ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         result = BasicRayTraversal.traverse(ray, testOctree);
         // Should hit if the center octant has geometry (depends on implementation)
@@ -218,7 +219,7 @@ public class ESVOPhase1Tests {
         // Test ray that grazes octree edge
         rayOrigin = new Vector3f(0.5f, 1.0f, 1.5f); // Aligned with octree edge
         rayDirection = new Vector3f(1.0f, 0.0f, 0.0f);
-        ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         result = BasicRayTraversal.traverse(ray, testOctree);
         // Should handle edge case gracefully (may or may not hit depending on precision)
@@ -277,7 +278,7 @@ public class ESVOPhase1Tests {
     void testRayTParameterCalculations() {
         Vector3f rayOrigin = new Vector3f(0.5f, 1.5f, 1.5f);
         Vector3f rayDirection = new Vector3f(1.0f, 0.0f, 0.0f);
-        BasicRayTraversal.Ray ray = new BasicRayTraversal.Ray(rayOrigin, rayDirection);
+        EnhancedRay ray = new EnhancedRay(rayOrigin, 0.001f, rayDirection, 0.001f);
         
         // Test pointAt method
         Vector3f point1 = ray.pointAt(0.0f);

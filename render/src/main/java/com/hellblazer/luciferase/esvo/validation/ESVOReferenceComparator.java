@@ -191,7 +191,7 @@ public class ESVOReferenceComparator {
     /**
      * Placeholder for ESVO render result
      */
-    public static class ESVORenderResult {
+    public static class ESVORenderResult implements ESVOQualityValidator.ESVORenderResult {
         private final ByteBuffer pixelData;
         private final int width;
         private final int height;
@@ -211,6 +211,10 @@ public class ESVOReferenceComparator {
         public int getWidth() { return width; }
         public int getHeight() { return height; }
         public ESVOOctreeData getOctreeData() { return octreeData; }
+        
+        // Implementation of ESVOQualityValidator.ESVORenderResult interface
+        @Override
+        public ByteBuffer getImageData() { return pixelData; }
         public List<TraversalStep> getTraversalPath() { return new ArrayList<>(traversalPath); }
     }
     
@@ -391,6 +395,12 @@ public class ESVOReferenceComparator {
                     }
                 }
             }
+        }
+        
+        // Handle empty structures
+        if (esvo.getVoxelCount() == 0 && reference.getVoxelCount() == 0) {
+            log.debug("Both structures are empty - validation passed");
+            return true;
         }
         
         double matchRatio = (double) matchedVoxels / Math.max(esvo.getVoxelCount(), reference.getVoxelCount());

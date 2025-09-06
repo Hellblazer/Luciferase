@@ -3,6 +3,7 @@ package com.hellblazer.luciferase.esvo.demo;
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
 import com.hellblazer.luciferase.esvo.core.OctreeNode;
 import com.hellblazer.luciferase.esvo.traversal.BasicRayTraversal;
+import com.hellblazer.luciferase.esvo.traversal.EnhancedRay;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.glfw.GLFWVidMode;
@@ -237,7 +238,7 @@ public final class Phase1Demo {
         for (int y = 0; y < RENDER_HEIGHT; y++) {
             for (int x = 0; x < RENDER_WIDTH; x++) {
                 // Generate ray for this pixel
-                BasicRayTraversal.Ray ray = BasicRayTraversal.generateRay(
+                EnhancedRay ray = BasicRayTraversal.generateRay(
                     x, y, RENDER_WIDTH, RENDER_HEIGHT, cameraPos, cameraDir, FOV);
                 
                 // Traverse octree

@@ -1,9 +1,9 @@
 package com.hellblazer.luciferase.esvo;
 
-import com.hellblazer.luciferase.esvo.core.ESVOApplication;
+import com.hellblazer.luciferase.esvo.app.ESVOApplication;
 import com.hellblazer.luciferase.esvo.core.ESVOContext;
-import com.hellblazer.luciferase.esvo.core.ESVORenderResult;
-import com.hellblazer.luciferase.esvo.data.ESVOOctreeData;
+import com.hellblazer.luciferase.esvo.validation.ESVOReferenceComparator.ESVORenderResult;
+import com.hellblazer.luciferase.esvo.validation.ESVOReferenceComparator.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.validation.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +13,7 @@ import org.lwjgl.system.MemoryUtil;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -96,13 +97,15 @@ public class ESVOPhase8Tests {
     void testQualityValidation() {
         var width = 512;
         var height = 512;
-        var rendered = new ESVORenderResult(createGradientBuffer(width, height), width, height);
-        var reference = new ESVORenderResult(createGradientBuffer(width, height), width, height);
+        var rendered = new ESVORenderResult(createGradientBuffer(width, height), width, height, 
+                                           new ESVOOctreeData(new HashMap<>(), new HashMap<>(), 5), new ArrayList<>());
+        var reference = new ESVORenderResult(createGradientBuffer(width, height), width, height, 
+                                            new ESVOOctreeData(new HashMap<>(), new HashMap<>(), 5), new ArrayList<>());
         
         var report = qualityValidator.validateQuality(rendered, reference);
         assertNotNull(report);
-        assertTrue(report.passesThresholds(), "Identical images should pass all thresholds");
-        assertEquals(1.0, report.overallQuality(), 0.01, "Overall quality should be near perfect");
+        assertTrue(report.passesAllThresholds(), "Identical images should pass all thresholds");
+        assertEquals(1.0, report.getOverallQualityScore(), 0.01, "Overall quality should be near perfect");
     }
 
     @Test
@@ -138,25 +141,25 @@ public class ESVOPhase8Tests {
     @DisplayName("Test performance comparison")
     void testPerformanceComparison() {
         var baseline = new ESVOPerformanceBenchmark.PerformanceReport(
-            16.67, 2.0, 14.0, 18.0, 17.0,
-            115_000_000, 60_000_000,
-            512 * 1024 * 1024L, 256 * 1024 * 1024L,
-            45.0, 15.0,
-            true, "Good"
+            new ESVOPerformanceBenchmark.FrameStats(60.0, 16.67, 14.0, 18.0, 17.0, 17.5, 2.0),
+            new ESVOPerformanceBenchmark.ThroughputStats(115_000_000, 120_000_000, 60_000_000, 65_000_000),
+            new ESVOPerformanceBenchmark.MemoryStats(512, 256, 100, 1024, 25.0),
+            new ESVOPerformanceBenchmark.SystemStats(45.0, 55.0, 8, 2L * 1024 * 1024 * 1024, 5000),
+            new ESVOPerformanceBenchmark.PerformanceAssessment(ESVOPerformanceBenchmark.PerformanceGrade.GOOD, new ArrayList<>(), List.of("Good baseline performance"))
         );
         
         var current = new ESVOPerformanceBenchmark.PerformanceReport(
-            15.0, 1.5, 13.0, 16.0, 15.5,
-            125_000_000, 65_000_000,
-            480 * 1024 * 1024L, 240 * 1024 * 1024L,
-            40.0, 12.0,
-            true, "Excellent"
+            new ESVOPerformanceBenchmark.FrameStats(66.7, 15.0, 13.0, 16.0, 15.5, 16.0, 1.5),
+            new ESVOPerformanceBenchmark.ThroughputStats(125_000_000, 130_000_000, 65_000_000, 70_000_000),
+            new ESVOPerformanceBenchmark.MemoryStats(480, 240, 80, 1024, 23.4),
+            new ESVOPerformanceBenchmark.SystemStats(40.0, 50.0, 8, 2L * 1024 * 1024 * 1024, 4500),
+            new ESVOPerformanceBenchmark.PerformanceAssessment(ESVOPerformanceBenchmark.PerformanceGrade.EXCELLENT, new ArrayList<>(), List.of("Excellent performance"))
         );
         
         var comparison = performanceBenchmark.comparePerformance(baseline, current);
         assertNotNull(comparison);
-        assertTrue(comparison.improved(), "Performance should show improvement");
-        assertTrue(comparison.frameTimeImprovement() > 0, "Frame time should improve");
+        assertTrue(comparison.fpsChangePercent() > 0, "FPS should show improvement");
+        assertTrue(comparison.frameTimeChangePercent() < 0, "Frame time should improve (negative change)");
     }
 
     @Test
@@ -165,20 +168,24 @@ public class ESVOPhase8Tests {
         var width = 256;
         var height = 256;
         var buffer = createTestBuffer(width, height, 128);
+        var bufferCopy = createTestBuffer(width, height, 128); // Create a separate buffer for reference
         
-        var esvoResult = new ESVORenderResult(buffer, width, height);
-        var refResult = new ESVOReferenceComparator.ReferenceResult(buffer, width, height);
+        var esvoResult = new ESVORenderResult(buffer, width, height, 
+                                             new ESVOOctreeData(new HashMap<>(), new HashMap<>(), 5), new ArrayList<>());
+        var refResult = new ESVOReferenceComparator.ReferenceResult(bufferCopy, width, height, 
+                                                                  new ESVOReferenceComparator.ReferenceOctreeData(new HashMap<>(), new HashMap<>(), 5), 
+                                                                  new ArrayList<>());
         
         var comparison = referenceComparator.compareToReference(esvoResult, refResult);
-        assertTrue(comparison.pixelAccuracy() > 0.99, "Should have >99% pixel accuracy");
+        assertTrue(comparison.getPixelAccuracy() > 0.99, "Should have >99% pixel accuracy");
         assertTrue(comparison.isValid(), "Comparison should be valid");
     }
 
     @Test
     @DisplayName("Test voxel structure validation")
     void testVoxelStructureValidation() {
-        var esvoData = new ESVOOctreeData(1024);
-        var refData = new ESVOReferenceComparator.ReferenceOctreeData();
+        var esvoData = new ESVOOctreeData(new HashMap<>(), new HashMap<>(), 5);
+        var refData = new ESVOReferenceComparator.ReferenceOctreeData(new HashMap<>(), new HashMap<>(), 5);
         
         // Add matching voxels
         for (int i = 0; i < 10; i++) {
@@ -199,15 +206,19 @@ public class ESVOPhase8Tests {
         // Add identical steps
         for (int i = 0; i < 10; i++) {
             var step = new ESVOReferenceComparator.TraversalStep(
-                i, new float[]{i * 0.1f, i * 0.1f, i * 0.1f}, i * 0.5f
+                new javax.vecmath.Point3f(i * 0.1f, i * 0.1f, i * 0.1f),
+                new javax.vecmath.Vector3f(1.0f, 0.0f, 0.0f),
+                i,
+                i * 0.5f,
+                "TEST_STEP"
             );
             esvoPath.add(step);
             refPath.add(step);
         }
         
         var comparison = referenceComparator.compareTraversalPaths(esvoPath, refPath);
-        assertEquals(0, comparison.lengthDifference(), "Path lengths should match");
-        assertEquals(1.0, comparison.similarity(), 0.001, "Paths should be identical");
+        assertEquals(refPath.size(), comparison.getEsvoPathLength(), "Path lengths should match");
+        assertEquals(1.0, comparison.getPathSimilarity(), 0.001, "Paths should be identical");
     }
 
     @Test
@@ -238,8 +249,10 @@ public class ESVOPhase8Tests {
     void testQualityReportGeneration() {
         var width = 512;
         var height = 512;
-        var rendered = new ESVORenderResult(createGradientBuffer(width, height), width, height);
-        var reference = new ESVORenderResult(createTestBuffer(width, height, 150), width, height);
+        var rendered = new ESVORenderResult(createGradientBuffer(width, height), width, height, 
+                                           new ESVOOctreeData(new HashMap<>(), new HashMap<>(), 5), new ArrayList<>());
+        var reference = new ESVORenderResult(createTestBuffer(width, height, 150), width, height, 
+                                            new ESVOOctreeData(new HashMap<>(), new HashMap<>(), 5), new ArrayList<>());
         
         var report = qualityValidator.validateQuality(rendered, reference);
         var reportString = qualityValidator.generateQualityReport(report);
@@ -276,21 +289,8 @@ public class ESVOPhase8Tests {
     }
     
     private ESVOApplication createMockApplication() {
-        return new ESVOApplication() {
-            @Override
-            public void render() {
-                // Mock render - just sleep briefly
-                try {
-                    Thread.sleep(1);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-            
-            @Override
-            public ESVOContext getContext() {
-                return context;
-            }
-        };
+        var app = new ESVOApplication();
+        app.initialize(); // Initialize the application
+        return app;
     }
 }
