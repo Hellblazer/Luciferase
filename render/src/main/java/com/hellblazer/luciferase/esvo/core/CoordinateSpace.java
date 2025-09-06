@@ -235,20 +235,10 @@ public final class CoordinateSpace {
         return Math.min(level, (1 << maxLevel) - 1);
     }
     
-    /**
-     * Apply octant mirroring to a complete ray (origin and direction)
-     * Used in StackBasedRayTraversal for traversal optimization
-     * 
-     * @param ray Original ray with origin and direction in octree space
-     * @param octantMask Octant mask from calculateOctantMask
-     * @return New Ray object with mirrored origin and direction
-     */
-    public static com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.Ray applyOctantMirroring(
-            com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.Ray ray, int octantMask) {
-        Vector3f mirroredOrigin = applyOctantMirroringToOrigin(ray.origin, octantMask);
-        Vector3f mirroredDirection = applyOctantMirroring(ray.direction, octantMask);
-        return new com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.Ray(mirroredOrigin, mirroredDirection);
-    }
+    // Note: Ray mirroring functionality has been moved to StackBasedRayTraversal
+    // to avoid circular dependency between CoordinateSpace and StackBasedRayTraversal.
+    // The ray mirroring method should be implemented directly in the StackBasedRayTraversal
+    // class where it can use the local Ray class definition.
     
     /**
      * Simple world-to-octree coordinate transformation

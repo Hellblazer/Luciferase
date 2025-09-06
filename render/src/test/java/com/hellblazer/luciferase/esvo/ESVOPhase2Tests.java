@@ -28,6 +28,7 @@ import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.Ray;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Phase 2 Tests: Stack-Based Deep Traversal
@@ -284,6 +285,9 @@ public class ESVOPhase2Tests {
     @Test
     @DisplayName("Test Phase 2 performance target: >60 FPS for 5-level octree")
     void testPhase2PerformanceTarget() {
+        // Skip performance tests in CI environment
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         var raysPerSecond = StackBasedRayTraversal.measureDeepTraversalPerformance(
             octree5Level, PERFORMANCE_RAY_COUNT);
         
@@ -414,5 +418,13 @@ public class ESVOPhase2Tests {
             assertTrue(result.hitPoint.z >= 1.0f && result.hitPoint.z <= 2.0f,
                       "Hit point should be in octree space");
         }
+    }
+    
+    /**
+     * Check if running in CI environment
+     */
+    private static boolean isRunningInCI() {
+        return "true".equals(System.getenv("CI")) || "true".equals(System.getProperty("CI")) || "true".equals(
+                System.getProperty("CONTINUOUS_INTEGRATION"));
     }
 }

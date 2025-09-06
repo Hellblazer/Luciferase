@@ -240,7 +240,9 @@ public class StackBasedRayTraversal {
         
         // Apply octant mirroring for traversal optimization
         var octantMask = CoordinateSpace.calculateOctantMask(ray.direction);
-        var mirroredRay = CoordinateSpace.applyOctantMirroring(ray, octantMask);
+        var mirroredOrigin = CoordinateSpace.applyOctantMirroringToOrigin(ray.origin, octantMask);
+        var mirroredDirection = CoordinateSpace.applyOctantMirroring(ray.direction, octantMask);
+        var mirroredRay = new Ray(mirroredOrigin, mirroredDirection);
         
         // Initialize traversal state
         var stack = new StackEntry[CAST_STACK_DEPTH];

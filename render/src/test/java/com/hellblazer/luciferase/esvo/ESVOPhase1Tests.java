@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import javax.vecmath.Vector3f;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Phase 1 Tests: Basic Ray Traversal for Single-Level Octree
@@ -226,6 +227,9 @@ public class ESVOPhase1Tests {
     @Test
     @DisplayName("Test Phase 1 performance target: >100 FPS single level")
     void testPhase1PerformanceTarget() {
+        // Skip performance tests in CI environment
+        assumeFalse(isRunningInCI(), "Skipping performance test in CI environment");
+        
         // Measure traversal performance
         double raysPerSecond = BasicRayTraversal.measureTraversalPerformance(
             testOctree, PERFORMANCE_RAY_COUNT);
@@ -295,5 +299,13 @@ public class ESVOPhase1Tests {
                     "Entry point should be on left face of octree");
         assertEquals(CoordinateSpace.OCTREE_MAX, exitPoint.x, EPSILON,
                     "Exit point should be on right face of octree");
+    }
+    
+    /**
+     * Check if running in CI environment
+     */
+    private static boolean isRunningInCI() {
+        return "true".equals(System.getenv("CI")) || "true".equals(System.getProperty("CI")) || "true".equals(
+                System.getProperty("CONTINUOUS_INTEGRATION"));
     }
 }
