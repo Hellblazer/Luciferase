@@ -27,8 +27,10 @@ public final class BasicRayTraversal {
     private static final float EPSILON = (float) Math.pow(2, -23); // exp2(-23.0) from GLSL
     
     /**
-     * Ray structure for traversal operations
+     * Legacy Ray structure for traversal operations
+     * @deprecated Use EnhancedRay for C++ compliance
      */
+    @Deprecated
     public static class Ray {
         public final Vector3f origin;
         public final Vector3f direction;
@@ -94,8 +96,9 @@ public final class BasicRayTraversal {
      */
     public static class SimpleOctree {
         private final OctreeNode rootNode;
-        private final Vector3f center;
+        public final Vector3f center;
         private final float halfSize;
+        private final boolean[] geometry; // Geometry presence for each octant
         
         public SimpleOctree(OctreeNode rootNode) {
             this.rootNode = rootNode;
@@ -103,11 +106,30 @@ public final class BasicRayTraversal {
                                      CoordinateSpace.OCTREE_CENTER, 
                                      CoordinateSpace.OCTREE_CENTER); // (1.5, 1.5, 1.5)
             this.halfSize = CoordinateSpace.OCTREE_SIZE * 0.5f; // 0.5
+            this.geometry = new boolean[8];
+        }
+        
+        public SimpleOctree(Vector3f center, float size) {
+            this.rootNode = null;
+            this.center = new Vector3f(center);
+            this.halfSize = size * 0.5f;
+            this.geometry = new boolean[8];
         }
         
         public OctreeNode getRootNode() { return rootNode; }
         public Vector3f getCenter() { return new Vector3f(center); }
         public float getHalfSize() { return halfSize; }
+        
+        public boolean hasGeometry(int octant) {
+            if (octant < 0 || octant >= 8) return false;
+            return geometry[octant];
+        }
+        
+        public void setGeometry(int octant, boolean hasGeometry) {
+            if (octant >= 0 && octant < 8) {
+                geometry[octant] = hasGeometry;
+            }
+        }
     }
     
     private BasicRayTraversal() {
@@ -311,5 +333,146 @@ public final class BasicRayTraversal {
         double elapsedSeconds = (endTime - startTime) / 1_000_000_000.0;
         
         return rayCount / elapsedSeconds;
+    }
+    
+    /**
+     * Enhanced traversal using EnhancedRay with proper C++ compliance
+     */
+    public static TraversalResult traverseEnhanced(EnhancedRay ray, SimpleOctree octree) {
+        log.debug("Starting enhanced traversal with ray: {}", ray);
+        
+        // Transform to octree space [1,2] if needed
+        EnhancedRay octreeRay = ray;
+        if (needsCoordinateTransform(ray.origin)) {
+            octreeRay = EnhancedRay.transformToOctreeSpace(ray);
+        }
+        
+        // Apply octant mirroring for optimization
+        int octantMask = octreeRay.calculateOctantMask();
+        EnhancedRay mirroredRay = octreeRay.applyOctantMirroring(octantMask);
+        
+        // Ray-box intersection with [1,2] octree bounds
+        float[] intersection = calculateRayBoxIntersection(mirroredRay.origin, mirroredRay.direction,
+                                                          new Vector3f(1.0f, 1.0f, 1.0f),
+                                                          new Vector3f(2.0f, 2.0f, 2.0f));
+        
+        if (intersection == null) {
+            var result = new TraversalResult();
+            return result;
+        }
+        
+        float tEnter = intersection[0];
+        float tExit = intersection[1];
+        
+        if (tEnter >= tExit || tExit <= 0) {
+            var result = new TraversalResult();
+            return result;
+        }
+        
+        float t = Math.max(tEnter, 0.001f);
+        Vector3f hitPoint = mirroredRay.pointAt(t);
+        
+        // Check termination condition using size parameters
+        float scaleExp2 = 1.0f; // Root level
+        if (mirroredRay.shouldTerminate(tExit, scaleExp2)) {
+            // Hit point is large enough to terminate immediately
+            
+            // Undo mirroring for final result
+            if ((octantMask & 1) == 0) hitPoint.x = 3.0f - hitPoint.x;
+            if ((octantMask & 2) == 0) hitPoint.y = 3.0f - hitPoint.y;
+            if ((octantMask & 4) == 0) hitPoint.z = 3.0f - hitPoint.z;
+            
+            int octant = calculateChildOctant(hitPoint, octree.center);
+            var result = new TraversalResult();
+            result.hit = true;
+            result.t = t;
+            result.hitPoint = hitPoint;
+            result.octant = octant;
+            return result;
+        }
+        
+        // Find which octant the ray hits
+        int octant = calculateChildOctant(hitPoint, octree.center);
+        
+        // Undo mirroring for final result
+        if ((octantMask & 1) == 0) hitPoint.x = 3.0f - hitPoint.x;
+        if ((octantMask & 2) == 0) hitPoint.y = 3.0f - hitPoint.y;
+        if ((octantMask & 4) == 0) hitPoint.z = 3.0f - hitPoint.z;
+        
+        boolean hasGeometry = octree.hasGeometry(octant);
+        var result = new TraversalResult();
+        result.hit = hasGeometry;
+        result.t = t;
+        result.hitPoint = hitPoint;
+        result.octant = octant;
+        return result;
+    }
+    
+    /**
+     * Check if coordinate transformation is needed
+     */
+    private static boolean needsCoordinateTransform(Vector3f origin) {
+        // If origin is outside [1,2] space, we need transformation
+        return origin.x < 1.0f || origin.x > 2.0f ||
+               origin.y < 1.0f || origin.y > 2.0f ||
+               origin.z < 1.0f || origin.z > 2.0f;
+    }
+    
+    /**
+     * Generate EnhancedRay for screen pixels with proper size parameters
+     */
+    public static EnhancedRay generateEnhancedRay(int screenX, int screenY, int screenWidth, int screenHeight,
+                                                  Vector3f cameraPos, Vector3f cameraDir, float fov,
+                                                  float pixelSize) {
+        
+        // Convert screen coordinates to NDC [-1, 1]
+        float ndcX = (2.0f * screenX + 1.0f) / screenWidth - 1.0f;
+        float ndcY = 1.0f - (2.0f * screenY + 1.0f) / screenHeight;
+        
+        // Calculate ray direction
+        float aspectRatio = (float) screenWidth / screenHeight;
+        float tanHalfFov = (float) Math.tan(fov * 0.5);
+        
+        Vector3f rayDir = new Vector3f();
+        rayDir.x = ndcX * aspectRatio * tanHalfFov;
+        rayDir.y = ndcY * tanHalfFov;
+        rayDir.z = -1.0f;
+        rayDir.normalize();
+        
+        // Calculate size parameters based on pixel size and distance
+        float originSize = pixelSize;
+        float directionSize = pixelSize / Math.abs(rayDir.z); // Adjust for perspective
+        
+        // Transform to octree space
+        Vector3f octreeOrigin = CoordinateSpace.worldToOctree(cameraPos);
+        Vector3f octreeDirection = CoordinateSpace.worldToOctreeDirection(rayDir);
+        
+        return new EnhancedRay(octreeOrigin, originSize, octreeDirection, directionSize);
+    }
+    
+    /**
+     * Calculate ray-box intersection for the enhanced traversal
+     */
+    private static float[] calculateRayBoxIntersection(Vector3f origin, Vector3f direction, 
+                                                      Vector3f boxMin, Vector3f boxMax) {
+        // Simple AABB intersection test
+        float txMin = (boxMin.x - origin.x) / direction.x;
+        float txMax = (boxMax.x - origin.x) / direction.x;
+        if (txMin > txMax) { float temp = txMin; txMin = txMax; txMax = temp; }
+        
+        float tyMin = (boxMin.y - origin.y) / direction.y;
+        float tyMax = (boxMax.y - origin.y) / direction.y;
+        if (tyMin > tyMax) { float temp = tyMin; tyMin = tyMax; tyMax = temp; }
+        
+        float tzMin = (boxMin.z - origin.z) / direction.z;
+        float tzMax = (boxMax.z - origin.z) / direction.z;
+        if (tzMin > tzMax) { float temp = tzMin; tzMin = tzMax; tzMax = temp; }
+        
+        float tMin = Math.max(Math.max(txMin, tyMin), tzMin);
+        float tMax = Math.min(Math.min(txMax, tyMax), tzMax);
+        
+        if (tMin > tMax) return null; // No intersection
+        
+        return new float[]{tMin, tMax};
     }
 }
