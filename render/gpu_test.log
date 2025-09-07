@@ -1,0 +1,56 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Detecting the operating system and CPU architecture
+[INFO] ------------------------------------------------------------------------
+[INFO] os.detected.name: osx
+[INFO] os.detected.arch: aarch_64
+[INFO] os.detected.bitness: 64
+[INFO] os.detected.version: 15.6
+[INFO] os.detected.version.major: 15
+[INFO] os.detected.version.minor: 6
+[INFO] os.detected.classifier: osx-aarch_64
+[INFO] 
+[INFO] ------------------< com.hellblazer.luciferase:render >------------------
+[INFO] Building Luciferase - Render Module 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- enforcer:3.1.0:enforce (enforce-maven) @ render ---
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ render ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ render ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ render ---
+[INFO] Copying 0 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ render ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- surefire:3.0.0-M9:test (default-test) @ render ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+WARNING: Using incubator modules: jdk.incubator.vector
+[INFO] Running com.hellblazer.luciferase.esvo.GPUDiagnosticTest
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.lwjgl.system.MemoryUtil (file:/Users/hal.hildebrand/.m2/repository/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6.jar)
+WARNING: Please consider reporting this to the maintainers of class org.lwjgl.system.MemoryUtil
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+
+=== GPU Diagnostic Test Starting ===
+Platform: macOS
+Architecture: ARM64
+Java Version: 24
+OS: Mac OS X 15.6
+CI Environment: false
+macOS -XstartOnFirstThread: false
+⚠️  WARNING: macOS requires -XstartOnFirstThread for GLFW
+   Add to JVM options: -XstartOnFirstThread
+   Disabled GLFW thread check for diagnostic purposes
+
+--- Attempting GLFW initialization ---

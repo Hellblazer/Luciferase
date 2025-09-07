@@ -148,7 +148,7 @@ class HeadlessPlatformValidationTest extends CICompatibleGPUTest {
                     
                     // Try to get first platform info
                     PointerBuffer platforms = stack.mallocPointer(1);
-                    checkCLError(clGetPlatformIDs(platforms, (IntBuffer)null));
+                    checkCLErrorLocal(clGetPlatformIDs(platforms, (IntBuffer)null));
                     
                     long platform = platforms.get(0);
                     
@@ -200,7 +200,7 @@ class HeadlessPlatformValidationTest extends CICompatibleGPUTest {
         }
     }
     
-    protected static void checkCLError(int errcode) {
+    private static void checkCLErrorLocal(int errcode) {
         if (errcode != CL_SUCCESS) {
             throw new RuntimeException("OpenCL error: " + errcode);
         }

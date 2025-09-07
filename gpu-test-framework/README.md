@@ -1,18 +1,19 @@
 # GPU Test Framework
 
-A comprehensive, reusable headless GPU testing framework for Java 24 projects using LWJGL and OpenCL. Based on the LWJGL headless testing patterns and designed specifically for the ART (Adaptive Resonance Theory) project's GPU compute testing needs.
+A comprehensive, reusable GPU testing framework for Java projects with automatic backend selection, performance benchmarking, and CI/CD compatibility. Built with LWJGL 3.3.6 for multi-platform GPU compute testing.
 
 ## Features
 
+- **Multi-Backend Support**: OpenCL, OpenGL Compute, Metal 3 (via bgfx)
 - **Headless Operation**: Runs without display or windowing systems - perfect for CI/CD
-- **CI/CD Compatible**: Graceful handling of missing OpenCL libraries in CI environments
-- **Platform Detection**: Automatic detection of macOS, Linux, Windows with ARM64/AMD64 support  
-- **GPU Discovery**: Automatic OpenCL platform and device enumeration
-- **Memory Management**: Safe LWJGL memory operations with automatic cleanup
-- **JUnit 5 Integration**: Modern testing with conditional execution and assumptions
+- **CI/CD Compatible**: Automatic mock fallback in CI environments
+- **Performance Benchmarking**: Built-in CPU vs GPU comparison with JMH
+- **Memory Analysis**: Transfer overhead profiling and optimization guidance
+- **Cross-Validation**: Ensure GPU and CPU implementations match
+- **Platform Detection**: Automatic capability discovery across OS and architectures
+- **GPU Discovery**: Automatic device enumeration and selection
 - **Graceful Degradation**: Tests skip gracefully when GPU hardware is unavailable
-- **Mock Platform Support**: Provides mock platforms when real OpenCL is unavailable
-- **Comprehensive Logging**: Detailed logging for debugging GPU issues
+- **Mock Platform Support**: Provides mock platforms when real hardware is unavailable
 
 ## Architecture
 

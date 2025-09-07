@@ -3,17 +3,31 @@ package com.hellblazer.luciferase.gpu.test.examples;
 import com.hellblazer.luciferase.gpu.test.CICompatibleGPUTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.lwjgl.opencl.CL10.*;
 import static org.lwjgl.opencl.CL11.*;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Verification tests to prove the GPU framework is actually doing real GPU compute work.
  * This test demonstrates that we're not just faking GPU operations.
  */
 class GPUVerificationTest extends CICompatibleGPUTest {
+    
+    @BeforeEach
+    void skipIfNoGPU() {
+        // Skip these tests if no GPU is available
+        assumeTrue(isGPUAvailable(), "GPU verification tests require actual GPU hardware");
+    }
     
     @Test
     @DisplayName("Verify actual GPU computation vs CPU - different results prove GPU execution")
@@ -294,7 +308,6 @@ class GPUVerificationTest extends CICompatibleGPUTest {
         System.out.printf("  Compute Units: %d%n", device.computeUnits());
         System.out.printf("  Max Mem Alloc: %.2f MB%n", device.maxMemAllocSize() / (1024.0 * 1024.0));
         System.out.printf("  Global Memory: %.2f MB%n", device.globalMemSize() / (1024.0 * 1024.0));
-        System.out.printf("  Device Type: %s%n", device.isGPU() ? "GPU" : device.isCPU() ? "CPU" : "Other");
         
         // Verify this looks like real hardware
         assertNotNull(device.name());
@@ -319,5 +332,93 @@ class GPUVerificationTest extends CICompatibleGPUTest {
             "Device should be from known GPU vendor. Device: " + device.name());
         
         System.out.println("✅ Hardware information verified as genuine GPU device");
+    }
+    
+    // Helper classes and methods
+    record Platform(long platformId, String name, String vendor) {}
+    record Device(long deviceId, String name, int computeUnits, long maxMemAllocSize, long globalMemSize) {}
+    
+    private List<Platform> discoverPlatforms() {
+        try (var stack = stackPush()) {
+            var numPlatforms = stack.mallocInt(1);
+            checkCLError(clGetPlatformIDs(null, numPlatforms));
+            
+            if (numPlatforms.get(0) == 0) {
+                return List.of();
+            }
+            
+            var platformIds = stack.mallocPointer(numPlatforms.get(0));
+            checkCLError(clGetPlatformIDs(platformIds, (IntBuffer)null));
+            
+            var platforms = new ArrayList<Platform>();
+            for (int i = 0; i < numPlatforms.get(0); i++) {
+                long platformId = platformIds.get(i);
+                String name = getPlatformInfoString(platformId, CL_PLATFORM_NAME);
+                String vendor = getPlatformInfoString(platformId, CL_PLATFORM_VENDOR);
+                platforms.add(new Platform(platformId, name, vendor));
+            }
+            return platforms;
+        }
+    }
+    
+    private List<Device> discoverDevices(long platformId, int deviceType) {
+        try (var stack = stackPush()) {
+            var numDevices = stack.mallocInt(1);
+            int result = clGetDeviceIDs(platformId, deviceType, null, numDevices);
+            
+            if (result != CL_SUCCESS || numDevices.get(0) == 0) {
+                return List.of();
+            }
+            
+            var deviceIds = stack.mallocPointer(numDevices.get(0));
+            checkCLError(clGetDeviceIDs(platformId, deviceType, deviceIds, (IntBuffer)null));
+            
+            var devices = new ArrayList<Device>();
+            for (int i = 0; i < numDevices.get(0); i++) {
+                long deviceId = deviceIds.get(i);
+                String name = getDeviceInfoString(deviceId, CL_DEVICE_NAME);
+                int computeUnits = getDeviceInfoInt(deviceId, CL_DEVICE_MAX_COMPUTE_UNITS);
+                long maxMemAlloc = getDeviceInfoLong(deviceId, CL_DEVICE_MAX_MEM_ALLOC_SIZE);
+                long globalMem = getDeviceInfoLong(deviceId, CL_DEVICE_GLOBAL_MEM_SIZE);
+                devices.add(new Device(deviceId, name, computeUnits, maxMemAlloc, globalMem));
+            }
+            return devices;
+        }
+    }
+    
+    private String getPlatformInfoString(long platform, int param) {
+        try (var stack = stackPush()) {
+            var size = stack.mallocPointer(1);
+            checkCLError(clGetPlatformInfo(platform, param, (ByteBuffer)null, size));
+            var buffer = stack.malloc((int)size.get(0));
+            checkCLError(clGetPlatformInfo(platform, param, buffer, null));
+            return memUTF8(buffer);
+        }
+    }
+    
+    private String getDeviceInfoString(long device, int param) {
+        try (var stack = stackPush()) {
+            var size = stack.mallocPointer(1);
+            checkCLError(clGetDeviceInfo(device, param, (ByteBuffer)null, size));
+            var buffer = stack.malloc((int)size.get(0));
+            checkCLError(clGetDeviceInfo(device, param, buffer, null));
+            return memUTF8(buffer);
+        }
+    }
+    
+    private int getDeviceInfoInt(long device, int param) {
+        try (var stack = stackPush()) {
+            var buffer = stack.mallocInt(1);
+            checkCLError(clGetDeviceInfo(device, param, buffer, null));
+            return buffer.get(0);
+        }
+    }
+    
+    private long getDeviceInfoLong(long device, int param) {
+        try (var stack = stackPush()) {
+            var buffer = stack.mallocLong(1);
+            checkCLError(clGetDeviceInfo(device, param, buffer, null));
+            return buffer.get(0);
+        }
     }
 }
