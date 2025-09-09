@@ -159,7 +159,7 @@ public class ESVOPhase7Tests {
         var octreeData = new ESVOOctreeData(256);
         
         // Add nodes with parent-child relationships
-        octreeData.setNode(0, new ESVOOctreeNode((byte)0xFF, 1000, 0)); // Root with all children
+        octreeData.setNode(0, new ESVOOctreeNode((byte)0xFF, 1000, 1)); // Root with all children (farPointer points to first child)
         for (int i = 1; i <= 8; i++) {
             octreeData.setNode(i, new ESVOOctreeNode((byte)0x00, i * 100, 0)); // Leaf nodes
         }

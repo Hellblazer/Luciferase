@@ -95,38 +95,28 @@ public class CISafeTest extends CICompatibleGPUTest {
 ### 3. OpenCL Testing
 
 ```java
-import com.hellblazer.luciferase.gpu.test.opencl.ESVODataStructures.*;
+
 import org.lwjgl.opencl.*;
 
 public class OpenCLExample {
-    
+
     @Test
     void testOpenCLRayTraversal() {
         // Create test data
         Ray[] rays = generateRays(1000);
         OctreeNode[] octree = generateOctree(8);
-        
+
         // Create OpenCL buffers
-        long rayBuffer = BufferUtils.createRayBuffer(
-            context, rays, CL10.CL_MEM_READ_ONLY
-        );
-        
-        long octreeBuffer = BufferUtils.createNodeBuffer(
-            context, octree, CL10.CL_MEM_READ_ONLY
-        );
-        
+        long rayBuffer = BufferUtils.createRayBuffer(context, rays, CL10.CL_MEM_READ_ONLY);
+
+        long octreeBuffer = BufferUtils.createNodeBuffer(context, octree, CL10.CL_MEM_READ_ONLY);
+
         // Execute kernel
-        CL10.clEnqueueNDRangeKernel(
-            queue, kernel, 1, null,
-            stackPointers(rays.length), null,
-            null, null
-        );
-        
+        CL10.clEnqueueNDRangeKernel(queue, kernel, 1, null, stackPointers(rays.length), null, null, null);
+
         // Read results
-        IntersectionResult[] results = BufferUtils.readResults(
-            queue, resultBuffer, rays.length
-        );
-        
+        IntersectionResult[] results = BufferUtils.readResults(queue, resultBuffer, rays.length);
+
         // Validate
         assertTrue(results.length == rays.length);
     }

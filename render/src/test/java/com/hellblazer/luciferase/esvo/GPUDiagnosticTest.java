@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.esvo;
 
+import com.hellblazer.luciferase.gpu.test.PlatformTestSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.lwjgl.glfw.GLFW;
@@ -37,7 +38,7 @@ public class GPUDiagnosticTest {
                       System.getenv("GITHUB_ACTIONS") != null;
         System.out.println("CI Environment: " + isCI);
         
-        // Check for macOS XstartOnFirstThread requirement
+        // Check platform requirements for GLFW/OpenGL
         if (Platform.get() == Platform.MACOSX) {
             var jvmOptions = System.getProperty("java.vm.options", "");
             var hasStartOnFirstThread = jvmOptions.contains("-XstartOnFirstThread");
@@ -46,9 +47,11 @@ public class GPUDiagnosticTest {
             if (!hasStartOnFirstThread) {
                 System.out.println("⚠️  WARNING: macOS requires -XstartOnFirstThread for GLFW");
                 System.out.println("   Add to JVM options: -XstartOnFirstThread");
-                // Disable the thread check for testing purposes
-                org.lwjgl.system.Configuration.GLFW_CHECK_THREAD0.set(false);
-                System.out.println("   Disabled GLFW thread check for diagnostic purposes");
+                System.out.println("   Using JUnit assumption to skip test gracefully");
+                
+                // Use proper JUnit assumption to skip test
+                PlatformTestSupport.requireMacOSWithStartOnFirstThread();
+                return; // This line won't be reached, but kept for clarity
             }
         }
         

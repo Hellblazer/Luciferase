@@ -76,16 +76,31 @@ public interface SpatialKey<K extends SpatialKey<K>> extends Comparable<K> {
     @Override
     String toString();
 
-    // TODO: Re-enable protobuf serialization after testing
-    /*
+    /**
+     * Convert this SpatialKey to its protobuf representation.
+     */
     default com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey toProtoSpatialKey() {
-        // Temporarily disabled for testing
-        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
+        var builder = com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey.newBuilder();
+        
+        if (this instanceof com.hellblazer.luciferase.lucien.octree.MortonKey mortonKey) {
+            builder.setMorton(mortonKey.toProto());
+        } else if (this instanceof com.hellblazer.luciferase.lucien.tetree.TetreeKey<?> tetreeKey) {
+            builder.setTetree(tetreeKey.toProto());
+        } else {
+            throw new UnsupportedOperationException("Unknown SpatialKey type: " + this.getClass().getName());
+        }
+        
+        return builder.build();
     }
 
+    /**
+     * Create a SpatialKey from its protobuf representation.
+     */
     static SpatialKey<?> fromProtoSpatialKey(com.hellblazer.luciferase.lucien.forest.ghost.proto.SpatialKey proto) {
-        // Temporarily disabled for testing
-        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
+        return switch (proto.getKeyTypeCase()) {
+            case MORTON -> com.hellblazer.luciferase.lucien.octree.MortonKey.fromProto(proto.getMorton());
+            case TETREE -> com.hellblazer.luciferase.lucien.tetree.TetreeKey.fromProto(proto.getTetree());
+            case KEYTYPE_NOT_SET -> throw new IllegalArgumentException("SpatialKey protobuf has no key type set");
+        };
     }
-    */
 }

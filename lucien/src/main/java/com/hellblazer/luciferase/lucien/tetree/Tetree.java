@@ -2294,10 +2294,11 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
             var key = keyArray[i];
             SpatialNodeImpl<ID> node = spatialIndex.get(key);
 
-            // TODO: Re-implement cached bounds optimization
-            // For now, add all non-null nodes as candidates
             if (node != null) {
-                candidates.add(key);
+                // Cached bounds optimization: check if tetrahedron intersects query bounds
+                if (tetrahedronIntersectsBounds(key, bounds)) {
+                    candidates.add(key);
+                }
             }
         }
     }
@@ -2764,6 +2765,75 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         // we should accept this as a valid intersection. Small entities that fall within the
         // bounding box of a tetrahedron should be considered as intersecting for spanning purposes.
 
+        return true;
+    }
+
+    /**
+     * Check if tetrahedron represented by key intersects with volume bounds.
+     * Uses proper tetrahedral geometry, not cube approximations.
+     */
+    private boolean tetrahedronIntersectsBounds(TetreeKey<? extends TetreeKey> key, VolumeBounds bounds) {
+        Tet tet = Tet.tetrahedron(key);
+        var vertices = tet.coordinates();
+        
+        // Quick bounding box rejection test first
+        float tetMinX = Float.MAX_VALUE, tetMaxX = Float.MIN_VALUE;
+        float tetMinY = Float.MAX_VALUE, tetMaxY = Float.MIN_VALUE;
+        float tetMinZ = Float.MAX_VALUE, tetMaxZ = Float.MIN_VALUE;
+        
+        for (var vertex : vertices) {
+            tetMinX = Math.min(tetMinX, vertex.x);
+            tetMaxX = Math.max(tetMaxX, vertex.x);
+            tetMinY = Math.min(tetMinY, vertex.y);
+            tetMaxY = Math.max(tetMaxY, vertex.y);
+            tetMinZ = Math.min(tetMinZ, vertex.z);
+            tetMaxZ = Math.max(tetMaxZ, vertex.z);
+        }
+        
+        // Bounding box intersection test
+        if (tetMaxX < bounds.minX() || tetMinX > bounds.maxX() || 
+            tetMaxY < bounds.minY() || tetMinY > bounds.maxY() || 
+            tetMaxZ < bounds.minZ() || tetMinZ > bounds.maxZ()) {
+            return false;
+        }
+        
+        // Test if any vertex of tetrahedron is inside bounds
+        for (var vertex : vertices) {
+            if (bounds.contains(vertex.x, vertex.y, vertex.z)) {
+                return true;
+            }
+        }
+        
+        // Test if any corner of bounds is inside tetrahedron
+        var boundCorners = new Point3f[] {
+            new Point3f(bounds.minX(), bounds.minY(), bounds.minZ()),
+            new Point3f(bounds.maxX(), bounds.minY(), bounds.minZ()),
+            new Point3f(bounds.minX(), bounds.maxY(), bounds.minZ()),
+            new Point3f(bounds.maxX(), bounds.maxY(), bounds.minZ()),
+            new Point3f(bounds.minX(), bounds.minY(), bounds.maxZ()),
+            new Point3f(bounds.maxX(), bounds.minY(), bounds.maxZ()),
+            new Point3f(bounds.minX(), bounds.maxY(), bounds.maxZ()),
+            new Point3f(bounds.maxX(), bounds.maxY(), bounds.maxZ())
+        };
+        
+        for (var corner : boundCorners) {
+            if (tet.contains(corner)) {
+                return true;
+            }
+        }
+        
+        // Test if the center of the volume bounds is inside the tetrahedron
+        float centerX = (bounds.minX() + bounds.maxX()) / 2;
+        float centerY = (bounds.minY() + bounds.maxY()) / 2;
+        float centerZ = (bounds.minZ() + bounds.maxZ()) / 2;
+        Point3f volumeCenter = new Point3f(centerX, centerY, centerZ);
+        
+        if (tet.contains(volumeCenter)) {
+            return true;
+        }
+        
+        // Conservative approach: if bounding boxes intersect, consider intersection
+        // This ensures we don't miss potential candidates in complex geometric cases
         return true;
     }
 

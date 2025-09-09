@@ -22,6 +22,16 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>common</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>portal</artifactId>
+        </dependency>
+        
+        <!-- JavaFX for mesh handling -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+        </dependency>
         
         <!-- LWJGL Core -->
         <dependency>

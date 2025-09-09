@@ -1,16 +1,10 @@
 // ESVO Ray Traversal OpenCL Kernel
 // Port of GLSL compute shader for CI-compatible testing
 
-// Structure definitions matching host-side layout
+// Structure definitions matching CUDA reference (UNIFIED)
 typedef struct {
-    int childDescriptor;
-    int contourPointer;
-    float minValue;
-    float maxValue;
-    int attributes;
-    int padding1;
-    int padding2;
-    int padding3;
+    int childDescriptor;  // [childptr(14)|far(1)|childmask(8)|leafmask(8)]
+    int contourData;      // [contour_ptr(24)|contour_mask(8)]
 } OctreeNode;
 
 typedef struct {
@@ -204,7 +198,11 @@ __kernel void esvo_raycast(
                     
                     // Only process if potentially closer than current result
                     if (childTEntry < result.t && stackPtr < 31) {
-                        int childNodeIndex = current.nodeIndex * 8 + childIdx + 1;
+                        // CUDA reference sparse indexing: parent_ptr + popcount(child_masks & ((1 << childIdx) - 1))
+                        int childMask = (current.node.childDescriptor >> 8) & 0xFF;
+                        int childPtr = (current.node.childDescriptor >> 17) & 0x3FFF;
+                        int popCount = popcount(childMask & ((1 << childIdx) - 1));
+                        int childNodeIndex = childPtr + popCount;
                         
                         stack[stackPtr].nodeIndex = childNodeIndex;
                         stack[stackPtr].tEntry = max(childTEntry, current.tEntry);

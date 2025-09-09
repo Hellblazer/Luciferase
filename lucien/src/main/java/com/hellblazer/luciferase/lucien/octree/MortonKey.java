@@ -215,4 +215,20 @@ public final class MortonKey implements SpatialKey<MortonKey> {
         }
         return base64.substring(firstNonA);
     }
+    
+    /**
+     * Convert this MortonKey to its protobuf representation.
+     */
+    public com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey toProto() {
+        return com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey.newBuilder()
+            .setMortonCode(mortonCode)
+            .build();
+    }
+
+    /**
+     * Create a MortonKey from its protobuf representation.
+     */
+    public static MortonKey fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey proto) {
+        return new MortonKey(proto.getMortonCode());
+    }
 }
