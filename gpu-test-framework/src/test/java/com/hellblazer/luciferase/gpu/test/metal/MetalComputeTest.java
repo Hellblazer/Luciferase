@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.gpu.test.metal;
 
 import com.hellblazer.luciferase.gpu.test.CICompatibleGPUTest;
+import com.hellblazer.luciferase.gpu.test.KernelResourceLoader;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,19 +80,7 @@ public class MetalComputeTest extends CICompatibleGPUTest {
             log.info("Testing Metal compute shader execution");
             
             // Create compute shader for simple vector addition
-            String shaderSource = """
-                #include <metal_stdlib>
-                using namespace metal;
-                
-                kernel void vector_add(
-                    device float* a [[buffer(0)]],
-                    device float* b [[buffer(1)]],
-                    device float* result [[buffer(2)]],
-                    uint id [[thread_position_in_grid]])
-                {
-                    result[id] = a[id] + b[id];
-                }
-                """;
+            String shaderSource = KernelResourceLoader.loadKernel("shaders/metal_vector_add.metal");
             
             // Create buffers
             int numElements = 1024;
@@ -155,63 +144,7 @@ public class MetalComputeTest extends CICompatibleGPUTest {
             log.info("Testing Metal ray traversal compute shader");
             
             // Metal shader for ray-box intersection
-            String shaderSource = """
-                #include <metal_stdlib>
-                using namespace metal;
-                
-                struct Ray {
-                    float3 origin;
-                    float3 direction;
-                    float tMin;
-                    float tMax;
-                };
-                
-                struct Box {
-                    float3 min;
-                    float3 max;
-                };
-                
-                struct IntersectionResult {
-                    uint hit;
-                    float t;
-                    float3 normal;
-                };
-                
-                bool ray_box_intersection(Ray ray, Box box, thread float& tEntry, thread float& tExit) {
-                    float3 invDir = 1.0 / ray.direction;
-                    float3 t0 = (box.min - ray.origin) * invDir;
-                    float3 t1 = (box.max - ray.origin) * invDir;
-                    
-                    float3 tMin = min(t0, t1);
-                    float3 tMax = max(t0, t1);
-                    
-                    tEntry = max(max(tMin.x, tMin.y), tMin.z);
-                    tExit = min(min(tMax.x, tMax.y), tMax.z);
-                    
-                    return tEntry <= tExit && tExit >= 0.0;
-                }
-                
-                kernel void ray_traversal(
-                    device Ray* rays [[buffer(0)]],
-                    device Box* boxes [[buffer(1)]],
-                    device IntersectionResult* results [[buffer(2)]],
-                    uint id [[thread_position_in_grid]])
-                {
-                    Ray ray = rays[id];
-                    Box box = boxes[0]; // Test against single box
-                    
-                    float tEntry, tExit;
-                    if (ray_box_intersection(ray, box, tEntry, tExit)) {
-                        results[id].hit = 1;
-                        results[id].t = max(tEntry, ray.tMin);
-                        results[id].normal = float3(1.0, 0.0, 0.0);
-                    } else {
-                        results[id].hit = 0;
-                        results[id].t = 1e30;
-                        results[id].normal = float3(0.0);
-                    }
-                }
-                """;
+            String shaderSource = KernelResourceLoader.loadKernel("shaders/metal_ray_traversal.metal");
             
             // Test implementation would continue here...
             log.info("Metal ray traversal test completed");

@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.gpu.test.examples;
 
 import com.hellblazer.luciferase.gpu.test.CICompatibleGPUTest;
+import com.hellblazer.luciferase.gpu.test.KernelResourceLoader;
 import com.hellblazer.luciferase.gpu.test.support.TestSupportMatrix;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,25 +31,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 public class SimpleMatrixMultiplyTest extends CICompatibleGPUTest {
     private static final Logger log = LoggerFactory.getLogger(SimpleMatrixMultiplyTest.class);
     
-    private static final String MATRIX_MULTIPLY_KERNEL = """
-        __kernel void matrixMultiply(
-            __global const float* A,
-            __global const float* B,
-            __global float* C,
-            const int N)
-        {
-            int row = get_global_id(0);
-            int col = get_global_id(1);
-            
-            if (row < N && col < N) {
-                float sum = 0.0f;
-                for (int k = 0; k < N; k++) {
-                    sum += A[row * N + k] * B[k * N + col];
-                }
-                C[row * N + col] = sum;
-            }
-        }
-        """;
+    private static final String MATRIX_MULTIPLY_KERNEL = KernelResourceLoader.loadKernel("kernels/matrix_multiply.cl");
     
     private TestSupportMatrix supportMatrix;
     private boolean gpuAvailable;

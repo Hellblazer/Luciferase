@@ -165,14 +165,7 @@ public abstract class GPUComputeHeadlessTest extends OpenCLHeadlessTest {
     protected void testGPUVectorAddition(long platformId, long deviceId) {
         log.info("Testing GPU vector addition on device {}", deviceId);
         
-        var kernelSource = """
-            __kernel void vector_add(__global const float* A, __global const float* B, __global float* C, int N) {
-                int i = get_global_id(0);
-                if (i < N) {
-                    C[i] = A[i] + B[i];
-                }
-            }
-            """;
+        var kernelSource = KernelResourceLoader.loadKernel("kernels/vector_add.cl");
         
         testMemoryAllocation(() -> {
             try (MemoryStack stack = stackPush()) {

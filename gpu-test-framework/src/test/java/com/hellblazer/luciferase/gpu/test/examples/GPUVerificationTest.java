@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.gpu.test.examples;
 
 import com.hellblazer.luciferase.gpu.test.CICompatibleGPUTest;
+import com.hellblazer.luciferase.gpu.test.KernelResourceLoader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,14 +81,7 @@ class GPUVerificationTest extends CICompatibleGPUTest {
             var gpuStartTime = System.nanoTime();
             
             // OpenCL kernel for the same operation
-            var kernelSource = """
-                __kernel void complex_compute(__global const float* a, __global const float* b, __global float* result) {
-                    int i = get_global_id(0);
-                    float valA = a[i];
-                    float valB = b[i];
-                    result[i] = sqrt(valA * valA + valB * valB) * sin(valA) + cos(valB);
-                }
-                """;
+            var kernelSource = KernelResourceLoader.loadKernel("kernels/complex_compute.cl");
             
             // Create OpenCL context and resources
             var errcode = stack.mallocInt(1);
