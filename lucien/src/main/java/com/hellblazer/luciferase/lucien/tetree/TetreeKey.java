@@ -409,17 +409,25 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
     }
 
 
-    // TODO: Re-enable protobuf serialization after testing
-    /*
+    /**
+     * Convert this TetreeKey to protobuf representation for serialization.
+     */
     public com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey toProto() {
-        // Temporarily disabled for testing
-        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
+        return com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey.newBuilder()
+            .setLevel(level)
+            .setLow(getLowBits())
+            .setHigh(getHighBits())
+            .build();
     }
 
+    /**
+     * Create TetreeKey from protobuf representation.
+     */
     public static TetreeKey<?> fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.TetreeKey proto) {
-        // Temporarily disabled for testing
-        throw new UnsupportedOperationException("Protobuf serialization temporarily disabled");
+        if (proto.getLevel() == 0) {
+            return getRoot();
+        }
+        return create((byte) proto.getLevel(), proto.getLow(), proto.getHigh());
     }
-    */
 
 }

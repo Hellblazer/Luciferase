@@ -13,14 +13,14 @@ subdivision. The module uses inheritance to maximize code reuse while maintainin
 approach. All core features are complete, including S0-S5 tetrahedral subdivision with 100% geometric containment and
 anisotropic prism subdivision with triangular/linear spatial indexing.
 
-**Total Classes: 172 Java files** organized across 14 packages (including ghost and neighbor detection)
+**Total Classes: 185 Java files** organized across 17 packages (including ghost and neighbor detection)
 
 ## Package Overview
 
 For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.md](./LUCIEN_ARCHITECTURE.md).
 
-- **Root Package (28 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
-- **Entity Package (12 classes)**: Complete entity management infrastructure
+- **Root Package (29 classes)**: Core abstractions, spatial types, geometry utilities, performance optimization
+- **Entity Package (13 classes)**: Complete entity management infrastructure
 - **Octree Package (6 classes)**: Morton curve-based cubic spatial subdivision with internal utilities
 - **Tetree Package (34 classes)**: Tetrahedral spatial subdivision with 21-level support, extensive optimizations, and lazy evaluation
 - **Prism Package (8 classes)**: Anisotropic spatial subdivision with Line/Triangle elements, PrismKey composite keys,
@@ -36,6 +36,9 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 - **Geometry Package (1 class)**: AABB intersection utilities
 - **Occlusion Package**: Dynamic Scene Occlusion Culling (DSOC) with TBVs and hierarchical Z-buffer
 - **Index Package (0 classes)**: Empty directory
+- **Debug Package (4 classes)**: Debugging utilities for all spatial index types
+- **Migration Package (1 class)**: Spatial index type conversion utilities
+- **Profiler Package (1 class)**: Performance profiling utilities
 
 ## Key Architecture Components
 
@@ -178,7 +181,7 @@ For detailed performance analysis, see:
 
 ## Testing Coverage
 
-**250+ total tests** with comprehensive coverage:
+**222 test files with 1,360 @Test methods** providing comprehensive coverage:
 
 - Unit tests for all major operations across all spatial indices (Octree, Tetree, Prism)
 - Integration tests for spatial queries

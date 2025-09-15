@@ -1,0 +1,115 @@
+#version 450
+
+// ESVO Ray Traversal - GLSL Compute Shader Implementation
+
+layout(local_size_x = 64) in;
+
+struct Ray {
+    vec3 origin;
+    float tMin;
+    vec3 direction;
+    float tMax;
+};
+
+struct OctreeNode {
+    uint childDescriptor;  // [childptr(14)|far(1)|childmask(8)|leafmask(8)]
+    uint contourData;      // [contour_ptr(24)|contour_mask(8)]
+};
+
+struct HitResult {
+    vec3 position;
+    float distance;
+    uint voxelData;
+};
+
+// Input/Output buffers
+layout(std430, binding = 0) readonly buffer RayBuffer {
+    Ray rays[];
+};
+
+layout(std430, binding = 1) readonly buffer OctreeBuffer {
+    OctreeNode nodes[];
+};
+
+layout(std430, binding = 2) writeonly buffer ResultBuffer {
+    HitResult results[];
+};
+
+// Uniforms
+uniform uint maxDepth;
+uniform vec3 sceneMin;
+uniform vec3 sceneMax;
+
+bool intersectAABB(Ray ray, vec3 boxMin, vec3 boxMax, out float tEntry, out float tExit) {
+    vec3 invDir = 1.0 / ray.direction;
+    vec3 t0 = (boxMin - ray.origin) * invDir;
+    vec3 t1 = (boxMax - ray.origin) * invDir;
+    
+    vec3 tMin = min(t0, t1);
+    vec3 tMax = max(t0, t1);
+    
+    tEntry = max(max(tMin.x, tMin.y), max(tMin.z, ray.tMin));
+    tExit = min(min(tMax.x, tMax.y), min(tMax.z, ray.tMax));
+    
+    return tEntry <= tExit && tExit >= 0.0;
+}
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= rays.length()) return;
+    
+    Ray ray = rays[gid];
+    HitResult result;
+    result.position = vec3(0.0);
+    result.distance = -1.0;
+    result.voxelData = 0;
+    
+    // Check scene bounds
+    float tEntry, tExit;
+    if (!intersectAABB(ray, sceneMin, sceneMax, tEntry, tExit)) {
+        results[gid] = result;
+        return;
+    }
+    
+    // Stack-based traversal
+    uint stack[32];
+    float stackT[32];
+    int stackPtr = 0;
+    
+    // Start with root
+    stack[0] = 0;
+    stackT[0] = tEntry;
+    stackPtr = 1;
+    
+    float closestHit = ray.tMax;
+    
+    while (stackPtr > 0) {
+        uint nodeIdx = stack[--stackPtr];
+        float nodeTEntry = stackT[stackPtr];
+        
+        if (nodeTEntry > closestHit) continue;
+        
+        OctreeNode node = nodes[nodeIdx];
+        
+        // Extract child mask from packed descriptor  
+        uint childMask = (node.childDescriptor >> 8) & 0xFF;
+        
+        // Leaf node
+        if (childMask == 0) {
+            // Extract contour data for voxel information
+            uint contourPtr = (node.contourData >> 8) & 0xFFFFFF;
+            if (contourPtr != 0 && nodeTEntry < closestHit) {
+                closestHit = nodeTEntry;
+                result.position = ray.origin + ray.direction * closestHit;
+                result.distance = closestHit;
+                result.voxelData = contourPtr;
+            }
+            continue;
+        }
+        
+        // Traverse children
+        // ... child traversal logic ...
+    }
+    
+    results[gid] = result;
+}

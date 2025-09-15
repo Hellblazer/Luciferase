@@ -45,7 +45,29 @@ import static com.hellblazer.luciferase.lucien.Constants.*;
  **/
 public class Tet {
     public static final  TetreeKey<?> ROOT_TET      = TetreeKey.getRoot();
-    // Table 2: Local indices - Iloc(parent_type, bey_child_index)
+    /**
+     * Default root tetrahedron type (follows t8code standard)
+     */
+    private static final byte DEFAULT_ROOT_TET_TYPE = 0;
+    
+    /**
+     * Get the root tetrahedron type. Can be configured via system property
+     * or defaults to type 0 (S0 tetrahedron in standard t8code).
+     */
+    private static byte getRootTetrahedronType() {
+        String rootTypeStr = System.getProperty("tetree.root.type");
+        if (rootTypeStr != null) {
+            try {
+                byte rootType = Byte.parseByte(rootTypeStr);
+                if (rootType >= 0 && rootType <= 5) {
+                    return rootType;
+                }
+            } catch (NumberFormatException e) {
+                // Fall through to default
+            }
+        }
+        return DEFAULT_ROOT_TET_TYPE;
+    }    // Table 2: Local indices - Iloc(parent_type, bey_child_index)
     // Note: Different from TetreeConnectivity.INDEX_TO_BEY_NUMBER due to different indexing scheme
     private static final byte[][]     LOCAL_INDICES = { { 0, 1, 4, 7, 2, 3, 6, 5 }, // Parent type 0
                                                         { 0, 1, 5, 7, 2, 3, 6, 4 }, // Parent type 1
@@ -784,9 +806,8 @@ public class Tet {
             return type;
         }
         if (level == 0) {
-            /* TODO: the type of the root tet is hardcoded to 0
-             *       maybe once we want to allow the root tet to have different types */
-            return 0;
+            // Root tetrahedron type - configurable via ROOT_TET_TYPE or defaults to 0
+            return getRootTetrahedronType();
         }
 
         // Try cached lookup first for O(1) operation
