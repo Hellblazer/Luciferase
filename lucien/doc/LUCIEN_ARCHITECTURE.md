@@ -10,7 +10,7 @@ The Luciferase codebase underwent architectural simplification in 2025, focusing
 functionality with entity management as the primary abstraction. The system has been refocused to eliminate complex
 abstractions while maintaining full spatial indexing capabilities.
 
-The module consists of 187 Java files organized across 15 packages, providing a comprehensive spatial indexing system
+The module consists of 185 Java files organized across 17 packages, providing a comprehensive spatial indexing system
 with advanced features including collision detection, tree balancing, visitor patterns, forest management, and distributed
 ghost support. All core features are complete, including the S0-S5 tetrahedral subdivision, anisotropic prism subdivision,
 and full ghost layer implementation with gRPC communication.
@@ -19,7 +19,7 @@ and full ghost layer implementation with gRPC communication.
 
 ```
 com.hellblazer.luciferase.lucien/
-├── Root package (28 classes + 2 images)
+├── Root package (29 classes + 2 images)
 │   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex, 
 │   │                      SpatialNodeStorage, SpatialNodeImpl, SpatialKey
 │   ├── Spatial types: Spatial, VolumeBounds, SpatialIndexSet
@@ -29,7 +29,7 @@ com.hellblazer.luciferase.lucien/
 │   ├── Utilities: Constants, VisibilitySearch, LevelSelector, NodeEstimator, 
 │   │              BatchInsertionResult, StackBasedTreeBuilder, SubdivisionStrategy
 │   └── Resources: reference-cube.png, reference-simplexes.png
-├── entity/ (12 classes)
+├── entity/ (13 classes)
 │   ├── Core: Entity, EntityBounds, EntityData, EntityDistance
 │   ├── Identity: EntityID, EntityIDGenerator
 │   ├── Management: EntityManager, EntitySpanningPolicy
@@ -104,15 +104,24 @@ com.hellblazer.luciferase.lucien/
 │   └── UnorderedPair - Utility for unordered pairs
 ├── geometry/ (1 class)
 │   └── AABBIntersector - AABB intersection utilities
-├── occlusion/ (15 classes)
+├── occlusion/ (11 classes)
 │   ├── Core: HierarchicalZBuffer, HierarchicalOcclusionCuller
-│   ├── Configuration: DSOCConfiguration
+│   ├── Configuration: DSOCConfiguration, AdaptiveZBufferConfig
 │   ├── Management: VisibilityStateManager, FrameManager
 │   ├── TBV: TemporalBoundingVolume, TBVManager
 │   ├── Strategies: TBVStrategy, AdaptiveTBVStrategy, 
 │   │               FixedDurationTBVStrategy, VelocityBasedTBVStrategy
 │   ├── State: VisibilityState, EntityVisibilityInfo, OcclusionType
 │   └── Statistics: OcclusionStatistics
+├── debug/ (4 classes)
+│   ├── SpatialIndexDebugger - Base debugging utilities
+│   ├── OctreeDebugger - Octree-specific debugging
+│   ├── TetreeDebugger - Tetree-specific debugging  
+│   └── PrismDebugger - Prism-specific debugging
+├── migration/ (1 class)
+│   └── SpatialIndexConverter - Converts between spatial index types
+├── profiler/ (1 class)
+│   └── SpatialIndexProfiler - Performance profiling utilities
 └── index/ (0 classes)
     └── [Empty directory]
 ```

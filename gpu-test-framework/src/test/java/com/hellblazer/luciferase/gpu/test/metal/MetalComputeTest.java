@@ -154,7 +154,7 @@ public class MetalComputeTest extends CICompatibleGPUTest {
     @Test 
     public void testMetalPerformance() {
         withMetalContext(context -> {
-            if (!isGPUAvailable()) {
+            if (!isOpenCLAvailable()) {
                 log.info("Skipping performance test - no GPU available");
                 return;
             }

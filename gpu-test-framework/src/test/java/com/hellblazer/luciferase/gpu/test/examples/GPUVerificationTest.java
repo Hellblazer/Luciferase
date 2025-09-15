@@ -27,7 +27,7 @@ class GPUVerificationTest extends CICompatibleGPUTest {
     @BeforeEach
     void skipIfNoGPU() {
         // Skip these tests if no GPU is available
-        assumeTrue(isGPUAvailable(), "GPU verification tests require actual GPU hardware");
+        assumeTrue(isOpenCLAvailable(), "GPU verification tests require actual GPU hardware");
     }
     
     @Test
@@ -36,7 +36,7 @@ class GPUVerificationTest extends CICompatibleGPUTest {
         System.out.println("=== GPU COMPUTATION VERIFICATION TEST ===");
         
         // First, discover available GPU devices
-        var platforms = discoverPlatforms();
+        var platforms = discoverTestPlatforms();
         assertFalse(platforms.isEmpty(), "No OpenCL platforms found");
         
         var platform = platforms.get(0);
@@ -209,7 +209,7 @@ class GPUVerificationTest extends CICompatibleGPUTest {
         System.out.println("=== GPU MEMORY VERIFICATION TEST ===");
         
         // First, discover available GPU devices
-        var platforms = discoverPlatforms();
+        var platforms = discoverTestPlatforms();
         assertFalse(platforms.isEmpty(), "No OpenCL platforms found");
         
         var platform = platforms.get(0);
@@ -285,7 +285,7 @@ class GPUVerificationTest extends CICompatibleGPUTest {
         System.out.println("=== HARDWARE VERIFICATION TEST ===");
         
         // First, discover available GPU devices
-        var platforms = discoverPlatforms();
+        var platforms = discoverTestPlatforms();
         assertFalse(platforms.isEmpty(), "No OpenCL platforms found");
         
         var platform = platforms.get(0);
@@ -332,7 +332,7 @@ class GPUVerificationTest extends CICompatibleGPUTest {
     record Platform(long platformId, String name, String vendor) {}
     record Device(long deviceId, String name, int computeUnits, long maxMemAllocSize, long globalMemSize) {}
     
-    private List<Platform> discoverPlatforms() {
+    private List<Platform> discoverTestPlatforms() {
         try (var stack = stackPush()) {
             var numPlatforms = stack.mallocInt(1);
             checkCLError(clGetPlatformIDs(null, numPlatforms));
