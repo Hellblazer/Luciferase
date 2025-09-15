@@ -1,0 +1,353 @@
+#version 450
+
+// CRITICAL: Local workgroup size must match Java constants
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// ESSENTIAL CONSTANTS from C++ - DO NOT MODIFY
+const int CAST_STACK_DEPTH = 23;
+const int MAX_RAYCAST_ITERATIONS = 10000;  // Set to 0 to disable iteration limit
+const float EPSILON = exp2(-23.0);
+
+// Shared memory stack for workgroup (8x8 = 64 threads)
+shared uint stack_nodes[64 * CAST_STACK_DEPTH];
+shared float stack_tmax[64 * CAST_STACK_DEPTH];
+
+// SSBO for octree nodes (8 bytes per node = 2 x uint)
+layout(std430, binding = 0) readonly buffer OctreeBuffer {
+    uvec2 nodes[];  // First uint = childDescriptor, Second uint = contourDescriptor  
+} octree;
+
+// Output image
+layout(rgba8, binding = 1) uniform image2D outputImage;
+
+// Camera uniform buffer - CRITICAL coordinate transforms
+layout(std140, binding = 2) uniform CameraData {
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    mat4 objectToWorld;      // Transform from object to world space
+    mat4 octreeToObject;     // Transform from octree [1,2] to object space
+    vec3 cameraPos;
+    float nearPlane;
+    vec3 cameraDir;
+    float farPlane;
+} camera;
+
+// Ray structure with screen-space size tracking for LOD
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float orig_sz;    // Screen-space size at ray origin
+    float dir_sz;     // Screen-space size change per unit distance
+    float tmin;
+    float tmax;
+};
+
+/**
+ * Generate ray for pixel - CRITICAL: Must transform to octree space [1,2]!
+ * 
+ * BUG FIX #2: Missing Coordinate Space Transformation
+ * Original code generated rays in world space but octree requires [1,2] coordinate space.
+ * This transformation is ESSENTIAL or ray intersections will be completely wrong.
+ */
+Ray generateRay(ivec2 pixel) {
+    // Convert pixel to normalized device coordinates
+    vec2 ndc = (vec2(pixel) + 0.5) / vec2(imageSize(outputImage)) * 2.0 - 1.0;
+    
+    // Generate ray in world space
+    vec4 nearPoint = inverse(camera.projMatrix * camera.viewMatrix) * vec4(ndc, -1.0, 1.0);
+    vec4 farPoint = inverse(camera.projMatrix * camera.viewMatrix) * vec4(ndc, 1.0, 1.0);
+    
+    nearPoint /= nearPoint.w;
+    farPoint /= farPoint.w;
+    
+    vec3 worldOrigin = nearPoint.xyz;
+    vec3 worldDirection = normalize(farPoint.xyz - nearPoint.xyz);
+    
+    // CRITICAL: Transform to octree coordinate space [1, 2]
+    // This is the missing transformation that causes complete rendering failure!
+    mat4 worldToOctree = inverse(camera.octreeToObject) * inverse(camera.objectToWorld);
+    
+    // Transform ray origin to octree space
+    vec4 octreeOrigin = worldToOctree * vec4(worldOrigin, 1.0);
+    // Transform ray direction to octree space (no translation for direction)
+    vec4 octreeDirection = worldToOctree * vec4(worldDirection, 0.0);
+    
+    Ray ray;
+    ray.origin = octreeOrigin.xyz;
+    ray.direction = normalize(octreeDirection.xyz);
+    
+    // Initialize screen-space size for LOD calculation
+    float pixelSize = 2.0 / float(imageSize(outputImage).x);
+    vec3 pixelDelta = (worldToOctree * vec4(pixelSize, 0.0, 0.0, 0.0)).xyz;
+    ray.orig_sz = length(pixelDelta);
+    ray.dir_sz = ray.orig_sz;
+    
+    ray.tmin = 0.0;
+    ray.tmax = 1.0;
+    return ray;
+}
+
+/**
+ * CRITICAL: popc8 - Population count for lower 8 bits ONLY
+ * This must match the Java implementation exactly for child indexing
+ */
+uint popc8(uint mask) {
+    return bitCount(mask & 0xFFu);
+}
+
+/**
+ * Main ray casting function with ALL CRITICAL BUG FIXES APPLIED
+ * 
+ * BUG FIX #1: POP Operation Double-Stack-Read
+ * BUG FIX #2: Missing Coordinate Space Transformation (in generateRay)
+ * BUG FIX #3: Iteration Limit Always Active
+ */
+void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
+    float epsilon = EPSILON;
+    
+    // Avoid division by zero in ray direction
+    if (abs(ray.direction.x) < epsilon) ray.direction.x = sign(ray.direction.x) * epsilon;
+    if (abs(ray.direction.y) < epsilon) ray.direction.y = sign(ray.direction.y) * epsilon;
+    if (abs(ray.direction.z) < epsilon) ray.direction.z = sign(ray.direction.z) * epsilon;
+    
+    // Precompute ray coefficients for octree space [1, 2]
+    float tx_coef = 1.0 / -abs(ray.direction.x);
+    float ty_coef = 1.0 / -abs(ray.direction.y);
+    float tz_coef = 1.0 / -abs(ray.direction.z);
+    
+    float tx_bias = tx_coef * ray.origin.x;
+    float ty_bias = ty_coef * ray.origin.y;
+    float tz_bias = tz_coef * ray.origin.z;
+    
+    // Octant mirroring to make ray direction negative (optimization)
+    int octantMask = 7;
+    if (ray.direction.x > 0.0) { octantMask ^= 1; tx_bias = 3.0 * tx_coef - tx_bias; }
+    if (ray.direction.y > 0.0) { octantMask ^= 2; ty_bias = 3.0 * ty_coef - ty_bias; }
+    if (ray.direction.z > 0.0) { octantMask ^= 4; tz_bias = 3.0 * tz_coef - tz_bias; }
+    
+    // Initialize t-span for octree box [1, 2]
+    float t_min = max(max(2.0 * tx_coef - tx_bias, 2.0 * ty_coef - ty_bias), 2.0 * tz_coef - tz_bias);
+    float t_max = min(min(tx_coef - tx_bias, ty_coef - ty_bias), tz_coef - tz_bias);
+    float h = t_max;  // Push optimization tracker
+    t_min = max(t_min, 0.0);
+    t_max = min(t_max, 1.0);
+    
+    // Initialize traversal state
+    int stackPtr = 0;
+    int threadIdx = int(gl_LocalInvocationIndex);
+    int stackBase = threadIdx * CAST_STACK_DEPTH;
+    
+    uint parentIdx = 0u; // Root node
+    int idx = 0;
+    vec3 pos = vec3(1.0, 1.0, 1.0);
+    int scale = CAST_STACK_DEPTH - 1;
+    float scale_exp2 = 0.5; // exp2(scale - s_max)
+    
+    // Determine initial voxel
+    if (1.5 * tx_coef - tx_bias > t_min) { idx ^= 1; pos.x = 1.5; }
+    if (1.5 * ty_coef - ty_bias > t_min) { idx ^= 2; pos.y = 1.5; }
+    if (1.5 * tz_coef - tz_bias > t_min) { idx ^= 4; pos.z = 1.5; }
+    
+    // Initialize cached child descriptor
+    uvec2 child_descriptor = uvec2(0u, 0u);
+    
+    // BUG FIX #3: Conditional iteration limit (like C++)
+    int iter = 0;
+    
+    // Main traversal loop - CRITICAL: iteration limit only active if MAX_RAYCAST_ITERATIONS > 0
+    while (scale < CAST_STACK_DEPTH && (MAX_RAYCAST_ITERATIONS == 0 || iter < MAX_RAYCAST_ITERATIONS)) {
+        if (MAX_RAYCAST_ITERATIONS > 0) iter++;  // Only increment if limit is active
+        
+        // Fetch child descriptor unless already valid
+        if (child_descriptor.x == 0u) {
+            child_descriptor = octree.nodes[parentIdx];
+        }
+        uint childDesc = child_descriptor.x;
+        uint contourDesc = child_descriptor.y;
+        
+        // Extract node data (bit layout must match Java OctreeNode exactly)
+        uint nonLeafMask = childDesc & 0xFFu;
+        uint validMask = (childDesc >> 8) & 0xFFu;
+        bool isFar = (childDesc & 0x10000u) != 0u;
+        uint childPtr = childDesc >> 17;
+        
+        // Calculate corner t-values
+        float tx_corner = pos.x * tx_coef - tx_bias;
+        float ty_corner = pos.y * ty_coef - ty_bias;
+        float tz_corner = pos.z * tz_coef - tz_bias;
+        float tc_max = min(min(tx_corner, ty_corner), tz_corner);
+        
+        // Apply mirroring to child index
+        int childShift = idx ^ octantMask;
+        // CRITICAL: Shift the ENTIRE child descriptor for mask testing
+        uint childMasks = childDesc << childShift;
+        
+        // Check if child exists (test bit 15 of shifted descriptor) and t-span valid
+        if ((childMasks & 0x8000u) != 0u && t_min <= t_max) {
+            // INTERSECT
+            float tv_max = min(t_max, tc_max);
+            float half = scale_exp2 * 0.5;
+            
+            // Check if we should terminate (voxel small enough for screen space)
+            float ray_size = tc_max * ray.dir_sz + ray.orig_sz;
+            if (ray_size >= scale_exp2) {
+                break; // Hit voxel - it's small enough to be visible
+            }
+            
+            // Calculate center t-values for child selection
+            float tx_center = half * tx_coef + tx_corner;
+            float ty_center = half * ty_coef + ty_corner;
+            float tz_center = half * tz_coef + tz_corner;
+            
+            // CONTOUR INTERSECTION for sub-voxel surface refinement
+            uint contourMask = (contourDesc & 0xFFu) << childShift;
+            if ((contourMask & 0x80u) != 0u) {
+                // Extract contour data pointer
+                uint contourPtr = contourDesc >> 8;
+                uint contourOffset = popc8(contourMask & 0x7Fu);
+                int contourValue = int(octree.nodes[contourPtr + contourOffset].x);
+                
+                // Decode contour parameters using bit shifting
+                float cthick = float(uint(contourValue)) * scale_exp2 * 0.75;
+                float cpos = float(contourValue << 7) * scale_exp2 * 1.5;
+                
+                // Normal components via left shift and dot product
+                float cdirx = float(contourValue << 14) * ray.direction.x;
+                float cdiry = float(contourValue << 20) * ray.direction.y;
+                float cdirz = float(contourValue << 26) * ray.direction.z;
+                
+                float cdot = cdirx + cdiry + cdirz;
+                if (abs(cdot) > 0.001) {
+                    float tcoef = 1.0 / cdot;
+                    float tavg = (tx_center * cdirx + ty_center * cdiry + tz_center * cdirz + cpos) * tcoef;
+                    float tdiff = cthick * abs(tcoef);
+                    
+                    t_min = max(t_min, tavg - tdiff);
+                    tv_max = min(tv_max, tavg + tdiff);
+                }
+            }
+            
+            // Check if child is non-leaf (test bit 7 of shifted descriptor)
+            if ((childMasks & 0x0080u) != 0u && t_min <= tv_max) {
+                // PUSH - Save parent on stack (with optimization to avoid redundant pushes)
+                if (tc_max < h && stackPtr < CAST_STACK_DEPTH - 1) {
+                    stack_nodes[stackBase + stackPtr] = parentIdx;
+                    stack_tmax[stackBase + stackPtr] = t_max;
+                    stackPtr++;
+                }
+                h = tc_max;
+                
+                // DESCEND to child
+                uint ofs = childPtr;
+                
+                // Handle far pointer
+                if (isFar) {
+                    ofs = uint(octree.nodes[parentIdx + ofs * 2u].x);
+                }
+                
+                // Add offset for specific child using shifted masks
+                ofs += popc8(childMasks & 0x7Fu);
+                parentIdx = parentIdx + ofs * 2u;
+                
+                // Update position for child octant
+                scale--;
+                scale_exp2 = half;
+                idx = 0;
+                
+                // Select child voxel that ray enters first
+                if (tx_center > t_min) { idx ^= 1; pos.x += scale_exp2; }
+                if (ty_center > t_min) { idx ^= 2; pos.y += scale_exp2; }
+                if (tz_center > t_min) { idx ^= 4; pos.z += scale_exp2; }
+                
+                t_max = tv_max;
+                
+                // Invalidate cached child descriptor
+                child_descriptor = uvec2(0u, 0u);
+                continue;
+            }
+        }
+        
+        // ADVANCE - Step to next sibling
+        int step_mask = 0;
+        if (tx_corner <= tc_max) { step_mask ^= 1; pos.x -= scale_exp2; }
+        if (ty_corner <= tc_max) { step_mask ^= 2; pos.y -= scale_exp2; }
+        if (tz_corner <= tc_max) { step_mask ^= 4; pos.z -= scale_exp2; }
+        
+        t_min = tc_max;
+        idx ^= step_mask;
+        
+        // POP if necessary
+        if ((idx & step_mask) != 0u) {
+            // BUG FIX #1: Calculate scale FIRST, then do SINGLE stack read
+            uint differing_bits = 0u;
+            if ((step_mask & 1u) != 0u) differing_bits |= floatBitsToUint(pos.x) ^ floatBitsToUint(pos.x + scale_exp2);
+            if ((step_mask & 2u) != 0u) differing_bits |= floatBitsToUint(pos.y) ^ floatBitsToUint(pos.y + scale_exp2);
+            if ((step_mask & 4u) != 0u) differing_bits |= floatBitsToUint(pos.z) ^ floatBitsToUint(pos.z + scale_exp2);
+            
+            // CRITICAL: Calculate scale from highest bit position (matches C++)
+            scale = (floatBitsToInt(float(differing_bits)) >> 23) - 127;
+            scale_exp2 = intBitsToFloat((scale - CAST_STACK_DEPTH + 127) << 23);
+            
+            // Exit if outside octree
+            if (scale >= CAST_STACK_DEPTH) break;
+            
+            // SINGLE STACK READ ONLY - This was the critical bug!
+            parentIdx = stack_nodes[stackBase + scale];
+            t_max = stack_tmax[stackBase + scale];
+            
+            // Round cube position and extract child slot index
+            int shx = floatBitsToInt(pos.x) >> scale;
+            int shy = floatBitsToInt(pos.y) >> scale;
+            int shz = floatBitsToInt(pos.z) >> scale;
+            pos.x = intBitsToFloat(shx << scale);
+            pos.y = intBitsToFloat(shy << scale);
+            pos.z = intBitsToFloat(shz << scale);
+            idx = (shx & 1) | ((shy & 1) << 1) | ((shz & 1) << 2);
+            
+            // Reset push optimization to prevent same parent being stored again
+            h = 0.0f;
+            
+            // Invalidate cached child descriptor
+            child_descriptor = uvec2(0u, 0u);
+        }
+    }
+    
+    // Calculate hit point
+    hitPoint = ray.origin + ray.direction * t_min;
+    
+    // Calculate normal from voxel face intersection
+    vec3 voxelCenter = pos + vec3(scale_exp2 * 0.5);
+    vec3 toHit = hitPoint - voxelCenter;
+    vec3 absToHit = abs(toHit);
+    
+    // Find which face was hit based on maximum component
+    if (absToHit.x > absToHit.y && absToHit.x > absToHit.z) {
+        hitNormal = vec3(sign(toHit.x), 0.0, 0.0);
+    } else if (absToHit.y > absToHit.z) {
+        hitNormal = vec3(0.0, sign(toHit.y), 0.0);
+    } else {
+        hitNormal = vec3(0.0, 0.0, sign(toHit.z));
+    }
+}
+
+/**
+ * Main compute shader entry point
+ */
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    
+    // Bounds check
+    if (pixel.x >= imageSize(outputImage).x || pixel.y >= imageSize(outputImage).y)
+        return;
+    
+    // Generate ray for pixel (with critical coordinate transform)
+    Ray ray = generateRay(pixel);
+    
+    // Cast ray through octree (with all critical bug fixes)
+    vec3 hitPoint, hitNormal;
+    castRay(ray, hitPoint, hitNormal);
+    
+    // Output normal as color (for debugging/visualization)
+    vec3 color = hitNormal * 0.5 + 0.5;
+    imageStore(outputImage, pixel, vec4(color, 1.0));
+}
