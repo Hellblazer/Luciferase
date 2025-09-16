@@ -26,6 +26,10 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>portal</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>resource</artifactId>
+        </dependency>
         
         <!-- JavaFX for mesh handling -->
         <dependency>
