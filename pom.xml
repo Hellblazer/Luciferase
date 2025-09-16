@@ -49,6 +49,7 @@
         <module>gpu-test-framework</module>
         <module>render</module>
         <module>dyada-java</module>
+        <module>resource</module>
     </modules>
 
     <dependencyManagement>
@@ -97,6 +98,11 @@
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>render</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <version>${project.version}</version>
+                <artifactId>resource</artifactId>
             </dependency>
 
             <dependency>
@@ -267,6 +273,13 @@
                 <classifier>${lwjgl.natives}</classifier>
             </dependency>
 
+            <!-- OpenCL bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-opencl</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
@@ -284,6 +297,11 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
+                <version>${junit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-api</artifactId>
                 <version>${junit.version}</version>
             </dependency>
             <dependency>
