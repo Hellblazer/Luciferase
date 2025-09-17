@@ -53,6 +53,13 @@ public abstract class AbstractGPUResource<T> extends ResourceHandle<T> implement
     }
     
     /**
+     * Check if this resource is closed
+     */
+    public boolean isClosed() {
+        return !isValid();
+    }
+    
+    /**
      * Record an access to this resource
      */
     protected void recordAccess() {

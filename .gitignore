@@ -21,3 +21,4 @@ target/prism-test-data*.csv
 target/debug-test.csv
 /lucien/doc/dsoc/archive/
 /dyada-java/.jqwik-database
+/resource/logs

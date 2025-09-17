@@ -1,10 +1,15 @@
 package com.hellblazer.luciferase.esvo.traversal;
 
 import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.resource.UnifiedResourceManager;
 import javax.vecmath.Vector3f;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Advanced Ray Traversal for ESVO Phase 3
@@ -18,13 +23,20 @@ import java.util.List;
  * These features are critical for achieving high-quality rendering
  * and optimal performance in production ESVO systems.
  */
-public class AdvancedRayTraversal {
+public class AdvancedRayTraversal implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(AdvancedRayTraversal.class);
     
     // Feature flags
     private boolean farPointersEnabled = true;
     private boolean contoursEnabled = true;
     private boolean beamOptimizationEnabled = true;
     private boolean normalReconstructionEnabled = true;
+    
+    // Resource management
+    private final UnifiedResourceManager resourceManager;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicLong totalMemoryAllocated = new AtomicLong(0);
+    private final List<ByteBuffer> allocatedBuffers = new ArrayList<>();
     
     // Beam optimization state
     private static final int BEAM_SIZE = 2; // 2x2 ray beams
@@ -43,7 +55,8 @@ public class AdvancedRayTraversal {
      * Default constructor with all features enabled
      */
     public AdvancedRayTraversal() {
-        // All features enabled by default
+        this.resourceManager = UnifiedResourceManager.getInstance();
+        log.debug("AdvancedRayTraversal initialized with all features enabled");
     }
     
     /**
@@ -55,6 +68,8 @@ public class AdvancedRayTraversal {
      * @return Hit information or null if no hit
      */
     public HitInfo traverse(Vector3f origin, Vector3f direction, ByteBuffer octreeData) {
+        ensureNotClosed();
+        
         // Check for beam optimization opportunity
         if (beamOptimizationEnabled && currentBeam.canAddRay(origin, direction)) {
             return traverseBeam(origin, direction, octreeData);
@@ -68,6 +83,7 @@ public class AdvancedRayTraversal {
      * Traverse with all advanced features enabled
      */
     private HitInfo traverseWithAdvancedFeatures(Vector3f origin, Vector3f direction, ByteBuffer octreeData) {
+        ensureNotClosed();
         // Initialize traversal state
         TraversalState state = initializeTraversal(origin, direction);
         
@@ -535,6 +551,66 @@ public class AdvancedRayTraversal {
                 max.z = Math.max(max.z, origins[i].z);
             }
             return max;
+        }
+    }
+    
+    /**
+     * Allocate a managed buffer for ray traversal operations
+     */
+    public ByteBuffer allocateBuffer(int sizeBytes, String debugName) {
+        ensureNotClosed();
+        
+        ByteBuffer buffer = resourceManager.allocateMemory(sizeBytes);
+        allocatedBuffers.add(buffer);
+        totalMemoryAllocated.addAndGet(sizeBytes);
+        
+        log.trace("Allocated buffer '{}' of size {} bytes for ray traversal", debugName, sizeBytes);
+        return buffer;
+    }
+    
+    /**
+     * Get total memory allocated during ray traversal
+     */
+    public long getTotalMemoryAllocated() {
+        return totalMemoryAllocated.get();
+    }
+    
+    /**
+     * Get performance statistics
+     */
+    public String getPerformanceStats() {
+        return String.format(
+            "Ray Traversal Stats: Far Pointer Resolutions=%d, Contour Intersections=%d, Beam Traversals=%d",
+            farPointerResolutions, contourIntersections, beamTraversals
+        );
+    }
+    
+    @Override
+    public void close() {
+        if (closed.compareAndSet(false, true)) {
+            log.debug("Closing AdvancedRayTraversal, releasing {} bytes of memory", totalMemoryAllocated.get());
+            
+            // Release all allocated buffers
+            for (ByteBuffer buffer : allocatedBuffers) {
+                try {
+                    resourceManager.releaseMemory(buffer);
+                } catch (Exception e) {
+                    log.error("Error releasing buffer", e);
+                }
+            }
+            allocatedBuffers.clear();
+            
+            // Reset beam state
+            currentBeam.reset();
+            
+            log.info("AdvancedRayTraversal closed. {}", getPerformanceStats());
+            totalMemoryAllocated.set(0);
+        }
+    }
+    
+    private void ensureNotClosed() {
+        if (closed.get()) {
+            throw new IllegalStateException("AdvancedRayTraversal has been closed");
         }
     }
 }

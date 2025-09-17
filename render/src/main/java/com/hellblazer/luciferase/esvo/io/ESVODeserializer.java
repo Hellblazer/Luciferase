@@ -37,8 +37,9 @@ public class ESVODeserializer {
             // Read header
             ESVOFileFormat.Header header = readHeader(channel);
             
-            // Create octree
-            ESVOOctreeData octree = new ESVOOctreeData(header.nodeCount * 8 + 1024);
+            // Create octree - ensure minimum capacity
+            int capacity = Math.max(header.nodeCount * 8 + 1024, 100000);
+            ESVOOctreeData octree = new ESVOOctreeData(capacity);
             
             // Read nodes
             readNodes(channel, octree, header.nodeCount);
@@ -56,8 +57,9 @@ public class ESVODeserializer {
             // Read header
             ESVOFileFormat.Header header = readHeader(channel);
             
-            // Create octree
-            ESVOOctreeData octree = new ESVOOctreeData(header.nodeCount * 8 + 1024);
+            // Create octree - ensure minimum capacity
+            int capacity = Math.max(header.nodeCount * 8 + 1024, 100000);
+            ESVOOctreeData octree = new ESVOOctreeData(capacity);
             
             // Read nodes
             readNodes(channel, octree, header.nodeCount);

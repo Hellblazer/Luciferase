@@ -193,4 +193,11 @@ public class NativeMemoryHandle extends ResourceHandle<ByteBuffer> {
         return String.format("NativeMemoryHandle[address=0x%x, size=%d, aligned=%b, state=%s]",
             address, size, aligned, getState());
     }
+    
+    /**
+     * Get the underlying ByteBuffer.
+     */
+    public ByteBuffer getBuffer() {
+        return get();
+    }
 }

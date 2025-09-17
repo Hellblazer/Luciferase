@@ -126,6 +126,12 @@
     </profiles>
     
     <dependencies>
+        <!-- Resource Management Framework -->
+        <dependency>
+            <groupId>com.hellblazer.luciferase</groupId>
+            <artifactId>resource</artifactId>
+        </dependency>
+        
         <!-- Core LWJGL Dependencies -->
         <dependency>
             <groupId>org.lwjgl</groupId>

@@ -46,6 +46,11 @@ public interface GPUResource extends AutoCloseable {
     String getDescription();
     
     /**
+     * Check if this resource is closed
+     */
+    boolean isClosed();
+    
+    /**
      * Resource usage statistics
      */
     public static class ResourceStatistics {

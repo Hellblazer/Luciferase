@@ -148,7 +148,9 @@ public class MemoryPool implements AutoCloseable {
     private final ResourceTracker tracker;
     private final Map<Integer, ConcurrentLinkedDeque<PooledBuffer>> pools;
     private final Set<PooledBuffer> borrowed;
+    private final Map<ByteBuffer, PooledBuffer> allocatedBuffers; // Track allocate() calls
     private final ReentrantLock lock;
+    private final long maxIdleTimeNanos; // Max idle time before eviction
     
     private final AtomicInteger totalBuffers;
     private final AtomicLong totalMemory;
@@ -159,21 +161,42 @@ public class MemoryPool implements AutoCloseable {
     private volatile boolean closed = false;
     
     /**
+     * Create a memory pool with size and idle time configuration.
+     */
+    public MemoryPool(long maxPoolSizeBytes, java.time.Duration maxIdleTime) {
+        this(Config.builder()
+            .maxPoolSize(Math.max(1, (int)(maxPoolSizeBytes / (1024 * 1024)))) // Convert to MB count, minimum 1
+            .maxBuffersPerSize(10) // Allow multiple buffers per size
+            .build(), 
+            ResourceTracker.getGlobalTracker(),
+            maxIdleTime);
+    }
+    
+    /**
      * Create a memory pool with default configuration.
      */
     public MemoryPool(ResourceTracker tracker) {
-        this(Config.builder().build(), tracker);
+        this(Config.builder().build(), tracker, java.time.Duration.ofMinutes(1));
     }
     
     /**
      * Create a memory pool with custom configuration.
      */
     public MemoryPool(Config config, ResourceTracker tracker) {
+        this(config, tracker, java.time.Duration.ofMinutes(1));
+    }
+    
+    /**
+     * Create a memory pool with custom configuration and idle time.
+     */
+    public MemoryPool(Config config, ResourceTracker tracker, java.time.Duration maxIdleTime) {
         this.config = config;
         this.tracker = tracker;
         this.pools = new HashMap<>();
         this.borrowed = new HashSet<>();
+        this.allocatedBuffers = new HashMap<>();
         this.lock = new ReentrantLock();
+        this.maxIdleTimeNanos = maxIdleTime.toNanos();
         
         this.totalBuffers = new AtomicInteger(0);
         this.totalMemory = new AtomicLong(0);
@@ -192,6 +215,18 @@ public class MemoryPool implements AutoCloseable {
      * @return A borrowed buffer handle
      */
     public BorrowedBuffer borrow(int size) {
+        if (size < 0) {
+            throw new IllegalArgumentException("Size must be non-negative, got: " + size);
+        }
+        
+        if (size == 0) {
+            // Return an empty buffer for zero size
+            return new BorrowedBuffer(
+                new PooledBuffer(ByteBuffer.allocateDirect(0), 0, 0, false),
+                tracker
+            );
+        }
+        
         if (closed) {
             throw new IllegalStateException("Pool is closed");
         }
@@ -310,13 +345,11 @@ public class MemoryPool implements AutoCloseable {
      * Evict old buffers that haven't been used recently.
      */
     private void evictOldBuffers() {
-        long evictionAge = 60_000_000_000L; // 60 seconds in nanoseconds
-        
         for (var pool : pools.values()) {
             var iterator = pool.iterator();
             while (iterator.hasNext()) {
                 var buffer = iterator.next();
-                if (buffer.getIdleTime() > evictionAge) {
+                if (buffer.getIdleTime() > maxIdleTimeNanos) {
                     iterator.remove();
                     freeBuffer(buffer);
                     log.trace("Evicted idle buffer of size {}", buffer.size);
@@ -346,6 +379,150 @@ public class MemoryPool implements AutoCloseable {
      */
     private static int roundUpToPowerOf2(int value) {
         return 1 << (32 - Integer.numberOfLeadingZeros(value - 1));
+    }
+    
+    /**
+     * Allocate a buffer from the pool.
+     * Simple wrapper for compatibility.
+     * Note: Buffers allocated this way MUST be returned via returnToPool().
+     */
+    public ByteBuffer allocate(int size) {
+        if (size < 0) {
+            throw new IllegalArgumentException("Size must be non-negative, got: " + size);
+        }
+        
+        if (size == 0) {
+            // Return an empty buffer for zero size
+            return ByteBuffer.allocateDirect(0);
+        }
+        
+        allocations.incrementAndGet();
+        
+        // Round up to power of 2 for better reuse
+        int poolSize = roundUpToPowerOf2(size);
+        
+        lock.lock();
+        try {
+            var pool = pools.computeIfAbsent(poolSize, k -> new ConcurrentLinkedDeque<>());
+            
+            // Try to get from pool
+            PooledBuffer buffer = pool.poll();
+            if (buffer != null) {
+                poolHits.incrementAndGet();
+                totalMemory.addAndGet(poolSize); // Count as allocated
+                log.debug("Reusing buffer {} of size {} from pool", 
+                         System.identityHashCode(buffer.buffer), poolSize);
+                
+                // Clear buffer before reuse
+                buffer.buffer.clear();
+                MemoryUtil.memSet(buffer.buffer, 0);
+                
+                allocatedBuffers.put(buffer.buffer, buffer);
+                return buffer.buffer;
+            }
+            
+            // Need to allocate new buffer
+            poolMisses.incrementAndGet();
+            
+            // Allocate new buffer
+            ByteBuffer newBuffer = MemoryUtil.memAlloc(poolSize);
+            
+            var pooledBuffer = new PooledBuffer(
+                newBuffer,
+                MemoryUtil.memAddress(newBuffer),
+                poolSize,
+                false
+            );
+            
+            totalBuffers.incrementAndGet();
+            totalMemory.addAndGet(poolSize);
+            
+            log.debug("Allocated new buffer {} of size {} for pool", 
+                     System.identityHashCode(newBuffer), poolSize);
+            
+            allocatedBuffers.put(newBuffer, pooledBuffer);
+            return newBuffer;
+            
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Return a buffer to the pool.
+     */
+    public void returnToPool(ByteBuffer buffer) {
+        if (buffer == null) {
+            return;
+        }
+        
+        lock.lock();
+        try {
+            PooledBuffer pooledBuffer = allocatedBuffers.remove(buffer);
+            if (pooledBuffer != null) {
+                totalMemory.addAndGet(-pooledBuffer.size); // No longer allocated
+                
+                var pool = pools.get(pooledBuffer.size);
+                if (pool != null && pool.size() < config.maxBuffersPerSize) {
+                    // Check if this buffer is already in the pool (duplicate return)
+                    boolean alreadyInPool = pool.stream()
+                        .anyMatch(pb -> pb.buffer == pooledBuffer.buffer);
+                    
+                    if (!alreadyInPool) {
+                        // Mark the buffer as used when returning to pool so idle time resets
+                        pooledBuffer.markUsed();
+                        pool.offer(pooledBuffer);
+                        log.trace("Returned buffer of size {} to pool", pooledBuffer.size);
+                    } else {
+                        log.debug("Buffer {} already in pool, ignoring duplicate return", 
+                                 System.identityHashCode(buffer));
+                    }
+                } else {
+                    // Pool for this size is full, free the buffer
+                    freeBuffer(pooledBuffer);
+                }
+            } else {
+                // Buffer was not tracked or already returned
+                log.trace("Buffer {} not tracked or already returned", 
+                         System.identityHashCode(buffer));
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Evict expired buffers from the pool.
+     */
+    public void evictExpired() {
+        evictOldBuffers();
+    }
+    
+    /**
+     * Get current size of pool in bytes.
+     */
+    public long getCurrentSize() {
+        lock.lock();
+        try {
+            long size = 0;
+            for (var pool : pools.values()) {
+                for (var buffer : pool) {
+                    size += buffer.size;
+                }
+            }
+            return size;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Get hit rate as a percentage.
+     */
+    public double getHitRate() {
+        long total = allocations.get();
+        if (total == 0) return 0.0;
+        return (double) poolHits.get() / total;
     }
     
     /**
@@ -416,6 +593,28 @@ public class MemoryPool implements AutoCloseable {
         public long getTotalMemoryMB() {
             return totalMemoryBytes / (1024 * 1024);
         }
+        
+        public long getTotalAllocated() {
+            return totalMemoryBytes;
+        }
+        
+        public long getUsedMemory() {
+            // Memory currently in use (borrowed buffers)
+            return currentlyBorrowed * (totalMemoryBytes / Math.max(totalBuffers, 1));
+        }
+        
+        public long getHitCount() {
+            return poolHits;
+        }
+        
+        public long getMissCount() {
+            return poolMisses;
+        }
+        
+        public long getEvictionCount() {
+            // Not tracked separately, return 0 for now
+            return 0;
+        }
     }
     
     /**
@@ -471,6 +670,12 @@ public class MemoryPool implements AutoCloseable {
                 freeBuffer(buffer);
             }
             borrowed.clear();
+            
+            // Free allocated buffers
+            for (var buffer : allocatedBuffers.values()) {
+                freeBuffer(buffer);
+            }
+            allocatedBuffers.clear();
             
             log.info("Closed memory pool: total allocations={}, hit rate={:.1f}%",
                 allocations.get(),

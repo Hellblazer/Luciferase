@@ -1,5 +1,10 @@
 package com.hellblazer.luciferase.esvo.gpu;
 
+import com.hellblazer.luciferase.resource.UnifiedResourceManager;
+import com.hellblazer.luciferase.resource.opengl.BufferResource;
+import com.hellblazer.luciferase.resource.opengl.ShaderProgramResource;
+import com.hellblazer.luciferase.resource.opengl.ShaderResource;
+import com.hellblazer.luciferase.resource.opengl.TextureResource;
 import org.lwjgl.opengl.GL43;
 import org.lwjgl.system.MemoryStack;
 import org.slf4j.Logger;
@@ -41,16 +46,17 @@ public final class ComputeShaderRenderer {
     public static final int OUTPUT_IMAGE_BINDING = 1;
     public static final int CAMERA_UBO_BINDING = 2;
     
-    // Shader programs
-    private int raycastComputeShader = 0;
-    private int raycastProgram = 0;
+    // Resource manager for GPU resources
+    private final UnifiedResourceManager resourceManager = UnifiedResourceManager.getInstance();
     
-    // Uniform buffer for camera data
-    private int cameraUBO = 0;
+    // Managed resources
+    private ShaderResource raycastComputeShader;
+    private ShaderProgramResource raycastProgram;
+    private BufferResource cameraUBO;
+    private TextureResource outputTexture;
+    
     private static final int CAMERA_UBO_SIZE = 64 * 4 + 16 * 4; // 4x4 matrices + vectors
     
-    // Output texture
-    private int outputTexture = 0;
     private int frameWidth;
     private int frameHeight;
     
@@ -120,11 +126,11 @@ public final class ComputeShaderRenderer {
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, octreeToObject);
         
         // Bind output texture
-        glBindImageTexture(OUTPUT_IMAGE_BINDING, outputTexture, 0, false, 0, 
+        glBindImageTexture(OUTPUT_IMAGE_BINDING, outputTexture.getOpenGLId(), 0, false, 0, 
                           GL_WRITE_ONLY, GL_RGBA8);
         
         // Use compute shader program
-        glUseProgram(raycastProgram);
+        glUseProgram(raycastProgram.getOpenGLId());
         
         // Dispatch compute shader
         int groupsX = (frameWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
@@ -146,7 +152,7 @@ public final class ComputeShaderRenderer {
      * Get the output texture ID for display or further processing
      */
     public int getOutputTexture() {
-        return outputTexture;
+        return outputTexture != null ? outputTexture.getOpenGLId() : 0;
     }
     
     /**
@@ -168,8 +174,8 @@ public final class ComputeShaderRenderer {
         
         if (initialized) {
             // Recreate output texture with new size
-            if (outputTexture != 0) {
-                glDeleteTextures(outputTexture);
+            if (outputTexture != null) {
+                outputTexture.close();
             }
             createOutputTexture();
             
@@ -185,24 +191,28 @@ public final class ComputeShaderRenderer {
             return;
         }
         
-        if (raycastProgram != 0) {
-            glDeleteProgram(raycastProgram);
-            raycastProgram = 0;
-        }
-        
-        if (raycastComputeShader != 0) {
-            glDeleteShader(raycastComputeShader);
-            raycastComputeShader = 0;
-        }
-        
-        if (cameraUBO != 0) {
-            glDeleteBuffers(cameraUBO);
-            cameraUBO = 0;
-        }
-        
-        if (outputTexture != 0) {
-            glDeleteTextures(outputTexture);
-            outputTexture = 0;
+        try {
+            if (raycastProgram != null) {
+                raycastProgram.close();
+                raycastProgram = null;
+            }
+            
+            if (raycastComputeShader != null) {
+                raycastComputeShader.close();
+                raycastComputeShader = null;
+            }
+            
+            if (cameraUBO != null) {
+                cameraUBO.close();
+                cameraUBO = null;
+            }
+            
+            if (outputTexture != null) {
+                outputTexture.close();
+                outputTexture = null;
+            }
+        } catch (Exception e) {
+            log.error("Error disposing GPU resources", e);
         }
         
         disposed = true;
@@ -217,29 +227,14 @@ public final class ComputeShaderRenderer {
         // Load raycast compute shader source
         String shaderSource = loadShaderSource("raycast.comp");
         
-        // Create and compile compute shader
-        raycastComputeShader = glCreateShader(GL_COMPUTE_SHADER);
-        glShaderSource(raycastComputeShader, shaderSource);
-        glCompileShader(raycastComputeShader);
+        // Create and compile compute shader using resource manager
+        raycastComputeShader = resourceManager.createComputeShader(shaderSource, "ESVORaycastCompute");
         
-        // Check compilation status
-        if (glGetShaderi(raycastComputeShader, GL_COMPILE_STATUS) == GL_FALSE) {
-            String log = glGetShaderInfoLog(raycastComputeShader);
-            glDeleteShader(raycastComputeShader);
-            throw new RuntimeException("Compute shader compilation failed:\n" + log);
-        }
-        
-        // Create and link program
-        raycastProgram = glCreateProgram();
-        glAttachShader(raycastProgram, raycastComputeShader);
-        glLinkProgram(raycastProgram);
-        
-        // Check link status
-        if (glGetProgrami(raycastProgram, GL_LINK_STATUS) == GL_FALSE) {
-            String log = glGetProgramInfoLog(raycastProgram);
-            glDeleteProgram(raycastProgram);
-            throw new RuntimeException("Compute shader program linking failed:\n" + log);
-        }
+        // Create shader program using resource manager
+        raycastProgram = resourceManager.createShaderProgram(
+            "ESVORaycastProgram",
+            raycastComputeShader
+        );
         
         log.info("Compiled ESVO compute shaders successfully");
     }
@@ -254,26 +249,14 @@ public final class ComputeShaderRenderer {
     }
     
     private void createUniformBuffers() {
-        // Create camera uniform buffer
-        cameraUBO = glGenBuffers();
-        glBindBuffer(GL_UNIFORM_BUFFER, cameraUBO);
-        glBufferData(GL_UNIFORM_BUFFER, CAMERA_UBO_SIZE, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_UNIFORM_BUFFER, CAMERA_UBO_BINDING, cameraUBO);
+        // Create camera uniform buffer using resource manager
+        cameraUBO = resourceManager.createUniformBuffer(CAMERA_UBO_SIZE, "ESVOCameraUBO");
+        glBindBufferBase(GL_UNIFORM_BUFFER, CAMERA_UBO_BINDING, cameraUBO.getOpenGLId());
     }
     
     private void createOutputTexture() {
-        outputTexture = glGenTextures();
-        glBindTexture(GL_TEXTURE_2D, outputTexture);
-        
-        // Create RGBA8 texture for output
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, frameWidth, frameHeight, 0, 
-                    GL_RGBA, GL_UNSIGNED_BYTE, 0);
-        
-        // Set texture parameters
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        // Create RGBA8 texture using resource manager
+        outputTexture = resourceManager.createTexture2D(frameWidth, frameHeight, GL_RGBA8, "ESVOOutputTexture");
     }
     
     private void updateCameraUniforms(Matrix4f viewMatrix, Matrix4f projMatrix,
@@ -297,7 +280,7 @@ public final class ComputeShaderRenderer {
             buffer.flip();
             
             // Update uniform buffer
-            glBindBuffer(GL_UNIFORM_BUFFER, cameraUBO);
+            glBindBuffer(GL_UNIFORM_BUFFER, cameraUBO.getOpenGLId());
             glBufferSubData(GL_UNIFORM_BUFFER, 0, buffer);
         }
     }

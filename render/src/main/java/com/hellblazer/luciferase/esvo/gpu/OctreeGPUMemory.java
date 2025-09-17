@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.esvo.gpu;
 
+import com.hellblazer.luciferase.resource.UnifiedResourceManager;
+import com.hellblazer.luciferase.resource.opengl.BufferResource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
@@ -36,8 +38,11 @@ public final class OctreeGPUMemory {
     private final int nodeCount;
     private boolean disposed = false;
     
-    // GPU buffer objects
-    private int nodeSSBO = 0; // Shader Storage Buffer Object
+    // Resource manager for GPU resources
+    private final UnifiedResourceManager resourceManager = UnifiedResourceManager.getInstance();
+    
+    // Managed GPU buffer
+    private BufferResource nodeSSBO; // Shader Storage Buffer Object
     
     /**
      * Create GPU memory for octree nodes
@@ -81,11 +86,13 @@ public final class OctreeGPUMemory {
             throw new IllegalStateException("GPU memory has been disposed");
         }
         
-        if (nodeSSBO == 0) {
-            nodeSSBO = glGenBuffers();
+        if (nodeSSBO == null) {
+            // Create storage buffer using resource manager
+            nodeSSBO = resourceManager.createStorageBuffer((int)bufferSize, "OctreeNodeSSBO");
         }
         
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, nodeSSBO);
+        // Upload data to the buffer
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, nodeSSBO.getOpenGLId());
         glBufferData(GL_SHADER_STORAGE_BUFFER, nodeBuffer, GL_STATIC_DRAW);
         
         // Check for OpenGL errors
@@ -95,7 +102,7 @@ public final class OctreeGPUMemory {
                 String.format("OpenGL error during buffer upload: 0x%X", error));
         }
         
-        log.debug("Uploaded {} bytes to GPU SSBO {}", bufferSize, nodeSSBO);
+        log.debug("Uploaded {} bytes to GPU SSBO {}", bufferSize, nodeSSBO.getOpenGLId());
     }
     
     /**
@@ -108,11 +115,11 @@ public final class OctreeGPUMemory {
             throw new IllegalStateException("GPU memory has been disposed");
         }
         
-        if (nodeSSBO == 0) {
+        if (nodeSSBO == null) {
             throw new IllegalStateException("Buffer not uploaded to GPU yet");
         }
         
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, nodeSSBO);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bindingPoint, nodeSSBO.getOpenGLId());
     }
     
     /**
@@ -175,7 +182,7 @@ public final class OctreeGPUMemory {
      * Get the GPU buffer object ID (for direct OpenGL use)
      */
     public int getSSBO() {
-        return nodeSSBO;
+        return nodeSSBO != null ? nodeSSBO.getOpenGLId() : 0;
     }
     
     /**
@@ -208,10 +215,14 @@ public final class OctreeGPUMemory {
             return;
         }
         
-        // Delete GPU buffer
-        if (nodeSSBO != 0) {
-            glDeleteBuffers(nodeSSBO);
-            nodeSSBO = 0;
+        try {
+            // Delete GPU buffer using resource manager
+            if (nodeSSBO != null) {
+                nodeSSBO.close();
+                nodeSSBO = null;
+            }
+        } catch (Exception e) {
+            log.error("Error disposing GPU buffer", e);
         }
         
         // Free CPU memory
