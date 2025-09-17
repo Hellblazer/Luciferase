@@ -1,34 +1,58 @@
 package com.hellblazer.luciferase.esvo.builder;
 
+import com.hellblazer.luciferase.resource.CompositeResourceManager;
+import com.hellblazer.luciferase.resource.ResourceHandle;
 import org.lwjgl.system.MemoryUtil;
 import javax.vecmath.Vector3f;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Phase 4: CPU Builder Implementation
  * 
  * Builds octree from triangles with parallel subdivision.
+ * Manages thread pool lifecycle with proper resource cleanup.
  */
-public class ESVOCPUBuilder {
+public class ESVOCPUBuilder implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(ESVOCPUBuilder.class);
     private static final int MAX_THREADS = 32;
+    
     private final ForkJoinPool pool;
     private final AtomicInteger threadMask = new AtomicInteger(0);
     private final ThreadLocal<Integer> threadId = new ThreadLocal<>();
     private final Map<Long, Integer> threadIdMap = new ConcurrentHashMap<>();
+    private final CompositeResourceManager resourceManager;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicBoolean initialized = new AtomicBoolean(false);
+    private int maxThreads = 0;
     
     public ESVOCPUBuilder() {
+        this(new CompositeResourceManager());
+    }
+    
+    public ESVOCPUBuilder(CompositeResourceManager resourceManager) {
+        this.resourceManager = resourceManager;
+        
         // Respect 32-thread limit
         int threads = Math.min(ForkJoinPool.getCommonPoolParallelism(), MAX_THREADS);
         this.pool = new ForkJoinPool(threads);
+        
+        // Register the thread pool as a managed resource
+        resourceManager.add(new ThreadPoolResource(pool));
+        
+        log.debug("ESVOCPUBuilder initialized with {} threads", threads);
     }
     
     /**
      * Voxelize a triangle into the octree.
      */
     public List<Integer> voxelizeTriangle(Vector3f v0, Vector3f v1, Vector3f v2, int targetLevel) {
+        ensureNotClosed();
         List<Integer> voxels = new ArrayList<>();
         
         // Conservative voxelization using edge functions
@@ -170,6 +194,7 @@ public class ESVOCPUBuilder {
      * Parallel subdivision for performance testing.
      */
     public void subdivideParallel(int nodeCount) throws InterruptedException, ExecutionException {
+        ensureNotClosed();
         List<Future<Integer>> futures = new ArrayList<>();
         
         for (int i = 0; i < nodeCount; i++) {
@@ -205,16 +230,111 @@ public class ESVOCPUBuilder {
     }
     
     /**
-     * Shutdown the builder and release resources.
+     * Initialize the builder with a specific number of threads.
      */
+    public void initialize(int threads) {
+        ensureNotClosed();
+        this.maxThreads = Math.min(threads, MAX_THREADS);
+        initialized.set(true);
+        log.debug("ESVOCPUBuilder initialized with {} threads", this.maxThreads);
+    }
+    
+    /**
+     * Check if the builder is initialized.
+     */
+    public boolean isInitialized() {
+        return initialized.get();
+    }
+    
+    /**
+     * Submit a task to the thread pool.
+     */
+    public <T> Future<T> submitTask(Callable<T> task) {
+        ensureNotClosed();
+        return pool.submit(task);
+    }
+    
+    /**
+     * Get the number of active threads in the pool.
+     */
+    public int getActiveThreadCount() {
+        return pool.getActiveThreadCount();
+    }
+
+    /**
+     * Shutdown the builder and release resources.
+     * @deprecated Use {@link #close()} instead
+     */
+    @Deprecated
     public void shutdown() {
-        pool.shutdown();
-        try {
-            if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+        close();
+    }
+    
+    @Override
+    public void close() {
+        if (closed.compareAndSet(false, true)) {
+            log.debug("Closing ESVOCPUBuilder");
+            
+            // Mark as not initialized
+            initialized.set(false);
+            
+            // Release all thread IDs
+            releaseAllThreads();
+            
+            // Shutdown thread pool
+            pool.shutdown();
+            try {
+                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    log.warn("Thread pool did not terminate gracefully, forcing shutdown");
+                    pool.shutdownNow();
+                    
+                    // Wait a bit more for tasks to respond to cancellation
+                    if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                        log.error("Thread pool did not terminate after forced shutdown");
+                    }
+                }
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while waiting for thread pool shutdown", e);
                 pool.shutdownNow();
+                Thread.currentThread().interrupt();
             }
-        } catch (InterruptedException e) {
-            pool.shutdownNow();
+            
+            // Close all managed resources
+            try {
+                resourceManager.close();
+            } catch (Exception e) {
+                log.error("Error closing resource manager", e);
+            }
+            
+            log.info("ESVOCPUBuilder closed successfully");
+        }
+    }
+    
+    private void ensureNotClosed() {
+        if (closed.get()) {
+            throw new IllegalStateException("ESVOCPUBuilder has been closed");
+        }
+    }
+    
+    /**
+     * Resource wrapper for thread pools
+     */
+    private static class ThreadPoolResource extends ResourceHandle<ForkJoinPool> {
+        public ThreadPoolResource(ForkJoinPool pool) {
+            super(pool, null); // No tracker needed
+        }
+        
+        @Override
+        protected void doCleanup(ForkJoinPool pool) {
+            pool.shutdown();
+            try {
+                if (!pool.awaitTermination(1, TimeUnit.SECONDS)) {
+                    pool.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                pool.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

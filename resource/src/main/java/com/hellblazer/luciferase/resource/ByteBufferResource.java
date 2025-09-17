@@ -6,12 +6,13 @@ import java.util.UUID;
 /**
  * A GPU resource wrapper for ByteBuffers
  */
-public class BufferResource extends ResourceHandle<ByteBuffer> implements GPUResource {
+public class ByteBufferResource extends ResourceHandle<ByteBuffer> implements GPUResource {
     private long lastAccessTime;
     private long accessCount;
     
-    public BufferResource(UUID id, ByteBuffer buffer, ResourceTracker tracker) {
+    public ByteBufferResource(UUID id, ByteBuffer buffer, ResourceTracker tracker) {
         super(buffer, tracker);
+        // Note: We inherit the ID from ResourceHandle, no need to store separately
         this.lastAccessTime = System.currentTimeMillis();
         this.accessCount = 1; // Mark as accessed on allocation
     }
@@ -38,6 +39,11 @@ public class BufferResource extends ResourceHandle<ByteBuffer> implements GPURes
     @Override
     public boolean isValid() {
         return getState() == State.ALLOCATED && super.isValid();
+    }
+    
+    @Override
+    public boolean isClosed() {
+        return !isValid();
     }
     
     public void bind() {

@@ -69,4 +69,11 @@ public class ESVOOctreeData {
     public int getMaxSizeBytes() {
         return maxSizeBytes;
     }
+    
+    /**
+     * Get the capacity (same as max size in bytes for compatibility)
+     */
+    public int getCapacity() {
+        return maxSizeBytes;
+    }
 }

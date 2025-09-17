@@ -2,6 +2,9 @@ package com.hellblazer.luciferase.esvo.io;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.resource.UnifiedResourceManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -9,13 +12,22 @@ import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Serializer for ESVO octree data
+ * Serializer for ESVO octree data with resource management
  */
-public class ESVOSerializer {
+public class ESVOSerializer implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(ESVOSerializer.class);
     
     private final int version;
+    private final UnifiedResourceManager resourceManager;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicLong totalBytesWritten = new AtomicLong(0);
+    private final List<ByteBuffer> allocatedBuffers = new ArrayList<>();
     
     public ESVOSerializer() {
         this(ESVOFileFormat.VERSION_2);
@@ -23,12 +35,16 @@ public class ESVOSerializer {
     
     public ESVOSerializer(int version) {
         this.version = version;
+        this.resourceManager = UnifiedResourceManager.getInstance();
+        log.debug("ESVOSerializer created with version {}", version);
     }
     
     /**
      * Serialize octree data to file
      */
     public void serialize(ESVOOctreeData octree, Path outputFile) throws IOException {
+        ensureNotClosed();
+        
         try (FileChannel channel = FileChannel.open(outputFile, 
                 StandardOpenOption.CREATE, 
                 StandardOpenOption.WRITE,
@@ -42,14 +58,18 @@ public class ESVOSerializer {
             header.version = version;
             header.nodeCount = nodeCount;
             
-            ByteBuffer headerBuffer = ByteBuffer.allocate(header.getHeaderSize());
+            ByteBuffer headerBuffer = allocateBuffer(header.getHeaderSize(), "header");
             headerBuffer.order(ByteOrder.LITTLE_ENDIAN);
             writeHeader(headerBuffer, header);
             headerBuffer.flip();
-            channel.write(headerBuffer);
+            long bytesWritten = channel.write(headerBuffer);
+            totalBytesWritten.addAndGet(bytesWritten);
             
             // Write nodes
             writeNodes(channel, octree, nodeCount);
+            
+            log.info("Serialized {} nodes to {}, {} bytes written", 
+                    nodeCount, outputFile, totalBytesWritten.get());
         }
     }
     
@@ -72,11 +92,12 @@ public class ESVOSerializer {
             header.nodeCount = nodeCount;
             
             // Write header (will update metadata offset later)
-            ByteBuffer headerBuffer = ByteBuffer.allocate(header.getHeaderSize());
+            ByteBuffer headerBuffer = allocateBuffer(header.getHeaderSize(), "header");
             headerBuffer.order(ByteOrder.LITTLE_ENDIAN);
             writeHeader(headerBuffer, header);
             headerBuffer.flip();
-            channel.write(headerBuffer);
+            long bytesWritten = channel.write(headerBuffer);
+            totalBytesWritten.addAndGet(bytesWritten);
             
             // Write nodes
             writeNodes(channel, octree, nodeCount);
@@ -129,8 +150,13 @@ public class ESVOSerializer {
     private void writeNodes(FileChannel channel, ESVOOctreeData octree, int nodeCount) 
             throws IOException {
         
+        // Skip if no nodes to write
+        if (nodeCount == 0) {
+            return;
+        }
+        
         // Allocate buffer for nodes (8 bytes per node)
-        ByteBuffer nodeBuffer = ByteBuffer.allocate(nodeCount * 8);
+        ByteBuffer nodeBuffer = allocateBuffer(nodeCount * 8, "nodes");
         nodeBuffer.order(ByteOrder.LITTLE_ENDIAN);
         
         // Write each node
@@ -148,5 +174,47 @@ public class ESVOSerializer {
         
         nodeBuffer.flip();
         channel.write(nodeBuffer);
+    }
+    
+    /**
+     * Allocate a managed buffer
+     */
+    private ByteBuffer allocateBuffer(int size, String name) {
+        ByteBuffer buffer = resourceManager.allocateMemory(size);
+        allocatedBuffers.add(buffer);
+        log.trace("Allocated {} buffer of size {} bytes", name, size);
+        return buffer;
+    }
+    
+    /**
+     * Get total bytes written
+     */
+    public long getTotalBytesWritten() {
+        return totalBytesWritten.get();
+    }
+    
+    @Override
+    public void close() {
+        if (closed.compareAndSet(false, true)) {
+            log.debug("Closing ESVOSerializer, releasing {} buffers", allocatedBuffers.size());
+            
+            // Release all allocated buffers
+            for (ByteBuffer buffer : allocatedBuffers) {
+                try {
+                    resourceManager.releaseMemory(buffer);
+                } catch (Exception e) {
+                    log.error("Error releasing buffer", e);
+                }
+            }
+            allocatedBuffers.clear();
+            
+            log.info("ESVOSerializer closed. Total bytes written: {}", totalBytesWritten.get());
+        }
+    }
+    
+    private void ensureNotClosed() {
+        if (closed.get()) {
+            throw new IllegalStateException("ESVOSerializer has been closed");
+        }
     }
 }

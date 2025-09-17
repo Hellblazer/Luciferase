@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.resource;
 
+import com.hellblazer.luciferase.resource.memory.MemoryPool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 
@@ -147,7 +148,7 @@ public class MemoryPoolTest {
     
     @Test
     void testPoolStatistics() {
-        var stats = pool.getStatistics();
+        var stats = pool.getPoolStatistics();
         assertNotNull(stats);
         assertEquals(0, stats.getHitCount());
         assertEquals(0, stats.getMissCount());
@@ -160,7 +161,7 @@ public class MemoryPoolTest {
         // Reuse
         pool.allocate(1024);
         
-        stats = pool.getStatistics();
+        stats = pool.getPoolStatistics();
         assertEquals(1, stats.getHitCount());
         assertEquals(1, stats.getMissCount());
     }
