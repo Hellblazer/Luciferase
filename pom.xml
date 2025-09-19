@@ -116,11 +116,6 @@
                 <artifactId>primemover-maven-plugin</artifactId>
                 <version>${prime-mover.version}</version>
             </dependency>
-            <dependency>
-                <groupId>com.hellblazer.primeMover</groupId>
-                <artifactId>sim-agent</artifactId>
-                <version>${prime-mover.version}</version>
-            </dependency>
 
             <dependency>
                 <groupId>com.chiralbehaviors</groupId>
