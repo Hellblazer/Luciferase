@@ -270,9 +270,13 @@ public class MemoryPool implements AutoCloseable {
                 poolHits.incrementAndGet();
                 log.trace("Reusing buffer of size {} from pool", poolSize);
                 
-                // Clear buffer before reuse
+                // Clear buffer before reuse - ensure it's zeroed
                 buffer.buffer.clear();
-                MemoryUtil.memSet(buffer.buffer, 0);
+                // Use direct buffer fill for better compatibility
+                while (buffer.buffer.hasRemaining()) {
+                    buffer.buffer.put((byte) 0);
+                }
+                buffer.buffer.clear(); // Reset position to 0
                 
                 borrowed.add(buffer);
                 return new BorrowedBuffer(buffer, tracker);
@@ -413,9 +417,13 @@ public class MemoryPool implements AutoCloseable {
                 log.debug("Reusing buffer {} of size {} from pool", 
                          System.identityHashCode(buffer.buffer), poolSize);
                 
-                // Clear buffer before reuse
+                // Clear buffer before reuse - ensure it's zeroed
                 buffer.buffer.clear();
-                MemoryUtil.memSet(buffer.buffer, 0);
+                // Use direct buffer fill for better compatibility
+                while (buffer.buffer.hasRemaining()) {
+                    buffer.buffer.put((byte) 0);
+                }
+                buffer.buffer.clear(); // Reset position to 0
                 
                 allocatedBuffers.put(buffer.buffer, buffer);
                 return buffer.buffer;
