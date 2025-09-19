@@ -272,11 +272,21 @@ public class MemoryPool implements AutoCloseable {
                 
                 // Clear buffer before reuse - ensure it's zeroed
                 buffer.buffer.clear();
-                // Zero the buffer using a more efficient method
-                for (int i = 0; i < buffer.buffer.capacity(); i++) {
-                    buffer.buffer.put(i, (byte) 0);
+                // Use bulk put operation for better performance and reliability
+                int capacity = buffer.buffer.capacity();
+                buffer.buffer.position(0);
+                buffer.buffer.limit(capacity);
+                
+                // Fill with zeros using bulk operations for better performance
+                // This works more reliably across different environments
+                while (buffer.buffer.remaining() >= 8) {
+                    buffer.buffer.putLong(0L);
                 }
-                buffer.buffer.clear(); // Ensure position is 0
+                while (buffer.buffer.hasRemaining()) {
+                    buffer.buffer.put((byte) 0);
+                }
+                
+                buffer.buffer.clear(); // Reset position and limit
                 
                 borrowed.add(buffer);
                 return new BorrowedBuffer(buffer, tracker);
@@ -419,11 +429,21 @@ public class MemoryPool implements AutoCloseable {
                 
                 // Clear buffer before reuse - ensure it's zeroed
                 buffer.buffer.clear();
-                // Zero the buffer using a more efficient method
-                for (int i = 0; i < buffer.buffer.capacity(); i++) {
-                    buffer.buffer.put(i, (byte) 0);
+                // Use bulk put operation for better performance and reliability
+                int capacity = buffer.buffer.capacity();
+                buffer.buffer.position(0);
+                buffer.buffer.limit(capacity);
+                
+                // Fill with zeros using bulk operations for better performance
+                // This works more reliably across different environments
+                while (buffer.buffer.remaining() >= 8) {
+                    buffer.buffer.putLong(0L);
                 }
-                buffer.buffer.clear(); // Ensure position is 0
+                while (buffer.buffer.hasRemaining()) {
+                    buffer.buffer.put((byte) 0);
+                }
+                
+                buffer.buffer.clear(); // Reset position and limit
                 
                 allocatedBuffers.put(buffer.buffer, buffer);
                 return buffer.buffer;
