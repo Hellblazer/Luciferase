@@ -18,7 +18,7 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libgl1-mesa-glx libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
+          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
       - name: Build with Maven
         run: |
           export DISPLAY=:99.0
