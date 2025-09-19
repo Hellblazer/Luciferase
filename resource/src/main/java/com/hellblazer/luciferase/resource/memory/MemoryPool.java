@@ -272,11 +272,11 @@ public class MemoryPool implements AutoCloseable {
                 
                 // Clear buffer before reuse - ensure it's zeroed
                 buffer.buffer.clear();
-                // Use direct buffer fill for better compatibility
-                while (buffer.buffer.hasRemaining()) {
-                    buffer.buffer.put((byte) 0);
+                // Zero the buffer using a more efficient method
+                for (int i = 0; i < buffer.buffer.capacity(); i++) {
+                    buffer.buffer.put(i, (byte) 0);
                 }
-                buffer.buffer.clear(); // Reset position to 0
+                buffer.buffer.clear(); // Ensure position is 0
                 
                 borrowed.add(buffer);
                 return new BorrowedBuffer(buffer, tracker);
@@ -419,11 +419,11 @@ public class MemoryPool implements AutoCloseable {
                 
                 // Clear buffer before reuse - ensure it's zeroed
                 buffer.buffer.clear();
-                // Use direct buffer fill for better compatibility
-                while (buffer.buffer.hasRemaining()) {
-                    buffer.buffer.put((byte) 0);
+                // Zero the buffer using a more efficient method
+                for (int i = 0; i < buffer.buffer.capacity(); i++) {
+                    buffer.buffer.put(i, (byte) 0);
                 }
-                buffer.buffer.clear(); // Reset position to 0
+                buffer.buffer.clear(); // Ensure position is 0
                 
                 allocatedBuffers.put(buffer.buffer, buffer);
                 return buffer.buffer;
