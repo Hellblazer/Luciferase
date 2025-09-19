@@ -15,5 +15,11 @@ jobs:
           distribution: 'graalvm'
           cache: 'maven'
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-glx libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
       - name: Build with Maven
-        run: ./mvnw -batch-mode --update-snapshots clean install --file pom.xml
+        run: |
+          export DISPLAY=:99.0
+          xvfb-run -a ./mvnw -batch-mode --update-snapshots clean install --file pom.xml

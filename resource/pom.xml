@@ -95,7 +95,16 @@
                         --enable-preview
                         -Dgpu.resource.tracking=true
                         -Dgpu.resource.tracking.verbose=true
+                        -Djava.awt.headless=true
+                        -Dorg.lwjgl.system.allocator=system
+                        -Dorg.lwjgl.system.stackSize=128
+                        --add-opens java.base/java.lang=ALL-UNNAMED
+                        --add-opens java.base/java.nio=ALL-UNNAMED
                     </argLine>
+                    <systemPropertyVariables>
+                        <java.awt.headless>true</java.awt.headless>
+                        <org.lwjgl.system.allocator>system</org.lwjgl.system.allocator>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
