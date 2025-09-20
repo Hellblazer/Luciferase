@@ -44,7 +44,7 @@ public abstract class LWJGLHeadlessTest implements AutoCloseable {
             loadRequiredNativeLibraries();
         } catch (Throwable t) {
             var message = "Native library initialization failed: " + t.getMessage();
-            log.error(message, t);
+            log.info(message);  // Just log the message, no stack trace
             org.junit.jupiter.api.Assumptions.assumeTrue(false, message);
         }
     }

@@ -308,6 +308,16 @@ public class MemoryPool implements AutoCloseable {
                 newBuffer = MemoryUtil.memAlloc(poolSize);
             }
             
+            // Zero the newly allocated buffer - LWJGL doesn't zero memory by default
+            newBuffer.clear();
+            while (newBuffer.remaining() >= 8) {
+                newBuffer.putLong(0L);
+            }
+            while (newBuffer.hasRemaining()) {
+                newBuffer.put((byte) 0);
+            }
+            newBuffer.clear(); // Reset position and limit
+            
             var pooledBuffer = new PooledBuffer(
                 newBuffer,
                 MemoryUtil.memAddress(newBuffer),
@@ -454,6 +464,16 @@ public class MemoryPool implements AutoCloseable {
             
             // Allocate new buffer
             ByteBuffer newBuffer = MemoryUtil.memAlloc(poolSize);
+            
+            // Zero the newly allocated buffer - LWJGL doesn't zero memory by default
+            newBuffer.clear();
+            while (newBuffer.remaining() >= 8) {
+                newBuffer.putLong(0L);
+            }
+            while (newBuffer.hasRemaining()) {
+                newBuffer.put((byte) 0);
+            }
+            newBuffer.clear(); // Reset position and limit
             
             var pooledBuffer = new PooledBuffer(
                 newBuffer,

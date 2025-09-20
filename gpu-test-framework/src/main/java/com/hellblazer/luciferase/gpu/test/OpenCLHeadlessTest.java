@@ -32,17 +32,21 @@ public abstract class OpenCLHeadlessTest extends LWJGLHeadlessTest {
         } catch (LinkageError e) {
             var message = String.format("OpenCL native libraries not found on %s: %s", 
                                       getPlatformInfo(), e.getMessage());
-            log.warn("OpenCL not available - this is normal in CI environments without GPU support");
-            log.info("Tests will be skipped. For full GPU testing, use a system with OpenCL drivers installed.");
+            log.info("OpenCL not available - tests will be skipped (normal in CI environments)");
             throw new OpenCLUnavailableException(message, e);
         } catch (Exception e) {
             var message = String.format("OpenCL initialization failed on %s: %s", 
                                       getPlatformInfo(), e.getMessage());
             
+            // Check for common non-error conditions
+            if (e.getMessage() != null && e.getMessage().contains("already been created")) {
+                log.debug("OpenCL was already initialized - continuing");
+                return; // This is fine, OpenCL is already set up
+            }
+            
             // Check if this is a CI environment or missing OpenCL libraries
             if (isOpenCLUnavailable(e)) {
-                log.warn("OpenCL not available - this is normal in CI environments without GPU support");
-                log.info("Tests will be skipped. For full GPU testing, use a system with OpenCL drivers installed.");
+                log.info("OpenCL not available - tests will be skipped (normal in CI environments)");
                 throw new OpenCLUnavailableException(message, e);
             } else {
                 log.warn(message);
