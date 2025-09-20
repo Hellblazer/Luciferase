@@ -99,7 +99,9 @@ public class MemoryPoolTest {
         var buffer1 = smallPool.allocate(1024);
         var buffer2 = smallPool.allocate(1024);
         
+        
         smallPool.returnToPool(buffer1);
+        
         smallPool.returnToPool(buffer2);
         
         assertEquals(2048, smallPool.getCurrentSize());

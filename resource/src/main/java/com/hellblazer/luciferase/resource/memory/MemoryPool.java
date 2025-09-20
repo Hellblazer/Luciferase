@@ -148,9 +148,10 @@ public class MemoryPool implements AutoCloseable {
     private final ResourceTracker tracker;
     private final Map<Integer, ConcurrentLinkedDeque<PooledBuffer>> pools;
     private final Set<PooledBuffer> borrowed;
-    private final Map<ByteBuffer, PooledBuffer> allocatedBuffers; // Track allocate() calls
+    private final Map<ByteBuffer, PooledBuffer> allocatedBuffers; // Track allocate() calls - use IdentityHashMap for object identity
     private final ReentrantLock lock;
     private final long maxIdleTimeNanos; // Max idle time before eviction
+    private final long maxPoolSizeBytes; // Max total bytes in pool (0 = use config.maxPoolSize for buffer count)
     
     private final AtomicInteger totalBuffers;
     private final AtomicLong totalMemory;
@@ -165,11 +166,12 @@ public class MemoryPool implements AutoCloseable {
      */
     public MemoryPool(long maxPoolSizeBytes, java.time.Duration maxIdleTime) {
         this(Config.builder()
-            .maxPoolSize(Math.max(1, (int)(maxPoolSizeBytes / (1024 * 1024)))) // Convert to MB count, minimum 1
-            .maxBuffersPerSize(10) // Allow multiple buffers per size
+            .maxPoolSize(Integer.MAX_VALUE) // No buffer count limit when using byte size limit
+            .maxBuffersPerSize(Integer.MAX_VALUE) // No per-size limit when using byte size limit
             .build(), 
             ResourceTracker.getGlobalTracker(),
-            maxIdleTime);
+            maxIdleTime,
+            maxPoolSizeBytes);
     }
     
     /**
@@ -190,13 +192,21 @@ public class MemoryPool implements AutoCloseable {
      * Create a memory pool with custom configuration and idle time.
      */
     public MemoryPool(Config config, ResourceTracker tracker, java.time.Duration maxIdleTime) {
+        this(config, tracker, maxIdleTime, 0);
+    }
+    
+    /**
+     * Create a memory pool with custom configuration, idle time, and byte size limit.
+     */
+    private MemoryPool(Config config, ResourceTracker tracker, java.time.Duration maxIdleTime, long maxPoolSizeBytes) {
         this.config = config;
         this.tracker = tracker;
         this.pools = new HashMap<>();
         this.borrowed = new HashSet<>();
-        this.allocatedBuffers = new HashMap<>();
+        this.allocatedBuffers = new IdentityHashMap<>(); // Use IdentityHashMap for object identity
         this.lock = new ReentrantLock();
         this.maxIdleTimeNanos = maxIdleTime.toNanos();
+        this.maxPoolSizeBytes = maxPoolSizeBytes;
         
         this.totalBuffers = new AtomicInteger(0);
         this.totalMemory = new AtomicLong(0);
@@ -433,7 +443,7 @@ public class MemoryPool implements AutoCloseable {
             PooledBuffer buffer = pool.poll();
             if (buffer != null) {
                 poolHits.incrementAndGet();
-                totalMemory.addAndGet(poolSize); // Count as allocated
+                // DON'T count as allocated when reusing from pool - it's already in totalMemory
                 log.debug("Reusing buffer {} of size {} from pool", 
                          System.identityHashCode(buffer.buffer), poolSize);
                 
@@ -508,10 +518,25 @@ public class MemoryPool implements AutoCloseable {
         try {
             PooledBuffer pooledBuffer = allocatedBuffers.remove(buffer);
             if (pooledBuffer != null) {
-                totalMemory.addAndGet(-pooledBuffer.size); // No longer allocated
-                
                 var pool = pools.get(pooledBuffer.size);
-                if (pool != null && pool.size() < config.maxBuffersPerSize) {
+                
+                // Check if we should keep this buffer based on size limits
+                boolean shouldKeep = false;
+                if (maxPoolSizeBytes > 0) {
+                    // Using byte size limit - calculate current pool size inline to avoid lock issues
+                    long currentPoolSize = 0;
+                    for (var p : pools.values()) {
+                        for (var buf : p) {
+                            currentPoolSize += buf.size;
+                        }
+                    }
+                    shouldKeep = (currentPoolSize + pooledBuffer.size) <= maxPoolSizeBytes;
+                } else {
+                    // Using buffer count limit
+                    shouldKeep = pool != null && pool.size() < config.maxBuffersPerSize;
+                }
+                
+                if (shouldKeep && pool != null) {
                     // Check if this buffer is already in the pool (duplicate return)
                     boolean alreadyInPool = pool.stream()
                         .anyMatch(pb -> pb.buffer == pooledBuffer.buffer);
@@ -520,13 +545,17 @@ public class MemoryPool implements AutoCloseable {
                         // Mark the buffer as used when returning to pool so idle time resets
                         pooledBuffer.markUsed();
                         pool.offer(pooledBuffer);
-                        log.trace("Returned buffer of size {} to pool", pooledBuffer.size);
+                        log.debug("Returned buffer of size {} to pool (pool now has {} buffers, {} bytes total)", 
+                                 pooledBuffer.size, pool.size(), getCurrentSize() + pooledBuffer.size);
                     } else {
                         log.debug("Buffer {} already in pool, ignoring duplicate return", 
                                  System.identityHashCode(buffer));
                     }
                 } else {
-                    // Pool for this size is full, free the buffer
+                    // Pool is full or doesn't exist, free the buffer
+                    log.debug("Pool limit reached (byte limit: {}, current: {}), freeing buffer of size {}", 
+                             maxPoolSizeBytes > 0 ? maxPoolSizeBytes : "N/A", 
+                             getCurrentSize(), pooledBuffer.size);
                     freeBuffer(pooledBuffer);
                 }
             } else {
