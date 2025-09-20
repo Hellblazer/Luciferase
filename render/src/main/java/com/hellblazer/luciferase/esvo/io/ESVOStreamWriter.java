@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.esvo.io;
 
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -34,15 +34,16 @@ public class ESVOStreamWriter {
     /**
      * Write a batch of nodes
      */
-    public void writeNodeBatch(List<ESVOOctreeNode> nodes) throws IOException {
-        ByteBuffer nodeBuffer = ByteBuffer.allocate(nodes.size() * 8);
+    public void writeNodeBatch(List<ESVONodeUnified> nodes) throws IOException {
+        ByteBuffer nodeBuffer = ByteBuffer.allocate(nodes.size() * 12); // 12 bytes per node
         nodeBuffer.order(ByteOrder.LITTLE_ENDIAN);
         
-        for (ESVOOctreeNode node : nodes) {
-            nodeBuffer.put(node.childMask);
+        for (ESVONodeUnified node : nodes) {
+            nodeBuffer.put((byte)node.getChildMask());
             nodeBuffer.put((byte)0); // padding
             nodeBuffer.putShort((short)0); // padding
-            nodeBuffer.putInt(node.contour);
+            nodeBuffer.putInt(node.getContourDescriptor());
+            nodeBuffer.putInt(node.getChildPtr());
         }
         
         nodeBuffer.flip();

@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.esvo.io;
 
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -54,21 +54,26 @@ public class ESVOStreamReader {
     /**
      * Read the next node
      */
-    public ESVOOctreeNode readNext() throws IOException {
+    public ESVONodeUnified readNext() throws IOException {
         if (!hasNext()) {
             return null;
         }
         
-        ByteBuffer nodeBuffer = ByteBuffer.allocate(8);
+        ByteBuffer nodeBuffer = ByteBuffer.allocate(12);
         nodeBuffer.order(ByteOrder.LITTLE_ENDIAN);
         channel.read(nodeBuffer);
         nodeBuffer.flip();
         
-        ESVOOctreeNode node = new ESVOOctreeNode();
-        node.childMask = nodeBuffer.get();
+        byte childMask = nodeBuffer.get();
         nodeBuffer.get(); // skip padding
         nodeBuffer.getShort(); // skip padding
-        node.contour = nodeBuffer.getInt();
+        int contourData = nodeBuffer.getInt();
+        int childPtr = nodeBuffer.getInt();
+        
+        // Create node with raw descriptors
+        int childDescriptor = (childMask & 0xFF) << 8 | (childPtr << 17);
+        int contourDescriptor = contourData;
+        ESVONodeUnified node = new ESVONodeUnified(childDescriptor, contourDescriptor);
         
         currentNode++;
         return node;

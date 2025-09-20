@@ -128,7 +128,7 @@ The framework automatically handles platform-specific native libraries:
 
 ```xml
 <dependency>
-    <groupId>com.hellblazer.art</groupId>
+    <groupId>com.hellblazer.luciferase</groupId>
     <artifactId>gpu-test-framework</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <scope>test</scope>
@@ -247,13 +247,14 @@ Successful GPU discovery and testing:
 [INFO] ✅ GPU vector addition test PASSED - 1024 elements processed
 ```
 
-## Integration with ART Project
+## Integration with Luciferase
 
-This framework is designed specifically for testing ART neural network GPU acceleration:
+This framework is designed for testing GPU acceleration in the Luciferase project:
 
-- Vector operations (addition, multiplication, dot products)
-- Matrix operations for weight updates
-- Parallel pattern matching computations
-- Memory bandwidth testing for large datasets
+- **ESVO ray traversal** - Efficient sparse voxel octree GPU kernels
+- **Spatial index operations** - Parallel tree traversal and queries
+- **Collision detection** - GPU-accelerated broad and narrow phase
+- **Rendering pipeline** - Compute shaders for voxel rendering
+- **Memory bandwidth testing** - Profiling large octree structures
 
-The framework provides the foundation for testing GPU-accelerated ART algorithms in a headless CI/CD environment.
+The framework provides the foundation for testing GPU-accelerated spatial algorithms in a headless CI/CD environment.

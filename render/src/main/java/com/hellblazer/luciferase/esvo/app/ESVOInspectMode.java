@@ -392,11 +392,11 @@ public class ESVOInspectMode {
         for (int i = 0; i < indices.length; i++) {
             var octreeNode = octreeData.getNode(indices[i]);
             if (octreeNode != null) {
-                // Convert ESVOOctreeNode to ESVONode
+                // Convert ESVONodeUnified to ESVONode
                 var esvoNode = new ESVONode();
-                esvoNode.setNonLeafMask(octreeNode.childMask & 0xFF);
-                esvoNode.setContourMask(octreeNode.contour);
-                esvoNode.setChildPointer(octreeNode.farPointer);
+                esvoNode.setNonLeafMask(octreeNode.getChildMask() & 0xFF);
+                esvoNode.setContourMask(octreeNode.getContourPtr());
+                esvoNode.setChildPointer(octreeNode.getChildPtr());
                 nodes[i] = esvoNode;
             } else {
                 nodes[i] = new ESVONode(); // Create empty node

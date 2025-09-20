@@ -40,7 +40,10 @@ public class ESVOPhase7Tests {
         // Simulate some work
         var octreeData = new ESVOOctreeData(1024);
         for (int i = 0; i < 100; i++) {
-            octreeData.setNode(i, new ESVOOctreeNode((byte)0xFF, i * 1000, 0));
+            octreeData.setNode(i, new ESVONodeUnified(
+                (0xFF << 8),     // childDescriptor with childMask=0xFF
+                i * 1000         // contourDescriptor
+            ));
         }
         
         profiler.recordMemoryAccess("octree_write", 100, 800); // 100 accesses, 800 bytes
@@ -66,7 +69,10 @@ public class ESVOPhase7Tests {
         // Create a scattered access pattern (cache-unfriendly)
         int[] scatteredIndices = {0, 512, 1, 513, 2, 514, 3, 515};
         for (int index : scatteredIndices) {
-            octreeData.setNode(index, new ESVOOctreeNode((byte)(index % 8), index * 100, 0));
+            octreeData.setNode(index, new ESVONodeUnified(
+                ((index % 8) << 8),  // childDescriptor with childMask
+                index * 100          // contourDescriptor
+            ));
         }
         
         // Test memory layout analysis
@@ -87,8 +93,8 @@ public class ESVOPhase7Tests {
             var original = octreeData.getNode(index);
             var optimized = optimizedData.getNode(index);
             if (original != null && optimized != null) {
-                assertEquals(original.childMask, optimized.childMask);
-                assertEquals(original.contour, optimized.contour);
+                assertEquals(original.getChildMask(), optimized.getChildMask());
+                assertEquals(original.getContourPtr(), optimized.getContourPtr());
             }
         }
     }
@@ -159,9 +165,15 @@ public class ESVOPhase7Tests {
         var octreeData = new ESVOOctreeData(256);
         
         // Add nodes with parent-child relationships
-        octreeData.setNode(0, new ESVOOctreeNode((byte)0xFF, 1000, 1)); // Root with all children (farPointer points to first child)
+        octreeData.setNode(0, new ESVONodeUnified(
+            (0xFF << 8) | (1 << 17),  // childDescriptor with childMask=0xFF and childPtr=1
+            1000                       // contourDescriptor
+        )); // Root with all children
         for (int i = 1; i <= 8; i++) {
-            octreeData.setNode(i, new ESVOOctreeNode((byte)0x00, i * 100, 0)); // Leaf nodes
+            octreeData.setNode(i, new ESVONodeUnified(
+                0,           // childDescriptor with no children
+                i * 100      // contourDescriptor
+            )); // Leaf nodes
         }
         
         // Test spatial locality analysis
@@ -191,7 +203,10 @@ public class ESVOPhase7Tests {
         for (int i = 0; i < 100; i++) {
             // Create nodes with some redundancy
             byte childMask = (byte)(i % 4 == 0 ? 0xFF : 0x00);
-            octreeData.setNode(i, new ESVOOctreeNode(childMask, i * 50, 0));
+            octreeData.setNode(i, new ESVONodeUnified(
+                (childMask & 0xFF) << 8,  // childDescriptor with childMask
+                i * 50                     // contourDescriptor
+            ));
         }
         
         var compressed = bandwidthOptimizer.compressNodeData(octreeData);
@@ -210,8 +225,8 @@ public class ESVOPhase7Tests {
             var restored = decompressed.getNode(i);
             if (original != null) {
                 assertNotNull(restored);
-                assertEquals(original.childMask, restored.childMask);
-                assertEquals(original.contour, restored.contour);
+                assertEquals(original.getChildMask(), restored.getChildMask());
+                assertEquals(original.getContourPtr(), restored.getContourPtr());
             }
         }
     }
@@ -246,7 +261,11 @@ public class ESVOPhase7Tests {
         // Create test octree
         var octreeData = new ESVOOctreeData(1024);
         for (int i = 0; i < 200; i++) {
-            octreeData.setNode(i, new ESVOOctreeNode((byte)(i % 256), i * 10, 0));
+            // Create node with childMask=(i%256) in bits 8-15
+            octreeData.setNode(i, new ESVONodeUnified(
+                ((i % 256) << 8),  // childDescriptor with childMask
+                i * 10             // contourDescriptor
+            ));
         }
         
         // Test full optimization pipeline

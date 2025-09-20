@@ -7,10 +7,24 @@ typedef struct {
     float tMax;
 } Ray;
 
+// UNIFIED ESVO Node Structure - Matches CUDA Reference Implementation
+// This structure MUST be identical to ESVONodeUnified.java
 typedef struct {
-    uint childDescriptor;  // [childptr(14)|far(1)|childmask(8)|leafmask(8)]
+    uint childDescriptor;  // [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
     uint contourData;      // [contour_ptr(24)|contour_mask(8)]
 } OctreeNode;
+
+// Bit mask definitions - MUST match ESVONodeUnified.java
+#define LEAF_MASK_BITS     0xFF        // Bits 0-7: leafmask
+#define CHILD_MASK_BITS    0xFF00      // Bits 8-15: childmask  
+#define CHILD_MASK_SHIFT   8
+#define FAR_FLAG_BIT       0x10000     // Bit 16: far flag
+#define CHILD_PTR_MASK     0x7FFE0000  // Bits 17-30: childptr (14 bits)
+#define CHILD_PTR_SHIFT    17
+#define VALID_FLAG_BIT     0x80000000  // Bit 31: valid flag
+#define CONTOUR_MASK_BITS  0xFF        // Bits 0-7 of contourData
+#define CONTOUR_PTR_MASK   0xFFFFFF00  // Bits 8-31 of contourData
+#define CONTOUR_PTR_SHIFT  8
 
 typedef struct {
     float3 min;

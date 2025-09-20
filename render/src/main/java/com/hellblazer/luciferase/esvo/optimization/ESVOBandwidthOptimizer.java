@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.optimization;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import java.util.*;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
@@ -332,16 +332,21 @@ public class ESVOBandwidthOptimizer {
         return output.toByteArray();
     }
     
-    private byte[] serializeNode(ESVOOctreeNode node) {
-        var nodeData = new byte[12]; // childMask(1) + contour(4) + reserved(7)
-        nodeData[0] = node.childMask;
+    private byte[] serializeNode(ESVONodeUnified node) {
+        var nodeData = new byte[12]; // childMask(1) + childPtr(2) + contour(4) + reserved(5)
+        nodeData[0] = (byte)node.getChildMask();
         
-        // Pack contour as 4 bytes
-        var contourBytes = intToBytes(node.contour);
-        System.arraycopy(contourBytes, 0, nodeData, 1, 4);
+        // Pack child pointer as 2 bytes (14 bits)
+        var childPtr = node.getChildPtr();
+        nodeData[1] = (byte)(childPtr >> 8);
+        nodeData[2] = (byte)childPtr;
+        
+        // Pack full contourDescriptor as 4 bytes (includes mask and ptr)
+        var contourBytes = intToBytes(node.getContourDescriptor());
+        System.arraycopy(contourBytes, 0, nodeData, 3, 4);
         
         // Reserved space for future data
-        // nodeData[5-11] remain zero
+        // nodeData[7-11] remain zero
         
         return nodeData;
     }
@@ -365,15 +370,20 @@ public class ESVOBandwidthOptimizer {
             var nodeIndex = bytesToInt(data, index);
             index += 4;
             
-            var childMask = data[index++];
-            var contour = bytesToInt(data, index);
+            var childMask = data[index++] & 0xFF;
+            var childPtr = ((data[index] & 0xFF) << 8) | (data[index + 1] & 0xFF);
+            index += 2;
+            
+            var contourDescriptor = bytesToInt(data, index);
             index += 4;
             
             // Skip reserved bytes
-            index += 7;
+            index += 5;
             
-            if (childMask != 0 || contour != 0) {
-                octreeData.setNode(nodeIndex, new ESVOOctreeNode(childMask, contour, 0));
+            if (childMask != 0 || contourDescriptor != 0) {
+                // Reconstruct node with proper bit packing
+                int childDescriptor = (childMask << 8) | (childPtr << 17);
+                octreeData.setNode(nodeIndex, new ESVONodeUnified(childDescriptor, contourDescriptor));
             }
         }
         

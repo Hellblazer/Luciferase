@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.io;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -49,12 +49,18 @@ public class ESVOMemoryMappedReader {
             
             // Read nodes
             for (int i = 0; i < nodeCount; i++) {
-                ESVOOctreeNode node = new ESVOOctreeNode();
-                node.childMask = buffer.get();
+                byte childMask = buffer.get();
                 buffer.get(); // skip padding
                 buffer.getShort(); // skip padding
-                node.contour = buffer.getInt();
-                node.farPointer = buffer.getInt();
+                int contourData = buffer.getInt();
+                int farPointer = buffer.getInt();
+                
+                // Create node with proper constructor
+                ESVONodeUnified node = new ESVONodeUnified(
+                    (childMask & 0xFF) << 8 | (farPointer << 17), // childDescriptor
+                    contourData  // contourDescriptor
+                );
+                
                 
                 octree.setNode(i, node);
             }
@@ -66,7 +72,7 @@ public class ESVOMemoryMappedReader {
     /**
      * Read a single node at a specific index
      */
-    public ESVOOctreeNode readNode(Path inputFile, int nodeIndex) throws IOException {
+    public ESVONodeUnified readNode(Path inputFile, int nodeIndex) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(inputFile.toFile(), "r");
              FileChannel channel = raf.getChannel()) {
             
@@ -79,13 +85,19 @@ public class ESVOMemoryMappedReader {
                 FileChannel.MapMode.READ_ONLY, nodeOffset, 12);
             buffer.order(ByteOrder.LITTLE_ENDIAN);
             
-            // Read node
-            ESVOOctreeNode node = new ESVOOctreeNode();
-            node.childMask = buffer.get();
+            // Read node components
+            byte childMask = buffer.get();
             buffer.get(); // skip padding
             buffer.getShort(); // skip padding
-            node.contour = buffer.getInt();
-            node.farPointer = buffer.getInt();
+            int contourData = buffer.getInt();
+            int childPtr = buffer.getInt();
+            
+            // Construct childDescriptor and contourDescriptor
+            int childDescriptor = (childMask & 0xFF) << 8 | (childPtr << 17);
+            int contourDescriptor = contourData;
+            
+            // Create node with raw descriptors
+            ESVONodeUnified node = new ESVONodeUnified(childDescriptor, contourDescriptor);
             
             return node;
         }

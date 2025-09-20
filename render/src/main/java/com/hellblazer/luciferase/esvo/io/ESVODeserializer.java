@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.io;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -119,20 +119,23 @@ public class ESVODeserializer {
     private void readNodes(FileChannel channel, ESVOOctreeData octree, int nodeCount) 
             throws IOException {
         
-        // Read all nodes
-        ByteBuffer nodeBuffer = ByteBuffer.allocate(nodeCount * 8);
+        // Read all nodes (12 bytes per node: 4+4+4)
+        ByteBuffer nodeBuffer = ByteBuffer.allocate(nodeCount * 12);
         nodeBuffer.order(ByteOrder.LITTLE_ENDIAN);
         channel.read(nodeBuffer);
         nodeBuffer.flip();
         
         // Parse nodes
         for (int i = 0; i < nodeCount; i++) {
-            ESVOOctreeNode node = new ESVOOctreeNode();
-            node.childMask = nodeBuffer.get();
-            nodeBuffer.get(); // skip padding
-            nodeBuffer.getShort(); // skip padding
-            node.contour = nodeBuffer.getInt();
+            // Read childDescriptor (4 bytes)
+            int childDescriptor = nodeBuffer.getInt();
+            // Read contourDescriptor (4 bytes)
+            int contourDescriptor = nodeBuffer.getInt();
+            // Skip padding (4 bytes)
+            nodeBuffer.getInt();
             
+            // Create node with raw descriptors (always create node, even if all zeros)
+            ESVONodeUnified node = new ESVONodeUnified(childDescriptor, contourDescriptor);
             octree.setNode(i, node);
         }
     }

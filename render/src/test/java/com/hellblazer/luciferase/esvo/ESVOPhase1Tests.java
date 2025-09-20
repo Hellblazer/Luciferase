@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo;
 
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
-import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.traversal.BasicRayTraversal;
 import com.hellblazer.luciferase.esvo.traversal.EnhancedRay;
 import org.junit.jupiter.api.Test;
@@ -44,7 +44,13 @@ public class ESVOPhase1Tests {
         byte nonLeafMask = 0; // All leaves
         int childPointer = 0; // No children data needed for Phase 1
         
-        OctreeNode rootNode = new OctreeNode(nonLeafMask, validMask, false, childPointer, (byte)0, 0);
+        // Create ESVONodeUnified with proper bit packing
+        // childDescriptor: [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
+        // For single level: valid=1, childptr=0, far=0, childmask=validMask, leafmask=~nonLeafMask
+        int childDescriptor = (1 << 31) | (validMask << 8) | (~nonLeafMask & 0xFF);
+        int contourDescriptor = 0; // No contour data for Phase 1
+        
+        ESVONodeUnified rootNode = new ESVONodeUnified(childDescriptor, contourDescriptor);
         testOctree = new BasicRayTraversal.SimpleOctree(rootNode);
     }
     

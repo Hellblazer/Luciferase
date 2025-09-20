@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.app;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.io.ESVODeserializer;
 
 import javax.vecmath.Vector3f;
@@ -219,8 +219,8 @@ public class ESVOScene {
             totalNodes += nodeIndices.length;
             
             for (int index : nodeIndices) {
-                ESVOOctreeNode node = octree.getNode(index);
-                if (node != null && node.childMask != 0) {
+                ESVONodeUnified node = octree.getNode(index);
+                if (node != null && node.getChildMask() != 0) {
                     totalNonEmptyNodes++;
                 }
             }
@@ -254,7 +254,7 @@ public class ESVOScene {
             }
             
             // Check for valid root node
-            ESVOOctreeNode root = octree.getNode(0);
+            ESVONodeUnified root = octree.getNode(0);
             if (root == null) {
                 issues.add("Octree '" + name + "' has no root node");
             }
@@ -262,7 +262,7 @@ public class ESVOScene {
             // Check node consistency
             int[] nodeIndices = octree.getNodeIndices();
             for (int index : nodeIndices) {
-                ESVOOctreeNode node = octree.getNode(index);
+                ESVONodeUnified node = octree.getNode(index);
                 if (node == null) {
                     issues.add("Octree '" + name + "' has null node at index " + index);
                 }

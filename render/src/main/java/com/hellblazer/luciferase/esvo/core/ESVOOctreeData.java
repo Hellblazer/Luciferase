@@ -8,7 +8,7 @@ import java.util.Map;
  * Manages octree nodes for serialization/deserialization
  */
 public class ESVOOctreeData {
-    private final Map<Integer, ESVOOctreeNode> nodes;
+    private final Map<Integer, ESVONodeUnified> nodes;
     private final int maxSizeBytes;
     
     /**
@@ -22,7 +22,7 @@ public class ESVOOctreeData {
     /**
      * Set a node at the specified index
      */
-    public void setNode(int index, ESVOOctreeNode node) {
+    public void setNode(int index, ESVONodeUnified node) {
         if (node != null) {
             nodes.put(index, node);
         }
@@ -31,7 +31,7 @@ public class ESVOOctreeData {
     /**
      * Get a node at the specified index
      */
-    public ESVOOctreeNode getNode(int index) {
+    public ESVONodeUnified getNode(int index) {
         return nodes.get(index);
     }
     

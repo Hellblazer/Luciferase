@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.optimization;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
@@ -15,7 +15,7 @@ import java.util.Arrays;
 public class ESVOMemoryOptimizer {
     
     private static final int CACHE_LINE_SIZE = 64; // Typical cache line size in bytes
-    private static final int NODE_SIZE = 16; // Estimated size of ESVOOctreeNode in bytes
+    private static final int NODE_SIZE = 16; // Estimated size of ESVONodeUnified in bytes
     
     /**
      * Analyze memory layout for cache efficiency
@@ -65,7 +65,8 @@ public class ESVOMemoryOptimizer {
             var node = originalData.getNode(originalIndex);
             if (node != null) {
                 // Place nodes sequentially for better cache locality
-                optimized.setNode(i, new ESVOOctreeNode(node.childMask, node.contour, node.farPointer));
+                // Preserve the original node in the new location
+                optimized.setNode(originalIndex, node);
             }
         }
         

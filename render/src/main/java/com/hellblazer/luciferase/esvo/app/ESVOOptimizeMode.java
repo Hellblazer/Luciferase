@@ -113,9 +113,9 @@ public class ESVOOptimizeMode {
             var octreeNode = octreeData.getNode(indices[i]);
             if (octreeNode != null) {
                 var esvoNode = new ESVONode();
-                esvoNode.setNonLeafMask(octreeNode.childMask & 0xFF);
-                esvoNode.setContourMask(octreeNode.contour);
-                esvoNode.setChildPointer(octreeNode.farPointer);
+                esvoNode.setNonLeafMask(octreeNode.getChildMask() & 0xFF);
+                esvoNode.setContourMask(octreeNode.getContourMask());
+                esvoNode.setChildPointer(octreeNode.getChildPtr());
                 nodes[i] = esvoNode;
             } else {
                 nodes[i] = new ESVONode();
@@ -143,10 +143,13 @@ public class ESVOOptimizeMode {
         
         for (int i = 0; i < nodes.length; i++) {
             var esvoNode = nodes[i];
-            var octreeNode = new com.hellblazer.luciferase.esvo.core.ESVOOctreeNode(
-                (byte) esvoNode.getNonLeafMask(),
-                esvoNode.getContourMask(),
-                esvoNode.getChildPointer()
+            var octreeNode = new com.hellblazer.luciferase.esvo.core.ESVONodeUnified(
+                (byte)0, // leafMask - ESVONode doesn't have leaf mask
+                (byte) esvoNode.getNonLeafMask(), // childMask
+                false, // isFar - default to false
+                esvoNode.getChildPointer(), // childPtr
+                (byte) esvoNode.getContourMask(), // contourMask
+                0 // contourPtr - ESVONode doesn't have contour pointer
             );
             octreeData.setNode(i, octreeNode);
         }

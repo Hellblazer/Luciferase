@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.traversal;
 
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
-import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,12 +58,12 @@ public final class BasicRayTraversal {
      * Single-level octree for Phase 1 testing
      */
     public static class SimpleOctree {
-        private final OctreeNode rootNode;
+        private final ESVONodeUnified rootNode;
         public final Vector3f center;
         private final float halfSize;
         private final boolean[] geometry; // Geometry presence for each octant
         
-        public SimpleOctree(OctreeNode rootNode) {
+        public SimpleOctree(ESVONodeUnified rootNode) {
             this.rootNode = rootNode;
             this.center = new Vector3f(CoordinateSpace.OCTREE_CENTER, 
                                      CoordinateSpace.OCTREE_CENTER, 
@@ -79,7 +79,7 @@ public final class BasicRayTraversal {
             this.geometry = new boolean[8];
         }
         
-        public OctreeNode getRootNode() { return rootNode; }
+        public ESVONodeUnified getRootNode() { return rootNode; }
         public Vector3f getCenter() { return new Vector3f(center); }
         public float getHalfSize() { return halfSize; }
         
@@ -127,8 +127,8 @@ public final class BasicRayTraversal {
         
         // For single-level traversal, we need to check octants in the order 
         // the ray passes through them, returning the first with geometry.
-        OctreeNode rootNode = octree.getRootNode();
-        int validMask = rootNode.getValidMask() & 0xFF;
+        ESVONodeUnified rootNode = octree.getRootNode();
+        int validMask = rootNode.getChildMask() & 0xFF;
         Vector3f center = octree.getCenter();
         
         // Calculate where ray crosses the center planes
@@ -170,7 +170,7 @@ public final class BasicRayTraversal {
             int octant = calculateChildOctant(midPoint, center);
             
             // Return first octant with geometry
-            if ((validMask & (1 << octant)) != 0) {
+            if (rootNode.hasChild(octant)) {
                 Vector3f hitPoint = ray.pointAt(t0);
                 return new TraversalResult(true, t0, octant, hitPoint);
             }

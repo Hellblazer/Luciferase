@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.esvo;
 
-import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.traversal.AdvancedRayTraversal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,13 +47,13 @@ public class ESVOPhase3Tests {
         int childDesc = 0x447B7F21; // Far bit (16) is set
         int contourDesc = 0x00000000;
         
-        OctreeNode node = new OctreeNode(childDesc, contourDesc);
+        ESVONodeUnified node = new ESVONodeUnified(childDesc, contourDesc);
         
         // Verify far bit is detected
         assertTrue(node.isFar(), "Far bit should be set");
         
         // Test far pointer resolution
-        int farPointerIndex = node.getChildPointer(); // This is the index into far pointer table
+        int farPointerIndex = node.getChildPtr(); // This is the index into far pointer table
         assertEquals(0x447B >> 1, farPointerIndex, "Far pointer index extraction failed");
         
         // Simulate far pointer table lookup
@@ -78,14 +78,14 @@ public class ESVOPhase3Tests {
         int childDesc = 0x00FF7F00; // Valid children
         int contourDesc = 0x12345678; // Contour mask and pointer
         
-        OctreeNode node = new OctreeNode(childDesc, contourDesc);
+        ESVONodeUnified node = new ESVONodeUnified(childDesc, contourDesc);
         
         // Extract contour mask (lower 8 bits)
         int contourMask = node.getContourMask();
         assertEquals(0x78, contourMask, "Contour mask extraction failed");
         
         // Extract contour pointer (upper 24 bits)
-        int contourPtr = node.getContourPointer();
+        int contourPtr = node.getContourPtr();
         assertEquals(0x123456, contourPtr, "Contour pointer extraction failed");
         
         // Test contour plane equation decoding

@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.esvo.traversal;
 
 import javax.vecmath.Vector3f;
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
-import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
 /**
  * Phase 2: Stack-Based Deep Traversal Implementation
@@ -69,7 +69,7 @@ public class StackBasedRayTraversal {
      * Multi-level octree for deep traversal testing
      */
     public static class MultiLevelOctree {
-        private final OctreeNode[] nodes;
+        private final ESVONodeUnified[] nodes;
         private final int maxDepth;
         private final Vector3f center;
         private final float size;
@@ -81,7 +81,7 @@ public class StackBasedRayTraversal {
             
             // Calculate total nodes needed for complete octree
             var totalNodes = calculateNodeCount(maxDepth);
-            this.nodes = new OctreeNode[totalNodes];
+            this.nodes = new ESVONodeUnified[totalNodes];
             
             // Initialize octree structure
             initializeOctree();
@@ -102,7 +102,7 @@ public class StackBasedRayTraversal {
         
         private void initializeOctree() {
             // Create root node with all children valid for testing
-            nodes[0] = new OctreeNode((byte)0xFF, (byte)0xFF, false, 0, (byte)0, 0);
+            nodes[0] = new ESVONodeUnified((byte)0xFF, (byte)0xFF, false, 0, (byte)0, 0);
             
             // For testing, create a simple pattern where:
             // - Even levels have all children valid
@@ -118,15 +118,15 @@ public class StackBasedRayTraversal {
             
             if (depth >= maxDepth || depth >= 10) { // Also limit to 10 actual levels
                 // Leaf node - no children
-                nodes[nodeIndex] = new OctreeNode((byte)0, (byte)0, false, 0, (byte)0, 0);
+                nodes[nodeIndex] = new ESVONodeUnified((byte)0, (byte)0, false, 0, (byte)0, 0);
                 return;
             }
             
             // Internal node - determine which children to create
             var validMask = calculateValidMask(depth, nodeCenter);
-            var nonLeafMask = validMask; // All valid children are non-leaf
+            var leafMask = 0; // All valid children are non-leaf for internal nodes
             
-            nodes[nodeIndex] = new OctreeNode((byte)nonLeafMask, (byte)validMask, false, 
+            nodes[nodeIndex] = new ESVONodeUnified((byte)leafMask, (byte)validMask, false, 
                                              getFirstChildIndex(nodeIndex), (byte)0, 0);
             
             // Create children only if there's space
@@ -171,12 +171,13 @@ public class StackBasedRayTraversal {
         }
         
         private int getFirstChildIndex(int parentIndex) {
-            // Simple linear allocation for testing
-            // In real implementation, this would use the child pointer
-            return parentIndex * 8 + 1;
+            // Use relative offset that fits in 14-bit limit (0-16383)
+            // For testing, use a simple sequential allocation that respects the limit
+            var baseOffset = Math.min(parentIndex + 1, 16383); // Stay within 14-bit limit
+            return Math.min(baseOffset, 16383);
         }
         
-        public OctreeNode getNode(int index) {
+        public ESVONodeUnified getNode(int index) {
             return (index >= 0 && index < nodes.length) ? nodes[index] : null;
         }
         
@@ -254,7 +255,7 @@ public class StackBasedRayTraversal {
             var currentPos = mirroredRay.pointAt(t);
             
             // Check if we've reached a leaf or empty node
-            if (node.getValidMask() == 0 || node.getNonLeafMask() == 0) {
+            if (node.getChildMask() == 0 || node.getLeafMask() == 0xFF) {
                 // Hit a leaf or empty node
                 var hitPoint = ray.pointAt(t);
                 var normal = calculateSurfaceNormal(hitPoint, octree.getCenter());
@@ -266,7 +267,7 @@ public class StackBasedRayTraversal {
             childOctant ^= octantMask; // Apply octant mirroring
             
             // Check if child is valid
-            if ((node.getValidMask() & (1 << childOctant)) == 0) {
+            if (!node.hasChild(childOctant)) {
                 // Child doesn't exist, pop from stack
                 if (stackPtr == 0) break; // No more nodes to pop
                 
@@ -291,7 +292,7 @@ public class StackBasedRayTraversal {
             }
             
             // Move to child node
-            currentNode = calculateChildIndex(currentNode, childOctant, node.getValidMask());
+            currentNode = calculateChildIndex(currentNode, childOctant, node.getChildMask());
             tMax = childTMax;
             t += 0.001f; // Small step to avoid numerical issues
         }

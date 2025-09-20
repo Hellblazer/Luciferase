@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.io;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -48,13 +48,13 @@ public class ESVOMemoryMappedWriter {
             
             // Write nodes
             for (int i = 0; i < nodeCount; i++) {
-                ESVOOctreeNode node = octree.getNode(i);
+                ESVONodeUnified node = octree.getNode(i);
                 if (node != null) {
-                    buffer.put(node.childMask);
+                    buffer.put((byte)node.getChildMask());
                     buffer.put((byte)0); // padding
                     buffer.putShort((short)0); // padding
-                    buffer.putInt(node.contour);
-                    buffer.putInt(node.farPointer);
+                    buffer.putInt(node.getContourDescriptor());
+                    buffer.putInt(node.getChildPtr());
                 } else {
                     // Empty node: 12 bytes of zeros
                     buffer.putLong(0);

@@ -2,7 +2,7 @@ package com.hellblazer.luciferase.esvo;
 
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
 import com.hellblazer.luciferase.esvo.core.ESVOConstants;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal;
 import com.hellblazer.luciferase.esvo.traversal.EnhancedRay;

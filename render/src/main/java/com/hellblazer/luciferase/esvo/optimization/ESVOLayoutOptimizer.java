@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.optimization;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import javax.vecmath.Vector3f;
 import java.util.*;
 
@@ -105,7 +105,7 @@ public class ESVOLayoutOptimizer {
         }
         
         // Build tree structure from existing data
-        var nodeMap = new HashMap<Integer, ESVOOctreeNode>();
+        var nodeMap = new HashMap<Integer, ESVONodeUnified>();
         var childrenMap = new HashMap<Integer, List<Integer>>();
         
         for (int index : nodeIndices) {
@@ -280,9 +280,9 @@ public class ESVOLayoutOptimizer {
     private static class MortonEntry {
         private final int originalIndex;
         private final long mortonCode;
-        private final ESVOOctreeNode node;
+        private final ESVONodeUnified node;
         
-        public MortonEntry(int originalIndex, long mortonCode, ESVOOctreeNode node) {
+        public MortonEntry(int originalIndex, long mortonCode, ESVONodeUnified node) {
             this.originalIndex = originalIndex;
             this.mortonCode = mortonCode;
             this.node = node;
@@ -290,7 +290,7 @@ public class ESVOLayoutOptimizer {
         
         public int getOriginalIndex() { return originalIndex; }
         public long getMortonCode() { return mortonCode; }
-        public ESVOOctreeNode getNode() { return node; }
+        public ESVONodeUnified getNode() { return node; }
     }
     
     private Map<Integer, Vector3f> calculateNodePositions(ESVOOctreeData octreeData) {
@@ -320,13 +320,13 @@ public class ESVOLayoutOptimizer {
         var children = new ArrayList<Integer>();
         var parentNode = octreeData.getNode(parentIndex);
         
-        if (parentNode != null && parentNode.childMask != 0) {
+        if (parentNode != null && parentNode.getChildMask() != 0) {
             // Calculate child indices using CUDA reference sparse indexing
             for (int i = 0; i < 8; i++) {
-                if ((parentNode.childMask & (1 << i)) != 0) {
+                if ((parentNode.getChildMask() & (1 << i)) != 0) {
                     // CUDA reference: parent_ptr + popcount(child_masks & ((1 << i) - 1))
-                    int popCount = Integer.bitCount(parentNode.childMask & ((1 << i) - 1));
-                    var childIndex = parentNode.farPointer + popCount;
+                    int popCount = Integer.bitCount(parentNode.getChildMask() & ((1 << i) - 1));
+                    var childIndex = parentNode.getChildPtr() + popCount;
                     if (octreeData.hasNode(childIndex)) {
                         children.add(childIndex);
                     }
@@ -337,7 +337,7 @@ public class ESVOLayoutOptimizer {
         return children;
     }
     
-    private List<Integer> findRootNodes(Map<Integer, ESVOOctreeNode> nodeMap,
+    private List<Integer> findRootNodes(Map<Integer, ESVONodeUnified> nodeMap,
                                        Map<Integer, List<Integer>> childrenMap) {
         var allNodes = new HashSet<>(nodeMap.keySet());
         var childNodes = new HashSet<Integer>();

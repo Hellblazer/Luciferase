@@ -53,7 +53,7 @@ public class ESVOPhase6Tests {
     void testSceneManagement() throws IOException {
         // Create a simple octree for testing
         ESVOOctreeData octree = new ESVOOctreeData(1024);
-        ESVOOctreeNode rootNode = new ESVOOctreeNode((byte)0xFF, 0x12345678, 0);
+        ESVONodeUnified rootNode = new ESVONodeUnified((0xFF << 8), 0x12345678);
         octree.setNode(0, rootNode);
         
         // Test scene creation and octree loading
@@ -72,7 +72,7 @@ public class ESVOPhase6Tests {
         // Create test octree file
         ESVOOctreeData octree = new ESVOOctreeData(512);
         for (int i = 0; i < 10; i++) {
-            ESVOOctreeNode node = new ESVOOctreeNode((byte)i, i * 100, 0);
+            ESVONodeUnified node = new ESVONodeUnified((i << 8), i * 100);
             octree.setNode(i, node);
         }
         
@@ -89,9 +89,9 @@ public class ESVOPhase6Tests {
         assertNotNull(loaded);
         
         // Verify loaded data
-        ESVOOctreeNode node0 = loaded.getNode(0);
-        assertEquals((byte)0, node0.childMask);
-        assertEquals(0, node0.contour);
+        ESVONodeUnified node0 = loaded.getNode(0);
+        assertEquals((byte)0, (byte)node0.getChildMask());
+        assertEquals(0, node0.getContourPtr());
     }
     
     @Test
@@ -146,7 +146,7 @@ public class ESVOPhase6Tests {
         scene.setUpdateCallback(() -> updateLatch.countDown());
         
         // Modify octree
-        ESVOOctreeNode newNode = new ESVOOctreeNode((byte)0x42, 0xABCDEF, 123);
+        ESVONodeUnified newNode = new ESVONodeUnified((0x42 << 8) | (123 << 17), (0xABCDEF << 8));
         octree.setNode(5, newNode);
         scene.markDirty("dynamic");
         
@@ -154,10 +154,10 @@ public class ESVOPhase6Tests {
         assertTrue(updateLatch.await(1, TimeUnit.SECONDS));
         
         // Verify change was applied
-        ESVOOctreeNode retrieved = scene.getOctree("dynamic").getNode(5);
-        assertEquals((byte)0x42, retrieved.childMask);
-        assertEquals(0xABCDEF, retrieved.contour);
-        assertEquals(123, retrieved.farPointer);
+        ESVONodeUnified retrieved = scene.getOctree("dynamic").getNode(5);
+        assertEquals((byte)0x42, (byte)retrieved.getChildMask());
+        assertEquals(0xABCDEF, retrieved.getContourPtr());
+        assertEquals(123, retrieved.getChildPtr());
     }
     
     @Test
@@ -189,8 +189,8 @@ public class ESVOPhase6Tests {
         ESVOOctreeData octree = new ESVOOctreeData(512);
         
         // Add nodes at known positions
-        ESVOOctreeNode node1 = new ESVOOctreeNode((byte)1, 100, 0);
-        ESVOOctreeNode node2 = new ESVOOctreeNode((byte)2, 200, 0);
+        ESVONodeUnified node1 = new ESVONodeUnified((1 << 8), (100 << 8));
+        ESVONodeUnified node2 = new ESVONodeUnified((2 << 8), (200 << 8));
         octree.setNode(0, node1);
         octree.setNode(10, node2);
         
@@ -217,8 +217,8 @@ public class ESVOPhase6Tests {
         ESVOOctreeData octree1 = new ESVOOctreeData(256);
         ESVOOctreeData octree2 = new ESVOOctreeData(512);
         
-        octree1.setNode(0, new ESVOOctreeNode((byte)1, 111, 0));
-        octree2.setNode(0, new ESVOOctreeNode((byte)2, 222, 0));
+        octree1.setNode(0, new ESVONodeUnified((1 << 8), (111 << 8)));
+        octree2.setNode(0, new ESVONodeUnified((2 << 8), (222 << 8)));
         
         scene.loadOctree("first", octree1);
         scene.loadOctree("second", octree2);
@@ -228,13 +228,13 @@ public class ESVOPhase6Tests {
         assertTrue(scene.hasOctree("second"));
         
         // Test individual retrieval
-        ESVOOctreeNode node1 = scene.getOctree("first").getNode(0);
-        ESVOOctreeNode node2 = scene.getOctree("second").getNode(0);
+        ESVONodeUnified node1 = scene.getOctree("first").getNode(0);
+        ESVONodeUnified node2 = scene.getOctree("second").getNode(0);
         
-        assertEquals((byte)1, node1.childMask);
-        assertEquals(111, node1.contour);
-        assertEquals((byte)2, node2.childMask);
-        assertEquals(222, node2.contour);
+        assertEquals((byte)1, (byte)node1.getChildMask());
+        assertEquals(111, node1.getContourPtr());
+        assertEquals((byte)2, (byte)node2.getChildMask());
+        assertEquals(222, node2.getContourPtr());
         
         // Test removal
         scene.removeOctree("first");

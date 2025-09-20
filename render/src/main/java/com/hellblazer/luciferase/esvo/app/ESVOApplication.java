@@ -251,7 +251,7 @@ public class ESVOApplication {
                     for (int i = 0; i < Math.min(nodeIndices.length, gpuMemory.getNodeCount()); i++) {
                         var node = octree.getNode(nodeIndices[i]);
                         if (node != null) {
-                            gpuMemory.writeNode(i, node.childMask, node.contour);
+                            gpuMemory.writeNode(i, node.getChildMask(), node.getContourPtr());
                         }
                     }
                     gpuMemory.uploadToGPU();

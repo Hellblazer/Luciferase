@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.io;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.resource.UnifiedResourceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,25 +155,30 @@ public class ESVOSerializer implements AutoCloseable {
             return;
         }
         
-        // Allocate buffer for nodes (8 bytes per node)
-        ByteBuffer nodeBuffer = allocateBuffer(nodeCount * 8, "nodes");
+        // Allocate buffer for nodes (12 bytes per node: 1+1+2+4+4)
+        ByteBuffer nodeBuffer = allocateBuffer(nodeCount * 12, "nodes");
         nodeBuffer.order(ByteOrder.LITTLE_ENDIAN);
         
         // Write each node
         for (int i = 0; i < nodeCount; i++) {
-            ESVOOctreeNode node = octree.getNode(i);
+            ESVONodeUnified node = octree.getNode(i);
             if (node != null) {
-                nodeBuffer.put(node.childMask);
-                nodeBuffer.put((byte)0); // padding
-                nodeBuffer.putShort((short)0); // padding
-                nodeBuffer.putInt(node.contour);
+                // Write childDescriptor (4 bytes)
+                nodeBuffer.putInt(node.getChildDescriptor());
+                // Write contourDescriptor (4 bytes)  
+                nodeBuffer.putInt(node.getContourDescriptor());
+                // Write padding (4 bytes) for alignment
+                nodeBuffer.putInt(0);
             } else {
-                nodeBuffer.putLong(0); // Empty node
+                nodeBuffer.putInt(0); // Empty first 4 bytes
+                nodeBuffer.putInt(0); // Empty second 4 bytes
+                nodeBuffer.putInt(0); // Empty third 4 bytes
             }
         }
         
         nodeBuffer.flip();
-        channel.write(nodeBuffer);
+        long nodesBytesWritten = channel.write(nodeBuffer);
+        totalBytesWritten.addAndGet(nodesBytesWritten);
     }
     
     /**

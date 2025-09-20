@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo;
 
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
-import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 
@@ -67,19 +67,27 @@ public class ESVOGPUIntegrationTest {
         boolean isFar = true;
         int childPointer = 0x447B >> 1;
         
-        OctreeNode node = new OctreeNode(nonLeafMask, validMask, isFar, childPointer, (byte)0, 0);
+        // Convert to ESVONodeUnified format - leafMask = ~nonLeafMask, childMask = validMask
+        ESVONodeUnified node = new ESVONodeUnified(
+            (byte)(~nonLeafMask),  // leafMask (inverse of nonLeafMask)
+            validMask,             // childMask (which children exist)
+            isFar,                 // far flag
+            childPointer,          // child pointer
+            (byte)0,              // contour mask
+            0                     // contour pointer
+        );
         
         // Validate bit field extraction
-        assertEquals(0x21, node.getNonLeafMask() & 0xFF, "Non-leaf mask mismatch");
-        assertEquals(0x7F, node.getValidMask() & 0xFF, "Valid mask mismatch");
+        assertEquals(0xDE, node.getLeafMask() & 0xFF, "Leaf mask mismatch (inverse of non-leaf)");
+        assertEquals(0x7F, node.getChildMask() & 0xFF, "Child mask mismatch");
         assertTrue(node.isFar(), "Far bit should be set");
-        assertEquals(childPointer, node.getChildPointer(), "Child pointer mismatch");
+        assertEquals(childPointer, node.getChildPtr(), "Child pointer mismatch");
         
-        // Test child offset calculation using popc8
-        int validMaskInt = node.getValidMask() & 0xFF;
+        // Test child offset calculation using popcount
+        int childMaskInt = node.getChildMask() & 0xFF;
         for (int i = 0; i < 8; i++) {
-            if ((validMaskInt & (1 << i)) != 0) {
-                int expectedOffset = OctreeNode.popc8(validMaskInt & ((1 << i) - 1));
+            if ((childMaskInt & (1 << i)) != 0) {
+                int expectedOffset = Integer.bitCount(childMaskInt & ((1 << i) - 1));
                 int actualOffset = node.getChildOffset(i);
                 assertEquals(expectedOffset, actualOffset, 
                            String.format("Child offset mismatch for index %d", i));
@@ -95,26 +103,35 @@ public class ESVOGPUIntegrationTest {
     @DisplayName("Test octree data structures")
     void testOctreeDataStructures() {
         // Test creating octree nodes in memory
-        OctreeNode[] testNodes = new OctreeNode[TEST_NODE_COUNT];
+        ESVONodeUnified[] testNodes = new ESVONodeUnified[TEST_NODE_COUNT];
         
         // Create root node with 4 children
-        testNodes[0] = OctreeNode.createWithChildren(
-            (byte)0x0F,  // validMask - children 0,1,2,3 exist
-            (byte)0x0F,  // nonLeafMask - all are internal nodes
+        testNodes[0] = new ESVONodeUnified(
+            (byte)0xF0,  // leafMask - inverse of nonLeafMask (upper 4 are leaves)
+            (byte)0x0F,  // childMask - children 0,1,2,3 exist
+            false,       // not a far pointer
             8,           // childPointer - points to child array
-            false        // not far pointer
+            (byte)0,     // contour mask
+            0            // contourPointer
         );
         
         // Validate root node structure
         assertNotNull(testNodes[0], "Root node should be created");
-        assertEquals(0x0F, testNodes[0].getValidMask() & 0xFF, "Valid mask mismatch");
-        assertEquals(0x0F, testNodes[0].getNonLeafMask() & 0xFF, "Non-leaf mask mismatch");
+        assertEquals(0x0F, testNodes[0].getChildMask() & 0xFF, "Child mask mismatch");
+        assertEquals(0xF0, testNodes[0].getLeafMask() & 0xFF, "Leaf mask mismatch");
         
         // Create child nodes (leaves)
         for (int i = 1; i < 9; i++) {
-            testNodes[i] = OctreeNode.createLeaf();
+            testNodes[i] = new ESVONodeUnified(
+                (byte)0xFF,  // leafMask - all bits set for leaf
+                (byte)0,     // childMask - no children
+                false,       // not a far pointer
+                0,           // no child pointer
+                (byte)0,     // no contour mask
+                0            // no contour pointer
+            );
             assertNotNull(testNodes[i], "Leaf node should be created");
-            assertEquals(0, testNodes[i].getNonLeafMask(), "Leaf should have zero non-leaf mask");
+            assertEquals(0xFF, testNodes[i].getLeafMask() & 0xFF, "Leaf should have all leaf bits set");
         }
     }
     

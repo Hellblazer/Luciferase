@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo;
 
 import com.hellblazer.luciferase.esvo.io.*;
-import com.hellblazer.luciferase.esvo.core.ESVOOctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,16 +41,18 @@ public class ESVOPhase5Tests {
         ESVOOctreeData octree = new ESVOOctreeData(512); // 512MB octree
         
         // Add root node
-        ESVOOctreeNode root = new ESVOOctreeNode();
-        root.childMask = (byte)0b11110000; // 4 children
-        root.contour = 0x12345678;
+        ESVONodeUnified root = new ESVONodeUnified(
+            ((0b11110000 & 0xFF) << 8), // childDescriptor with childMask
+            (0x12345678 << 8)  // contourDescriptor with contourPtr in bits 8-31
+        );
         octree.setNode(0, root);
         
         // Add child nodes
         for (int i = 0; i < 4; i++) {
-            ESVOOctreeNode child = new ESVOOctreeNode();
-            child.childMask = 0;
-            child.contour = 0x1000 + i;
+            ESVONodeUnified child = new ESVONodeUnified(
+                0, // childDescriptor with childMask = 0
+                ((0x1000 + i) << 8)  // contourDescriptor with contourPtr in bits 8-31
+            );
             octree.setNode(i + 1, child);
         }
         
@@ -67,15 +69,15 @@ public class ESVOPhase5Tests {
         assertNotNull(loaded);
         
         // Check root node
-        ESVOOctreeNode loadedRoot = loaded.getNode(0);
-        assertEquals((byte)0b11110000, loadedRoot.childMask);
-        assertEquals(0x12345678, loadedRoot.contour);
+        ESVONodeUnified loadedRoot = loaded.getNode(0);
+        assertEquals((byte)0b11110000, (byte)loadedRoot.getChildMask());
+        assertEquals(0x345678, loadedRoot.getContourPtr()); // Due to << 8 shift
         
         // Check children
         for (int i = 0; i < 4; i++) {
-            ESVOOctreeNode loadedChild = loaded.getNode(i + 1);
-            assertEquals(0, loadedChild.childMask);
-            assertEquals(0x1000 + i, loadedChild.contour);
+            ESVONodeUnified loadedChild = loaded.getNode(i + 1);
+            assertEquals(0, loadedChild.getChildMask());
+            assertEquals(0x1000 + i, loadedChild.getContourPtr()); // Values are correct as-is
         }
     }
     
@@ -86,11 +88,13 @@ public class ESVOPhase5Tests {
         
         // Fill with pattern data that compresses well
         for (int i = 0; i < 100; i++) {
-            ESVOOctreeNode node = new ESVOOctreeNode();
-            node.childMask = (byte)(i % 256);
-            node.contour = i * 1000;
+            ESVONodeUnified node = new ESVONodeUnified(
+                ((i % 256) & 0xFF) << 8, // childDescriptor with childMask
+                ((i * 1000) << 8)  // contourDescriptor with contourPtr in bits 8-31
+            );
             octree.setNode(i, node);
         }
+        
         
         // Serialize with compression
         Path compressedFile = tempDir.resolve("compressed.esvo.gz");
@@ -113,9 +117,9 @@ public class ESVOPhase5Tests {
         
         // Verify data integrity
         for (int i = 0; i < 100; i++) {
-            ESVOOctreeNode node = loaded.getNode(i);
-            assertEquals((byte)(i % 256), node.childMask);
-            assertEquals(i * 1000, node.contour);
+            ESVONodeUnified node = loaded.getNode(i);
+            assertEquals((byte)(i % 256), node.getChildMask());
+            assertEquals(i * 1000, node.getContourPtr());
         }
     }
     
@@ -126,10 +130,11 @@ public class ESVOPhase5Tests {
         
         // Add nodes with specific patterns
         for (int i = 0; i < 50; i++) {
-            ESVOOctreeNode node = new ESVOOctreeNode();
-            node.childMask = (byte)(0xFF - i);
-            node.contour = 0xABCD0000 | i;
-            node.farPointer = (i > 25) ? i * 100 : 0;
+            int childPtr = (i > 25) ? i * 100 : 0;
+            ESVONodeUnified node = new ESVONodeUnified(
+                ((0xFF - i) & 0xFF) << 8 | (childPtr << 17), // childDescriptor
+                ((0xABCD00 | i) << 8)  // contourDescriptor with contourPtr in bits 8-31
+            );
             octree.setNode(i, node);
         }
         
@@ -144,16 +149,16 @@ public class ESVOPhase5Tests {
         
         // Verify all nodes
         for (int i = 0; i < 50; i++) {
-            ESVOOctreeNode node = loaded.getNode(i);
-            assertEquals((byte)(0xFF - i), node.childMask);
-            assertEquals(0xABCD0000 | i, node.contour);
-            assertEquals((i > 25) ? i * 100 : 0, node.farPointer);
+            ESVONodeUnified node = loaded.getNode(i);
+            assertEquals((byte)(0xFF - i), (byte)node.getChildMask());
+            assertEquals(0xABCD00 | i, node.getContourPtr());
+            assertEquals((i > 25) ? i * 100 : 0, node.getChildPtr());
         }
         
         // Test random access capability
-        ESVOOctreeNode randomNode = reader.readNode(mmapFile, 42);
-        assertEquals((byte)(0xFF - 42), randomNode.childMask);
-        assertEquals(0xABCD0000 | 42, randomNode.contour);
+        ESVONodeUnified randomNode = reader.readNode(mmapFile, 42);
+        assertEquals((byte)(0xFF - 42), (byte)randomNode.getChildMask());
+        assertEquals(0xABCD00 | 42, randomNode.getContourPtr());
     }
     
     @Test
@@ -169,12 +174,13 @@ public class ESVOPhase5Tests {
         int batchSize = 100;
         
         for (int batch = 0; batch < totalNodes / batchSize; batch++) {
-            List<ESVOOctreeNode> nodes = new ArrayList<>();
+            List<ESVONodeUnified> nodes = new ArrayList<>();
             for (int i = 0; i < batchSize; i++) {
                 int nodeId = batch * batchSize + i;
-                ESVOOctreeNode node = new ESVOOctreeNode();
-                node.childMask = (byte)(nodeId & 0xFF);
-                node.contour = nodeId * 7;
+                ESVONodeUnified node = new ESVONodeUnified(
+                    ((nodeId & 0xFF) << 8), // childDescriptor with childMask
+                    ((nodeId * 7) << 8)  // contourDescriptor with contourPtr in bits 8-31
+                );
                 nodes.add(node);
             }
             streamWriter.writeNodeBatch(nodes);
@@ -187,9 +193,9 @@ public class ESVOPhase5Tests {
         // Verify nodes
         int nodesRead = 0;
         while (streamReader.hasNext()) {
-            ESVOOctreeNode node = streamReader.readNext();
-            assertEquals((byte)(nodesRead & 0xFF), node.childMask);
-            assertEquals(nodesRead * 7, node.contour);
+            ESVONodeUnified node = streamReader.readNext();
+            assertEquals((byte)(nodesRead & 0xFF), (byte)node.getChildMask());
+            assertEquals(nodesRead * 7, node.getContourPtr());
             nodesRead++;
         }
         streamReader.close();
@@ -205,9 +211,10 @@ public class ESVOPhase5Tests {
         
         // Create octree
         ESVOOctreeData octree = new ESVOOctreeData(512);
-        ESVOOctreeNode node = new ESVOOctreeNode();
-        node.childMask = (byte)0x42;
-        node.contour = (int)0xDEADBEEF;
+        ESVONodeUnified node = new ESVONodeUnified(
+            ((0x42 & 0xFF) << 8), // childDescriptor with childMask
+            (0xDEADBEEF << 8)  // contourDescriptor with contourPtr in bits 8-31
+        );
         octree.setNode(0, node);
         
         // Write as version 1
@@ -229,10 +236,10 @@ public class ESVOPhase5Tests {
         ESVOOctreeData v2Loaded = deserializer.deserialize(v2File);
         
         // Check data integrity
-        assertEquals((byte)0x42, v1Loaded.getNode(0).childMask);
-        assertEquals((int)0xDEADBEEF, v1Loaded.getNode(0).contour);
-        assertEquals((byte)0x42, v2Loaded.getNode(0).childMask);
-        assertEquals((int)0xDEADBEEF, v2Loaded.getNode(0).contour);
+        assertEquals((byte)0x42, (byte)v1Loaded.getNode(0).getChildMask());
+        assertEquals(0xADBEEF, v1Loaded.getNode(0).getContourPtr()); // 0xADBEEF as unsigned int
+        assertEquals((byte)0x42, (byte)v2Loaded.getNode(0).getChildMask());
+        assertEquals(0xADBEEF, v2Loaded.getNode(0).getContourPtr()); // 0xADBEEF as unsigned int
     }
     
     @Test
@@ -253,9 +260,10 @@ public class ESVOPhase5Tests {
         
         // Add some nodes
         for (int i = 0; i < 10; i++) {
-            ESVOOctreeNode node = new ESVOOctreeNode();
-            node.childMask = (byte)i;
-            node.contour = i * 100;
+            ESVONodeUnified node = new ESVONodeUnified(
+                ((i & 0xFF) << 8), // childDescriptor with childMask
+                ((i * 100) << 8)  // contourDescriptor with contourPtr in bits 8-31
+            );
             octree.setNode(i, node);
         }
         
@@ -283,9 +291,9 @@ public class ESVOPhase5Tests {
         
         // Check octree data
         for (int i = 0; i < 10; i++) {
-            ESVOOctreeNode node = result.octree.getNode(i);
-            assertEquals((byte)i, node.childMask);
-            assertEquals(i * 100, node.contour);
+            ESVONodeUnified node = result.octree.getNode(i);
+            assertEquals((byte)i, node.getChildMask());
+            assertEquals(i * 100, node.getContourPtr());
         }
     }
 }

@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.esvo.traversal;
 
-import com.hellblazer.luciferase.esvo.core.OctreeNode;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.resource.UnifiedResourceManager;
 import javax.vecmath.Vector3f;
 import java.nio.ByteBuffer;
@@ -94,7 +94,7 @@ public class AdvancedRayTraversal implements AutoCloseable {
             int childDesc = octreeData.getInt(nodeOffset);
             int contourDesc = octreeData.getInt(nodeOffset + 4);
             
-            OctreeNode node = new OctreeNode(childDesc, contourDesc);
+            ESVONodeUnified node = new ESVONodeUnified(childDesc, contourDesc);
             
             // Process current voxel
             if (processVoxel(state, node, octreeData)) {
@@ -143,23 +143,23 @@ public class AdvancedRayTraversal implements AutoCloseable {
     /**
      * Process voxel with far pointer resolution
      */
-    private boolean processVoxel(TraversalState state, OctreeNode node, ByteBuffer octreeData) {
+    private boolean processVoxel(TraversalState state, ESVONodeUnified node, ByteBuffer octreeData) {
         // Check if we need to resolve a far pointer
         if (farPointersEnabled && node.isFar()) {
-            int resolvedPointer = resolveFarPointer(state.parentIdx, node.getChildPointer(), octreeData);
+            int resolvedPointer = resolveFarPointer(state.parentIdx, node.getChildPtr(), octreeData);
             farPointerResolutions++;
             state.parentIdx = resolvedPointer;
         }
         
         // Standard voxel processing
-        byte validMask = node.getValidMask();
-        if (validMask == 0) {
+        int childMask = node.getChildMask();
+        if (childMask == 0) {
             return false; // Empty node
         }
         
         // Check for leaf hit
-        byte nonLeafMask = node.getNonLeafMask();
-        if (nonLeafMask == 0) {
+        int leafMask = node.getLeafMask();
+        if (leafMask == 0xFF) {
             // All children are leaves - we have a hit
             return true;
         }
@@ -191,13 +191,13 @@ public class AdvancedRayTraversal implements AutoCloseable {
      * 
      * Contours encode a plane equation that clips the voxel for more accurate surfaces.
      */
-    private boolean processContourIntersection(TraversalState state, OctreeNode node, ByteBuffer octreeData) {
+    private boolean processContourIntersection(TraversalState state, ESVONodeUnified node, ByteBuffer octreeData) {
         int contourMask = node.getContourMask() & 0xFF;
         if (contourMask == 0) {
             return false;
         }
         
-        int contourPtr = node.getContourPointer();
+        int contourPtr = node.getContourPtr();
         
         // Read contour data from octree
         int contourOffset = contourPtr * 8;
@@ -438,7 +438,7 @@ public class AdvancedRayTraversal implements AutoCloseable {
     /**
      * Advance traversal to next voxel
      */
-    private void advanceTraversal(TraversalState state, OctreeNode node, ByteBuffer octreeData) {
+    private void advanceTraversal(TraversalState state, ESVONodeUnified node, ByteBuffer octreeData) {
         // Simplified advancement - in full implementation would handle stack operations
         state.scale++;
         state.t_min = state.t_max;

@@ -422,11 +422,14 @@ public class ESVOBuildMode {
         
         for (int i = 0; i < nodes.length; i++) {
             var esvoNode = nodes[i];
-            // Convert ESVONode to ESVOOctreeNode
-            var octreeNode = new com.hellblazer.luciferase.esvo.core.ESVOOctreeNode(
-                (byte) esvoNode.getNonLeafMask(),
-                esvoNode.getContourMask(), 
-                esvoNode.getChildPointer()
+            // Convert ESVONode to ESVONodeUnified
+            var octreeNode = new com.hellblazer.luciferase.esvo.core.ESVONodeUnified(
+                (byte)0, // leafMask - ESVONode doesn't have leaf mask
+                (byte) esvoNode.getNonLeafMask(), // childMask
+                false, // isFar - default to false
+                esvoNode.getChildPointer(), // childPtr
+                (byte) esvoNode.getContourMask(), // contourMask
+                0 // contourPtr - ESVONode doesn't have contour pointer
             );
             octreeData.setNode(i, octreeNode);
         }
