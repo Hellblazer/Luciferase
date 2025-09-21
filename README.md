@@ -2,19 +2,19 @@
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
-A high-performance 3D spatial indexing and visualization library for Java 24+
+3D spatial indexing and visualization library for Java 24.
 
 ## Overview
 
-Luciferase is a comprehensive spatial data structure library providing efficient 3D indexing, collision detection, and visualization capabilities. Built with Java 24's cutting-edge features including the Foreign Function & Memory (FFM) API, it offers both CPU and GPU-accelerated spatial operations.
+Luciferase is a spatial data structure library providing 3D indexing, collision detection, and visualization capabilities. Built with Java 24 and the Foreign Function & Memory (FFM) API.
 
 ## Features
 
-- **Dual Spatial Indexing Systems**
-  - **Octree**: Cubic spatial subdivision using Morton space-filling curves (21 levels, ~2 billion nodes)
-  - **Tetree**: Tetrahedral spatial subdivision using TM-index curves (21 levels, matching Octree capacity)
+- Spatial Indexing Systems
+  - Octree: Cubic spatial subdivision using Morton space-filling curves (21 levels, 2 billion nodes)
+  - Tetree: Tetrahedral spatial subdivision using TM-index curves (21 levels, matching Octree capacity)
   
-- **Advanced Capabilities**
+- Capabilities
   - Multi-entity support per spatial location
   - Thread-safe concurrent operations
   - K-nearest neighbor search
@@ -22,17 +22,18 @@ Luciferase is a comprehensive spatial data structure library providing efficient
   - Collision detection with physics shapes
   - Adaptive tree balancing strategies
   
-- **Performance Optimizations**
-  - Zero-copy GPU memory transfers via FFM
+- Performance Optimizations
+  - Memory-efficient data structures via FFM
   - Lock-free entity movement protocols
   - Object pooling for GC reduction
   - SIMD operations support
   
-- **Visualization & Rendering**
+- Visualization & Rendering
   - JavaFX 3D visualization
-  - WebGPU integration for GPU compute
-  - ESVO (Efficient Sparse Voxel Octrees) rendering pipeline
-  - Real-time mesh generation
+  - LWJGL-based OpenGL rendering
+  - ESVO (Efficient Sparse Voxel Octrees) implementation (Laine & Karras 2010)
+  - Stack-based ray traversal optimized for GPU architectures
+  - Mesh generation and contour extraction
 
 ## Architecture
 
@@ -40,21 +41,23 @@ Luciferase is a comprehensive spatial data structure library providing efficient
 
 | Module | Description |
 |--------|-------------|
-| **lucien** | Core spatial indexing implementation (Octree, Tetree, collision detection) |
-| **render** | WebGPU-based voxel rendering with FFM integration |
-| **sentry** | Delaunay tetrahedralization for kinetic point tracking |
-| **portal** | JavaFX 3D visualization and mesh handling |
-| **common** | Optimized collections and geometry utilities |
-| **von** | Distributed spatial perception framework |
-| **simulation** | Animation and movement simulation |
-| **grpc** | Protocol buffer definitions for serialization |
+| [common](common/README.md) | Collections and geometry utilities |
+| [resource](resource/README.md) | Shared resources, shaders, and configuration files |
+| [lucien](lucien/README.md) | Core spatial indexing implementation (Octree, Tetree, collision detection) |
+| [render](render/README.md) | ESVO implementation with LWJGL rendering, FFM integration |
+| [gpu-test-framework](gpu-test-framework/README.md) | GPU testing infrastructure and benchmarking utilities |
+| [sentry](sentry/README.md) | Delaunay tetrahedralization for kinetic point tracking |
+| [portal](portal/README.md) | JavaFX 3D visualization and mesh handling |
+| [von](von/README.md) | Distributed spatial perception framework |
+| [simulation](simulation/README.md) | Animation and movement simulation |
+| [grpc](grpc/README.md) | Protocol buffer definitions for serialization |
 
 ## Requirements
 
-- **Java 24+** (uses stable FFM API)
-- **Maven 3.91+**
-- **JavaFX 24** (for visualization)
-- **Optional**: WebGPU runtime for GPU acceleration
+- Java 24 (uses stable FFM API)
+- Maven 3.91+
+- JavaFX 24 (for visualization)
+- LWJGL 3 (for OpenGL rendering)
 
 ## Build Instructions
 
@@ -100,19 +103,23 @@ var ray = new Ray3f(origin, direction);
 var hits = octree.intersectRay(ray);
 ```
 
-### WebGPU Voxel Rendering
+### ESVO Rendering
 
 ```java
-import com.hellblazer.luciferase.render.voxel.gpu.VoxelGPUManager;
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
+import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
-// Initialize GPU manager
-var gpuManager = new VoxelGPUManager(webGPUDevice);
+// Create ESVO octree with 8-byte nodes
+var octreeData = new ESVOOctreeData(maxSizeBytes);
+var root = new ESVONodeUnified(childDescriptor, contourDescriptor);
+octreeData.setNode(0, root);
 
-// Upload voxel octree to GPU
-var nodeCount = gpuManager.uploadOctree(voxelRoot);
+// Stack-based ray traversal (optimized for GPU architectures)
+var traversal = new StackBasedRayTraversal(octreeData);
+var intersections = traversal.traverse(ray);
 
-// Render frame
-gpuManager.render(camera, renderTarget);
+// Serialize for efficient memory transfer
+var gpuBuffer = ESVOSerializer.serialize(octreeData);
 ```
 
 ## Performance
@@ -130,22 +137,23 @@ Benchmark results on Apple M1 (10,000 entities):
 
 - [Architecture Overview](lucien/doc/LUCIEN_ARCHITECTURE.md)
 - [Performance Metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md)
+- [ESVO Implementation](render/doc/ESVO_COMPLETION_SUMMARY.md)
 - [Java 24 FFM Integration](render/doc/JAVA_24_FFM_PLAN.md)
 - [API Documentation](https://hellblazer.github.io/Luciferase/) (Javadoc)
 
 ## Contributing
 
-Contributions are welcome! Please read our [contributing guidelines](CONTRIBUTING.md) before submitting PRs.
+Contributions are welcome. Please read our [contributing guidelines](CONTRIBUTING.md) before submitting PRs.
 
 ## License
 
-This project is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 See [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- Uses [webgpu-java](https://github.com/myworldvw/webgpu-java) for WebGPU bindings
+- ESVO implementation based on Laine & Karras 2010 paper "Efficient Sparse Voxel Octrees"
 - Inspired by [t8code](https://github.com/DLR-AMR/t8code) for tetrahedral indexing
 - Built with [PrimeMover](https://github.com/Hellblazer/PrimeMover) simulation framework
 
