@@ -34,4 +34,7 @@
 
     <!-- Turn off verbose logging for test framework -->
     <logger name="org.junit" level="WARN"/>
+    
+    <!-- Reduce noise from resource management logging -->
+    <logger name="com.hellblazer.luciferase.render.UnifiedResourceManager" level="WARN"/>
 </configuration>

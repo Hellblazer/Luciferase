@@ -811,15 +811,15 @@ public class UnifiedResourceManager implements AutoCloseable {
                 int countBefore = activeResourceCount.get();
                 activeResourceCount.incrementAndGet(); // Track as active
                 int countAfter = activeResourceCount.get();
-                log.info("Incremented activeResourceCount from {} to {} for new buffer {}", 
+                log.debug("Incremented activeResourceCount from {} to {} for new buffer {}", 
                         countBefore, countAfter, System.identityHashCode(buffer));
             } else {
-                log.info("Buffer {} was already tracked, not incrementing activeResourceCount (current: {})", 
+                log.debug("Buffer {} was already tracked, not incrementing activeResourceCount (current: {})", 
                         System.identityHashCode(buffer), activeResourceCount.get());
             }
             allocationCount.incrementAndGet(); // Debug counter
             
-            log.info("Allocated buffer {} with resourceId {}, resources.size() = {}, activeCount = {}", 
+            log.debug("Allocated buffer {} with resourceId {}, resources.size() = {}, activeCount = {}", 
                      System.identityHashCode(buffer), resourceId, resources.size(), activeResourceCount.get());
         }
         return buffer;
@@ -881,7 +881,7 @@ public class UnifiedResourceManager implements AutoCloseable {
             int countBefore = activeResourceCount.get();
             activeResourceCount.decrementAndGet(); // Always decrement when buffer was tracked
             int countAfter = activeResourceCount.get();
-            log.info("Decremented activeResourceCount from {} to {} for buffer {}", 
+            log.debug("Decremented activeResourceCount from {} to {} for buffer {}", 
                     countBefore, countAfter, System.identityHashCode(buffer));
             allocatedBytesPerType.get(GPUResourceType.MEMORY_POOL).addAndGet(-buffer.capacity()); // Always update bytes
             totalAllocatedBytes.addAndGet(-buffer.capacity()); // Also update total allocated bytes
@@ -896,7 +896,7 @@ public class UnifiedResourceManager implements AutoCloseable {
                     } catch (Exception e) {
                         log.debug("Error closing buffer resource", e);
                     }
-                    log.info("Released buffer {} with resourceId {}, resources.size() = {}, activeCount = {}", 
+                    log.debug("Released buffer {} with resourceId {}, resources.size() = {}, activeCount = {}", 
                              System.identityHashCode(buffer), resourceId, resources.size(), activeResourceCount.get());
                 } else {
                     log.warn("Buffer {} found in bufferToIdMap but resource {} not found in resources map", 

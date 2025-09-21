@@ -93,8 +93,7 @@ public class DSOCZBufferAdaptationTest {
             var stats = index.getDSOCStatistics();
             assertNotNull(stats);
             
-            System.out.printf("%s Z-buffer size %dx%d initialized successfully%n", 
-                indexType, size, size);
+            // Z-buffer initialized successfully
         }
     }
     
@@ -130,7 +129,7 @@ public class DSOCZBufferAdaptationTest {
         var stats = index.getDSOCStatistics();
         assertTrue((Boolean) stats.get("dsocEnabled"));
         
-        System.out.printf("%s adaptive Z-buffer test completed%n", indexType);
+        // Adaptive Z-buffer test completed
     }
     
     @ParameterizedTest(name = "{0}")
@@ -198,8 +197,7 @@ public class DSOCZBufferAdaptationTest {
             var frustum = createTestFrustum();
             var visible = index.frustumCullVisible(frustum, camera);
             
-            System.out.printf("%s camera Z=%.1f, visible entities: %d%n", 
-                indexType, camZ, visible.size());
+            // Camera position and visibility test completed
         }
     }
     
@@ -244,8 +242,7 @@ public class DSOCZBufferAdaptationTest {
             assertNotNull(visible);
             assertTrue(index.isDSOCEnabled());
             
-            System.out.printf("%s Z-buffer %dx%d (aspect %.2f) - visible: %d%n", 
-                indexType, size[0], size[1], aspect, visible.size());
+            // Z-buffer aspect ratio test completed
             
             // Clear entities for next test
             for (int i = 0; i < 50; i++) {
@@ -281,8 +278,7 @@ public class DSOCZBufferAdaptationTest {
             long memAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
             long memUsed = memAfter - memBefore;
             
-            System.out.printf("%s Z-buffer size %dx%d: %d KB%n", 
-                indexType, size, size, memUsed / 1024);
+            // Memory efficiency measurement completed
             
             // Clean up
             for (int i = 0; i < 100; i++) {
@@ -345,13 +341,10 @@ public class DSOCZBufferAdaptationTest {
         var visible = octree.frustumCullVisible(frustum, camera);
         
         // Should see occluders and some medium objects, but few small objects
-        System.out.printf("Hierarchical culling - visible: %d out of 100%n", visible.size());
+        // Hierarchical culling - visible count tracked internally
         
         var stats = octree.getDSOCStatistics();
-        System.out.println("DSOC Statistics: " + stats);
-        System.out.println("DSOC Enabled: " + octree.isDSOCEnabled());
-        System.out.println("Occluder count: " + stats.get("occluderCount"));
-        System.out.println("Z-buffer activated: " + stats.get("zBufferActivated"));
+        // Statistics logged internally, no need for console output in tests
         
         // According to CLAUDE.md, DSOC is disabled by default and needs explicit enabling
         // The test should verify that DSOC is active and processing entities
@@ -360,7 +353,7 @@ public class DSOCZBufferAdaptationTest {
         
         // The hierarchical occlusion may not always reduce visible count in all scenarios
         // especially with the current DSOC optimizations that focus on performance
-        System.out.println("Test completed - DSOC is active but may not occlude in this scenario");
+        // Test completed - DSOC is active but may not occlude in this scenario
     }
     
     @ParameterizedTest(name = "{0}")
@@ -410,8 +403,7 @@ public class DSOCZBufferAdaptationTest {
                 }
             }
             
-            System.out.printf("%s hour %d completed - frame %d%n", 
-                indexType, hour + 1, index.getCurrentFrame());
+            // Long session hour completed
         }
         
         // Should still be functional after long session
