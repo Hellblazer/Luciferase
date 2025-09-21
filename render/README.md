@@ -176,6 +176,50 @@ Uses the framework for GPU testing:
 3. Adjust stack size based on octree depth
 4. Use beam optimization for coherent rays
 
+## Testing
+
+The render module uses the `gpu-test-framework` module for GPU-related testing:
+
+```xml
+<dependency>
+    <groupId>com.hellblazer.luciferase</groupId>
+    <artifactId>gpu-test-framework</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+### Running Tests
+
+```bash
+# Run all render tests
+mvn test -pl render
+
+# Run with GPU profiling
+mvn test -pl render -Dgpu.profile=true
+
+# Run specific test class
+mvn test -pl render -Dtest=ESVORendererTest
+```
+
+### Test Categories
+
+- **Unit Tests**: Core algorithm validation
+- **Integration Tests**: GPU pipeline integration
+- **Performance Tests**: Rendering benchmarks using gpu-test-framework
+- **Visual Tests**: Render output validation
+
+## Dependencies
+
+### Core Dependencies
+- **resource**: GPU resource management
+- **common**: Shared utilities and geometry
+- **gpu-test-framework** (test scope): GPU testing infrastructure
+
+### External Dependencies
+- **LWJGL**: OpenGL/OpenCL bindings
+- **javax.vecmath**: Vector mathematics
+- **JMH** (test scope): Performance benchmarking
+
 ## Configuration
 
 ### Render Configuration Options
