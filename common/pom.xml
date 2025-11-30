@@ -28,4 +28,44 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>${ci.slow.test.excludes}</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>ci-build</id>
+            <activation>
+                <property>
+                    <name>env.CI</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <ci.slow.test.excludes>**/HilbertCurveComparatorTest.java</ci.slow.test.excludes>
+            </properties>
+        </profile>
+        <profile>
+            <id>local-build</id>
+            <activation>
+                <property>
+                    <name>!env.CI</name>
+                </property>
+            </activation>
+            <properties>
+                <ci.slow.test.excludes></ci.slow.test.excludes>
+            </properties>
+        </profile>
+    </profiles>
 </project>
