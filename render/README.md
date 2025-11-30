@@ -164,11 +164,20 @@ Uses the framework for GPU testing:
 
 ## Performance
 
-### Benchmarks (NVIDIA RTX 3080)
-- **Ray Throughput**: 2.5 Grays/sec
-- **Node Throughput**: 150M nodes/sec
-- **Frame Time**: 16ms @ 1080p (60 FPS)
-- **Memory Usage**: 450MB for 10M nodes
+### Benchmarks
+> **Note**: Performance metrics need to be updated with actual measurements from current hardware.
+> 
+> To run benchmarks on your system:
+> ```bash
+> mvn test -pl render -Dtest=ESVOPerformanceBenchmark
+> mvn test -pl render -Dtest=ESVOJMHBenchmark -Pperformance
+> ```
+
+Expected metrics to measure:
+- **Ray Throughput**: Grays/sec
+- **Node Throughput**: Nodes/sec  
+- **Frame Time**: ms @ various resolutions
+- **Memory Usage**: MB for various node counts
 
 ### Optimization Tips
 1. Use power-of-2 resolutions for better GPU utilization

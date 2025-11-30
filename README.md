@@ -124,14 +124,23 @@ var gpuBuffer = ESVOSerializer.serialize(octreeData);
 
 ## Performance
 
-Benchmark results on Apple M1 (10,000 entities):
+> **Note**: Performance benchmarks should be run on your specific hardware for accurate results.
+> 
+> To run benchmarks on your system:
+> ```bash
+> mvn test -Pperformance
+> # or for specific benchmarks:
+> mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark
+> ```
 
-| Operation | Octree | Tetree |
-|-----------|--------|--------|
-| Insertion | 285K/sec | 541K/sec |
-| k-NN Query | 5.5K/sec | 3.1K/sec |
-| Ray Intersection | 26K/sec | 15K/sec |
-| Update | 189K/sec | 364K/sec |
+Expected benchmark categories (with 10,000 entities):
+
+| Operation | Description |
+|-----------|-------------|
+| Insertion | Entity insertion operations/sec |
+| k-NN Query | k-nearest neighbor searches/sec |
+| Ray Intersection | Ray-tree intersection tests/sec |
+| Update | Entity position updates/sec |
 
 ## Documentation
 
