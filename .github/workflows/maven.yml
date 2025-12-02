@@ -9,12 +9,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: graalvm/setup-graalvm@v1
+      - uses: actions/setup-java@v4
         with:
-          java-version: '24'
-          distribution: 'graalvm'
+          java-version: '25'
+          distribution: 'oracle'
           cache: 'maven'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install native dependencies
         run: |
           sudo apt-get update
