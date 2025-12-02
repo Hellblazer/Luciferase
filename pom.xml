@@ -9,15 +9,16 @@
     <name>Luciferase - A Bright Spark</name>
 
     <properties>
-        <maven.compiler.source>24</maven.compiler.source>
-        <maven.compiler.target>24</maven.compiler.target>
+        <java.target.version>25</java.target.version>
+        <maven.compiler.source>${java.target.version}</maven.compiler.source>
+        <maven.compiler.target>${java.target.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.9.1</junit.version>
         <logback.version>1.5.13</logback.version>
         <grpc.version>1.54.0</grpc.version>
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
-        <javafx.version>24</javafx.version>
+        <javafx.version>${java.target.version}</javafx.version>
         <prime-mover.version>0.1.0-SNAPSHOT</prime-mover.version>
         <jmh.version>1.37</jmh.version>
         <jqwik.version>1.8.4</jqwik.version>
@@ -107,6 +108,11 @@
                 <version>${gpu-support.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>com.hellblazer.primeMover</groupId>
+                <artifactId>api</artifactId>
+                <version>${prime-mover.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>runtime</artifactId>
@@ -350,7 +356,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <release>24</release>
+                    <release>${java.target.version}</release>
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                        <arg>--add-modules</arg>
+                        <arg>jdk.incubator.vector</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>

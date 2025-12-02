@@ -19,6 +19,10 @@
     <dependencies>
         <dependency>
             <groupId>com.hellblazer.primeMover</groupId>
+            <artifactId>api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.hellblazer.primeMover</groupId>
             <artifactId>runtime</artifactId>
         </dependency>
         <dependency>

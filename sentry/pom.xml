@@ -86,22 +86,9 @@
                     </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-compiler-plugin</artifactId>
-                        <configuration>
-                            <release>24</release>
-                            <compilerArgs>
-                                <arg>--enable-preview</arg>
-                                <arg>--add-modules</arg>
-                                <arg>jdk.incubator.vector</arg>
-                            </compilerArgs>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <argLine>
-                                --enable-preview 
                                 --add-modules jdk.incubator.vector
                                 -Dsentry.enableSIMD=true
                                 -Xmx512m -Xms256m
@@ -138,18 +125,6 @@
                                 </configuration>
                             </execution>
                         </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-compiler-plugin</artifactId>
-                        <configuration>
-                            <release>24</release>
-                            <compilerArgs>
-                                <arg>--enable-preview</arg>
-                                <arg>--add-modules</arg>
-                                <arg>jdk.incubator.vector</arg>
-                            </compilerArgs>
-                        </configuration>
                     </plugin>
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
