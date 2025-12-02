@@ -24,6 +24,7 @@
         <lwjgl.version>3.3.6</lwjgl.version>
         <!-- Default LWJGL natives - will be overridden by profiles -->
         <lwjgl.natives>natives-linux</lwjgl.natives>
+        <gpu-support.version>1.0.2</gpu-support.version>
     </properties>
 
     <licenses>
@@ -47,10 +48,8 @@
         <module>von</module>
         <module>simulation</module>
         <module>sentry</module>
-        <module>gpu-test-framework</module>
         <module>render</module>
         <module>dyada-java</module>
-        <module>resource</module>
     </modules>
 
     <dependencyManagement>
@@ -93,17 +92,19 @@
             <dependency>
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
-                <artifactId>gpu-test-framework</artifactId>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <version>${project.version}</version>
                 <artifactId>render</artifactId>
             </dependency>
+
+            <!-- GPU Support Framework (external dependencies) -->
             <dependency>
-                <groupId>${project.groupId}</groupId>
-                <version>${project.version}</version>
+                <groupId>com.hellblazer.gpu-support</groupId>
                 <artifactId>resource</artifactId>
+                <version>${gpu-support.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.hellblazer.gpu-support</groupId>
+                <artifactId>gpu-test-framework</artifactId>
+                <version>${gpu-support.version}</version>
             </dependency>
 
             <dependency>
@@ -506,6 +507,14 @@
     </build>
 
     <repositories>
+        <repository>
+            <id>github</id>
+            <name>GPU Support GitHub Packages</name>
+            <url>https://maven.pkg.github.com/Hellblazer/gpu-support</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
         <repository>
             <id>hell-repo</id>
             <url>

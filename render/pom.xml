@@ -26,8 +26,10 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>portal</artifactId>
         </dependency>
+        
+        <!-- GPU Support Framework -->
         <dependency>
-            <groupId>${project.groupId}</groupId>
+            <groupId>com.hellblazer.gpu-support</groupId>
             <artifactId>resource</artifactId>
         </dependency>
         
@@ -94,7 +96,7 @@
 
         <!-- Test Dependencies -->
         <dependency>
-            <groupId>${project.groupId}</groupId>
+            <groupId>com.hellblazer.gpu-support</groupId>
             <artifactId>gpu-test-framework</artifactId>
             <scope>test</scope>
         </dependency>
