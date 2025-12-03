@@ -10,7 +10,7 @@ import javax.vecmath.Tuple3f;
 /**
  * @author hal.hildebrand
  **/
-@Entity({ Moveable.class })
+@Entity({ Locatable.class, Moveable.class })
 public class MovableActor implements Locatable, Moveable {
     private final Cursor cursor;
 
