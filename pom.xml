@@ -19,13 +19,13 @@
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
         <javafx.version>${java.target.version}</javafx.version>
-        <prime-mover.version>1.0.2</prime-mover.version>
+        <prime-mover.version>1.0.3</prime-mover.version>
         <jmh.version>1.37</jmh.version>
         <jqwik.version>1.8.4</jqwik.version>
         <lwjgl.version>3.3.6</lwjgl.version>
         <!-- Default LWJGL natives - will be overridden by profiles -->
         <lwjgl.natives>natives-linux</lwjgl.natives>
-        <gpu-support.version>1.0.2</gpu-support.version>
+        <gpu-support.version>1.0.3</gpu-support.version>
     </properties>
 
     <licenses>
@@ -569,6 +569,14 @@
             </snapshots>
         </pluginRepository>
     </pluginRepositories>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/Hellblazer/Luciferase</url>
+        </repository>
+    </distributionManagement>
 
     <profiles>
         <!-- Platform-specific profiles for LWJGL natives -->

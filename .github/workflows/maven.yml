@@ -1,23 +1,36 @@
 name: Java CI
 
-on: [ push ]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  build:
-
+  compile:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: graalvm/setup-graalvm@v1
         with:
           java-version: '25'
-          distribution: 'oracle'
-          cache: 'maven'
-      - name: Install native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
       - name: Configure Maven for GitHub Packages
         run: |
           mkdir -p ~/.m2
@@ -29,13 +42,13 @@ jobs:
             <servers>
               <server>
                 <id>github</id>
-                <username>${GITHUB_ACTOR}</username>
-                <password>${GITHUB_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
               </server>
               <server>
                 <id>github-prime-mover</id>
-                <username>${GITHUB_ACTOR}</username>
-                <password>${PACKAGES_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.PACKAGES_TOKEN}</password>
               </server>
             </servers>
           </settings>
@@ -43,7 +56,83 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-      - name: Build with Maven
+
+      - name: Compile with Maven
+        run: ./mvnw -batch-mode clean compile test-compile --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # Save cache after successful compile, even if tests fail later
+      - name: Save Maven cache
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+
+  test:
+    needs: compile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore Maven cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Configure Maven for GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>github</id>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
+              </server>
+              <server>
+                <id>github-prime-mover</id>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.PACKAGES_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglu1-mesa libxrandr2 libxcursor1 libxinerama1 libxi6 libxxf86vm1
+
+      - name: Test with Maven
         run: |
           export DISPLAY=:99.0
-          xvfb-run -a ./mvnw -batch-mode --update-snapshots clean install --file pom.xml
+          xvfb-run -a ./mvnw -batch-mode test --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
