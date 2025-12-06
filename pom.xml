@@ -570,6 +570,14 @@
         </pluginRepository>
     </pluginRepositories>
 
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/Hellblazer/Luciferase</url>
+        </repository>
+    </distributionManagement>
+
     <profiles>
         <!-- Platform-specific profiles for LWJGL natives -->
         <profile>
