@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.geometry.MortonCurve;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,7 +28,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Performance test for ExtendedTetreeKey caching in TetreeLevelCache. This test validates that the caching
  * significantly improves tmIndex() performance.
+ * 
+ * These tests are disabled in CI environments (CI=true) because they are timing-sensitive and can fail
+ * due to hardware variations, JVM warmup differences, or shared runner load.
  */
+@DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Performance tests are skipped in CI due to timing sensitivity and hardware variations")
 public class TetreeKeyCachePerformanceTest {
 
     @BeforeEach

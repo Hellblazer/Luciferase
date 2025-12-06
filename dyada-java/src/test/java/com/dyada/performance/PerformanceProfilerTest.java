@@ -1,6 +1,7 @@
 package com.dyada.performance;
 
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -359,6 +360,8 @@ class PerformanceProfilerTest {
 
     @Nested
     @DisplayName("Performance and Scalability")
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", 
+        disabledReason = "Performance tests are skipped in CI due to timing sensitivity and hardware variations")
     class PerformanceTests {
 
         @Test
