@@ -44,6 +44,9 @@ jobs:
 
       - name: Set release version
         run: ./mvnw -batch-mode versions:set -DnewVersion=${{ github.event.inputs.releaseVersion }} -DgenerateBackupPoms=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install native dependencies
         run: |
@@ -61,13 +64,13 @@ jobs:
             <servers>
               <server>
                 <id>github</id>
-                <username>\${GITHUB_ACTOR}</username>
-                <password>\${GITHUB_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
               </server>
               <server>
                 <id>github-prime-mover</id>
-                <username>\${GITHUB_ACTOR}</username>
-                <password>\${PACKAGES_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.PACKAGES_TOKEN}</password>
               </server>
             </servers>
           </settings>
@@ -80,6 +83,9 @@ jobs:
         run: |
           export DISPLAY=:99.0
           xvfb-run -a ./mvnw -batch-mode clean install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Commit release version
         run: |
@@ -94,6 +100,9 @@ jobs:
 
       - name: Set next development version
         run: ./mvnw -batch-mode versions:set -DnewVersion=${{ github.event.inputs.nextVersion }} -DgenerateBackupPoms=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Commit next development version
         run: |

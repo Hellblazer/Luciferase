@@ -42,13 +42,13 @@ jobs:
             <servers>
               <server>
                 <id>github</id>
-                <username>\${GITHUB_ACTOR}</username>
-                <password>\${GITHUB_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
               </server>
               <server>
                 <id>github-prime-mover</id>
-                <username>\${GITHUB_ACTOR}</username>
-                <password>\${PACKAGES_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.PACKAGES_TOKEN}</password>
               </server>
             </servers>
           </settings>
@@ -59,6 +59,9 @@ jobs:
 
       - name: Compile with Maven
         run: ./mvnw -batch-mode clean compile test-compile --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       # Save cache after successful compile, even if tests fail later
       - name: Save Maven cache
@@ -106,13 +109,13 @@ jobs:
             <servers>
               <server>
                 <id>github</id>
-                <username>\${GITHUB_ACTOR}</username>
-                <password>\${GITHUB_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
               </server>
               <server>
                 <id>github-prime-mover</id>
-                <username>\${GITHUB_ACTOR}</username>
-                <password>\${PACKAGES_TOKEN}</password>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.PACKAGES_TOKEN}</password>
               </server>
             </servers>
           </settings>
@@ -130,3 +133,6 @@ jobs:
         run: |
           export DISPLAY=:99.0
           xvfb-run -a ./mvnw -batch-mode test --file pom.xml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
