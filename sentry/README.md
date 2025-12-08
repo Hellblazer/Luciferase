@@ -181,7 +181,6 @@ mvn test -pl sentry -Dtest=*Benchmark
 
 ## References
 
-- [Computational Geometry: Algorithms and Applications](https://www.cs.uu.nl/geobook/)
 - [Delaunay Triangulation in 3D](https://www.cs.cmu.edu/~quake/tripaper/triangle2.html)
 - [Kinetic Data Structures](https://graphics.stanford.edu/courses/cs268-11-spring/notes/g-kds.pdf)
 

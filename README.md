@@ -149,7 +149,6 @@ Expected benchmark categories (with 10,000 entities):
 
 - [Architecture Overview](lucien/doc/LUCIEN_ARCHITECTURE.md)
 - [Performance Metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md)
-- [API Documentation](https://hellblazer.github.io/Luciferase/) (Javadoc)
 
 ## Contributing
 
@@ -165,7 +164,6 @@ See [LICENSE](LICENSE) for details.
 
 - ESVO implementation based on Laine & Karras 2010 paper "Efficient Sparse Voxel Octrees"
 - Inspired by [t8code](https://github.com/DLR-AMR/t8code) for tetrahedral indexing
-- Built with [PrimeMover](https://github.com/Hellblazer/PrimeMover) simulation framework
 
 ## Contact
 
