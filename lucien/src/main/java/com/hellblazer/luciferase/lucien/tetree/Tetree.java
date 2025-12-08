@@ -597,7 +597,7 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
      *
      * @return NavigableSet of spatial indices
      */
-    public NavigableSet<TetreeKey<?>> getSortedSpatialIndices() {
+    public NavigableSet<TetreeKey<? extends TetreeKey>> getSortedSpatialIndices() {
         lock.readLock().lock();
         try {
             return new TreeSet<>(spatialIndex.keySet());
@@ -1459,6 +1459,16 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     protected Set<TetreeKey<? extends TetreeKey>> findNodesIntersectingBounds(VolumeBounds bounds) {
         var intersectingNodes = new HashSet<TetreeKey<? extends TetreeKey>>();
 
+        log.debug("findNodesIntersectingBounds: bounds={}, spatialIndex.size()={}", bounds, spatialIndex.size());
+
+        // DEBUG: Check what keys are actually in the spatial index
+        log.debug("Keys in spatial index:");
+        for (var key : spatialIndex.keySet()) {
+            var tet = Tet.tetrahedron(key);
+            log.debug("  Key: {}, Tet: x={}, y={}, z={}, level={}, type={}", 
+                      key, tet.x(), tet.y(), tet.z(), tet.l(), tet.type());
+        }
+
         // Optimized approach: Check by levels starting from coarse to fine
         // This avoids checking all nodes and leverages spatial locality
         
@@ -1468,6 +1478,8 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
             var tet = Tet.tetrahedron(nodeKey);
             nodesByLevel.computeIfAbsent(tet.l(), k -> new ArrayList<>()).add(nodeKey);
         }
+        
+        log.debug("Nodes by level: {}", nodesByLevel.keySet());
         
         // Process levels from coarse to fine
         for (byte level = 0; level <= maxDepth; level++) {
@@ -1489,10 +1501,13 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
                 }
             } else {
                 // For finer levels, check all nodes at this level
+                log.debug("Checking level {}: {} nodes", level, nodesAtLevel.size());
                 for (var nodeKey : nodesAtLevel) {
                     var node = spatialIndex.get(nodeKey);
                     if (node != null && !node.isEmpty()) {
-                        if (checkTetrahedronBoundsIntersection(nodeKey, bounds)) {
+                        var intersects = checkTetrahedronBoundsIntersection(nodeKey, bounds);
+                        log.debug("  Node {}: intersects={}", nodeKey, intersects);
+                        if (intersects) {
                             intersectingNodes.add(nodeKey);
                         }
                     }
@@ -1524,6 +1539,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
             tetMinZ = Math.min(tetMinZ, vertex.z);
             tetMaxZ = Math.max(tetMaxZ, vertex.z);
         }
+        
+        log.debug("    Tet AABB: [{}, {}] x [{}, {}] x [{}, {}]", 
+                  tetMinX, tetMaxX, tetMinY, tetMaxY, tetMinZ, tetMaxZ);
         
         // AABB intersection test
         return !(tetMaxX < bounds.minX() || tetMinX > bounds.maxX() || 
@@ -2603,6 +2621,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         var anchorY = (int) (Math.floor(point.y / cellSize) * cellSize);
         var anchorZ = (int) (Math.floor(point.z / cellSize) * cellSize);
 
+        log.debug("locate: point={}, level={}, cellSize={}, anchor=({}, {}, {})", 
+                  point, level, cellSize, anchorX, anchorY, anchorZ);
+
         // Step 2: Use deterministic S0-S5 classification based on distance to tetrahedron centroids
         // This approach achieved 100% accuracy in testing and is much faster than testing all 6
         var relX = (point.x - anchorX) / cellSize; // Normalize to [0,1]
@@ -2610,7 +2631,9 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         var relZ = (point.z - anchorZ) / cellSize;
         
         byte type = classifyPointInS0S5Cube(relX, relY, relZ);
-        return new Tet(anchorX, anchorY, anchorZ, level, type);
+        var tet = new Tet(anchorX, anchorY, anchorZ, level, type);
+        log.debug("locate: created Tet with type={}, coordinates={}", type, java.util.Arrays.toString(tet.coordinates()));
+        return tet;
     }
 
     /**

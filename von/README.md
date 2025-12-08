@@ -1,5 +1,8 @@
 # Von Module
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 Distributed spatial perception framework for Luciferase
 
 ## Overview

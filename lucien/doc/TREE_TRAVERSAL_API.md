@@ -1,5 +1,8 @@
 # Tree Traversal API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Tree Traversal API provides flexible and efficient methods for visiting nodes and entities in spatial tree

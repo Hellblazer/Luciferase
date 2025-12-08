@@ -1,5 +1,8 @@
 # Luciferase
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
 3D spatial indexing and visualization library for Java 24.
@@ -31,7 +34,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 - Visualization & Rendering
   - JavaFX 3D visualization
   - LWJGL-based OpenGL rendering
-  - ESVO (Efficient Sparse Voxel Octrees) implementation (Laine & Karras 2010)
+  - ESVO (Efficient Sparse Voxel Octrees) core algorithms complete (Laine & Karras 2010 reference)
   - Stack-based ray traversal optimized for GPU architectures
   - Mesh generation and contour extraction
 
@@ -42,10 +45,10 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 | Module | Description |
 |--------|-------------|
 | [common](common/README.md) | Collections and geometry utilities |
-| [resource](resource/README.md) | Shared resources, shaders, and configuration files |
+| **resource** | Shared resources, shaders, and configuration files |
 | [lucien](lucien/README.md) | Core spatial indexing implementation (Octree, Tetree, collision detection) |
 | [render](render/README.md) | ESVO implementation with LWJGL rendering, FFM integration |
-| [gpu-test-framework](gpu-test-framework/README.md) | GPU testing infrastructure and benchmarking utilities |
+| **gpu-test-framework** | GPU testing infrastructure and benchmarking utilities |
 | [sentry](sentry/README.md) | Delaunay tetrahedralization for kinetic point tracking |
 | [portal](portal/README.md) | JavaFX 3D visualization and mesh handling |
 | [von](von/README.md) | Distributed spatial perception framework |
@@ -146,13 +149,10 @@ Expected benchmark categories (with 10,000 entities):
 
 - [Architecture Overview](lucien/doc/LUCIEN_ARCHITECTURE.md)
 - [Performance Metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md)
-- [ESVO Implementation](render/doc/ESVO_COMPLETION_SUMMARY.md)
-- [Java 24 FFM Integration](render/doc/JAVA_24_FFM_PLAN.md)
-- [API Documentation](https://hellblazer.github.io/Luciferase/) (Javadoc)
 
 ## Contributing
 
-Contributions are welcome. Please read our [contributing guidelines](CONTRIBUTING.md) before submitting PRs.
+Contributions are welcome. Please follow the project's code style and testing standards when submitting PRs.
 
 ## License
 
@@ -164,7 +164,6 @@ See [LICENSE](LICENSE) for details.
 
 - ESVO implementation based on Laine & Karras 2010 paper "Efficient Sparse Voxel Octrees"
 - Inspired by [t8code](https://github.com/DLR-AMR/t8code) for tetrahedral indexing
-- Built with [PrimeMover](https://github.com/Hellblazer/PrimeMover) simulation framework
 
 ## Contact
 

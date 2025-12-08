@@ -1,5 +1,8 @@
 # K-Nearest Neighbors API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 The K-Nearest Neighbors (k-NN) API provides efficient methods for finding the closest entities to a query point in 3D
 space. This is essential for proximity queries, spatial clustering, and location-based services.
 

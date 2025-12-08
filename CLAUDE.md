@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Session Initialization
@@ -95,7 +98,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 
 ### Critical Context Files
 
-When working with Octree implementation, use the C++ code in the [Octree directory](./Octree) as the reference implementation.
+When working with Octree implementation, use the C++ code in the Octree directory at the repository root as the reference implementation.
 
 The Java implementation uses a unified generic architecture:
 - **Generic Base**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>`
@@ -111,11 +114,8 @@ For accurate architecture documentation, see:
 - `lucien/doc/PERFORMANCE_METRICS_MASTER.md` - Current performance metrics
 - `render/doc/ESVO_COMPLETION_SUMMARY.md` - ESVO implementation status
 
-Historical documents (archived, describe unimplemented or superseded features):
-- `lucien/archived/SPATIAL_INDEX_CONSOLIDATION.md` - Details of the consolidation changes
-- `lucien/archived/TETREE_PORTING_PLAN.md` - Planned features never built
-- `lucien/archived/TETRAHEDRAL_DOMAIN_ANALYSIS.md` - Technical analysis for unimplemented features
-- `lucien/archived/TETREE_OCTREE_ANALYSIS.md` - Comparison of architectures
+Historical reference:
+- `HISTORICAL_FIXES_REFERENCE.md` - Complete archive of bug fixes and optimizations from June-August 2025
 
 ### Dependencies
 

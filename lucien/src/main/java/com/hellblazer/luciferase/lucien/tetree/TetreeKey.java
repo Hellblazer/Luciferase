@@ -17,8 +17,10 @@
 package com.hellblazer.luciferase.lucien.tetree;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
+import javax.vecmath.Point3f;
 import java.util.Objects;
 
 /**
@@ -428,6 +430,170 @@ public abstract class TetreeKey<K extends TetreeKey<K>> implements SpatialKey<Te
             return getRoot();
         }
         return create((byte) proto.getLevel(), proto.getLow(), proto.getHigh());
+    }
+
+    // ===== SFC Range Estimation for k-NN Optimization =====
+    
+    /**
+     * Represents a range of Tetree keys for spatial queries.
+     * Used to prune k-NN search using ConcurrentSkipListMap.subMap().
+     * 
+     * @param lower the lower bound (inclusive) of the TetreeKey range
+     * @param upper the upper bound (exclusive) of the TetreeKey range
+     */
+    public record SFCRange(TetreeKey<?> lower, TetreeKey<?> upper) {
+        public SFCRange {
+            Objects.requireNonNull(lower, "Lower bound cannot be null");
+            Objects.requireNonNull(upper, "Upper bound cannot be null");
+        }
+    }
+    
+    /**
+     * Estimate the appropriate Tetree depth for a given search radius.
+     * This maps a geometric distance to the corresponding SFC depth where cells
+     * are approximately the size of the search radius.
+     * 
+     * From Paper 4 (Space-Filling Trees for Motion Planning):
+     * - Larger radius → coarser level (fewer, larger cells)
+     * - Smaller radius → finer level (more, smaller cells)
+     * 
+     * Note: Uses the same geometric sizing as Octree (Constants.lengthAtLevel)
+     * since tetrahedra are inscribed in cubes of the same cell size.
+     * 
+     * @param radius the search radius in world coordinates
+     * @return the estimated Tetree depth (level) appropriate for this radius
+     */
+    public static byte estimateSFCDepth(float radius) {
+        if (radius <= 0) {
+            throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
+        }
+        
+        // Find the finest level where cell diagonal >= radius
+        // Start from finest level (small cells) and work towards coarser levels (large cells)
+        // Return the first level where the cell is large enough to cover the radius
+        for (byte level = MortonCurve.MAX_REFINEMENT_LEVEL; level >= 0; level--) {
+            float cellSize = Constants.lengthAtLevel(level);
+            float cellDiagonal = (float) (cellSize * Math.sqrt(3.0));
+            
+            // If cell diagonal at this level >= radius, this is our target level
+            if (cellDiagonal >= radius) {
+                return level;
+            }
+        }
+        
+        // Radius is larger than even the root cell (extremely large), use root level
+        return 0;
+    }
+    
+    /**
+     * Estimate the SFC range (TetreeKey range) that covers a spherical region.
+     * This enables pruned k-NN search using ConcurrentSkipListMap.subMap().
+     * 
+     * Algorithm from Paper 4:
+     * 1. Compute axis-aligned bounding box (AABB) around the sphere
+     * 2. Find tetrahedra that contain the AABB corners at the estimated depth
+     * 3. Return range [min_key, max_key] covering all entities in the sphere
+     * 
+     * Note: Returns a conservative estimate (may include entities outside the sphere).
+     * Caller must filter by actual distance.
+     * 
+     * @param center the center point of the search sphere
+     * @param radius the search radius
+     * @return SFCRange covering the spherical region (conservative estimate)
+     */
+    public static SFCRange estimateSFCRange(Point3f center, float radius) {
+        if (radius <= 0) {
+            throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
+        }
+        
+        // Step 1: Estimate appropriate depth for this radius
+        byte level = estimateSFCDepth(radius);
+        float cellSize = Constants.lengthAtLevel(level);
+        
+        // Step 2: Compute AABB around sphere
+        // Expand by cell size to ensure complete coverage (conservative)
+        float expansion = cellSize;
+        
+        // Clamp coordinates to valid range [0, MAX_COORD]
+        // MAX_COORD = 2^21 - 1 = 2,097,151
+        float maxCoord = Constants.MAX_COORD;
+        
+        Point3f min = new Point3f(
+            Math.max(0, center.x - radius - expansion),
+            Math.max(0, center.y - radius - expansion),
+            Math.max(0, center.z - radius - expansion)
+        );
+        Point3f max = new Point3f(
+            Math.min(maxCoord, center.x + radius + expansion),
+            Math.min(maxCoord, center.y + radius + expansion),
+            Math.min(maxCoord, center.z + radius + expansion)
+        );
+        
+        // Step 3: Find tetrahedra containing the AABB corners
+        // Use Tet.locatePointBeyRefinementFromRoot to find the tetrahedral cell at this level
+        Tet minTet = Tet.locatePointBeyRefinementFromRoot(min.x, min.y, min.z, level);
+        Tet maxTet = Tet.locatePointBeyRefinementFromRoot(max.x, max.y, max.z, level);
+        
+        if (minTet == null || maxTet == null) {
+            // Fallback: use root tetrahedron range
+            return new SFCRange(getRoot(), getRoot());
+        }
+        
+        // Convert to TetreeKeys
+        TetreeKey<?> minKey = minTet.tmIndex();
+        TetreeKey<?> maxKey = maxTet.tmIndex();
+        
+        // Ensure proper ordering (min <= max)
+        if (minKey.compareTo(maxKey) > 0) {
+            var tmp = minKey;
+            minKey = maxKey;
+            maxKey = tmp;
+        }
+        
+        // Step 4: Create inclusive range
+        // For subMap(), we need [lower, upper) 
+        // We need to increment the upper bound, which requires getting the next key
+        TetreeKey<?> upperBound = getNextKey(maxKey);
+        
+        return new SFCRange(minKey, upperBound);
+    }
+    
+    /**
+     * Get the next TetreeKey in SFC order for creating exclusive upper bounds.
+     * This is needed for ConcurrentSkipListMap.subMap(lower, upper) where upper is exclusive.
+     * 
+     * @param key the current key
+     * @return the next key in SFC order, or a sentinel maximum key if at the end
+     */
+    private static TetreeKey<?> getNextKey(TetreeKey<?> key) {
+        // Strategy: Try to increment the tm-index by 1
+        // If we overflow at this level, return a key at level-1 (coarser level)
+        // This ensures we don't miss any keys in the range
+        
+        long lowBits = key.getLowBits();
+        long highBits = key.getHighBits();
+        byte level = key.getLevel();
+        
+        // Try to increment low bits
+        if (lowBits < Long.MAX_VALUE) {
+            return create(level, lowBits + 1, highBits);
+        }
+        
+        // Low bits overflow, try to increment high bits
+        if (highBits < Long.MAX_VALUE) {
+            return create(level, 0, highBits + 1);
+        }
+        
+        // Both overflow - use a sentinel at parent level if possible
+        if (level > 0) {
+            var parent = key.parent();
+            if (parent != null) {
+                return getNextKey((TetreeKey<?>) parent);
+            }
+        }
+        
+        // At root and overflowed - return maximum possible key
+        return create(level, Long.MAX_VALUE, Long.MAX_VALUE);
     }
 
 }

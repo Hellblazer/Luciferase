@@ -1,5 +1,8 @@
 # Ghost API
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Ghost API provides comprehensive distributed spatial index support through ghost elements - non-local elements that maintain neighbor relationships with local elements. This enables efficient parallel computations without explicit communication during computation phases.
@@ -361,7 +364,7 @@ try {
 
 ## See Also
 
-- [Ghost Functionality Analysis](GHOST_FUNCTIONALITY_ANALYSIS.md) - Detailed comparison with t8code
-- [Ghost Implementation Status](GHOST_IMPLEMENTATION_STATUS.md) - Current implementation state
+- [Forest Management API](FOREST_MANAGEMENT_API.md) - Multi-tree coordination with ghost elements
 - [Neighbor Detection](NEIGHBOR_DETECTION_API.md) - Detailed neighbor detection API
+- [Architecture Summary](ARCHITECTURE_SUMMARY.md) - Overall architecture including ghost layer
 - [Forest Management API](FOREST_MANAGEMENT_API.md) - Multi-tree ghost coordination

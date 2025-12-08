@@ -1,5 +1,8 @@
 # gRPC Module
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 Protocol Buffer definitions and gRPC services for distributed spatial computing.
 
 ## Overview

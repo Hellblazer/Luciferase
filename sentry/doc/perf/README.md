@@ -38,7 +38,7 @@ The Sentry module has undergone extensive optimization. Most planned optimizatio
 - **[OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md)** - Original optimization roadmap (mostly completed)
 
 ### Session Management
-- **[OPTIMIZATION_SESSION.md](OPTIMIZATION_SESSION.md)** - Session state for optimization work
+- Session state and optimization tracking is managed through the documentation above
 
 ## Key Performance Features
 

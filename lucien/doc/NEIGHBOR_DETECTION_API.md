@@ -1,5 +1,8 @@
 # Neighbor Detection API
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Neighbor Detection API provides topological neighbor finding for spatial indices, enabling efficient identification of adjacent elements in 3D space. This API is essential for ghost element creation, collision detection optimization, and spatial queries.

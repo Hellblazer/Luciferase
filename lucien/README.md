@@ -1,5 +1,8 @@
 # Lucien Module
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 Core spatial indexing and collision detection for Luciferase
 
 ## Overview
@@ -168,7 +171,6 @@ mvn test -pl lucien -Pperformance
 
 - [Architecture Overview](doc/LUCIEN_ARCHITECTURE.md)
 - [Performance Metrics](doc/PERFORMANCE_METRICS_MASTER.md)
-- [Spatial Index Consolidation](archived/SPATIAL_INDEX_CONSOLIDATION.md)
 
 ## License
 

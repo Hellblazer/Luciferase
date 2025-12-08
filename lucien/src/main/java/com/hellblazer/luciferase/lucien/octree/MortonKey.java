@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.octree;
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 
+import javax.vecmath.Point3f;
 import java.util.Objects;
 
 /**
@@ -33,6 +34,20 @@ import java.util.Objects;
  * @author hal.hildebrand
  */
 public final class MortonKey implements SpatialKey<MortonKey> {
+    
+    /**
+     * Represents a range of Morton keys for spatial queries.
+     * Used to prune k-NN search using ConcurrentSkipListMap.subMap().
+     * 
+     * @param lower the lower bound (inclusive) of the Morton key range
+     * @param upper the upper bound (exclusive) of the Morton key range
+     */
+    public record SFCRange(MortonKey lower, MortonKey upper) {
+        public SFCRange {
+            Objects.requireNonNull(lower, "Lower bound cannot be null");
+            Objects.requireNonNull(upper, "Upper bound cannot be null");
+        }
+    }
 
     private final long mortonCode;
     private final byte level;  // Cached for performance
@@ -230,5 +245,113 @@ public final class MortonKey implements SpatialKey<MortonKey> {
      */
     public static MortonKey fromProto(com.hellblazer.luciferase.lucien.forest.ghost.proto.MortonKey proto) {
         return new MortonKey(proto.getMortonCode());
+    }
+    
+    // ===== SFC Range Estimation for k-NN Optimization =====
+    
+    /**
+     * Estimate the appropriate Morton depth for a given search radius.
+     * This maps a geometric distance to the corresponding SFC depth where cells
+     * are approximately the size of the search radius.
+     * 
+     * From Paper 4 (Space-Filling Trees for Motion Planning):
+     * - Larger radius → coarser level (fewer, larger cells)
+     * - Smaller radius → finer level (more, smaller cells)
+     * 
+     * @param radius the search radius in world coordinates
+     * @return the estimated Morton depth (level) appropriate for this radius
+     */
+    public static byte estimateSFCDepth(float radius) {
+        if (radius <= 0) {
+            throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
+        }
+        
+        // Find the finest level where cell diagonal >= radius
+        // Start from finest level (small cells) and work towards coarser levels (large cells)
+        // Return the first level where the cell is large enough to cover the radius
+        for (byte level = Constants.getMaxRefinementLevel(); level >= 0; level--) {
+            float cellSize = Constants.lengthAtLevel(level);
+            float cellDiagonal = (float) (cellSize * Math.sqrt(3.0));
+            
+            // If cell diagonal at this level >= radius, this is our target level
+            if (cellDiagonal >= radius) {
+                return level;
+            }
+        }
+        
+        // Radius is larger than even the root cell (extremely large), use root level
+        return 0;
+    }
+    
+    /**
+     * Estimate the SFC range (Morton key range) that covers a spherical region.
+     * This enables pruned k-NN search using ConcurrentSkipListMap.subMap().
+     * 
+     * Algorithm from Paper 4:
+     * 1. Compute axis-aligned bounding box (AABB) around the sphere
+     * 2. Convert AABB corners to Morton keys at the estimated depth
+     * 3. Return range [min_morton, max_morton] covering all entities in the sphere
+     * 
+     * Note: Returns a conservative estimate (may include entities outside the sphere).
+     * Caller must filter by actual distance.
+     * 
+     * @param center the center point of the search sphere
+     * @param radius the search radius
+     * @return SFCRange covering the spherical region (conservative estimate)
+     */
+    public static SFCRange estimateSFCRange(Point3f center, float radius) {
+        if (radius <= 0) {
+            throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
+        }
+        
+        // Step 1: Estimate appropriate depth for this radius
+        byte level = estimateSFCDepth(radius);
+        float cellSize = Constants.lengthAtLevel(level);
+        
+        // Step 2: Compute AABB around sphere
+        // Expand by cell size to ensure complete coverage (conservative)
+        float expansion = cellSize;
+        
+        // Clamp coordinates to valid Morton range [0, MAX_COORD]
+        // MAX_COORD = 2^21 - 1 = 2,097,151
+        float maxCoord = Constants.MAX_COORD;
+        
+        Point3f min = new Point3f(
+            Math.max(0, center.x - radius - expansion),
+            Math.max(0, center.y - radius - expansion),
+            Math.max(0, center.z - radius - expansion)
+        );
+        Point3f max = new Point3f(
+            Math.min(maxCoord, center.x + radius + expansion),
+            Math.min(maxCoord, center.y + radius + expansion),
+            Math.min(maxCoord, center.z + radius + expansion)
+        );
+        
+        // Step 3: Convert AABB corners to Morton keys
+        long minMortonCode = Constants.calculateMortonIndex(min, level);
+        long maxMortonCode = Constants.calculateMortonIndex(max, level);
+        
+        // Ensure proper ordering (min <= max)
+        if (minMortonCode > maxMortonCode) {
+            long tmp = minMortonCode;
+            minMortonCode = maxMortonCode;
+            maxMortonCode = tmp;
+        }
+        
+        // Step 4: Create inclusive range
+        // For subMap(), we need [lower, upper) so increment upper bound
+        var lowerBound = new MortonKey(minMortonCode, level);
+        
+        // Increment upper bound for exclusive upper range in subMap()
+        // Handle overflow by using max possible Morton code at this level
+        long upperMortonCode;
+        if (maxMortonCode == Long.MAX_VALUE) {
+            upperMortonCode = Long.MAX_VALUE;
+        } else {
+            upperMortonCode = maxMortonCode + 1;
+        }
+        var upperBound = new MortonKey(upperMortonCode, level);
+        
+        return new SFCRange(lowerBound, upperBound);
     }
 }

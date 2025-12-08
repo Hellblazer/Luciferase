@@ -1,5 +1,8 @@
 # Tree Balancing API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Tree Balancing API provides automated and manual tree optimization capabilities to maintain efficient spatial index

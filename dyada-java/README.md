@@ -828,14 +828,14 @@ Licensed under AGPL v3.0 - see the LICENSE file for details.
 
 ## Related Projects
 
-- **[Luciferase](../lucien/)**: 3D spatial visualization and rendering framework with advanced spatial indexing
-- **[Portal](../portal/)**: JavaFX-based 3D mesh visualization components with camera controls
-- **[Render](../render/)**: GPU-accelerated spatial rendering pipeline with ESVO support
-- **[Sentry](../sentry/)**: Delaunay tetrahedralization for kinetic point tracking
+- **Luciferase**: 3D spatial visualization and rendering framework with advanced spatial indexing (lucien module)
+- **Portal**: JavaFX-based 3D mesh visualization components with camera controls (portal module)
+- **Render**: GPU-accelerated spatial rendering pipeline with ESVO support (render module)
+- **Sentry**: Delaunay tetrahedralization for kinetic point tracking (sentry module)
 
 ## API Documentation
 
-For detailed API documentation, see the generated [Javadoc](target/site/apidocs/index.html) or explore the comprehensive test suite for usage examples.
+For detailed API documentation, build the Javadoc using `mvn javadoc:javadoc` or explore the comprehensive test suite for usage examples.
 
 ### Quick API Reference
 

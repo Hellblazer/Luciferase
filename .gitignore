@@ -22,3 +22,14 @@ target/debug-test.csv
 /lucien/doc/dsoc/archive/
 /dyada-java/.jqwik-database
 /resource/logs
+
+# Documentation artifacts
+*.md.backup
+*.md.backup-*
+performance-results/summary-*.txt
+.github/reviews/review-*.md
+
+# Beads workflow (managed on separate branch)
+.beads/
+.gitattributes
+/.vscode/settings.json

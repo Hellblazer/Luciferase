@@ -39,7 +39,7 @@ import java.util.*;
  * 
  * @author Hal Hildebrand
  */
-public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<?>> {
+public class TetreeNeighborDetector implements NeighborDetector<TetreeKey<? extends TetreeKey>> {
     
     private static final Logger log = LoggerFactory.getLogger(TetreeNeighborDetector.class);
     

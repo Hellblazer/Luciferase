@@ -1,5 +1,8 @@
 # Simulation Module
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 Advanced physics simulation and animation framework for 3D spatial systems.
 
 ## Overview

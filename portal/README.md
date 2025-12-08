@@ -1,5 +1,8 @@
 # Portal Module
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 JavaFX 3D visualization and mesh handling for Luciferase
 
 ## Overview

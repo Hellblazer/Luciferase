@@ -1,5 +1,8 @@
 # Prism Spatial Index API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Prism spatial index provides anisotropic spatial subdivision combining fine horizontal granularity with coarse

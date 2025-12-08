@@ -1,5 +1,8 @@
 # Lucien Module Architecture
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The lucien module provides spatial indexing capabilities through a unified architecture that supports octree (cubic),
@@ -74,7 +77,7 @@ com.hellblazer.luciferase.lucien/
 │   ├── AbstractTreeVisitor - Base implementation
 │   ├── Concrete: EntityCollectorVisitor, NodeCountVisitor
 │   └── Support: TraversalContext, TraversalStrategy
-├── forest/ (16 classes + ghost subpackage)
+├── forest/ (28 classes total: 8 core + 11 ghost + 9 other)
 │   ├── Core: Forest, TreeNode, TreeMetadata, TreeLocation
 │   ├── Configuration: ForestConfig
 │   ├── Management: DynamicForestManager, ForestEntityManager, ForestLoadBalancer

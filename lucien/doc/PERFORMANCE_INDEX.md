@@ -9,7 +9,8 @@
 
 This index guides you to performance-related documentation for the Luciferase spatial indexing library.
 
-**Last Updated**: July 25, 2025
+**Last Updated**: 2025-12-08  
+**Status**: Current
 
 ## Main Performance Documents
 
@@ -34,19 +35,7 @@ This index guides you to performance-related documentation for the Luciferase sp
 
 ## Specialized Performance Reports
 
-### [COLLISION_SYSTEM_PERFORMANCE_REPORT.md](COLLISION_SYSTEM_PERFORMANCE_REPORT.md)
-
-**Collision detection performance**
-
-- Discrete collision: 27-93 ns per check
-- Continuous collision detection
-- Spatial index integration
-
-### [BATCH_PERFORMANCE.md](BATCH_PERFORMANCE.md)
-
-**Batch loading analysis**
-
-- Tetree shows 74-296x speedup in batch mode
+All specialized performance metrics have been consolidated into [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md) for consistency.
 - Bulk operation strategies
 
 ### [SPATIAL_INDEX_PERFORMANCE_GUIDE.md](./SPATIAL_INDEX_PERFORMANCE_GUIDE.md)

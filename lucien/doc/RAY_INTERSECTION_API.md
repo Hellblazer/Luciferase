@@ -1,5 +1,8 @@
 # Ray Intersection API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Ray Intersection API provides efficient ray tracing capabilities for spatial queries in Octree, Tetree, and Prism

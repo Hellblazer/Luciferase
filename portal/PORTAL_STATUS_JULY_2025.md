@@ -181,18 +181,7 @@ The Portal module includes comprehensive technical documentation:
     - Visual design requirements and implementation phases
     - Performance targets and success metrics
     - Integration requirements with lucien module
-
-2. **[TRANSFORM_BASED_ARCHITECTURE.md](doc/TRANSFORM_BASED_ARCHITECTURE.md)**
-    - Memory-efficient rendering approach using reference meshes
-    - Transform pipeline for large coordinate systems
-    - Implementation details for S0-S5 tetrahedra types
-    - Performance benefits and architectural rationale
-
-3. **[TRANSFORM_VERIFICATION_GUIDE.md](doc/TRANSFORM_VERIFICATION_GUIDE.md)**
-    - Practical guide for verifying transform-based rendering
-    - Debug techniques and expected outputs
-    - Memory usage comparisons
-    - Visual verification methods
+    - Transform-based rendering architecture and verification details
 
 ## Summary
 

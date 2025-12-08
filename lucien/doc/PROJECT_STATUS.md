@@ -108,7 +108,6 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 - [Lucien Architecture Overview](./LUCIEN_ARCHITECTURE.md)
 - [Architecture Summary](./ARCHITECTURE_SUMMARY.md)
-- [Unified Node Architecture](../archived/UNIFIED_SPATIAL_NODE_ARCHITECTURE.md)
 
 ### Performance
 
@@ -136,7 +135,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
   - 5 ghost algorithms (MINIMAL, CONSERVATIVE, AGGRESSIVE, ADAPTIVE, CUSTOM)
 - **Performance**: All targets exceeded (99% better memory, 95-99% faster creation)
 - **Testing**: Comprehensive integration tests, all passing
-- **Documentation**: [Ghost Functionality Analysis](./GHOST_FUNCTIONALITY_ANALYSIS.md)
+- **Documentation**: [Ghost API](./GHOST_API.md)
 
 ### Previously Completed (July 12, 2025)
 

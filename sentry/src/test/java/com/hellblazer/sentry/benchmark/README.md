@@ -1,5 +1,8 @@
 # Sentry Benchmark Suite
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 This directory contains JMH benchmarks for measuring Sentry module performance.
 
 ## Benchmarks
