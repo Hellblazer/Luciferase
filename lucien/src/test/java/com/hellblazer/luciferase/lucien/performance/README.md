@@ -1,5 +1,8 @@
 # Spatial Index Performance Testing Framework
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 This directory contains a comprehensive performance testing framework for evaluating the performance characteristics of
 spatial index implementations (Octree and Tetree).
 

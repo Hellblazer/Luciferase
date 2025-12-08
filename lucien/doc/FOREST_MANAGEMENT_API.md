@@ -1,5 +1,8 @@
 # Forest Management API
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 The Forest Management API provides multi-tree spatial indexing capabilities, enabling coordinated operations across multiple spatial index trees. This API supports distributed spatial indexing, load balancing, and advanced spatial partitioning strategies.
 
 ## Core Forest Classes

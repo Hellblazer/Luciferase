@@ -1,5 +1,8 @@
 # Frustum Culling API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 The Frustum Culling API provides efficient methods for determining which entities are visible within a 3D viewing
 frustum. This is essential for rendering optimization in 3D graphics applications.
 

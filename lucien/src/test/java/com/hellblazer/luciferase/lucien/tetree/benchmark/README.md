@@ -1,5 +1,8 @@
 # Tetree Performance Optimization Benchmarks
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 This directory contains JMH (Java Microbenchmark Harness) benchmarks that measure the performance improvements achieved
 through the optimization work on the Tetree spatial index implementation.
 

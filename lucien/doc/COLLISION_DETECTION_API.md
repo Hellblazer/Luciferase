@@ -1,5 +1,8 @@
 # Collision Detection API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Collision Detection API provides efficient broad-phase and narrow-phase collision detection for entities in spatial

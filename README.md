@@ -1,5 +1,8 @@
 # Luciferase
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
 3D spatial indexing and visualization library for Java 24.

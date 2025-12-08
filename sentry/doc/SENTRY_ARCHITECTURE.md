@@ -1,5 +1,8 @@
 # Sentry Module Architecture
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Sentry module implements a 3D Delaunay tetrahedralization data structure optimized for kinetic point tracking and spatial awareness systems. It provides a spatial publish/subscribe framework for higher-level applications.

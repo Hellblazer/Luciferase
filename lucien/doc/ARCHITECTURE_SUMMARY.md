@@ -1,5 +1,8 @@
 # Lucien Architecture Summary
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Purpose
 
 This document provides a high-level summary of the Luciferase lucien module architecture. For detailed information, see

@@ -1,5 +1,8 @@
 # CLAUDE.md
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Session Initialization

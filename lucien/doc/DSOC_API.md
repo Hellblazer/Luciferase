@@ -1,5 +1,8 @@
 # DSOC (Dynamic Scene Occlusion Culling) API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The DSOC system provides efficient occlusion culling for dynamic scenes by maintaining Temporal Bounding Volumes (TBVs) for moving entities. DSOC is integrated at the AbstractSpatialIndex level, making it available for all spatial index implementations (Octree, Tetree, etc.).

@@ -1,5 +1,8 @@
 # Core Spatial Index API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 This document provides a comprehensive reference for the core spatial index operations including entity management, spatial queries, and node operations. It combines all fundamental functionality for working with Octree, Tetree, and Prism spatial indices.
 
 ## Overview

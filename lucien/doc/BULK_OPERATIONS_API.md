@@ -1,5 +1,8 @@
 # Bulk Operations API Documentation
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 The Bulk Operations API provides high-performance methods for inserting, updating, and managing large numbers of
 entities in spatial indices. These operations can be 5-10x faster than individual insertions.
 

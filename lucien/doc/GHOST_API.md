@@ -1,5 +1,8 @@
 # Ghost API
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The Ghost API provides comprehensive distributed spatial index support through ghost elements - non-local elements that maintain neighbor relationships with local elements. This enables efficient parallel computations without explicit communication during computation phases.

@@ -1,5 +1,8 @@
 # Sentry Module
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 Delaunay tetrahedralization and kinetic point tracking for Luciferase
 
 ## Overview

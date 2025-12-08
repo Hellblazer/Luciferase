@@ -9,7 +9,8 @@
 
 This index guides you to performance-related documentation for the Luciferase spatial indexing library.
 
-**Last Updated**: July 25, 2025
+**Last Updated**: 2025-12-08  
+**Status**: Current
 
 ## Main Performance Documents
 

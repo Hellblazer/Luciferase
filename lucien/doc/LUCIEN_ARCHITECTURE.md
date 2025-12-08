@@ -1,5 +1,8 @@
 # Lucien Module Architecture
 
+**Last Updated**: 2025-12-08
+**Status**: Current
+
 ## Overview
 
 The lucien module provides spatial indexing capabilities through a unified architecture that supports octree (cubic),
