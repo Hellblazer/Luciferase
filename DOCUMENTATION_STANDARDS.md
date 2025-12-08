@@ -62,7 +62,7 @@ All primary documentation files (not included: code comments, inline documentati
 
 ### 2. Cross-Reference Standards
 
-- **Link Format**: Use relative paths for internal documents: `[API Guide](./CORE_SPATIAL_INDEX_API.md)`
+- **Link Format**: Use relative paths for internal documents: `[API Guide](./lucien/doc/CORE_SPATIAL_INDEX_API.md)`
 - **External Links**: Use absolute URLs with full path
 - **Broken References**: Document review process must catch broken links
 - **Mandatory Cross-References**:

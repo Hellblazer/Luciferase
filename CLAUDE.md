@@ -98,7 +98,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 
 ### Critical Context Files
 
-When working with Octree implementation, use the C++ code in the [Octree directory](./Octree) as the reference implementation.
+When working with Octree implementation, use the C++ code in the Octree directory at the repository root as the reference implementation.
 
 The Java implementation uses a unified generic architecture:
 - **Generic Base**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>`
