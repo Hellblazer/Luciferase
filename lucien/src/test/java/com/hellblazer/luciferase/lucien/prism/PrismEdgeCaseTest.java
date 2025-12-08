@@ -155,9 +155,9 @@ public class PrismEdgeCaseTest {
         var negativeK = prism.kNearestNeighbors(new Point3f(25.0f, 25.0f, 50.0f), -5, Float.MAX_VALUE);
         assertTrue(negativeK.isEmpty());
         
-        // k-NN with zero search radius
-        var zeroRadius = prism.kNearestNeighbors(new Point3f(25.0f, 25.0f, 50.0f), 10, 0.0f);
-        assertTrue(zeroRadius.isEmpty() || zeroRadius.size() == 1); // May find entity at exact position
+        // k-NN with zero search radius - should throw IllegalArgumentException
+        assertThrows(IllegalArgumentException.class, () -> 
+            prism.kNearestNeighbors(new Point3f(25.0f, 25.0f, 50.0f), 10, 0.0f));
         
         // Range query with zero-size cube
         var zeroCube = new Spatial.Cube(50.0f, 25.0f, 50.0f, 0.0f);
