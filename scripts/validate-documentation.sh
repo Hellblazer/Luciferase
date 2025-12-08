@@ -36,7 +36,7 @@ echo ""
 # Test 1: Check for required headers
 echo -e "${BLUE}[1/10] Checking for required headers...${NC}"
 MISSING_HEADERS=0
-for file in $(find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -type f); do
+for file in $(find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.beads/*" -not -path "*/Octree/*" -not -path "*/t8code/*" -type f); do
     if ! grep -q "Last Updated" "$file" 2>/dev/null; then
         if [[ "$file" == *"README.md" ]] || [[ "$file" == *"CLAUDE.md" ]] || [[ "$file" == *"_API.md" ]] || [[ "$file" == *"ARCHITECTURE"* ]]; then
             echo -e "${YELLOW}  Missing 'Last Updated' header: $file${NC}"
@@ -56,7 +56,7 @@ echo ""
 # Test 2: Check for broken internal links
 echo -e "${BLUE}[2/10] Checking for broken internal links...${NC}"
 BROKEN_LINKS=0
-for file in $(find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -type f); do
+for file in $(find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.beads/*" -not -path "*/Octree/*" -not -path "*/t8code/*" -type f); do
     # Extract markdown links [text](path.md)
     while IFS= read -r link; do
         # Only check relative paths (not URLs)
@@ -84,7 +84,7 @@ echo -e "${BLUE}[3/10] Checking for outdated documentation...${NC}"
 OUTDATED_DOCS=0
 SIX_MONTHS_AGO=$(date -v-6m '+%Y-%m-%d' 2>/dev/null || date -d '6 months ago' '+%Y-%m-%d' 2>/dev/null || echo "2025-06-06")
 
-for file in $(find . -name "*PERFORMANCE*.md" -o -name "*METRICS*.md" -not -path "*/.git/*"); do
+for file in $(find . -name "*PERFORMANCE*.md" -o -name "*METRICS*.md" -not -path "*/.git/*" -not -path "*/target/*"); do
     if grep -q "Last Updated" "$file"; then
         LAST_UPDATED=$(grep "Last Updated" "$file" | grep -oP '\d{4}-\d{2}-\d{2}' | head -1)
         if [[ "$LAST_UPDATED" < "$SIX_MONTHS_AGO" ]]; then
@@ -173,7 +173,7 @@ echo -e "${BLUE}[7/10] Verifying Java class references...${NC}"
 INVALID_REFS=0
 
 # Extract .java references from markdown and verify they exist
-for file in $(find . -name "*.md" -not -path "*/.git/*" -type f); do
+for file in $(find . -name "*.md" -not -path "*/.git/*" -not -path "*/target/*" -type f); do
     while IFS= read -r class_ref; do
         # Remove .java extension for search
         class_name="${class_ref%.java}"
@@ -235,7 +235,7 @@ echo ""
 # Test 10: Check documentation file sizes
 echo -e "${BLUE}[10/10] Checking documentation file sizes...${NC}"
 LARGE_DOCS=0
-for file in $(find . -name "*.md" -not -path "*/.git/*" -type f); do
+for file in $(find . -name "*.md" -not -path "*/.git/*" -not -path "*/target/*" -type f); do
     SIZE=$(wc -l < "$file" 2>/dev/null || echo "0")
     if [ "$SIZE" -gt 2000 ]; then
         echo -e "${YELLOW}  Large documentation file ($SIZE lines): $file${NC}"

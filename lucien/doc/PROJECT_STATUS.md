@@ -108,7 +108,6 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 - [Lucien Architecture Overview](./LUCIEN_ARCHITECTURE.md)
 - [Architecture Summary](./ARCHITECTURE_SUMMARY.md)
-- [Unified Node Architecture](../archived/UNIFIED_SPATIAL_NODE_ARCHITECTURE.md)
 
 ### Performance
 

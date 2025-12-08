@@ -601,7 +601,7 @@ spatialIndex.setAutoBalancingEnabled(true);
 - `BEY_TETRAHEDRAL_SUBDIVISION.md` - Bey algorithm details
 - `GHOST_API.md` - Ghost layer and distributed operations
 - `TREE_BALANCING_API.md` - Balancing strategies
-- `FOREST_MANAGEMENT_API.md` - Multi-tree forest operations
+- `FOREST_MANAGEMENT_API.md` - Forest management operations
 
 ### 8.3 Paper Reference
 **"A tetrahedral space-filling curve for non-conforming adaptive meshes"**

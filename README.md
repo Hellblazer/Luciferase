@@ -45,10 +45,10 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 | Module | Description |
 |--------|-------------|
 | [common](common/README.md) | Collections and geometry utilities |
-| [resource](resource/README.md) | Shared resources, shaders, and configuration files |
+| **resource** | Shared resources, shaders, and configuration files |
 | [lucien](lucien/README.md) | Core spatial indexing implementation (Octree, Tetree, collision detection) |
 | [render](render/README.md) | ESVO implementation with LWJGL rendering, FFM integration |
-| [gpu-test-framework](gpu-test-framework/README.md) | GPU testing infrastructure and benchmarking utilities |
+| **gpu-test-framework** | GPU testing infrastructure and benchmarking utilities |
 | [sentry](sentry/README.md) | Delaunay tetrahedralization for kinetic point tracking |
 | [portal](portal/README.md) | JavaFX 3D visualization and mesh handling |
 | [von](von/README.md) | Distributed spatial perception framework |
@@ -149,13 +149,11 @@ Expected benchmark categories (with 10,000 entities):
 
 - [Architecture Overview](lucien/doc/LUCIEN_ARCHITECTURE.md)
 - [Performance Metrics](lucien/doc/PERFORMANCE_METRICS_MASTER.md)
-- [ESVO Implementation](render/doc/ESVO_COMPLETION_SUMMARY.md)
-- [Java 24 FFM Integration](render/doc/JAVA_24_FFM_PLAN.md)
 - [API Documentation](https://hellblazer.github.io/Luciferase/) (Javadoc)
 
 ## Contributing
 
-Contributions are welcome. Please read our [contributing guidelines](CONTRIBUTING.md) before submitting PRs.
+Contributions are welcome. Please follow the project's code style and testing standards when submitting PRs.
 
 ## License
 

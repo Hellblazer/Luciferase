@@ -388,7 +388,7 @@ Retrieved:
 - `BEY_TETRAHEDRAL_SUBDIVISION.md` - Bey algorithm details
 - `GHOST_API.md` - Ghost layer API
 - `TREE_BALANCING_API.md` - Balancing strategies
-- `FOREST_MANAGEMENT_API.md` - Multi-tree forests
+- `FOREST_MANAGEMENT_API.md` - Forest management
 
 ### Code References
 - `/lucien/tetree/Tet.java` - Core tetrahedron implementation
