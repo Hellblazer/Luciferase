@@ -1,13 +1,107 @@
 # Performance Metrics Master Reference
 
-**Last Updated**: December 6, 2025
+**Last Updated**: December 8, 2025
 **Purpose**: Single source of truth for all spatial index performance metrics
 
 > **IMPORTANT**: All performance documentation should reference these numbers. Do not duplicate performance metrics in other files.
 
 > **NOTE**: Performance metrics include complete comparisons of Octree, Tetree, and Prism spatial indices.
 
-> **NEW**: k-NN optimization Phase 2 (caching) and Phase 3a (concurrent) complete as of December 6, 2025.
+> **NEW**: Epic 0 baseline benchmarks established (December 8, 2025). k-NN optimization Phase 2 (caching) and Phase 3a (concurrent) complete as of December 6, 2025.
+
+## Epic 0: Baseline Measurements (Bead 0.1 - December 8, 2025)
+
+Four JMH benchmarks established to measure pre-optimization baselines for Epic 1-4:
+
+### 1. Morton Encoding Baseline (Epic 1)
+
+**Benchmark**: `MortonEncodingBaselineBenchmark.java`
+
+Measures Morton encoding operations per second before SIMD optimizations.
+
+**Metrics to collect**:
+- `benchmarkMortonEncode`: Raw Morton curve encoding throughput (ops/sec)
+- `benchmarkCalculateMortonIndex`: Full Morton index calculation including quantization (ops/sec)
+- `benchmarkMortonDecode`: Morton decoding throughput (ops/sec)
+- `benchmarkMortonRoundTrip`: Encode + decode round-trip performance (ops/sec)
+
+**Target improvement (Epic 1)**: 2-4x speedup with SIMD
+
+**Location**: `lucien/src/test/java/.../benchmark/baseline/MortonEncodingBaselineBenchmark.java`
+
+### 2. Ray Traversal Baseline (Epic 2)
+
+**Benchmark**: `RayTraversalBaselineBenchmark.java`
+
+Measures average nodes visited per ray intersection before beam optimization.
+
+**Metrics to collect**:
+- Octree ray intersection (all hits, first hit, within distance)
+- Tetree ray intersection (all hits, first hit, within distance)
+- Average traversal time per ray (ms)
+
+**Target improvement (Epic 2)**: 30-50% reduction in nodes visited with beam optimization
+
+**Dataset dependency**: Uses `small_sparse_10.dataset` (10.7M entities)
+
+**Location**: `lucien/src/test/java/.../benchmark/baseline/RayTraversalBaselineBenchmark.java`
+
+### 3. Contour Memory Baseline (Epic 3)
+
+**Benchmark**: `ContourMemoryBaselineBenchmark.java`
+
+Measures memory footprint of contour normals in ESVO nodes.
+
+**Current implementation**:
+- 4 bytes per node (32-bit descriptor)
+- Layout: [contour_ptr(24 bits) | contour_mask(8 bits)]
+
+**Metrics to collect**:
+- Contour packing throughput (ops/sec)
+- Contour mask extraction throughput (ops/sec)
+- Contour pointer extraction throughput (ops/sec)
+- Memory usage per node (bytes)
+
+**Target improvement (Epic 3)**: Optimized contour representation for reduced bandwidth
+
+**Location**: `lucien/src/test/java/.../benchmark/baseline/ContourMemoryBaselineBenchmark.java`
+
+### 4. Rendering Performance Baseline (Epic 4)
+
+**Benchmark**: `RenderingPerformanceBaselineBenchmark.java`
+
+Measures FPS (frames per second) with various dataset sizes before GPU optimization.
+
+**Metrics to collect**:
+- Full frame render FPS (800x600, 1920x1080)
+- Primary ray casting only (no shading)
+- Tiled rendering (8x8 tiles simulating GPU workgroups)
+
+**Target improvement (Epic 4)**: GPU-accelerated ESVO rendering
+
+**Dataset dependency**: Uses `small_sparse_10.dataset` (10.7M entities)
+
+**GPU requirement**: Requires `dangerouslyDisableSandbox=true` for GPU access
+
+**Location**: `lucien/src/test/java/.../benchmark/baseline/RenderingPerformanceBaselineBenchmark.java`
+
+### Running the Baseline Benchmarks
+
+```bash
+# Morton encoding (Epic 1)
+cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien.benchmark.baseline.MortonEncodingBaselineBenchmark
+
+# Ray traversal (Epic 2) - requires datasets from Bead 0.4
+cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien.benchmark.baseline.RayTraversalBaselineBenchmark
+
+# Contour memory (Epic 3)
+cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien.benchmark.baseline.ContourMemoryBaselineBenchmark
+
+# Rendering performance (Epic 4) - requires GPU and datasets
+cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien.benchmark.baseline.RenderingPerformanceBaselineBenchmark -DdangerouslyDisableSandbox=true
+```
+
+**Note**: Actual baseline numbers will be populated when benchmarks are run. Epic 1-4 optimizations will be measured against these baselines.
 
 ## Current Performance Metrics (August 3, 2025)
 
