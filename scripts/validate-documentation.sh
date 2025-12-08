@@ -59,11 +59,13 @@ BROKEN_LINKS=0
 for file in $(find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.beads/*" -not -path "*/Octree/*" -not -path "*/t8code/*" -type f); do
     # Extract markdown links [text](path.md)
     while IFS= read -r link; do
-        # Only check relative paths (not URLs)
-        if [[ "$link" != http* ]] && [[ "$link" != https* ]]; then
+        # Only check relative paths (not URLs or anchor-only links)
+        if [[ "$link" != http* ]] && [[ "$link" != https* ]] && [[ "$link" != \#* ]]; then
+            # Strip anchor from link if present
+            link_file="${link%%#*}"
             # Resolve relative path
             dir=$(dirname "$file")
-            if [ ! -f "$dir/$link" ] && [ ! -f "$PROJECT_ROOT/$link" ]; then
+            if [ ! -f "$dir/$link_file" ] && [ ! -f "$PROJECT_ROOT/$link_file" ]; then
                 echo -e "${YELLOW}  Broken link in $file: $link${NC}"
                 BROKEN_LINKS=$((BROKEN_LINKS + 1))
             fi
