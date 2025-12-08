@@ -299,13 +299,38 @@ SIMD Available: true
 
 ## Performance Expectations
 
+### Baseline Metrics (Scalar Implementation)
+
+**Test Configuration:**
+- Platform: Apple Silicon (ARM NEON)
+- Sample Size: 100,000 operations
+- Warmup: 5 iterations
+- Measurement: 10 iterations
+
+**Morton Encoding Baseline (Level 20):**
+
+| Operation | Throughput (ops/sec) | Avg Time (ms) |
+|-----------|---------------------|---------------|
+| Morton Encode | 524.28 M | 0.19 |
+| Calculate Morton Index | 396.76 M | 0.25 |
+| Morton Decode | 402.58 M | 0.25 |
+| Round-trip (Encode+Decode) | 184.07 M | 0.54 |
+
+**Performance Across Levels:**
+
+| Level | Encode (M ops/sec) | Decode (M ops/sec) | Round-trip (M ops/sec) |
+|-------|-------------------|-------------------|----------------------|
+| 10 | 74.40 | 115.14 | 32.66 |
+| 15 | 210.91 | 390.63 | 79.65 |
+| 20 | 524.28 | 402.58 | 184.07 |
+
 ### Target Metrics (Epic 1 Goal)
 
 | Metric | Baseline (Scalar) | Target (SIMD) | Speedup |
 |--------|------------------|---------------|---------|
-| Morton Encode | TBD (Bead 0.1) | TBD (Bead 1.3) | 2-4x |
-| Morton Decode | TBD (Bead 0.1) | TBD (Bead 1.3) | 2-4x |
-| Round-trip | TBD (Bead 0.1) | TBD (Bead 1.3) | 2-4x |
+| Morton Encode | 524.28 M ops/sec | 1-2 B ops/sec | 2-4x |
+| Morton Decode | 402.58 M ops/sec | 800M-1.6B ops/sec | 2-4x |
+| Round-trip | 184.07 M ops/sec | 368-736 M ops/sec | 2-4x |
 
 **Note**: Actual SIMD implementation will be added in Bead 1.1. The infrastructure in Bead 1.0 provides the foundation for measuring these improvements.
 

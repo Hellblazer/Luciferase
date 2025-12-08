@@ -1,0 +1,83 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Detecting the operating system and CPU architecture
+[INFO] ------------------------------------------------------------------------
+[INFO] os.detected.name: osx
+[INFO] os.detected.arch: aarch_64
+[INFO] os.detected.bitness: 64
+[INFO] os.detected.version: 26.1
+[INFO] os.detected.version.major: 26
+[INFO] os.detected.version.minor: 1
+[INFO] os.detected.classifier: osx-aarch_64
+[WARNING] The POM for com.hellblazer.primeMover:maven-plugin:jar:1.0.3 is missing, no dependency information available
+[WARNING] Failed to retrieve plugin descriptor for com.hellblazer.primeMover:maven-plugin:1.0.3: Plugin com.hellblazer.primeMover:maven-plugin:1.0.3 or one of its dependencies could not be resolved:
+	com.hellblazer.primeMover:maven-plugin:jar:1.0.3 was not found in https://raw.githubusercontent.com/Hellblazer/repo-hell/main/mvn-artifact during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of plugin-hell-repo has elapsed or updates are forced
+	com.hellblazer.primeMover:maven-plugin:jar:1.0.3 was not found in https://maven.pkg.github.com/Hellblazer/Prime-Mover during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of github-prime-mover has elapsed or updates are forced
+	com.hellblazer.primeMover:maven-plugin:jar:1.0.3 was not found in https://repo.maven.apache.org/maven2 during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of central has elapsed or updates are forced
+
+[INFO] 
+[INFO] ------------------< com.hellblazer.luciferase:lucien >------------------
+[INFO] Building Lucien - Asset Stewardship 0.0.2-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The POM for com.hellblazer.primeMover:maven-plugin:jar:1.0.3 is missing, no dependency information available
+[WARNING] Failed to retrieve plugin descriptor for com.hellblazer.primeMover:maven-plugin:1.0.3: Plugin com.hellblazer.primeMover:maven-plugin:1.0.3 or one of its dependencies could not be resolved:
+	com.hellblazer.primeMover:maven-plugin:jar:1.0.3 was not found in https://raw.githubusercontent.com/Hellblazer/repo-hell/main/mvn-artifact during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of plugin-hell-repo has elapsed or updates are forced
+	com.hellblazer.primeMover:maven-plugin:jar:1.0.3 was not found in https://maven.pkg.github.com/Hellblazer/Prime-Mover during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of github-prime-mover has elapsed or updates are forced
+	com.hellblazer.primeMover:maven-plugin:jar:1.0.3 was not found in https://repo.maven.apache.org/maven2 during a previous attempt. This failure was cached in the local repository and resolution is not reattempted until the update interval of central has elapsed or updates are forced
+
+[INFO] 
+[INFO] --- exec:3.6.2:java (default-cli) @ lucien ---
+=== Morton Encoding Baseline Benchmark ===
+Sample size: 100000
+Warmup iterations: 5
+Measurement iterations: 10
+
+--- Level: 10 ---
+benchmarkMortonEncode:
+  Average time: 1.34 ms
+  Throughput: 74397621.06 ops/sec
+benchmarkCalculateMortonIndex:
+  Average time: 0.45 ms
+  Throughput: 222555957.24 ops/sec
+benchmarkMortonDecode:
+  Average time: 0.87 ms
+  Throughput: 115139377.37 ops/sec
+benchmarkMortonRoundTrip:
+  Average time: 3.06 ms
+  Throughput: 32659191.02 ops/sec
+
+--- Level: 15 ---
+benchmarkMortonEncode:
+  Average time: 0.47 ms
+  Throughput: 210914798.65 ops/sec
+benchmarkCalculateMortonIndex:
+  Average time: 1.46 ms
+  Throughput: 68292594.98 ops/sec
+benchmarkMortonDecode:
+  Average time: 0.26 ms
+  Throughput: 390631256.20 ops/sec
+benchmarkMortonRoundTrip:
+  Average time: 1.26 ms
+  Throughput: 79652466.73 ops/sec
+
+--- Level: 20 ---
+benchmarkMortonEncode:
+  Average time: 0.19 ms
+  Throughput: 524281302.08 ops/sec
+benchmarkCalculateMortonIndex:
+  Average time: 0.25 ms
+  Throughput: 396759899.95 ops/sec
+benchmarkMortonDecode:
+  Average time: 0.25 ms
+  Throughput: 402583296.50 ops/sec
+benchmarkMortonRoundTrip:
+  Average time: 0.54 ms
+  Throughput: 184070230.89 ops/sec
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.507 s
+[INFO] Finished at: 2025-12-08T15:40:35-08:00
+[INFO] ------------------------------------------------------------------------
