@@ -31,7 +31,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 - Visualization & Rendering
   - JavaFX 3D visualization
   - LWJGL-based OpenGL rendering
-  - ESVO (Efficient Sparse Voxel Octrees) implementation (Laine & Karras 2010)
+  - ESVO (Efficient Sparse Voxel Octrees) core algorithms complete (Laine & Karras 2010 reference)
   - Stack-based ray traversal optimized for GPU architectures
   - Mesh generation and contour extraction
 

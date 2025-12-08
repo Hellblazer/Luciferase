@@ -111,11 +111,8 @@ For accurate architecture documentation, see:
 - `lucien/doc/PERFORMANCE_METRICS_MASTER.md` - Current performance metrics
 - `render/doc/ESVO_COMPLETION_SUMMARY.md` - ESVO implementation status
 
-Historical documents (archived, describe unimplemented or superseded features):
-- `lucien/archived/SPATIAL_INDEX_CONSOLIDATION.md` - Details of the consolidation changes
-- `lucien/archived/TETREE_PORTING_PLAN.md` - Planned features never built
-- `lucien/archived/TETRAHEDRAL_DOMAIN_ANALYSIS.md` - Technical analysis for unimplemented features
-- `lucien/archived/TETREE_OCTREE_ANALYSIS.md` - Comparison of architectures
+Historical reference:
+- `HISTORICAL_FIXES_REFERENCE.md` - Complete archive of bug fixes and optimizations from June-August 2025
 
 ### Dependencies
 

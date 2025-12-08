@@ -42,7 +42,7 @@
     </logger>
 
     <!-- Tetree specific logging for debugging -->
-    <logger name="com.hellblazer.luciferase.lucien.tetree" level="INFO" additivity="false">
+    <logger name="com.hellblazer.luciferase.lucien.tetree" level="DEBUG" additivity="false">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </logger>

@@ -1544,27 +1544,11 @@ public class Tet {
             return ROOT_TET;
         }
 
-        // Determine if we have grid coordinates or absolute coordinates
-        // Grid coordinates from locateStandardRefinement are in range [0, 2^level-1]
-        // Absolute coordinates (from tests) can be much larger
-        int maxGridCoord = (1 << l) - 1;
-        boolean isGridCoordinates = x <= maxGridCoord && y <= maxGridCoord && z <= maxGridCoord;
-
-        int shiftedX, shiftedY, shiftedZ;
-        if (isGridCoordinates) {
-            // Convert grid coordinates to absolute coordinates for encoding
-            // Grid coordinates at level L need to be shifted to align with the hierarchical bit structure
-            // At level L, we have L bits of precision, but tmIndex extracts from bits 20 down to (20-L+1)
-            int shiftAmount = Constants.getMaxRefinementLevel() - l;
-            shiftedX = x << shiftAmount;
-            shiftedY = y << shiftAmount;
-            shiftedZ = z << shiftAmount;
-        } else {
-            // Already absolute coordinates, use as-is
-            shiftedX = x;
-            shiftedY = y;
-            shiftedZ = z;
-        }
+        // Tet coordinates are always absolute world coordinates (multiples of cellSize at the given level)
+        // as validated by validateAnchorCoordinates(). Use them directly for encoding.
+        int shiftedX = x;
+        int shiftedY = y;
+        int shiftedZ = z;
 
         // V2 OPTIMIZATION: Build parent chain in reverse order while building bits
         // Stack to hold types as we walk up

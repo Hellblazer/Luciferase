@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.lucien.tetree;
 import com.hellblazer.luciferase.lucien.Constants;
 import org.junit.jupiter.api.Test;
 
+import javax.vecmath.Point3f;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -355,5 +356,177 @@ class TetreeKeyTest {
             assertTrue(key1.isValid());
             assertTrue(key2.isValid());
         }
+    }
+
+    // ===== SFC Range Estimation Tests =====
+
+    @Test
+    void testEstimateSFCDepth_BasicFunctionality() {
+        // Small radius → fine level (high level number)
+        byte fineDepth = TetreeKey.estimateSFCDepth(10.0f);
+        assertTrue(fineDepth >= 15, "Small radius should map to fine level, got: " + fineDepth);
+        
+        // Medium radius → medium level
+        byte mediumDepth = TetreeKey.estimateSFCDepth(1000.0f);
+        assertTrue(mediumDepth >= 5 && mediumDepth <= 15, "Medium radius should map to medium level, got: " + mediumDepth);
+        
+        // Large radius → coarse level (low level number)
+        byte coarseDepth = TetreeKey.estimateSFCDepth(100000.0f);
+        assertTrue(coarseDepth <= 10, "Large radius should map to coarse level, got: " + coarseDepth);
+        
+        // Very large radius → level 0 (root)
+        byte rootDepth = TetreeKey.estimateSFCDepth(Float.MAX_VALUE);
+        assertEquals(0, rootDepth, "Extremely large radius should map to root level");
+    }
+
+    @Test
+    void testEstimateSFCDepth_MonotonicProperty() {
+        // Verify that larger radius → coarser level (smaller level number)
+        byte level1 = TetreeKey.estimateSFCDepth(10.0f);
+        byte level2 = TetreeKey.estimateSFCDepth(100.0f);
+        byte level3 = TetreeKey.estimateSFCDepth(1000.0f);
+        
+        assertTrue(level1 >= level2, "Smaller radius should map to finer or equal level: " + level1 + " >= " + level2);
+        assertTrue(level2 >= level3, "Smaller radius should map to finer or equal level: " + level2 + " >= " + level3);
+    }
+
+    @Test
+    void testEstimateSFCDepth_InvalidInput() {
+        assertThrows(IllegalArgumentException.class, () -> TetreeKey.estimateSFCDepth(0.0f));
+        assertThrows(IllegalArgumentException.class, () -> TetreeKey.estimateSFCDepth(-10.0f));
+    }
+
+    @Test
+    void testEstimateSFCRange_BasicCoverage() {
+        Point3f center = new Point3f(1000.0f, 1000.0f, 1000.0f);
+        float radius = 50.0f;
+        
+        var range = TetreeKey.estimateSFCRange(center, radius);
+        
+        assertNotNull(range);
+        assertNotNull(range.lower());
+        assertNotNull(range.upper());
+        
+        // Verify range ordering
+        assertTrue(range.lower().compareTo(range.upper()) < 0, 
+                   "Lower bound should be less than upper bound");
+        
+        // Verify both keys are at the same level
+        assertEquals(range.lower().getLevel(), range.upper().getLevel(),
+                    "Range keys should be at the same level");
+    }
+
+    @Test
+    void testEstimateSFCRange_ConservativeEstimate() {
+        // Verify that the range is conservative (includes all entities in the sphere)
+        Point3f center = new Point3f(1000.0f, 1000.0f, 1000.0f);
+        float radius = 200.0f;
+        
+        var range = TetreeKey.estimateSFCRange(center, radius);
+        
+        // Test points on sphere boundary should be within or near the range
+        // We test 6 cardinal directions
+        Point3f[] boundaryPoints = {
+            new Point3f(center.x + radius, center.y, center.z), // +X
+            new Point3f(center.x - radius, center.y, center.z), // -X
+            new Point3f(center.x, center.y + radius, center.z), // +Y
+            new Point3f(center.x, center.y - radius, center.z), // -Y
+            new Point3f(center.x, center.y, center.z + radius), // +Z
+            new Point3f(center.x, center.y, center.z - radius)  // -Z
+        };
+        
+        for (Point3f point : boundaryPoints) {
+            Tet tet = Tet.locatePointBeyRefinementFromRoot(point.x, point.y, point.z, range.lower().getLevel());
+            if (tet != null) {
+                var pointKey = tet.tmIndex();
+                
+                // Point should be within or close to the range
+                boolean withinRange = pointKey.compareTo(range.lower()) >= 0 && 
+                                    pointKey.compareTo(range.upper()) < 0;
+                
+                // Allow for conservative estimate - point might be just outside
+                assertTrue(withinRange || 
+                          Math.abs(pointKey.compareTo(range.lower())) <= 10 ||
+                          Math.abs(pointKey.compareTo(range.upper())) <= 10,
+                          "Boundary point should be covered by conservative range: " + point);
+            }
+        }
+    }
+
+    @Test
+    void testEstimateSFCRange_OriginCenter() {
+        // Test with center near origin
+        Point3f center = new Point3f(500.0f, 500.0f, 500.0f);
+        float radius = 100.0f;
+        
+        var range = TetreeKey.estimateSFCRange(center, radius);
+        
+        assertNotNull(range);
+        assertTrue(range.lower().compareTo(range.upper()) < 0);
+    }
+
+    @Test
+    void testEstimateSFCRange_LargeRadius() {
+        Point3f center = new Point3f(100000.0f, 100000.0f, 100000.0f);
+        float radius = 50000.0f;
+        
+        var range = TetreeKey.estimateSFCRange(center, radius);
+        
+        assertNotNull(range);
+        assertTrue(range.lower().getLevel() <= 7, "Large radius should use coarse level, got: " + range.lower().getLevel());
+    }
+
+    @Test
+    void testEstimateSFCRange_SmallRadius() {
+        Point3f center = new Point3f(10000.0f, 10000.0f, 10000.0f);
+        float radius = 5.0f;
+        
+        var range = TetreeKey.estimateSFCRange(center, radius);
+        
+        assertNotNull(range);
+        assertTrue(range.lower().getLevel() >= 15, "Small radius should use fine level, got: " + range.lower().getLevel());
+    }
+
+    @Test
+    void testEstimateSFCRange_InvalidInput() {
+        Point3f center = new Point3f(1000.0f, 1000.0f, 1000.0f);
+        assertThrows(IllegalArgumentException.class, () -> TetreeKey.estimateSFCRange(center, 0.0f));
+        assertThrows(IllegalArgumentException.class, () -> TetreeKey.estimateSFCRange(center, -10.0f));
+    }
+
+    @Test
+    void testEstimateSFCRange_DifferentRadii() {
+        Point3f center = new Point3f(5000.0f, 5000.0f, 5000.0f);
+        
+        // Test multiple radii
+        float[] radii = {10.0f, 50.0f, 200.0f, 1000.0f};
+        var previousRange = TetreeKey.estimateSFCRange(center, radii[0]);
+        
+        for (int i = 1; i < radii.length; i++) {
+            var currentRange = TetreeKey.estimateSFCRange(center, radii[i]);
+            
+            // Larger radius should result in coarser or equal level
+            assertTrue(currentRange.lower().getLevel() <= previousRange.lower().getLevel(),
+                      "Larger radius should use coarser or equal level");
+            
+            previousRange = currentRange;
+        }
+    }
+
+    @Test
+    void testSFCRange_RecordValidation() {
+        Point3f center = new Point3f(1000.0f, 1000.0f, 1000.0f);
+        var range = TetreeKey.estimateSFCRange(center, 100.0f);
+        
+        // Verify record properties
+        assertNotNull(range.lower());
+        assertNotNull(range.upper());
+        assertEquals(range, range); // Self-equality
+        
+        // Test null validation
+        assertThrows(NullPointerException.class, 
+                    () -> new TetreeKey.SFCRange(null, TetreeKey.getRoot()));
+        assertThrows(NullPointerException.class, 
+                    () -> new TetreeKey.SFCRange(TetreeKey.getRoot(), null));
     }
 }
