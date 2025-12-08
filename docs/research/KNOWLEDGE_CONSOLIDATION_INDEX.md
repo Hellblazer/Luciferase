@@ -13,8 +13,8 @@
 For a comprehensive understanding of the consolidation process:
 1. Review [CONSOLIDATION_EXECUTIVE_SUMMARY.md](./CONSOLIDATION_EXECUTIVE_SUMMARY.md) - Results overview
 2. Check [KNOWLEDGE_CONSOLIDATION_REPORT.md](./KNOWLEDGE_CONSOLIDATION_REPORT.md) - Detailed findings
-3. Establish processes with [DOCUMENTATION_STANDARDS.md](./DOCUMENTATION_STANDARDS.md)
-4. Navigate knowledge with [KNOWLEDGE_MANAGEMENT_GUIDE.md](./KNOWLEDGE_MANAGEMENT_GUIDE.md)
+3. Establish processes with [DOCUMENTATION_STANDARDS.md](../../DOCUMENTATION_STANDARDS.md)
+4. Navigate knowledge with [KNOWLEDGE_MANAGEMENT_GUIDE.md](../../KNOWLEDGE_MANAGEMENT_GUIDE.md)
 
 ---
 
@@ -88,14 +88,14 @@ A complete knowledge audit was performed on the Luciferase project documentation
 
 ### For Establishing Processes
 
-3. **[DOCUMENTATION_STANDARDS.md](./DOCUMENTATION_STANDARDS.md)**
+3. **[DOCUMENTATION_STANDARDS.md](../../DOCUMENTATION_STANDARDS.md)**
    - Standards for all documentation
    - Header requirements, content standards
    - Update and deprecation procedures
    - Critical technical knowledge protection
    - **Best for**: Creating new docs, maintaining consistency
 
-4. **[KNOWLEDGE_MANAGEMENT_GUIDE.md](./KNOWLEDGE_MANAGEMENT_GUIDE.md)**
+4. **[KNOWLEDGE_MANAGEMENT_GUIDE.md](../../KNOWLEDGE_MANAGEMENT_GUIDE.md)**
    - How to navigate and access knowledge
    - Document hierarchy and organization
    - Knowledge source authority matrix
@@ -104,7 +104,7 @@ A complete knowledge audit was performed on the Luciferase project documentation
 
 ### For Reference
 
-5. **[TEST_COVERAGE_SUMMARY.md](./TEST_COVERAGE_SUMMARY.md)**
+5. **[TEST_COVERAGE_SUMMARY.md](../../TEST_COVERAGE_SUMMARY.md)**
    - Complete test infrastructure overview
    - Test organization across modules
    - GPU testing requirements
@@ -232,7 +232,7 @@ Source: HISTORICAL_FIXES_REFERENCE.md
 
 ### For Development Teams (Week 2-3)
 
-1. Read [KNOWLEDGE_MANAGEMENT_GUIDE.md](./KNOWLEDGE_MANAGEMENT_GUIDE.md)
+1. Read [KNOWLEDGE_MANAGEMENT_GUIDE.md](../../KNOWLEDGE_MANAGEMENT_GUIDE.md)
 2. Learn to navigate knowledge base
 3. Follow DOCUMENTATION_STANDARDS.md for new docs
 4. Update documentation with feature merges
@@ -382,13 +382,13 @@ Check quarterly:
 
 ### For Documentation Questions
 
-1. Check [KNOWLEDGE_MANAGEMENT_GUIDE.md](./KNOWLEDGE_MANAGEMENT_GUIDE.md)
+1. Check [KNOWLEDGE_MANAGEMENT_GUIDE.md](../../KNOWLEDGE_MANAGEMENT_GUIDE.md)
 2. Search existing documentation
 3. Review related examples in TEST_COVERAGE_SUMMARY.md
 
 ### For Standards Questions
 
-1. Read [DOCUMENTATION_STANDARDS.md](./DOCUMENTATION_STANDARDS.md)
+1. Read [DOCUMENTATION_STANDARDS.md](../../DOCUMENTATION_STANDARDS.md)
 2. Review examples in existing documentation
 3. Contact documentation owner
 
