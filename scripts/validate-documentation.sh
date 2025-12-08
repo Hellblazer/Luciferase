@@ -57,20 +57,43 @@ echo ""
 echo -e "${BLUE}[2/10] Checking for broken internal links...${NC}"
 BROKEN_LINKS=0
 for file in $(find . -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/target/*" -not -path "*/.beads/*" -not -path "*/Octree/*" -not -path "*/t8code/*" -type f); do
-    # Extract markdown links [text](path.md)
-    while IFS= read -r link; do
-        # Only check relative paths (not URLs or anchor-only links)
-        if [[ "$link" != http* ]] && [[ "$link" != https* ]] && [[ "$link" != \#* ]]; then
-            # Strip anchor from link if present
-            link_file="${link%%#*}"
-            # Resolve relative path
-            dir=$(dirname "$file")
-            if [ ! -f "$dir/$link_file" ] && [ ! -f "$PROJECT_ROOT/$link_file" ]; then
-                echo -e "${YELLOW}  Broken link in $file: $link${NC}"
-                BROKEN_LINKS=$((BROKEN_LINKS + 1))
+    # Extract markdown links [text](path.md), but skip code blocks
+    IN_CODE_BLOCK=false
+    while IFS= read -r line; do
+        # Track code block boundaries (lines starting with ```)
+        if echo "$line" | grep -q '^\s*```'; then
+            if [ "$IN_CODE_BLOCK" = true ]; then
+                IN_CODE_BLOCK=false
+            else
+                IN_CODE_BLOCK=true
             fi
+            continue
         fi
-    done < <(grep -oP '\[.*?\]\(\K[^)]+' "$file" 2>/dev/null || true)
+        
+        # Skip link extraction if we're inside a code block
+        if [ "$IN_CODE_BLOCK" = true ]; then
+            continue
+        fi
+        
+        # Extract markdown links from this line using grep
+        if echo "$line" | grep -q '\[.*\](.*)'  2>/dev/null; then
+            echo "$line" | grep -oE '\[[^\]]+\]\([^)]+\)' 2>/dev/null | while read -r match; do
+                # Extract the URL part from [text](url)
+                link=$(echo "$match" | sed 's/.*(\([^)]*\)).*/\1/')
+                # Only check relative paths (not URLs or anchor-only links)
+                if [[ -n "$link" ]] && [[ "$link" != http* ]] && [[ "$link" != https* ]] && [[ "$link" != \#* ]]; then
+                    # Strip anchor from link if present
+                    link_file="${link%%#*}"
+                    # Resolve relative path
+                    dir=$(dirname "$file")
+                    if [ ! -f "$dir/$link_file" ] && [ ! -f "$PROJECT_ROOT/$link_file" ]; then
+                        echo -e "${YELLOW}  Broken link in $file: $link${NC}"
+                        BROKEN_LINKS=$((BROKEN_LINKS + 1))
+                    fi
+                fi
+            done
+        fi
+    done < "$file"
 done
 
 if [ $BROKEN_LINKS -eq 0 ]; then
