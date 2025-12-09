@@ -23,6 +23,7 @@ import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
 import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
 import com.hellblazer.luciferase.portal.esvo.renderer.OctreeRenderer;
 import com.hellblazer.luciferase.portal.esvo.ui.OctreeControlPanel;
+import com.hellblazer.luciferase.portal.esvo.ui.OctreeStructureDiagram;
 import com.hellblazer.luciferase.portal.esvo.visualization.RayCastVisualizer;
 import com.hellblazer.luciferase.portal.mesh.octree.OctreeNodeMeshRenderer;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
@@ -35,6 +36,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.PhongMaterial;
 import javafx.stage.Stage;
+import javafx.scene.control.SplitPane;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,6 +72,8 @@ public class OctreeInspectorApp extends Application {
     // UI Components
     private CameraView cameraView;
     private OctreeControlPanel controlPanel;
+    private OctreeStructureDiagram structureDiagram;
+    private SplitPane mainSplitPane;
     
     // 3D Scene Groups
     private Group worldGroup;
@@ -140,8 +144,16 @@ public class OctreeInspectorApp extends Application {
         cameraView.setFirstPersonNavigationEabled(true);
         cameraView.startViewing();
         
-        // Bind camera view size to window (accounting for control panel width)
-        cameraView.fitWidthProperty().bind(root.widthProperty().subtract(350));
+        // Create octree structure diagram
+        structureDiagram = new OctreeStructureDiagram();
+        
+        // Create split pane for 3D view and structure diagram
+        mainSplitPane = new SplitPane();
+        mainSplitPane.getItems().addAll(cameraView, structureDiagram);
+        mainSplitPane.setDividerPositions(0.7); // 70% for 3D view, 30% for diagram
+        
+        // Bind sizes
+        cameraView.fitWidthProperty().bind(mainSplitPane.widthProperty().multiply(0.7));
         cameraView.fitHeightProperty().bind(root.heightProperty());
         
         // Create control panel with event handlers
@@ -163,8 +175,8 @@ public class OctreeInspectorApp extends Application {
         controlPanel.setShowVoxels(false);  // Initially empty
         controlPanel.setShowRays(false);
         
-        // Layout: 3D view in center, controls on right
-        root.setCenter(cameraView);
+        // Layout: split pane in center, controls on right
+        root.setCenter(mainSplitPane);
         root.setRight(controlPanel);
         
         // Create main scene
@@ -415,6 +427,9 @@ public class OctreeInspectorApp extends Application {
             // Show octree by default
             octreeGroup.setVisible(true);
             controlPanel.setShowOctree(true);
+            
+            // Update structure diagram
+            structureDiagram.setOctreeData(octree, currentLevel);
             
             log.info("Octree visualization updated: {} nodes rendered", octree.getNodeCount());
             
