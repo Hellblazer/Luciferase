@@ -9,7 +9,8 @@
 ## Phase Status
 
 ### Phase 1: Quick Wins (Target: 30-40% improvement)
-- [x] **1.1 Replace LinkedList with ArrayList** 
+
+- [x] **1.1 Replace LinkedList with ArrayList**
   - Status: ✅ COMPLETE
   - Branch: `sentry-opt-arraylist`
   - Actual Impact: 21% (small lists) to 984% (large lists)
@@ -41,10 +42,12 @@
     - `Grid.java` - Updated to acquire from pool
   - Results: phase1-3-results-2025-01-18.txt
   - **NOTE**: Pool release disabled due to crashes from premature object reuse.
+
     The tetrahedralization maintains neighbor references after delete(),
     requiring more sophisticated lifecycle management for safe pooling.
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30% improvement)
+
 - [x] **2.1 Optimize ordinalOf() with Direct Field Comparison**
   - Status: ✅ COMPLETE
   - Branch: main (no feature branch)
@@ -69,6 +72,7 @@
     - `OrientedFace.java` - Added early exit checks in flip() and isLocallyDelaunay()
   - Results: phase2-2-results-2025-01-18.txt
   - **NOTE**: Early exit checks added overhead without sufficient benefit.
+
     Geometric predicate caching ineffective due to unique vertex combinations.
 
 - [x] **2.3 Alternative Optimizations**
@@ -87,9 +91,11 @@
     - Batch processing capabilities for future use
   - Results: phase2-3-results-2025-01-18.txt
   - **NOTE**: Successfully reduced method call overhead and improved data locality
+
     achieving 37.2% performance improvement over baseline.
 
 ### Phase 3: Advanced Optimizations (Target: 30-50% improvement)
+
 - [x] **3.1 SIMD Vectorization for Geometric Predicates**
   - Status: ✅ COMPLETE (infrastructure ready, optimization needed)
   - Branch: main (no feature branch)
@@ -114,6 +120,7 @@
     - CI/CD configuration example
   - Results: phase3-1-results-2025-01-18.txt
   - **NOTE**: SIMD infrastructure is complete and working. Current implementation
+
     shows overhead exceeds benefits for individual operations. Batch operations
     show better potential (0.25x slowdown vs 0.03x). Further optimization needed
     for production use.
@@ -124,6 +131,7 @@
   - Expected Impact: N/A
   - Rationale: See PHASE_3_2_SKIP_RATIONALE.md
   - **NOTE**: This optimization contradicts the fundamental single-threaded
+
     design requirement of the Sentry module. All data structures have been
     optimized for single-threaded access. Proceeding to Phase 3.3 instead.
 
@@ -151,10 +159,12 @@
     - 2000 vertices: 38.9 → 38.2 steps (+1.6%)
     - 5000 vertices: 51.0 → 54.1 steps (-6.2%)
   - **NOTE**: The landmark index shows inconsistent results. The implementation
+
     needs refinement in landmark selection strategy and distribution. The
     theoretical O(n^(1/6)) improvement was not achieved in practice.
 
 ### Phase 4: Architectural Changes (Target: 50%+ improvement)
+
 - [x] **4.1 Hybrid Exact/Approximate Predicates**
   - Status: ✅ COMPLETE
   - Branch: main (no feature branch)
@@ -180,6 +190,7 @@
       - 2000 vertices: 1.8% improvement
       - 5000 vertices: -0.2% (neutral)
   - **NOTE**: Excellent performance for small to medium grids. The float
+
     approximation provides significant speedup for orientation tests which
     are the most frequent operations during point location.
 
@@ -199,11 +210,13 @@
     - PackedTetrahedron as lightweight index wrapper
   - Results: Runtime bug in neighbor tracking prevents benchmarking
   - **NOTE**: Architecture is complete and shows promise for significant
+
     memory savings. Debugging needed before performance validation.
 
 ## Benchmarking
 
 ### Baseline Metrics
+
 - [x] Create baseline benchmark
   - Date: 2025-01-18
   - Commit: (pending commit)
@@ -215,7 +228,9 @@
     - ManualBenchmarkRunner.java - Simple benchmark runner
 
 ### Current Metrics
+
 #### Baseline
+
 - **LinkedList random access**: 17.39 ns/op
 - **ArrayList random access**: 3.91 ns/op (4.45x faster)
 - **Flip operation**: 0.06 µs/op  
@@ -223,6 +238,7 @@
 - **Initial insertion time**: ~22 µs (estimated from profiling)
 
 #### After Optimizations
+
 - **Phase 1.1**: ArrayList conversion - 1.21x to 10.84x improvement
 - **Phase 1.2**: getAdjacentVertex now 9.08 ns/call (44% improvement)
 - **Phase 1.3**: Object pooling - 84.28% reuse rate, 23.8% improvement
@@ -235,11 +251,13 @@
 ## Test Status
 
 ### Regression Tests
+
 - [ ] All existing tests pass
 - [ ] Performance regression tests created
 - [ ] Correctness validation tests created
 
 ### New Tests
+
 - [ ] ArrayList conversion tests
 - [ ] Cache invalidation tests
 - [ ] Object pool tests
@@ -247,6 +265,7 @@
 ## Notes and Decisions
 
 ### 2025-01-18
+
 - Created optimization tracking document
 - Analyzed performance bottlenecks
 - Created comprehensive optimization plan
@@ -276,37 +295,54 @@
 ## Commands and Scripts
 
 ### Create Baseline
+
 ```bash
+
 # Checkout clean main branch
+
 git checkout main
 git pull
 
 # Create baseline branch
+
 git checkout -b sentry-baseline
 
 # Run baseline benchmark
+
 mvn clean test -Pbenchmark-baseline -Dtest=SentryBenchmark
 
 # Save results
+
 cp target/benchmark-results.json benchmarks/baseline-$(date +%Y%m%d).json
-```
+
+```text
 
 ### Start Optimization Work
+
 ```bash
+
 # Create optimization branch
+
 git checkout -b sentry-opt-phase1
 
 # For specific optimization
+
 git checkout -b sentry-opt-arraylist
-```
+
+```text
 
 ### Run Benchmarks
+
 ```bash
+
 # Run current benchmarks
+
 mvn clean test -Pbenchmark -Dtest=SentryBenchmark
 
 # Compare with baseline
+
 java -cp target/test-classes com.hellblazer.sentry.bench.CompareResults \
   benchmarks/baseline.json \
   target/benchmark-results.json
-```
+
+```text

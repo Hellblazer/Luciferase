@@ -4,7 +4,8 @@
 
 **The GPU test framework enables headless GPU testing WITHOUT window handles or display requirements.**
 
-### Key Principles:
+### Key Principles
+
 1. **OpenCL-based**: Uses OpenCL for compute operations, NOT OpenGL (no window needed)
 2. **CI-Compatible**: Gracefully handles environments without GPU drivers  
 3. **Mock Platform**: Provides mock OpenCL platform when real drivers unavailable
@@ -13,16 +14,19 @@
 
 ## Framework Architecture
 
-### Class Hierarchy:
-```
+### Class Hierarchy
+
+```text
+
 LWJGLHeadlessTest (base)
   └── OpenCLHeadlessTest (OpenCL initialization)
       └── GPUComputeHeadlessTest (compute operations)
           └── CICompatibleGPUTest (CI detection & skipping)
               └── Your test class
-```
 
-### Key Classes:
+```text
+
+### Key Classes
 
 1. **CICompatibleGPUTest**: Base class for ALL GPU tests
    - Detects OpenCL availability
@@ -37,8 +41,10 @@ LWJGLHeadlessTest (base)
 
 ## CORRECT Testing Pattern
 
-### Example Test Class:
+### Example Test Class
+
 ```java
+
 class MyGPUTest extends CICompatibleGPUTest {
     
     @Test
@@ -62,12 +68,15 @@ class MyGPUTest extends CICompatibleGPUTest {
         testGPUVectorAddition(platform.platformId(), deviceId);
     }
 }
-```
+
+```text
 
 ## What NOT to Do (Common Failures)
 
-### ❌ NEVER DO THIS:
+### ❌ NEVER DO THIS
+
 ```java
+
 // WRONG - Creates window, will crash in headless
 GLFW.glfwInit();
 GLFW.glfwCreateWindow(...);
@@ -79,10 +88,13 @@ glCreateShader(GL_COMPUTE_SHADER);
 // WRONG - Direct GPU memory without checks
 OctreeGPUMemory memory = new OctreeGPUMemory();
 memory.uploadToGPU(); // Crashes without OpenGL context
-```
 
-### ✅ CORRECT APPROACH:
+```text
+
+### ✅ CORRECT APPROACH
+
 ```java
+
 // RIGHT - Extend CICompatibleGPUTest
 class MyTest extends CICompatibleGPUTest {
     
@@ -103,21 +115,25 @@ class MyTest extends CICompatibleGPUTest {
         testGPUVectorAddition(...);
     }
 }
-```
+
+```text
 
 ## Testing Workflow
 
-### 1. Local Development (GPU Available):
+### 1. Local Development (GPU Available)
+
 - Real OpenCL platforms detected
 - Tests run actual GPU computations
 - Full validation of GPU code
 
-### 2. CI Environment (No GPU):
+### 2. CI Environment (No GPU)
+
 - OpenCL not found, mock platform returned
 - Tests validate structure/logic only
 - No crashes, tests skip gracefully
 
-### 3. Mixed Testing:
+### 3. Mixed Testing
+
 - Use `@EnabledIf("hasGPUDevice")` for GPU-only tests
 - Use mock platform for structure validation
 - Separate GPU operations from business logic
@@ -132,13 +148,15 @@ class MyTest extends CICompatibleGPUTest {
 
 ## OpenCL vs OpenGL
 
-### OpenCL (What we use):
+### OpenCL (What we use)
+
 - Compute-only, no display needed
 - Works headless with drivers
 - Used for parallel computations
 - No window handle required
 
-### OpenGL (What we DON'T use for testing):
+### OpenGL (What we DON'T use for testing)
+
 - Requires display context
 - Needs window handle (GLFW)
 - Will crash in headless CI
@@ -146,31 +164,40 @@ class MyTest extends CICompatibleGPUTest {
 
 ## Test Execution
 
-### Running Tests:
+### Running Tests
+
 ```bash
+
 # Tests will automatically detect environment
+
 mvn test
 
 # Force CI mode (uses mock platform)
+
 CI=true mvn test
 
 # With OpenCL drivers installed
+
 mvn test # Full GPU tests run
 
 # Without OpenCL drivers  
+
 mvn test # Tests skip gracefully
-```
+
+```text
 
 ## Key Methods
 
-### From CICompatibleGPUTest:
+### From CICompatibleGPUTest
+
 - `discoverPlatforms()`: Returns real or mock platforms
 - `discoverDevices(platformId, deviceType)`: Returns devices
 - `testGPUVectorAddition(platformId, deviceId)`: Example compute test
 - `isOpenCLAvailable()`: Static check for OpenCL
 - `isCIEnvironment()`: Detects CI environment
 
-### From MockPlatform:
+### From MockPlatform
+
 - `shouldUseMockPlatform()`: Checks if mock needed
 - `getMockPlatforms()`: Returns mock platform list
 - `getMockDevices()`: Returns mock device list

@@ -4,8 +4,10 @@
 
 The locate algorithm finds which tetrahedron contains a given point by walking through the mesh.
 
-### Algorithm Steps:
-```
+### Algorithm Steps
+
+```text
+
 locate(query_point, start_tetrahedron):
     current = start_tetrahedron
     
@@ -30,9 +32,11 @@ locate(query_point, start_tetrahedron):
             
         // Continue walk from neighbor
         current = neighbor
-```
+
+```text
 
 ### Key Observations:
+
 - Uses randomized face checking order to avoid worst-case behavior
 - Terminates when point is inside a tetrahedron or outside convex hull
 - Performance depends on mesh quality and starting position
@@ -41,7 +45,8 @@ locate(query_point, start_tetrahedron):
 
 ### 2.1 flip1to4 (Vertex Inside Tetrahedron)
 
-```
+```text
+
 flip1to4(tetrahedron, new_vertex):
     // Create 4 new tetrahedra
     t0 = new Tetrahedron(a, b, c, new_vertex)
@@ -83,13 +88,15 @@ flip1to4(tetrahedron, new_vertex):
             ears.add(external_face)
     
     return ears
-```
+
+```text
 
 ### 2.2 Patch Operation
 
 The patch operation updates bidirectional neighbor relationships:
 
-```
+```text
+
 patch(face_vertex, new_tetrahedron, new_face):
     old_neighbor = this.getNeighbor(face_vertex)
     if old_neighbor != null:
@@ -100,13 +107,15 @@ patch(face_vertex, new_tetrahedron, new_face):
                 break
     
     new_tetrahedron.setNeighbor(new_face, old_neighbor)
-```
+
+```text
 
 ## 3. Insertion Algorithm
 
 The complete point insertion algorithm:
 
-```
+```text
+
 insert(vertex, containing_tetrahedron):
     // Initial flip based on vertex position
     if vertex inside containing_tetrahedron:
@@ -124,13 +133,15 @@ insert(vertex, containing_tetrahedron):
         if face.needsFlip(vertex):
             new_ears = face.flip(vertex)
             ears.extend(new_ears)
-```
+
+```text
 
 ## 4. Ear Processing (Delaunay Restoration)
 
 After insertion, we must restore the Delaunay property:
 
-```
+```text
+
 OrientedFace.flip(vertex):
     incident = this.getIncident()
     adjacent = this.getAdjacent()
@@ -151,27 +162,33 @@ OrientedFace.flip(vertex):
         else:
             // Handle degenerate case
             return handleDegenerateCase()
-```
+
+```text
 
 ## 5. Critical Implementation Details
 
 ### 5.1 Vertex Ordering
+
 - Must maintain consistent orientation: (a,b,c) positive w.r.t. d
 - When creating new tetrahedra, vertex order matters
 
 ### 5.2 Face Enumeration
+
 - Face opposite A: contains vertices B, C, D
 - Face opposite B: contains vertices A, C, D
 - Face opposite C: contains vertices A, B, D
 - Face opposite D: contains vertices A, B, C
 
 ### 5.3 Neighbor Mapping
+
 The mapping between faces must be consistent:
+
 - If T1's face opposite A neighbors T2
 - Then T2's face opposite X neighbors T1
 - Where X is the vertex in T2 not shared with T1
 
 ### 5.4 Locate Starting Point
+
 - Use spatial locality: start from last accessed tetrahedron
 - Fallback to vertex adjacency for nearby searches
 - Random starting point for worst-case avoidance
@@ -179,35 +196,43 @@ The mapping between faces must be consistent:
 ## 6. Edge Cases and Degeneracies
 
 ### 6.1 Coplanar Points
+
 - Four coplanar points cannot form a valid tetrahedron
 - Must detect and handle during insertion
 
 ### 6.2 Boundary Points
+
 - Points on convex hull boundary need special handling
 - May expand the convex hull
 
 ### 6.3 Duplicate Points
+
 - Can either reject or merge with existing vertex
 - Current implementation allows duplicates
 
 ### 6.4 Numerical Precision
+
 - Use robust geometric predicates
 - Handle near-degenerate configurations
 
 ## 7. Optimization Techniques
 
 ### 7.1 Spatial Locality
+
 - Track 'last' tetrahedron for subsequent searches
 - Most insertions are spatially coherent
 
 ### 7.2 Memory Pooling
+
 - Reuse deleted tetrahedron objects
 - Reduces allocation overhead
 
 ### 7.3 Lazy Deletion
+
 - Mark as deleted rather than immediately freeing
 - Batch cleanup during quiet periods
 
 ### 7.4 Walking Strategy
+
 - Randomized face order prevents adversarial inputs
 - Straight-line walk is usually near-optimal

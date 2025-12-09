@@ -109,15 +109,23 @@ public class Constants {
     /**
      * Calculate the Morton index for a given point and level
      *
-     * @param point the 3D point
+     * @param point the 3D point (must have non-negative coordinates)
      * @param level the refinement level
      * @return the Morton index
+     * @throws IllegalArgumentException if point has negative coordinates
      *
      * Note: Morton encoding uses 21-bit coordinates. The maximum coordinate value that can be encoded is 2^21 - 1 =
      * 2,097,151. Coordinates beyond this range will wrap around due to bit masking in the MortonCurve.encode method. At
      * level 0, the cell length is 2^21 = 2,097,152, which exceeds the maximum encodable coordinate.
      */
     public static long calculateMortonIndex(Point3f point, byte level) {
+        // Validate coordinates are non-negative
+        if (point.x < 0 || point.y < 0 || point.z < 0) {
+            throw new IllegalArgumentException(
+                "Negative coordinates not supported: " + point
+            );
+        }
+        
         var length = lengthAtLevel(level);
         int quantizedX = (int) (Math.floor(point.x / length) * length);
         int quantizedY = (int) (Math.floor(point.y / length) * length);

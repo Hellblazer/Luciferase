@@ -9,6 +9,7 @@
 This document outlines all disabled tests, incomplete implementations, mock/stub code, and pending features across the entire Luciferase 3D spatial data structure and visualization library. The analysis covers **805 Java files** across all modules and identifies **95+ distinct items** requiring remediation.
 
 ### Key Findings
+
 - **7 disabled test classes** (performance/benchmark tests)
 - **31 TODO/FIXME comments** indicating incomplete implementations  
 - **60+ mock/stub implementations** primarily in render module ESVO application layer
@@ -20,7 +21,7 @@ This document outlines all disabled tests, incomplete implementations, mock/stub
 ## 📊 Overall Status by Module
 
 | Module | Status | Critical Issues | Priority |
-|--------|--------|----------------|----------|
+| -------- | -------- | ---------------- | ---------- |
 | **Lucien** | ✅ Production Ready | 0 | Maintenance |
 | **Sentry** | ✅ Production Ready | 0 | Maintenance |
 | **Common** | ✅ Production Ready | 3 minor | Low |
@@ -36,16 +37,20 @@ This document outlines all disabled tests, incomplete implementations, mock/stub
 ## 🚨 Priority 0 - Critical Issues (Immediate Action Required)
 
 ### Render Module - ESVO Application Layer
+
 **Impact:** High - User-facing functionality completely mocked  
 **Effort:** 2-4 weeks per item  
 **Dependencies:** Core ESVO algorithms (already complete)
 
 #### P0.1: Octree Building Pipeline (ESVOBuildMode)
-```
+
+```text
+
 Files: ESVOBuildMode.java
 TODOs: 7 critical implementations needed
 Status: Completely mocked - no real functionality
-```
+
+```text
 
 **Required Implementations:**
 1. **Real mesh loading** (OBJ, PLY, STL file formats)
@@ -74,11 +79,14 @@ Status: Completely mocked - no real functionality
    - Estimated effort: 1-2 weeks
 
 #### P0.2: Octree Inspection System (ESVOInspectMode)
-```
+
+```text
+
 Files: ESVOInspectMode.java  
 TODOs: 3 critical implementations needed
 Status: Completely mocked - no real analysis
-```
+
+```text
 
 **Required Implementations:**
 1. **Real octree file reader** 
@@ -97,11 +105,14 @@ Status: Completely mocked - no real analysis
    - Estimated effort: 1 week
 
 #### P0.3: Performance Benchmarking (ESVOBenchmarkMode)
-```
+
+```text
+
 Files: ESVOBenchmarkMode.java
 TODOs: 3 critical implementations needed
 Status: Completely mocked - no real benchmarks
-```
+
+```text
 
 **Required Implementations:**
 1. **Camera path loading**
@@ -124,11 +135,14 @@ Status: Completely mocked - no real benchmarks
 ## 🔧 Priority 1 - Major Features (Next Sprint)
 
 ### P1.1: Interactive Visualization (ESVOInteractiveMode)
-```
+
+```text
+
 Files: ESVOInteractiveMode.java
 Status: Complete placeholder - needs full implementation
 Estimated effort: 4-6 weeks
-```
+
+```text
 
 **Scope:** Complete JavaFX application with:
 - Real-time octree visualization
@@ -138,11 +152,14 @@ Estimated effort: 4-6 weeks
 - State save/load functionality
 
 ### P1.2: Ambient Occlusion Pipeline (ESVOAmbientMode)  
-```
+
+```text
+
 Files: ESVOAmbientMode.java
 Status: Complete placeholder - needs full implementation  
 Estimated effort: 3-4 weeks
-```
+
+```text
 
 **Scope:** Octree-accelerated AO computation:
 - Mesh loading and normal computation
@@ -151,11 +168,14 @@ Estimated effort: 3-4 weeks
 - Quality and sampling controls
 
 ### P1.3: Octree Optimization System (ESVOOptimizeMode)
-```
+
+```text
+
 Files: ESVOOptimizeMode.java  
 Status: Complete placeholder - needs full implementation
 Estimated effort: 2-3 weeks  
-```
+
+```text
 
 **Scope:** Advanced octree optimization:
 - Tree structure analysis and optimization
@@ -168,25 +188,32 @@ Estimated effort: 2-3 weeks
 ## 📋 Priority 2 - Quality of Life Improvements
 
 ### P2.1: Disabled Performance Tests
+
 **Impact:** Low - Tests exist but are disabled for CI  
 **Effort:** 0 - Just enable when needed  
 
 #### Lucien Module Performance Tests (5 disabled)
-```
+
+```text
+
 Files: 
+
 - ForestPerformanceBenchmark.java (@Disabled "Performance benchmarks - enable to run")  
 - DSOCBenchmarkRunner.java (@Disabled "Manual benchmark - run explicitly when needed")
 - DSOCPerformanceBenchmark.java (@Disabled "JMH benchmark - run manually")
 - DSOCPerformanceTest.java (2 tests @Disabled "Performance test - run manually")
-```
+
+```text
 
 **Recommendation:** Keep disabled by default, enable for performance analysis sessions.
 
 ### P2.2: TODO Comments in Core Modules
+
 **Impact:** Low to Medium - Mostly optimizations or edge cases  
 **Effort:** 1-3 days each
 
 #### Lucien Module (8 TODOs)
+
 1. **Tetree.java:2297** - Re-implement cached bounds optimization
 2. **Tet.java:787** - Remove hardcoded root tet type  
 3. **TetreeKey.java:412** - Re-enable protobuf serialization after testing
@@ -195,15 +222,18 @@ Files:
 6. **GridForest.java** (3 TODOs) - Complete implementation when constructor issues resolved
 
 #### Other Minor Items
+
 - **Portal/CameraBoom.java:61** - Auto-generated method stub
 - **Prism.java:167** - Implement exact prism-ray intersection
 - **Triangle.java:207** - Implement full t8code triangular SFC algorithm
 
 ### P2.3: Collection Implementation Gaps
+
 **Impact:** Low - Working but incomplete APIs  
 **Effort:** 1-2 days each
 
 #### Common Module (3 items)
+
 - **OpenAddressingSet.java** - Missing some Set interface methods
 - **ShortArrayList.java** - Missing some List interface methods  
 - **IntArrayList.java** - Missing some List interface methods
@@ -213,16 +243,19 @@ Files:
 ## 🎭 Priority 3 - Mock/Stub Code (Review for Removal)
 
 ### P3.1: GPU Test Framework Mocks
+
 **Impact:** Low - Designed for CI compatibility  
 **Status:** Intentional design - keep as-is
 
 The GPU test framework contains extensive mock implementations specifically designed for CI environments where GPU hardware is unavailable. This is **intentional architecture** and should remain.
 
 ### P3.2: Core Module Stubs  
+
 **Impact:** Medium - May indicate incomplete APIs  
 **Effort:** Varies by component
 
 #### Items for Review:
+
 - **Sentry/Tetrahedron.java** - UnsupportedOperationException in some methods
 - **Sentry/OrientedFace.java** - UnsupportedOperationException in some methods  
 - **Dyada transformations** - Linear transformation incomplete
@@ -232,6 +265,7 @@ The GPU test framework contains extensive mock implementations specifically desi
 ## 🗓 Recommended Implementation Timeline
 
 ### Phase 1 (Weeks 1-4): Core ESVO Functionality
+
 **Goal:** Make ESVO application layer functional (not mocked)
 
 **Week 1-2:**
@@ -244,6 +278,7 @@ The GPU test framework contains extensive mock implementations specifically desi
 - Integration testing
 
 ### Phase 2 (Weeks 5-8): Analysis and Benchmarking  
+
 **Goal:** Complete inspection and benchmarking systems
 
 **Week 5-6:**
@@ -257,6 +292,7 @@ The GPU test framework contains extensive mock implementations specifically desi
 - Documentation
 
 ### Phase 3 (Weeks 9-16): Advanced Features
+
 **Goal:** Complete advanced ESVO features  
 
 **Week 9-12:**  
@@ -268,6 +304,7 @@ The GPU test framework contains extensive mock implementations specifically desi
 - Octree optimization system  
 
 ### Phase 4 (Weeks 17+): Polish and Optimization
+
 **Goal:** Address remaining TODOs and optimizations
 
 - Performance optimizations
@@ -310,17 +347,20 @@ The GPU test framework contains extensive mock implementations specifically desi
 ## ⚠️ Risk Assessment
 
 ### High Risk Items
+
 1. **Octree Building Algorithm Complexity** - May require significant algorithmic work
 2. **JavaFX GUI Implementation** - Large scope with UI/UX considerations
 3. **Real-time Rendering Performance** - May expose performance bottlenecks
 
 ### Mitigation Strategies
+
 1. **Incremental Implementation** - Start with basic functionality, add features iteratively
 2. **Comprehensive Testing** - Maintain test coverage as functionality is added
 3. **Performance Monitoring** - Profile early and often during implementation
 4. **Fallback Options** - Keep mock modes available for development/testing
 
 ### Low Risk Items
+
 - TODO comment resolution (mostly optimizations)
 - Collection API completion (well-defined scope)  
 - Performance test enablement (zero risk)

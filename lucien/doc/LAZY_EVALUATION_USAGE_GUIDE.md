@@ -11,6 +11,7 @@ This guide demonstrates how to use the lazy evaluation features in Tetree to eff
 The `LazyRangeIterator` provides O(1) memory iteration over TetreeKey ranges.
 
 ```java
+
 // Create a large range
 var startTet = new Tet(0, 0, 0, level, (byte)0);
 var endTet = new Tet(1000000, 1000000, 1000000, level, (byte)5);
@@ -26,13 +27,15 @@ while (iterator.hasNext()) {
         break; // Early termination supported
     }
 }
-```
+
+```text
 
 ### 2. SFCRange with Lazy Methods
 
 The enhanced `SFCRange` provides streaming capabilities:
 
 ```java
+
 // Create a spatial range
 var range = new Tet.SFCRange(startKey, endKey);
 
@@ -52,13 +55,15 @@ if (range.isSingle()) {
 
 // Estimate size without enumeration
 long estimatedSize = range.estimateSize();
-```
+
+```text
 
 ### 3. RangeHandle for Deferred Computation
 
 `RangeHandle` represents spatial queries without immediate execution:
 
 ```java
+
 // Create range handle - no computation yet
 var handle = new RangeHandle(rootTet, bounds, includeIntersecting, level);
 
@@ -76,13 +81,15 @@ var allKeys = handles.stream()
     .flatMap(RangeHandle::stream)
     .distinct()
     .toList();
-```
+
+```text
 
 ### 4. RangeQueryVisitor for Tree Traversal
 
 Alternative to range-based iteration using tree structure:
 
 ```java
+
 // Create visitor for spatial bounds query
 var visitor = new RangeQueryVisitor<ID, Content>(bounds, includeIntersecting);
 
@@ -96,7 +103,8 @@ tetree.nodes().forEach(node -> {
 // Get results and statistics
 var matchingNodes = visitor.getResults();
 System.out.println(visitor.getStatistics());
-```
+
+```text
 
 ## Usage Patterns
 
@@ -105,6 +113,7 @@ System.out.println(visitor.getStatistics());
 When querying large spatial ranges:
 
 ```java
+
 // BAD: Materializes all keys
 List<TetreeKey<?>> allKeys = computeAllKeysInRange(bounds);
 for (var key : allKeys) {
@@ -115,25 +124,29 @@ for (var key : allKeys) {
 Tet.spatialRangeQueryKeys(bounds, level)
     .stream()
     .forEach(this::processKey);
-```
+
+```text
 
 ### Pattern 2: Early Termination
 
 Finding first N matching elements:
 
 ```java
+
 // Find first 100 entities in range
 var firstHundred = tetree.boundedBy(bounds)
     .flatMap(node -> node.entityIds().stream())
     .limit(100)
     .toList();
-```
+
+```text
 
 ### Pattern 3: Memory-Conscious Processing
 
 Processing very large ranges in batches:
 
 ```java
+
 var range = new Tet.SFCRange(startKey, endKey);
 var iterator = range.iterator();
 
@@ -150,13 +163,15 @@ while (iterator.hasNext()) {
 if (!batch.isEmpty()) {
     processBatch(batch);
 }
-```
+
+```text
 
 ### Pattern 4: Combining Multiple Ranges
 
 Efficiently combine results from multiple spatial queries:
 
 ```java
+
 // Define multiple query regions
 List<VolumeBounds> regions = getRegionsOfInterest();
 
@@ -170,7 +185,8 @@ handles.stream()
     .flatMap(RangeHandle::stream)
     .distinct()  // Remove duplicates across regions
     .forEach(this::processKey);
-```
+
+```text
 
 ## Performance Considerations
 
@@ -209,6 +225,7 @@ handles.stream()
 ### Example 1: Spatial Search with Distance Filter
 
 ```java
+
 Point3f queryPoint = new Point3f(100, 100, 100);
 float maxDistance = 50.0f;
 
@@ -230,11 +247,13 @@ var results = Tet.spatialRangeQueryKeys(
         return center.distance(queryPoint) <= maxDistance;
     })
     .toList();
-```
+
+```text
 
 ### Example 2: Progressive Loading
 
 ```java
+
 public class ProgressiveLoader {
     private final Iterator<TetreeKey<?>> iterator;
     private final int batchSize = 100;
@@ -257,11 +276,13 @@ public class ProgressiveLoader {
         return iterator.hasNext();
     }
 }
-```
+
+```text
 
 ### Example 3: Memory-Aware Range Processing
 
 ```java
+
 public void processLargeRange(VolumeBounds bounds, byte level) {
     var ranges = Tet.spatialRangeQueryKeys(bounds, level);
     
@@ -283,7 +304,8 @@ public void processLargeRange(VolumeBounds bounds, byte level) {
         }
     }
 }
-```
+
+```text
 
 ## Conclusion
 

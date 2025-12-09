@@ -9,10 +9,13 @@ This document outlines a comprehensive optimization strategy for the Sentry modu
 ### Phase 1: Quick Wins (1-2 weeks, 30-40% improvement)
 
 #### 1.1 Replace LinkedList with ArrayList
+
 **Impact**: High (15-20% improvement)  
 **Effort**: Low  
 **Implementation**:
+
 ```java
+
 // Change from:
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // LinkedList<OrientedFace> ears
@@ -23,7 +26,8 @@ public Tetrahedron flip(Vertex n, ArrayList<OrientedFace> ears) {
     // Pre-size based on expected ear count
     ears.ensureCapacity(expectedSize);
 }
-```
+
+```text
 
 **Benefits**:
 - O(1) random access vs O(n)
@@ -31,10 +35,13 @@ public Tetrahedron flip(Vertex n, ArrayList<OrientedFace> ears) {
 - Lower memory overhead
 
 #### 1.2 Cache getAdjacentVertex() Results
+
 **Impact**: Medium (10-15% improvement)  
 **Effort**: Low  
 **Implementation**:
+
 ```java
+
 public abstract class OrientedFace {
     private Vertex cachedAdjacentVertex;
     private boolean adjacentVertexCached = false;
@@ -52,13 +59,17 @@ public abstract class OrientedFace {
         adjacentVertexCached = false;
     }
 }
-```
+
+```text
 
 #### 1.3 Implement Object Pooling for Tetrahedra
+
 **Impact**: Medium (10-15% improvement)  
 **Effort**: Medium  
 **Implementation**:
+
 ```java
+
 public class TetrahedronPool {
     private final Queue<Tetrahedron> pool = new ConcurrentLinkedQueue<>();
     private final int maxPoolSize = 10000;
@@ -79,15 +90,19 @@ public class TetrahedronPool {
         }
     }
 }
-```
+
+```text
 
 ### Phase 2: Algorithmic Improvements (2-4 weeks, 20-30% improvement)
 
 #### 2.1 Optimize ordinalOf() with Direct Field Comparison
+
 **Impact**: Medium (5-10% improvement)  
 **Effort**: Low  
 **Implementation**:
+
 ```java
+
 // Add vertex ID field
 public class Vertex {
     private final int id;  // Unique identifier
@@ -103,13 +118,17 @@ public V ordinalOf(Tetrahedron t) {
     if (neighbors[3] == tid) return V.D;
     return null;
 }
-```
+
+```text
 
 #### 2.2 Batch Geometric Predicate Calculations
+
 **Impact**: High (15-20% improvement)  
 **Effort**: Medium  
 **Implementation**:
+
 ```java
+
 public class GeometricPredicateCache {
     // Cache orientation results for vertex triples
     private final Map<VertexTriple, Double> orientationCache;
@@ -123,13 +142,17 @@ public class GeometricPredicateCache {
         // Potentially use SIMD instructions
     }
 }
-```
+
+```text
 
 #### 2.3 Early Exit Optimizations
+
 **Impact**: Low-Medium (5-10% improvement)  
 **Effort**: Low  
 **Implementation**:
+
 ```java
+
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // Quick check for common cases
     if (ears.size() == 4) {
@@ -149,15 +172,19 @@ public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     
     // Continue with optimized algorithm...
 }
-```
+
+```text
 
 ### Phase 3: Advanced Optimizations (4-8 weeks, 30-50% improvement)
 
 #### 3.1 SIMD Vectorization for Geometric Predicates
+
 **Impact**: High (20-30% improvement)  
 **Effort**: High  
 **Implementation**:
+
 ```java
+
 // Use JDK 16+ Vector API
 public class SimdGeometry {
     private static final VectorSpecies<Double> SPECIES = DoubleVector.SPECIES_256;
@@ -172,13 +199,17 @@ public class SimdGeometry {
         return result.reduceLanes(VectorOperators.ADD);
     }
 }
-```
+
+```text
 
 #### 3.2 Parallel Flip Operations
+
 **Impact**: Medium-High (15-25% improvement)  
 **Effort**: High  
 **Implementation**:
+
 ```java
+
 public class ParallelDelaunay {
     private final ForkJoinPool pool = new ForkJoinPool();
     
@@ -192,13 +223,17 @@ public class ParallelDelaunay {
             .collect(Collectors.toList()));
     }
 }
-```
+
+```text
 
 #### 3.3 Spatial Indexing for Neighbor Queries
+
 **Impact**: Medium (10-20% improvement)  
 **Effort**: High  
 **Implementation**:
+
 ```java
+
 public class SpatialIndex {
     private final Map<SpatialKey, List<Tetrahedron>> index;
     
@@ -208,11 +243,13 @@ public class SpatialIndex {
         return index.get(key);
     }
 }
-```
+
+```text
 
 ### Phase 4: Architectural Changes (8-12 weeks, 50%+ improvement)
 
 #### 4.1 Hybrid Exact/Approximate Predicates
+
 **Impact**: Very High (30-40% improvement)  
 **Effort**: Very High  
 **Implementation**:
@@ -221,6 +258,7 @@ public class SpatialIndex {
 - Implement interval arithmetic for robustness
 
 #### 4.2 Alternative Data Structures
+
 **Impact**: High (20-30% improvement)  
 **Effort**: Very High  
 **Implementation**:
@@ -231,16 +269,19 @@ public class SpatialIndex {
 ## Implementation Strategy
 
 ### Step 1: Baseline and Instrumentation
+
 1. Create comprehensive benchmark suite
 2. Add performance counters to critical paths
 3. Establish baseline metrics
 
 ### Step 2: Iterative Implementation
+
 1. Implement Phase 1 optimizations
 2. Measure and validate improvements
 3. Progress to next phase based on results
 
 ### Step 3: Testing and Validation
+
 1. Ensure numerical stability
 2. Validate Delaunay property preservation
 3. Test edge cases and degenerate inputs
@@ -248,7 +289,7 @@ public class SpatialIndex {
 ## Expected Results
 
 | Optimization Phase | Expected Improvement | Cumulative Improvement |
-|-------------------|---------------------|------------------------|
+| ------------------- | --------------------- | ------------------------ |
 | Phase 1 | 30-40% | 30-40% |
 | Phase 2 | 20-30% | 44-58% |
 | Phase 3 | 30-50% | 61-79% |

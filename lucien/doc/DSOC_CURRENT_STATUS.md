@@ -8,18 +8,20 @@
 
 ### Performance Results (Validated July 24, 2025)
 
-```
+```text
+
 Test Configuration: 1000 entities, 0.1 occlusion ratio
 ========================================================
 WITHOUT DSOC: 0.20 ms/frame
 WITH DSOC:    0.10 ms/frame
 RESULT:       2.0x speedup
-```
+
+```text
 
 ### Before vs After Comparison
 
 | Metric | Original State | Current Optimized State | Improvement |
-|--------|----------------|-------------------------|-------------|
+| -------- | ---------------- | ------------------------- | ------------- |
 | Performance Impact | 2.6x-11x slower | 2.0x faster | 5.2x-22x better |
 | TBV Activation | 0 active TBVs | Active when moving entities present | Fully functional |
 | Memory Usage | Wasteful upfront allocation | Lazy + adaptive allocation | Efficient scaling |
@@ -45,13 +47,16 @@ RESULT:       2.0x speedup
 ## Current Usage Guidelines
 
 ### When to Enable DSOC:
+
 - Scenes with 200+ entities
 - Meaningful occluders present (buildings, terrain, large objects)
 - Moving entities with velocity >5 m/s
 - When performance profiling confirms benefits
 
 ### Configuration Example:
+
 ```java
+
 // Recommended production configuration
 DSOCConfiguration config = DSOCConfiguration.defaultConfig()
     .withEnabled(true)  // Explicit activation required
@@ -60,10 +65,13 @@ DSOCConfiguration config = DSOCConfiguration.defaultConfig()
     .withEnableEntityOcclusion(true);
 
 spatialIndex.enableDSOC(config, 512, 512);
-```
+
+```text
 
 ### Performance Monitoring:
+
 ```java
+
 // Check system health
 Map<String, Object> stats = spatialIndex.getDSOCStatistics();
 boolean autoDisabled = (Boolean) stats.getOrDefault("dsocAutoDisabled", false);
@@ -73,26 +81,31 @@ long memoryUsage = (Long) stats.getOrDefault("memoryUsage", 0L);
 if (autoDisabled) {
     logger.warn("DSOC auto-disabled - check scene configuration");
 }
-```
+
+```text
 
 ## Optimization Features Implemented
 
 ### Phase 1: Immediate Stabilization
+
 - Auto-disable mechanism with 20% overhead threshold
 - Default DSOC disabled for safety
 - Performance monitoring and protection
 
 ### Phase 2: Performance Improvements
+
 - Adaptive Z-buffer sizing (128x128 to 2048x2048)
 - Lazy resource allocation (3+ occluder activation threshold)
 - Early exit optimizations for small scenes
 
 ### Phase 3: Realistic Testing
+
 - Dynamic entity movement scenarios
 - Strategic occluder placement testing
 - TBV activation validation with high-velocity entities
 
 ### Phase 4: Comprehensive Validation
+
 - Multi-scenario performance testing
 - Before/after comparison framework
 - Regression prevention test suite
@@ -100,7 +113,7 @@ if (autoDisabled) {
 ## Expected Performance by Scene Size
 
 | Scene Size | Entity Count | Expected Performance | Notes |
-|------------|-------------|---------------------|-------|
+| ------------ | ------------- | --------------------- | ------- |
 | Small | < 50 | No overhead | Early exit active |
 | Medium | 50-500 | 0-20% improvement | Adaptive sizing |
 | Large | 500-2000 | 1.5-3x improvement | Full DSOC benefits |
@@ -109,6 +122,7 @@ if (autoDisabled) {
 ## Files Modified/Added
 
 ### Core Implementation:
+
 - `AbstractSpatialIndex.java` - Performance monitoring, auto-disable, early exits
 - `DSOCConfiguration.java` - Safe defaults (disabled by default)
 - `HierarchicalOcclusionCuller.java` - Lazy allocation, early exits
@@ -116,6 +130,7 @@ if (autoDisabled) {
 - `AdaptiveZBufferConfig.java` - Configuration management (NEW)
 
 ### Testing & Validation:
+
 - `DSOCPerformanceTest.java` - Original test (now shows 2x speedup)
 - Various validation tests (temporarily moved due to API updates needed)
 

@@ -21,7 +21,7 @@
 ## SFC Concepts (8 Documents)
 
 | Doc ID | Title | Key Content | Relevance |
-|--------|-------|-------------|-----------|
+| -------- | ------- | ------------- | ----------- |
 | `sft-01-overview` | Space-Filling Trees Overview | SFT definition, properties, advantages over space-filling curves | Foundational |
 | `sft-02-vs-rrt` | Space-Filling Trees vs RRT | Deterministic vs probabilistic, completeness guarantees, path quality | High |
 | `sft-03-incremental-search` | Incremental Search Strategies | Level-by-level expansion, anytime algorithms, solution convergence | High |
@@ -36,7 +36,7 @@
 ## k-NN Optimization Insights (7 Documents)
 
 | Doc ID | Title | Key Content | Relevance |
-|--------|-------|-------------|-----------|
+| -------- | ------- | ------------- | ----------- |
 | `knn-01-bottleneck` | k-NN Bottleneck in Motion Planning | RRT bottleneck analysis, 70-90% CPU time in k-NN, parallel RRT limitations | Critical |
 | `knn-02-sfc-locality` | SFC Locality Preservation for k-NN | Statistical evidence, 85-95% candidate precision, binary search startup | Critical |
 | `knn-03-incremental-knn` | Incremental k-NN Updates | Dynamic maintenance, O(log N + k) per update, 95% computation reduction | High |
@@ -50,7 +50,7 @@
 ## Lucien Integration Insights (6 Documents)
 
 | Doc ID | Title | Key Content | Implementation Focus |
-|--------|-------|-------------|----------------------|
+| -------- | ------- | ------------- | ---------------------- |
 | `lucien-01-current-knn` | Lucien Current k-NN Implementation | ObjectPool pattern, O(N) worst case, SFC traversal without pruning | Analysis |
 | `lucien-02-sfc-pruning` | SFC-Based Subtree Pruning | Distance-to-depth mapping, 90-95% candidate elimination, 4-6x speedup | Priority 1 |
 | `lucien-03-morton-knn-cache` | Morton Key k-NN Caching | Per-cell caching, version tracking, 50-70% reduction for static scenes | Priority 2 |
@@ -97,6 +97,7 @@
 **Target Performance**: 0.3-0.5ms per k-NN query (vs current 1.5-2.0ms)
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/key/MortonKey.java` (add depth mapping)
 
@@ -128,6 +129,7 @@
 **Target Performance**: 0.3-0.5ms per k-NN query (similar to Octree)
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/key/TetreeKey.java` (add range methods)
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java` (dispatch to appropriate range method)
 
@@ -162,14 +164,17 @@
    - Target: 50-70% hit rate for typical motion planning
 
 **Target Performance**:
+
 - Cache hit: 0.05-0.1ms (20-30x speedup)
 - Cache miss: 0.3-0.5ms (Phase 1 pruning)
 - Blended: ~0.15-0.25ms average (6-10x overall from Phase 1 baseline)
 
 **Files to Create**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/cache/KNNCache.java`
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/entity/EntityManager.java` (version tracking)
 
@@ -201,6 +206,7 @@
 **Target Performance**: 70-90% reduction in collision checks
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/collision/CollisionDetection.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 
@@ -237,9 +243,11 @@
 **Target Performance**: Maintain Phase 1-2 performance under concurrent load
 
 **Files to Create**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/concurrent/RegionLocking.java`
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/cache/KNNCache.java`
 
@@ -249,30 +257,36 @@
 
 **✅ ACTUAL RESULTS (December 6, 2025)**
 
-```
+```text
+
 Baseline (August 2025):      0.103ms per k-NN query (10K entities, k=20)
                               ↓
 Phase 1 (SFC Pruning):        [SKIPPED - went directly to Phase 2]
                               ↓
 Phase 2 (k-NN Caching):       0.0015ms cache hit (69× faster than baseline)
+
                               0.0001ms blended average (1030× faster)
+
                               50-102× speedup validated
                               ↓
 Phase 3a (Concurrent):        2,998,362 queries/sec sustained (12 threads)
                               593,066 queries/sec read-only
+
                               0.0003ms avg latency under load
                               18.1M queries tested, ZERO errors
+
                               ↓
 Phase 3b/3c (Region Locking): [SKIPPED - baseline performance exceeds requirements]
 
 ACHIEVED: 0.0015ms per query (cache hit) - 69× better than baseline
           3M queries/sec concurrent - far exceeds motion planning requirements
-```
+
+```text
 
 **Original Targets vs Actual Performance:**
 
 | Phase | Original Target | Actual Result | Status |
-|-------|----------------|---------------|---------|
+| ------- | ---------------- | --------------- | --------- |
 | Phase 1 | 0.3-0.5ms (4-6× improvement) | SKIPPED | N/A |
 | Phase 2 Cache Hit | 0.05-0.1ms (20-30× speedup) | 0.0015ms (50-102× speedup) | ✅ 33-67× BETTER |
 | Phase 2 Blended | 0.15-0.25ms | 0.0001ms | ✅ 1500-2500× BETTER |
@@ -284,22 +298,26 @@ ACHIEVED: 0.0015ms per query (cache hit) - 69× better than baseline
 ## Testing & Validation
 
 ### Unit Tests (per phase)
+
 - **Phase 1**: Correctness of k-NN results, pruning effectiveness, distance-to-depth mapping
 - **Phase 2**: Cache hit rates, invalidation logic, version tracking
 - **Phase 3**: Concurrent access patterns, race condition safety, deadlock freedom
 
 ### Integration Tests
+
 - Motion planning scenario with 100+ moving entities
 - Collision detection with obstacle-rich scenes
 - Frustum culling with camera movement
 - DSOC occlusion with k-NN filtering
 
 ### Performance Benchmarks
+
 - `OctreeVsTetreeBenchmark`: Include k-NN performance metrics
 - Custom k-NN benchmark: Vary scene density, entity count, query patterns
 - Concurrent benchmark: Multi-threaded k-NN stress test
 
 ### Documentation
+
 - Update `PERFORMANCE_METRICS_MASTER.md` with k-NN improvements
 - Add k-NN optimization guide to `LUCIEN_ARCHITECTURE.md`
 - Create k-NN best practices document
@@ -309,21 +327,29 @@ ACHIEVED: 0.0015ms per query (cache hit) - 69× better than baseline
 ## Knowledge Base Query Examples
 
 ### Using Command Line
+
 ```bash
+
 # Query about k-NN optimization
+
 python3 scripts/query_sft_knowledge.py "k-NN optimization space-filling curves"
 
 # Query about specific document
+
 python3 scripts/query_sft_knowledge.py "Morton key caching k-NN"
-```
+
+```text
 
 ### Using Python API
+
 ```python
+
 from scripts.chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 
 indexer = SFTMotionPlanningIndexer()
 
 # Search for specific optimization techniques
+
 results = indexer.query_collection(
     "How to implement SFC-based pruning for k-NN?",
     n_results=3
@@ -332,7 +358,8 @@ results = indexer.query_collection(
 for result in results:
     print(f"Title: {result['metadata']['title']}")
     print(f"Content: {result['content']}")
-```
+
+```text
 
 ---
 
@@ -372,6 +399,7 @@ for result in results:
 **✅ IMPLEMENTATION COMPLETE (December 6, 2025)**
 
 ### What Was Completed:
+
 1. ✅ **Phase 2 (k-NN Result Caching)** - Implemented version-based caching with LRU eviction
    - Files created: `lucien/src/main/java/com/hellblazer/luciferase/lucien/cache/KNNResultCache.java`
    - Files modified: `lucien/src/main/java/com/hellblazer/luciferase/lucien/AbstractSpatialIndex.java`
@@ -382,17 +410,20 @@ for result in results:
    - 18.1M queries tested with zero errors
 
 ### What Was Skipped:
+
 - **Phase 1 (SFC Pruning)** - Unnecessary, went directly to Phase 2
 - **Phase 3b (Region-Based Locking)** - Baseline performance (3M queries/sec) far exceeds requirements
 - **Phase 3c (Concurrent Benchmarking)** - Data-driven decision: current architecture sufficient
 
 ### Documentation Created:
+
 - ChromaDB: `luciferase_knn_phase2_phase3_complete` (comprehensive implementation summary)
 - Memory Bank: Updated `Luciferase/performance-summary.md`
 - PERFORMANCE_METRICS_MASTER.md: Added k-NN caching and concurrent performance sections
 - SFT_KNN_IMPLEMENTATION_ROADMAP.md: Updated with actual results
 
 ### Beads Issues Closed:
+
 - Luciferase-ibn (Phase 2: k-NN Result Caching)
 - Luciferase-oon (Phase 2d: Benchmark Testing)
 - Luciferase-dd5 (Phase 3a: Concurrent Stress Testing)

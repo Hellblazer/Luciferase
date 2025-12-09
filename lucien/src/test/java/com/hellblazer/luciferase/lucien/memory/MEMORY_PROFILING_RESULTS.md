@@ -7,6 +7,7 @@ Test Environment: 4GB heap
 ## Executive Summary
 
 The refactoring from HashMap + TreeSet to ConcurrentSkipListMap shows significant memory savings:
+
 - **54-61% reduction in memory usage** across different data sizes
 - **No memory leaks detected** in either approach
 - **Better fragmentation characteristics** with ConcurrentSkipListMap
@@ -16,11 +17,11 @@ The refactoring from HashMap + TreeSet to ConcurrentSkipListMap shows significan
 
 ### Memory Usage Comparison
 
-| Entity Count | HashMap+TreeSet | ConcurrentSkipListMap | Reduction | Per-Entity Overhead |
-|--------------|-----------------|----------------------|-----------|-------------------|
-| 1,000        | 0.08 MB        | 0.03 MB              | 54.4%     | 80 → 36 bytes     |
-| 10,000       | 0.75 MB        | 0.34 MB              | 54.1%     | 78 → 36 bytes     |
-| 100,000      | 1.77 MB        | 0.69 MB              | 61.2%     | 18 → 7 bytes      |
+|Entity Count|HashMap+TreeSet|ConcurrentSkipListMap|Reduction|Per-Entity Overhead|
+| -------------- | ----------------- | ---------------------- | ----------- | ------------------- |
+|1,000|0.08 MB|0.03 MB|54.4%|80 → 36 bytes|
+|10,000|0.75 MB|0.34 MB|54.1%|78 → 36 bytes|
+|100,000|1.77 MB|0.69 MB|61.2%|18 → 7 bytes|
 
 ### Key Findings
 

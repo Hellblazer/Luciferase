@@ -8,7 +8,7 @@
 
 ## Quick Navigation
 
-### I Need To...
+### I Need To
 
 #### Understand the Project
 
@@ -63,55 +63,55 @@
 
 These documents provide overview and orientation:
 
-| Document | Purpose | Read Time |
-|----------|---------|-----------|
-| [README.md](./README.md) | Project overview and quick start | 10 min |
-| [CLAUDE.md](./CLAUDE.md) | Development guidelines and critical context | 15 min |
-| [lucien/doc/PROJECT_STATUS.md](./lucien/doc/PROJECT_STATUS.md) | Current state and recent improvements | 10 min |
+|Document|Purpose|Read Time|
+| ---------- | --------- | ----------- |
+|[README.md](./README.md)|Project overview and quick start|10 min|
+|[CLAUDE.md](./CLAUDE.md)|Development guidelines and critical context|15 min|
+|[lucien/doc/PROJECT_STATUS.md](./lucien/doc/PROJECT_STATUS.md)|Current state and recent improvements|10 min|
 
 ### Level 2: Core Knowledge (Essential Reading)
 
 These documents provide foundational understanding:
 
-| Document | For | Focus |
-|----------|-----|-------|
-| [lucien/doc/ARCHITECTURE_SUMMARY.md](./lucien/doc/ARCHITECTURE_SUMMARY.md) | Anyone using or modifying spatial indices | Architecture patterns |
-| [lucien/doc/PERFORMANCE_METRICS_MASTER.md](./lucien/doc/PERFORMANCE_METRICS_MASTER.md) | Optimization and selection | Performance data |
-| [TEST_COVERAGE_SUMMARY.md](./TEST_COVERAGE_SUMMARY.md) | Test development and maintenance | Test organization |
-| [lucien/doc/API_DOCUMENTATION_INDEX.md](./lucien/doc/API_DOCUMENTATION_INDEX.md) | API users | API discovery |
+|Document|For|Focus|
+| ---------- | ----- | ------- |
+|[lucien/doc/ARCHITECTURE_SUMMARY.md](./lucien/doc/ARCHITECTURE_SUMMARY.md)|Anyone using or modifying spatial indices|Architecture patterns|
+|[lucien/doc/PERFORMANCE_METRICS_MASTER.md](./lucien/doc/PERFORMANCE_METRICS_MASTER.md)|Optimization and selection|Performance data|
+|[TEST_COVERAGE_SUMMARY.md](./TEST_COVERAGE_SUMMARY.md)|Test development and maintenance|Test organization|
+|[lucien/doc/API_DOCUMENTATION_INDEX.md](./lucien/doc/API_DOCUMENTATION_INDEX.md)|API users|API discovery|
 
 ### Level 3: Detailed References (Deep Dive)
 
 These documents provide comprehensive details:
 
-| Document | Topic | Use Case |
-|----------|-------|----------|
-| [lucien/doc/LUCIEN_ARCHITECTURE.md](./lucien/doc/LUCIEN_ARCHITECTURE.md) | Complete architecture | Deep understanding |
-| [lucien/doc/CORE_SPATIAL_INDEX_API.md](./lucien/doc/CORE_SPATIAL_INDEX_API.md) | Core API | Implementing spatial operations |
-| [lucien/doc/COLLISION_DETECTION_API.md](./lucien/doc/COLLISION_DETECTION_API.md) | Collision system | Physics simulation |
-| [lucien/doc/GHOST_API.md](./lucien/doc/GHOST_API.md) | Distributed support | Large-scale systems |
+|Document|Topic|Use Case|
+| ---------- | ------- | ---------- |
+|[lucien/doc/LUCIEN_ARCHITECTURE.md](./lucien/doc/LUCIEN_ARCHITECTURE.md)|Complete architecture|Deep understanding|
+|[lucien/doc/CORE_SPATIAL_INDEX_API.md](./lucien/doc/CORE_SPATIAL_INDEX_API.md)|Core API|Implementing spatial operations|
+|[lucien/doc/COLLISION_DETECTION_API.md](./lucien/doc/COLLISION_DETECTION_API.md)|Collision system|Physics simulation|
+|[lucien/doc/GHOST_API.md](./lucien/doc/GHOST_API.md)|Distributed support|Large-scale systems|
 
 ### Level 4: Specialized References (As Needed)
 
 These documents address specific topics:
 
-| Document | Topic | When Needed |
-|----------|-------|-------------|
-| [lucien/doc/K_NEAREST_NEIGHBORS_API.md](./lucien/doc/K_NEAREST_NEIGHBORS_API.md) | k-NN search | Proximity queries |
-| [lucien/doc/RAY_INTERSECTION_API.md](./lucien/doc/RAY_INTERSECTION_API.md) | Ray casting | Rendering/physics |
-| [lucien/doc/FRUSTUM_CULLING_API.md](./lucien/doc/FRUSTUM_CULLING_API.md) | Visibility culling | Graphics optimization |
-| [lucien/doc/DSOC_API.md](./lucien/doc/DSOC_API.md) | Occlusion culling | Rendering performance |
+|Document|Topic|When Needed|
+| ---------- | ------- | ------------- |
+|[lucien/doc/K_NEAREST_NEIGHBORS_API.md](./lucien/doc/K_NEAREST_NEIGHBORS_API.md)|k-NN search|Proximity queries|
+|[lucien/doc/RAY_INTERSECTION_API.md](./lucien/doc/RAY_INTERSECTION_API.md)|Ray casting|Rendering/physics|
+|[lucien/doc/FRUSTUM_CULLING_API.md](./lucien/doc/FRUSTUM_CULLING_API.md)|Visibility culling|Graphics optimization|
+|[lucien/doc/DSOC_API.md](./lucien/doc/DSOC_API.md)|Occlusion culling|Rendering performance|
 
 ### Level 5: Reference Materials (Lookup)
 
 These documents provide reference information:
 
-| Document | Type | Purpose |
-|----------|------|---------|
-| [DOCUMENTATION_STANDARDS.md](./DOCUMENTATION_STANDARDS.md) | Standards | Documentation consistency |
-| [HISTORICAL_FIXES_REFERENCE.md](./HISTORICAL_FIXES_REFERENCE.md) | Archive | Understanding evolution |
-| [lucien/doc/PERFORMANCE_TESTING_PROCESS.md](./lucien/doc/PERFORMANCE_TESTING_PROCESS.md) | Procedure | Running benchmarks |
-| [GPU_TEST_FRAMEWORK_GUIDE.md](./GPU_TEST_FRAMEWORK_GUIDE.md) | Setup | GPU testing |
+|Document|Type|Purpose|
+| ---------- | ------ | --------- |
+|[DOCUMENTATION_STANDARDS.md](./DOCUMENTATION_STANDARDS.md)|Standards|Documentation consistency|
+|[HISTORICAL_FIXES_REFERENCE.md](./HISTORICAL_FIXES_REFERENCE.md)|Archive|Understanding evolution|
+|[lucien/doc/PERFORMANCE_TESTING_PROCESS.md](./lucien/doc/PERFORMANCE_TESTING_PROCESS.md)|Procedure|Running benchmarks|
+|[GPU_TEST_FRAMEWORK_GUIDE.md](./GPU_TEST_FRAMEWORK_GUIDE.md)|Setup|GPU testing|
 
 ---
 
@@ -124,11 +124,13 @@ These documents provide reference information:
 **API**: [lucien/doc/CORE_SPATIAL_INDEX_API.md](./lucien/doc/CORE_SPATIAL_INDEX_API.md)
 
 **Specific Indices**:
+
 - Octree: [lucien/doc/CORE_SPATIAL_INDEX_API.md](./lucien/doc/CORE_SPATIAL_INDEX_API.md) (section: Octree)
 - Tetree: [lucien/doc/TETREE_IMPLEMENTATION_GUIDE.md](./lucien/doc/TETREE_IMPLEMENTATION_GUIDE.md)
 - Prism: [lucien/doc/PRISM_API.md](./lucien/doc/PRISM_API.md)
 
 **Critical Geometry**:
+
 - Cube vs Tetrahedron: [CLAUDE.md](./CLAUDE.md#geometric-distinctions)
 - S0-S5 Subdivision: [lucien/doc/S0_S5_TETRAHEDRAL_SUBDIVISION.md](./lucien/doc/S0_S5_TETRAHEDRAL_SUBDIVISION.md)
 
@@ -194,14 +196,14 @@ These documents provide reference information:
 
 These documents are the single source of truth for their topics:
 
-| Topic | Authoritative Document | Version | Last Updated |
-|-------|----------------------|---------|--------------|
-| Performance Metrics | PERFORMANCE_METRICS_MASTER.md | August 3, 2025 | Current |
-| Project Status | PROJECT_STATUS.md | Ongoing | Current |
-| Architecture | LUCIEN_ARCHITECTURE.md | 185 classes | Current |
-| API Catalog | API_DOCUMENTATION_INDEX.md | 16 APIs | Current |
-| Testing | TEST_COVERAGE_SUMMARY.md | Comprehensive | December 6, 2025 |
-| Standards | DOCUMENTATION_STANDARDS.md | v1.0 | December 6, 2025 |
+|Topic|Authoritative Document|Version|Last Updated|
+| ------- | ---------------------- | --------- | -------------- |
+|Performance Metrics|PERFORMANCE_METRICS_MASTER.md|August 3, 2025|Current|
+|Project Status|PROJECT_STATUS.md|Ongoing|Current|
+|Architecture|LUCIEN_ARCHITECTURE.md|185 classes|Current|
+|API Catalog|API_DOCUMENTATION_INDEX.md|16 APIs|Current|
+|Testing|TEST_COVERAGE_SUMMARY.md|Comprehensive|December 6, 2025|
+|Standards|DOCUMENTATION_STANDARDS.md|v1.0|December 6, 2025|
 
 ### Secondary Sources
 
@@ -258,7 +260,8 @@ These documents preserve historical information and context:
 
 Recommended collections to create:
 
-```
+```text
+
 Collections:
 ├── luciferase-architecture
 │   ├── Spatial index designs
@@ -280,13 +283,15 @@ Collections:
     ├── Usage examples
     ├── Parameter documentation
     └── Performance characteristics
-```
+
+```text
 
 ### Memory Bank Files
 
 Recommended files to maintain:
 
-```
+```text
+
 memory/luciferase/
 ├── architecture.md
 │   ├── Core module relationships
@@ -308,7 +313,8 @@ memory/luciferase/
     ├── GPU testing requirements
     ├── Performance validation
     └── Critical test cases
-```
+
+```text
 
 ---
 
@@ -334,6 +340,7 @@ Every 3 months (next: March 6, 2026), verify:
 ### Documentation Owner
 
 Assign one person responsible for:
+
 - Quarterly documentation reviews
 - Approving significant documentation changes
 - Maintaining consistency across documents
@@ -343,6 +350,7 @@ Assign one person responsible for:
 ### Per-Feature Lead
 
 When adding major features:
+
 - Update PROJECT_STATUS.md
 - Add API documentation
 - Update ARCHITECTURE_SUMMARY.md if needed
@@ -352,6 +360,7 @@ When adding major features:
 ### CI/CD Pipeline
 
 Automated checks should:
+
 - Verify all links are valid
 - Check for outdated metrics (>90 days old)
 - Validate markdown formatting
@@ -363,14 +372,14 @@ Automated checks should:
 
 Track these metrics quarterly:
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| Documentation Currency | <90 days | Current |
-| Broken Links | 0 | 0 |
-| API Documentation Completeness | 100% | 100% |
-| Architecture-Code Alignment | 95%+ | 96% |
-| Performance Metrics Accuracy | ±10% | 99% |
-| Test Coverage Documentation | >85% | 95% |
+|Metric|Target|Current|
+| -------- | -------- | --------- |
+|Documentation Currency|<90 days|Current|
+|Broken Links|0|0|
+|API Documentation Completeness|100%|100%|
+|Architecture-Code Alignment|95%+|96%|
+|Performance Metrics Accuracy|±10%|99%|
+|Test Coverage Documentation|>85%|95%|
 
 ---
 

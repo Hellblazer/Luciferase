@@ -12,6 +12,7 @@ The gRPC module provides the communication layer for Luciferase's distributed fe
 ## Features
 
 ### Protocol Buffer Definitions
+
 - **Spatial Data Types**: Efficient serialization of octrees, tetrees, and spatial indices
 - **Entity Messages**: Compact representation of entities with positions and metadata
 - **Query Messages**: Spatial queries including range, k-NN, ray intersection, frustum
@@ -19,6 +20,7 @@ The gRPC module provides the communication layer for Luciferase's distributed fe
 - **Synchronization**: Distributed state synchronization protocols
 
 ### gRPC Services
+
 - **SpatialIndexService**: Remote spatial index operations
 - **EntityService**: Entity management across nodes
 - **QueryService**: Distributed spatial queries
@@ -29,7 +31,8 @@ The gRPC module provides the communication layer for Luciferase's distributed fe
 
 ### Message Definitions
 
-```
+```text
+
 grpc/
 ├── src/main/proto/
 │   ├── spatial/
@@ -50,13 +53,15 @@ grpc/
 │       ├── spatial_service.proto # Spatial index service
 │       ├── entity_service.proto  # Entity management service
 │       └── sync_service.proto    # Synchronization service
-```
+
+```text
 
 ## Protocol Buffer Schemas
 
 ### Entity Message
 
 ```protobuf
+
 message Entity {
     string id = 1;
     Position position = 2;
@@ -75,11 +80,13 @@ message BoundingBox {
     Position min = 1;
     Position max = 2;
 }
-```
+
+```text
 
 ### Spatial Query
 
 ```protobuf
+
 message RangeQuery {
     Position center = 1;
     float radius = 2;
@@ -97,11 +104,13 @@ message RayQuery {
     Vector3 direction = 2;
     float max_distance = 3;
 }
-```
+
+```text
 
 ### Service Definition
 
 ```protobuf
+
 service SpatialIndexService {
     rpc Insert(InsertRequest) returns (InsertResponse);
     rpc Update(UpdateRequest) returns (UpdateResponse);
@@ -110,13 +119,15 @@ service SpatialIndexService {
     rpc KNNQuery(KNNQueryRequest) returns (KNNQueryResponse);
     rpc Subscribe(SubscribeRequest) returns (stream EntityUpdate);
 }
-```
+
+```text
 
 ## Usage Examples
 
 ### Client Implementation
 
 ```java
+
 // Create gRPC channel
 var channel = ManagedChannelBuilder
     .forAddress("localhost", 50051)
@@ -139,11 +150,13 @@ var response = spatialStub.insert(
     InsertRequest.newBuilder()
         .setEntity(entity)
         .build());
-```
+
+```text
 
 ### Server Implementation
 
 ```java
+
 public class SpatialIndexServiceImpl 
     extends SpatialIndexServiceGrpc.SpatialIndexServiceImplBase {
     
@@ -168,11 +181,13 @@ public class SpatialIndexServiceImpl
         observer.onCompleted();
     }
 }
-```
+
+```text
 
 ### Streaming Updates
 
 ```java
+
 // Subscribe to entity updates
 var subscription = spatialStub.subscribe(
     SubscribeRequest.newBuilder()
@@ -195,11 +210,13 @@ subscription.forEachRemaining(update -> {
             break;
     }
 });
-```
+
+```text
 
 ## Serialization Performance
 
 ### Message Sizes
+
 - Entity: 50-200 bytes (depending on metadata)
 - Position: 12 bytes
 - BoundingBox: 24 bytes
@@ -207,6 +224,7 @@ subscription.forEachRemaining(update -> {
 - Query Request: 20-50 bytes
 
 ### Throughput
+
 - Serialization: 500K entities/second
 - Deserialization: 450K entities/second
 - Network transfer: Limited by bandwidth
@@ -217,6 +235,7 @@ subscription.forEachRemaining(update -> {
 ### Connection Pooling
 
 ```java
+
 // Configure connection pool
 var channel = ManagedChannelBuilder
     .forAddress("localhost", 50051)
@@ -225,32 +244,38 @@ var channel = ManagedChannelBuilder
     .keepAliveTime(30, TimeUnit.SECONDS)
     .keepAliveTimeout(5, TimeUnit.SECONDS)
     .build();
-```
+
+```text
 
 ### Load Balancing
 
 ```java
+
 // Round-robin load balancing
 var channel = ManagedChannelBuilder
     .forTarget("dns:///spatial.service:50051")
     .defaultLoadBalancingPolicy("round_robin")
     .build();
-```
+
+```text
 
 ### Compression
 
 ```java
+
 // Enable gzip compression
 var spatialStub = SpatialIndexServiceGrpc
     .newBlockingStub(channel)
     .withCompression("gzip");
-```
+
+```text
 
 ## Security
 
 ### TLS Configuration
 
 ```java
+
 // Configure TLS
 var channel = NettyChannelBuilder
     .forAddress("spatial.service", 443)
@@ -258,11 +283,13 @@ var channel = NettyChannelBuilder
         .trustManager(new File("ca-cert.pem"))
         .build())
     .build();
-```
+
+```text
 
 ### Authentication
 
 ```java
+
 // Add authentication metadata
 var spatialStub = SpatialIndexServiceGrpc
     .newBlockingStub(channel)
@@ -276,22 +303,26 @@ var spatialStub = SpatialIndexServiceGrpc
             applier.apply(metadata);
         }
     });
-```
+
+```text
 
 ## Integration
 
 ### With Von Distribution
 
 ```java
+
 // Von uses gRPC for node communication
 var vonNode = new VonNode();
 vonNode.setGrpcService(new SpatialIndexServiceImpl(spatialIndex));
 vonNode.start(50051);
-```
+
+```text
 
 ### With Lucien Spatial Indices
 
 ```java
+
 // Serialize spatial index nodes
 var octreeNode = octree.getNode(key);
 var protoNode = OctreeNodeProto.newBuilder()
@@ -299,20 +330,26 @@ var protoNode = OctreeNodeProto.newBuilder()
     .setLevel(octreeNode.getLevel())
     .addAllEntities(octreeNode.getEntityIds())
     .build();
-```
+
+```text
 
 ## Testing
 
 ```bash
+
 # Run gRPC tests
+
 mvn test -pl grpc
 
 # Generate protocol buffer code
+
 mvn protobuf:compile
 
 # Run integration tests
+
 mvn test -pl grpc -Dtest=GrpcIntegrationTest
-```
+
+```text
 
 ## Dependencies
 

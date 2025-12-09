@@ -8,8 +8,10 @@ This document provides specific micro-optimizations for the hottest methods in t
 
 ### 1. OrientedFace.flip() - 82% CPU Time
 
-#### Current Implementation Issues:
+#### Current Implementation Issues
+
 ```java
+
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // Problem 1: LinkedList with O(n) access
     OrientedFace reflex = null;
@@ -24,10 +26,13 @@ public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
         }
     }
 }
-```
+
+```text
 
 #### Optimized Version:
+
 ```java
+
 public Tetrahedron flip(Vertex n, ArrayList<OrientedFace> ears) {
     // Optimization 1: Use ArrayList for O(1) access
     final int size = ears.size();
@@ -58,12 +63,15 @@ public Tetrahedron flip(Vertex n, ArrayList<OrientedFace> ears) {
     
     // Use cached values in subsequent logic...
 }
-```
+
+```text
 
 ### 2. patch() Method - 20% CPU Time
 
 #### Current Implementation:
+
 ```java
+
 void patch(Vertex old, Tetrahedron n, V vNew) {
     // Problem 1: ordinalOf() performs 4 comparisons
     V v = ordinalOf(old);
@@ -77,10 +85,13 @@ void patch(Vertex old, Tetrahedron n, V vNew) {
     neighbor.setNeighbor(neighbor.ordinalOf(this), n);
     n.setNeighbor(vNew, neighbor);
 }
-```
+
+```text
 
 #### Optimized Version:
+
 ```java
+
 // Add direct vertex-to-ordinal mapping
 private static final int VERTEX_ID_SHIFT = 16;
 private int[] vertexOrdinalMap = new int[4];
@@ -103,12 +114,15 @@ void patchOptimized(Vertex old, Tetrahedron n, V vNew) {
     neighbor.neighbors[neighborOrdinal] = n;
     n.neighbors[vNew.ordinal()] = neighbor;
 }
-```
+
+```text
 
 ### 3. isRegular() and isReflex() - 8% Each
 
 #### Current Implementation:
+
 ```java
+
 public boolean isRegular() {
     // Problem 1: Method call overhead
     return !getIncident().inSphere(getAdjacentVertex());
@@ -119,10 +133,13 @@ public boolean isReflex() {
     Vertex n = getAdjacentVertex();
     return faceOrientation.orientation(vertices) < 0;
 }
-```
+
+```text
 
 #### Optimized Version:
+
 ```java
+
 // Cache results in face object
 private byte cachedState = UNCACHED;
 private static final byte UNCACHED = 0;
@@ -141,12 +158,15 @@ public boolean isRegularCached() {
     }
     return cachedState == REGULAR;
 }
-```
+
+```text
 
 ### 4. Geometric Predicates Optimization
 
 #### Current leftOfPlaneFast():
+
 ```java
+
 public static double leftOfPlaneFast(double xa, double ya, double za, 
                                      double xb, double yb, double zb,
                                      double xc, double yc, double zc, 
@@ -165,10 +185,13 @@ public static double leftOfPlaneFast(double xa, double ya, double za,
            bdx * (cdy * adz - cdz * ady) + 
            cdx * (ady * bdz - adz * bdy);
 }
-```
+
+```text
 
 #### Optimized with FMA (Fused Multiply-Add):
+
 ```java
+
 public static double leftOfPlaneFMA(double xa, double ya, double za, 
                                     double xb, double yb, double zb,
                                     double xc, double yc, double zc, 
@@ -186,21 +209,27 @@ public static double leftOfPlaneFMA(double xa, double ya, double za,
     // Optimization 3: Final FMA operations
     return Math.fma(adx, term1, Math.fma(bdx, term2, cdx * term3));
 }
-```
+
+```text
 
 ### 5. Memory Layout Optimizations
 
 #### Current Tetrahedron Layout:
+
 ```java
+
 public class Tetrahedron {
     private Vertex a, b, c, d;      // 32 bytes (4 references)
     private Tetrahedron nA, nB, nC, nD;  // 32 bytes (4 references)
     // Total: 64 bytes + object header
 }
-```
+
+```text
 
 #### Optimized Layout:
+
 ```java
+
 public class TetrahedronOptimized {
     // Optimization 1: Pack vertices and neighbors together
     private long[] vertexAndNeighborIds;  // 8 longs = 64 bytes
@@ -215,12 +244,15 @@ public class TetrahedronOptimized {
         return vertexPool.get((int)(id >>> 32));
     }
 }
-```
+
+```text
 
 ## JVM-Specific Optimizations
 
 ### 1. Method Inlining Hints
+
 ```java
+
 // Force inlining of critical methods
 @ForceInline
 public final boolean isReflex() {
@@ -232,10 +264,13 @@ public final boolean isReflex() {
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // Large method body...
 }
-```
+
+```text
 
 ### 2. Branch Prediction Optimization
+
 ```java
+
 // Current: Unpredictable branches
 if (ear.isReflex()) {
     // Reflex case (rare)
@@ -249,10 +284,13 @@ if (ear.isRegular()) {
 } else {
     // Reflex case (rare)
 }
-```
+
+```text
 
 ### 3. Loop Optimizations
+
 ```java
+
 // Enable loop unrolling for small, fixed iterations
 for (int i = 0; i < 4; i++) {
     // Unroll manually for better performance
@@ -261,12 +299,15 @@ for (int i = 0; i < 4; i++) {
     process(vertices[2]);
     process(vertices[3]);
 }
-```
+
+```text
 
 ## Memory Access Patterns
 
 ### 1. Prefetching
+
 ```java
+
 // Prefetch next elements while processing current
 for (int i = 0; i < ears.size() - 1; i++) {
     OrientedFace current = ears.get(i);
@@ -275,36 +316,46 @@ for (int i = 0; i < ears.size() - 1; i++) {
     // Process current while next is being loaded
     processEar(current);
 }
-```
+
+```text
 
 ### 2. Cache Line Alignment
+
 ```java
+
 // Align frequently accessed fields to cache line boundaries
 @Contended
 public class HotData {
     volatile long counter;  // Isolated on its own cache line
 }
-```
+
+```text
 
 ## Measurement and Validation
 
 ### Before Optimization:
-```
+
+```text
+
 Method                      Time(ms)  Calls    Avg(ns)
 OrientedFace.flip()          8200     100K     82000
 patch()                      2000     500K      4000
 isRegular()                   800     1M         800
 isReflex()                    800     1M         800
-```
+
+```text
 
 ### After Optimization (Expected):
-```
+
+```text
+
 Method                      Time(ms)  Calls    Avg(ns)
 OrientedFace.flip()          3280     100K     32800  (-60%)
 patch()                       600     500K      1200  (-70%)
 isRegular()                   200     1M         200  (-75%)
 isReflex()                    200     1M         200  (-75%)
-```
+
+```text
 
 ## Testing Strategy
 

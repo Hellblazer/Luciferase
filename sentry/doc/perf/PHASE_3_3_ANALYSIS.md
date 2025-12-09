@@ -3,13 +3,16 @@
 ## Current Implementation Analysis
 
 ### Point Location Algorithm
+
 The current implementation uses a "walking" algorithm:
+
 1. Start from a known tetrahedron (usually the last one accessed)
 2. Check which face the query point is outside of
 3. Move to the neighbor on that side
 4. Repeat until the containing tetrahedron is found
 
 ```java
+
 public Tetrahedron locate(Tuple3f query, Random entropy) {
     // Check each face orientation
     for (V face : Grid.VERTICES) {
@@ -19,14 +22,17 @@ public Tetrahedron locate(Tuple3f query, Random entropy) {
         }
     }
 }
-```
+
+```text
 
 ### Performance Characteristics
+
 - **Average case**: O(n^(1/3)) for n tetrahedra
 - **Worst case**: O(n) if walking across entire mesh
 - **Best case**: O(1) if starting near target
 
 ### Where Neighbor Queries Occur
+
 1. **Point location** (`locate()` method) - finding which tetrahedron contains a point
 2. **Vertex insertion** (`track()` method) - locating where to insert new vertex
 3. **Flip operations** - checking adjacent tetrahedra during flips
@@ -36,7 +42,9 @@ public Tetrahedron locate(Tuple3f query, Random entropy) {
 ### Design Options
 
 #### Option 1: Grid-Based Spatial Hash
+
 ```java
+
 public class SpatialHashIndex {
     private final Map<Integer, List<Tetrahedron>> grid;
     private final double cellSize;
@@ -58,10 +66,13 @@ public class SpatialHashIndex {
         return null;
     }
 }
-```
+
+```text
 
 #### Option 2: Hierarchical Index (Octree)
+
 ```java
+
 public class OctreeIndex {
     private class Node {
         Bounds bounds;
@@ -81,10 +92,13 @@ public class OctreeIndex {
         return null;
     }
 }
-```
+
+```text
 
 #### Option 3: Jump-and-Walk
+
 ```java
+
 public class JumpAndWalkIndex {
     // Sample of well-distributed tetrahedra
     private final Tetrahedron[] landmarks;
@@ -97,27 +111,33 @@ public class JumpAndWalkIndex {
         return nearest.locate(p, entropy);
     }
 }
-```
+
+```text
 
 ## Implementation Challenges
 
 ### 1. Dynamic Updates
+
 - Tetrahedra are created/destroyed during flips
 - Index must be updated efficiently
 - Bulk updates during flip cascades
 
 ### 2. Memory Overhead
+
 - Each tetrahedron needs bounding box
 - Index structures add memory
 - Must balance granularity vs memory
 
 ### 3. Spatial Overlap
+
 - Tetrahedra can have overlapping bounding boxes
 - Makes precise indexing difficult
 - May need to check multiple candidates
 
 ### 4. Integration Points
+
 Where to add spatial indexing:
+
 - `MutableGrid.locate()` - primary entry point
 - `Vertex.locate()` - for nearby searches
 - `Tetrahedron.locate()` - fallback to walking
@@ -131,12 +151,14 @@ Where to add spatial indexing:
 4. **Proven effective** - used in many Delaunay implementations
 
 ### Implementation Plan
+
 1. Add landmark selection during grid construction
 2. Maintain array of ~sqrt(n) well-distributed tetrahedra
 3. Modify `locate()` to find nearest landmark first
 4. Measure improvement in average walk length
 
 ### Expected Performance
+
 - Reduce average walk from O(n^(1/3)) to O(n^(1/6))
 - 10-20% overall performance improvement
 - Minimal memory overhead (<1% of total)

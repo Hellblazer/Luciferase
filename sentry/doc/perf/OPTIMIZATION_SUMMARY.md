@@ -10,14 +10,15 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Optimization Phases Completed
 
 ### Phase 1: Quick Wins (Target: 30-40%, Achieved: ~40%)
+
 1. **LinkedList → ArrayList** (21-984% improvement)
    - Replaced LinkedList with ArrayList for O(1) random access
    - Dramatic improvements for large ear lists
-   
+
 2. **Adjacent Vertex Caching** (44% improvement)
    - Cached getAdjacentVertex() results to avoid repeated calculations
    - Reduced redundant topological queries
-   
+
 3. **Object Pooling** (23.8% improvement, up to 88% reuse rate)
    - Implemented TetrahedronPool for object reuse
    - Refactored from singleton to per-MutableGrid instance (July 2025)
@@ -27,38 +28,41 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
    - Added batch release and adaptive sizing capabilities
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30%, Achieved: ~35%)
+
 1. **Ordinal Optimization** (10.2% improvement)
    - Inlined ordinalOf() logic in hot paths
    - Converted to switch expressions for better performance
-   
+
 2. **Early Exit/Batch Predicates** (-3.1% regression)
    - Early exit checks added overhead without sufficient benefit
    - Geometric predicate caching ineffective due to unique vertex combinations
-   
+
 3. **Alternative Optimizations** (37.2% improvement)
    - Created FlipOptimizer with method inlining
    - Thread-local working sets for cache locality
    - Pre-allocated arrays to reduce allocations
 
 ### Phase 3: Advanced Optimizations (Target: 30-50%, Mixed results)
+
 1. **SIMD Vectorization** (Infrastructure complete, -70% due to overhead)
    - Implemented full SIMD infrastructure with Maven profiles
    - Runtime detection and fallback mechanisms
    - Current overhead exceeds benefits for individual operations
-   
+
 2. **Parallel Flip Operations** (Skipped)
    - Incompatible with single-threaded design requirement
-   
+
 3. **Spatial Indexing** (-12% to +4%, needs refinement)
    - Implemented Jump-and-Walk algorithm with landmarks
    - Mixed results, theoretical O(n^(1/6)) improvement not achieved
 
 ### Phase 4: Architectural Changes (Target: 50%+, Partially achieved)
+
 1. **Hybrid Predicates** (29.6-66% improvement for small grids)
    - Fast float approximations with exact fallback
    - Excellent performance for orientation tests
    - Less than 0.5% of calls require exact predicates
-   
+
 2. **Alternative Data Structures** (Architecture complete, runtime bug)
    - Implemented Structure-of-Arrays (SoA) layout
    - Expected ~8x memory reduction
@@ -67,16 +71,19 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Key Metrics
 
 ### Baseline Performance
+
 - Flip operation: ~22 µs
 - getAdjacentVertex: 16.13 ns/call
 - LinkedList access: 17.39 ns/op
 
 ### Final Performance
+
 - Flip operation: 5.41 µs (76% improvement)
 - getAdjacentVertex: 9.08 ns/call (44% improvement)  
 - ArrayList access: 3.91 ns/op (4.45x faster)
 
 ### Test Results
+
 - All existing tests pass (after updating expected values)
 - Performance maintained across different input sizes
 - Correctness preserved throughout optimizations
@@ -99,6 +106,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Recent Updates (July 2025)
 
 ### TetrahedronPool Refactoring and Optimization
+
 - **Problem**: Static singleton pool shared across all MutableGrid instances
 - **Solution**: Instance-based pooling with thread-local context
 - **Implementation**:
@@ -123,6 +131,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Recent Updates (July 2025) - Phase 2
 
 ### Optional Pooling Implementation
+
 - **Problem**: TetrahedronPool was mandatory, complicating debugging and testing
 - **Solution**: Abstraction layer with pluggable allocation strategies
 - **Implementation**:
@@ -141,6 +150,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Recent Updates (July 2025) - Phase 3
 
 ### Rebuild Performance Optimizations
+
 - **Problem**: Small rebuilds (≤256 points) suffered from pooling context overhead
 - **Solution**: Automatic direct allocation for small rebuilds, bypassing pool management
 - **Implementation**:
@@ -157,21 +167,25 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ### Current Performance Metrics (July 2025)
 
 **Rebuild Performance Benchmarks**:
+
 - **Pooled Strategy**: 4.06 ms average (256 points, standard benchmark)
 - **Direct Strategy**: 2.98 ms average (26% faster than pooled)
 - **Optimized Target Test**: 0.836 ms average (MutableGridTest.smokin, 83% faster than pooled)
 
 **Pool Efficiency**:
+
 - **Reuse Rate**: 86.26% (rebuild operations) / 92.59% (standard operations)
 - **Pool Overhead**: 53.22 ns per acquire/release pair
 - **Batch Operations**: 4.88 μs for 100 items
 
 **Raw Allocation Overhead**:
+
 - **Pooled**: 16.18 ns per operation
 - **Direct**: 9.09 ns per operation
 - **Speedup**: Direct is 1.78x faster for raw allocation
 
 **Memory Efficiency**:
+
 - **Small datasets (100 points)**: Pooled uses slightly more memory (1.00x)
 - **Medium datasets (1,000 points)**: Pooled uses 33% less memory (0.67x)
 - **Large datasets (10,000 points)**: Pooled uses 12% more memory (1.12x)

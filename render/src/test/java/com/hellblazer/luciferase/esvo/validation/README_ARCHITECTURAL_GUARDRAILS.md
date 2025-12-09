@@ -7,6 +7,7 @@ The tests in `ESVOReferenceValidationTest` were **designed to fail** until criti
 ## Purpose
 
 These tests serve as **architectural guardrails** that:
+
 - Block development progression until critical issues are resolved
 - Document exactly what needs to be fixed
 - Prevent accidental deployment of incompatible implementations
@@ -17,10 +18,13 @@ These tests serve as **architectural guardrails** that:
 **Previously**, the ESVO implementation had **three different node structures** that were completely incompatible. **This has been resolved** with the introduction of `ESVONodeUnified`:
 
 ### ✅ ESVONodeUnified.java (8 bytes) - SINGLE SOURCE OF TRUTH
+
 ```java
+
 private int childDescriptor;    // [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
 private int contourDescriptor;  // [contour_ptr(24)|contour_mask(8)]
-```
+
+```text
 
 **All other node structures have been unified to use this implementation:**
 - ESVODataStructures.OctreeNode → Uses ESVONodeUnified
@@ -30,6 +34,7 @@ private int contourDescriptor;  // [contour_ptr(24)|contour_mask(8)]
 ## ✅ CUDA Reference Implementation (IMPLEMENTED)
 
 According to Laine & Karras 2010, the reference implementation has been **fully implemented**:
+
 - ✅ **Total size**: 8 bytes (int2) - `ESVONodeUnified` exactly matches
 - ✅ **child_descriptor.x**: [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)] - Implemented with proper bit packing
 - ✅ **child_descriptor.y**: [contour_ptr(24)|contour_mask(8)] - Implemented with validation
@@ -47,6 +52,7 @@ According to Laine & Karras 2010, the reference implementation has been **fully 
 ## ✅ GUARDRAIL SUCCESS
 
 The architectural guardrails served their purpose perfectly by:
+
 - ✅ **Blocking incompatible development** until architecture was correct
 - ✅ **Documenting exact requirements** that needed to be implemented
 - ✅ **Preventing deployment** of incompatible implementations
@@ -67,6 +73,7 @@ These tests now serve as **regression protection** to ensure the unified archite
 ## 🎉 ARCHITECTURAL MILESTONE ACHIEVED
 
 The ESVO implementation is now **production-ready** with:
+
 - **Complete CUDA reference compliance**
 - **Unified 8-byte node structure** across all components
 - **Proper sparse child indexing** algorithm

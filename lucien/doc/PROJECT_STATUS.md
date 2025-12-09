@@ -126,8 +126,9 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 ### Recently Completed (July 13, 2025)
 
 **Ghost Implementation** ✅ - Successfully added complete distributed spatial index support:
+
 - **Status**: COMPLETED - All 5 phases implemented and tested
-- **Features**: 
+- **Features**:
   - Dual ghost approach (distance-based + topology-based)
   - Complete neighbor detection (Octree/Tetree)
   - Full gRPC service infrastructure with virtual threads
@@ -140,6 +141,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 ### Previously Completed (July 12, 2025)
 
 **Prism Spatial Index Implementation** ✅ - Successfully added triangular prism-based spatial indexing as a third option alongside Octree and Tetree:
+
 - **Status**: COMPLETED - All phases implemented and tested
 - **Features**: Anisotropic subdivision, triangular coordinate system, specialized collision detection
 - **Performance**: 78-85% of Octree's memory usage, optimized for height-stratified data
@@ -147,6 +149,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - **Documentation**: [Prism API](./PRISM_API.md)
 
 **Delivered Benefits**:
+
 - **Anisotropic subdivision**: Fine horizontal (triangular), coarse vertical (linear) granularity
 - **Memory efficiency**: 20-30% better for layered data as predicted
 - **Specialized queries**: 5x+ faster vertical layer operations confirmed

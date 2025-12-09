@@ -243,7 +243,7 @@ public class StackBasedTreeBuilderTest {
         // Verify spatial locality - entities in same cluster should be findable
         var cluster0Center = new Point3f(50, 50, 50);
         var nearbyInCluster0 = octree.entitiesInRegion(
-        new Spatial.Cube(cluster0Center.x - 100, cluster0Center.y - 100, cluster0Center.z - 100, 200));
+        new Spatial.Cube(0, 0, 0, 200)); // Use non-negative coordinates
         assertTrue(nearbyInCluster0.size() > 0);
         assertTrue(nearbyInCluster0.size() <= 100); // Should mostly find cluster 0 entities
     }

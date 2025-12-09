@@ -10,9 +10,11 @@ This package provides a comprehensive collision detection debugging and visualiz
 ## Components
 
 ### 1. **CollisionShapeRenderer**
+
 Renders collision shapes as wireframe visualizations.
 
 ```java
+
 // Render a sphere wireframe
 var sphere = new SphereShape(new Point3f(0, 0, 0), 1.0f);
 Node wireframe = CollisionShapeRenderer.renderWireframe(sphere, Color.CYAN);
@@ -21,12 +23,15 @@ Node wireframe = CollisionShapeRenderer.renderWireframe(sphere, Color.CYAN);
 Node contact = CollisionShapeRenderer.createContactPoint(
     contactPoint, contactNormal, Color.YELLOW
 );
-```
+
+```text
 
 ### 2. **CollisionVisualizer**
+
 Complete real-time visualization system with property bindings.
 
 ```java
+
 var visualizer = new CollisionVisualizer();
 
 // Add shapes and bodies
@@ -43,12 +48,15 @@ scene.getChildren().add(visualizer.getRootGroup());
 
 // Update each frame
 visualizer.update();
-```
+
+```text
 
 ### 3. **CollisionProfiler**
+
 Thread-safe performance profiling for collision operations.
 
 ```java
+
 var profiler = CollisionProfiler.getInstance();
 
 // Time operations
@@ -62,12 +70,15 @@ profiler.recordCollisionPair("Sphere", "Box", true);
 // Generate performance report
 String report = profiler.generateReport();
 System.out.println(report);
-```
+
+```text
 
 ### 4. **CollisionEventRecorder**
+
 Record and replay collision events for debugging.
 
 ```java
+
 var recorder = new CollisionEventRecorder();
 
 // Start recording
@@ -81,12 +92,15 @@ recorder.nextFrame();
 recorder.isRecordingProperty().set(false);
 recorder.startReplay();
 recorder.stepReplay(); // Step through recorded events
-```
+
+```text
 
 ### 5. **SpatialIndexDebugVisualizer**
+
 Visualize spatial partitioning and collision hotspots.
 
 ```java
+
 var spatialVisualizer = new SpatialIndexDebugVisualizer();
 
 // Track collision shapes
@@ -99,22 +113,27 @@ spatialVisualizer.recordCollision(collisionPoint);
 spatialVisualizer.showNodesProperty().set(true);
 spatialVisualizer.minLevelProperty().set(0);
 spatialVisualizer.maxLevelProperty().set(10);
-```
+
+```text
 
 ### 6. **CollisionDebugViewer**
+
 Complete interactive demonstration application.
 
 ```java
+
 public class MyCollisionDemo extends CollisionDebugViewer {
     public static void main(String[] args) {
         launch(args);
     }
 }
-```
+
+```text
 
 ## Features
 
 ### Visualization Features
+
 - ✅ **Wireframe rendering** for all collision shapes (Sphere, Box, OrientedBox, Capsule, Mesh, ConvexHull, Heightmap)
 - ✅ **Contact point visualization** with normal vectors
 - ✅ **Penetration vector display** showing collision depth
@@ -123,6 +142,7 @@ public class MyCollisionDemo extends CollisionDebugViewer {
 - ✅ **Spatial index visualization** with level-based coloring
 
 ### Performance Analysis
+
 - ✅ **Real-time timing statistics** for all collision operations
 - ✅ **Collision pair frequency** tracking and hit rate analysis
 - ✅ **Hot path detection** for operations >1ms
@@ -130,6 +150,7 @@ public class MyCollisionDemo extends CollisionDebugViewer {
 - ✅ **Comprehensive performance reports** with timing breakdowns
 
 ### Debugging Tools
+
 - ✅ **Event recording and replay** with deterministic capture
 - ✅ **Frame-by-frame stepping** through collision scenarios
 - ✅ **Session save/load** for reproducible test cases
@@ -137,6 +158,7 @@ public class MyCollisionDemo extends CollisionDebugViewer {
 - ✅ **Interactive controls** for all visualization aspects
 
 ### Integration
+
 - ✅ **JavaFX-based** visualization using the existing portal framework
 - ✅ **Thread-safe implementation** suitable for production debugging
 - ✅ **Property-based configuration** with live updates
@@ -146,6 +168,7 @@ public class MyCollisionDemo extends CollisionDebugViewer {
 ## Usage Example
 
 ```java
+
 public class CollisionDebugExample extends Abstract3DApp {
     
     private CollisionVisualizer visualizer;
@@ -204,11 +227,13 @@ public class CollisionDebugExample extends Abstract3DApp {
         timer.start();
     }
 }
-```
+
+```text
 
 ## Configuration
 
 ### Visualization Properties
+
 - `showWireframes`: Display collision shape wireframes
 - `showContactPoints`: Display collision contact points
 - `showPenetrationVectors`: Display penetration depth vectors
@@ -219,6 +244,7 @@ public class CollisionDebugExample extends Abstract3DApp {
 - `vectorScale`: Scale factor for vector visualizations
 
 ### Performance Profiling
+
 - Automatic timing of all collision operations
 - Collision pair frequency tracking
 - Hot path detection (>1ms operations)
@@ -226,6 +252,7 @@ public class CollisionDebugExample extends Abstract3DApp {
 - Frame rate monitoring
 
 ### Event Recording
+
 - Deterministic capture of collision events
 - Complete state recording (positions, velocities, orientations)
 - Frame-accurate replay functionality
@@ -237,15 +264,20 @@ public class CollisionDebugExample extends Abstract3DApp {
 The collision visualization system is part of the portal module:
 
 ```bash
+
 # Compile
+
 mvn compile -pl portal
 
 # Run tests
+
 mvn test -pl portal
 
 # Run the demo application
+
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.collision.CollisionDebugViewer"
-```
+
+```text
 
 ## Dependencies
 

@@ -16,6 +16,7 @@ entities across nodes.
 Defines when and how the tree should be rebalanced:
 
 ```java
+
 public interface TreeBalancingStrategy<ID extends EntityID> {
     // Thresholds for node operations
     int getSplitThreshold(int level, int maxEntitiesPerNode);
@@ -40,13 +41,15 @@ public interface TreeBalancingStrategy<ID extends EntityID> {
         double loadVariance
     )
 }
-```
+
+```text
 
 ### TreeBalancer
 
 Performs the actual rebalancing operations:
 
 ```java
+
 public interface TreeBalancer<ID extends EntityID> {
     // Node operations
     BalancingAction checkNodeBalance(long nodeIndex);
@@ -72,23 +75,27 @@ public interface TreeBalancer<ID extends EntityID> {
                              long timeTaken, boolean success)
 
 }
-```
+
+```text
 
 ## API Methods
 
 ### 1. Enable Auto-Balancing
 
 ```java
+
 void setAutoBalancingEnabled(boolean enabled)
 
 boolean isAutoBalancingEnabled()
-```
+
+```text
 
 Enables automatic rebalancing after insert/remove operations.
 
 **Example:**
 
 ```java
+
 // Enable automatic balancing
 spatialIndex.setAutoBalancingEnabled(true);
 
@@ -97,19 +104,23 @@ spatialIndex.
 
 insert(position, level, content);
 // Automatic rebalancing may occur here
-```
+
+```text
 
 ### 2. Manual Rebalancing
 
 ```java
+
 TreeBalancer.RebalancingResult rebalanceTree()
-```
+
+```text
 
 Manually triggers a full tree rebalancing operation.
 
 **Example:**
 
 ```java
+
 // Perform manual rebalancing
 TreeBalancer.RebalancingResult result = spatialIndex.rebalanceTree();
 
@@ -128,19 +139,23 @@ println("  Entities relocated: "+result.entitiesRelocated());
 System.out.
 
 println("  Time taken: "+result.timeTaken() +"ms");
-```
+
+```text
 
 ### 3. Set Balancing Strategy
 
 ```java
+
 void setBalancingStrategy(TreeBalancingStrategy<ID> strategy)
-```
+
+```text
 
 Configures the balancing strategy used by the tree.
 
 **Example:**
 
 ```java
+
 // Use aggressive balancing for better query performance
 spatialIndex.setBalancingStrategy(new AggressiveBalancingStrategy<>());
 
@@ -148,19 +163,23 @@ spatialIndex.setBalancingStrategy(new AggressiveBalancingStrategy<>());
 spatialIndex.
 
 setBalancingStrategy(new ConservativeBalancingStrategy<>());
-```
+
+```text
 
 ### 4. Get Balancing Statistics
 
 ```java
+
 TreeBalancingStrategy.TreeBalancingStats getBalancingStats()
-```
+
+```text
 
 Retrieves current tree balance statistics.
 
 **Example:**
 
 ```java
+
 TreeBalancingStrategy.TreeBalancingStats stats = spatialIndex.getBalancingStats();
 
 if(stats.
@@ -173,7 +192,8 @@ println("Tree is imbalanced, manual rebalancing recommended");
 
 rebalanceTree();
 }
-```
+
+```text
 
 ## Built-in Strategies
 
@@ -182,6 +202,7 @@ rebalanceTree();
 Balanced approach suitable for most use cases:
 
 ```java
+
 public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalancingStrategy<ID> {
     @Override
     public int getSplitThreshold(int level, int maxEntitiesPerNode) {
@@ -207,13 +228,15 @@ public class DefaultBalancingStrategy<ID extends EntityID> implements TreeBalanc
         return 5000; // 5 seconds between auto-rebalances
     }
 }
-```
+
+```text
 
 ### AggressiveBalancingStrategy
 
 Maintains tight balance for optimal query performance:
 
 ```java
+
 public class AggressiveBalancingStrategy<ID extends EntityID> extends DefaultBalancingStrategy<ID> {
     @Override
     public int getSplitThreshold(int level, int maxEntitiesPerNode) {
@@ -234,13 +257,15 @@ public class AggressiveBalancingStrategy<ID extends EntityID> extends DefaultBal
         return 1000; // More frequent checks
     }
 }
-```
+
+```text
 
 ### ConservativeBalancingStrategy
 
 Minimizes rebalancing overhead:
 
 ```java
+
 public class ConservativeBalancingStrategy<ID extends EntityID> extends DefaultBalancingStrategy<ID> {
     @Override
     public int getSplitThreshold(int level, int maxEntitiesPerNode) {
@@ -261,13 +286,15 @@ public class ConservativeBalancingStrategy<ID extends EntityID> extends DefaultB
                stats.emptyNodes() > stats.totalNodes() * 0.5;
     }
 }
-```
+
+```text
 
 ## Custom Strategies
 
 ### Level-Aware Strategy
 
 ```java
+
 public class LevelAwareStrategy<ID extends EntityID> implements TreeBalancingStrategy<ID> {
     @Override
     public int getSplitThreshold(int level, int maxEntitiesPerNode) {
@@ -292,11 +319,13 @@ public class LevelAwareStrategy<ID extends EntityID> implements TreeBalancingStr
                                                                                                                 maxEntitiesPerNode);
     }
 }
-```
+
+```text
 
 ### Time-Based Strategy
 
 ```java
+
 public class TimeBasedStrategy<ID extends EntityID> implements TreeBalancingStrategy<ID> {
     private final Map<Integer, Long> lastBalanceTime = new HashMap<>();
     private final long[] rebalanceIntervals = {
@@ -329,7 +358,8 @@ public class TimeBasedStrategy<ID extends EntityID> implements TreeBalancingStra
         return rebalanceIntervals[index];
     }
 }
-```
+
+```text
 
 ## Balancing Operations
 
@@ -366,6 +396,7 @@ Full tree rebalancing process:
 ### Auto-Balancing Impact
 
 ```java
+
 public class BalancingMetrics {
     private long totalRebalanceTime = 0;
     private int  rebalanceCount     = 0;
@@ -391,11 +422,13 @@ public class BalancingMetrics {
         }
     }
 }
-```
+
+```text
 
 ### Batch Operations
 
 ```java
+
 public class BatchBalancing {
     public void performBatchInsert(List<EntityData> entities) {
         // Disable auto-balancing during batch insert
@@ -416,7 +449,8 @@ public class BatchBalancing {
         }
     }
 }
-```
+
+```text
 
 ## Best Practices
 
@@ -436,6 +470,7 @@ public class BatchBalancing {
 ## Integration Example
 
 ```java
+
 public class AdaptiveBalancingSystem {
     private final SpatialIndex<LongEntityID, GameObject> spatialIndex;
     private final BalancingMetrics                       metrics = new BalancingMetrics();
@@ -488,4 +523,5 @@ public class AdaptiveBalancingSystem {
         }
     }
 }
-```
+
+```text

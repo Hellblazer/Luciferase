@@ -18,15 +18,18 @@ All primary documentation files (not included: code comments, inline documentati
 ### Minimal Header
 
 ```markdown
+
 # Document Title
 
 **Last Updated**: YYYY-MM-DD
 **Status**: Current | Archived | Draft
-```
+
+```text
 
 ### Recommended Header (for significant documents)
 
 ```markdown
+
 # Document Title
 
 **Last Updated**: December 6, 2025
@@ -35,11 +38,13 @@ All primary documentation files (not included: code comments, inline documentati
 **Applies To**: [Module names or components]
 **Related Documents**: [List of cross-references]
 **Confidence Level**: [95%+ recommended, less for in-progress items]
-```
+
+```text
 
 ### Archive Header (for deprecated documents)
 
 ```markdown
+
 # Document Title [ARCHIVED]
 
 **Deprecated**: December 1, 2025
@@ -47,7 +52,8 @@ All primary documentation files (not included: code comments, inline documentati
 **Successor**: [Link to replacement document or none]
 **Last Updated**: [Date when deprecated]
 **Historical Context**: [Brief explanation of what this document covers and why it's historical]
-```
+
+```text
 
 ---
 
@@ -75,7 +81,7 @@ All primary documentation files (not included: code comments, inline documentati
 Use these standard terms consistently across all documentation:
 
 | Concept | Standard Term | Avoid |
-|---------|---------------|-------|
+| --------- | --------------- | ------- |
 | Distributed spatial indexing support | Distributed support / Ghost layer | Remote trees, distributed trees |
 | Multi-tree management | Forest management | Tree forest, forest coordination |
 | Tree depth optimization | Tree balancing | Rebalancing, reorganization |
@@ -95,11 +101,14 @@ All performance-related statements must include:
 - **Source Document**: Reference to PERFORMANCE_METRICS_MASTER.md
 
 **Example Format**:
-```
+
+```text
+
 Tetree performs 5.7x faster than Octree for insertions with 1,000 entities
 (OctreeVsTetreeVsPrismBenchmark, August 3, 2025, Mac OS X aarch64, Java 24)
 See PERFORMANCE_METRICS_MASTER.md for complete results.
-```
+
+```text
 
 ### 5. Code Example Standards
 
@@ -112,18 +121,24 @@ All code examples must:
 - **Be Commented**: Explain non-obvious parts
 
 **Poor Example**:
+
 ```java
+
 octree.insert(id, pos);
-```
+
+```text
 
 **Good Example**:
+
 ```java
+
 // Insert an entity at a specific position
 var octree = new Octree<>(bounds, maxLevel);
 var entityId = new LongEntityID(42L);
 var position = new Point3f(10, 20, 30);
 octree.insert(entityId, position);
-```
+
+```text
 
 ---
 
@@ -151,6 +166,7 @@ octree.insert(entityId, position);
 When merging a major feature, update these documents in order:
 
 ```markdown
+
 ## Documentation Update Checklist
 
 When merging a feature branch with significant changes:
@@ -164,7 +180,8 @@ When merging a feature branch with significant changes:
 - [ ] Add timestamp to all modified documents
 - [ ] Review all cross-references for correctness
 - [ ] Request review from documentation owner
-```
+
+```text
 
 ---
 
@@ -183,6 +200,7 @@ When a document becomes obsolete:
 ### Deprecation Header Template
 
 ```markdown
+
 # Document Title [ARCHIVED]
 
 **Status**: ARCHIVED
@@ -199,7 +217,8 @@ When a document becomes obsolete:
 [Explanation of what this document covered and why it's no longer maintained]
 
 [Content of original document...]
-```
+
+```text
 
 ---
 
@@ -208,24 +227,28 @@ When a document becomes obsolete:
 The following documents contain critical technical information that MUST NOT be changed without careful review:
 
 ### 1. Geometry Calculations
+
 - **Document**: CLAUDE.md (lines 141-149)
 - **Critical Claim**: Cube center vs tetrahedron centroid calculations differ fundamentally
 - **Never Change**: These calculations are based on mathematical correctness, not preference
 - **Verification**: TetS0S5SubdivisionTest validates implementation
 
 ### 2. S0-S5 Tetrahedral Subdivision
+
 - **Document**: S0_S5_TETRAHEDRAL_SUBDIVISION.md, CLAUDE.md (lines 151-158)
 - **Critical Claim**: 6 tetrahedra tile a cube perfectly with no gaps/overlaps
 - **Never Change**: This is proven by mathematical proof documented in TetS0S5SubdivisionTest
 - **Verification**: 100% containment rate verified in unit tests
 
 ### 3. TET SFC Level Encoding
+
 - **Document**: CLAUDE.md (lines 160-165), TM_INDEX_LIMITATIONS_AND_SOLUTIONS.md
 - **Critical Claim**: tmIndex() is O(level) and cannot be optimized further
 - **Never Change**: This is a fundamental architectural constraint required for global uniqueness
 - **Verification**: Documented in performance analysis and confirmed by benchmarks
 
 ### 4. Ghost Layer Implementation
+
 - **Document**: GHOST_API.md, PERFORMANCE_METRICS_MASTER.md (lines 97-108)
 - **Critical Claim**: Ghost layer performance exceeds all targets (99% better than 2x baseline)
 - **Never Change**: Verified by GhostPerformanceBenchmark
@@ -253,6 +276,7 @@ Before submitting documentation changes:
 ### Peer Review Requirements
 
 Documentation changes affecting:
+
 - **Architecture**: Requires 1+ peer review
 - **Performance Claims**: Requires verification against benchmarks
 - **API Changes**: Requires API owner approval
@@ -323,16 +347,21 @@ Historical documents have special status:
 Consider implementing:
 
 ```bash
+
 # Check all markdown files
+
 markdownlint lucien/doc/*.md portal/doc/*.md
 
 # Verify all links
+
 markdown-link-check lucien/doc/**/*.md
 
 # Check for outdated metrics (older than 90 days)
+
 grep -r "Last Updated.*[0-9][0-9][0-9][0-9]-[01][0-9]-" lucien/doc/ | \
   grep -v "$(date -d '90 days ago' +'%Y-%m')"
-```
+
+```text
 
 ---
 
@@ -341,6 +370,7 @@ grep -r "Last Updated.*[0-9][0-9][0-9][0-9]-[01][0-9]-" lucien/doc/ | \
 ### Documentation Owner
 
 Assign a documentation owner who:
+
 - Reviews all documentation changes
 - Maintains consistency across documents
 - Performs quarterly documentation audits

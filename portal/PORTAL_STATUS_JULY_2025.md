@@ -105,6 +105,7 @@ focuses on rendering Octree and Tetree structures, entities, and spatial queries
 The visualization directly integrates with lucien module classes:
 
 ```java
+
 // Direct spatial index integration
 SpatialIndex<TetreeKey, ID, Content> tetree = new Tetree<>();
 TetreeVisualization<ID, Content> viz = new TetreeVisualization<>(tetree);
@@ -116,7 +117,8 @@ viz.refresh(); // Updates visualization
 // Query visualization
 var results = tetree.rangeQuery(bounds);
 viz.highlightQueryResults(results);
-```
+
+```text
 
 ### UI Controls
 

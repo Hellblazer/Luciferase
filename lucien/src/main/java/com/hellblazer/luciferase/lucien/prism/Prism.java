@@ -57,30 +57,45 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     private final float worldSize;
     private final int maxLevel;
     private final TreeBalancer<PrismKey, ID> balancer;
-    private final SubdivisionStrategy<PrismKey, ID, Content> subdivisionStrategy;
+    private final PrismSubdivisionStrategy<ID, Content> subdivisionStrategy;
     
     /**
      * Create a new Prism spatial index with default parameters.
+     * Uses balanced subdivision strategy.
      * 
      * @param idGenerator The ID generator for creating entity IDs
      */
     public Prism(com.hellblazer.luciferase.lucien.entity.EntityIDGenerator<ID> idGenerator) {
-        this(idGenerator, 1.0f, MAX_LEVEL);
+        this(idGenerator, 1.0f, MAX_LEVEL, PrismSubdivisionStrategy.balanced());
     }
     
     /**
      * Create a new Prism spatial index with specified parameters.
+     * Uses balanced subdivision strategy.
      * 
      * @param idGenerator The ID generator for creating entity IDs
      * @param worldSize The size of the world cube (default 1.0)
      * @param maxLevel The maximum subdivision level (default 21)
      */
     public Prism(com.hellblazer.luciferase.lucien.entity.EntityIDGenerator<ID> idGenerator, float worldSize, int maxLevel) {
+        this(idGenerator, worldSize, maxLevel, PrismSubdivisionStrategy.balanced());
+    }
+    
+    /**
+     * Create a new Prism spatial index with custom subdivision strategy.
+     * 
+     * @param idGenerator The ID generator for creating entity IDs
+     * @param worldSize The size of the world cube
+     * @param maxLevel The maximum subdivision level
+     * @param strategy The subdivision strategy to use
+     */
+    public Prism(com.hellblazer.luciferase.lucien.entity.EntityIDGenerator<ID> idGenerator, 
+                 float worldSize, int maxLevel, PrismSubdivisionStrategy<ID, Content> strategy) {
         super(idGenerator, 100, (byte)maxLevel, com.hellblazer.luciferase.lucien.entity.EntitySpanningPolicy.withSpanning());
         this.worldSize = worldSize;
         this.maxLevel = maxLevel;
         this.balancer = new NoOpTreeBalancer();
-        this.subdivisionStrategy = new PrismSubdivisionStrategy();
+        this.subdivisionStrategy = strategy;
     }
     
     @Override
@@ -377,7 +392,7 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
     
     @Override
     protected SubdivisionStrategy<PrismKey, ID, Content> createDefaultSubdivisionStrategy() {
-        return new PrismSubdivisionStrategy();
+        return PrismSubdivisionStrategy.balanced();
     }
     
     @Override
@@ -629,59 +644,6 @@ public class Prism<ID extends com.hellblazer.luciferase.lucien.entity.EntityID, 
         return t >= 0 && t <= 1 && u >= 0 && u <= 1;
     }
     
-    /**
-     * Custom subdivision strategy for prisms.
-     */
-    private class PrismSubdivisionStrategy extends SubdivisionStrategy<PrismKey, ID, Content> {
-        
-        @Override
-        public Set<PrismKey> calculateTargetNodes(PrismKey parentIndex, byte parentLevel, 
-                                                  com.hellblazer.luciferase.lucien.entity.EntityBounds entityBounds,
-                                                  AbstractSpatialIndex<PrismKey, ID, Content> spatialIndex) {
-            // If entity has bounds, check which children it overlaps
-            if (entityBounds != null) {
-                var targetNodes = new HashSet<PrismKey>();
-                var children = getAllChildren(parentIndex);
-                
-                for (var child : children) {
-                    var childBounds = getBounds(child);
-                    // Check if entity bounds overlap with child bounds
-                    // Simple AABB overlap test
-                    if (entityBounds.getMin().x <= childBounds[3] && entityBounds.getMax().x >= childBounds[0] &&
-                        entityBounds.getMin().y <= childBounds[4] && entityBounds.getMax().y >= childBounds[1] &&
-                        entityBounds.getMin().z <= childBounds[5] && entityBounds.getMax().z >= childBounds[2]) {
-                        targetNodes.add(child);
-                    }
-                }
-                
-                return targetNodes.isEmpty() ? Set.of(parentIndex) : targetNodes;
-            }
-            
-            // For point entities, just return the parent
-            return Set.of(parentIndex);
-        }
-        
-        @Override
-        public SubdivisionResult determineStrategy(SubdivisionContext<PrismKey, ID> context) {
-            // Don't subdivide if at max level
-            if (context.nodeLevel >= maxLevel) {
-                return SubdivisionResult.insertInParent("At maximum level");
-            }
-            
-            // Subdivide if too many entities
-            if (context.currentNodeSize > context.maxEntitiesPerNode) {
-                return SubdivisionResult.forceSubdivision("Node overloaded");
-            }
-            
-            return SubdivisionResult.insertInParent("Node not overloaded");
-        }
-        
-        @Override
-        protected double estimateEntitySizeFactor(SubdivisionContext<PrismKey, ID> context) {
-            // Simple estimation based on level
-            return 1.0 / Math.pow(2, context.nodeLevel);
-        }
-    }
     
     
     /**

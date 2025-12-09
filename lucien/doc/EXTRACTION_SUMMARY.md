@@ -16,7 +16,9 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 ### 1. Knowledge Base Documents
 
 #### Primary Document
+
 **File**: `/lucien/doc/TM_SFC_NONCONFORMING_MESH_EXTRACTION.md`
+
 - **Size**: ~8,000 words
 - **Coverage**: 8 major sections covering all TM-SFC aspects
 - **Sections**:
@@ -30,7 +32,9 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
   8. References (code locations, documentation, paper citation)
 
 #### ChromaDB Index
+
 **File**: `/lucien/doc/CHROMADB_KNOWLEDGE_INDEX.md`
+
 - **Size**: ~3,000 words
 - **Contents**: 8 structured documents ready for ChromaDB storage
 - **Each Document Includes**:
@@ -41,7 +45,9 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
   - Cross-references to other documents
 
 #### This Summary
+
 **File**: `/lucien/doc/EXTRACTION_SUMMARY.md`
+
 - Quick reference guide
 - Key insights
 - Integration points
@@ -52,7 +58,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 ## Document Map (ChromaDB Ready)
 
 | ID | Topic | Relevance | Key Module | Size |
-|----|----|-----------|-----------|------|
+| ---- | ---- | ----------- | ----------- | ------ |
 | `tm_sfc_001_hanging_nodes` | Hanging nodes & faces | High | forest/ghost | Large |
 | `tm_sfc_002_bey_refinement` | Bey tetrahedral subdivision | **Critical** | tetree/Tet.java | Large |
 | `tm_sfc_003_tm_sfc_ordering` | Tree-monotonic SFC | **Critical** | TetreeConnectivity | Large |
@@ -70,6 +76,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 ## Key Insights Extracted
 
 ### Insight 1: Bey Refinement Prevents Element-Level Hanging Nodes
+
 **Finding**: Bey's vertex-based refinement naturally prevents hanging nodes at the element level through vertex midpoint placement.
 
 **Implementation**: `Tet.child()` method creates children using edge midpoints, ensuring all vertices align perfectly with neighbor elements.
@@ -77,6 +84,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Impact**: Hanging nodes only occur when adjacent elements have different refinement levels (mixed refinement), which is exactly when ghost layers become essential.
 
 ### Insight 2: TM-SFC Enables Efficient Ghost Detection
+
 **Finding**: Tree-monotonic space-filling curve preserves spatial locality in child numbering, enabling O(log n) neighbor detection.
 
 **Implementation**: `TetreeConnectivity` lookup tables map Bey indices to TM indices, maintaining locality for ghost creation.
@@ -84,9 +92,11 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Impact**: Ghost layer overhead is manageable because neighbors are found efficiently, not through exhaustive search.
 
 ### Insight 3: Ghost Layers Are Non-Conformity Solution
+
 **Finding**: Instead of enforcing mesh conformity (which is expensive), Luciferase enables local computation through ghost copies of non-local elements.
 
 **Implementation**:
+
 - `ElementGhostManager` detects boundary elements
 - `GhostLayer` stores ghost copies indexed by spatial key
 - Algorithms see complete neighbor information locally
@@ -94,6 +104,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Impact**: Enables non-conforming meshes without explicit inter-process communication during computation.
 
 ### Insight 4: Balancing Controls Hanging Node Depth
+
 **Finding**: Unconstrained refinement leads to exponential ghost overhead. Tree balancing strategies prevent excessive hanging node nesting.
 
 **Implementation**: `TreeBalancingStrategy` thresholds prevent depth differences > 3 levels via node splitting/merging.
@@ -101,6 +112,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Impact**: Linear ghost overhead despite adaptive refinement (without balancing: exponential growth).
 
 ### Insight 5: Red/Green Trade-off Guides Strategy Selection
+
 **Finding**: Bey refinement (red) is always 8 children, but balancing and ghost overhead require strategic constraint.
 
 **Implementation**: Adaptive refinement strategies can select REFINE (red) or COARSEN (merge) based on hanging node depth.
@@ -108,9 +120,11 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Impact**: Gives developers control over element count vs. computational complexity trade-off.
 
 ### Insight 6: Tetree Benefits from Non-Conformity
+
 **Finding**: Unlike Octree (which prefers conformity), Tetree becomes more efficient when accepting non-conforming meshes with ghost support.
 
 **Implementation**:
+
 - Tetrahedral elements are more efficient per-element
 - Non-conforming allows variable refinement depth
 - Ghost overhead is lower than dual-mesh conforming approach
@@ -121,81 +135,108 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 
 ## Hanging Node Handling: Complete Flow
 
-```
+```text
+
 1. DETECTION (ElementGhostManager)
+
    ├─ identify boundary elements
    └─ flag as potential ghost sources
 
 2. NEIGHBOR FINDING (NeighborDetector)
+
    ├─ TM-SFC ordering enables efficient search
    ├─ Find face neighbors (including coarser/finer)
    └─ Return topological neighbor information
 
 3. GHOST CREATION (GhostLayer)
+
    ├─ Create ghost copies of neighbors
    ├─ Index by spatial key in ConcurrentSkipListMap
    └─ Store remote element references
 
 4. LOCAL COMPUTATION
+
    ├─ Algorithm sees complete neighbor info
    ├─ No explicit communication needed
    └─ Works seamlessly despite hanging nodes
 
 5. SYNCHRONIZATION (GhostCommunicationManager)
+
    ├─ Deferred to sync phase (not computation)
    ├─ gRPC-based distributed exchange
    └─ Virtual thread support for scalability
-```
+
+```text
 
 ---
 
 ## Non-Conforming Mesh Algorithms: Complete Feature Set
 
 ### Feature 1: Hanging Node Depth Control
+
 ```java
+
 // From AdaptiveRefinementStrategy
 if (estimateHangingNodeDepth(context) > MAX_HANGING_NODE_DEPTH) {
     return RefinementDecision.COARSEN;  // Prevent excessive depth
 }
-```
+
+```text
+
 **Constraint**: MAX = 3 levels prevents exponential ghost overhead
 
 ### Feature 2: Adaptive Balancing
+
 ```java
+
 // From TreeBalancingStrategy
 shouldRebalanceTree() {
     return stats.loadVariance() > threshold ||
            stats.emptyNodes() > threshold;
 }
-```
+
+```text
+
 **Effect**: Prevents overly deep local refinement
 
 ### Feature 3: Multi-Level Neighbor Detection
+
 ```java
+
 // From NeighborDetector
 findNeighbors(key, GhostType.FACES)  // Face-adjacent at any level
-```
+
+```text
+
 **Scope**: Handles neighbors at same level, parent level, and child level
 
 ### Feature 4: Ghost Algorithm Selection
+
 ```java
+
 // From ElementGhostManager
 GhostAlgorithm strategy = switch(conformityLevel) {
     case STRICT -> GhostAlgorithm.CONSERVATIVE;
     case BALANCED -> GhostAlgorithm.ADAPTIVE;
     case PERMISSIVE -> GhostAlgorithm.MINIMAL;
 }
-```
+
+```text
+
 **Flexibility**: Choose ghost overhead vs. completeness
 
 ### Feature 5: Conformity Migration
+
 ```java
+
 // When non-conformity becomes excessive
 Octree octree = Octree.fromTetree(tetree);
 
 // When tetrahedral efficiency needed
 Tetree tetree = Tetree.fromOctree(octree);
-```
+
+```text
+
 **Escape hatch**: Switch spatial index types when needed
 
 ---
@@ -203,18 +244,21 @@ Tetree tetree = Tetree.fromOctree(octree);
 ## Integration Points for Tetree Balancing
 
 ### Current State
+
 - ✅ Tetree subdivision (Bey refinement fully implemented)
 - ✅ Ghost layer infrastructure exists
 - ✅ Tree balancing strategies available
 - ✅ Adaptive forest with density thresholds
 
 ### Enhancement Opportunities
+
 1. **Hanging Node Depth Tracking**: Add metrics to `TreeBalancingStats`
 2. **Adaptive Conformity**: Adjust ghost algorithm based on refinement patterns
 3. **Distributed Balancing**: Coordinate across forest trees for ghost efficiency
 4. **Performance Tuning**: Benchmark ghost overhead under various refinement patterns
 
 ### Research Directions
+
 1. Optimal hanging node depth for specific applications
 2. Ghost algorithm selection heuristics
 3. Hybrid conforming/non-conforming forest strategies
@@ -225,13 +269,16 @@ Tetree tetree = Tetree.fromOctree(octree);
 ## Ghost Layer Integration with Tetree
 
 ### Current Implementation
+
 - `GhostLayer<Key, ID, Content>`: Stores ghost elements
 - `ElementGhostManager<Key, ID, Content>`: Creates/updates ghosts
 - `NeighborDetector<Key>`: Finds topological neighbors
 - `GhostAlgorithm`: Selects ghost creation strategy
 
 ### Enhancement Path
-```
+
+```text
+
 Current: Ghost infrastructure exists
     ↓
 Enhance: Add hanging node metrics
@@ -239,9 +286,11 @@ Enhance: Add hanging node metrics
 Optimize: Adaptive ghost selection
     ↓
 Scale: Distributed ghost coordination
-```
+
+```text
 
 ### Code Locations
+
 - **Ghost Layer**: `lucien/src/main/java/com/hellblazer/luciferase/lucien/forest/ghost/GhostLayer.java`
 - **Element Manager**: `lucien/src/main/java/com/hellblazer/luciferase/lucien/forest/ghost/ElementGhostManager.java`
 - **Neighbor Detector**: `lucien/src/main/java/com/hellblazer/luciferase/lucien/neighbor/NeighborDetector.java`
@@ -252,59 +301,76 @@ Scale: Distributed ghost coordination
 ## ChromaDB Usage Examples
 
 ### Example 1: Learning TM-SFC Properties
-```
+
+```text
+
 Q: "What are the properties of tree-monotonic space-filling curves?"
 Expected Doc: tm_sfc_003_tm_sfc_ordering
 
 Retrieved:
+
 - SFC preserves spatial locality
 - Bey-to-TM mapping in connectivity tables
 - Enables efficient neighbor detection
 - Reduces ghost communication overhead
-```
+
+```text
 
 ### Example 2: Implementing Hanging Node Control
-```
+
+```text
+
 Q: "How to prevent excessive hanging nodes?"
 Expected Docs: tm_sfc_005 (balancing), tm_sfc_006 (refinement)
 
 Retrieved:
+
 - MAX_HANGING_NODE_DEPTH = 3
 - TreeBalancingStrategy thresholds
 - RefinementDecision validation
 - Adaptive threshold adjustment
-```
+
+```text
 
 ### Example 3: Designing Ghost Strategy
-```
+
+```text
+
 Q: "What ghost algorithms are available and when to use them?"
 Expected Doc: tm_sfc_004_ghost_layer
 
 Retrieved:
+
 - MINIMAL (lowest memory)
 - CONSERVATIVE (balanced)
 - AGGRESSIVE (maximum performance)
 - ADAPTIVE (learn from usage)
 - Selection based on conformity level
-```
+
+```text
 
 ### Example 4: Tetree vs Octree Decision
-```
+
+```text
+
 Q: "Should I use Tetree or Octree for adaptive meshes?"
 Expected Docs: tm_sfc_007 (hybrid), tm_sfc_002 (bey efficiency)
 
 Retrieved:
+
 - Tetree: More efficient per-element, supports non-conformity
 - Octree: Conforming, simpler neighbor detection
 - Hybrid: Tetree boundaries + Octree interior
 - Migration available both directions
-```
+
+```text
 
 ---
 
 ## Files Created
 
 ### Documentation Files
+
 1. **TM_SFC_NONCONFORMING_MESH_EXTRACTION.md** (8,000+ words)
    - Complete knowledge extraction
    - All TM-SFC concepts and algorithms
@@ -324,6 +390,7 @@ Retrieved:
    - Quick reference
 
 ### Total Content
+
 - **3 files created**
 - **~12,000+ words**
 - **8 ChromaDB documents ready**
@@ -335,18 +402,21 @@ Retrieved:
 ## How to Use These Documents
 
 ### For Learning
+
 1. Start with `EXTRACTION_SUMMARY.md` (this file) for overview
 2. Read relevant sections in `TM_SFC_NONCONFORMING_MESH_EXTRACTION.md`
 3. Follow code references to implementation files
 4. Check `CHROMADB_KNOWLEDGE_INDEX.md` for related topics
 
 ### For Development
+
 1. Consult specific sections for algorithm details
 2. Use code examples as templates
 3. Reference document IDs for ChromaDB queries
 4. Check integration points for your use case
 
 ### For Integration with ChromaDB
+
 1. Use `CHROMADB_KNOWLEDGE_INDEX.md` as import specification
 2. Each document has metadata ready for indexing
 3. Document IDs are stable and meaningful
@@ -357,23 +427,27 @@ Retrieved:
 ## Next Steps
 
 ### Immediate (To integrate with Lucien development)
+
 - [ ] Review `TM_SFC_NONCONFORMING_MESH_EXTRACTION.md` for accuracy
 - [ ] Cross-reference with current Tetree implementation
 - [ ] Update CLAUDE.md with paper reference
 
 ### Short-term (Integration)
+
 - [ ] Import documents into ChromaDB with metadata
 - [ ] Test query performance on extracted knowledge
 - [ ] Validate document connectivity graph
 - [ ] Create example workflows
 
 ### Medium-term (Enhancement)
+
 - [ ] Track hanging node metrics in balancing stats
 - [ ] Implement adaptive ghost selection
 - [ ] Optimize neighbor detection for distributed mode
 - [ ] Benchmark ghost overhead patterns
 
 ### Long-term (Research)
+
 - [ ] Analyze optimal hanging node depth by application
 - [ ] Compare conforming vs. non-conforming performance
 - [ ] Develop heuristics for strategy selection
@@ -384,6 +458,7 @@ Retrieved:
 ## Related Documentation
 
 ### Existing Luciferase Docs
+
 - `TETREE_IMPLEMENTATION_GUIDE.md` - Tetree reference
 - `BEY_TETRAHEDRAL_SUBDIVISION.md` - Bey algorithm details
 - `GHOST_API.md` - Ghost layer API
@@ -391,6 +466,7 @@ Retrieved:
 - `FOREST_MANAGEMENT_API.md` - Forest management
 
 ### Code References
+
 - `/lucien/tetree/Tet.java` - Core tetrahedron implementation
 - `/lucien/tetree/TetreeConnectivity.java` - TM-SFC lookup tables
 - `/lucien/forest/ghost/GhostLayer.java` - Ghost infrastructure

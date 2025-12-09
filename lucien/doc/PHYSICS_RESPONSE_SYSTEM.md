@@ -1,4 +1,5 @@
 # Physics Response System Documentation
+
 **Date: July 7, 2025**
 
 ## Overview
@@ -10,7 +11,9 @@ The Luciferase physics response system implements realistic collision response u
 ### Core Components
 
 #### 1. PhysicsMaterial
+
 Defines material properties that affect collision response:
+
 - **Friction**: Coefficient of friction for tangential forces
 - **Restitution**: Elasticity/bounciness (0 = perfectly inelastic, 1 = perfectly elastic)
 - **Density**: Mass per unit volume
@@ -18,20 +21,25 @@ Defines material properties that affect collision response:
 Includes presets for common materials (steel, rubber, wood, ice, concrete, glass).
 
 #### 2. RigidBody
+
 Represents a physics object with:
+
 - **State**: Position, orientation (quaternion), linear/angular velocity
 - **Mass Properties**: Mass, inverse mass, inertia tensor
 - **Forces**: Force and torque accumulators
 - **Damping**: Linear and angular damping coefficients
 
 Key methods:
+
 - `applyForce()`: Apply force at center of mass
 - `applyForceAtPoint()`: Apply force at world point (creates torque)
 - `applyImpulse()`: Instantaneous momentum change
 - `integrate()`: Update physics state over time
 
 #### 3. ImpulseResolver
+
 Resolves collisions between rigid bodies:
+
 - Calculates impulse magnitude using relative velocity
 - Applies normal impulse for separation
 - Applies friction impulse for tangential motion
@@ -40,15 +48,19 @@ Resolves collisions between rigid bodies:
 - No separation check - relies on collision detection
 
 #### 4. InertiaTensor
+
 Utility for calculating moment of inertia for various shapes:
-- Sphere: I = (2/5) * m * r²
+
+- Sphere: I = (2/5) *m* r²
 - Box: Different values for each axis
 - Cylinder/Capsule: Accounts for mass distribution
 - Transform method for world space conversion
 - Scale method for resizing objects
 
 #### 5. Constraint System
+
 Maintains relationships between bodies:
+
 - **ContactConstraint**: Prevents penetration
 - **DistanceConstraint**: Maintains fixed distance (joints)
 - Sequential impulse solving with warm starting
@@ -56,11 +68,13 @@ Maintains relationships between bodies:
 ## Physics Features
 
 ### Conservation Laws
+
 - **Linear Momentum**: p = mv conserved in collisions
 - **Angular Momentum**: L = Iω with proper torque calculations
 - **Energy**: Controlled by restitution coefficient
 
 ### Collision Response Pipeline
+
 1. Detect collision (from collision detection system)
 2. Calculate relative velocity at contact point
 3. Compute impulse magnitude
@@ -69,6 +83,7 @@ Maintains relationships between bodies:
 6. Correct positions to resolve penetration
 
 ### Advanced Features
+
 - **Rotational Dynamics**: Full 3D rotation with quaternions
 - **Angular Impulse**: Torque from off-center collisions
 - **Friction Models**: Coulomb friction with clamping to normal force
@@ -81,6 +96,7 @@ Maintains relationships between bodies:
 The physics response system integrates with the existing collision detection:
 
 ```java
+
 // Collision detection provides contact info
 CollisionResult collision = collisionDetector.checkCollision(shapeA, shapeB);
 
@@ -88,7 +104,8 @@ CollisionResult collision = collisionDetector.checkCollision(shapeA, shapeB);
 if (collision.collides) {
     ImpulseResolver.resolveCollision(bodyA, bodyB, collision);
 }
-```
+
+```text
 
 ## Performance Characteristics
 
@@ -100,6 +117,7 @@ if (collision.collides) {
 ## Usage Example
 
 ```java
+
 // Create rigid bodies
 var sphereInertia = InertiaTensor.sphere(10.0f, 1.0f);
 var bodyA = new RigidBody(10.0f, sphereInertia);
@@ -116,7 +134,8 @@ bodyA.integrate(deltaTime);
 if (collision.collides) {
     ImpulseResolver.resolveCollision(bodyA, bodyB, collision);
 }
-```
+
+```text
 
 ## Future Enhancements
 
@@ -129,6 +148,7 @@ if (collision.collides) {
 ## Implementation Notes
 
 ### Key Design Decisions
+
 1. **No Separation Check**: The impulse resolver processes all collisions without checking if bodies are separating. This simplifies the logic and relies on the collision detection phase to provide valid collisions.
 
 2. **Damping Applied During Integration**: Linear and angular damping are applied during the integration step, affecting both velocity and position updates.
@@ -143,6 +163,7 @@ if (collision.collides) {
 ## Testing
 
 Comprehensive test coverage includes:
+
 - Material property validation and combination rules
 - Rigid body force and impulse application
 - Velocity integration with damping

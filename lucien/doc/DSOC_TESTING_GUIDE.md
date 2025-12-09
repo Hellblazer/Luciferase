@@ -5,12 +5,14 @@ This guide provides an overview of testing strategies for the Dynamic Scene Occl
 ## Testing Documentation
 
 ### 1. Performance Testing
+
 - **[DSOC_PERFORMANCE_TESTING_GUIDE.md](DSOC_PERFORMANCE_TESTING_GUIDE.md)** - Java performance tests and benchmarks
   - JUnit performance tests (disabled by default)
   - JMH benchmarks for detailed performance analysis
   - Instructions for running performance tests
 
 ### 2. Comprehensive Testing
+
 - **[DSOC_TESTING_COMPREHENSIVE.md](DSOC_TESTING_COMPREHENSIVE.md)** - Complete testing strategies
   - Unit testing examples (C++)
   - Integration testing patterns
@@ -22,47 +24,60 @@ This guide provides an overview of testing strategies for the Dynamic Scene Occl
 ### Run DSOC Performance Tests
 
 ```bash
+
 # Enable performance tests temporarily
+
 export RUN_DSOC_PERF_TESTS=true
 
 # Run basic performance tests
+
 mvn test -Dtest=DSOCPerformanceTest
 
 # Run JMH benchmarks (takes longer)
+
 mvn test -Dtest=DSOCBenchmarkRunner
-```
+
+```text
 
 ### Run Integration Tests
 
 ```bash
+
 # Run DSOC integration tests
+
 mvn test -Dtest=*DSOCIntegrationTest
 
 # Run with specific configuration
+
 mvn test -Dtest=*DSOCIntegrationTest -DdsocEnabled=true
-```
+
+```text
 
 ## Test Categories
 
 ### 1. Unit Tests
+
 - TBV (Temporal Bounding Volume) creation and validation
 - Z-buffer operations
 - Occlusion query logic
 - Configuration validation
 
 ### 2. Integration Tests
+
 - DSOC with spatial indices (Octree, Tetree)
 - Auto-disable mechanism
 - Performance monitoring
 - Memory management
 
 ### 3. Performance Tests
+
 - Throughput benchmarks
 - Memory usage analysis
 - Scalability testing
 - Overhead measurement
 
 ### 4. Edge Cases
+
 - Empty scenes
 - Extreme entity counts
 - Rapid movement scenarios
@@ -71,26 +86,35 @@ mvn test -Dtest=*DSOCIntegrationTest -DdsocEnabled=true
 ## Key Test Scenarios
 
 ### Scenario 1: Basic Occlusion
+
 ```java
+
 // Test that DSOC correctly culls occluded entities
 spatialIndex.enableDSOC(config, 512, 512);
 // Add occluders and test entities
 // Verify culling results
-```
+
+```text
 
 ### Scenario 2: Performance Protection
+
 ```java
+
 // Test auto-disable kicks in when performance degrades
 // Create scenario with poor occlusion
 // Verify DSOC auto-disables
-```
+
+```text
 
 ### Scenario 3: Dynamic Scenes
+
 ```java
+
 // Test with moving entities
 // Verify TBV updates correctly
 // Check performance metrics
-```
+
+```text
 
 ## Best Practices
 

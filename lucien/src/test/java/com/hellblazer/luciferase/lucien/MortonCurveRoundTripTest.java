@@ -103,12 +103,12 @@ public class MortonCurveRoundTripTest {
         var mortonBeyond = MortonCurve.encode(beyondMax, 0, 0);
         assertEquals(0, mortonBeyond, "Coordinate beyond 21-bit max should produce Morton 0");
 
-        // Test negative coordinates - calculateMortonIndex doesn't validate, it just casts to int
-        // which can produce unexpected results
+        // Test negative coordinates - spatial indices don't support negative coordinates
+        // This is a documented constraint of the Morton curve implementation
         var negativePoint = new Point3f(-100, 100, 100);
-        // This actually doesn't throw, it just produces unexpected results
-        var morton = Constants.calculateMortonIndex(negativePoint, (byte) 10);
-        assertTrue(morton >= 0, "Morton code should be non-negative even with negative input");
+        assertThrows(IllegalArgumentException.class, () -> {
+            Constants.calculateMortonIndex(negativePoint, (byte) 10);
+        }, "Negative coordinates should throw IllegalArgumentException");
 
         // Document the overflow behavior at level 0
         // At level 0, length = 2^21 = 2,097,152 which is beyond max coordinate

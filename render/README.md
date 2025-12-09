@@ -28,11 +28,13 @@ The module implements the Laine & Karras 2010 ESVO algorithm:
 ### Shader Systems
 
 #### Compute Shaders
+
 - `esvo_traverse.comp` - Ray-octree intersection kernel
 - `stack_compact.comp` - Stack memory compaction
 - `contour_gen.comp` - Contour generation from voxel data
 
 #### Vertex/Fragment Shaders
+
 - `voxel.vert/frag` - Voxel cube rendering
 - `ray_debug.vert/frag` - Ray visualization for debugging
 - `wireframe.vert/frag` - Octree structure visualization
@@ -44,11 +46,13 @@ The module implements the Laine & Karras 2010 ESVO algorithm:
 The render module integrates with the resource module for GPU memory management:
 
 ```java
+
 // Automatic GPU buffer management
 var bufferManager = new GPUBufferManager(resourceManager);
 var nodeBuffer = bufferManager.allocateNodeBuffer(nodeCount);
 var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
-```
+
+```text
 
 ### Thread Safety
 
@@ -59,6 +63,7 @@ var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
 ## Features
 
 ### Current Implementation
+
 - ✅ ESVO sparse voxel octree rendering
 - ✅ Stack-based GPU ray traversal
 - ✅ Contour-based surface approximation
@@ -66,11 +71,13 @@ var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
 - ✅ Debug visualization tools
 
 ### In Progress
+
 - ⚠️ Unified node structure (see ARCHITECTURAL_GUARDRAILS.md)
 - ⚠️ Full CUDA reference compliance
 - ⚠️ Beam optimization implementation
 
 ### Future Enhancements
+
 - WebGPU backend support
 - Vulkan rendering pipeline
 - Distributed GPU rendering
@@ -81,6 +88,7 @@ var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
 ### Basic Rendering Setup
 
 ```java
+
 // Initialize render pipeline
 var config = RenderConfig.builder()
     .resolution(1920, 1080)
@@ -96,11 +104,13 @@ pipeline.setOctree(octree);
 
 // Render frame
 pipeline.renderFrame(camera, lights);
-```
+
+```text
 
 ### ESVO Ray Traversal
 
 ```java
+
 // Setup ESVO traversal
 var esvo = new ESVORenderer(resourceManager);
 esvo.setOctree(octreeData);
@@ -108,37 +118,50 @@ esvo.setCamera(camera);
 
 // Execute GPU traversal
 var intersections = esvo.traverse(rays);
-```
+
+```text
 
 ### Debug Visualization
 
 ```java
+
 // Enable debug overlays
 pipeline.setDebugMode(DebugMode.SHOW_OCTREE_STRUCTURE);
 pipeline.setDebugMode(DebugMode.SHOW_RAY_PATHS);
 pipeline.setDebugMode(DebugMode.SHOW_TRAVERSAL_STATS);
-```
+
+```text
 
 ## Testing
 
 ### Unit Tests
+
 ```bash
+
 # Run all render tests
+
 mvn test -pl render
 
 # Run specific test suites
+
 mvn test -pl render -Dtest=ESVOTraversalTest
 mvn test -pl render -Dtest=ContourExtractionTest
-```
+
+```text
 
 ### Performance Tests
+
 ```bash
+
 # Run performance benchmarks
+
 mvn test -pl render -Dtest=RenderBenchmark
 
 # GPU performance profiling
+
 mvn test -pl render -Dtest=GPUProfileTest -Pgpu-profile
-```
+
+```text
 
 ### Validation Tests
 
@@ -147,20 +170,26 @@ The module includes architectural validation tests that ensure compliance with t
 ## Integration
 
 ### With Lucien Module
+
 The render module visualizes spatial data structures from lucien:
+
 - Octree visualization
 - Tetree rendering
 - Collision shape display
 - Spatial query visualization
 
 ### With Portal Module
+
 Provides rendering backend for JavaFX 3D visualization:
+
 - Offscreen rendering to JavaFX images
 - Interactive camera controls
 - Real-time updates
 
 ### With GPU Test Framework
+
 Uses the framework for GPU testing:
+
 - Shader compilation tests
 - Compute kernel validation
 - Memory transfer benchmarks
@@ -168,6 +197,7 @@ Uses the framework for GPU testing:
 ## Performance
 
 ### Benchmarks
+
 > **Note**: Performance metrics need to be updated with actual measurements from current hardware.
 > 
 > To run benchmarks on your system:
@@ -177,12 +207,14 @@ Uses the framework for GPU testing:
 > ```
 
 Expected metrics to measure:
+
 - **Ray Throughput**: Grays/sec
 - **Node Throughput**: Nodes/sec  
 - **Frame Time**: ms @ various resolutions
 - **Memory Usage**: MB for various node counts
 
 ### Optimization Tips
+
 1. Use power-of-2 resolutions for better GPU utilization
 2. Enable contour caching for static scenes
 3. Adjust stack size based on octree depth
@@ -193,25 +225,32 @@ Expected metrics to measure:
 The render module uses the `gpu-test-framework` module for GPU-related testing:
 
 ```xml
+
 <dependency>
     <groupId>com.hellblazer.luciferase</groupId>
     <artifactId>gpu-test-framework</artifactId>
     <scope>test</scope>
 </dependency>
-```
+
+```text
 
 ### Running Tests
 
 ```bash
+
 # Run all render tests
+
 mvn test -pl render
 
 # Run with GPU profiling
+
 mvn test -pl render -Dgpu.profile=true
 
 # Run specific test class
+
 mvn test -pl render -Dtest=ESVORendererTest
-```
+
+```text
 
 ### Test Categories
 
@@ -223,11 +262,13 @@ mvn test -pl render -Dtest=ESVORendererTest
 ## Dependencies
 
 ### Core Dependencies
+
 - **resource**: GPU resource management
 - **common**: Shared utilities and geometry
 - **gpu-test-framework** (test scope): GPU testing infrastructure
 
 ### External Dependencies
+
 - **LWJGL**: OpenGL/OpenCL bindings
 - **javax.vecmath**: Vector mathematics
 - **JMH** (test scope): Performance benchmarking
@@ -237,6 +278,7 @@ mvn test -pl render -Dtest=ESVORendererTest
 ### Render Configuration Options
 
 ```java
+
 RenderConfig.builder()
     .resolution(width, height)
     .maxOctreeDepth(23)          // CUDA reference: 23 levels
@@ -246,11 +288,13 @@ RenderConfig.builder()
     .shadowRays(4)               // Soft shadows
     .ambientOcclusion(true)      // Screen-space AO
     .build();
-```
+
+```text
 
 ### Shader Configuration
 
 Shaders are loaded from `resources/shaders/`:
+
 - Place custom shaders in this directory
 - Use `#include` directives for common code
 - Shaders are hot-reloaded in debug mode
@@ -277,9 +321,11 @@ Shaders are loaded from `resources/shaders/`:
 ### Debug Logging
 
 ```xml
+
 <logger name="com.hellblazer.luciferase.render" level="DEBUG"/>
 <logger name="com.hellblazer.luciferase.render.shader" level="TRACE"/>
-```
+
+```text
 
 ## References
 

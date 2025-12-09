@@ -9,11 +9,13 @@ This document contains detailed historical bug fixes and implementation notes fr
 ## Maven Dependency Management
 
 **MAVEN DEPENDENCY BEST PRACTICE**: When adding dependencies to a Maven multi-module project:
+
 1. For multiple dependencies from the same groupId: Create a version property in root pom.xml (e.g., `<jmh.version>1.37</jmh.version>` for multiple JMH artifacts)
 2. For single dependencies: Use the version directly in dependencyManagement (no property needed)
 3. Add all dependencies to the root pom.xml `<dependencyManagement>` section with versions
 4. In module pom.xml files, reference dependencies WITHOUT version tags
 5. This ensures consistent versions across modules with centralized management
+
 Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jmh.version} property
 
 ## Morton Curve Correctness
@@ -67,7 +69,7 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **Root Cause**: Incorrect bit packing - z coordinate (32-bit) wasn't shifted, overlapping with level and type fields
 - **WRONG**: `key = ((long) x << 32) | ((long) y << 16) | ((long) z) | ((long) level << 8) | type`
 - **CORRECT**: Uses hash function with prime multipliers for proper distribution
-- **Hash Function**: `key = x * 0x9E3779B97F4A7C15L + y * 0xBF58476D1CE4E5B9L + z * 0x94D049BB133111EBL + level * 0x2545F4914F6CDD1DL + type`
+- **Hash Function**: `key = x *0x9E3779B97F4A7C15L + y* 0xBF58476D1CE4E5B9L + z *0x94D049BB133111EBL + level* 0x2545F4914F6CDD1DL + type`
 - **Fix Location**: TetreeLevelCache.java cacheIndex() and getCachedIndex() methods
 - **Result**: 0% collision rate (was 74%), >95% slot utilization, all SFC round-trip tests passing
 - **Validation**: TetreeLevelCacheKeyCollisionTest shows fix eliminates collisions
@@ -128,17 +130,17 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
     1. Replaced spatialIndex HashMap and sortedSpatialIndices TreeSet with single ConcurrentSkipListMap
     2. Changed SpatialNodeImpl.entityIds from ArrayList to CopyOnWriteArrayList
 - **Benefits**:
-    - Eliminates ConcurrentModificationException during iteration
-    - Thread-safe sorted key access without explicit locking
-    - Single source of truth for spatial data
-    - O(log n) operations with concurrent access
-    - Thread-safe entity list iteration
+  - Eliminates ConcurrentModificationException during iteration
+  - Thread-safe sorted key access without explicit locking
+  - Single source of truth for spatial data
+  - O(log n) operations with concurrent access
+  - Thread-safe entity list iteration
 - **Changes**:
-    - AbstractSpatialIndex now uses ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>
-    - Removed all sortedSpatialIndices references (19 in AbstractSpatialIndex, 9 in Octree, 19 in Tetree)
-    - Updated Octree and Tetree to use spatialIndex.keySet() for iteration
-    - SpatialNodeImpl now uses CopyOnWriteArrayList for thread-safe iteration
-    - ForestConcurrencyTest adjusted to handle frustum coordinate constraints
+  - AbstractSpatialIndex now uses ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>
+  - Removed all sortedSpatialIndices references (19 in AbstractSpatialIndex, 9 in Octree, 19 in Tetree)
+  - Updated Octree and Tetree to use spatialIndex.keySet() for iteration
+  - SpatialNodeImpl now uses CopyOnWriteArrayList for thread-safe iteration
+  - ForestConcurrencyTest adjusted to handle frustum coordinate constraints
 - **Impact**: Fixes concurrent query failures, simplifies architecture, enables lock-free reads
 
 ## TETRAHEDRAL SUBDIVISION SOLUTION (June 28, 2025)
@@ -156,9 +158,9 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **Problem**: Computing all 8 children when only one is needed was inefficient
 - **Solution**: Added efficient single-child methods to BeySubdivision
 - **New Methods**:
-    - `getBeyChild(parent, beyIndex)` - Computes single child in Bey order
-    - `getTMChild(parent, tmIndex)` - Computes single child in TM order
-    - `getMortonChild(parent, mortonIndex)` - Computes single child in Morton order
+  - `getBeyChild(parent, beyIndex)` - Computes single child in Bey order
+  - `getTMChild(parent, tmIndex)` - Computes single child in TM order
+  - `getMortonChild(parent, mortonIndex)` - Computes single child in Morton order
 - **Performance**: ~3x faster than computing all children (17.10 ns per call)
 - **Integration**: Tet.child() now uses BeySubdivision.getMortonChild()
 - **Location**: BeySubdivision.java, integrated into Tet.child()
@@ -171,11 +173,11 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **Analysis**: ~48% gaps and ~32% overlaps in t8code subdivision
 - **Solution**: Disabled tests expecting proper partitioning
 - **Affected Tests**:
-    - TetreeContainmentConsistencyTest
-    - TetreePartitionTest
-    - TetreeContainmentDebugTest
-    - TetreeTypeDeterminationTest
-    - CorrectTetreeLocateTest
+  - TetreeContainmentConsistencyTest
+  - TetreePartitionTest
+  - TetreeContainmentDebugTest
+  - TetreeTypeDeterminationTest
+  - CorrectTetreeLocateTest
 - **Documentation**: See TETREE_T8CODE_PARTITION_ANALYSIS.md for details
 - **Note**: This is a fundamental limitation of t8code, not a bug in our implementation
 
@@ -205,10 +207,10 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **Problem**: TetreeKey O(level) tmIndex() computation prevents efficient range enumeration
 - **Solution**: Implemented lazy evaluation patterns to defer key generation until needed
 - **Components**:
-    - LazyRangeIterator: O(1) memory iterator regardless of range size
-    - LazySFCRangeStream: Java Stream API integration with early termination
-    - RangeHandle: First-class range objects with deferred computation
-    - RangeQueryVisitor: Tree-based alternative to range iteration
+  - LazyRangeIterator: O(1) memory iterator regardless of range size
+  - LazySFCRangeStream: Java Stream API integration with early termination
+  - RangeHandle: First-class range objects with deferred computation
+  - RangeQueryVisitor: Tree-based alternative to range iteration
 - **Performance**: 99.5% memory savings for large ranges (6M+ keys)
 - **Trade-offs**: Small overhead for tiny ranges, massive benefits for large ranges
 - **Documentation**: See lucien/doc/LAZY_EVALUATION_USAGE_GUIDE.md for usage examples
@@ -228,10 +230,10 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **CopyOnWriteArrayList**: Used for entity storage in SpatialNodeImpl to prevent ConcurrentModificationException
 - **ObjectPool Integration**: Extended to k-NN, collision detection, ray intersection, frustum culling, and bulk operations
 - **Performance Metrics**:
-    - k-NN: 0.18ms per query with minimal GC pressure
-    - Collision Detection: 9.46ms average, 419 ops/sec concurrent
-    - Ray Intersection: 0.323ms per ray, 26,607 rays/sec concurrent
-    - Bulk Insert: 347K-425K entities/sec, < 1.2 MB memory leak over 10 iterations
+  - k-NN: 0.18ms per query with minimal GC pressure
+  - Collision Detection: 9.46ms average, 419 ops/sec concurrent
+  - Ray Intersection: 0.323ms per ray, 26,607 rays/sec concurrent
+  - Bulk Insert: 347K-425K entities/sec, < 1.2 MB memory leak over 10 iterations
 - **ExtremeConcurrencyStressTest**: Successfully handles 50-100 threads with mixed operations
 - **ForestConcurrencyTest**: All tests now pass (previously failing with CME)
 - **Bulk Operation Optimizations**: Added ObjectPool usage and ID pre-generation in insertBatch
@@ -260,10 +262,10 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **LockFreeEntityMover**: Four-phase atomic movement protocol (PREPARE → INSERT → UPDATE → REMOVE)
 - **Atomic Movement Protocol**: Ensures entities always findable during concurrent operations
 - **Performance Results**:
-    - Single-threaded: 101K movements/sec
-    - Concurrent: 264K movements/sec (4 threads)
-    - Content updates: 1.69M updates/sec
-    - Memory efficiency: 187 bytes per entity
+  - Single-threaded: 101K movements/sec
+  - Concurrent: 264K movements/sec (4 threads)
+  - Content updates: 1.69M updates/sec
+  - Memory efficiency: 187 bytes per entity
 - **Zero conflicts** in testing with optimistic retry mechanism
 - **LockFreePerformanceTest**: Validates throughput and memory efficiency
 
@@ -282,10 +284,10 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 - **Standardized Process**: Created PERFORMANCE_TESTING_PROCESS.md to document repeatable performance testing workflow
 - **Maven Integration**: Added performance profiles to pom.xml for automated test execution, data extraction, and documentation updates
 - **Key Profiles**:
-    - `performance`: Runs all performance benchmarks with proper environment configuration
-    - `performance-extract`: Extracts metrics from test results into CSV/markdown format
-    - `performance-docs`: Updates documentation files with current performance data
-    - `performance-full`: Complete workflow combining all steps
+  - `performance`: Runs all performance benchmarks with proper environment configuration
+  - `performance-extract`: Extracts metrics from test results into CSV/markdown format
+  - `performance-docs`: Updates documentation files with current performance data
+  - `performance-full`: Complete workflow combining all steps
 - **Documentation Maintenance**: Process prevents performance data inconsistencies across documentation files
 - **Commands**: Use `mvn clean test -Pperformance` for benchmarks, `mvn clean verify -Pperformance-full` for complete update
 - **Critical**: This process and documentation must be kept current as performance characteristics evolve
@@ -312,13 +314,13 @@ Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jm
 
 - **Problem**: 7 test failures in StackTraversalTest and ContourExtractorTest preventing module completion
 - **StackTraversalTest Fixes**:
-    - Changed stack from sorted insertion to LIFO for GPU efficiency
-    - Fixed child node indexing in octree traversal simulation
-    - Adjusted test expectations to match actual implementation
+  - Changed stack from sorted insertion to LIFO for GPU efficiency
+  - Fixed child node indexing in octree traversal simulation
+  - Adjusted test expectations to match actual implementation
 - **ContourExtractorTest Fixes**:
-    - Fixed `findFarthestPoint` null pointer by initializing with first point
-    - Added multiple fallbacks in `extractContour` for edge cases
-    - Enhanced plane fitting to handle degenerate triangles
+  - Fixed `findFarthestPoint` null pointer by initializing with first point
+  - Added multiple fallbacks in `extractContour` for edge cases
+  - Enhanced plane fitting to handle degenerate triangles
 - **Result**: All 520 tests in render module now passing (0 failures, 5 skipped)
 - **ESVO Implementation Status**: P0 and P1 components 100% complete with tests
 - **Files Modified**: ContourExtractor.java, StackTraversalTest.java

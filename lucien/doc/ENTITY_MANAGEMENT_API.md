@@ -12,6 +12,7 @@ The Entity Management API provides centralized entity lifecycle management for s
 The central entity management class that handles entity lifecycle operations.
 
 ```java
+
 // Create entity manager with ID generator
 SequentialLongIDGenerator idGenerator = new SequentialLongIDGenerator();
 EntityManager<LongEntityID, GameObject> entityManager = 
@@ -31,7 +32,8 @@ entityManager.updateEntity(playerId, newPosition, (byte) 10);
 
 // Remove entity
 entityManager.removeEntity(playerId);
-```
+
+```text
 
 **Key Methods:**
 - `insertEntity(Point3f, byte, Content)` - Insert point entity
@@ -48,6 +50,7 @@ entityManager.removeEntity(playerId);
 Represents a spatial entity with position, content, and optional bounds.
 
 ```java
+
 // Create entity
 LongEntityID entityId = new LongEntityID(42L);
 Point3f position = new Point3f(10, 20, 30);
@@ -61,17 +64,21 @@ Point3f pos = entity.getPosition();
 String data = entity.getContent();
 EntityBounds entityBounds = entity.getBounds();
 boolean hasCustomBounds = entity.hasCustomBounds();
-```
+
+```text
 
 ### EntityBounds
 
 Defines spatial boundaries for entities that span multiple spatial cells.
 
 ```java
+
 // Create entity bounds (relative to entity position)
 EntityBounds bounds = new EntityBounds(
+
     -50.0f, -25.0f, -30.0f,  // min offsets (x, y, z)
      50.0f,  25.0f,  30.0f   // max offsets (x, y, z)
+
 );
 
 // Check if point is within bounds (relative to entity position)
@@ -86,10 +93,13 @@ float width = bounds.getWidth();   // max.x - min.x
 float height = bounds.getHeight(); // max.y - min.y  
 float depth = bounds.getDepth();   // max.z - min.z
 float volume = bounds.getVolume(); // width * height * depth
-```
+
+```text
 
 **Common Bound Patterns:**
+
 ```java
+
 // Point entity (no bounds)
 EntityBounds pointBounds = EntityBounds.POINT; // (0,0,0) to (0,0,0)
 
@@ -101,13 +111,15 @@ EntityBounds boxBounds = EntityBounds.box(10.0f, 5.0f, 2.0f); // custom dimensio
 
 // Sphere entity (approximated as cube)
 EntityBounds sphereBounds = EntityBounds.sphere(3.0f); // radius 3.0
-```
+
+```text
 
 ## Entity Identification
 
 ### EntityID Hierarchy
 
 ```java
+
 // Base interface
 public interface EntityID extends Comparable<EntityID> {
     String asString();
@@ -116,13 +128,15 @@ public interface EntityID extends Comparable<EntityID> {
 // Implementations
 LongEntityID longId = new LongEntityID(12345L);
 UUIDEntityID uuidId = new UUIDEntityID(UUID.randomUUID());
-```
+
+```text
 
 ### LongEntityID
 
 Efficient long-based entity identification.
 
 ```java
+
 // Create long-based ID
 LongEntityID id1 = new LongEntityID(42L);
 LongEntityID id2 = LongEntityID.of(100L);
@@ -132,13 +146,15 @@ boolean equal = id1.equals(id2);
 int comparison = id1.compareTo(id2);
 String stringRep = id1.asString(); // "42"
 long value = id1.getValue();
-```
+
+```text
 
 ### UUIDEntityID
 
 UUID-based entity identification for distributed systems.
 
 ```java
+
 // Create UUID-based ID
 UUIDEntityID id1 = new UUIDEntityID();                    // Random UUID
 UUIDEntityID id2 = new UUIDEntityID(UUID.randomUUID());   // Specific UUID
@@ -147,7 +163,8 @@ UUIDEntityID id3 = UUIDEntityID.fromString("123e4567-e89b-12d3-a456-426614174000
 // Properties
 UUID uuid = id1.getUUID();
 String stringRep = id1.asString();
-```
+
+```text
 
 ## ID Generation
 
@@ -156,18 +173,21 @@ String stringRep = id1.asString();
 Interface for ID generation strategies.
 
 ```java
+
 public interface EntityIDGenerator<ID extends EntityID> {
     ID generateID();
     void reset();        // Reset generator state
     long getCount();     // Get generation count
 }
-```
+
+```text
 
 ### SequentialLongIDGenerator
 
 Generates sequential long-based IDs for high-performance scenarios.
 
 ```java
+
 // Create sequential generator
 SequentialLongIDGenerator generator = new SequentialLongIDGenerator();
 
@@ -183,10 +203,13 @@ generator.reset(); // Start over from 1
 // Start from specific value
 SequentialLongIDGenerator custom = new SequentialLongIDGenerator(1000L);
 LongEntityID id = custom.generateID(); // ID: 1001
-```
+
+```text
 
 **Thread Safety:**
+
 ```java
+
 // Thread-safe sequential generation
 SequentialLongIDGenerator generator = new SequentialLongIDGenerator();
 
@@ -198,13 +221,15 @@ for (int i = 0; i < 1000; i++) {
 }
 
 // All IDs will be unique across threads
-```
+
+```text
 
 ### UUIDGenerator
 
 Generates UUID-based IDs for distributed systems.
 
 ```java
+
 // Create UUID generator  
 UUIDGenerator generator = new UUIDGenerator();
 
@@ -214,7 +239,8 @@ UUIDEntityID id2 = generator.generateID();
 
 // UUIDs are globally unique
 assert !id1.equals(id2);
-```
+
+```text
 
 ## Entity Operations
 
@@ -223,6 +249,7 @@ assert !id1.equals(id2);
 Wrapper for entity data with metadata.
 
 ```java
+
 // Create entity data
 EntityData<LongEntityID, String> data = new EntityData<>(
     entityId, 
@@ -236,13 +263,15 @@ LongEntityID id = data.getEntityId();
 Point3f pos = data.getPosition();
 String content = data.getContent();
 long timestamp = data.getTimestamp();
-```
+
+```text
 
 ### EntityDistance<ID, Content>
 
 Entity with distance information for proximity queries.
 
 ```java
+
 // Created by k-NN queries
 List<EntityDistance<LongEntityID, String>> nearest = 
     spatialIndex.kNearestNeighborsWithDistance(queryPoint, 5);
@@ -255,7 +284,8 @@ for (EntityDistance<LongEntityID, String> result : nearest) {
     
     System.out.printf("Entity %s at distance %.2f%n", id, distance);
 }
-```
+
+```text
 
 ## Entity Spanning Policies
 
@@ -264,6 +294,7 @@ for (EntityDistance<LongEntityID, String> result : nearest) {
 Controls how large entities are handled across multiple spatial cells.
 
 ```java
+
 public enum EntitySpanningPolicy {
     SINGLE_CELL,    // Entity placed in one cell only
     SPAN_CELLS,     // Entity spans multiple cells
@@ -276,7 +307,8 @@ spatialIndex.setEntitySpanningPolicy(EntitySpanningPolicy.SPAN_CELLS);
 // Insert large entity that spans multiple cells
 EntityBounds largeBounds = new EntityBounds(-100, -100, -100, 100, 100, 100);
 entityManager.insertEntity(centerPosition, (byte) 5, largeBuilding, largeBounds);
-```
+
+```text
 
 **Policy Behaviors:**
 - **SINGLE_CELL**: Entity stored in one cell based on center position
@@ -288,6 +320,7 @@ entityManager.insertEntity(centerPosition, (byte) 5, largeBuilding, largeBounds)
 ### Basic Entity Lifecycle
 
 ```java
+
 // Setup
 SequentialLongIDGenerator idGen = new SequentialLongIDGenerator();
 Octree<LongEntityID, GameObject> spatialIndex = new Octree<>(idGen, 10, (byte) 20);
@@ -313,11 +346,13 @@ entityManager.updateEntity(playerId, new Point3f(10, 0, 10), (byte) 10);
 
 // Remove entity
 entityManager.removeEntity(buildingId);
-```
+
+```text
 
 ### Forest Integration
 
 ```java
+
 // Entity manager for forest operations
 Forest<MortonKey, LongEntityID, GameObject> forest = new Forest<>();
 ForestEntityManager<LongEntityID, GameObject> forestEM = 
@@ -334,11 +369,13 @@ LongEntityID id2 = forestEM.insertEntity(new Point3f(500, 0, 500), npc);
 forestEM.updateEntityPosition(id1, new Point3f(600, 0, 600)); // May migrate trees
 List<LongEntityID> nearbyAcrossTrees = forestEM.findKNearestNeighbors(
     new Point3f(400, 0, 400), 10);
-```
+
+```text
 
 ### Batch Operations
 
 ```java
+
 // Bulk entity insertion for performance
 List<Point3f> positions = generatePositions(10000);
 List<GameObject> entities = generateEntities(10000);
@@ -351,11 +388,13 @@ List<LongEntityID> ids = entityManager.insertBatch(positions, entities, (byte) 1
 
 // Finalize bulk loading
 spatialIndex.finalizeBulkLoading();
-```
+
+```text
 
 ### Custom Entity Types
 
 ```java
+
 // Custom entity with rich data
 public class GameEntity {
     private String name;
@@ -373,13 +412,15 @@ EntityManager<UUIDEntityID, GameEntity> gameEntityManager =
 GameEntity dragon = new GameEntity("Ancient Dragon", EntityType.NPC);
 UUIDEntityID dragonId = gameEntityManager.insertEntity(
     dragonPosition, (byte) 5, dragon, largeBounds);
-```
+
+```text
 
 ## Performance Considerations
 
 ### ID Generation Performance
 
 ```java
+
 // Sequential IDs: ~100M IDs/second (single thread)
 SequentialLongIDGenerator fastGen = new SequentialLongIDGenerator();
 
@@ -389,11 +430,13 @@ UUIDGenerator secureGen = new UUIDGenerator();
 // Choose based on requirements:
 // - Sequential: High performance, single system
 // - UUID: Distributed systems, global uniqueness
-```
+
+```text
 
 ### Memory Efficiency
 
 ```java
+
 // Efficient entity storage
 EntityBounds.POINT;                    // Singleton for point entities
 EntityBounds.cube(size);               // Cached common sizes
@@ -401,13 +444,15 @@ entity.hasCustomBounds();              // Avoid bounds overhead for point entiti
 
 // Bulk operations reduce per-entity overhead
 entityManager.insertBatch(positions, contents, level);
-```
+
+```text
 
 ### Thread Safety
 
 All entity management operations are thread-safe:
 
 ```java
+
 // Concurrent entity operations
 ExecutorService executor = Executors.newFixedThreadPool(8);
 
@@ -415,26 +460,31 @@ ExecutorService executor = Executors.newFixedThreadPool(8);
 executor.submit(() -> entityManager.insertEntity(pos1, level, content1));
 executor.submit(() -> entityManager.insertEntity(pos2, level, content2));
 executor.submit(() -> entityManager.updateEntity(id, newPos, level));
-```
+
+```text
 
 ## Best Practices
 
 ### 1. ID Generator Selection
+
 - Use `SequentialLongIDGenerator` for single-system, high-performance scenarios
 - Use `UUIDGenerator` for distributed systems or when global uniqueness is required
 - Reset generators appropriately when restarting systems
 
 ### 2. Entity Bounds
+
 - Use `EntityBounds.POINT` for point entities to minimize memory overhead
 - Define bounds relative to entity center position
 - Consider spanning policy impact on query performance
 
 ### 3. Batch Operations
+
 - Use bulk loading for large initial datasets
 - Batch related operations when possible
 - Enable bulk loading before large insertions, disable afterward
 
 ### 4. Entity Lifecycle
+
 - Remove entities promptly when no longer needed
 - Update positions incrementally rather than remove/reinsert
 - Use appropriate precision levels for different entity types
@@ -442,6 +492,7 @@ executor.submit(() -> entityManager.updateEntity(id, newPos, level));
 ## Error Handling
 
 ```java
+
 try {
     entityManager.insertEntity(position, level, content);
 } catch (IllegalArgumentException e) {
@@ -457,4 +508,5 @@ Optional<Entity<ID, Content>> entity = entityManager.getEntitySafe(entityId);
 if (entity.isPresent()) {
     // Process entity
 }
-```
+
+```text

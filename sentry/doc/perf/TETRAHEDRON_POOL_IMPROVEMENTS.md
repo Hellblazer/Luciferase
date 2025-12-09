@@ -3,46 +3,58 @@
 ## Current State Analysis (July 2025)
 
 ### Performance Metrics
+
 - **Reuse Rate**: 88% (with aggressive release strategy implemented)
 - **Pool Size**: Default 1024 max, 64 pre-allocated
 - **Average Insertion**: 24.19 µs
 - **Release Ratio**: 84% (tetrahedra properly returned to pool)
 
 ### Current Implementation Strengths
+
 - Per-instance pooling (no shared state)
 - Thread-local context for method calls
 - Pre-allocation reduces initial allocation cost
 - Safety checks prevent invalid releases
 
 ### Completed Improvements
+
 1. **Aggressive Release Strategy**: ✅ Implemented with deferred release mechanism
 2. **Batch Release**: ✅ Added releaseBatch() method
 3. **Pool Warming**: ✅ Added warmUp() method
 4. **Adaptive Sizing**: ✅ Added adaptPoolSize() method
 
 ### Remaining Issues
+
 1. **Batch Acquisition**: Individual acquire calls still have overhead
 2. **Generation Tracking**: Could further improve safety and reuse
 
 ## Improvement Opportunities
 
 ### 1. Aggressive Release Strategy (✅ COMPLETED)
+
 **Problem**: Currently, releases are conservative - only in flip4to1 and releaseAllTetrahedrons
 **Solution**: Implemented deferred release mechanism
+
 ```java
+
 // In OrientedFace.flip2to3() and flip3to2()
 incident.delete();
 adjacent.delete();
 // Defer release until after all operations complete
 TetrahedronPoolContext.deferRelease(incident);
 TetrahedronPoolContext.deferRelease(adjacent);
-```
+
+```text
+
 **Actual Impact**: Increased reuse rate from 54% to 88%
 
 ### 2. Batch Allocation/Release (Medium Priority)
+
 **Problem**: Individual acquire/release calls have method overhead
 **Solution**:
+
 ```java
+
 public Tetrahedron[] acquireBatch(int count) {
     Tetrahedron[] batch = new Tetrahedron[count];
     for (int i = 0; i < count; i++) {
@@ -57,13 +69,18 @@ public Tetrahedron[] acquireBatch(int count) {
     acquireCount += count;
     return batch;
 }
-```
+
+```text
+
 **Expected Impact**: 5-10% reduction in allocation overhead
 
 ### 3. Adaptive Pool Sizing (Medium Priority)
+
 **Problem**: Fixed pool size may be too small/large for workload
 **Solution**:
+
 ```java
+
 private void adaptPoolSize() {
     double reuseRate = getReuseRate();
     if (reuseRate < 10 && size < maxSize / 2) {
@@ -82,13 +99,18 @@ private void adaptPoolSize() {
         }
     }
 }
-```
+
+```text
+
 **Expected Impact**: Better memory usage, maintain optimal pool size
 
 ### 4. Warm Pool Pre-allocation (Low Priority)
+
 **Problem**: Cold pool has no reusable objects
 **Solution**:
+
 ```java
+
 public void warmUp(int expectedSize) {
     int toCreate = Math.min(expectedSize, maxSize - size);
     for (int i = 0; i < toCreate; i++) {
@@ -98,13 +120,18 @@ public void warmUp(int expectedSize) {
         size++;
     }
 }
-```
+
+```text
+
 **Expected Impact**: Better initial performance
 
 ### 5. Lifecycle-Aware Release (High Priority)
+
 **Problem**: Safety checks prevent many valid releases
 **Solution**:
+
 ```java
+
 // Add generation tracking
 public class Tetrahedron {
     private int generation = 0;
@@ -130,13 +157,18 @@ public void startOperation() {
 public void releaseStaleTetrahedra() {
     // Release all tetrahedra from previous generations
 }
-```
+
+```text
+
 **Expected Impact**: Could increase reuse rate to 60-80%
 
 ### 6. Zero-Allocation Fast Path (Medium Priority)
+
 **Problem**: Even with pooling, we still allocate/deallocate
 **Solution**:
+
 ```java
+
 // Pre-allocate common operation sizes
 private final Tetrahedron[] flip2to3Cache = new Tetrahedron[3];
 private final Tetrahedron[] flip1to4Cache = new Tetrahedron[4];
@@ -150,10 +182,13 @@ public Tetrahedron[] acquireFlip2to3() {
     }
     return flip2to3Cache;
 }
-```
+
+```text
+
 **Expected Impact**: Near-zero allocation for common operations
 
 ### 7. NUMA-Aware Pooling (Low Priority - Future)
+
 **Problem**: On NUMA systems, memory locality matters
 **Solution**: Thread-local pools with work stealing
 **Expected Impact**: 10-20% on NUMA systems
@@ -178,6 +213,7 @@ public Tetrahedron[] acquireFlip2to3() {
 ## Expected Overall Impact
 
 With all improvements:
+
 - **Reuse Rate**: 60-80% (up from 2-25%)
 - **Allocation Overhead**: 80-90% reduction
 - **Memory Usage**: Adaptive, optimal for workload

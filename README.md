@@ -43,7 +43,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 ### Core Modules
 
 | Module | Description |
-|--------|-------------|
+| -------- | ------------- |
 | [common](common/README.md) | Collections and geometry utilities |
 | **resource** | Shared resources, shaders, and configuration files |
 | [lucien](lucien/README.md) | Core spatial indexing implementation (Octree, Tetree, collision detection) |
@@ -65,25 +65,32 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 ## Build Instructions
 
 ```bash
+
 # Clone the repository
+
 git clone https://github.com/Hellblazer/Luciferase.git
 cd Luciferase
 
 # Build with Maven wrapper
+
 ./mvnw clean install
 
 # Run tests
+
 ./mvnw test
 
 # Run benchmarks (optional)
+
 ./mvnw test -Pperformance
-```
+
+```text
 
 ## Quick Start
 
 ### Basic Octree Usage
 
 ```java
+
 import com.hellblazer.luciferase.lucien.grid.Octree;
 
 // Create an octree with bounds
@@ -104,11 +111,13 @@ var neighbors = octree.findKNearestNeighbors(position, 5);
 // Perform ray intersection
 var ray = new Ray3f(origin, direction);
 var hits = octree.intersectRay(ray);
-```
+
+```text
 
 ### ESVO Rendering
 
 ```java
+
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 
@@ -123,7 +132,8 @@ var intersections = traversal.traverse(ray);
 
 // Serialize for efficient memory transfer
 var gpuBuffer = ESVOSerializer.serialize(octreeData);
-```
+
+```text
 
 ## Performance
 
@@ -139,7 +149,7 @@ var gpuBuffer = ESVOSerializer.serialize(octreeData);
 Expected benchmark categories (with 10,000 entities):
 
 | Operation | Description |
-|-----------|-------------|
+| ----------- | ------------- |
 | Insertion | Entity insertion operations/sec |
 | k-NN Query | k-nearest neighbor searches/sec |
 | Ray Intersection | Ray-tree intersection tests/sec |

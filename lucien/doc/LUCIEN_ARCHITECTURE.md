@@ -20,7 +20,8 @@ and full ghost layer implementation with gRPC communication.
 
 ## Package Structure
 
-```
+```text
+
 com.hellblazer.luciferase.lucien/
 ├── Root package (29 classes + 2 images)
 │   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex, 
@@ -127,28 +128,33 @@ com.hellblazer.luciferase.lucien/
 │   └── SpatialIndexProfiler - Performance profiling utilities
 └── index/ (0 classes)
     └── [Empty directory]
-```
+
+```text
 
 ## Class Hierarchy
 
 ### Core Inheritance Structure
 
-```
+```text
+
 SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
     └── AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
             ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
             ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
             └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
-```
+
+```text
 
 ### Node Storage (Phase 6.2 Update)
 
 As of July 10, 2025, the node storage hierarchy has been simplified:
 
-```
+```text
+
 SpatialNodeStorage<ID> (interface)
     └── SpatialNodeImpl<ID> (unified implementation used by both Octree and Tetree)
-```
+
+```text
 
 The previous `OctreeNode` and `TetreeNodeImpl` classes have been eliminated in favor of a single unified node
 implementation.
@@ -160,13 +166,16 @@ The `AbstractSpatialIndex` class contains the majority of spatial indexing funct
 ### Common State (Updated July 2025)
 
 - `spatialIndex: ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>>` - **Thread-safe spatial storage** using
+
   ConcurrentSkipListMap (replaces dual HashMap/TreeSet structure)
+
 - `entityManager: EntityManager<ID, Content>` - Centralized entity lifecycle management
 - `maxEntitiesPerNode: int` - Threshold for node subdivision
 - `maxDepth: byte` - Maximum tree depth
 - `spanningPolicy: EntitySpanningPolicy` - Controls entity spanning behavior
 
 **Key Architectural Change (July 2025):** Eliminated separate `sortedSpatialIndices` NavigableSet in favor of single
+
 ConcurrentSkipListMap providing both O(log n) access and sorted iteration with thread safety.
 
 ### Common Operations
@@ -375,6 +384,7 @@ The DSOC system provides efficient occlusion culling for dynamic scenes by maint
 DSOC seamlessly integrates with the existing spatial index operations:
 
 ```java
+
 // Enable DSOC on any spatial index
 spatialIndex.enableDSOC(config, bufferWidth, bufferHeight);
 
@@ -385,11 +395,13 @@ spatialIndex.nextFrame();
 // Frustum culling automatically includes occlusion
 List<FrustumIntersection<ID, Content>> visible = 
     spatialIndex.frustumCullVisible(frustum, cameraPos);
-```
+
+```text
 
 ### Temporal Bounding Volumes (TBVs)
 
 TBVs enable efficient handling of dynamic objects by predicting future positions:
+
 - Created when entities become occluded
 - Expanded based on velocity and acceleration bounds
 - Tested for visibility without updating spatial structure
@@ -560,31 +572,42 @@ adaptive/hierarchical forests.
 **Entity and Load Management (3 classes):**
 
 - **ForestEntityManager** - Cross-tree entity lifecycle with automatic tree assignment strategies (RoundRobin,
+
   SpatialBounds, LoadBalanced)
+
 - **ForestLoadBalancer** - Real-time load metrics and automatic rebalancing (entity count, memory usage, query load
+
   thresholds)
+
 - **DynamicForestManager** - Runtime tree operations with background processing (splitting, merging, entity migration)
 
 **Specialized Forest Types (3 classes):**
 
 - **GridForest** - Uniform spatial partitioning with factory methods for both Octree and Tetree grids
 - **AdaptiveForest** - Dynamic density-based adaptation with multiple subdivision strategies (Octant, Binary, K-means,
+
   Adaptive)
+
 - **HierarchicalForest** - Level-of-detail management with distance-based entity promotion/demotion and configurable LOD
+
   distances
 
 **Query and Connectivity (4 classes):**
 
 - **ForestQuery** - Unified query interface for single-tree targeting and forest-wide operations
 - **ForestSpatialQueries** - Parallel spatial queries (k-NN, range, ray intersection, frustum culling) with configurable
+
   thread counts
+
 - **TreeConnectivityManager** - Spatial relationship management with adjacency detection and shared boundary analysis
 - **GhostZoneManager** - Boundary entity synchronization with configurable ghost zone widths and bulk update operations
 
 **Configuration (2 classes):**
 
 - **ForestConfig** - Builder-pattern configuration (overlapping policies, ghost zones, partition strategies, background
+
   management)
+
 - **AdaptiveForestEntityManager** - Enhanced entity manager for adaptive forests with integrated density tracking
 
 **Forest Features:**
@@ -645,12 +668,14 @@ adaptive/hierarchical forests.
 All spatial classes use consistent generics with type-safe keys:
 
 ```java
+
 public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     // Key: Type-safe spatial key (MortonKey or ExtendedTetreeKey)
     // ID: Entity identifier type
     // Content: User-defined content type
 }
-```
+
+```text
 
 **SpatialKey Architecture**:
 
@@ -712,13 +737,16 @@ The TetreeKey system provides efficient spatial key encoding for tetrahedral sub
 
 Level 21 uses innovative split encoding to achieve full 21-level support:
 
-```
+```text
+
 Level 21 Encoding (6 bits total):
+
 - 4 bits stored in low long positions 60-63
 - 2 bits stored in high long positions 60-61
 - Preserves space-filling curve ordering
 - Enables efficient parent/child computation
-```
+
+```text
 
 **Key Features**:
 - Maintains SFC ordering properties despite split encoding
@@ -727,12 +755,15 @@ Level 21 Encoding (6 bits total):
 - Complete compatibility with existing tetrahedral operations
 
 **Constants and Masks**:
+
 ```java
+
 protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low long
 protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long  
 protected static final long LEVEL_21_LOW_MASK = 0xFL;      // 4 bits: 0b1111
 protected static final long LEVEL_21_HIGH_MASK = 0x3L;     // 2 bits: 0b11
-```
+
+```text
 
 This design achieves full Octree-equivalent refinement levels while maintaining the memory efficiency and performance characteristics of the tetrahedral space-filling curve.
 
@@ -776,6 +807,7 @@ The simplified architecture focuses on:
 ## Usage Example
 
 ```java
+
 // Create an octree
 Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator(), 10,  // max entities per node
                                                    (byte) 20  // max depth
@@ -801,7 +833,9 @@ insert(id, new Point3f(100, 200,300), (byte)10,"Entity data");   // x + y < worl
 
 // k-NN search (same API across all implementations)
 List<LongEntityID> nearest = octree.kNearestNeighbors(new Point3f(110, 210, 310), 5,  // find 5 nearest
+
                                                       1000.0f  // max distance
+
                                                      );
 
 // Range query
@@ -847,7 +881,8 @@ DynamicForestManager<MortonKey, LongEntityID, String> manager = new DynamicFores
 manager.
 
 enableAutoManagement(60000); // Check every minute
-```
+
+```text
 
 ## Forest Architecture
 
@@ -890,13 +925,18 @@ The Forest architecture is designed for high-performance concurrent operations:
 **Major architectural shift eliminating separate HashMap/TreeSet in favor of single ConcurrentSkipListMap:**
 
 - **ConcurrentSkipListMap Replacement**: Single thread-safe data structure replaces spatialIndex HashMap +
+
   sortedSpatialIndices TreeSet
+
 - **Memory Efficiency**: 54-61% reduction in memory usage through architectural consolidation
 - **Thread Safety**: Eliminated ConcurrentModificationException during iteration
 - **CopyOnWriteArrayList**: SpatialNodeImpl now uses thread-safe entity storage preventing iteration conflicts
 - **Lock-Free Entity Updates**: Added atomic movement protocol with four-phase commit (PREPARE → INSERT → UPDATE →
+
   REMOVE)
+
 - **ObjectPool Integration**: Extended pooling to all query operations (k-NN, collision, ray intersection, frustum
+
   culling)
 
 ### Phase 6.2 Cleanup (July 10, 2025)
@@ -1007,7 +1047,7 @@ The unified architecture allows easy switching between spatial index types based
 ### Decision Matrix
 
 | Criterion                  | Octree | Tetree        | Prism             |
-|----------------------------|--------|---------------|-------------------|
+| ---------------------------- | -------- | --------------- | ------------------- |
 | **Coordinate Constraints** | None   | Positive only | x + y < worldSize |
 | **Memory Usage**           | High   | Low           | Medium            |
 | **Insertion Speed**        | Slow   | Fast          | Medium            |

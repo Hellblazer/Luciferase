@@ -20,7 +20,7 @@ Complete guide to all APIs in the Lucien spatial indexing module.
 Essential APIs for all spatial indexing operations:
 
 | API                                                     | Purpose                           | Key Classes                                    | Use When                                         |
-|---------------------------------------------------------|-----------------------------------|------------------------------------------------|--------------------------------------------------|
+| --------------------------------------------------------- | ----------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
 | **[Core Spatial Index API](CORE_SPATIAL_INDEX_API.md)** | Basic spatial operations          | `SpatialIndex`, `AbstractSpatialIndex`         | Starting any spatial indexing project            |
 | **[Entity Management API](ENTITY_MANAGEMENT_API.md)**   | Entity lifecycle management       | `EntityManager`, `EntityBounds`, ID generators | Managing entities in spatial indexes             |
 | **[Bulk Operations API](BULK_OPERATIONS_API.md)**       | High-performance batch operations | `BulkOperationProcessor`, batch methods        | Inserting/updating large datasets (5-10x faster) |
@@ -31,7 +31,7 @@ Essential APIs for all spatial indexing operations:
 Specialized spatial query operations:
 
 | API                                                       | Purpose                       | Key Features                                       | Performance            |
-|-----------------------------------------------------------|-------------------------------|----------------------------------------------------|------------------------|
+| ----------------------------------------------------------- | ------------------------------- | ---------------------------------------------------- | ------------------------ |
 | **[K-Nearest Neighbors API](K_NEAREST_NEIGHBORS_API.md)** | Proximity queries             | k-NN search, radius queries, distance calculations | 0.5-20.2 μs per query  |
 | **[Ray Intersection API](RAY_INTERSECTION_API.md)**       | Ray casting and line-of-sight | Ray-volume intersection, traversal, physics        | ~10ms for 10K entities |
 | **[Plane Intersection API](PLANE_INTERSECTION_API.md)**   | 3D plane queries              | Arbitrary plane intersection, spatial cutting      | Millisecond response   |
@@ -42,7 +42,7 @@ Specialized spatial query operations:
 High-performance and specialized operations:
 
 | API                                                        | Purpose                         | Key Benefits                              | When to Use                     |
-|------------------------------------------------------------|---------------------------------|-------------------------------------------|---------------------------------|
+| ------------------------------------------------------------ | --------------------------------- | ------------------------------------------- | --------------------------------- |
 | **[Collision Detection API](COLLISION_DETECTION_API.md)**  | Physics and collision systems   | Multi-shape collision, broad/narrow phase | Games, simulations, physics     |
 | **[Lock-Free Operations API](LOCKFREE_OPERATIONS_API.md)** | High-performance concurrent ops | 264K movements/sec, atomic protocols      | High-concurrency scenarios      |
 | **[Tree Traversal API](TREE_TRAVERSAL_API.md)**            | Visitor pattern tree walking    | Custom traversal strategies, filtering    | Complex tree analysis           |
@@ -56,7 +56,7 @@ High-performance and specialized operations:
 Multi-tree coordination and specialized forest types:
 
 | API                                                   | Purpose                 | Key Features                         | Scale                              |
-|-------------------------------------------------------|-------------------------|--------------------------------------|------------------------------------|
+| ------------------------------------------------------- | ------------------------- | -------------------------------------- | ------------------------------------ |
 | **[Forest Management API](FOREST_MANAGEMENT_API.md)** | Multi-tree coordination | Distributed indexing, load balancing | Massive datasets, multiple regions |
 
 **Forest Specializations Included:**
@@ -144,36 +144,44 @@ Multi-tree coordination and specialized forest types:
 **Level 1 - Basic Operations:**
 
 ```java
+
 // Core spatial indexing
 SpatialIndex + EntityManager + basic queries
-```
+
+```text
 
 APIs: [Core Spatial Index](CORE_SPATIAL_INDEX_API.md), [Entity Management](ENTITY_MANAGEMENT_API.md)
 
 **Level 2 - Advanced Queries:**
 
 ```java
+
 // Add specialized query capabilities  
 + k-NN search + ray intersection + collision detection
-```
+
+```text
 
 APIs: [K-Nearest Neighbors](K_NEAREST_NEIGHBORS_API.md), [Ray Intersection](RAY_INTERSECTION_API.md), [Collision Detection](COLLISION_DETECTION_API.md)
 
 **Level 3 - Performance Optimization:**
 
 ```java
+
 // High-performance operations
 + bulk operations + lock-free updates + tree balancing
-```
+
+```text
 
 APIs: [Bulk Operations](BULK_OPERATIONS_API.md), [Lock-Free Operations](LOCKFREE_OPERATIONS_API.md), [Tree Balancing](TREE_BALANCING_API.md)
 
 **Level 4 - Scale and Specialization:**
 
 ```java
+
 // Multi-tree and advanced features
 + forest management + specialized forests + advanced traversal
-```
+
+```text
 
 APIs: [Forest Management](FOREST_MANAGEMENT_API.md), [Tree Traversal](TREE_TRAVERSAL_API.md)
 
@@ -184,51 +192,61 @@ APIs: [Forest Management](FOREST_MANAGEMENT_API.md), [Tree Traversal](TREE_TRAVE
 **Basic Setup:**
 
 ```java
+
 // See: Core Spatial Index API
 Octree<LongEntityID, GameObject> spatialIndex = new Octree<>(idGen, 10, (byte) 20);
 EntityManager<LongEntityID, GameObject> entityManager = new EntityManager<>(spatialIndex, idGen);
-```
+
+```text
 
 **High-Performance Queries:**
 
 ```java  
+
 // See: K-Nearest Neighbors API + Lock-Free Operations API
 List<LongEntityID> nearest = spatialIndex.kNearestNeighbors(position, 10);
 LockFreeEntityMover<LongEntityID, GameObject> mover = new LockFreeEntityMover<>(spatialIndex);
-```
+
+```text
 
 **Multi-Tree Setup:**
 
 ```java
+
 // See: Forest Management API
 Forest<MortonKey, LongEntityID, GameObject> forest = new Forest<>();
 AdaptiveForest<MortonKey, LongEntityID, GameObject> adaptive = new AdaptiveForest<>(config, treeFactory);
-```
+
+```text
 
 **Physics Integration:**
 
 ```java
+
 // See: Collision Detection API + Ray Intersection API  
 CollisionSystem<LongEntityID, GameObject> collision = new CollisionSystem<>(spatialIndex);
 Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayIntersectFirst(ray);
-```
+
+```text
 
 **Distributed Ghost Support:**
 
 ```java
+
 // See: Ghost API + Neighbor Detection API
 spatialIndex.setGhostType(GhostType.FACES);
 spatialIndex.createGhostLayer();
 GhostCommunicationManager ghostManager = new GhostCommunicationManager(50051, spatialIndex, registry);
 ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
-```
+
+```text
 
 ## Performance Reference
 
 ### Benchmark Data (July 2025)
 
 | Operation        | Octree          | Tetree          | Winner                                        |
-|------------------|-----------------|-----------------|-----------------------------------------------|
+| ------------------ | ----------------- | ----------------- | ----------------------------------------------- |
 | **Insertion**    | 1.5-2.0 μs/op   | 0.24-0.95 μs/op | **Tetree 2-6x faster**                        |
 | **k-NN Query**   | 15.8-18.2 μs/op | 7.8-19.0 μs/op  | **Mixed, Tetree better for smaller datasets** |
 | **Range Query**  | 2.1-14.2 μs/op  | 13.0-19.9 μs/op | **Octree 1.4-6x faster**                      |
@@ -265,7 +283,9 @@ ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
 ### 🎯 **API Selection**
 
 - **Start Simple**: Begin with [Core Spatial Index](CORE_SPATIAL_INDEX_API.md)
+
   and [Entity Management](ENTITY_MANAGEMENT_API.md)
+
 - **Add Incrementally**: Introduce APIs as needed, don't over-engineer
 - **Profile First**: Use [Tree Balancing API](TREE_BALANCING_API.md) to identify bottlenecks
 

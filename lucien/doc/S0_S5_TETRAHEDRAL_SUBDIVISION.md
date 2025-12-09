@@ -8,7 +8,8 @@ geometric containment.
 
 ## Cube Vertex Numbering
 
-```
+```text
+
       6 -------- 7
      /|         /|
     / |        / |
@@ -24,14 +25,15 @@ V0 = (0, 0, 0)    V4 = (0, 0, h)
 V1 = (h, 0, 0)    V5 = (h, 0, h)
 V2 = (0, h, 0)    V6 = (0, h, h)
 V3 = (h, h, 0)    V7 = (h, h, h)
-```
+
+```text
 
 ## The 6 Tetrahedra
 
 All tetrahedra share vertices V0 (origin) and V7 (opposite corner):
 
 | Type | Name | Vertices  | Vertex Coordinates                 |
-|------|------|-----------|------------------------------------|
+| ------ | ------ | ----------- | ------------------------------------ |
 | 0    | S0   | {0,1,3,7} | (0,0,0), (h,0,0), (h,h,0), (h,h,h) |
 | 1    | S1   | {0,2,3,7} | (0,0,0), (0,h,0), (h,h,0), (h,h,h) |
 | 2    | S2   | {0,4,5,7} | (0,0,0), (0,0,h), (h,0,h), (h,h,h) |
@@ -46,6 +48,7 @@ Points within the cube can be deterministically assigned to exactly one tetrahed
 ### Algorithm
 
 ```java
+
 private static byte classifyPointInCube(float x, float y, float z) {
     // Coordinates normalized to [0,1] within cube
     
@@ -65,7 +68,8 @@ private static byte classifyPointInCube(float x, float y, float z) {
         return upperDiagonal ? (byte)2 : (byte)3; // S2 or S3
     }
 }
-```
+
+```text
 
 ### Classification Rules
 
@@ -83,6 +87,7 @@ private static byte classifyPointInCube(float x, float y, float z) {
 - **Equal coordinates**: X-dominance takes precedence over Y, which takes precedence over Z
 - **Diagonal boundary** (sum = 1.5): Assigned to upper diagonal group
 - **Shared faces/edges**: Points on boundaries belong to multiple tetrahedra geometrically but are assigned to exactly
+
   one by the algorithm
 
 ## Geometric Properties

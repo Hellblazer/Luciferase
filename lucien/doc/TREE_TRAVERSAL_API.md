@@ -16,6 +16,7 @@ serialization, and tree visualization.
 The `TreeVisitor` interface defines callbacks for tree traversal events:
 
 ```java
+
 public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     // Called at start of traversal
     void beginTraversal(int totalNodes, int totalEntities);
@@ -36,7 +37,8 @@ public interface TreeVisitor<Key extends SpatialKey<Key>, ID extends EntityID, C
     boolean shouldVisitEntities();
     int getMaxDepth();
 }
-```
+
+```text
 
 ### TraversalStrategy
 
@@ -63,14 +65,17 @@ Internal context tracking traversal state:
 ### 1. Full Tree Traversal
 
 ```java
+
 void traverse(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy)
-```
+
+```text
 
 Traverses the entire spatial tree using the specified strategy.
 
 **Example:**
 
 ```java
+
 spatialIndex.traverse(new TreeVisitor<Key, LongEntityID, String>() {
     @Override
     public void beginTraversal(int totalNodes, int totalEntities) {
@@ -91,48 +96,58 @@ spatialIndex.traverse(new TreeVisitor<Key, LongEntityID, String>() {
         System.out.println("Traversed " + nodesVisited + " nodes, " + entitiesVisited + " entities");
     }
 },TraversalStrategy.DEPTH_FIRST);
-```
+
+```text
 
 ### 2. Subtree Traversal
 
 ```java
+
 void traverseFrom(TreeVisitor<ID, Content> visitor, TraversalStrategy strategy, long startNodeIndex)
-```
+
+```text
 
 Traverses a subtree starting from a specific node.
 
 **Example:**
 
 ```java
+
 // Start from a specific spatial index
 long nodeIndex = 0x1234567890L;
 spatialIndex.
 
 traverseFrom(visitor, TraversalStrategy.BREADTH_FIRST, nodeIndex);
-```
+
+```text
 
 ### 3. Region Traversal
 
 ```java
+
 void traverseRegion(TreeVisitor<ID, Content> visitor, Spatial region, TraversalStrategy strategy)
-```
+
+```text
 
 Traverses only nodes that intersect with the specified region.
 
 **Example:**
 
 ```java
+
 Spatial.Sphere region = new Spatial.Sphere(100, 100, 100, 50); // Center (100,100,100), radius 50
 spatialIndex.
 
 traverseRegion(visitor, region, TraversalStrategy.DEPTH_FIRST);
-```
+
+```text
 
 ## Visitor Patterns
 
 ### Statistics Collector
 
 ```java
+
 public class StatisticsVisitor implements TreeVisitor<ID, Content> {
     private       int                   maxDepth         = 0;
     private       int                   totalNodes       = 0;
@@ -169,11 +184,13 @@ public class StatisticsVisitor implements TreeVisitor<ID, Content> {
         System.out.println("  Entities per level: " + entitiesPerLevel);
     }
 }
-```
+
+```text
 
 ### Tree Serializer
 
 ```java
+
 public class TreeSerializer implements TreeVisitor<ID, Content> {
     private final JsonWriter         writer;
     private final Stack<JsonContext> contextStack = new Stack<>();
@@ -229,11 +246,13 @@ public class TreeSerializer implements TreeVisitor<ID, Content> {
         writer.endObject(); // node
     }
 }
-```
+
+```text
 
 ### Tree Validator
 
 ```java
+
 public class TreeValidator implements TreeVisitor<ID, Content> {
     private final Set<ID>                   seenEntities = new HashSet<>();
     private final List<String>              errors       = new ArrayList<>();
@@ -271,13 +290,15 @@ public class TreeValidator implements TreeVisitor<ID, Content> {
         return errors.isEmpty();
     }
 }
-```
+
+```text
 
 ## Advanced Usage
 
 ### Conditional Traversal
 
 ```java
+
 public class ConditionalVisitor implements TreeVisitor<ID, Content> {
     private final Predicate<SpatialNode<ID>> nodePredicate;
     private final Predicate<Content> entityPredicate;
@@ -295,11 +316,13 @@ public class ConditionalVisitor implements TreeVisitor<ID, Content> {
         }
     }
 }
-```
+
+```text
 
 ### Performance Analysis
 
 ```java
+
 public class PerformanceAnalyzer implements TreeVisitor<ID, Content> {
     private final Map<Long, NodeMetrics> nodeMetrics = new HashMap<>();
 
@@ -337,11 +360,13 @@ public class PerformanceAnalyzer implements TreeVisitor<ID, Content> {
         }
     }
 }
-```
+
+```text
 
 ### Parallel Traversal
 
 ```java
+
 public class ParallelVisitor implements TreeVisitor<ID, Content> {
     private final ForkJoinPool                                           pool    = new ForkJoinPool();
     private final ConcurrentHashMap<Long, CompletableFuture<NodeResult>> futures = new ConcurrentHashMap<>();
@@ -366,7 +391,8 @@ public class ParallelVisitor implements TreeVisitor<ID, Content> {
         aggregateResults();
     }
 }
-```
+
+```text
 
 ## Best Practices
 
@@ -387,6 +413,7 @@ Multiple traversals can run concurrently.
 ## Integration Example
 
 ```java
+
 public class SpatialDebugger {
     private final SpatialIndex<LongEntityID, GameObject> spatialIndex;
 
@@ -424,4 +451,5 @@ public class SpatialDebugger {
         }, TraversalStrategy.DEPTH_FIRST);
     }
 }
-```
+
+```text
