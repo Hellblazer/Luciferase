@@ -51,7 +51,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 ### Module Structure
 
 | Module | Description |
-|--------|-------------|
+| -------- | ------------- |
 | **common** | Optimized collections (`FloatArrayList`, `OaHashSet`), geometry utilities |
 | **grpc** | Protocol buffer definitions for serialization |
 | **lucien** | Core spatial indexing (Octree, Tetree, Prism) - 185 Java files, 17 packages |
@@ -101,6 +101,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 When working with Octree implementation, use the C++ code in the Octree directory at the repository root as the reference implementation.
 
 The Java implementation uses a unified generic architecture:
+
 - **Generic Base**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>`
 - **Type-Safe Keys**: `MortonKey` (Octree) and `TetreeKey` (Tetree) provide spatial indexing
 - **Shared Operations**: ConcurrentSkipListMap storage, k-NN search, range queries, collision detection
@@ -109,12 +110,14 @@ The Java implementation uses a unified generic architecture:
 - **Code Reuse**: ~95% of functionality shared through generic inheritance
 
 For accurate architecture documentation, see:
+
 - `lucien/doc/LUCIEN_ARCHITECTURE.md` - Complete architecture overview
 - `lucien/doc/ARCHITECTURE_SUMMARY.md` - Complete class inventory
 - `lucien/doc/PERFORMANCE_METRICS_MASTER.md` - Current performance metrics
 - `render/doc/ESVO_COMPLETION_SUMMARY.md` - ESVO implementation status
 
 Historical reference:
+
 - `HISTORICAL_FIXES_REFERENCE.md` - Complete archive of bug fixes and optimizations from June-August 2025
 
 ### Dependencies
@@ -141,6 +144,7 @@ Historical reference:
 ### Geometric Distinctions
 
 **CUBE vs TETRAHEDRON Center Calculations:**
+
 - **CUBE CENTER**: `origin.x + cellSize / 2.0f` (simple offset from origin)
 - **TETRAHEDRON CENTROID**: `(v0 + v1 + v2 + v3) / 4.0f` (average of 4 vertices)
 - **NEVER** use cube center formula for tetrahedron calculations
@@ -199,6 +203,7 @@ Historical reference:
 ### Maven Dependency Management
 
 When adding dependencies to this multi-module project:
+
 1. For multiple artifacts from same groupId: Create version property in root pom.xml (e.g., `<jmh.version>1.37</jmh.version>`)
 2. For single dependencies: Use version directly in dependencyManagement (no property needed)
 3. Add all dependencies to root pom.xml `<dependencyManagement>` section with versions
@@ -219,9 +224,11 @@ When adding dependencies to this multi-module project:
 ## Historical Reference
 
 For detailed historical bug fixes and implementation notes (not essential for day-to-day development), see:
+
 - **HISTORICAL_FIXES_REFERENCE.md** - Complete archive of dated bug fixes and optimizations
 
 This includes detailed information about:
+
 - T8CODE parent-child cycle fix (June 2025)
 - Cache key collision fix (June 2025)
 - Performance optimizations (June-July 2025)
