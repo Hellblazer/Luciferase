@@ -1,0 +1,59 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Detecting the operating system and CPU architecture
+[INFO] ------------------------------------------------------------------------
+[INFO] os.detected.name: osx
+[INFO] os.detected.arch: aarch_64
+[INFO] os.detected.bitness: 64
+[INFO] os.detected.version: 26.1
+[INFO] os.detected.version.major: 26
+[INFO] os.detected.version.minor: 1
+[INFO] os.detected.classifier: osx-aarch_64
+[INFO] 
+[INFO] ------------------< com.hellblazer.luciferase:lucien >------------------
+[INFO] Building Lucien - Asset Stewardship 0.0.2-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ lucien ---
+[INFO] Deleting /Users/hal.hildebrand/git/Luciferase/lucien/target
+[INFO] 
+[INFO] --- enforcer:3.1.0:enforce (enforce-maven) @ lucien ---
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ lucien ---
+[INFO] skip non existing resourceDirectory /Users/hal.hildebrand/git/Luciferase/lucien/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ lucien ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 189 source files with javac [debug release 25] to target/classes
+[INFO] /Users/hal.hildebrand/git/Luciferase/lucien/src/main/java/com/hellblazer/luciferase/lucien/AbstractSpatialIndex.java: Some input files use unchecked or unsafe operations.
+[INFO] /Users/hal.hildebrand/git/Luciferase/lucien/src/main/java/com/hellblazer/luciferase/lucien/AbstractSpatialIndex.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ lucien ---
+[INFO] Copying 6 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ lucien ---
+[INFO] Changes detected - recompiling the module! :dependency
+[INFO] Compiling 242 source files with javac [debug release 25] to target/test-classes
+[WARNING] /Users/hal.hildebrand/git/Luciferase/lucien/src/test/java/com/hellblazer/luciferase/lucien/occlusion/DSOCMemoryStressTest.java:[462,15] runFinalization() in java.lang.System has been deprecated and marked for removal
+[INFO] /Users/hal.hildebrand/git/Luciferase/lucien/src/test/java/com/hellblazer/luciferase/lucien/entity/EntityManagerDynamicsTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /Users/hal.hildebrand/git/Luciferase/lucien/src/test/java/com/hellblazer/luciferase/lucien/entity/EntityManagerDynamicsTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.0.0-M9:test (default-test) @ lucien ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+WARNING: Using incubator modules: jdk.incubator.vector
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  4.223 s
+[INFO] Finished at: 2025-12-08T16:11:54-08:00
+[INFO] ------------------------------------------------------------------------
