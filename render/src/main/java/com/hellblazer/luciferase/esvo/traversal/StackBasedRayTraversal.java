@@ -20,6 +20,7 @@ package com.hellblazer.luciferase.esvo.traversal;
 import javax.vecmath.Vector3f;
 import com.hellblazer.luciferase.esvo.core.CoordinateSpace;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 
 /**
  * Phase 2: Stack-Based Deep Traversal Implementation
@@ -85,6 +86,43 @@ public class StackBasedRayTraversal {
             
             // Initialize octree structure
             initializeOctree();
+        }
+        
+        /**
+         * Create octree from ESVOOctreeData.
+         * Used for visualization and traversal of user-built octrees.
+         * 
+         * @param octreeData ESVO octree data from builder
+         * @param maxDepth Maximum depth of the octree
+         */
+        public MultiLevelOctree(ESVOOctreeData octreeData, int maxDepth) {
+            this.maxDepth = maxDepth;
+            this.center = new Vector3f(1.5f, 1.5f, 1.5f);
+            this.size = 1.0f;
+            
+            // Get node count from octree data
+            int nodeCount = octreeData.getNodeCount();
+            if (nodeCount == 0) {
+                this.nodes = new ESVONodeUnified[1];
+                this.nodes[0] = new ESVONodeUnified((byte)0, (byte)0, false, 0, (byte)0, 0);
+                return;
+            }
+            
+            // Allocate array to hold all nodes
+            int[] indices = octreeData.getNodeIndices();
+            int maxIndex = 0;
+            for (int idx : indices) {
+                if (idx > maxIndex) maxIndex = idx;
+            }
+            this.nodes = new ESVONodeUnified[maxIndex + 1];
+            
+            // Copy nodes from ESVOOctreeData
+            for (int index : indices) {
+                ESVONodeUnified node = octreeData.getNode(index);
+                if (node != null) {
+                    this.nodes[index] = node;
+                }
+            }
         }
         
         private int calculateNodeCount(int depth) {
