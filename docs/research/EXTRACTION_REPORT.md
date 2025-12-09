@@ -156,6 +156,7 @@ Successfully extracted and indexed comprehensive knowledge from "Space-Filling T
 ### 1. The Core Problem
 
 Current Lucien k-NN bottleneck:
+
 - **Time**: 1.5-2.0ms per k-NN query
 - **Cause**: O(N) iteration through skip list candidates
 - **Impact**: 70-90% of collision detection time spent in k-NN
@@ -163,28 +164,33 @@ Current Lucien k-NN bottleneck:
 ### 2. The Solution Pattern
 
 Space-filling curve locality principle:
-```
+
+```text
+
 Euclidean distance ≈ SFC distance (with 85-95% accuracy)
 Therefore: Points in nearby SFC indices are likely spatially close
 This enables: Binary search + local filtering = O(log N + k)
 Result: 4-6x baseline improvement
-```
+
+```text
 
 ### 3. Distance-to-Morton-Depth Mapping
 
 ```java
+
 // Key technique for Phase 1:
 depth = log2(max_distance / cell_size)
 range = [morton_key - (2^depth), morton_key + (2^depth)]
 candidates = skipList.subMap(range.lower, range.upper)
 // Check candidates and update depth dynamically as better
 // solutions found - further pruning as search narrows
-```
+
+```text
 
 ### 4. Three-Phase Implementation Path
 
 | Phase | Optimization | Speedup | Effort | Time |
-|-------|-------------|---------|--------|------|
+| ------- | ------------- | --------- | -------- | ------ |
 | 1 | SFC Pruning | 4-6x | Medium | 4 weeks |
 | 2 | k-NN Caching | 20-30x (cached) | Medium | 3 weeks |
 | 3 | Concurrency | 3-6x under load | High | 2 weeks |
@@ -192,38 +198,52 @@ candidates = skipList.subMap(range.lower, range.upper)
 
 ### 5. Performance Target Progression
 
-```
+```text
+
 Baseline:                    1.5-2.0ms per k-NN
 After Phase 1:              0.3-0.5ms (4-6x improvement)
 After Phase 2 (avg):        0.15-0.25ms (6-10x from baseline)
+
   - Cache hits:             0.05-0.1ms (20-30x)
   - Cache misses:           0.3-0.5ms (4-6x, uses Phase 1)
+
 After Phase 3:              Maintained under concurrent load
 Interactive target:         < 0.1ms per query
-```
+
+```text
 
 ---
 
 ## How to Access Knowledge
 
 ### Command Line Query
+
 ```bash
+
 # Single query
+
 python3 scripts/query_sft_knowledge.py "Morton key k-NN optimization"
 
 # Interactive mode
+
 python3 scripts/query_sft_knowledge.py
+
 # Then enter queries at prompt
+
 # Commands: 'list', 'demo', 'quit'
-```
+
+```text
 
 ### Python API
+
 ```python
+
 from scripts.chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 
 indexer = SFTMotionPlanningIndexer()
 
 # Search for specific document
+
 results = indexer.query_collection(
     "How to implement SFC-based pruning?",
     n_results=5
@@ -232,27 +252,33 @@ results = indexer.query_collection(
 for result in results:
     print(result['metadata']['title'])
     print(result['content'])
-```
+
+```text
 
 ### ChromaDB Direct Access
+
 ```python
+
 import chromadb
 
 client = chromadb.PersistentClient(path="/tmp/lucien_knowledge")
 collection = client.get_collection("sft_motion_planning")
 
 # Query the collection directly
+
 results = collection.query(
     query_texts=["k-NN optimization"],
     n_results=5
 )
-```
+
+```text
 
 ---
 
 ## Implementation Checklist
 
 ### Pre-Implementation (This Week)
+
 - [ ] Read `KNOWLEDGE_BASE_SUMMARY.md` (overview)
 - [ ] Read `lucien-02-sfc-pruning` (Phase 1 design)
 - [ ] Read `sft-06-knn-optimization-lucien` (Lucien context)
@@ -260,6 +286,7 @@ results = collection.query(
 - [ ] Design distance-to-depth function
 
 ### Phase 1: SFC Pruning (4 weeks)
+
 - [ ] Implement `distance_to_morton_depth()` in MortonKey
 - [ ] Implement `estimate_morton_range()` in MortonKey
 - [ ] Modify KNearestNeighbor to use `skipList.subMap()`
@@ -269,6 +296,7 @@ results = collection.query(
 - [ ] Benchmark: Achieve 4-6x speedup
 
 ### Phase 2: Caching (3 weeks)
+
 - [ ] Create `KNNCache` class
 - [ ] Implement version tracking
 - [ ] Integrate with Phase 1 pruning
@@ -277,6 +305,7 @@ results = collection.query(
 - [ ] Test dynamic scenarios
 
 ### Phase 3: Concurrency (2 weeks)
+
 - [ ] Create `RegionLocking` utility
 - [ ] Implement region-based locking
 - [ ] Add version consistency model
@@ -284,6 +313,7 @@ results = collection.query(
 - [ ] Verify deadlock-free operation
 
 ### Final (Throughout)
+
 - [ ] Update `PERFORMANCE_METRICS_MASTER.md`
 - [ ] Add k-NN docs to `LUCIEN_ARCHITECTURE.md`
 - [ ] Create k-NN best practices guide
@@ -293,12 +323,14 @@ results = collection.query(
 ## Expected Outcomes
 
 ### After Phase 1 (4 weeks)
+
 - k-NN time: 0.3-0.5ms (was 1.5-2.0ms)
 - Speedup: 4-6x
 - Files modified: KNearestNeighbor.java, MortonKey.java
 - All tests passing ✓
 
 ### After Phase 2 (7 weeks total)
+
 - k-NN time: 0.15-0.25ms average (0.05-0.1ms for hits)
 - Speedup: 6-10x from baseline
 - Files modified: Add cache, collision detection
@@ -306,12 +338,14 @@ results = collection.query(
 - Collision checks: 70-90% reduction ✓
 
 ### After Phase 3 (10 weeks total)
+
 - k-NN time: Maintained under concurrent load
 - Parallel efficiency: 3-6x speedup
 - Files modified: Add region locking
 - Concurrent correctness verified ✓
 
 ### Interactive Motion Planning
+
 - k-NN queries: < 0.1ms (target achieved)
 - Queries per frame: 100+ at 60fps ✓
 - Simulation with 100+ objects: Real-time ✓
@@ -321,6 +355,7 @@ results = collection.query(
 ## Files Summary
 
 ### Documentation (All in `/Users/hal.hildebrand/git/Luciferase/`)
+
 - `KNOWLEDGE_BASE_SUMMARY.md` - Start here (5-10 min read)
 - `SFT_MOTION_PLANNING_EXTRACTION.md` - Comprehensive analysis
 - `SFT_KNN_IMPLEMENTATION_ROADMAP.md` - Implementation guide
@@ -329,10 +364,12 @@ results = collection.query(
 - `EXTRACTION_REPORT.md` - This file
 
 ### Scripts (All in `/Users/hal.hildebrand/git/Luciferase/scripts/`)
+
 - `chroma_sft_motion_planning_indexer.py` - Indexer (545 lines)
 - `query_sft_knowledge.py` - Query tool (170 lines)
 
 ### Knowledge Base
+
 - Location: `/tmp/lucien_knowledge/`
 - Type: ChromaDB PersistentClient
 - Documents: 21 indexed
@@ -407,24 +444,28 @@ results = collection.query(
 ## Success Criteria Summary
 
 ### Phase 1 (SFC Pruning)
+
 - Speedup: 4-6x verified ✓
 - Tests: All passing ✓
 - Correctness: < 1% false negatives ✓
 - Metrics: Pruning statistics logged ✓
 
 ### Phase 2 (Caching)
+
 - Speedup: 20-30x for hits ✓
 - Hit rate: 50-70% ✓
 - Collision reduction: 70-90% ✓
 - Invalidation: Correct ✓
 
 ### Phase 3 (Concurrency)
+
 - Threads: 100+ concurrent ✓
 - Performance: Maintained ✓
 - Correctness: Deadlock-free ✓
 - Scalability: 3-6x under load ✓
 
 ### Overall
+
 - k-NN time: < 0.1ms ✓
 - Motion planning: Interactive 60fps ✓
 - Documentation: Complete ✓

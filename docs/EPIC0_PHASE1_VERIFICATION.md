@@ -55,7 +55,9 @@ JMH (Java Microbenchmark Harness) is properly configured for performance benchma
 **Version**: 1.37
 
 **Dependencies** (in `pom.xml`):
+
 ```xml
+
 <dependency>
     <groupId>org.openjdk.jmh</groupId>
     <artifactId>jmh-core</artifactId>
@@ -68,18 +70,22 @@ JMH (Java Microbenchmark Harness) is properly configured for performance benchma
     <version>1.37</version>
     <scope>test</scope>
 </dependency>
-```
 
-**Location**: 
+```text
+
+**Location**:
 - Root `pom.xml`: Dependency management with version property
 - `lucien/pom.xml`: Active dependencies for benchmark module
 
 ### Usage
 
 Benchmarks can be run with standard Maven test goal:
+
 ```bash
+
 mvn test -Dtest=*Benchmark*
-```
+
+```text
 
 ### Conclusion
 
@@ -105,24 +111,36 @@ GPU testing infrastructure exists but requires platform-specific configuration.
 ### Platform Requirements
 
 #### macOS
+
 - **Required**: `-XstartOnFirstThread` JVM flag for GLFW/OpenGL
 - **Test Behavior**: Gracefully skips via JUnit assumption if flag missing
 - **Run Command**:
+
   ```bash
+
   mvn test -Dtest=GPUDiagnosticTest -pl render \
+
     -DargLine="-XstartOnFirstThread"
-  ```
+
+```text
 
 #### Linux/CI
+
 - **Required**: `dangerouslyDisableSandbox=true` (sandbox blocks GPU access)
 - **Run Command**:
+
   ```bash
+
   mvn test -Dtest=GPUDiagnosticTest -pl render \
+
     -DargLine="-DdangerouslyDisableSandbox=true"
-  ```
+
+```text
 
 ### Test Output (macOS without flag)
-```
+
+```text
+
 === GPU Diagnostic Test Starting ===
 Platform: macOS
 Architecture: ARM64
@@ -133,11 +151,13 @@ macOS -XstartOnFirstThread: false
 ⚠️  WARNING: macOS requires -XstartOnFirstThread for GLFW
    Add to JVM options: -XstartOnFirstThread
    Using JUnit assumption to skip test gracefully
-```
+
+```text
 
 ### Note on Bead 0.2
 
 The bead Luciferase-wqw (Bead 0.2) calls for creating:
+
 - `GPUDeviceDetector.java` - Enumerate GPUs
 - `GPUCapabilityReporter.java` - Report specs
 - `GPUBenchmarkRunner.java` - Run benchmarks
