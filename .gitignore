@@ -17,6 +17,7 @@
 # Performance testing artifacts
 *.backup
 *.test-backup
+*.dataset
 target/prism-test-data*.csv
 target/debug-test.csv
 /lucien/doc/dsoc/archive/
@@ -29,7 +30,7 @@ target/debug-test.csv
 performance-results/summary-*.txt
 .github/reviews/review-*.md
 
-# Beads workflow (managed on separate branch)
-.beads/
+# Beads workflow - track issues.jsonl directly
+.beads/db.sqlite3
 .gitattributes
 /.vscode/settings.json
