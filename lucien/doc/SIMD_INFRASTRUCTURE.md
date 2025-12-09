@@ -451,11 +451,13 @@ Add to `.vscode/settings.json`:
 - Document performance improvements
 
 ### Bead 1.4: Production Hardening
+
 - Error handling and edge cases
 - Performance regression tests
 - Production-ready logging
 
 ### Bead 1.5: Edge Case Testing
+
 - Boundary value testing
 - Stress testing with large datasets
 - Cross-platform validation
@@ -463,6 +465,7 @@ Add to `.vscode/settings.json`:
 ## References
 
 ### Documentation
+
 - [VectorAPISupport.java](../src/main/java/com/hellblazer/luciferase/lucien/internal/VectorAPISupport.java) - Core SIMD infrastructure
 - [SIMDMortonBenchmarkHarness.java](../src/test/java/com/hellblazer/luciferase/lucien/benchmark/simd/SIMDMortonBenchmarkHarness.java) - Benchmark harness
 - [VectorAPISupportTest.java](../src/test/java/com/hellblazer/luciferase/lucien/internal/VectorAPISupportTest.java) - Infrastructure tests
@@ -473,13 +476,11 @@ Add to `.vscode/settings.json`:
 - [JEP 448: Vector API (Sixth Incubator)](https://openjdk.org/jeps/448) - Java 24 Vector API
 - [JEP 469: Vector API (Seventh Incubator)](https://openjdk.org/jeps/469) - Java 25 Vector API
 
-
 ### Related Issues
 
 - **Luciferase-e1.0**: SIMD Infrastructure Setup (this document)
 - **Luciferase-e1.1**: SIMDMortonEncoder Implementation (next)
 - **Luciferase-e1**: Epic 1 - SIMD Acceleration for Morton Encoding (parent)
-
 
 ---
 
