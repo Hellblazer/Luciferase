@@ -170,9 +170,28 @@ SIMD acceleration for Morton encoding is **not beneficial** on ARM NEON. The sca
 4. `SIMDMortonPerformanceTest.java` - Performance benchmark (retain for documentation)
 5. `MortonEncodingSIMDBenchmark.java` - JMH benchmark (can be removed)
 
+## Production Decision (Bead 1.4)
+
+**Decision**: Revert SIMD integration from production code.
+
+**Actions Taken**:
+1. ✅ Reverted `Constants.calculateMortonIndex()` to use `MortonCurve.encode()` (scalar)
+2. ✅ Retained SIMD implementation files for documentation/research
+3. ✅ Retained performance test files showing negative results
+4. ✅ Updated `.gitignore` to exclude large `*.dataset` files from repository
+
+**Rationale**: SIMD implementation is 2.7x slower than scalar. No reason to keep it in production path.
+
+**Code Status**:
+- `SIMDMortonEncoder.java` - Retained for reference
+- `VectorAPISupport.java` - Retained (may be useful for future SIMD work)
+- Integration tests - Retained as documentation
+- Performance tests - Retained to preserve benchmark data
+- Production code - **REVERTED** to scalar implementation
+
 ## Next Steps
 
-1. Document findings in ChromaDB
-2. Close Epic 1 beads with findings
-3. Recommend Epic 2 focusing on ray intersection SIMD
-4. Update PERFORMANCE_METRICS_MASTER.md with these results
+1. ✅ Document findings in this file
+2. ✅ Close Epic 1 beads with findings (Bead 1.4 complete)
+3. Consider Epic 2 focusing on ray intersection SIMD (better SIMD candidate)
+4. Investigate tetrahedral SFC encoding SIMD potential (similar concerns likely apply)
