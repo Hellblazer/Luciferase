@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.lucien;
 
 import com.hellblazer.luciferase.geometry.MortonCurve;
+import com.hellblazer.luciferase.lucien.simd.SIMDMortonEncoder;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 
 import javax.vecmath.Point3f;
@@ -132,7 +133,7 @@ public class Constants {
         assert (quantizedZ & MAX_COORD) == quantizedZ || quantizedZ < 0 : String.format(
         "Z coordinate %d exceeds 21-bit range, will wrap to %d", quantizedZ, quantizedZ & MAX_COORD);
 
-        return MortonCurve.encode(quantizedX, quantizedY, quantizedZ);
+        return SIMDMortonEncoder.encode(quantizedX, quantizedY, quantizedZ);
     }
 
     /** maximum level we can accommodate without overflow **/
