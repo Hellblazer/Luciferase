@@ -17,7 +17,7 @@ The Luciferase project maintains extensive test coverage across spatial indexing
 ### Overall Test Coverage
 
 | Metric | Value |
-|--------|-------|
+| -------- | ------- |
 | **Total Test Classes** | 100+ |
 | **Total Test Methods** | 1000+ |
 | **Coverage Focus** | Core spatial indexing: >95%, Advanced features: 85%, Application layer: 60% |
@@ -35,7 +35,8 @@ The Luciferase project maintains extensive test coverage across spatial indexing
 
 #### Core Functionality Tests
 
-```
+```text
+
 com.hellblazer.luciferase.lucien.tests/
 ├── octree/
 │   ├── OctreeTest.java - Basic operations
@@ -132,12 +133,13 @@ com.hellblazer.luciferase.lucien.tests/
 │
 └── migration/
     └── SpatialIndexConverterTest.java - Type migration
-```
+
+```text
 
 #### Test Coverage Breakdown
 
 | Category | Tests | Coverage |
-|----------|-------|----------|
+| ---------- | ------- | ---------- |
 | Octree | 8 | 98% |
 | Tetree | 15 | 97% |
 | Prism | 7 | 95% |
@@ -237,20 +239,25 @@ com.hellblazer.luciferase.lucien.tests/
 All performance tests use JMH (Java Microbenchmark Harness):
 
 ```bash
+
 # Run all performance tests
+
 mvn clean test -Pperformance
 
 # Run specific benchmark
+
 mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark
 
 # Disable assertions for better accuracy
+
 mvn test -Pperformance -DAssertOption=-da
-```
+
+```text
 
 ### Key Benchmarks
 
 | Benchmark | Purpose | Updates |
-|-----------|---------|---------|
+| ----------- | --------- | --------- |
 | **OctreeVsTetreeVsPrismBenchmark** | Comparative performance across indices | August 3, 2025 |
 | **GhostPerformanceBenchmark** | Distributed support overhead | July 13, 2025 |
 | **LockFreeEntityMoverBenchmark** | Concurrent movement (264K ops/sec) | July 2025 |
@@ -267,11 +274,13 @@ mvn test -Pperformance -DAssertOption=-da
 GPU tests require sandbox to be disabled:
 
 ```xml
+
 <!-- In pom.xml -->
 <configuration>
   <dangerouslyDisableSandbox>true</dangerouslyDisableSandbox>
 </configuration>
-```
+
+```text
 
 ### GPU Test Categories
 
@@ -283,12 +292,16 @@ GPU tests require sandbox to be disabled:
 ### Running GPU Tests
 
 ```bash
+
 # Run GPU tests (requires GPU and dangerouslyDisableSandbox: true)
+
 mvn test -Pperformance -DgpuTests=true
 
 # Run specific GPU test
+
 mvn test -Dtest=OpenCLComputeTest -DgpuTests=true
-```
+
+```text
 
 ---
 
@@ -304,6 +317,7 @@ mvn test -Dtest=OpenCLComputeTest -DgpuTests=true
 ### Test Grouping
 
 Tests are organized by:
+
 1. **Functionality**: Spatial index operations, geometry, physics
 2. **Performance**: Benchmarks separated from functional tests
 3. **Integration**: Ghost layer, forest operations
@@ -351,11 +365,14 @@ Some tests are intentionally disabled:
 Generated after test run:
 
 ```bash
+
 mvn clean verify
 
 # Generated in target/site/jacoco/
+
 open target/site/jacoco/index.html
-```
+
+```text
 
 ### Current Coverage
 
@@ -400,50 +417,68 @@ open target/site/jacoco/index.html
 ### Standard Test Run
 
 ```bash
+
 # Full test suite (excludes performance, GPU)
+
 mvn clean test
 
 # Specific module
+
 mvn test -pl lucien
 
 # Specific test class
+
 mvn test -Dtest=OctreeTest
 
 # Specific test method
+
 mvn test -Dtest=OctreeTest#testInsert
-```
+
+```text
 
 ### Performance Tests
 
 ```bash
+
 # All performance benchmarks
+
 mvn test -Pperformance
 
 # Specific benchmark
+
 mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark
 
 # With assertions disabled (more accurate)
+
 mvn test -Pperformance -DAssertOption=-da
-```
+
+```text
 
 ### GPU Tests
 
 ```bash
+
 # Requires GPU and dangerouslyDisableSandbox: true
+
 mvn test -Pperformance -DgpuTests=true
-```
+
+```text
 
 ### Test Output
 
 Enable verbose test output:
 
 ```bash
+
 # Show test output
+
 VERBOSE_TESTS=1 mvn test
 
 # Suppress test output (default)
+
 mvn test
-```
+
+```text
 
 ---
 
@@ -477,6 +512,7 @@ mvn test
 ### Test Refactoring
 
 When refactoring code:
+
 1. Ensure all tests still pass
 2. Add new tests for new functionality
 3. Update test names if behavior changes
@@ -489,18 +525,24 @@ When refactoring code:
 ### GitHub Actions Workflow
 
 ```yaml
+
 name: Build and Test
 on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+
       - uses: actions/checkout@v2
       - name: Run tests
+
         run: mvn clean test
+
       - name: Upload coverage
+
         uses: codecov/codecov-action@v1
-```
+
+```text
 
 ### Pre-merge Requirements
 
