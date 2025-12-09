@@ -23,10 +23,14 @@ import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
 import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
 import com.hellblazer.luciferase.portal.esvo.renderer.OctreeRenderer;
 import com.hellblazer.luciferase.portal.esvo.ui.OctreeControlPanel;
+import com.hellblazer.luciferase.portal.esvo.visualization.RayCastVisualizer;
 import com.hellblazer.luciferase.portal.mesh.octree.OctreeNodeMeshRenderer;
+import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.*;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.PhongMaterial;
@@ -34,6 +38,7 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -79,6 +84,7 @@ public class OctreeInspectorApp extends Application {
     private OctreeRenderer octreeRenderer;
     private ProceduralVoxelGenerator voxelGenerator;
     private ESVOOctreeData currentOctree;
+    private RayCastVisualizer rayCastVisualizer;
     
     // Background executor for octree building
     private final ExecutorService buildExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -99,6 +105,7 @@ public class OctreeInspectorApp extends Application {
                                            OctreeNodeMeshRenderer.Strategy.BATCHED,
                                            OctreeRenderer.ColorScheme.DEPTH_GRADIENT,
                                            true);
+        rayCastVisualizer = new RayCastVisualizer();
         
         log.info("ESVO components initialized");
         
@@ -162,6 +169,9 @@ public class OctreeInspectorApp extends Application {
         
         // Create main scene
         Scene scene = new Scene(root, 1200, 800);
+        
+        // Add mouse click handler for ray casting
+        subScene.setOnMouseClicked(this::handleMouseClick);
         
         // Configure and show stage
         primaryStage.setTitle("ESVO Octree Inspector");
@@ -414,6 +424,93 @@ public class OctreeInspectorApp extends Application {
     }
     
     /**
+     * Handle mouse clicks for ray casting visualization.
+     * Ctrl+Click casts a ray from camera through the click point.
+     */
+    private void handleMouseClick(MouseEvent event) {
+        // Only cast rays on Ctrl+Click (left button)
+        if (!event.isControlDown() || event.getButton() != MouseButton.PRIMARY) {
+            return;
+        }
+        
+        // Check if octree is available
+        if (currentOctree == null || !esvoBridge.hasOctree()) {
+            log.warn("No octree available for ray casting");
+            return;
+        }
+        
+        // Get camera position and compute ray direction
+        var camera = cameraView.getCamera();
+        
+        // Camera position in scene coordinates
+        var cameraPos = new Vector3f(
+            (float) camera.getTranslateX(),
+            (float) camera.getTranslateY(),
+            (float) camera.getTranslateZ()
+        );
+        
+        // Normalize to [0,1] space (scene is 100x100x100, centered at origin)
+        var normalizedOrigin = new Vector3f(
+            (cameraPos.x + 50.0f) / 100.0f,
+            (cameraPos.y + 50.0f) / 100.0f,
+            (cameraPos.z + 50.0f) / 100.0f
+        );
+        
+        // Get camera look direction from rotation transforms
+        // For now, use simple forward direction (can be enhanced with actual transforms)
+        var direction = new Vector3f(0.0f, 0.0f, 1.0f); // Forward direction
+        
+        log.info("Casting ray from camera position: {}", normalizedOrigin);
+        
+        try {
+            // Cast ray through octree
+            DeepTraversalResult result = esvoBridge.castRay(normalizedOrigin, direction);
+            
+            // Visualize the ray
+            if (result != null) {
+                visualizeRayCast(normalizedOrigin, direction, result);
+                
+                // Log statistics
+                rayCastVisualizer.createStatisticsDisplay(result);
+                
+                // Auto-enable ray visualization if it was off
+                if (!rayGroup.isVisible()) {
+                    rayGroup.setVisible(true);
+                    controlPanel.setShowRays(true);
+                }
+            } else {
+                log.warn("Ray casting returned null result");
+            }
+            
+        } catch (Exception e) {
+            log.error("Failed to cast ray", e);
+        }
+    }
+    
+    /**
+     * Visualize a ray cast result in the scene.
+     */
+    private void visualizeRayCast(Vector3f origin, Vector3f direction, DeepTraversalResult result) {
+        try {
+            // Clear previous ray visualization
+            rayGroup.getChildren().clear();
+            
+            // Create ray visualization
+            float maxDistance = 2.0f; // Max ray length in normalized space
+            Group rayVis = rayCastVisualizer.visualize(origin, direction, result, maxDistance);
+            
+            // Add to ray group
+            rayGroup.getChildren().add(rayVis);
+            
+            log.info("Ray visualization added: hit={}, distance={:.3f}", 
+                    result.hit, result.distance);
+            
+        } catch (Exception e) {
+            log.error("Failed to visualize ray cast", e);
+        }
+    }
+    
+    /**
      * Print usage instructions to console.
      */
     private void printInstructions() {
@@ -424,6 +521,12 @@ public class OctreeInspectorApp extends Application {
         System.out.println("- Mouse drag: Rotate camera");
         System.out.println("- Mouse wheel: Zoom in/out");
         System.out.println("- WASD keys: Move camera (when first-person mode enabled)");
+        System.out.println();
+        System.out.println("Ray Casting:");
+        System.out.println("- Ctrl+Click: Cast ray from camera through scene");
+        System.out.println("- Yellow line: Ray path");
+        System.out.println("- Red sphere: Hit point");
+        System.out.println("- Cyan line: Surface normal at hit");
         System.out.println();
         System.out.println("Control Panel (right side):");
         System.out.println("- Octree Parameters: Adjust depth and resolution");
