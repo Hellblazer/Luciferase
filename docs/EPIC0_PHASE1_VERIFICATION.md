@@ -23,18 +23,21 @@ Contours are implemented and ready for Epic 3 (Memory Optimization for Contours)
 ### Evidence
 
 **Java Implementation**:
+
 - `render/src/main/java/com/hellblazer/luciferase/esvo/core/ESVONodeUnified.java`
   - Contains `contourDescriptor` field: `[contour_ptr(24)|contour_mask(8)]`
   - Methods: `getContourPtr()`, `getContourMask()`
   - Bug fix documented: unsigned right shift (>>>) for proper 24-bit extraction
 
 **OpenCL Kernel**:
+
 - `render/src/main/resources/kernels/esvo_ray_traversal.cl`
   - Lines 14, 25-27, 122-124
   - OctreeNode structure includes `contourData` field
   - Contour extraction logic in ray traversal
 
 **Documentation**:
+
 - `render/src/test/java/com/hellblazer/luciferase/esvo/ESVO_COMPLETION_SUMMARY.md`
   - Documents contour implementation and critical fixes
 
