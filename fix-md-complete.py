@@ -47,6 +47,7 @@ def fix_markdown_complete(content):
         prev_is_list = prev_line.strip() and re.match(r'^[-*]|\d+\.', prev_line.lstrip())
         prev_is_code = prev_line.strip().startswith('```')
         prev_is_blank = not prev_line.strip()
+        prev_ends_with_colon = prev_line.strip().endswith(':')  # New check
         
         next_is_heading = next_line.startswith('#') and len(next_line) > 1 and next_line[1] in (' ', '#')
         next_is_list = next_line.strip() and re.match(r'^[-*]|\d+\.', next_line.lstrip())
@@ -56,8 +57,8 @@ def fix_markdown_complete(content):
         if is_heading and not prev_is_blank and not prev_is_heading and prev_line.strip():
             result.append('')
         
-        # MD032: Blank before list (unless prev is blank/list/heading/code)
-        if is_list and not prev_is_blank and not prev_is_list and not prev_is_heading and not prev_is_code and prev_line.strip():
+        # MD032: Blank before list (unless prev is blank/list/heading/code/ends with colon)
+        if is_list and not prev_is_blank and not prev_is_list and not prev_is_heading and not prev_is_code and not prev_ends_with_colon and prev_line.strip():
             result.append('')
         
         # MD031: Blank before code fence (unless prev is blank/heading)
