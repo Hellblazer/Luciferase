@@ -41,10 +41,15 @@ class VoxelRendererTest {
     
     @BeforeAll
     static void initJavaFX() throws InterruptedException {
-        // Initialize JavaFX toolkit
-        CountDownLatch latch = new CountDownLatch(1);
-        Platform.startup(() -> latch.countDown());
-        assertTrue(latch.await(5, TimeUnit.SECONDS), "JavaFX platform failed to start");
+        // Initialize JavaFX toolkit (or use existing initialization)
+        try {
+            CountDownLatch latch = new CountDownLatch(1);
+            Platform.startup(() -> latch.countDown());
+            assertTrue(latch.await(5, TimeUnit.SECONDS), "JavaFX platform failed to start");
+        } catch (IllegalStateException e) {
+            // JavaFX toolkit already initialized by another test
+            // This is fine - just continue with tests
+        }
     }
     
     @Test
