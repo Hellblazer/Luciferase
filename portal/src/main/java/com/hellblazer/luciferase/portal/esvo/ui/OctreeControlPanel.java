@@ -17,14 +17,18 @@
 package com.hellblazer.luciferase.portal.esvo.ui;
 
 import com.hellblazer.luciferase.portal.CameraView;
+import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
+import com.hellblazer.luciferase.portal.esvo.renderer.VoxelRenderer;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.HBox;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 
 import java.util.function.IntConsumer;
+import java.util.function.Consumer;
 
 /**
  * Control panel for the ESVO Octree Inspector application providing UI controls
@@ -42,6 +46,10 @@ public class OctreeControlPanel extends VBox {
     private final Runnable toggleVoxels;
     private final Runnable toggleRays;
     private final IntConsumer onLevelChanged;
+    private final Consumer<ProceduralVoxelGenerator.Shape> onShapeChanged;
+    private final Consumer<VoxelRenderer.RenderMode> onRenderModeChanged;
+    private final Consumer<VoxelRenderer.MaterialScheme> onMaterialSchemeChanged;
+    private final Runnable onCameraPreset;
     
     // Control references for external access
     private CheckBox panModeCheckBox;
@@ -55,6 +63,13 @@ public class OctreeControlPanel extends VBox {
     private CheckBox showRaysCheckBox;
     private Slider depthSlider;
     private Label depthValueLabel;
+    private ComboBox<ProceduralVoxelGenerator.Shape> shapeSelector;
+    private Slider resolutionSlider;
+    private Label resolutionValueLabel;
+    private Label voxelCountLabel;
+    private ToggleGroup renderModeGroup;
+    private ComboBox<VoxelRenderer.MaterialScheme> materialSchemeSelector;
+    private TextArea performanceMetrics;
     
     public OctreeControlPanel(CameraView cameraView, 
                              Runnable resetCamera,
@@ -63,7 +78,11 @@ public class OctreeControlPanel extends VBox {
                              Runnable toggleOctree,
                              Runnable toggleVoxels,
                              Runnable toggleRays,
-                             IntConsumer onLevelChanged) {
+                             IntConsumer onLevelChanged,
+                             Consumer<ProceduralVoxelGenerator.Shape> onShapeChanged,
+                             Consumer<VoxelRenderer.RenderMode> onRenderModeChanged,
+                             Consumer<VoxelRenderer.MaterialScheme> onMaterialSchemeChanged,
+                             Runnable onCameraPreset) {
         this.cameraView = cameraView;
         this.resetCamera = resetCamera;
         this.toggleAxes = toggleAxes;
@@ -72,9 +91,13 @@ public class OctreeControlPanel extends VBox {
         this.toggleVoxels = toggleVoxels;
         this.toggleRays = toggleRays;
         this.onLevelChanged = onLevelChanged;
+        this.onShapeChanged = onShapeChanged;
+        this.onRenderModeChanged = onRenderModeChanged;
+        this.onMaterialSchemeChanged = onMaterialSchemeChanged;
+        this.onCameraPreset = onCameraPreset;
         
         setPadding(new Insets(10));
-        setSpacing(15);
+        setSpacing(10);
         setMinWidth(300);
         setPrefWidth(350);
         setStyle("-fx-background-color: #f0f0f0; -fx-border-color: #cccccc; -fx-border-width: 1;");
@@ -120,6 +143,140 @@ public class OctreeControlPanel extends VBox {
         depthPane.add(depthSlider, 1, 0);
         depthPane.add(depthValueLabel, 2, 0);
         
+        // Shape Selection Section
+        Separator shapeSeparator = new Separator();
+        
+        Label shapeLabel = new Label("Shape Selection");
+        shapeLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        GridPane shapePane = new GridPane();
+        shapePane.setHgap(10);
+        shapePane.setVgap(5);
+        
+        Label shapeTypeLabel = new Label("Shape:");
+        shapeSelector = new ComboBox<>();
+        shapeSelector.getItems().addAll(ProceduralVoxelGenerator.Shape.values());
+        shapeSelector.setValue(ProceduralVoxelGenerator.Shape.SPHERE);
+        shapeSelector.setMaxWidth(Double.MAX_VALUE);
+        shapeSelector.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(ProceduralVoxelGenerator.Shape item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? "" : ProceduralVoxelGenerator.getShapeName(item));
+            }
+        });
+        shapeSelector.setButtonCell(new ListCell<>() {
+            @Override
+            protected void updateItem(ProceduralVoxelGenerator.Shape item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? "" : ProceduralVoxelGenerator.getShapeName(item));
+            }
+        });
+        shapeSelector.valueProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                updateVoxelCount();
+                if (onShapeChanged != null) {
+                    onShapeChanged.accept(newVal);
+                }
+            }
+        });
+        
+        Label resolutionLabel = new Label("Resolution:");
+        resolutionSlider = new Slider(16, 128, 64);
+        resolutionSlider.setShowTickLabels(true);
+        resolutionSlider.setShowTickMarks(true);
+        resolutionSlider.setMajorTickUnit(32);
+        resolutionSlider.setMinorTickCount(3);
+        resolutionSlider.setSnapToTicks(false);
+        resolutionSlider.setPrefWidth(200);
+        
+        resolutionValueLabel = new Label("64");
+        resolutionSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            int resolution = newVal.intValue();
+            resolutionValueLabel.setText(String.valueOf(resolution));
+            updateVoxelCount();
+        });
+        
+        Label voxelCountTitleLabel = new Label("Est. Voxels:");
+        voxelCountLabel = new Label("138,000");
+        voxelCountLabel.setStyle("-fx-font-weight: bold;");
+        
+        shapePane.add(shapeTypeLabel, 0, 0);
+        shapePane.add(shapeSelector, 1, 0, 2, 1);
+        shapePane.add(resolutionLabel, 0, 1);
+        shapePane.add(resolutionSlider, 1, 1);
+        shapePane.add(resolutionValueLabel, 2, 1);
+        shapePane.add(voxelCountTitleLabel, 0, 2);
+        shapePane.add(voxelCountLabel, 1, 2);
+        
+        // Initialize voxel count
+        updateVoxelCount();
+        
+        // Rendering Controls Section
+        Separator renderingSeparator = new Separator();
+        
+        Label renderingLabel = new Label("Rendering Controls");
+        renderingLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        Label renderModeLabel = new Label("Render Mode:");
+        renderModeGroup = new ToggleGroup();
+        
+        HBox renderModeBox = new HBox(10);
+        RadioButton filledButton = new RadioButton("Filled");
+        filledButton.setToggleGroup(renderModeGroup);
+        filledButton.setSelected(true);
+        filledButton.setUserData(VoxelRenderer.RenderMode.FILLED);
+        
+        RadioButton wireframeButton = new RadioButton("Wireframe");
+        wireframeButton.setToggleGroup(renderModeGroup);
+        wireframeButton.setUserData(VoxelRenderer.RenderMode.WIREFRAME);
+        
+        RadioButton pointsButton = new RadioButton("Points");
+        pointsButton.setToggleGroup(renderModeGroup);
+        pointsButton.setUserData(VoxelRenderer.RenderMode.POINTS);
+        
+        renderModeBox.getChildren().addAll(filledButton, wireframeButton, pointsButton);
+        
+        renderModeGroup.selectedToggleProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && onRenderModeChanged != null) {
+                var mode = (VoxelRenderer.RenderMode) newVal.getUserData();
+                onRenderModeChanged.accept(mode);
+            }
+        });
+        
+        Label materialLabel = new Label("Material:");
+        materialSchemeSelector = new ComboBox<>();
+        materialSchemeSelector.getItems().addAll(VoxelRenderer.MaterialScheme.values());
+        materialSchemeSelector.setValue(VoxelRenderer.MaterialScheme.POSITION_GRADIENT);
+        materialSchemeSelector.setMaxWidth(Double.MAX_VALUE);
+        materialSchemeSelector.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(VoxelRenderer.MaterialScheme item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText("");
+                } else {
+                    setText(item.name().replace("_", " "));
+                }
+            }
+        });
+        materialSchemeSelector.setButtonCell(new ListCell<>() {
+            @Override
+            protected void updateItem(VoxelRenderer.MaterialScheme item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText("");
+                } else {
+                    setText(item.name().replace("_", " "));
+                }
+            }
+        });
+        materialSchemeSelector.valueProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && onMaterialSchemeChanged != null) {
+                onMaterialSchemeChanged.accept(newVal);
+            }
+        });
+        
         // Camera Controls Section
         Separator cameraSeparator = new Separator();
         
@@ -140,6 +297,36 @@ public class OctreeControlPanel extends VBox {
             if (resetCamera != null) resetCamera.run();
             panModeCheckBox.setSelected(cameraView.isPanning());
         });
+        
+        // Camera Presets
+        Label presetsLabel = new Label("Camera Presets:");
+        HBox presetsBox = new HBox(5);
+        
+        Button frontButton = new Button("Front");
+        frontButton.setMinWidth(65);
+        frontButton.setOnAction(e -> {
+            if (onCameraPreset != null) onCameraPreset.run();
+        });
+        
+        Button topButton = new Button("Top");
+        topButton.setMinWidth(65);
+        topButton.setOnAction(e -> {
+            if (onCameraPreset != null) onCameraPreset.run();
+        });
+        
+        Button sideButton = new Button("Side");
+        sideButton.setMinWidth(65);
+        sideButton.setOnAction(e -> {
+            if (onCameraPreset != null) onCameraPreset.run();
+        });
+        
+        Button isoButton = new Button("Iso");
+        isoButton.setMinWidth(65);
+        isoButton.setOnAction(e -> {
+            if (onCameraPreset != null) onCameraPreset.run();
+        });
+        
+        presetsBox.getChildren().addAll(frontButton, topButton, sideButton, isoButton);
         
         // Navigation Speed Controls
         Label speedLabel = new Label("Navigation Speeds");
@@ -229,6 +416,19 @@ public class OctreeControlPanel extends VBox {
             if (toggleRays != null) toggleRays.run();
         });
         
+        // Performance Metrics Section
+        Separator performanceSeparator = new Separator();
+        
+        Label performanceLabel = new Label("Performance Metrics");
+        performanceLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        performanceMetrics = new TextArea();
+        performanceMetrics.setEditable(false);
+        performanceMetrics.setPrefRowCount(6);
+        performanceMetrics.setWrapText(true);
+        performanceMetrics.setStyle("-fx-font-family: monospace; -fx-font-size: 10; -fx-control-inner-background: #ffffff;");
+        performanceMetrics.setText("No metrics available yet.\nGenerate octree to see performance data.");
+        
         // Keyboard Shortcuts Section
         Separator shortcutSeparator = new Separator();
         
@@ -271,10 +471,21 @@ public class OctreeControlPanel extends VBox {
             octreeLabel,
             octreeSeparator,
             depthPane,
+            shapeSeparator,
+            shapeLabel,
+            shapePane,
+            renderingSeparator,
+            renderingLabel,
+            renderModeLabel,
+            renderModeBox,
+            materialLabel,
+            materialSchemeSelector,
             cameraSeparator,
             cameraLabel,
             panModeCheckBox,
             resetCameraButton,
+            presetsLabel,
+            presetsBox,
             new Label(), // spacing
             speedLabel,
             speedGrid,
@@ -285,6 +496,9 @@ public class OctreeControlPanel extends VBox {
             showOctreeCheckBox,
             showVoxelsCheckBox,
             showRaysCheckBox,
+            performanceSeparator,
+            performanceLabel,
+            performanceMetrics,
             shortcutSeparator,
             shortcutLabel,
             shortcutsArea
@@ -367,5 +581,44 @@ public class OctreeControlPanel extends VBox {
     
     public double getZoomSpeed() {
         return zoomSpeedSlider.getValue();
+    }
+    
+    public ProceduralVoxelGenerator.Shape getSelectedShape() {
+        return shapeSelector.getValue();
+    }
+    
+    public int getResolution() {
+        return (int) resolutionSlider.getValue();
+    }
+    
+    public VoxelRenderer.RenderMode getSelectedRenderMode() {
+        var selectedToggle = renderModeGroup.getSelectedToggle();
+        if (selectedToggle != null) {
+            return (VoxelRenderer.RenderMode) selectedToggle.getUserData();
+        }
+        return VoxelRenderer.RenderMode.FILLED; // default
+    }
+    
+    public VoxelRenderer.MaterialScheme getSelectedMaterialScheme() {
+        return materialSchemeSelector.getValue();
+    }
+    
+    public void updatePerformanceMetrics(String metrics) {
+        if (performanceMetrics != null) {
+            performanceMetrics.setText(metrics);
+        }
+    }
+    
+    /**
+     * Update the estimated voxel count label based on current shape and resolution.
+     */
+    private void updateVoxelCount() {
+        var shape = shapeSelector.getValue();
+        int resolution = (int) resolutionSlider.getValue();
+        
+        if (shape != null) {
+            int count = ProceduralVoxelGenerator.estimateVoxelCount(shape, resolution);
+            voxelCountLabel.setText(String.format("%,d", count));
+        }
     }
 }

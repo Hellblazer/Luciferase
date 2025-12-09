@@ -34,3 +34,4 @@ performance-results/summary-*.txt
 .beads/db.sqlite3
 .gitattributes
 /.vscode/settings.json
+portal/logs/

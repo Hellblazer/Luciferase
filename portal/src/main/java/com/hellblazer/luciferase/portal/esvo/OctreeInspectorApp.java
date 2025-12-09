@@ -172,7 +172,11 @@ public class OctreeInspectorApp extends Application {
             this::handleToggleOctree,
             this::handleToggleVoxels,
             this::handleToggleRays,
-            this::handleLevelChange
+            this::handleLevelChange,
+            this::handleShapeChange,
+            this::handleRenderModeChange,
+            this::handleMaterialSchemeChange,
+            this::handleCameraPreset
         );
         
         // Set initial visibility states
@@ -378,25 +382,86 @@ public class OctreeInspectorApp extends Application {
     }
     
     /**
+     * Handle shape selection change from control panel.
+     */
+    private void handleShapeChange(ProceduralVoxelGenerator.Shape newShape) {
+        log.info("Shape changed to: {}", ProceduralVoxelGenerator.getShapeName(newShape));
+        // Rebuild octree with new shape
+        generateDemoOctree();
+    }
+    
+    /**
+     * Handle render mode change from control panel.
+     */
+    private void handleRenderModeChange(VoxelRenderer.RenderMode newMode) {
+        log.info("Render mode changed to: {}", newMode);
+        
+        // Recreate voxel renderer with new render mode
+        voxelRenderer = VoxelRenderer.builder()
+                                     .voxelSize(1.5)
+                                     .materialScheme(controlPanel.getSelectedMaterialScheme())
+                                     .renderMode(newMode)
+                                     .build();
+        
+        // Re-render voxels if we have current data
+        if (currentOctree != null) {
+            generateDemoOctree();
+        }
+    }
+    
+    /**
+     * Handle material scheme change from control panel.
+     */
+    private void handleMaterialSchemeChange(VoxelRenderer.MaterialScheme newScheme) {
+        log.info("Material scheme changed to: {}", newScheme);
+        
+        // Recreate voxel renderer with new material scheme
+        voxelRenderer = VoxelRenderer.builder()
+                                     .voxelSize(1.5)
+                                     .materialScheme(newScheme)
+                                     .renderMode(controlPanel.getSelectedRenderMode())
+                                     .build();
+        
+        // Re-render voxels if we have current data
+        if (currentOctree != null) {
+            generateDemoOctree();
+        }
+    }
+    
+    /**
+     * Handle camera preset button click.
+     * Note: This is a placeholder - camera presets will be implemented in a future phase.
+     */
+    private void handleCameraPreset() {
+        log.info("Camera preset clicked - not yet implemented");
+        // TODO: Implement camera preset positions in Phase 3.2+
+    }
+    
+    /**
      * Generate and visualize a demo octree.
-     * Uses a sphere shape for demonstration.
+     * Uses the shape and resolution selected in the control panel.
      */
     private void generateDemoOctree() {
-        log.info("Generating demo octree at depth {}", currentLevel);
+        // Get current shape and resolution from control panel
+        var shape = controlPanel.getSelectedShape();
+        int resolution = controlPanel.getResolution();
+        
+        log.info("Generating demo octree: shape={}, resolution={}, depth={}", 
+                 ProceduralVoxelGenerator.getShapeName(shape), resolution, currentLevel);
         
         // Build octree in background thread
         CompletableFuture.supplyAsync(() -> {
             try {
-                // Generate sphere voxels
-                var voxels = voxelGenerator.generateSphere(64);
+                // Generate voxels for selected shape
+                var voxels = voxelGenerator.generate(shape, resolution);
                 log.info("Generated {} voxels", voxels.size());
                 
                 // Build ESVO octree
                 var octree = esvoBridge.buildOctree(voxels, currentLevel);
                 log.info("Built octree with {} nodes", octree.getNodeCount());
                 
-                // Return both voxels and octree
-                return new Object[] { voxels, octree };
+                // Return shape, resolution, voxels, and octree
+                return new Object[] { shape, resolution, voxels, octree };
             } catch (Exception e) {
                 log.error("Failed to build octree", e);
                 return null;
@@ -405,12 +470,15 @@ public class OctreeInspectorApp extends Application {
         .thenAcceptAsync(result -> {
             if (result != null) {
                 @SuppressWarnings("unchecked")
-                var voxels = (List<Point3i>) result[0];
-                var octree = (ESVOOctreeData) result[1];
+                var resultShape = (ProceduralVoxelGenerator.Shape) result[0];
+                var resultResolution = (Integer) result[1];
+                @SuppressWarnings("unchecked")
+                var resultVoxels = (List<Point3i>) result[2];
+                var resultOctree = (ESVOOctreeData) result[3];
                 
                 // Update visualization on JavaFX thread
-                updateOctreeVisualization(octree);
-                updateVoxelVisualization(voxels);
+                updateOctreeVisualization(resultOctree);
+                updateVoxelVisualization(resultVoxels, resultResolution);
             }
         }, Platform::runLater);
     }
@@ -454,21 +522,24 @@ public class OctreeInspectorApp extends Application {
     /**
      * Update the voxel visualization with new voxel data.
      * Must be called on JavaFX Application Thread.
+     * 
+     * @param voxels the voxel positions to render
+     * @param resolution the resolution used to generate the voxels
      */
-    private void updateVoxelVisualization(List<Point3i> voxels) {
+    private void updateVoxelVisualization(List<Point3i> voxels, int resolution) {
         try {
             // Clear existing voxel visualization
             voxelGroup.getChildren().clear();
             
-            // Render voxels with current resolution (64 for demo sphere)
-            var renderedVoxels = voxelRenderer.render(voxels, 64);
+            // Render voxels with actual resolution
+            var renderedVoxels = voxelRenderer.render(voxels, resolution);
             voxelGroup.getChildren().add(renderedVoxels);
             
             // Show voxels by default
             voxelGroup.setVisible(true);
             controlPanel.setShowVoxels(true);
             
-            log.info("Voxel visualization updated: {} voxels rendered", voxels.size());
+            log.info("Voxel visualization updated: {} voxels rendered at resolution {}", voxels.size(), resolution);
             
         } catch (Exception e) {
             log.error("Failed to update voxel visualization", e);
