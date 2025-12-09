@@ -35,6 +35,7 @@ This comprehensive research analysis synthesized insights from 5 academic papers
 ### Research Impact
 
 The 5 papers form a **coherent theoretical and practical framework**:
+
 1. **Paper 3 (TM-SFC Bitwise)** → Theoretical foundation (8 formal theorems)
 2. **Paper 1 (Holke t8code)** → Distributed algorithms at scale (858B elements)
 3. **Paper 5 (Non-Conforming)** → Mesh topology handling (hanging nodes, balancing)
@@ -210,14 +211,17 @@ The 5 papers form a **coherent theoretical and practical framework**:
 - **Anisotropic** (Paper 2): Dimension-selective 2/4/8 children (Omnitrees)
 
 **Hybrid Strategy**:
-```
+
+```text
+
 Interior regions (bulk volume):
   → Use isotropic (simple, efficient, balanced)
 
 Boundary regions (features):
   → Use anisotropic (capture gradients without over-refinement)
   → Prism elements for thin features
-```
+
+```text
 
 **Lucien**: Octree & Tetree (isotropic), Prism (anisotropic) → ✅ **Covers both**
 
@@ -228,12 +232,15 @@ Boundary regions (features):
 - **Non-Conforming** (Paper 5): Local refinement, ghost layer, fewer elements
 
 **Hybrid Resolution** (Papers 1+5 consensus):
-```
+
+```text
+
 1. Refine locally (non-conforming)
 2. Check hanging node depth
 3. If depth > threshold (3 levels) → Apply ripple balancing
 4. Update ghost layer
-```
+
+```text
 
 **Lucien Implementation**: ✅ **Hybrid approach via TreeBalancingStrategy**
 
@@ -253,7 +260,9 @@ Boundary regions (features):
 ### 2.3 Citation Network & Evolution
 
 **Knowledge Flow**:
-```
+
+```text
+
 Bey 1995 (Refinement)
     ↓
 Burstedde & Holke 2016 (TM-SFC Theory) ← Paper 3
@@ -267,7 +276,8 @@ Non-Conforming Meshes Paper ← Paper 5
 Independent:
 Omnitrees (Paper 2) ← Anisotropic extension
 Motion Planning (Paper 4) ← k-NN optimization
-```
+
+```text
 
 **Evolution Pattern**:
 1. **Theory** (Paper 3: prove it works)
@@ -282,7 +292,9 @@ Motion Planning (Paper 4) ← k-NN optimization
 ### 3.1 Validated Design Choices
 
 **1. Generic Type System** (Paper 1: Element-type-independent API)
+
 ```java
+
 public abstract class AbstractSpatialIndex<
     Key extends SpatialKey<Key>,
     ID extends EntityID,
@@ -291,46 +303,61 @@ public abstract class AbstractSpatialIndex<
     // ~95% code reuse
     // 17 abstract methods for type-specific operations
 }
-```
+
+```text
+
 ✅ **Validated**: Matches Paper 1's scheme pattern exactly
 
 ---
 
 **2. ConcurrentSkipListMap Storage** (Papers 1 & 4)
+
 ```java
+
 // Single thread-safe SFC-ordered storage
 private ConcurrentNavigableMap<Key, SpatialNodeImpl<ID>> spatialIndex;
 
 Benefits (July 2025 optimization):
+
   - 54-61% memory reduction vs HashMap+TreeSet
   - O(log N) operations with SFC ordering
   - Thread-safe iteration
   - Lock-free reads
-```
+
+```text
+
 ✅ **Validated**: Papers 1+4 both recommend SFC-ordered storage
 
 ---
 
 **3. Bey Refinement** (Papers 1, 3, 5)
+
 ```java
+
 // BeySubdivision.java
 public List<Tet> subdivide(Tet parent) {
     // 8 children via vertex midpoints
     // S0-S5 subdivision (100% cube coverage)
 }
-```
+
+```text
+
 ✅ **Validated**: All 3 papers confirm this approach
 
 ---
 
 **4. Hybrid Balancing** (Papers 1 & 5)
+
 ```java
+
 // TreeBalancingStrategy with adaptive thresholds
 Default: Balance when variance > 50%
 Aggressive: Balance when variance > 25%
 Conservative: Balance only when critical
 Adaptive: Learn from usage patterns
-```
+
+```text
+
 ✅ **Validated**: Papers 1+5 recommend hybrid approach
 
 ---
@@ -338,7 +365,7 @@ Adaptive: Learn from usage patterns
 ### 3.2 Performance Comparison
 
 | Component | Paper Target | Lucien Actual | Status |
-|-----------|-------------|---------------|--------|
+| ----------- | ------------- | --------------- | -------- |
 | **Ghost Memory** | <2x local (Paper 1) | 0.01x-0.25x | 🚀 **8-200× better** |
 | **Ghost Creation** | <10% overhead (Paper 1) | -95% to -99% | 🚀 **Faster than baseline** |
 | **k-NN Query** | <0.1ms (Paper 4) | 1.5-2.0ms | ⚠️ **15-20× slower** |
@@ -353,7 +380,7 @@ Adaptive: Learn from usage patterns
 ### 3.3 Feature Completeness Matrix
 
 | Feature | Papers | Lucien Status | Priority |
-|---------|--------|---------------|----------|
+| --------- | -------- | --------------- | ---------- |
 | **TM-SFC Encoding** | Paper 3 | ✅ Complete (21 levels) | - |
 | **Bey Refinement** | Papers 1,3,5 | ✅ Complete | - |
 | **S0-S5 Subdivision** | Paper 3 | ✅ Complete (100% coverage) | - |
@@ -378,55 +405,75 @@ Adaptive: Learn from usage patterns
 ### 3.4 Lucien Innovations (Beyond Papers)
 
 **1. Dynamic Scene Occlusion Culling (DSOC)**
-```
+
+```text
+
 occlusion package (11 classes):
+
   - HierarchicalZBuffer (multi-level depth pyramid)
   - TemporalBoundingVolume (prediction for moving objects)
   - DSOCConfiguration (adaptive strategies)
 
 Performance: 2× rendering speedup
 Impact: Enables real-time rendering applications
-```
+
+```text
+
 🚀 **Not in papers' scope**
 
 ---
 
 **2. Lock-Free Entity Movement**
-```
+
+```text
+
 lockfree package (3 classes):
+
   - LockFreeEntityMover (264K movements/sec)
   - AtomicSpatialNode (lock-free node operations)
   - VersionedEntityState (optimistic concurrency)
 
 Protocol: PREPARE → INSERT → UPDATE → REMOVE (4-phase atomic)
-```
+
+```text
+
 🚀 **No lock-free algorithms in papers**
 
 ---
 
 **3. Prism Anisotropic Index**
-```
+
+```text
+
 prism package (8 classes):
+
   - Triangular/linear subdivision
   - Composite PrismKey
   - 60-71× faster insertion than Octree
 
 Use cases: Terrain, urban planning, atmospheric data
-```
+
+```text
+
 🚀 **Practical implementation of Paper 2 theory**
 
 ---
 
 **4. ObjectPool for Queries**
-```
+
+```text
+
 Extended pooling to all query operations:
+
   - k-NN search
   - Collision detection
   - Ray intersection
   - Frustum culling
 
 Impact: Reduced GC pressure, consistent performance
-```
+
+```text
+
 🚀 **Not addressed in papers**
 
 ---
@@ -438,16 +485,21 @@ Impact: Reduced GC pressure, consistent performance
 **From**: Paper 4 (Space-Filling Trees for Motion Planning)
 
 **Current Problem**:
+
 ```java
+
 // KNearestNeighbor.java (current)
 for (var entry : skipList.entrySet()) {  // ❌ Full iteration
     double distance = computeDistance(query, entry);
     updateKNearestNeighbor(distance);
 }
-```
+
+```text
 
 **Target Solution**:
+
 ```java
+
 // Optimized with SFC pruning
 var query_morton = calculateSpatialIndex(query_position);
 var search_depth = estimateMortonDepth(best_distance);  // NEW
@@ -467,7 +519,8 @@ for (var entry : candidates) {
         morton_range = estimateMortonRange(query_morton, search_depth);
     }
 }
-```
+
+```text
 
 **Implementation Plan**:
 - **Effort**: 4 weeks
@@ -487,7 +540,9 @@ for (var entry : candidates) {
 **Current Problem**: Every k-NN query recomputes from scratch
 
 **Target Solution**:
+
 ```java
+
 // Create: KNNCache.java
 public class KNNCache<Key, ID> {
     Map<Key, CachedResult<ID>> cache;  // morton_key → k-NN result
@@ -510,7 +565,8 @@ public class KNNCache<Key, ID> {
         return neighbors;
     }
 }
-```
+
+```text
 
 **Implementation Plan**:
 - **Effort**: 3 weeks
@@ -532,7 +588,9 @@ public class KNNCache<Key, ID> {
 - **Missing**: Dimension-selective refinement criteria
 
 **Target Solution**:
+
 ```java
+
 // AdaptiveRefinementStrategy.java enhancement
 public class AnisotropicRefinementStrategy<ID, Content> {
     public DimensionRefinementDecision analyzeCell(
@@ -552,7 +610,8 @@ public class AnisotropicRefinementStrategy<ID, Content> {
         return new DimensionRefinementDecision(refineX, refineY, refineZ);
     }
 }
-```
+
+```text
 
 **Implementation Plan**:
 - **Effort**: 4-6 weeks
@@ -572,7 +631,9 @@ public class AnisotropicRefinementStrategy<ID, Content> {
 **Current State**: No concurrent k-NN support
 
 **Target Solution**:
+
 ```java
+
 // Create: ConcurrentKNNSearch.java
 public class ConcurrentKNNSearch<Key, ID> {
     private final Lock[] regionLocks;  // Partition SFC space
@@ -588,7 +649,8 @@ public class ConcurrentKNNSearch<Key, ID> {
         }
     }
 }
-```
+
+```text
 
 **Implementation Plan**:
 - **Effort**: 2-3 weeks
@@ -606,50 +668,67 @@ public class ConcurrentKNNSearch<Key, ID> {
 ### 5.1 Collections Created
 
 **Collection: `spatial_indexing_research`**
-```
+
+```text
+
 Papers 1, 3, 5: t8code, TM-SFC theory, Non-conforming meshes
 Documents: ~30 documents
 Metadata: {"paper", "year", "concept", "level", "complexity"}
-```
+
+```text
 
 **Collection: `lucien_enhancement_opportunities`**
-```
+
+```text
+
 Enhancement recommendations and gap analysis
 Documents: ~20 documents
 Metadata: {"priority", "effort", "impact", "dependencies"}
-```
+
+```text
 
 **Custom Collection: `/tmp/lucien_knowledge/` (Paper 4)**
-```
+
+```text
+
 Motion planning k-NN optimization
 Documents: 21 documents
 Specialized indexer: chroma_sft_motion_planning_indexer.py
-```
+
+```text
 
 ---
 
 ### 5.2 Querying ChromaDB
 
 #### Python Setup
+
 ```python
+
 import chromadb
 from chromadb.config import Settings
 
 # Connect to ChromaDB
+
 client = chromadb.Client(Settings(
     chroma_db_impl="duckdb+parquet",
     persist_directory="/path/to/chroma/data"
 ))
 
 # Get collection
+
 collection = client.get_collection("spatial_indexing_research")
-```
+
+```text
 
 ---
 
 #### Query 1: k-NN Optimization Insights
+
 ```python
+
 # Find all k-NN related documents
+
 results = collection.query(
     query_texts=["How to optimize k-nearest neighbor search using space-filling curves?"],
     n_results=10,
@@ -662,13 +741,17 @@ results = collection.query(
 # - knn-02-sfc-locality
 # - knn-05-radius-search
 # - sft-05-nn-queries
-```
+
+```text
 
 ---
 
 #### Query 2: Bey Refinement Theory & Implementation
+
 ```python
+
 # Find Bey refinement documents
+
 results = collection.query(
     query_texts=["What are the theoretical guarantees for Bey tetrahedral refinement?"],
     n_results=5,
@@ -679,13 +762,17 @@ results = collection.query(
 # - tm_sfc_mathematical_properties_004 (Theorem 1: cube tiling)
 # - t8code_bey_refinement (Algorithm implementation)
 # - TM_SFC_NONCONFORMING_MESH_EXTRACTION.md §6 (Hanging node prevention)
-```
+
+```text
 
 ---
 
 #### Query 3: Ghost Layer Performance Optimization
+
 ```python
+
 # Find ghost layer implementation details
+
 results = collection.query(
     query_texts=["How to minimize ghost layer overhead in distributed spatial indices?"],
     n_results=8,
@@ -702,13 +789,17 @@ results = collection.query(
 # - t8code_forest_ghost_algorithm
 # - TM_SFC_NONCONFORMING_MESH_EXTRACTION.md §3
 # - lucien ghost layer performance metrics
-```
+
+```text
 
 ---
 
 #### Query 4: Balancing Strategies
+
 ```python
+
 # Find balancing strategy documents
+
 results = collection.query(
     query_texts=["How to balance performance vs conformity in adaptive meshes?"],
     n_results=5,
@@ -719,13 +810,17 @@ results = collection.query(
 # - t8code_balance_ripple (Strict 2:1 balance)
 # - TM_SFC_NONCONFORMING_MESH_EXTRACTION.md §4 (Permissive strategies)
 # - lucien-06-performance-targets (Performance implications)
-```
+
+```text
 
 ---
 
 #### Query 5: Anisotropic Refinement
+
 ```python
+
 # Find anisotropic refinement strategies
+
 results = collection.query(
     query_texts=["What are the advantages of anisotropic spatial subdivision?"],
     n_results=5,
@@ -737,15 +832,19 @@ results = collection.query(
 # - omnitree_data_structure.md
 # - prism_pyramid_hybrid_mesh_elements.md
 # - omnitree_performance_comparison.md
-```
+
+```text
 
 ---
 
 ### 5.3 Advanced Queries
 
 #### Multi-Query Search (Cross-Paper Correlation)
+
 ```python
+
 # Search across multiple concepts
+
 results = collection.query(
     query_texts=[
         "space-filling curve locality preservation",
@@ -756,13 +855,17 @@ results = collection.query(
 )
 
 # Aggregates results from Papers 1, 3, 4
-```
+
+```text
 
 ---
 
 #### Filtered Search by Complexity
+
 ```python
+
 # Find high-complexity theoretical documents
+
 results = collection.query(
     query_texts=["mathematical proofs spatial indexing"],
     n_results=5,
@@ -770,13 +873,17 @@ results = collection.query(
 )
 
 # Returns theoretical foundations with formal proofs
-```
+
+```text
 
 ---
 
 #### Lucien-Specific Implementation Queries
+
 ```python
+
 # Find documents directly applicable to Lucien
+
 results = collection.query(
     query_texts=["How to implement SFC-based k-NN in Java spatial index?"],
     n_results=5,
@@ -784,14 +891,17 @@ results = collection.query(
 )
 
 # Returns Lucien-specific implementation guidance
-```
+
+```text
 
 ---
 
 ### 5.4 Using the Motion Planning Knowledge Base
 
 ```python
+
 # Load Paper 4 specialized indexer
+
 import sys
 sys.path.append('/Users/hal.hildebrand/git/Luciferase/scripts')
 from chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
@@ -799,6 +909,7 @@ from chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 indexer = SFTMotionPlanningIndexer()
 
 # Query k-NN optimization roadmap
+
 results = indexer.query_collection(
     "Phased implementation roadmap for k-NN optimization",
     n_results=5
@@ -809,24 +920,29 @@ results = indexer.query_collection(
 # - lucien-02-sfc-pruning (Phase 1)
 # - lucien-03-morton-knn-cache (Phase 2)
 # - knn-06-concurrent-knn (Phase 3)
-```
+
+```text
 
 ---
 
 ### 5.5 Command-Line Query Tool
 
 ```bash
+
 # Query Paper 4 knowledge base directly
+
 cd /Users/hal.hildebrand/git/Luciferase
 python3 scripts/query_sft_knowledge.py "k-NN optimization"
 
 # Interactive mode
+
 python3 scripts/query_sft_knowledge.py
 > k-NN optimization strategies
 > list  # Show all documents
 > demo  # Run pre-defined examples
 > quit
-```
+
+```text
 
 ---
 
@@ -835,13 +951,16 @@ python3 scripts/query_sft_knowledge.py
 ### 6.1 Immediate Priority (Next 4-6 Weeks)
 
 **Recommendation #1: Implement k-NN SFC Pruning** ⭐⭐⭐⭐⭐
-```
+
+```text
+
 Priority: CRITICAL
 Effort: 4 weeks
 Impact: 4-6× speedup (1.5-2.0ms → 0.3-0.5ms)
 Dependencies: None
 
 Action Items:
+
 1. Add MortonKey.estimateSFCRange(position, radius)
 2. Add TetreeKey.estimateSFCRange(position, radius)
 3. Modify KNearestNeighbor to use subMap() with dynamic range
@@ -849,18 +968,23 @@ Action Items:
 5. Validate correctness (no false negatives)
 
 Expected Outcome:
+
   - k-NN becomes viable for real-time applications
   - Collision detection speedup (k-NN is 70-90% of time)
   - Enables >100 k-NN queries per frame
-```
+
+```text
 
 **Recommendation #2: Document Ghost Layer Performance** ⭐⭐⭐⭐
-```
+
+```text
+
 Priority: HIGH
 Effort: 1 week
 Impact: Research contribution
 
 Action Items:
+
 1. Create lucien/doc/GHOST_LAYER_PERFORMANCE_ANALYSIS.md
 2. Document -95% to -99% overhead achievement
 3. Compare with t8code targets (<10% overhead)
@@ -868,23 +992,28 @@ Action Items:
 5. Publish ADAPTIVE algorithm effectiveness metrics
 
 Expected Outcome:
+
   - Establish Lucien as reference implementation
   - Potential academic publication
   - Validates architecture superiority
-```
+
+```text
 
 ---
 
 ### 6.2 Medium-Term Priority (8-12 Weeks)
 
 **Recommendation #3: k-NN Result Caching** ⭐⭐⭐⭐
-```
+
+```text
+
 Priority: HIGH
 Effort: 3 weeks
 Impact: 20-30× speedup for cached queries (50-70% hit rate)
 Dependencies: Recommendation #1 (SFC pruning)
 
 Action Items:
+
 1. Create lucien/src/main/java/.../cache/KNNCache.java
 2. Implement Morton-cell indexed cache with version tracking
 3. Add cache invalidation on entity movement
@@ -892,19 +1021,24 @@ Action Items:
 5. Monitor cache hit rates and performance
 
 Expected Outcome:
+
   - <0.1ms per query for cache hits
   - 6-10× average speedup (with 60% hit rate)
   - Memory overhead: <10% (acceptable)
-```
+
+```text
 
 **Recommendation #4: Anisotropic Refinement for Prism** ⭐⭐⭐
-```
+
+```text
+
 Priority: MEDIUM
 Effort: 4-6 weeks
 Impact: 10-100× efficiency for directional features
 Dependencies: None (Prism already exists)
 
 Action Items:
+
 1. Modify Prism.java for dimension-selective criteria
 2. Create AnisotropicRefinementStrategy.java
 3. Implement gradient analysis per dimension
@@ -912,23 +1046,28 @@ Action Items:
 5. Validate with boundary layer test cases
 
 Expected Outcome:
+
   - Boundary layer efficiency: 10-100× improvement
   - Shock wave capture without over-refinement
   - Terrain feature detection
-```
+
+```text
 
 ---
 
 ### 6.3 Long-Term Priority (3-6 Months)
 
 **Recommendation #5: Concurrent k-NN** ⭐⭐⭐
-```
+
+```text
+
 Priority: MEDIUM
 Effort: 2-3 weeks
 Impact: 3-6× speedup under concurrent load
 Dependencies: Recommendation #1 (SFC pruning)
 
 Action Items:
+
 1. Create lucien/src/main/java/.../concurrent/RegionLocking.java
 2. Implement region-based locking (partition SFC space)
 3. Add lock-free reads with version consistency
@@ -936,29 +1075,36 @@ Action Items:
 5. Validate performance under load
 
 Expected Outcome:
+
   - Maintain k-NN performance with concurrent queries
   - Support fully dynamic simulations
   - Enable parallel entity insertion + queries
-```
+
+```text
 
 **Recommendation #6: Green Refinement Strategy** ⭐⭐
-```
+
+```text
+
 Priority: LOW
 Effort: 2-3 weeks
 Impact: Fewer elements with controlled hanging nodes
 Dependencies: None
 
 Action Items:
+
 1. Add TreeBalancingStrategy.greenRefinement()
 2. Implement bisection subdivision (2 children)
 3. Integrate hybrid red/green refinement
 4. Coordinate with ghost layer for topology
 
 Expected Outcome:
+
   - Economical refinement option
   - Controlled hanging node ratio
   - Reduced element count for same quality
-```
+
+```text
 
 ---
 
@@ -976,32 +1122,44 @@ Expected Outcome:
 ### 7.2 Implementation Timeline
 
 **Weeks 1-4: k-NN SFC Pruning** (Recommendation #1)
-```
+
+```text
+
 Week 1: Design distance-to-Morton-depth mapping
 Week 2: Implement estimateSFCRange() for MortonKey & TetreeKey
 Week 3: Modify KNearestNeighbor visitor with dynamic range
 Week 4: Benchmark, validate, document
-```
+
+```text
 
 **Week 5: Ghost Layer Documentation** (Recommendation #2)
-```
+
+```text
+
 Create GHOST_LAYER_PERFORMANCE_ANALYSIS.md
 Document metrics and compare with academic targets
-```
+
+```text
 
 **Weeks 6-8: k-NN Result Caching** (Recommendation #3)
-```
+
+```text
+
 Week 6: Design cache architecture and invalidation strategy
 Week 7: Implement KNNCache.java with version tracking
 Week 8: Integration, testing, performance validation
-```
+
+```text
 
 **Weeks 9-14: Anisotropic Refinement** (Recommendation #4)
-```
+
+```text
+
 Weeks 9-10: Design dimension-selective criteria
 Weeks 11-12: Implement AnisotropicRefinementStrategy
 Weeks 13-14: Testing with boundary layer cases
-```
+
+```text
 
 ---
 
@@ -1124,4 +1282,3 @@ The analysis of 5 academic papers reveals a **coherent theoretical and practical
 - ✅ ChromaDB query guide with examples
 
 **Next Action**: Begin implementation of Recommendation #1 (k-NN SFC Pruning)
-
