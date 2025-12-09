@@ -140,14 +140,14 @@ var concurrentPool = new ConcurrentObjectPool<>(...);
 ### Collection Performance vs JDK
 
 | Operation | FloatArrayList | ArrayList<Float> | Speedup |
-|-----------|---------------|------------------|---------|
+| ----------- | --------------- | ------------------ | --------- |
 | Add | 3.2 ns | 8.7 ns | 2.7x |
 | Get | 2.1 ns | 4.3 ns | 2.0x |
 | Iterate | 0.8 ns/elem | 2.4 ns/elem | 3.0x |
 | Memory | 4 bytes/elem | 20 bytes/elem | 5.0x |
 
 | Operation | OaHashSet | HashSet | Speedup |
-|-----------|-----------|---------|---------|
+| ----------- | ----------- | --------- | --------- |
 | Add | 12 ns | 18 ns | 1.5x |
 | Contains | 8 ns | 11 ns | 1.4x |
 | Remove | 10 ns | 15 ns | 1.5x |
