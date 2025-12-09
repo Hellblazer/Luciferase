@@ -10,7 +10,7 @@
 
 ### Phase 1: Quick Wins (Target: 30-40% improvement)
 
-- [x] **1.1 Replace LinkedList with ArrayList** 
+- [x] **1.1 Replace LinkedList with ArrayList**
   - Status: ✅ COMPLETE
   - Branch: `sentry-opt-arraylist`
   - Actual Impact: 21% (small lists) to 984% (large lists)
@@ -228,6 +228,7 @@
     - ManualBenchmarkRunner.java - Simple benchmark runner
 
 ### Current Metrics
+
 #### Baseline
 
 - **LinkedList random access**: 17.39 ns/op

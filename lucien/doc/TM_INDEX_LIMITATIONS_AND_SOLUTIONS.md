@@ -17,6 +17,7 @@ The TetreeKey encodes the complete ancestor chain from root to node:
 - Cannot simply increment a key to get the next one in SFC order
 
 **Impact:**
+
 - No arithmetic operations on keys (can't compute `key + 1`)
 - Range enumeration requires tree traversal
 - Cannot calculate range sizes arithmetically
@@ -42,6 +43,7 @@ for (int i = l - 1; i >= 0; i--) {
 ```text
 
 **Performance Impact (Before July 11 Optimizations):**
+
 - Insertion: Was 2.9x to 15.3x slower than Octree
 - Key generation at level 20 is ~140x slower than level 1
 - After concurrent optimizations: Tetree now 2.1-6.2x FASTER for insertions
@@ -55,6 +57,7 @@ TetreeKey operations are constrained to keys at the same level:
 - `max()` - throws exception for different levels
 
 **Impact:**
+
 - Range merging limited to single refinement level
 - Cannot optimize queries across multiple levels
 - Reduces opportunities for spatial query optimization
@@ -72,12 +75,14 @@ Each of the 6 tetrahedral types has different vertex arrangements:
 ### 1. Lazy Range Evaluation ✅ (Completed July 8, 2025)
 
 **Implementation:** 
+
 - `LazyRangeIterator` - O(1) memory iterator for TetreeKey ranges
 - `LazySFCRangeStream` - Stream API integration with Spliterator support
 - `RangeHandle` - Deferred computation for spatial queries
 - `RangeQueryVisitor` - Tree-based traversal with early termination
 
 **Measured Benefits:**
+
 - Memory: 99.5% reduction (4.1 GB → 8 KB for 6M keys)
 - Early termination: 177x faster for limited queries
 - Stream operations: Full Java Stream API support
@@ -86,12 +91,14 @@ Each of the 6 tetrahedral types has different vertex arrangements:
 ### 2. Comprehensive Caching Infrastructure
 
 **Already Implemented:**
+
 - `TetreeLevelCache`: 7 specialized sub-caches, >90% hit rate
 - Parent caching: 17.3x speedup for `parent()` calls
 - `TetreeRegionCache`: Pre-computes entire spatial regions
 - `ThreadLocalTetreeCache`: Eliminates contention
 
 **Performance Gains:**
+
 - Original: 770x slower than Octree
 - After early optimizations: 2.9x to 15.3x slower
 - After concurrent optimizations (July 11): 2.1x to 6.2x FASTER
@@ -100,6 +107,7 @@ Each of the 6 tetrahedral types has different vertex arrangements:
 ### 3. Enhanced SFCRange with Merging
 
 **Implementation:** Updated `Tet.SFCRange`
+
 - Supports range merging for adjacent keys
 - Provides start/end boundaries for traversal
 - Enables spatial query optimization

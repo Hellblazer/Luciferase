@@ -40,7 +40,7 @@ This directory contains JMH benchmarks for measuring Sentry module performance.
 
 ## Running Benchmarks
 
-### Using the script (recommended):
+### Using the script (recommended)
 
 ```bash
 

@@ -11,6 +11,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 ### Key Performance Characteristics
 
 **Octree**
+
 - O(1) Morton encoding
 - Predictable performance
 - Better for frequent insertions
@@ -18,6 +19,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - Best overall insertion performance
 
 **Tetree**
+
 - O(level) tmIndex computation
 - Excellent query performance
 - Memory efficient
@@ -25,6 +27,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - Best k-NN and range query performance
 
 **Prism**
+
 - Rectangular subdivision strategy
 - Moderate insertion performance (1.54x slower than Octree)
 - Query performance between Octree and Tetree

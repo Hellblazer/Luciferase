@@ -4,7 +4,7 @@
 
 **The GPU test framework enables headless GPU testing WITHOUT window handles or display requirements.**
 
-### Key Principles:
+### Key Principles
 
 1. **OpenCL-based**: Uses OpenCL for compute operations, NOT OpenGL (no window needed)
 2. **CI-Compatible**: Gracefully handles environments without GPU drivers  
@@ -14,7 +14,7 @@
 
 ## Framework Architecture
 
-### Class Hierarchy:
+### Class Hierarchy
 
 ```text
 
@@ -26,7 +26,7 @@ LWJGLHeadlessTest (base)
 
 ```text
 
-### Key Classes:
+### Key Classes
 
 1. **CICompatibleGPUTest**: Base class for ALL GPU tests
    - Detects OpenCL availability
@@ -41,7 +41,7 @@ LWJGLHeadlessTest (base)
 
 ## CORRECT Testing Pattern
 
-### Example Test Class:
+### Example Test Class
 
 ```java
 
@@ -73,7 +73,7 @@ class MyGPUTest extends CICompatibleGPUTest {
 
 ## What NOT to Do (Common Failures)
 
-### ❌ NEVER DO THIS:
+### ❌ NEVER DO THIS
 
 ```java
 
@@ -91,7 +91,7 @@ memory.uploadToGPU(); // Crashes without OpenGL context
 
 ```text
 
-### ✅ CORRECT APPROACH:
+### ✅ CORRECT APPROACH
 
 ```java
 
@@ -120,19 +120,19 @@ class MyTest extends CICompatibleGPUTest {
 
 ## Testing Workflow
 
-### 1. Local Development (GPU Available):
+### 1. Local Development (GPU Available)
 
 - Real OpenCL platforms detected
 - Tests run actual GPU computations
 - Full validation of GPU code
 
-### 2. CI Environment (No GPU):
+### 2. CI Environment (No GPU)
 
 - OpenCL not found, mock platform returned
 - Tests validate structure/logic only
 - No crashes, tests skip gracefully
 
-### 3. Mixed Testing:
+### 3. Mixed Testing
 
 - Use `@EnabledIf("hasGPUDevice")` for GPU-only tests
 - Use mock platform for structure validation
@@ -148,14 +148,14 @@ class MyTest extends CICompatibleGPUTest {
 
 ## OpenCL vs OpenGL
 
-### OpenCL (What we use):
+### OpenCL (What we use)
 
 - Compute-only, no display needed
 - Works headless with drivers
 - Used for parallel computations
 - No window handle required
 
-### OpenGL (What we DON'T use for testing):
+### OpenGL (What we DON'T use for testing)
 
 - Requires display context
 - Needs window handle (GLFW)
@@ -164,7 +164,7 @@ class MyTest extends CICompatibleGPUTest {
 
 ## Test Execution
 
-### Running Tests:
+### Running Tests
 
 ```bash
 
@@ -188,7 +188,7 @@ mvn test # Tests skip gracefully
 
 ## Key Methods
 
-### From CICompatibleGPUTest:
+### From CICompatibleGPUTest
 
 - `discoverPlatforms()`: Returns real or mock platforms
 - `discoverDevices(platformId, deviceType)`: Returns devices
@@ -196,7 +196,7 @@ mvn test # Tests skip gracefully
 - `isOpenCLAvailable()`: Static check for OpenCL
 - `isCIEnvironment()`: Detects CI environment
 
-### From MockPlatform:
+### From MockPlatform
 
 - `shouldUseMockPlatform()`: Checks if mock needed
 - `getMockPlatforms()`: Returns mock platform list

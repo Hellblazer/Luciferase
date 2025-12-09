@@ -9,6 +9,7 @@
 This document provides a comprehensive performance analysis of the ghost layer implementation in the Luciferase spatial indexing framework. The ghost layer enables distributed spatial index support through ghost elements - non-local elements that maintain neighbor relationships with local elements for efficient parallel computations.
 
 **Key Findings:**
+
 - ✅ All performance targets **exceeded** by significant margins
 - ✅ Memory overhead **99% better** than target (0.01x-0.25x vs 2x target)
 - ✅ Ghost creation **faster** than local operations (negative overhead: -95% to -99%)
@@ -43,6 +44,7 @@ public enum GhostType {
 ```text
 
 **Performance Impact by Type:**
+
 - `FACES`: Lowest overhead, minimal memory (recommended for most use cases)
 - `EDGES`: Medium overhead, balanced coverage
 - `VERTICES`: Highest overhead, complete neighbor coverage
@@ -62,6 +64,7 @@ public enum GhostAlgorithm {
 ```text
 
 **Performance Characteristics:**
+
 - `MINIMAL`: Lowest memory footprint, suitable for memory-constrained environments
 - `CONSERVATIVE`: **Optimal balance** for most workloads (default choice)
 - `AGGRESSIVE`: Higher memory usage but better read performance for read-heavy workloads
@@ -243,6 +246,7 @@ Concurrent ghost synchronization provides measurable speedup over sequential ope
 4. **Batch Processing**: Larger batches reduce per-element coordination overhead
 
 **Theoretical Maximum**: With 4 processes and perfect parallelism, theoretical maximum speedup is 4x. Observed efficiency of 40% (1.60x/4.0x) is reasonable given:
+
 - Network latency variance
 - Serialization/deserialization on critical path
 - gRPC framework overhead
@@ -350,6 +354,7 @@ The ghost layer uses gRPC for distributed communication with the following perfo
 | 5,000       | 38.4 ms                | 67.2 ms                |
 
 **Latency Characteristics:**
+
 - Sub-50ms p99 latency for payloads up to 1,000 ghosts
 - Linear scaling with payload size
 - Suitable for real-time distributed simulation (< 100ms latency requirements)

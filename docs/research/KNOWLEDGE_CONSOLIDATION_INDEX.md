@@ -89,14 +89,14 @@ A complete knowledge audit was performed on the Luciferase project documentation
 
 ### For Establishing Processes
 
-3. **[DOCUMENTATION_STANDARDS.md](../../DOCUMENTATION_STANDARDS.md)**
+1. **[DOCUMENTATION_STANDARDS.md](../../DOCUMENTATION_STANDARDS.md)**
    - Standards for all documentation
    - Header requirements, content standards
    - Update and deprecation procedures
    - Critical technical knowledge protection
    - **Best for**: Creating new docs, maintaining consistency
 
-4. **[KNOWLEDGE_MANAGEMENT_GUIDE.md](../../KNOWLEDGE_MANAGEMENT_GUIDE.md)**
+2. **[KNOWLEDGE_MANAGEMENT_GUIDE.md](../../KNOWLEDGE_MANAGEMENT_GUIDE.md)**
    - How to navigate and access knowledge
    - Document hierarchy and organization
    - Knowledge source authority matrix
@@ -105,7 +105,7 @@ A complete knowledge audit was performed on the Luciferase project documentation
 
 ### For Reference
 
-5. **[TEST_COVERAGE_SUMMARY.md](../../TEST_COVERAGE_SUMMARY.md)**
+1. **[TEST_COVERAGE_SUMMARY.md](../../TEST_COVERAGE_SUMMARY.md)**
    - Complete test infrastructure overview
    - Test organization across modules
    - GPU testing requirements

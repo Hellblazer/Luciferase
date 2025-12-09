@@ -15,7 +15,7 @@
 
 ### Day 1-3: Project Setup & Package Structure
 
-#### Tasks:
+#### Tasks
 
 ```text
 

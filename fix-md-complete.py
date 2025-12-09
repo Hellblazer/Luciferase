@@ -37,28 +37,28 @@ def fix_markdown_complete(content):
         prev_line = lines[i - 1] if i > 0 else ''
         next_line = lines[i + 1] if i < len(lines) - 1 else ''
         
-        # Classify lines
+        # Classify lines - FIXED: Use proper regex for list detection
         is_heading = line.startswith('#') and len(line) > 1 and line[1] in (' ', '#')
-        is_list = line.strip() and re.match(r'^[-*]|\d+\.', line.lstrip())
+        # Match unordered lists (- or * with space) or ordered lists (number. with space)
+        is_list = bool(re.match(r'^(\s*)[-*]\s+|^(\s*)\d+\.\s+', line))
         is_code_fence = line.strip().startswith('```')
         is_blank = not line.strip()
         
         prev_is_heading = prev_line.startswith('#') and len(prev_line) > 1 and prev_line[1] in (' ', '#')
-        prev_is_list = prev_line.strip() and re.match(r'^[-*]|\d+\.', prev_line.lstrip())
+        prev_is_list = bool(re.match(r'^(\s*)[-*]\s+|^(\s*)\d+\.\s+', prev_line))
         prev_is_code = prev_line.strip().startswith('```')
         prev_is_blank = not prev_line.strip()
-        prev_ends_with_colon = prev_line.strip().endswith(':')  # New check
         
         next_is_heading = next_line.startswith('#') and len(next_line) > 1 and next_line[1] in (' ', '#')
-        next_is_list = next_line.strip() and re.match(r'^[-*]|\d+\.', next_line.lstrip())
+        next_is_list = bool(re.match(r'^(\s*)[-*]\s+|^(\s*)\d+\.\s+', next_line))
         next_is_blank = not next_line.strip()
         
         # MD022: Blank before heading (unless prev is blank or heading)
         if is_heading and not prev_is_blank and not prev_is_heading and prev_line.strip():
             result.append('')
         
-        # MD032: Blank before list (unless prev is blank/list/heading/code/ends with colon)
-        if is_list and not prev_is_blank and not prev_is_list and not prev_is_heading and not prev_is_code and not prev_ends_with_colon and prev_line.strip():
+        # MD032: Blank before list (unless prev is blank/list/heading/code)
+        if is_list and not prev_is_blank and not prev_is_list and not prev_is_heading and not prev_is_code and prev_line.strip():
             result.append('')
         
         # MD031: Blank before code fence (unless prev is blank/heading)

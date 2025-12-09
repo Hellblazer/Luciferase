@@ -8,6 +8,7 @@
 The Neighbor Detection API provides topological neighbor finding for spatial indices, enabling efficient identification of adjacent elements in 3D space. This API is essential for ghost element creation, collision detection optimization, and spatial queries.
 
 **Key Features**:
+
 - Face, edge, and vertex neighbor detection
 - Boundary element identification
 - O(1) performance for Octree (Morton codes)
@@ -51,6 +52,7 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
      * @param key The spatial key to find neighbors for
      * @param ghostType Type of neighbors (FACES, EDGES, VERTICES)
      * @return List of neighbor keys
+
      */
 
     List<Key> findNeighbors(Key key, GhostType ghostType);
@@ -62,6 +64,7 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
      * @param key The spatial key
      * @param ghostType Type of neighbors
      * @return List of neighbors with owner rank information
+
      */
 
     default List<NeighborInfo<Key>> findNeighborsWithInfo(Key key, GhostType ghostType);
@@ -72,6 +75,7 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
      * 
      * @param key The spatial key
      * @return true if element has missing neighbors
+
      */
 
     boolean isBoundaryElement(Key key);
@@ -82,6 +86,7 @@ public interface NeighborDetector<Key extends SpatialKey<Key>> {
      * 
      * @param key The spatial key
      * @return Set of boundary directions
+
      */
 
     Set<Direction> getBoundaryDirections(Key key);
@@ -212,6 +217,7 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey> {
     /**
 
      * Convert TetreeKey back to Tet for neighbor computation.
+
      */
 
     public Tet keyToTet(TetreeKey key);

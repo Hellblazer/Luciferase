@@ -64,6 +64,7 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 ### Use Case Recommendations
 
 **Choose Octree when:**
+
 - Range query performance is critical (3.2x to 8.3x faster)
 - K-NN search performance at scale (>10K entities) matters
 - Cube-based spatial subdivision fits the problem domain
@@ -71,6 +72,7 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 - Memory differences are not significant
 
 **Choose Tetree when:**
+
 - Insertion performance is the primary concern (1.8x to 5.7x faster)
 - Update/movement performance matters (1.7x to 3.0x faster)
 - Working with concurrent workloads
@@ -78,6 +80,7 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 - Overall write-heavy workloads dominate
 
 **Choose Prism when:**
+
 - Data exhibits strong directional bias or anisotropy
 - Rectangular subdivision matches the problem domain
 - Memory usage is not a primary concern

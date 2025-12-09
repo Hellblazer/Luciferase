@@ -27,6 +27,7 @@
 ### Tier 1: Must Read for Implementation
 
 **`lucien-02-sfc-pruning`**
+
 - **Title**: SFC-Based Subtree Pruning for Lucien
 - **Focus**: Phase 1 implementation strategy
 - **Key Content**: Distance-to-Morton-depth mapping, pruning algorithm, 4-6x speedup
@@ -34,6 +35,7 @@
 - **Files to Modify**: KNearestNeighbor.java, MortonKey.java
 
 **`lucien-06-performance-targets`**
+
 - **Title**: k-NN Performance Targets for Lucien
 - **Focus**: Phased roadmap and milestones
 - **Key Content**: Phase 1-3 breakdown, timeline, success criteria
@@ -41,6 +43,7 @@
 - **Timeline**: 10 weeks for full implementation
 
 **`knn-02-sfc-locality`**
+
 - **Title**: SFC Locality Preservation for k-NN
 - **Focus**: Why SFC works (theoretical foundation)
 - **Key Content**: 85-95% candidate accuracy, statistical evidence, binary search startup
@@ -49,30 +52,35 @@
 ### Tier 2: Read Before Each Phase
 
 **`sft-06-knn-optimization-lucien`**
+
 - **Title**: k-NN Optimization for Lucien Context
 - **Focus**: Octree/Tetree specific optimization
 - **Key Content**: MortonKey optimization, TetreeKey strategy, expected improvements
 - **Phase**: All phases - context for implementation
 
 **`sft-05-nn-queries`**
+
 - **Title**: Nearest Neighbor Queries Using SFCs
 - **Focus**: SFC-based k-NN algorithms
 - **Key Content**: SFC index range search, Morton curve k-NN, hierarchical search, O(log N + k) complexity
 - **Phase**: Phase 1 - algorithm details
 
 **`lucien-03-morton-knn-cache`**
+
 - **Title**: Morton Key k-NN Caching
 - **Focus**: Phase 2 caching strategy
 - **Key Content**: Cache structure, version tracking, 50-70% reduction, 20-30x speedup for hits
 - **Phase**: Phase 2 - caching implementation
 
 **`lucien-05-collision-via-knn`**
+
 - **Title**: Collision Detection via k-NN
 - **Focus**: Practical optimization application
 - **Key Content**: k-NN filtering strategy, 70-90% collision check reduction, integration point
 - **Phase**: Phase 2 - collision integration
 
 **`knn-06-concurrent-knn`**
+
 - **Title**: Concurrent k-NN Search
 - **Focus**: Phase 3 concurrent implementation
 - **Key Content**: Lock-free approach, region-based partitioning, version-based consistency
@@ -81,66 +89,79 @@
 ### Tier 3: Reference & Context
 
 **`sft-01-overview`**
+
 - **Title**: Space-Filling Trees Overview
 - **Content**: SFT definition, properties, advantages
 - **Read**: For foundational understanding
 
 **`sft-02-vs-rrt`**
+
 - **Title**: Space-Filling Trees vs RRT Comparison
 - **Content**: Deterministic vs probabilistic, path quality, exploration efficiency
 - **Read**: For motivation and comparison with RRT
 
 **`sft-03-incremental-search`**
+
 - **Title**: Incremental Search Strategies
 - **Content**: Level-by-level expansion, anytime algorithms, monotonic improvement
 - **Read**: For understanding incremental k-NN updates
 
 **`sft-04-tree-traversal`**
+
 - **Title**: Tree Traversal Algorithms
 - **Content**: DFS/BFS traversal, Hilbert/Morton curves, branch-and-bound pruning
 - **Read**: For traversal optimization understanding
 
 **`sft-07-performance`**
+
 - **Title**: Performance Characteristics
 - **Content**: Complexity analysis, benchmarks, motion planning metrics
 - **Read**: For performance expectations and targets
 
 **`sft-08-collision-detection`**
+
 - **Title**: Collision Detection via SFC Traversal
 - **Content**: Spatial coherence, multi-level testing, sweep algorithms
 - **Read**: For DSOC and collision optimization context
 
 **`knn-01-bottleneck`**
+
 - **Title**: k-NN Bottleneck in Motion Planning
 - **Content**: RRT analysis, 70-90% CPU time in k-NN, parallel RRT limitations
 - **Read**: For motivation and problem context
 
 **`knn-03-incremental-knn`**
+
 - **Title**: Incremental k-NN Updates
 - **Content**: Dynamic maintenance, O(log N + k) per update, cache invalidation
 - **Read**: For Phase 2 dynamic updates
 
 **`knn-04-multidimensional-knn`**
+
 - **Title**: Multi-dimensional k-NN via SFC
 - **Content**: 6D/7D motion planning, avoids dimensionality curse, O(log N + k) regardless of d
 - **Read**: For understanding 6D/7D performance advantages
 
 **`knn-05-radius-search`**
+
 - **Title**: Radius Search via SFC Range Queries
 - **Content**: Adaptive radius expansion, O(log N + K) complexity, collision detection
 - **Read**: For radius-based collision queries
 
 **`knn-07-metric-space`**
+
 - **Title**: k-NN in Metric Spaces
 - **Content**: Non-Euclidean metrics, triangle inequality pruning, SO(3) support
 - **Read**: For future metric space support
 
 **`lucien-01-current-knn`**
+
 - **Title**: Lucien Current k-NN Implementation
 - **Content**: Current architecture, ObjectPool pattern, O(N) worst case, bottleneck analysis
 - **Read**: For understanding existing implementation
 
 **`lucien-04-tetree-sfc-ordering`**
+
 - **Title**: Tetree SFC Ordering Properties
 - **Content**: TetreeKey SFC properties, consecutiveIndex vs tmIndex, tetrahedral geometry
 - **Read**: For Tetree optimization understanding
@@ -152,26 +173,31 @@
 ### By Topic
 
 **k-NN Optimization**:
+
 - `lucien-02-sfc-pruning` (Phase 1)
 - `lucien-03-morton-knn-cache` (Phase 2)
 - `knn-06-concurrent-knn` (Phase 3)
 
 **Performance & Benchmarks**:
+
 - `sft-07-performance`
 - `lucien-06-performance-targets`
 - `lucien-01-current-knn`
 
 **Theoretical Foundation**:
+
 - `sft-01-overview`
 - `sft-05-nn-queries`
 - `knn-02-sfc-locality`
 
 **Practical Applications**:
+
 - `lucien-05-collision-via-knn`
 - `sft-08-collision-detection`
 - `knn-03-incremental-knn`
 
 **Algorithm Details**:
+
 - `sft-04-tree-traversal`
 - `knn-04-multidimensional-knn`
 - `knn-05-radius-search`
@@ -179,16 +205,19 @@
 ### By Phase
 
 **Phase 1 (SFC Pruning)**:
+
 - Primary: `lucien-02-sfc-pruning`
 - Reference: `sft-06-knn-optimization-lucien`, `sft-05-nn-queries`, `knn-02-sfc-locality`
 - Performance: `sft-07-performance`, `lucien-06-performance-targets`
 
 **Phase 2 (Caching & Collision)**:
+
 - Caching: `lucien-03-morton-knn-cache`, `knn-03-incremental-knn`
 - Collision: `lucien-05-collision-via-knn`, `sft-08-collision-detection`
 - Performance: `lucien-06-performance-targets`
 
 **Phase 3 (Concurrency)**:
+
 - Primary: `knn-06-concurrent-knn`
 - Foundation: `lucien-06-performance-targets`
 
@@ -299,17 +328,20 @@ for result in results:
 ## File Locations
 
 **Knowledge Base**
+
 - ChromaDB Storage: `/tmp/lucien_knowledge/`
 - Indexer Script: `/Users/hal.hildebrand/git/Luciferase/scripts/chroma_sft_motion_planning_indexer.py`
 - Query Tool: `/Users/hal.hildebrand/git/Luciferase/scripts/query_sft_knowledge.py`
 
 **Documentation**
+
 - Summary: `/Users/hal.hildebrand/git/Luciferase/KNOWLEDGE_BASE_SUMMARY.md`
 - Full Extraction: `/Users/hal.hildebrand/git/Luciferase/SFT_MOTION_PLANNING_EXTRACTION.md`
 - Implementation Roadmap: `/Users/hal.hildebrand/git/Luciferase/SFT_KNN_IMPLEMENTATION_ROADMAP.md`
 - This Index: `/Users/hal.hildebrand/git/Luciferase/DOCUMENT_INDEX.md`
 
 **Lucien Source Files to Modify**
+
 - Phase 1: `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - Phase 1: `lucien/src/main/java/com/simiacryptus/lucien/key/MortonKey.java`
 - Phase 2: Create `lucien/src/main/java/com/simiacryptus/lucien/cache/KNNCache.java`

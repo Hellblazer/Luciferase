@@ -3,6 +3,7 @@
 ## Master Performance Reference
 
 **⚠️ IMPORTANT**: For all current performance metrics and benchmarks, see:
+
 - **[PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)** - Single source of truth for all performance numbers
 
 ## Overview

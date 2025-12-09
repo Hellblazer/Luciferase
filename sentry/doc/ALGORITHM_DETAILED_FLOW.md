@@ -4,7 +4,7 @@
 
 The locate algorithm finds which tetrahedron contains a given point by walking through the mesh.
 
-### Algorithm Steps:
+### Algorithm Steps
 
 ```text
 

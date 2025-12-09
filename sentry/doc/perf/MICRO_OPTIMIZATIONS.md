@@ -8,7 +8,7 @@ This document provides specific micro-optimizations for the hottest methods in t
 
 ### 1. OrientedFace.flip() - 82% CPU Time
 
-#### Current Implementation Issues:
+#### Current Implementation Issues
 
 ```java
 

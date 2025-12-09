@@ -12,12 +12,12 @@ The DSOC performance tests are gated to prevent them from running during normal 
 **Location**: `src/test/java/com/hellblazer/luciferase/lucien/occlusion/DSOCPerformanceTest.java`
 **Tags**: `@Tag("performance")`, `@Disabled`
 
-#### Tests Included:
+#### Tests Included
 
 - `testDSOCPerformanceComparison()` - Compares DSOC vs non-DSOC performance across entity counts and occlusion ratios
 - `testDynamicScenePerformance()` - Tests dynamic scene with moving entities
 
-#### Test Scenarios:
+#### Test Scenarios
 
 - Entity counts: 1,000, 10,000, 50,000
 - Occlusion ratios: 10%, 50%, 90%
@@ -30,14 +30,14 @@ The DSOC performance tests are gated to prevent them from running during normal 
 **Location**: `src/test/java/com/hellblazer/luciferase/lucien/benchmark/DSOCPerformanceBenchmark.java`
 **Tags**: `@Tag("benchmark")`, `@Disabled`
 
-#### Benchmark Methods:
+#### Benchmark Methods
 
 - `benchmarkOctreeWithDSOC()` - JMH benchmark for Octree with DSOC
 - `benchmarkOctreeWithoutDSOC()` - JMH benchmark for Octree without DSOC
 - `benchmarkTetreeWithDSOC()` - JMH benchmark for Tetree with DSOC
 - `benchmarkTetreeWithoutDSOC()` - JMH benchmark for Tetree without DSOC
 
-#### Parameterized Testing:
+#### Parameterized Testing
 
 - Entity counts: 1,000, 10,000, 100,000
 - Occlusion ratios: 10%, 30%, 50%, 70%, 90%

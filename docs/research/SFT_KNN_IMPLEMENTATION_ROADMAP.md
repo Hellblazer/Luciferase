@@ -97,6 +97,7 @@
 **Target Performance**: 0.3-0.5ms per k-NN query (vs current 1.5-2.0ms)
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/key/MortonKey.java` (add depth mapping)
 
@@ -128,6 +129,7 @@
 **Target Performance**: 0.3-0.5ms per k-NN query (similar to Octree)
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/key/TetreeKey.java` (add range methods)
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java` (dispatch to appropriate range method)
 
@@ -162,14 +164,17 @@
    - Target: 50-70% hit rate for typical motion planning
 
 **Target Performance**:
+
 - Cache hit: 0.05-0.1ms (20-30x speedup)
 - Cache miss: 0.3-0.5ms (Phase 1 pruning)
 - Blended: ~0.15-0.25ms average (6-10x overall from Phase 1 baseline)
 
 **Files to Create**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/cache/KNNCache.java`
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/entity/EntityManager.java` (version tracking)
 
@@ -201,6 +206,7 @@
 **Target Performance**: 70-90% reduction in collision checks
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/collision/CollisionDetection.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 
@@ -237,9 +243,11 @@
 **Target Performance**: Maintain Phase 1-2 performance under concurrent load
 
 **Files to Create**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/concurrent/RegionLocking.java`
 
 **Files to Modify**:
+
 - `lucien/src/main/java/com/simiacryptus/lucien/traversal/KNearestNeighbor.java`
 - `lucien/src/main/java/com/simiacryptus/lucien/cache/KNNCache.java`
 

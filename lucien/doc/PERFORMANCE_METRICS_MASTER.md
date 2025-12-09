@@ -20,6 +20,7 @@ Four JMH benchmarks established to measure pre-optimization baselines for Epic 1
 Measures Morton encoding operations per second before SIMD optimizations.
 
 **Metrics to collect**:
+
 - `benchmarkMortonEncode`: Raw Morton curve encoding throughput (ops/sec)
 - `benchmarkCalculateMortonIndex`: Full Morton index calculation including quantization (ops/sec)
 - `benchmarkMortonDecode`: Morton decoding throughput (ops/sec)
@@ -36,6 +37,7 @@ Measures Morton encoding operations per second before SIMD optimizations.
 Measures average nodes visited per ray intersection before beam optimization.
 
 **Metrics to collect**:
+
 - Octree ray intersection (all hits, first hit, within distance)
 - Tetree ray intersection (all hits, first hit, within distance)
 - Average traversal time per ray (ms)
@@ -53,10 +55,12 @@ Measures average nodes visited per ray intersection before beam optimization.
 Measures memory footprint of contour normals in ESVO nodes.
 
 **Current implementation**:
+
 - 4 bytes per node (32-bit descriptor)
 - Layout: [contour_ptr(24 bits) | contour_mask(8 bits)]
 
 **Metrics to collect**:
+
 - Contour packing throughput (ops/sec)
 - Contour mask extraction throughput (ops/sec)
 - Contour pointer extraction throughput (ops/sec)
@@ -73,6 +77,7 @@ Measures memory footprint of contour normals in ESVO nodes.
 Measures FPS (frames per second) with various dataset sizes before GPU optimization.
 
 **Metrics to collect**:
+
 - Full frame render FPS (800x600, 1920x1080)
 - Primary ray casting only (no shading)
 - Tiled rendering (8x8 tiles simulating GPU workgroups)
@@ -149,6 +154,7 @@ These are the authoritative performance numbers based on OctreeVsTetreeVsPrismBe
 **Key Insight**: k-NN caching provides exceptional performance with 50-102× speedup on cache hits. Cache hit latency (0.0015ms) is 33-67× better than original target, demonstrating highly effective implementation.
 
 **Implementation Details**:
+
 - **Cache Strategy**: Version-based invalidation using global `AtomicLong` counter
 - **Eviction Policy**: LRU (Least Recently Used) via `LinkedHashMap` with `accessOrder=true`
 - **Thread Safety**: `Collections.synchronizedMap` wrapper for concurrent access
@@ -172,6 +178,7 @@ These are the authoritative performance numbers based on OctreeVsTetreeVsPrismBe
 **Key Insight**: Current architecture (Phase 2 cache + StampedLock optimistic reads) provides exceptional concurrent performance with 3M queries/sec sustained throughput and zero contention issues. Phase 3b (region-based locking) determined unnecessary.
 
 **Architecture Notes**:
+
 - **Locking Strategy**: StampedLock with optimistic reads for lock-free operation on most queries
 - **Cache Integration**: k-NN cache provides lock-free reads for cached results
 - **Scalability**: Linear scaling up to 12+ threads validated
@@ -225,10 +232,12 @@ These are the authoritative performance numbers based on OctreeVsTetreeVsPrismBe
 A major architectural change on July 11, 2025 completely reversed insertion performance characteristics:
 
 **Before July 11**:
+
 - Octree was 2.3x to 11.4x faster for insertions
 - Cause: O(1) Morton encoding vs O(level) tmIndex computation
 
 **After July 11**:
+
 - Tetree is now consistently 2.3x to 5.4x faster for insertions
 - Cause: ConcurrentSkipListMap refactoring favored Tetree's simpler key comparisons
 - Performance has stabilized and remained consistent through July 13, 2025

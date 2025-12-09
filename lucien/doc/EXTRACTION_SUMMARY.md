@@ -18,6 +18,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 #### Primary Document
 
 **File**: `/lucien/doc/TM_SFC_NONCONFORMING_MESH_EXTRACTION.md`
+
 - **Size**: ~8,000 words
 - **Coverage**: 8 major sections covering all TM-SFC aspects
 - **Sections**:
@@ -33,6 +34,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 #### ChromaDB Index
 
 **File**: `/lucien/doc/CHROMADB_KNOWLEDGE_INDEX.md`
+
 - **Size**: ~3,000 words
 - **Contents**: 8 structured documents ready for ChromaDB storage
 - **Each Document Includes**:
@@ -45,6 +47,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 #### This Summary
 
 **File**: `/lucien/doc/EXTRACTION_SUMMARY.md`
+
 - Quick reference guide
 - Key insights
 - Integration points
@@ -93,6 +96,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Finding**: Instead of enforcing mesh conformity (which is expensive), Luciferase enables local computation through ghost copies of non-local elements.
 
 **Implementation**:
+
 - `ElementGhostManager` detects boundary elements
 - `GhostLayer` stores ghost copies indexed by spatial key
 - Algorithms see complete neighbor information locally
@@ -120,6 +124,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 **Finding**: Unlike Octree (which prefers conformity), Tetree becomes more efficient when accepting non-conforming meshes with ghost support.
 
 **Implementation**:
+
 - Tetrahedral elements are more efficient per-element
 - Non-conforming allows variable refinement depth
 - Ghost overhead is lower than dual-mesh conforming approach

@@ -18,14 +18,14 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 
 ## Choosing the Right Index
 
-### Use Octree When:
+### Use Octree When
 
 - **Range queries** are performance critical (fastest implementation)
 - **Balanced performance** across all operations is required
 - **Traditional cubic subdivision** is preferred
 - **Coordinate constraints** cannot be accommodated (no restrictions)
 
-### Use Tetree When:
+### Use Tetree When
 
 - **Insertion performance** is important (faster than Octree)
 - **Memory efficiency** matters (most memory-efficient implementation)
@@ -33,7 +33,7 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 - **Working with large datasets** (10K+ entities)
 - **Tetrahedral space partitioning** is beneficial for your domain
 
-### Use Prism When:
+### Use Prism When
 
 - **Insertion performance is paramount** (dramatically faster than alternatives)
 - **Data has anisotropic distribution** (fine horizontal, coarse vertical)
@@ -66,13 +66,13 @@ spatialIndex.configureBulkOperations(config);
 
 #### Configuration Parameters
 
-| Parameter | Default | Recommended | Description |
+|Parameter|Default|Recommended|Description|
 | ----------- | --------- | ------------- | ------------- |
-| `batchSize` | 1000 | 1000-10000 | Entities processed per batch |
-| `deferSubdivision` | false | true | Delay node splitting until bulk complete |
-| `preSortByMorton` | false | true | Sort entities by spatial code first |
-| `enableParallel` | false | true (>100K) | Use parallel processing |
-| `useStackBasedBuilder` | false | true (>10K) | Use iterative tree building |
+|`batchSize`|1000|1000-10000|Entities processed per batch|
+|`deferSubdivision`|false|true|Delay node splitting until bulk complete|
+|`preSortByMorton`|false|true|Sort entities by spatial code first|
+|`enableParallel`|false|true (>100K)|Use parallel processing|
+|`useStackBasedBuilder`|false|true (>10K)|Use iterative tree building|
 
 ### 2. Memory Optimization
 
@@ -94,11 +94,11 @@ spatialIndex.preAllocateNodes(100000, NodeEstimator.SpatialDistribution.uniform(
 
 #### Memory Usage Patterns
 
-| Distribution | Memory Factor | Recommended Pre-allocation |
+|Distribution|Memory Factor|Recommended Pre-allocation|
 | -------------- | --------------- | ---------------------------- |
-| Uniform      | 1.0x          | `entityCount / 20` nodes   |
-| Clustered    | 0.7x          | `entityCount / 30` nodes   |
-| Surface      | 0.5x          | `entityCount / 40` nodes   |
+|Uniform|1.0x|`entityCount / 20` nodes|
+|Clustered|0.7x|`entityCount / 30` nodes|
+|Surface|0.5x|`entityCount / 40` nodes|
 
 #### Node Pooling for Dynamic Workloads
 
@@ -270,14 +270,14 @@ KNearestNeighborConfig knnConfig = new KNearestNeighborConfig()
 
 For current performance metrics by query type, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md)
 
-| Query Type | Best Index | Optimization Strategy |
+|Query Type|Best Index|Optimization Strategy|
 | ------------ | ------------ | ---------------------- |
-| k-NN (small scale) | Tetree | Use query caching, optimize initial radius |
-| k-NN (large scale) | Octree | Leverage predictable performance at scale |
-| Range | Tetree | Efficient tetrahedral traversal |
-| Ray | Octree/Tetree | Enable frustum culling, use early termination |
-| Layer/Vertical | Prism | Use specialized vertical slicing |
-| Anisotropic | Prism | Match subdivision to data distribution |
+|k-NN (small scale)|Tetree|Use query caching, optimize initial radius|
+|k-NN (large scale)|Octree|Leverage predictable performance at scale|
+|Range|Tetree|Efficient tetrahedral traversal|
+|Ray|Octree/Tetree|Enable frustum culling, use early termination|
+|Layer/Vertical|Prism|Use specialized vertical slicing|
+|Anisotropic|Prism|Match subdivision to data distribution|
 
 ## Performance Benchmarking
 
@@ -423,18 +423,18 @@ BulkOperationConfig config = BulkOperationConfig.balanced()
 
 ## Performance Trade-offs Summary
 
-| Use Case | Recommended | Reason |
+|Use Case|Recommended|Reason|
 | ---------- | ------------- | -------- |
-| Real-time insertions | Tetree | 2.1x to 6.2x faster insertions |
-| Bulk point cloud loading | Tetree | 35-38% faster at large scales |
-| k-NN intensive apps (<10K) | Tetree | 1.1x to 1.6x faster searches |
-| k-NN intensive apps (>10K) | Octree | 1.2x faster at scale |
-| Range query heavy | Tetree | 2.5x to 3.8x faster range queries |
-| Memory constrained | Tetree | 27-35% less memory usage |
-| Update-heavy at scale | Octree | Up to 15.3x faster updates at 10K+ |
-| Anisotropic data | Prism | Designed for directional distributions |
-| Layered/stratified data | Prism | Efficient vertical slicing operations |
-| Mixed workload | Profile first | Performance reversal changed dynamics |
+|Real-time insertions|Tetree|2.1x to 6.2x faster insertions|
+|Bulk point cloud loading|Tetree|35-38% faster at large scales|
+|k-NN intensive apps (<10K)|Tetree|1.1x to 1.6x faster searches|
+|k-NN intensive apps (>10K)|Octree|1.2x faster at scale|
+|Range query heavy|Tetree|2.5x to 3.8x faster range queries|
+|Memory constrained|Tetree|27-35% less memory usage|
+|Update-heavy at scale|Octree|Up to 15.3x faster updates at 10K+|
+|Anisotropic data|Prism|Designed for directional distributions|
+|Layered/stratified data|Prism|Efficient vertical slicing operations|
+|Mixed workload|Profile first|Performance reversal changed dynamics|
 
 ## Conclusion
 

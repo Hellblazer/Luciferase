@@ -51,7 +51,7 @@ Resolves collisions between rigid bodies:
 
 Utility for calculating moment of inertia for various shapes:
 
-- Sphere: I = (2/5) * m * r²
+- Sphere: I = (2/5) *m* r²
 - Box: Different values for each axis
 - Cylinder/Capsule: Accounts for mass distribution
 - Transform method for world space conversion

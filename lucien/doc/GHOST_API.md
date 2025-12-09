@@ -8,6 +8,7 @@
 The Ghost API provides comprehensive distributed spatial index support through ghost elements - non-local elements that maintain neighbor relationships with local elements. This enables efficient parallel computations without explicit communication during computation phases.
 
 **Key Features**:
+
 - Dual ghost approach (distance-based and topology-based)
 - Complete neighbor detection for Octree and Tetree
 - gRPC-based distributed communication
