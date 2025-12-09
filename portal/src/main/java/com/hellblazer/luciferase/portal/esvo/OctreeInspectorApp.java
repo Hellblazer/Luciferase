@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.portal.CameraView;
 import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
 import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
 import com.hellblazer.luciferase.portal.esvo.renderer.OctreeRenderer;
+import com.hellblazer.luciferase.portal.esvo.renderer.VoxelRenderer;
 import com.hellblazer.luciferase.portal.esvo.ui.OctreeControlPanel;
 import com.hellblazer.luciferase.portal.esvo.ui.OctreeStructureDiagram;
 import com.hellblazer.luciferase.portal.esvo.visualization.RayCastVisualizer;
@@ -86,6 +87,7 @@ public class OctreeInspectorApp extends Application {
     // ESVO Components
     private ESVOBridge esvoBridge;
     private OctreeRenderer octreeRenderer;
+    private VoxelRenderer voxelRenderer;
     private ProceduralVoxelGenerator voxelGenerator;
     private ESVOOctreeData currentOctree;
     private RayCastVisualizer rayCastVisualizer;
@@ -109,6 +111,11 @@ public class OctreeInspectorApp extends Application {
                                            OctreeNodeMeshRenderer.Strategy.BATCHED,
                                            OctreeRenderer.ColorScheme.DEPTH_GRADIENT,
                                            true);
+        voxelRenderer = VoxelRenderer.builder()
+                                     .voxelSize(1.5)
+                                     .materialScheme(VoxelRenderer.MaterialScheme.POSITION_GRADIENT)
+                                     .renderMode(VoxelRenderer.RenderMode.FILLED)
+                                     .build();
         rayCastVisualizer = new RayCastVisualizer();
         
         log.info("ESVO components initialized");
@@ -388,16 +395,22 @@ public class OctreeInspectorApp extends Application {
                 var octree = esvoBridge.buildOctree(voxels, currentLevel);
                 log.info("Built octree with {} nodes", octree.getNodeCount());
                 
-                return octree;
+                // Return both voxels and octree
+                return new Object[] { voxels, octree };
             } catch (Exception e) {
                 log.error("Failed to build octree", e);
                 return null;
             }
         }, buildExecutor)
-        .thenAcceptAsync(octree -> {
-            if (octree != null) {
+        .thenAcceptAsync(result -> {
+            if (result != null) {
+                @SuppressWarnings("unchecked")
+                var voxels = (List<Point3i>) result[0];
+                var octree = (ESVOOctreeData) result[1];
+                
                 // Update visualization on JavaFX thread
                 updateOctreeVisualization(octree);
+                updateVoxelVisualization(voxels);
             }
         }, Platform::runLater);
     }
@@ -435,6 +448,30 @@ public class OctreeInspectorApp extends Application {
             
         } catch (Exception e) {
             log.error("Failed to update octree visualization", e);
+        }
+    }
+    
+    /**
+     * Update the voxel visualization with new voxel data.
+     * Must be called on JavaFX Application Thread.
+     */
+    private void updateVoxelVisualization(List<Point3i> voxels) {
+        try {
+            // Clear existing voxel visualization
+            voxelGroup.getChildren().clear();
+            
+            // Render voxels with current resolution (64 for demo sphere)
+            var renderedVoxels = voxelRenderer.render(voxels, 64);
+            voxelGroup.getChildren().add(renderedVoxels);
+            
+            // Show voxels by default
+            voxelGroup.setVisible(true);
+            controlPanel.setShowVoxels(true);
+            
+            log.info("Voxel visualization updated: {} voxels rendered", voxels.size());
+            
+        } catch (Exception e) {
+            log.error("Failed to update voxel visualization", e);
         }
     }
     
