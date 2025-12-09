@@ -10,6 +10,7 @@
 This document describes the SIMD (Single Instruction Multiple Data) infrastructure setup for the Lucien spatial indexing module. The infrastructure provides runtime detection, configuration, and benchmarking capabilities for Vector API-based SIMD optimizations.
 
 **Key Components:**
+
 - ✅ VectorAPISupport - Runtime SIMD detection and configuration
 - ✅ Maven profile (`simd-preview`) for Vector API module integration
 - ✅ CPU feature detection (AVX512, AVX2, ARM NEON)
@@ -180,6 +181,7 @@ mvn test -Dtest=SIMDMortonBenchmarkHarness#benchmarkMortonEncode -Psimd-preview
 - Sample size: 10,000 operations per iteration
 
 **Benchmark Methods:**
+
 - `benchmarkMortonEncode` - Raw Morton encoding
 - `benchmarkCalculateMortonIndex` - Morton encoding with quantization
 - `benchmarkMortonDecode` - Morton decoding
@@ -230,6 +232,7 @@ private static VectorCapability detectCPUCapability() {
 ```
 
 **Limitations:**
+
 - Conservative detection (assumes AVX2, not AVX512)
 - No runtime CPU instruction set detection
 - Heuristic-based (relies on `os.arch` system property)
@@ -244,6 +247,7 @@ The infrastructure is designed for graceful degradation:
 1. **Vector API Not Available**: Falls back to scalar mode
 2. **SIMD Disabled**: Uses scalar implementation
 3. **Unsupported CPU**: Reports SCALAR capability
+
 
 **Example:**
 ```java
@@ -361,9 +365,11 @@ Status: Vector API not available
 ```
 
 **Solution:**
+
 1. Verify Java 24+ is installed
 2. Use `-Psimd-preview` profile
 3. Check `--add-modules jdk.incubator.vector` is set
+
 
 ### Issue: Benchmark Compilation Errors
 
@@ -467,10 +473,13 @@ Add to `.vscode/settings.json`:
 - [JEP 448: Vector API (Sixth Incubator)](https://openjdk.org/jeps/448) - Java 24 Vector API
 - [JEP 469: Vector API (Seventh Incubator)](https://openjdk.org/jeps/469) - Java 25 Vector API
 
+
 ### Related Issues
+
 - **Luciferase-e1.0**: SIMD Infrastructure Setup (this document)
 - **Luciferase-e1.1**: SIMDMortonEncoder Implementation (next)
 - **Luciferase-e1**: Epic 1 - SIMD Acceleration for Morton Encoding (parent)
+
 
 ---
 

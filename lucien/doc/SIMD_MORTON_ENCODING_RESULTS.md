@@ -79,6 +79,8 @@ From `PERFORMANCE_METRICS_MASTER.md`:
 ### Why Magic Bits Doesn't Vectorize Well
 
 The scalar magic bits algorithm:
+
+
 ```java
 private static long splitBy3(long a) {
     long x = a & 0x1fffff;
@@ -92,6 +94,8 @@ private static long splitBy3(long a) {
 ```
 
 This is:
+
+
 - **6 operations total** (mask, shift-or, mask, shift-or, ...)
 - **Highly pipelined** by modern CPUs
 - **No data dependencies** between coordinates
@@ -145,16 +149,19 @@ Better candidates for SIMD acceleration in Luciferase:
 ### 3. Lessons Learned
 
 **When SIMD Works**:
+
 ✅ High compute-to-setup ratio  
 ✅ Data parallel operations  
 ✅ Memory-bound workloads  
 ✅ Regular access patterns  
 
 **When SIMD Doesn't Work**:
+
 ❌ Already optimal scalar code  
 ❌ Low compute-to-setup ratio  
 ❌ Irregular data access  
 ❌ Serial dependencies  
+
 
 ## Conclusion
 
@@ -175,10 +182,12 @@ SIMD acceleration for Morton encoding is **not beneficial** on ARM NEON. The sca
 **Decision**: Revert SIMD integration from production code.
 
 **Actions Taken**:
+
 1. ✅ Reverted `Constants.calculateMortonIndex()` to use `MortonCurve.encode()` (scalar)
 2. ✅ Retained SIMD implementation files for documentation/research
 3. ✅ Retained performance test files showing negative results
 4. ✅ Updated `.gitignore` to exclude large `*.dataset` files from repository
+
 
 **Rationale**: SIMD implementation is 2.7x slower than scalar. No reason to keep it in production path.
 
@@ -195,3 +204,4 @@ SIMD acceleration for Morton encoding is **not beneficial** on ARM NEON. The sca
 2. ✅ Close Epic 1 beads with findings (Bead 1.4 complete)
 3. Consider Epic 2 focusing on ray intersection SIMD (better SIMD candidate)
 4. Investigate tetrahedral SFC encoding SIMD potential (similar concerns likely apply)
+
