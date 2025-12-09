@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.esvo.app;
 
 import com.hellblazer.luciferase.esvo.core.*;
-import com.hellblazer.luciferase.portal.mesh.MeshLoader;
+import com.hellblazer.luciferase.common.mesh.MeshLoader;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.TriangleMesh;
 

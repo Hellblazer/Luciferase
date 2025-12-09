@@ -130,11 +130,11 @@ public class ESVOBuildMode {
         try {
             switch (ext) {
                 case "obj":
-                    var objMeshView = com.hellblazer.luciferase.portal.mesh.MeshLoader.loadObj(inputFile);
+                    var objMeshView = com.hellblazer.luciferase.common.mesh.MeshLoader.loadObj(inputFile);
                     return convertJavaFXMeshToMeshData(objMeshView);
                     
                 case "stl":
-                    var stlMeshView = com.hellblazer.luciferase.portal.mesh.MeshLoader.loadStl(inputFile);
+                    var stlMeshView = com.hellblazer.luciferase.common.mesh.MeshLoader.loadStl(inputFile);
                     return convertJavaFXMeshToMeshData(stlMeshView);
                     
                 default:

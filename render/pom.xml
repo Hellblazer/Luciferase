@@ -22,10 +22,6 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>common</artifactId>
         </dependency>
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>portal</artifactId>
-        </dependency>
         
         <!-- GPU Support Framework -->
         <dependency>

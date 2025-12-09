@@ -12,7 +12,7 @@
  * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
  * <http://www.gnu.org/licenses/>.
  */
-package com.hellblazer.luciferase.portal.mesh;
+package com.hellblazer.luciferase.common.mesh;
 
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.TriangleMesh;
