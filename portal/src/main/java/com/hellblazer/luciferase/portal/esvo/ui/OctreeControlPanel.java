@@ -70,6 +70,8 @@ public class OctreeControlPanel extends VBox {
     private ToggleGroup renderModeGroup;
     private ComboBox<VoxelRenderer.MaterialScheme> materialSchemeSelector;
     private TextArea performanceMetrics;
+    private ProgressIndicator rebuildProgressIndicator;
+    private Label rebuildStatusLabel;
     
     public OctreeControlPanel(CameraView cameraView, 
                              Runnable resetCamera,
@@ -416,6 +418,24 @@ public class OctreeControlPanel extends VBox {
             if (toggleRays != null) toggleRays.run();
         });
         
+        // Rebuild Progress Section
+        Separator rebuildSeparator = new Separator();
+        
+        Label rebuildLabel = new Label("Rebuild Status");
+        rebuildLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        HBox rebuildBox = new HBox(10);
+        rebuildBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        
+        rebuildProgressIndicator = new ProgressIndicator();
+        rebuildProgressIndicator.setMaxSize(30, 30);
+        rebuildProgressIndicator.setVisible(false);
+        
+        rebuildStatusLabel = new Label("Ready");
+        rebuildStatusLabel.setStyle("-fx-font-weight: bold;");
+        
+        rebuildBox.getChildren().addAll(rebuildProgressIndicator, rebuildStatusLabel);
+        
         // Performance Metrics Section
         Separator performanceSeparator = new Separator();
         
@@ -496,6 +516,9 @@ public class OctreeControlPanel extends VBox {
             showOctreeCheckBox,
             showVoxelsCheckBox,
             showRaysCheckBox,
+            rebuildSeparator,
+            rebuildLabel,
+            rebuildBox,
             performanceSeparator,
             performanceLabel,
             performanceMetrics,
@@ -619,6 +642,35 @@ public class OctreeControlPanel extends VBox {
         if (shape != null) {
             int count = ProceduralVoxelGenerator.estimateVoxelCount(shape, resolution);
             voxelCountLabel.setText(String.format("%,d", count));
+        }
+    }
+    
+    /**
+     * Show the rebuild progress indicator with indeterminate state.
+     */
+    public void showRebuildProgress() {
+        if (rebuildProgressIndicator != null) {
+            rebuildProgressIndicator.setVisible(true);
+        }
+    }
+    
+    /**
+     * Hide the rebuild progress indicator.
+     */
+    public void hideRebuildProgress() {
+        if (rebuildProgressIndicator != null) {
+            rebuildProgressIndicator.setVisible(false);
+        }
+    }
+    
+    /**
+     * Update the rebuild status label.
+     * 
+     * @param status the status message to display
+     */
+    public void setRebuildStatus(String status) {
+        if (rebuildStatusLabel != null) {
+            rebuildStatusLabel.setText(status);
         }
     }
 }

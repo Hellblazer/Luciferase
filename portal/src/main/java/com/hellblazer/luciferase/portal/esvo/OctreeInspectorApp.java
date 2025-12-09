@@ -442,6 +442,13 @@ public class OctreeInspectorApp extends Application {
      * Uses the shape and resolution selected in the control panel.
      */
     private void generateDemoOctree() {
+        // Save current camera state before rebuilding
+        var savedCameraState = cameraView.saveCameraState();
+        
+        // Show progress indicator and update status
+        controlPanel.showRebuildProgress();
+        controlPanel.setRebuildStatus("Building...");
+        
         // Get current shape and resolution from control panel
         var shape = controlPanel.getSelectedShape();
         int resolution = controlPanel.getResolution();
@@ -479,6 +486,17 @@ public class OctreeInspectorApp extends Application {
                 // Update visualization on JavaFX thread
                 updateOctreeVisualization(resultOctree);
                 updateVoxelVisualization(resultVoxels, resultResolution);
+                
+                // Restore camera state to maintain user's view
+                cameraView.restoreCameraState(savedCameraState);
+                
+                // Hide progress indicator and update status
+                controlPanel.hideRebuildProgress();
+                controlPanel.setRebuildStatus("Ready");
+            } else {
+                // Handle build failure
+                controlPanel.hideRebuildProgress();
+                controlPanel.setRebuildStatus("Build Failed");
             }
         }, Platform::runLater);
     }

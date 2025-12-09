@@ -316,5 +316,77 @@ public final class CameraView extends ImageView {
     public void setPanning(boolean panning) {
         this.isPanning = panning;
     }
+    
+    /**
+     * Camera state snapshot for preservation across scene changes.
+     * Captures position, rotation, and transform state.
+     */
+    public static class CameraState {
+        public final double translateX;
+        public final double translateY;
+        public final double translateZ;
+        public final double rxAngle;
+        public final double ryAngle;
+        public final double rzAngle;
+        public final double tX;
+        public final double tY;
+        public final double tZ;
+        
+        public CameraState(double translateX, double translateY, double translateZ,
+                          double rxAngle, double ryAngle, double rzAngle,
+                          double tX, double tY, double tZ) {
+            this.translateX = translateX;
+            this.translateY = translateY;
+            this.translateZ = translateZ;
+            this.rxAngle = rxAngle;
+            this.ryAngle = ryAngle;
+            this.rzAngle = rzAngle;
+            this.tX = tX;
+            this.tY = tY;
+            this.tZ = tZ;
+        }
+    }
+    
+    /**
+     * Save current camera state for later restoration.
+     * Captures all position, rotation, and transform values.
+     * 
+     * @return CameraState snapshot of current camera configuration
+     */
+    public CameraState saveCameraState() {
+        return new CameraState(
+            camera.getTranslateX(),
+            camera.getTranslateY(),
+            camera.getTranslateZ(),
+            cameraTransform.rx.getAngle(),
+            cameraTransform.ry.getAngle(),
+            cameraTransform.rz.getAngle(),
+            cameraTransform.t.getX(),
+            cameraTransform.t.getY(),
+            cameraTransform.t.getZ()
+        );
+    }
+    
+    /**
+     * Restore camera to a previously saved state.
+     * Applies all position, rotation, and transform values.
+     * 
+     * @param state Previously saved camera state
+     */
+    public void restoreCameraState(CameraState state) {
+        if (state == null) {
+            return;
+        }
+        
+        camera.setTranslateX(state.translateX);
+        camera.setTranslateY(state.translateY);
+        camera.setTranslateZ(state.translateZ);
+        cameraTransform.rx.setAngle(state.rxAngle);
+        cameraTransform.ry.setAngle(state.ryAngle);
+        cameraTransform.rz.setAngle(state.rzAngle);
+        cameraTransform.t.setX(state.tX);
+        cameraTransform.t.setY(state.tY);
+        cameraTransform.t.setZ(state.tZ);
+    }
 
 }
