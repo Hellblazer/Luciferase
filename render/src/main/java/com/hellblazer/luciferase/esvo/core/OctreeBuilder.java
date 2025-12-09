@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.esvo.core;
 
+import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.resource.UnifiedResourceManager;
 import com.hellblazer.luciferase.resource.ByteBufferResource;
 import org.slf4j.Logger;
@@ -7,7 +8,9 @@ import org.slf4j.LoggerFactory;
 import javax.vecmath.Vector3f;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -63,6 +66,127 @@ public class OctreeBuilder implements AutoCloseable {
         
         // Track memory usage (approximate)
         totalMemoryAllocated.addAndGet(32); // Approximate size of VoxelData
+    }
+    
+    /**
+     * Build an ESVO octree from a list of voxel coordinates.
+     * Constructs octree structure by adding each voxel and building proper node hierarchy
+     * with child masks and indices.
+     * 
+     * @param voxelList List of voxel positions (integer coordinates)
+     * @param depth Maximum octree depth
+     * @return ESVOOctreeData containing the constructed octree
+     */
+    public ESVOOctreeData buildFromVoxels(List<Point3i> voxelList, int depth) {
+        ensureNotClosed();
+        
+        if (voxelList == null || voxelList.isEmpty()) {
+            log.warn("Building octree from empty voxel list");
+            return new ESVOOctreeData(1024); // Return minimal structure
+        }
+        
+        log.debug("Building octree from {} voxels at depth {}", voxelList.size(), depth);
+        
+        // Add all voxels to internal structure
+        for (Point3i voxel : voxelList) {
+            addVoxel(voxel.x, voxel.y, voxel.z, depth, 1.0f);
+        }
+        
+        // Build octree structure using hierarchical construction
+        Map<Long, OctreeNode> nodeMap = new HashMap<>();
+        
+        // Create leaf nodes for each voxel
+        for (VoxelData voxel : voxels) {
+            long nodeKey = computeNodeKey(voxel.position, voxel.level);
+            nodeMap.putIfAbsent(nodeKey, new OctreeNode(nodeKey, voxel.level, true));
+        }
+        
+        // Build parent nodes bottom-up
+        for (int level = depth - 1; level >= 0; level--) {
+            // Collect all keys at current child level first to avoid ConcurrentModificationException
+            List<Long> childKeys = new ArrayList<>();
+            for (Map.Entry<Long, OctreeNode> entry : nodeMap.entrySet()) {
+                if (entry.getValue().level == level + 1) {
+                    childKeys.add(entry.getKey());
+                }
+            }
+            
+            // Then add parent nodes
+            for (long childKey : childKeys) {
+                long parentKey = getParentKey(childKey);
+                nodeMap.putIfAbsent(parentKey, new OctreeNode(parentKey, level, false));
+            }
+        }
+        
+        // Convert to ESVOOctreeData structure
+        int estimatedSize = nodeMap.size() * 8; // 8 bytes per node
+        ESVOOctreeData octreeData = new ESVOOctreeData(estimatedSize);
+        
+        // Build ESVO nodes with proper child masks
+        int nodeIndex = 0;
+        Map<Long, Integer> keyToIndex = new HashMap<>();
+        
+        // First pass: assign indices to all nodes in breadth-first order
+        for (int level = 0; level <= depth; level++) {
+            for (Map.Entry<Long, OctreeNode> entry : nodeMap.entrySet()) {
+                if (entry.getValue().level == level) {
+                    keyToIndex.put(entry.getKey(), nodeIndex++);
+                }
+            }
+        }
+        
+        // Second pass: create ESVO nodes with proper child pointers and masks
+        for (Map.Entry<Long, OctreeNode> entry : nodeMap.entrySet()) {
+            long nodeKey = entry.getKey();
+            OctreeNode node = entry.getValue();
+            int currentIndex = keyToIndex.get(nodeKey);
+            
+            // Calculate child mask and leaf mask
+            int childMask = 0;
+            int leafMask = 0;
+            int firstChildIndex = -1;
+            
+            if (!node.isLeaf) {
+                // Check which children exist
+                for (int childIdx = 0; childIdx < 8; childIdx++) {
+                    long childKey = getChildKey(nodeKey, childIdx);
+                    if (nodeMap.containsKey(childKey)) {
+                        childMask |= (1 << childIdx);
+                        
+                        // Track first child index for child pointer
+                        int childIndex = keyToIndex.get(childKey);
+                        if (firstChildIndex == -1) {
+                            firstChildIndex = childIndex;
+                        }
+                        
+                        // Check if child is a leaf
+                        if (nodeMap.get(childKey).isLeaf) {
+                            leafMask |= (1 << childIdx);
+                        }
+                    }
+                }
+            } else {
+                // Leaf nodes have no children but mark themselves as leaves
+                leafMask = 0xFF; // All children would be leaves (leaf node convention)
+            }
+            
+            // Create ESVO node
+            int childPtr = firstChildIndex != -1 ? firstChildIndex : 0;
+            ESVONodeUnified esvoNode = new ESVONodeUnified(
+                (byte) leafMask,
+                (byte) childMask,
+                false,  // far flag
+                childPtr,
+                (byte) 0,  // contour mask (not used in basic construction)
+                0          // contour ptr (not used in basic construction)
+            );
+            
+            octreeData.setNode(currentIndex, esvoNode);
+        }
+        
+        log.debug("Built octree with {} nodes from {} voxels", nodeMap.size(), voxelList.size());
+        
+        return octreeData;
     }
     
     /**
@@ -141,6 +265,64 @@ public class OctreeBuilder implements AutoCloseable {
     }
     
     /**
+     * Compute a unique key for a node based on its position and level.
+     * Uses Morton encoding for spatial hashing.
+     */
+    private long computeNodeKey(Vector3f position, int level) {
+        // Normalize position to [0,1] range within the [1,2] coordinate space
+        float x = position.x - 1.0f;
+        float y = position.y - 1.0f;
+        float z = position.z - 1.0f;
+        
+        // Convert to integer coordinates at this level
+        int resolution = 1 << level;
+        int ix = Math.min((int) (x * resolution), resolution - 1);
+        int iy = Math.min((int) (y * resolution), resolution - 1);
+        int iz = Math.min((int) (z * resolution), resolution - 1);
+        
+        // Encode: level in upper bits, Morton code in lower bits
+        long morton = encodeMorton(ix, iy, iz);
+        return ((long) level << 48) | morton;
+    }
+    
+    /**
+     * Encode three integers into a Morton code (Z-order curve).
+     */
+    private long encodeMorton(int x, int y, int z) {
+        long result = 0;
+        for (int i = 0; i < 16; i++) {
+            result |= ((x & (1L << i)) << (2 * i)) |
+                      ((y & (1L << i)) << (2 * i + 1)) |
+                      ((z & (1L << i)) << (2 * i + 2));
+        }
+        return result;
+    }
+    
+    /**
+     * Get the parent key for a given node key.
+     */
+    private long getParentKey(long nodeKey) {
+        int level = (int) (nodeKey >> 48);
+        if (level == 0) {
+            return nodeKey; // Root has no parent
+        }
+        
+        long morton = nodeKey & 0xFFFFFFFFFFFFL;
+        long parentMorton = morton >> 3; // Shift right by 3 bits (divide by 8)
+        return ((long) (level - 1) << 48) | parentMorton;
+    }
+    
+    /**
+     * Get the child key for a given node and child index.
+     */
+    private long getChildKey(long nodeKey, int childIdx) {
+        int level = (int) (nodeKey >> 48);
+        long morton = nodeKey & 0xFFFFFFFFFFFFL;
+        long childMorton = (morton << 3) | childIdx; // Shift left by 3 bits, add child index
+        return ((long) (level + 1) << 48) | childMorton;
+    }
+    
+    /**
      * Internal voxel data structure
      */
     private static class VoxelData {
@@ -152,6 +334,21 @@ public class OctreeBuilder implements AutoCloseable {
             this.position = position;
             this.level = level;
             this.density = density;
+        }
+    }
+    
+    /**
+     * Internal octree node used during construction
+     */
+    private static class OctreeNode {
+        final long key;
+        final int level;
+        final boolean isLeaf;
+        
+        OctreeNode(long key, int level, boolean isLeaf) {
+            this.key = key;
+            this.level = level;
+            this.isLeaf = isLeaf;
         }
     }
 }
