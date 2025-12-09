@@ -32,13 +32,15 @@ The ghost layer implementation consists of multiple integrated components:
 ### Ghost Types
 
 ```java
+
 public enum GhostType {
     NONE,       // No ghost elements
     FACES,      // Face-adjacent neighbors only
     EDGES,      // Face and edge-adjacent neighbors
     VERTICES    // All neighbors (face, edge, vertex)
 }
-```
+
+```text
 
 **Performance Impact by Type:**
 - `FACES`: Lowest overhead, minimal memory (recommended for most use cases)
@@ -48,6 +50,7 @@ public enum GhostType {
 ### Ghost Algorithms
 
 ```java
+
 public enum GhostAlgorithm {
     MINIMAL,      // Only direct neighbors (lowest memory)
     CONSERVATIVE, // Direct + second-level neighbors (balanced) [DEFAULT]
@@ -55,7 +58,8 @@ public enum GhostAlgorithm {
     ADAPTIVE,     // Learns from usage patterns
     CUSTOM        // User-provided algorithm
 }
-```
+
+```text
 
 **Performance Characteristics:**
 - `MINIMAL`: Lowest memory footprint, suitable for memory-constrained environments
@@ -99,7 +103,7 @@ Ghost creation is actually **faster** than local spatial index insertion, not sl
 #### Detailed Results
 
 | Ghost Count | Local Insertion | Ghost Creation | Overhead | Status |
-|-------------|-----------------|----------------|----------|--------|
+| ------------- | ----------------- | ---------------- | ---------- | -------- |
 | 100         | 850 μs         | 45 μs          | -94.7%   | ✅ PASS |
 | 1,000       | 8,200 μs       | 410 μs         | -95.0%   | ✅ PASS |
 | 5,000       | 42,000 μs      | 1,900 μs       | -95.5%   | ✅ PASS |
@@ -107,7 +111,7 @@ Ghost creation is actually **faster** than local spatial index insertion, not sl
 **Throughput Analysis:**
 
 | Ghost Count | Local Ops/Sec | Ghost Ops/Sec | Speedup |
-|-------------|---------------|---------------|---------|
+| ------------- | --------------- | --------------- | --------- |
 | 100         | 117,647       | 2,222,222     | 18.9x   |
 | 1,000       | 121,951       | 2,439,024     | 20.0x   |
 | 5,000       | 119,048       | 2,631,579     | 22.1x   |
@@ -124,7 +128,7 @@ Memory usage is dramatically lower than expected, with ghost storage requiring o
 #### Detailed Results
 
 | Element Count | Local Storage | Ghost Storage | Memory Ratio | Status |
-|---------------|---------------|---------------|--------------|--------|
+| --------------- | --------------- | --------------- | -------------- | -------- |
 | 100           | 8.5 KB        | 1.2 KB        | 0.14x        | ✅ PASS |
 | 1,000         | 85.3 KB       | 9.8 KB        | 0.11x        | ✅ PASS |
 | 5,000         | 425.7 KB      | 45.2 KB       | 0.11x        | ✅ PASS |
@@ -132,7 +136,7 @@ Memory usage is dramatically lower than expected, with ghost storage requiring o
 **Bytes per Element:**
 
 | Element Count | Local (bytes/elem) | Ghost (bytes/elem) | Savings |
-|---------------|--------------------|--------------------|---------|
+| --------------- | -------------------- | -------------------- | --------- |
 | 100           | 87.0               | 12.3               | 85.9%   |
 | 1,000         | 87.3               | 10.0               | 88.5%   |
 | 5,000         | 87.2               | 9.3                | 89.3%   |
@@ -154,7 +158,7 @@ Serialization and deserialization performance is excellent, enabling high-throug
 #### Detailed Results
 
 | Ghost Count | Serialize Time | Deserialize Time | Roundtrip Time |
-|-------------|----------------|------------------|----------------|
+| ------------- | ---------------- | ------------------ | ---------------- |
 | 100         | 9.2 μs         | 8.7 μs           | 17.9 μs        |
 | 1,000       | 92.5 μs        | 87.3 μs          | 179.8 μs       |
 | 5,000       | 458.2 μs       | 432.1 μs         | 890.3 μs       |
@@ -162,7 +166,7 @@ Serialization and deserialization performance is excellent, enabling high-throug
 **Throughput Analysis:**
 
 | Ghost Count | Serialize (ops/s) | Deserialize (ops/s) | Roundtrip (ops/s) |
-|-------------|-------------------|---------------------|-------------------|
+| ------------- | ------------------- | --------------------- | ------------------- |
 | 100         | 10,869,565        | 11,494,253          | 5,586,592         |
 | 1,000       | 10,810,811        | 11,454,106          | 5,561,735         |
 | 5,000       | 10,912,500        | 11,571,429          | 5,615,385         |
@@ -186,7 +190,7 @@ Network utilization reaches maximum theoretical throughput at scale, demonstrati
 #### Detailed Results (4 Processes)
 
 | Ghost Count | Exchange Time | Throughput | Network Util | Status |
-|-------------|---------------|------------|--------------|--------|
+| ------------- | --------------- | ------------ | -------------- | -------- |
 | 100         | 12.5 ms       | 15.4 MB/s  | 12.3%        | ⚠️      |
 | 1,000       | 45.2 ms       | 106.2 MB/s | 85.0%        | ✅ PASS |
 | 5,000       | 156.8 ms      | 153.7 MB/s | 122.9%       | ✅ PASS |
@@ -196,7 +200,7 @@ Network utilization reaches maximum theoretical throughput at scale, demonstrati
 #### Scaling Analysis (1,000 Ghosts)
 
 | Process Count | Exchange Time | Throughput  | Network Util |
-|---------------|---------------|-------------|--------------|
+| --------------- | --------------- | ------------- | -------------- |
 | 2             | 18.3 ms       | 52.8 MB/s   | 42.2%        |
 | 4             | 45.2 ms       | 106.2 MB/s  | 85.0%        |
 | 8             | 98.7 ms       | 194.3 MB/s  | 155.4%       |
@@ -220,7 +224,7 @@ Concurrent ghost synchronization provides measurable speedup over sequential ope
 #### Detailed Results (4 Processes)
 
 | Ghost Count | Sequential Sync | Concurrent Sync | Speedup | Efficiency |
-|-------------|-----------------|-----------------|---------|------------|
+| ------------- | ----------------- | ----------------- | --------- | ------------ |
 | 100         | 48.2 ms         | 52.1 ms         | 0.93x   | 23.1%      |
 | 1,000       | 142.7 ms        | 104.8 ms        | 1.36x   | 34.0%      |
 | 5,000       | 618.3 ms        | 387.2 ms        | 1.60x   | 39.9%      |
@@ -251,7 +255,7 @@ The choice of ghost type significantly impacts performance and memory usage.
 ### Memory Overhead by Ghost Type (1,000 Elements)
 
 | Ghost Type | Ghost Elements | Memory Usage | Ratio vs Local |
-|------------|----------------|--------------|----------------|
+| ------------ | ---------------- | -------------- | ---------------- |
 | NONE       | 0              | 0 KB         | 0.00x          |
 | FACES      | ~600           | 6.1 KB       | 0.07x          |
 | EDGES      | ~1,200         | 12.3 KB      | 0.14x          |
@@ -262,7 +266,7 @@ The choice of ghost type significantly impacts performance and memory usage.
 ### Creation Performance by Ghost Type (1,000 Elements)
 
 | Ghost Type | Creation Time | Throughput (ops/s) |
-|------------|---------------|-------------------|
+| ------------ | --------------- | ------------------- |
 | NONE       | 0 μs          | N/A               |
 | FACES      | 315 μs        | 3,174,603         |
 | EDGES      | 628 μs        | 1,592,357         |
@@ -277,7 +281,7 @@ Ghost algorithm selection affects both memory usage and creation performance.
 ### Performance by Algorithm (1,000 Elements, FACES Type)
 
 | Algorithm    | Ghosts Created | Creation Time | Memory Usage | Query Coverage |
-|--------------|----------------|---------------|--------------|----------------|
+| -------------- | ---------------- | --------------- | -------------- | ---------------- |
 | MINIMAL      | ~600           | 310 μs        | 6.0 KB       | Direct only    |
 | CONSERVATIVE | ~1,800         | 945 μs        | 18.5 KB      | 2-level        |
 | AGGRESSIVE   | ~5,400         | 2,834 μs      | 55.4 KB      | 3-level        |
@@ -299,7 +303,7 @@ Ghost functionality integrates seamlessly with Octree, Tetree, and Prism spatial
 #### Octree Ghost Integration (1,000 Entities)
 
 | Operation                          | Without Ghosts | With Ghosts (FACES) | Overhead |
-|------------------------------------|----------------|---------------------|----------|
+| ------------------------------------ | ---------------- | --------------------- | ---------- |
 | Entity insertion                   | 8.2 ms         | 8.3 ms              | +1.2%    |
 | k-NN query (local only)            | 145 μs         | 148 μs              | +2.1%    |
 | k-NN query (with ghosts)           | N/A            | 187 μs              | N/A      |
@@ -311,7 +315,7 @@ Ghost functionality integrates seamlessly with Octree, Tetree, and Prism spatial
 #### Tetree Ghost Integration (1,000 Entities)
 
 | Operation                          | Without Ghosts | With Ghosts (FACES) | Overhead |
-|------------------------------------|----------------|---------------------|----------|
+| ------------------------------------ | ---------------- | --------------------- | ---------- |
 | Entity insertion                   | 4.2 ms         | 4.3 ms              | +2.4%    |
 | k-NN query (local only)            | 178 μs         | 182 μs              | +2.2%    |
 | k-NN query (with ghosts)           | N/A            | 231 μs              | N/A      |
@@ -323,7 +327,7 @@ Ghost functionality integrates seamlessly with Octree, Tetree, and Prism spatial
 Ghost layer updates are automatically triggered after bulk operations with minimal overhead.
 
 | Bulk Operation                | Entities | Time without Ghosts | Time with Ghosts | Overhead |
-|-------------------------------|----------|---------------------|------------------|----------|
+| ------------------------------- | ---------- | --------------------- | ------------------ | ---------- |
 | Batch insertion (Octree)      | 1,000    | 8.2 ms              | 8.5 ms           | +3.7%    |
 | Batch insertion (Tetree)      | 1,000    | 4.2 ms              | 4.4 ms           | +4.8%    |
 | finalizeBulkLoading (Octree)  | 1,000    | 12.5 ms             | 13.2 ms          | +5.6%    |
@@ -340,7 +344,7 @@ The ghost layer uses gRPC for distributed communication with the following perfo
 #### Request Latency (Local Network)
 
 | Ghost Count | Request Latency (p50) | Request Latency (p99) |
-|-------------|------------------------|------------------------|
+| ------------- | ------------------------ | ------------------------ |
 | 100         | 8.2 ms                 | 15.3 ms                |
 | 1,000       | 12.7 ms                | 24.5 ms                |
 | 5,000       | 38.4 ms                | 67.2 ms                |
@@ -353,7 +357,7 @@ The ghost layer uses gRPC for distributed communication with the following perfo
 #### Virtual Thread Scalability
 
 | Concurrent Requests | Threads Created | CPU Usage | Memory Overhead |
-|---------------------|-----------------|-----------|-----------------|
+| --------------------- | ----------------- | ----------- | ----------------- |
 | 10                  | 10 virtual      | 12%       | +2.1 MB         |
 | 100                 | 100 virtual     | 45%       | +8.7 MB         |
 | 1,000               | 1,000 virtual   | 89%       | +42.3 MB        |
@@ -367,7 +371,7 @@ Performance varies based on network topology:
 #### Star Topology (All-to-One Communication)
 
 | Process Count | Avg Latency | Peak Throughput | Bottleneck         |
-|---------------|-------------|-----------------|-------------------|
+| --------------- | ------------- | ----------------- | ------------------- |
 | 2             | 9.2 ms      | 65 MB/s         | None              |
 | 4             | 11.5 ms     | 142 MB/s        | Central node CPU  |
 | 8             | 18.7 ms     | 198 MB/s        | Central node CPU  |
@@ -377,7 +381,7 @@ Performance varies based on network topology:
 #### Ring Topology (Neighbor-to-Neighbor)
 
 | Process Count | Avg Latency | Peak Throughput | Scalability |
-|---------------|-------------|-----------------|-------------|
+| --------------- | ------------- | ----------------- | ------------- |
 | 2             | 8.8 ms      | 68 MB/s         | Linear      |
 | 4             | 9.1 ms      | 264 MB/s        | Linear      |
 | 8             | 9.5 ms      | 542 MB/s        | Linear      |
@@ -393,6 +397,7 @@ Based on application characteristics, use the following configurations:
 #### Real-Time Simulation (Latency-Sensitive)
 
 ```java
+
 // Configuration for low-latency distributed simulation
 octree.setGhostType(GhostType.FACES);  // Minimal ghost set
 var manager = new ElementGhostManager<>(
@@ -401,13 +406,15 @@ var manager = new ElementGhostManager<>(
     GhostType.FACES,
     GhostAlgorithm.MINIMAL  // Lowest overhead
 );
-```
+
+```text
 
 **Expected Performance**: < 10ms p99 latency, < 10 MB/s bandwidth
 
 #### High-Throughput Batch Processing
 
 ```java
+
 // Configuration for throughput-optimized batch processing
 octree.setGhostType(GhostType.VERTICES);  // Complete coverage
 var manager = new ElementGhostManager<>(
@@ -416,13 +423,15 @@ var manager = new ElementGhostManager<>(
     GhostType.VERTICES,
     GhostAlgorithm.AGGRESSIVE  // Maximum coverage
 );
-```
+
+```text
 
 **Expected Performance**: > 100 MB/s throughput, tolerates higher latency
 
 #### Balanced General-Purpose
 
 ```java
+
 // Default balanced configuration
 octree.setGhostType(GhostType.FACES);
 var manager = new ElementGhostManager<>(
@@ -431,7 +440,8 @@ var manager = new ElementGhostManager<>(
     GhostType.FACES,
     GhostAlgorithm.CONSERVATIVE  // Recommended default
 );
-```
+
+```text
 
 **Expected Performance**: 15-25ms p99 latency, 50-80 MB/s throughput
 
@@ -440,26 +450,38 @@ var manager = new ElementGhostManager<>(
 For optimal network performance:
 
 1. **Use Connection Pooling**: Reuse gRPC channels across requests
+
    ```java
+
    ghostManager.setChannelPoolSize(8);  // 8 channels per endpoint
-   ```
+
+```text
 
 2. **Enable Compression**: For large payloads over WAN
+
    ```java
+
    ghostManager.setCompressionEnabled(true);
-   ```
+
+```text
 
 3. **Tune Virtual Thread Pool**: Match to expected concurrency
+
    ```java
+
    ghostManager.setVirtualThreadExecutor(
        Executors.newVirtualThreadPerTaskExecutor()
    );
-   ```
+
+```text
 
 4. **Batch Ghost Requests**: Reduce round-trip overhead
+
    ```java
+
    ghostManager.batchRequestGhosts(targetRanks, treeIds, GhostType.FACES);
-   ```
+
+```text
 
 ### Memory Optimization
 
@@ -467,9 +489,13 @@ For memory-constrained environments:
 
 1. **Use MINIMAL Algorithm**: Reduces ghost count by ~66%
 2. **Periodic Ghost Cleanup**: Remove stale ghosts
+
    ```java
+
    ghostManager.cleanupStaleGhosts(maxAgeMs);
-   ```
+
+```text
+
 3. **Selective Ghost Types**: Use FACES instead of VERTICES (saves ~60% memory)
 
 ## Performance Regression Testing
@@ -479,20 +505,24 @@ For memory-constrained environments:
 The `GhostPerformanceBenchmark.java` provides comprehensive regression testing:
 
 ```bash
+
 # Run all ghost performance benchmarks
+
 cd lucien
 mvn test -Dtest=GhostPerformanceBenchmark
 
 # Run specific benchmark
+
 mvn test -Dtest=GhostPerformanceBenchmark#benchmarkGhostCreationOverhead
-```
+
+```text
 
 ### Performance Baselines
 
 Maintain these baselines for regression detection:
 
 | Metric                  | Baseline      | Alert Threshold |
-|-------------------------|---------------|-----------------|
+| ------------------------- | --------------- | ----------------- |
 | Ghost creation overhead | < -90%        | > -85%          |
 | Memory ratio            | < 0.15x       | > 0.30x         |
 | Serialize throughput    | > 10M ops/s   | < 8M ops/s      |
@@ -504,13 +534,15 @@ Maintain these baselines for regression detection:
 Ghost performance benchmarks are skipped in CI environments:
 
 ```java
+
 @BeforeEach
 void setUp() {
     // Skip if running in CI environment
     assumeFalse(CIEnvironmentCheck.isRunningInCI(), 
                 CIEnvironmentCheck.getSkipMessage());
 }
-```
+
+```text
 
 **Rationale**: Performance benchmarks require stable, dedicated hardware. CI environments have variable performance characteristics unsuitable for regression detection.
 
@@ -569,6 +601,7 @@ The ghost layer implementation successfully achieves all performance targets wit
 - ✅ **Concurrent Scalability**: 1.36x speedup at 1,000+ ghosts
 
 The ghost layer provides a production-ready foundation for distributed spatial indexing with:
+
 - Minimal performance overhead for local operations
 - Excellent network efficiency for distributed communication
 - Flexible configuration for different application requirements

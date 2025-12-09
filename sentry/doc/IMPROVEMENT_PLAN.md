@@ -73,7 +73,9 @@ Total estimated effort: 2-3 weeks for remaining enhancements.
 3. Implement quality metrics (aspect ratio, radius ratio)
 
 **Implementation**:
+
 ```java
+
 public class DegeneracyHandler {
     // Symbolic perturbation to prevent exact degeneracies
     public Point3f perturb(Point3f p, int index) {
@@ -94,7 +96,8 @@ public class DegeneracyHandler {
         return standardFlipCriterion(t1, t2);
     }
 }
-```
+
+```text
 
 ### 2. Voronoi Region Computation
 
@@ -106,7 +109,9 @@ public class DegeneracyHandler {
 3. Extract Voronoi cells for each vertex
 
 **Code Structure**:
+
 ```java
+
 public VoronoiRegion voronoiRegion(Vertex v) {
     List<Point3f> voronoiVertices = new ArrayList<>();
     List<VoronoiFace> faces = new ArrayList<>();
@@ -129,7 +134,8 @@ public VoronoiRegion voronoiRegion(Vertex v) {
     
     return new VoronoiRegion(v, voronoiVertices, faces);
 }
-```
+
+```text
 
 ### 3. Performance Optimizations
 
@@ -141,15 +147,18 @@ public VoronoiRegion voronoiRegion(Vertex v) {
 ## Implementation Schedule
 
 ### Phase 1 (1 week): Degenerate Handling
+
 - Day 1-2: Implement symbolic perturbation
 - Day 3-4: Add quality-based flip decisions
 - Day 5: Test with degenerate datasets
 
 ### Phase 2 (1-2 weeks): Voronoi Implementation
+
 - Week 1: Basic Voronoi vertex and edge computation
 - Week 2: Full Voronoi cell extraction and testing
 
 ### Phase 3 (Optional): Performance
+
 - Profile current implementation
 - Implement targeted optimizations
 - Benchmark improvements
@@ -157,12 +166,14 @@ public VoronoiRegion voronoiRegion(Vertex v) {
 ## Testing Strategy
 
 ### Current Test Coverage
+
 - 60 tests covering all major functionality
 - 100% Delaunay property validation
 - Comprehensive rebuild testing
 - Memory management verification
 
 ### Additional Tests Needed
+
 1. Degenerate configuration stress tests
 2. Voronoi region validation
 3. Performance benchmarks

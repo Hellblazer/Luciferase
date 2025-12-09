@@ -7,20 +7,27 @@ Java's Vector API (JEP 448) for SIMD operations is in preview status as of Java 
 ## Strategy: Multi-Profile Approach
 
 ### 1. Default Build (No Preview Features)
+
 The default build remains stable without preview features:
+
 - All optimizations from Phases 1-2 are always active
 - SIMD optimizations are disabled by default
 - Code compiles and runs on standard Java 23+
 
 ### 2. Preview Profile for SIMD
+
 Create a Maven profile that enables preview features:
+
 - Activated explicitly with `-Psimd-preview`
 - Enables `--enable-preview` for compilation and runtime
 - Only used for performance testing and benchmarking
 
 ### 3. Runtime Detection
+
 Use runtime checks to conditionally enable SIMD:
+
 ```java
+
 public class SIMDSupport {
     private static final boolean VECTOR_API_AVAILABLE;
     
@@ -41,13 +48,15 @@ public class SIMDSupport {
                "true".equals(System.getProperty("sentry.enableSIMD"));
     }
 }
-```
+
+```text
 
 ## Implementation Plan
 
 ### 1. Add Preview Profile to pom.xml
 
 ```xml
+
 <profiles>
     <!-- Standard profile - no preview features -->
     <profile>
@@ -78,9 +87,11 @@ public class SIMDSupport {
                     <artifactId>maven-surefire-plugin</artifactId>
                     <configuration>
                         <argLine>
+
                             --enable-preview 
                             --add-modules jdk.incubator.vector
                             -Dsentry.enableSIMD=true
+
                             ${existing.argLine}
                         </argLine>
                     </configuration>
@@ -89,11 +100,13 @@ public class SIMDSupport {
         </build>
     </profile>
 </profiles>
-```
+
+```text
 
 ### 2. Create Abstraction Layer
 
 ```java
+
 // GeometricPredicates.java
 public interface GeometricPredicates {
     double orientation(double ax, double ay, double az, 
@@ -137,21 +150,27 @@ public class GeometricPredicatesFactory {
         return new ScalarGeometricPredicates();
     }
 }
-```
+
+```text
 
 ### 3. CI Configuration
 
 #### GitHub Actions
+
 ```yaml
+
 jobs:
   # Standard build - always runs
   build:
     runs-on: ubuntu-latest
     steps:
+
       - uses: actions/checkout@v3
       - uses: actions/setup-java@v3
+
         with:
           java-version: '23'
+
       - run: mvn clean test
   
   # Preview features build - separate job
@@ -159,38 +178,55 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # Don't fail the build
     steps:
+
       - uses: actions/checkout@v3
       - uses: actions/setup-java@v3
+
         with:
           java-version: '23'
+
       - run: mvn clean test -Psimd-preview
-```
+
+```text
 
 ### 4. Development Workflow
 
 #### For regular development:
+
 ```bash
+
 # Standard build - no preview features
+
 mvn clean install
 
 # Run tests
+
 mvn test
-```
+
+```text
 
 #### For SIMD development:
+
 ```bash
+
 # Build with preview features
+
 mvn clean install -Psimd-preview
 
 # Run SIMD benchmarks
+
 mvn test -Psimd-preview -Dtest=SIMDBenchmark
 
 # Run with SIMD enabled
+
 java --enable-preview --add-modules jdk.incubator.vector \
+
      -Dsentry.enableSIMD=true \
      -cp target/classes:... \
+
      MainClass
-```
+
+```text
 
 ## Benefits
 
@@ -203,6 +239,7 @@ java --enable-preview --add-modules jdk.incubator.vector \
 ## Migration Path
 
 When Vector API becomes stable (likely Java 25+):
+
 1. Remove preview flags from SIMD profile
 2. Make SIMD profile the default
 3. Keep scalar implementation for older JVMs
@@ -218,6 +255,7 @@ When Vector API becomes stable (likely Java 25+):
 ## Recommendation
 
 Proceed with the multi-profile approach. It provides the best balance of:
+
 - Performance gains for those who want them
 - Stability for production use
 - Easy migration when API stabilizes

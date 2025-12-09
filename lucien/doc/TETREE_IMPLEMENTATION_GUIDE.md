@@ -28,6 +28,7 @@ and the paper "A tetrahedral space-filling curve for non-conforming adaptive mes
 ### 1. Tetrahedral Space-Filling Curve (Tet SFC)
 
 ```java
+
 // The Tet SFC index directly encodes the path from root
 // Level 0: index = 0 (root)
 // Level 1: indices 1-7 (8 children)
@@ -41,11 +42,13 @@ public static byte tetLevelFromIndex(long index) {
     int highBit = 63 - Long.numberOfLeadingZeros(index);
     return (byte) ((highBit / 3) + 1);
 }
-```
+
+```text
 
 ### 2. Child Generation Algorithm (Bey's Refinement)
 
 ```java
+
 // CRITICAL: Children are generated using vertex midpoints, NOT cube offsets
 public Tet child(int childIndex) {
     // Get Bey child ID from Morton index
@@ -67,7 +70,8 @@ public Tet child(int childIndex) {
 
     return new Tet(childX, childY, childZ, childLevel, childType);
 }
-```
+
+```text
 
 ### 3. Connectivity Tables
 
@@ -81,6 +85,7 @@ The implementation uses several lookup tables from t8code:
 ### 4. Coordinate System Constraints
 
 ```java
+
 // CRITICAL: All entity coordinates MUST be positive
 // The tetrahedral SFC only works within the positive octant
 // Ray origins can be negative, but entities cannot
@@ -91,11 +96,13 @@ private void validatePositiveCoordinates(Point3f point) {
             "Tetree requires positive coordinates. Got: " + point);
     }
 }
-```
+
+```text
 
 ### 5. Tetrahedral vs Cubic Geometry
 
 ```java
+
 // NEVER confuse these two calculations:
 
 // CUBE CENTER (for Octree):
@@ -107,7 +114,8 @@ Point3f centroid = new Point3f(
     (v0.y + v1.y + v2.y + v3.y) / 4.0f,
     (v0.z + v1.z + v2.z + v3.z) / 4.0f
 );
-```
+
+```text
 
 ## Common Pitfalls and Solutions
 
@@ -180,6 +188,7 @@ Point3f centroid = new Point3f(
 ### Useful Debug Methods
 
 ```java
+
 // Print tetrahedron details
 System.out.println("Tet: "+tet);
 System.out.
@@ -195,7 +204,8 @@ println("  Centroid: "+tet.centroid());
 // Validate subdivision
 List<Tet> children = tet.children();
 boolean valid = TetreeValidator.isValidSubdivisionFamily(children, tet);
-```
+
+```text
 
 ## Maintenance Notes
 

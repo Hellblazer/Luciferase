@@ -1,6 +1,7 @@
 # Detailed Resource Lifecycle Management Execution Plan
 
 ## Project Overview
+
 **Goal**: Implement proper RAII patterns and resource lifecycle management to eliminate memory leaks, race conditions, and resource exhaustion issues in render and gpu-test-framework modules.
 
 **Timeline**: 10 weeks (70 days)
@@ -15,7 +16,9 @@
 ### Day 1-3: Project Setup & Package Structure
 
 #### Tasks:
-```
+
+```text
+
 □ Create feature branch: resource-mgmt-phase-1
 □ Create package: com.hellblazer.luciferase.resource
 □ Create package: com.hellblazer.luciferase.resource.gpu
@@ -23,9 +26,11 @@
 □ Create package: com.hellblazer.luciferase.resource.memory
 □ Set up Maven dependencies for resource module
 □ Configure logging for resource tracking
-```
+
+```text
 
 #### Deliverables:
+
 - Package structure created
 - Maven configuration updated
 - Initial commit with structure
@@ -33,7 +38,9 @@
 ### Day 4-7: Core Resource Management Classes
 
 #### Task 1.1: ResourceHandle Base Class
+
 ```java
+
 // File: ResourceHandle.java
 package com.hellblazer.luciferase.resource;
 
@@ -93,10 +100,13 @@ public abstract class ResourceHandle<T> implements AutoCloseable {
         }
     }
 }
-```
+
+```text
 
 #### Task 1.2: CompositeResourceManager
+
 ```java
+
 // File: CompositeResourceManager.java
 package com.hellblazer.luciferase.resource;
 
@@ -179,10 +189,13 @@ public final class CompositeResourceManager implements AutoCloseable {
         }
     }
 }
-```
+
+```text
 
 #### Task 1.3: ResourceTracker
+
 ```java
+
 // File: ResourceTracker.java
 package com.hellblazer.luciferase.resource;
 
@@ -315,12 +328,15 @@ public final class ResourceTracker {
         }
     }
 }
-```
+
+```text
 
 ### Day 8-10: GPU Resource Handles
 
 #### Task 1.4: OpenGL Resource Handles
+
 ```java
+
 // File: GLBufferHandle.java
 package com.hellblazer.luciferase.resource.gpu;
 
@@ -506,12 +522,15 @@ public final class GLProgramHandle extends ResourceHandle<Integer> {
         glUseProgram(get());
     }
 }
-```
+
+```text
 
 ### Day 11-14: Memory Management Utilities
 
 #### Task 1.5: Native Memory Handles
+
 ```java
+
 // File: NativeMemoryHandle.java
 package com.hellblazer.luciferase.resource.memory;
 
@@ -693,7 +712,8 @@ public final class MemoryPool implements AutoCloseable {
         }
     }
 }
-```
+
+```text
 
 ---
 
@@ -702,7 +722,9 @@ public final class MemoryPool implements AutoCloseable {
 ### Day 15-17: Remove Deprecated Patterns
 
 #### Task 2.1: Fix OctreeGPUMemory
+
 ```java
+
 // BEFORE (with finalize):
 public final class OctreeGPUMemory {
     @Override
@@ -787,12 +809,15 @@ public final class OctreeGPUMemory implements AutoCloseable {
         resources.close();
     }
 }
-```
+
+```text
 
 ### Day 18-20: Fix Static Mutable State
 
 #### Task 2.2: Fix CICompatibleGPUTest
+
 ```java
+
 // BEFORE (with static mutable state):
 public abstract class CICompatibleGPUTest {
     private static Boolean isOpenCLAvailable = null; // Race condition!
@@ -856,12 +881,15 @@ public abstract class CICompatibleGPUTest {
         return testResources.manage(allocator.get());
     }
 }
-```
+
+```text
 
 ### Day 21-24: Native Memory Safety
 
 #### Task 2.3: Wrap Memory Allocations
+
 ```java
+
 // Create SafeMemoryAllocator.java
 package com.hellblazer.luciferase.resource.memory;
 
@@ -918,12 +946,15 @@ public final class SafeMemoryAllocator {
         }
     }
 }
-```
+
+```text
 
 ### Day 25-28: Exception Safety Patterns
 
 #### Task 2.4: Exception-Safe Initialization
+
 ```java
+
 // Template for exception-safe initialization
 public final class ComputeShaderRenderer implements AutoCloseable {
     private final CompositeResourceManager resources = new CompositeResourceManager("ComputeShader");
@@ -962,7 +993,8 @@ public final class ComputeShaderRenderer implements AutoCloseable {
         resources.close();
     }
 }
-```
+
+```text
 
 ---
 
@@ -971,6 +1003,7 @@ public final class ComputeShaderRenderer implements AutoCloseable {
 ### Day 29-35: Core Render Classes
 
 #### Task 3.1: Refactor Critical Classes
+
 - OctreeGPUMemory.java - Complete AutoCloseable conversion
 - ComputeShaderRenderer.java - Builder pattern with resources
 - ESVOCPUBuilder.java - Thread pool management
@@ -980,6 +1013,7 @@ public final class ComputeShaderRenderer implements AutoCloseable {
 ### Day 36-42: I/O and Optimization Classes
 
 #### Task 3.2: I/O Resource Management
+
 - ESVOSerializer.java - Try-with-resources
 - ESVODeserializer.java - Channel cleanup
 - ESVOStreamWriter.java - Buffer management
@@ -992,6 +1026,7 @@ public final class ComputeShaderRenderer implements AutoCloseable {
 ### Day 43-46: Test Base Classes
 
 #### Task 4.1: Base Class Refactoring
+
 - LWJGLHeadlessTest.java - Resource lifecycle
 - OpenCLHeadlessTest.java - CL resource management
 - GPUComputeHeadlessTest.java - Platform cleanup
@@ -1000,6 +1035,7 @@ public final class ComputeShaderRenderer implements AutoCloseable {
 ### Day 47-49: Mock and Support Classes
 
 #### Task 4.2: Mock Platform Updates
+
 - MockPlatform.java - Resource simulation
 - PlatformTestSupport.java - Cleanup verification
 - TestSupportMatrix.java - Resource tracking
@@ -1011,7 +1047,9 @@ public final class ComputeShaderRenderer implements AutoCloseable {
 ### Day 50-56: Test Suite Development
 
 #### Task 5.1: Resource Lifecycle Tests
+
 ```java
+
 @Test
 class ResourceLifecycleTest {
     
@@ -1070,11 +1108,13 @@ class ResourceLifecycleTest {
         }
     }
 }
-```
+
+```text
 
 ### Day 57-63: Stress Testing
 
 #### Task 5.2: Memory Leak Detection
+
 - 24-hour continuous allocation/deallocation test
 - Multi-threaded resource contention test
 - Exception injection during cleanup
@@ -1087,6 +1127,7 @@ class ResourceLifecycleTest {
 ### Day 64-66: Documentation
 
 #### Task 6.1: Developer Documentation
+
 - Resource Management Guide
 - Migration Guide for existing code
 - Best Practices document
@@ -1095,6 +1136,7 @@ class ResourceLifecycleTest {
 ### Day 67-70: Production Rollout
 
 #### Task 6.2: Staged Deployment
+
 1. Enable in development environment
 2. Monitor resource metrics
 3. Progressive rollout to staging
@@ -1105,12 +1147,14 @@ class ResourceLifecycleTest {
 ## Validation Checklist
 
 ### Pre-Phase Validation
+
 - [ ] Git branch created
 - [ ] Dependencies updated
 - [ ] CI/CD pipeline ready
 - [ ] Rollback plan documented
 
 ### Per-Phase Validation
+
 - [ ] All tests passing
 - [ ] No new memory leaks detected
 - [ ] Performance benchmarks acceptable
@@ -1118,6 +1162,7 @@ class ResourceLifecycleTest {
 - [ ] Documentation updated
 
 ### Post-Phase Validation
+
 - [ ] Integration tests passing
 - [ ] Stress tests completed
 - [ ] Resource metrics within limits
@@ -1128,7 +1173,7 @@ class ResourceLifecycleTest {
 ## Risk Matrix
 
 | Risk | Probability | Impact | Mitigation |
-|------|------------|--------|------------|
+| ------ | ------------ | -------- | ------------ |
 | Breaking changes | Medium | High | Feature flags, gradual rollout |
 | Performance regression | Low | Medium | Benchmarking, profiling |
 | Platform incompatibility | Low | High | Multi-platform testing |
@@ -1140,6 +1185,7 @@ class ResourceLifecycleTest {
 ## Success Metrics
 
 ### Quantitative Metrics
+
 - **Memory Leaks**: 0 in 24-hour test
 - **Resource Cleanup Rate**: 100%
 - **Test Pass Rate**: 100%
@@ -1147,6 +1193,7 @@ class ResourceLifecycleTest {
 - **Thread Safety Issues**: 0
 
 ### Qualitative Metrics
+
 - Code maintainability improved
 - Developer confidence increased
 - Production stability enhanced
@@ -1157,31 +1204,44 @@ class ResourceLifecycleTest {
 ## Command Reference
 
 ### Build Commands
+
 ```bash
+
 # Run with resource tracking
+
 mvn test -Dgpu.resource.tracking=true -Dgpu.resource.tracking.verbose=true
 
 # Memory leak detection
+
 mvn test -Dtest=ResourceLifecycleTest -Dgpu.resource.tracking=true
 
 # Stress testing
+
 mvn test -Dtest=ResourceStressTest -DforkCount=0 -DreuseForks=false
 
 # Performance profiling
+
 mvn test -Dtest=ResourcePerformanceTest -Djava.compiler=NONE
-```
+
+```text
 
 ### Monitoring Commands
+
 ```bash
+
 # Check resource stats
+
 jcmd <pid> VM.native_memory summary
 
 # Heap dump for leak analysis
+
 jcmd <pid> GC.heap_dump /tmp/heap.hprof
 
 # Thread dump for deadlock detection
+
 jcmd <pid> Thread.print
-```
+
+```text
 
 ---
 
@@ -1190,6 +1250,7 @@ jcmd <pid> Thread.print
 This detailed execution plan provides a systematic approach to implementing proper resource lifecycle management. The phased approach minimizes risk while ensuring comprehensive coverage of all resource management issues. Each phase builds on the previous one, with clear validation criteria and rollback procedures.
 
 The plan addresses all critical issues identified in the analysis:
+
 - Eliminates deprecated finalize() patterns
 - Implements RAII with AutoCloseable
 - Ensures exception safety

@@ -5,9 +5,11 @@ Based on the analysis of the t8code source code, here's how t8code manages spati
 ## Key Concepts
 
 ### 1. **CMesh (Coarse Mesh)**
+
 The cmesh is the foundational structure that defines the connectivity and spatial relationships between "trees" (coarse elements). Each tree represents a spatial region that can be independently refined.
 
 ### 2. **Forest**
+
 A forest is a collection of refined trees built on top of a cmesh. The forest manages the adaptive refinement of each tree independently.
 
 ## Creating Disconnected Regions
@@ -17,6 +19,7 @@ A forest is a collection of refined trees built on top of a cmesh. The forest ma
 This function creates a cmesh where each MPI process has its own disconnected brick of trees:
 
 ```c
+
 // From time_partition.c example
 t8_cmesh_t cmesh = t8_cmesh_new_disjoint_bricks(
     x,          // Number of trees in x direction
@@ -27,9 +30,11 @@ t8_cmesh_t cmesh = t8_cmesh_new_disjoint_bricks(
     z_periodic, // Periodic boundary in z
     comm        // MPI communicator
 );
-```
+
+```text
 
 Key features:
+
 - Each MPI process gets its own spatially disconnected brick
 - Trees within each brick can be connected or periodic
 - No connectivity between bricks on different processes
@@ -39,6 +44,7 @@ Key features:
 You can manually create a cmesh with multiple disconnected regions:
 
 ```c
+
 // Initialize cmesh
 t8_cmesh_t cmesh;
 t8_cmesh_init(&cmesh);
@@ -61,13 +67,15 @@ for (int i = 0; i < num_trees_region2; i++) {
 
 // Commit the cmesh
 t8_cmesh_commit(cmesh, comm);
-```
+
+```text
 
 ## Creating a Forest from Disconnected CMesh
 
 Once you have a cmesh with disconnected regions, create a forest:
 
 ```c
+
 // Initialize forest
 t8_forest_t forest;
 t8_forest_init(&forest);
@@ -84,7 +92,8 @@ t8_forest_set_level(forest, initial_level);
 
 // Commit the forest
 t8_forest_commit(forest);
-```
+
+```text
 
 ## How T8code Manages Disconnected Regions
 
@@ -99,6 +108,7 @@ t8_forest_commit(forest);
 ## Example: Managing Multiple Spatial Domains
 
 ```c
+
 // Example: Create 3 disconnected cubic regions
 void create_three_disconnected_cubes(sc_MPI_Comm comm) {
     t8_cmesh_t cmesh;
@@ -144,7 +154,8 @@ void create_three_disconnected_cubes(sc_MPI_Comm comm) {
     // Each cube is now independently refined to level 3
     // They remain spatially disconnected
 }
-```
+
+```text
 
 ## Key Points
 
@@ -159,6 +170,7 @@ void create_three_disconnected_cubes(sc_MPI_Comm comm) {
 5. **Independent Refinement**: Each disconnected region can be refined independently according to local criteria.
 
 This design makes t8code well-suited for applications with multiple spatial domains, such as:
+
 - Multi-body simulations
 - Domain subdivision methods
 - Adaptive mesh refinement for scattered objects

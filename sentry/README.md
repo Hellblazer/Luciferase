@@ -36,7 +36,8 @@ Sentry provides robust 3D Delaunay tetrahedralization with support for kinetic (
 
 ## Architecture
 
-```
+```text
+
 com.hellblazer.luciferase.sentry/
 ├── Tetrahedralization      # Main tetrahedralization class
 ├── Vertex                  # 3D vertex representation
@@ -48,13 +49,15 @@ com.hellblazer.luciferase.sentry/
 │   ├── PackedTetrahedron
 │   └── PackedWalker
 └── parallel/              # Parallel algorithms
-```
+
+```text
 
 ## Usage Examples
 
 ### Basic Tetrahedralization
 
 ```java
+
 import com.hellblazer.luciferase.sentry.Tetrahedralization;
 import com.hellblazer.luciferase.sentry.Vertex;
 
@@ -73,11 +76,13 @@ mesh.build();
 // Query point location
 var point = new Point3d(0.25, 0.25, 0.25);
 var tet = mesh.locate(point);
-```
+
+```text
 
 ### Kinetic Points
 
 ```java
+
 // Create kinetic tetrahedralization
 var kinetic = new KineticTetrahedralization();
 
@@ -89,11 +94,13 @@ kinetic.updateTime(deltaTime);
 
 // Maintain Delaunay property
 kinetic.repair();
-```
+
+```text
 
 ### Convex Hull
 
 ```java
+
 // Compute 3D convex hull
 var points = List.of(
     new Point3d(0, 0, 0),
@@ -105,25 +112,28 @@ var points = List.of(
 
 var hull = ConvexHull3D.compute(points);
 var faces = hull.getFaces();
-```
+
+```text
 
 ### Voronoi Diagram
 
 ```java
+
 // Generate Voronoi diagram (dual of Delaunay)
 var voronoi = mesh.getVoronoiDiagram();
 
 // Get Voronoi cell for a vertex
 var cell = voronoi.getCell(vertex);
 var cellFaces = cell.getFaces();
-```
+
+```text
 
 ## Performance
 
 ### Benchmarks (10,000 random points)
 
 | Operation | Time (ms) | Throughput |
-|-----------|-----------|------------|
+| ----------- | ----------- | ------------ |
 | Sequential Build | 245 | 40K vertices/sec |
 | Parallel Build (8 cores) | 67 | 149K vertices/sec |
 | Point Location | 0.012 | 83K queries/sec |
@@ -141,6 +151,7 @@ var cellFaces = cell.getFaces();
 Sentry uses robust geometric predicates to handle numerical precision:
 
 ```java
+
 // Orientation predicate (sign of volume)
 var orient = OrientationPredicate.orient3d(p1, p2, p3, p4);
 
@@ -149,23 +160,30 @@ var inSphere = InSpherePredicate.inSphere(p1, p2, p3, p4, query);
 
 // Collinearity test
 var collinear = GeometricPredicates.areCollinear(p1, p2, p3);
-```
+
+```text
 
 ## Testing
 
 ```bash
+
 # Run all Sentry tests
+
 mvn test -pl sentry
 
 # Run specific test suite
+
 mvn test -pl sentry -Dtest=TetrahedralizationTest
 
 # Run packed implementation tests
+
 mvn test -pl sentry -Dtest=Packed*Test
 
 # Performance benchmarks
+
 mvn test -pl sentry -Dtest=*Benchmark
-```
+
+```text
 
 ## Known Issues
 

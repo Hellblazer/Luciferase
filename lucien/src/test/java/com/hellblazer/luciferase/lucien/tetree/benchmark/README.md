@@ -42,6 +42,7 @@ Measures the performance improvement in spatial index set operations.
 To run these benchmarks, you need to add JMH dependencies to the `lucien/pom.xml`:
 
 ```xml
+
 <dependency>
     <groupId>org.openjdk.jmh</groupId>
     <artifactId>jmh-core</artifactId>
@@ -54,36 +55,47 @@ To run these benchmarks, you need to add JMH dependencies to the `lucien/pom.xml
     <version>1.37</version>
     <scope>test</scope>
 </dependency>
-```
+
+```text
 
 ## Running the Benchmarks
 
 ### Run all benchmarks:
 
 ```bash
+
 mvn clean test -Dtest=TetreeLevelCacheBenchmark,TetreeParentChainBenchmark,SpatialIndexSetBenchmark
-```
+
+```text
 
 ### Run individual benchmarks:
 
 ```bash
+
 # Level extraction benchmark
+
 mvn test -Dtest=TetreeLevelCacheBenchmark
 
 # Parent chain benchmark
+
 mvn test -Dtest=TetreeParentChainBenchmark
 
 # Spatial index set benchmark
+
 mvn test -Dtest=SpatialIndexSetBenchmark
-```
+
+```text
 
 ### Run with custom JMH options:
 
 ```bash
+
 java -cp target/test-classes:target/classes:target/dependency/* \
      org.openjdk.jmh.Main ".*TetreeLevelCache.*" \
+
      -f 1 -wi 3 -i 5 -t 1
-```
+
+```text
 
 ## Interpreting Results
 

@@ -9,6 +9,7 @@ The Portal module's mesh handling system provides comprehensive support for 3D p
 ### Mesh Representation
 
 The system uses an indexed face representation where:
+
 - Vertices are stored as a list of 3D points (Vector3d)
 - Faces reference vertices by index
 - Normals can be per-vertex or per-face
@@ -17,11 +18,13 @@ The system uses an indexed face representation where:
 ### File Format Support
 
 #### OBJ Format
+
 - Full support for vertices, normals, texture coordinates, and faces
 - Handles complex polygons (automatically triangulated for rendering)
 - Preserves material and group information
 
 #### STL Format
+
 - Binary and ASCII STL support
 - Automatic normal calculation if not provided
 - Efficient loading of large mesh files
@@ -31,6 +34,7 @@ The system uses an indexed face representation where:
 ### Loading a Mesh
 
 ```java
+
 // Load from OBJ file
 Mesh mesh = MeshLoader.loadObj("model.obj");
 
@@ -39,11 +43,13 @@ Mesh mesh = MeshLoader.loadStl("model.stl");
 
 // Create JavaFX MeshView for rendering
 MeshView view = MeshLoader.loadMeshView("model.obj");
-```
+
+```text
 
 ### Creating Meshes Programmatically
 
 ```java
+
 // Create a simple cube
 Cube cube = new Cube(1.0); // 1.0 = edge length
 Mesh cubeMesh = cube.getMesh();
@@ -55,11 +61,13 @@ Mesh icoMesh = ico.getMesh();
 // Create a sphere approximation
 Icosphere sphere = new Icosphere(1.0, 3); // radius=1.0, subdivisions=3
 Mesh sphereMesh = sphere.getMesh();
-```
+
+```text
 
 ### Working with Faces
 
 ```java
+
 Mesh mesh = // ... load or create mesh
 
 // Iterate through faces
@@ -76,7 +84,8 @@ for (Face face : mesh.getFaces()) {
     // Get face normal
     Vector3d normal = face.calculateNormal();
 }
-```
+
+```text
 
 ## Conway Operations
 
@@ -85,6 +94,7 @@ The system supports all standard Conway polyhedron operations:
 ### Basic Operations
 
 ```java
+
 Polyhedron poly = new Cube(1.0);
 
 // Ambo (rectification) - creates vertices at edge midpoints
@@ -98,11 +108,13 @@ Polyhedron truncated = poly.truncate();
 
 // Kis - adds pyramids to faces
 Polyhedron kis = poly.kis();
-```
+
+```text
 
 ### Advanced Operations
 
 ```java
+
 // Expand (bevel) - separates faces and edges
 Polyhedron expanded = poly.expand();
 
@@ -117,11 +129,13 @@ Polyhedron snub = poly.snub();
 
 // Reflect - creates mirror image
 Polyhedron reflected = poly.reflect();
-```
+
+```text
 
 ### Chaining Operations
 
 ```java
+
 // Create a truncated icosahedron (soccer ball)
 Polyhedron soccerBall = new Icosahedron(1.0)
     .truncate();
@@ -130,13 +144,15 @@ Polyhedron soccerBall = new Icosahedron(1.0)
 Polyhedron geodesic = new Icosahedron(1.0)
     .subdivide(3)  // Goldberg subdivision
     .normalize(1.0); // Project to sphere
-```
+
+```text
 
 ## Mesh Topology
 
 ### Adjacency Structures
 
 ```java
+
 Mesh mesh = // ... your mesh
 
 // Build edge-to-face adjacency
@@ -150,11 +166,13 @@ List<Face> neighbors = faceAdj.getAdjacentFaces(face);
 // Build vertex-to-face adjacency
 VertexToAdjacentFace vertexAdj = new VertexToAdjacentFace(mesh);
 List<Face> facesAroundVertex = vertexAdj.getAdjacentFaces(vertexIndex);
-```
+
+```text
 
 ### Ordered Adjacency
 
 ```java
+
 // Get ordered edges around a vertex
 OrderedVertexToAdjacentEdge orderedEdges = 
     new OrderedVertexToAdjacentEdge(mesh);
@@ -164,38 +182,45 @@ List<Edge> edgeRing = orderedEdges.getOrderedEdges(vertexIndex);
 OrderedVertexToAdjacentFace orderedFaces = 
     new OrderedVertexToAdjacentFace(mesh);
 List<Face> faceRing = orderedFaces.getOrderedFaces(vertexIndex);
-```
+
+```text
 
 ## Mesh Operations
 
 ### Normal Generation
 
 ```java
+
 // Generate vertex normals (smooth shading)
 mesh.generateNormals();
 
 // Access generated normals
 List<Vector3d> normals = mesh.getNormals();
-```
+
+```text
 
 ### Triangulation
 
 ```java
+
 // Convert to JavaFX TriangleMesh (triangulates automatically)
 TriangleMesh triMesh = mesh.toTriangleMesh();
 
 // Manual triangulation of a face
 Face quad = // ... 4-vertex face
 List<int[]> triangles = quad.toTriangles();
-```
+
+```text
 
 ### Export
 
 ```java
+
 // Export to OBJ format
 String objContent = mesh.toObj();
 Files.write(Paths.get("output.obj"), objContent.getBytes());
-```
+
+```text
 
 ## Performance Tips
 
@@ -209,6 +234,7 @@ Files.write(Paths.get("output.obj"), objContent.getBytes());
 ### Creating Custom Polyhedra
 
 ```java
+
 public class MyPolyhedron extends Polyhedron {
     public MyPolyhedron() {
         // Define vertices
@@ -224,11 +250,13 @@ public class MyPolyhedron extends Polyhedron {
         generateNormals();
     }
 }
-```
+
+```text
 
 ### Processing Mesh Geometry
 
 ```java
+
 // Scale a mesh
 for (Vector3d vertex : mesh.getVertices()) {
     vertex.scale(2.0); // Double the size
@@ -239,11 +267,13 @@ Vector3d centroid = mesh.calculateCentroid();
 for (Vector3d vertex : mesh.getVertices()) {
     vertex.sub(centroid);
 }
-```
+
+```text
 
 ## Visualization Integration
 
 ```java
+
 // Create mesh and convert to JavaFX
 Mesh mesh = new Icosphere(1.0, 4);
 TriangleMesh triMesh = mesh.toTriangleMesh();
@@ -255,4 +285,5 @@ meshView.setDrawMode(DrawMode.FILL);
 
 // Add to scene
 group.getChildren().add(meshView);
-```
+
+```text

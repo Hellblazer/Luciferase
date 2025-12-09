@@ -5,12 +5,14 @@
 This document outlines a comprehensive solution for handling the massive scale differences in visualizing spatial index structures that span 21 levels of subdivision. The plan addresses the fundamental challenge of mapping spatial index coordinates (ranging from 0 to 2^21) to JavaFX 3D's optimal coordinate range while maintaining visual clarity across all zoom levels.
 
 ### Key Challenges
+
 - Spatial indices use integer coordinates from 0 to 2,097,152
 - JavaFX 3D performs best with coordinates in range -1,000 to 1,000
 - Dynamic range spans over 1 million to 1 between smallest and largest cells
 - Previous attempts spent excessive time fighting scaling issues
 
 ### Solution Overview
+
 Implement a normalized coordinate system with level-aware scaling that automatically adapts visualization to the current viewing level, eliminating manual coordinate transformations throughout the codebase.
 
 ## Problem Analysis
@@ -18,11 +20,13 @@ Implement a normalized coordinate system with level-aware scaling that automatic
 ### 1. Coordinate System Scale Mismatch
 
 The spatial index system uses a 21-bit coordinate space:
+
 - **Maximum coordinate**: 2^21 - 1 = 2,097,151
 - **Coordinate range**: 0 to 2,097,152
 - **Direct visualization**: Would place objects millions of units from origin
 
 JavaFX 3D limitations:
+
 - **Optimal rendering range**: -1,000 to 1,000
 - **Z-buffer precision**: Degrades with large coordinate values
 - **Floating-point precision**: Accumulates errors at extreme scales
@@ -30,13 +34,16 @@ JavaFX 3D limitations:
 ### 2. Level-Based Scale Variations
 
 Cell sizes across levels:
-```
+
+```text
+
 Level 0:  2^21 = 2,097,152 units (entire space)
 Level 5:  2^16 = 65,536 units
 Level 10: 2^11 = 2,048 units
 Level 15: 2^6  = 64 units
 Level 20: 2^1  = 2 units
-```
+
+```text
 
 Dynamic range: 1,048,576:1 ratio between level 0 and level 20
 
@@ -45,9 +52,12 @@ Dynamic range: 1,048,576:1 ratio between level 0 and level 20
 Analysis of existing code reveals:
 
 1. **CellViews.calculateTransform()**: Directly maps integer coordinates
+
    ```java
+
    transform.appendTranslation(anchor.x, anchor.y, anchor.z);
-   ```
+
+```text
 
 2. **AutoScalingGroup**: Disabled (`autoScale = false`), suggesting past issues
 
@@ -60,6 +70,7 @@ Analysis of existing code reveals:
 ### Spatial Index Coordinate System
 
 The spatial index uses Morton encoding with 21-bit coordinates:
+
 - Each dimension (x, y, z) can range from 0 to 2^21-1
 - Cells are identified by their lower-left-back corner (anchor)
 - Cell size = 2^(21-level) at each level
@@ -74,6 +85,7 @@ The spatial index uses Morton encoding with 21-bit coordinates:
 ### Previous Scaling Attempts
 
 Evidence from codebase:
+
 - `AutoScalingGroup` exists but is disabled
 - No consistent scaling strategy across components
 - Manual coordinate transformations scattered in code
@@ -82,7 +94,8 @@ Evidence from codebase:
 
 ### Component Design
 
-```
+```text
+
 ┌─────────────────────────────┐
 │     ScalingStrategy         │
 ├─────────────────────────────┤
@@ -104,11 +117,13 @@ Evidence from codebase:
 │ + scaleGrid()│ │ + scaleTet() │
 │ + adaptLOD() │ │ + transform()│
 └──────────────┘ └──────────────┘
-```
+
+```text
 
 ### Coordinate Transformation Pipeline
 
-```
+```text
+
 Stage 1: Normalization
 ━━━━━━━━━━━━━━━━━━━━━
 Input:  Spatial Index Coordinates (0 to 2^21)
@@ -132,13 +147,15 @@ Stage 4: Camera Transform
 Input:  View Coordinates
 Output: Screen Coordinates
 Transform: Applied by JavaFX rendering pipeline
-```
+
+```text
 
 ## Implementation Specifications
 
 ### 1. ScalingStrategy Class
 
 ```java
+
 public class ScalingStrategy {
     private static final double MAX_COORDINATE = Constants.MAX_EXTENT; // 2^21
     private static final double VIEW_SCALE = 1000.0; // Target view size
@@ -177,11 +194,13 @@ public class ScalingStrategy {
                                extent, extent, extent);
     }
 }
-```
+
+```text
 
 ### 2. Modified CellViews Transform
 
 ```java
+
 public class CellViews {
     private final ScalingStrategy scalingStrategy = new ScalingStrategy();
     
@@ -220,11 +239,13 @@ public class CellViews {
         return transform;
     }
 }
-```
+
+```text
 
 ### 3. AdaptiveGrid Implementation
 
 ```java
+
 public class AdaptiveGrid extends Grid {
     private final ScalingStrategy scalingStrategy = new ScalingStrategy();
     private int currentLevel = 10; // Default viewing level
@@ -268,11 +289,13 @@ public class AdaptiveGrid extends Grid {
         return 1.0 / getGridDensityForLevel(level);
     }
 }
-```
+
+```text
 
 ### 4. Camera Management
 
 ```java
+
 public class AdaptiveCameraController {
     private final PerspectiveCamera camera;
     private final ScalingStrategy scalingStrategy = new ScalingStrategy();
@@ -318,13 +341,15 @@ public class AdaptiveCameraController {
         camera.setTranslateZ(-normalizedSize * VIEW_SCALE * 3);
     }
 }
-```
+
+```text
 
 ## Integration Strategy
 
 ### 1. Component Integration Flow
 
-```
+```text
+
 TetreeInspector
       │
       ├── ScalingStrategy (shared instance)
@@ -335,7 +360,8 @@ TetreeInspector
       ├── AdaptiveGrid → uses ScalingStrategy
       │
       └── AdaptiveCameraController → uses ScalingStrategy
-```
+
+```text
 
 ### 2. Backward Compatibility
 
@@ -355,9 +381,11 @@ TetreeInspector
 
 ### Multi-Resolution Grid Design
 
-```
+```text
+
 Level 0-5 (Coarse):
 ━━━━━━━━━━━━━━━━━
+
 - 8x8x8 major grid lines only
 - Thick lines (0.02 radius)
 - Alpha = 1.0
@@ -365,6 +393,7 @@ Level 0-5 (Coarse):
 
 Level 6-10 (Medium):
 ━━━━━━━━━━━━━━━━━━
+
 - 16x16x16 grid
 - Major lines every 4 cells (thick)
 - Minor lines (0.01 radius)
@@ -373,6 +402,7 @@ Level 6-10 (Medium):
 
 Level 11-15 (Fine):
 ━━━━━━━━━━━━━━━━━
+
 - 32x32x32 grid
 - Major lines every 8 cells
 - Minor lines every cell
@@ -381,16 +411,19 @@ Level 11-15 (Fine):
 
 Level 16-20 (Ultra-fine):
 ━━━━━━━━━━━━━━━━━━━━━━━
+
 - Only show grid within view frustum
 - Maximum 64x64x64 visible cells
 - Very thin lines (0.005 radius)
 - Alpha = 0.4
 - Color: Very light gray
-```
+
+```text
 
 ### Level-of-Detail (LOD) Implementation
 
 ```java
+
 public class GridLODManager {
     private static final int MAX_VISIBLE_LINES = 10000;
     
@@ -413,7 +446,8 @@ public class GridLODManager {
         return config;
     }
 }
-```
+
+```text
 
 ### Performance Optimizations
 
@@ -428,6 +462,7 @@ public class GridLODManager {
 ### 1. Unit Tests
 
 ```java
+
 @Test
 public void testScalingStrategyNormalization() {
     ScalingStrategy strategy = new ScalingStrategy();
@@ -457,7 +492,8 @@ public void testLevelTransformScaling() {
     assertTrue(scale10 > scale0);
     assertEquals(1024.0, scale10 / scale0, 0.001); // 2^10 difference
 }
-```
+
+```text
 
 ### 2. Visual Validation
 
@@ -476,6 +512,7 @@ public void testLevelTransformScaling() {
 ### 3. Performance Benchmarks
 
 Target metrics:
+
 - 60 FPS with 1000 visible tetrahedra
 - < 100ms grid regeneration when changing levels
 - < 10MB memory overhead for scaling system
@@ -491,31 +528,37 @@ Target metrics:
 ## Implementation Roadmap
 
 ### Phase 1: Core Infrastructure (Week 1)
+
 - [ ] Implement ScalingStrategy class
 - [ ] Create comprehensive unit tests
 - [ ] Validate mathematical correctness
 
 ### Phase 2: Component Updates (Week 2)
+
 - [ ] Modify CellViews to use ScalingStrategy
 - [ ] Update transform caching mechanism
 - [ ] Test with existing visualizations
 
 ### Phase 3: Grid System (Week 3)
+
 - [ ] Implement AdaptiveGrid class
 - [ ] Create GridLODManager
 - [ ] Optimize grid rendering performance
 
 ### Phase 4: Camera System (Week 4)
+
 - [ ] Implement AdaptiveCameraController
 - [ ] Integrate with level changes
 - [ ] Add smooth transitions
 
 ### Phase 5: Integration (Week 5)
+
 - [ ] Update TetreeInspector
 - [ ] Coordinate all components
 - [ ] End-to-end testing
 
 ### Phase 6: Optimization (Week 6)
+
 - [ ] Performance profiling
 - [ ] Memory optimization
 - [ ] Visual polish
@@ -525,24 +568,35 @@ Target metrics:
 ### A. Mathematical Formulas
 
 #### Normalization
-```
+
+```text
+
 normalized_coord = spatial_index_coord / 2^21
-```
+
+```text
 
 #### Level Scaling
-```
+
+```text
+
 scale_factor = view_size / (2^(21-level))
-```
+
+```text
 
 #### View Transformation
-```
+
+```text
+
 view_coord = (normalized_coord - 0.5) * view_size
-```
+
+```text
 
 ### B. Reference Implementation
 
 Simple example of complete transformation:
+
 ```java
+
 // Input: Spatial index position at level 10
 Point3f spatialPos = new Point3f(1048576, 524288, 262144);
 int level = 10;
@@ -564,7 +618,8 @@ Point3f viewPos = new Point3f(
     (normalized.y - 0.5f) * VIEW_SCALE * scaleFactor,
     (normalized.z - 0.5f) * VIEW_SCALE * scaleFactor
 );
-```
+
+```text
 
 ### C. Performance Considerations
 
@@ -587,6 +642,7 @@ Point3f viewPos = new Point3f(
 This scaling solution addresses the fundamental challenge of visualizing spatial indices across their entire dynamic range. By introducing a normalized coordinate system and level-aware scaling, we eliminate the manual coordinate transformations that plagued previous attempts. The architecture provides a clean separation of concerns, allowing each component to focus on its primary responsibility while the ScalingStrategy handles all coordinate transformations.
 
 The implementation prioritizes:
+
 - **Simplicity**: Single source of scaling logic
 - **Performance**: Efficient transforms and caching
 - **Flexibility**: Easy to adjust parameters

@@ -16,6 +16,7 @@ DyAda Java is a sophisticated computational geometry library that implements ada
 ## Key Features
 
 ### Core Capabilities
+
 - **Adaptive Mesh Refinement**: Dynamic refinement and coarsening based on configurable criteria
 - **Multiscale Spatial Indexing**: Efficient hierarchical spatial data structures using Morton order
 - **Coordinate Transformations**: Linear, affine, rotation, scaling, and composite transformations
@@ -23,6 +24,7 @@ DyAda Java is a sophisticated computational geometry library that implements ada
 - **Visualization Support**: Data structures optimized for 3D visualization and rendering
 
 ### Modern Java Features
+
 - **Records**: Immutable data structures with built-in validation
 - **Sealed Classes**: Type-safe hierarchies for spatial operations
 - **Pattern Matching**: Clean conditional logic for coordinate transformations
@@ -30,6 +32,7 @@ DyAda Java is a sophisticated computational geometry library that implements ada
 - **Memory Efficiency**: Immutable data structures with copy-on-write semantics
 
 ### Performance Characteristics
+
 - **Spatial Queries**: O(log n) average case for range and nearest neighbor queries
 - **Morton Encoding**: O(1) encoding/decoding with bit manipulation optimization
 - **Adaptive Refinement**: O(k log n) where k is the number of cells to refine
@@ -40,7 +43,8 @@ DyAda Java is a sophisticated computational geometry library that implements ada
 
 ### Package Structure
 
-```
+```text
+
 com.dyada
 ├── core/                           # Fundamental data structures
 │   ├── coordinates/               # Spatial coordinate systems
@@ -86,7 +90,8 @@ com.dyada
 │   └── ParallelDyAdaOperations.java # Parallel processing
 └── exceptions/                   # Custom exception hierarchy
     └── TransformationException.java # Transformation errors
-```
+
+```text
 
 ### Design Patterns
 
@@ -99,6 +104,7 @@ com.dyada
 ### Type Safety Enhancements
 
 ```java
+
 // Sealed class hierarchy for refinement strategies
 public sealed interface AdaptiveRefinementStrategy 
     permits ErrorBasedRefinement, GradientBasedRefinement {
@@ -132,13 +138,15 @@ public Coordinate transform(Coordinate input, TransformationType type) {
         case SCALING -> applyScalingTransform(input);
     };
 }
-```
+
+```text
 
 ## Quick Start
 
 ### Basic Setup
 
 ```java
+
 import com.dyada.refinement.*;
 import com.dyada.core.coordinates.*;
 import com.dyada.discretization.*;
@@ -155,11 +163,13 @@ var bounds = new Bounds(
 // - maxLevel: 8 (maximum refinement)
 // - tolerance: 0.1 (refinement threshold)
 var mesh = new AdaptiveMesh(bounds, 4, 8, 0.1);
-```
+
+```text
 
 ### Entity Management
 
 ```java
+
 // Insert entities at specific locations
 mesh.insertEntity("sensor1", new Coordinate(new double[]{2.5, 3.7}));
 mesh.insertEntity("sensor2", new Coordinate(new double[]{7.2, 1.8}));
@@ -175,11 +185,13 @@ mesh.removeEntity("sensor2");
 var stats = mesh.getStatistics();
 System.out.printf("Active cells: %d, Entities: %d, Max level: %d%n",
     stats.activeCells(), stats.entityCount(), stats.maxLevel());
-```
+
+```text
 
 ### Adaptive Refinement
 
 ```java
+
 // Configure refinement criteria
 var criteria = RefinementCriteria.builder()
     .refinementThreshold(0.01)    // Refine when error > 1%
@@ -198,11 +210,13 @@ var gradientStrategy = new GradientBasedRefinement(1.0, 0.5, 0.1);
 var result = mesh.refineAdaptively(errorStrategy, criteria);
 System.out.printf("Refined %d cells, created %d new cells%n", 
     result.cellsRefined(), result.newActiveCells());
-```
+
+```text
 
 ### Spatial Queries
 
 ```java
+
 // Range queries - find all entities within a spatial region
 var queryBounds = new CoordinateInterval(
     new Coordinate(new double[]{1.0, 1.0}),
@@ -216,11 +230,13 @@ var entitiesInRadius = mesh.queryRadius(center, 2.0);
 
 // Nearest neighbor queries
 var nearestNeighbors = mesh.queryNearestNeighbors(center, 3);
-```
+
+```text
 
 ### Coordinate Transformations
 
 ```java
+
 import com.dyada.transformations.*;
 
 // Linear transformation (2D scaling)
@@ -251,11 +267,13 @@ var affine = AffineTransformation.builder()
     .translate(1.0, 1.0)
     .build();
 var affineResult = affine.transform(point);
-```
+
+```text
 
 ### Spatial Discretization
 
 ```java
+
 import com.dyada.discretization.*;
 import com.dyada.core.descriptors.*;
 
@@ -284,11 +302,13 @@ queryEngine.insert("item2", new Coordinate(new double[]{75.0, 60.0}));
 // Advanced queries
 var nearestItems = queryEngine.kNearestNeighbors(location, 5);
 var itemsInRange = queryEngine.rangeQuery(queryBounds);
-```
+
+```text
 
 ### Morton Order Operations
 
 ```java
+
 import com.dyada.core.linearization.*;
 import com.dyada.performance.*;
 
@@ -311,11 +331,13 @@ long optimizedCode = optimizer.encode(coord, 10); // 10-bit precision
 
 // Decode Morton code back to coordinates
 var decoded = optimizer.decode(optimizedCode, 2, 10); // 2D, 10-bit
-```
+
+```text
 
 ### BitArray Operations
 
 ```java
+
 import com.dyada.core.bitarray.*;
 
 // Create and manipulate bit arrays
@@ -337,13 +359,15 @@ boolean isEmpty = bitArray1.isEmpty();
 bitArray1.stream().forEach(bit -> {
     // Process each bit
 });
-```
+
+```text
 
 ## Advanced Usage
 
 ### Custom Refinement Strategies
 
 ```java
+
 public class GradientBasedStrategy implements AdaptiveRefinementStrategy {
     private final double gradientThreshold;
     private final double coarseningFactor;
@@ -385,11 +409,13 @@ public class GradientBasedStrategy implements AdaptiveRefinementStrategy {
             .orElse(0.0);
     }
 }
-```
+
+```text
 
 ### Custom Coordinate Transformations
 
 ```java
+
 public class PolarTransformation implements CoordinateTransformation {
     @Override
     public Coordinate transform(Coordinate source) throws TransformationException {
@@ -422,11 +448,13 @@ public class PolarTransformation implements CoordinateTransformation {
 var polar = new PolarTransformation();
 var cartesian = polar.transform(new Coordinate(new double[]{5.0, Math.PI/4}));
 // Result: [3.536, 3.536] (approximately)
-```
+
+```text
 
 ### Performance Optimization
 
 ```java
+
 import com.dyada.performance.*;
 
 // Configure parallel operations
@@ -454,11 +482,13 @@ cache.configure()
 
 // Cache expensive coordinate transformations
 var cachedTransform = cache.memoize(expensiveTransformation);
-```
+
+```text
 
 ### Multi-Scale Indexing
 
 ```java
+
 import com.dyada.core.*;
 
 // Create multi-scale index for different resolution requirements
@@ -480,14 +510,15 @@ var index1 = multiIndex.getIndex(1);
 // Update specific dimensions
 var updated = multiIndex.updateLevel(0, (byte) 3);
 var modified = multiIndex.updateIndex(2, 45);
-```
+
+```text
 
 ## Performance Benchmarks
 
 ### Spatial Query Performance
 
 | Operation | Dataset Size | Average Time | Throughput |
-|-----------|-------------|--------------|------------|
+| ----------- | ------------- | -------------- | ------------ |
 | Range Query | 100K entities | 0.15 ms | 6,667 ops/sec |
 | k-NN Search (k=10) | 100K entities | 0.23 ms | 4,348 ops/sec |
 | Radius Query | 100K entities | 0.18 ms | 5,556 ops/sec |
@@ -497,7 +528,7 @@ var modified = multiIndex.updateIndex(2, 45);
 ### Memory Efficiency
 
 | Data Structure | Traditional | DyAda Java | Improvement |
-|---------------|-------------|------------|-------------|
+| --------------- | ------------- | ------------ | ------------- |
 | Spatial Index | 245 MB | 98 MB | 60% reduction |
 | Entity Storage | 156 MB | 89 MB | 43% reduction |
 | Coordinate Cache | 78 MB | 31 MB | 60% reduction |
@@ -505,7 +536,7 @@ var modified = multiIndex.updateIndex(2, 45);
 ### Refinement Performance
 
 | Mesh Size | Refinement Time | Memory Usage | Parallel Speedup |
-|-----------|----------------|--------------|------------------|
+| ----------- | ---------------- | -------------- | ------------------ |
 | 1K cells | 2.3 ms | 15 MB | 2.1x (4 cores) |
 | 10K cells | 18.7 ms | 89 MB | 3.2x (4 cores) |
 | 100K cells | 156 ms | 543 MB | 3.8x (4 cores) |
@@ -513,10 +544,12 @@ var modified = multiIndex.updateIndex(2, 45);
 ## Build Requirements
 
 ### Java Version
+
 - **Java 24+**: Required for records, pattern matching, sealed classes, and enhanced type inference
 - **Preview Features**: Some features may require `--enable-preview` flag
 
 ### Build Tools
+
 - **Maven 3.9.1+**: Build system and dependency management
 - **Memory**: Minimum 2GB heap for large datasets
 - **Operating System**: Cross-platform (Windows, macOS, Linux)
@@ -524,6 +557,7 @@ var modified = multiIndex.updateIndex(2, 45);
 ### Dependencies
 
 ```xml
+
 <dependencies>
     <!-- Core dependencies -->
     <dependency>
@@ -546,40 +580,51 @@ var modified = multiIndex.updateIndex(2, 45);
         <scope>test</scope>
     </dependency>
 </dependencies>
-```
+
+```text
 
 ## Build Commands
 
 ```bash
+
 # Clean and compile the library
+
 mvn clean compile
 
 # Run all tests (310 tests total)
+
 mvn test
 
 # Run specific test categories
+
 mvn test -Dtest=*PropertyTest*    # Property-based tests
 mvn test -Dtest=*Benchmark*       # Performance benchmarks
 mvn test -Dtest=*Integration*     # Integration tests
 
 # Generate test coverage report
+
 mvn jacoco:report
 
 # Generate API documentation
+
 mvn javadoc:javadoc
 
 # Create distribution package
+
 mvn clean package
 
 # Install to local repository
+
 mvn install
-```
+
+```text
 
 ## Integration Examples
 
 ### Spring Boot Integration
 
 ```java
+
 @Configuration
 @EnableConfigurationProperties(DyAdaProperties.class)
 public class DyAdaConfig {
@@ -632,12 +677,15 @@ public class DyAdaProperties {
         private int threadCount = Runtime.getRuntime().availableProcessors();
     }
 }
-```
+
+```text
 
 ### Application Configuration
 
 ```yaml
+
 # application.yml
+
 dyada:
   bounds:
     lower: [0.0, 0.0, 0.0]
@@ -648,11 +696,13 @@ dyada:
   parallel:
     enabled: true
     thread-count: 8
-```
+
+```text
 
 ### JavaFX Visualization
 
 ```java
+
 public class MeshVisualization extends Application {
     private AdaptiveMesh mesh;
     private Timeline animation;
@@ -715,7 +765,8 @@ public class MeshVisualization extends Application {
         // This would integrate with the actual 3D rendering system
     }
 }
-```
+
+```text
 
 ## Testing Strategy
 
@@ -766,20 +817,26 @@ public class MeshVisualization extends Application {
 ### Running Tests
 
 ```bash
+
 # Run all tests with coverage
+
 mvn clean test jacoco:report
 
 # Run specific test categories
+
 mvn test -Dtest="**/*PropertyTest"
 mvn test -Dtest="**/*IntegrationTest"
 mvn test -Dtest="**/*BenchmarkTest"
 
 # Run tests with verbose output
+
 mvn test -Dtest.verbose=true
 
 # Run tests with specific JVM arguments
+
 mvn test -Dargline="--enable-preview -Xmx4g"
-```
+
+```text
 
 ## Contributing
 
@@ -794,25 +851,33 @@ mvn test -Dargline="--enable-preview -Xmx4g"
 ### Contribution Process
 
 ```bash
+
 # Fork and clone the repository
+
 git clone https://github.com/your-username/dyada-java.git
 cd dyada-java
 
 # Create a feature branch
+
 git checkout -b feature/your-feature-name
 
 # Make your changes and run tests
+
 mvn clean test
 
 # Run code formatting
+
 mvn spotless:apply
 
 # Commit your changes
+
 git commit -m "Add: your feature description"
 
 # Push and create a pull request
+
 git push origin feature/your-feature-name
-```
+
+```text
 
 ### Code Quality Standards
 
@@ -840,6 +905,7 @@ For detailed API documentation, build the Javadoc using `mvn javadoc:javadoc` or
 ### Quick API Reference
 
 #### Core Classes
+
 - `AdaptiveMesh`: Main mesh implementation for adaptive refinement
 - `Coordinate`: N-dimensional immutable coordinates with mathematical operations
 - `SpatialDiscretizer`: Spatial discretization engine with configurable strategies
@@ -847,11 +913,13 @@ For detailed API documentation, build the Javadoc using `mvn javadoc:javadoc` or
 - `BitArray`: Immutable bit arrays with efficient bitwise operations
 
 #### Key Interfaces
+
 - `AdaptiveRefinementStrategy`: Strategy interface for refinement algorithms
 - `CoordinateTransformation`: Interface for coordinate transformation operations
 - `Linearization`: Abstract interface for space-filling curve implementations
 
 #### Exception Hierarchy
+
 - `DyadaException`: Base exception for all DyAda operations
 - `DyadaTooFineException`: Thrown when refinement exceeds precision limits
 - `TransformationException`: Thrown for invalid transformation operations

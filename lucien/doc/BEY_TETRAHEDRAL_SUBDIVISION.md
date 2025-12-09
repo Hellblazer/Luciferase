@@ -24,8 +24,10 @@ Bey refinement is NOT about subdividing a tetrahedron at cube positions. It's a 
 
 Given a parent tetrahedron with vertices V0, V1, V2, V3:
 
-```
+```text
+
 6 Edge Midpoints:
+
 - M01 = (V0 + V1) / 2  
 - M02 = (V0 + V2) / 2
 - M03 = (V0 + V3) / 2
@@ -35,20 +37,24 @@ Given a parent tetrahedron with vertices V0, V1, V2, V3:
 
 8 Children:
 Corner tetrahedra (at original vertices):
+
 - T0: V0, M01, M02, M03
 - T1: V1, M01, M12, M13
 - T2: V2, M02, M12, M23
 - T3: V3, M03, M13, M23
 
 Octahedral tetrahedra (from split octahedron):
+
 - T4-T7: Various combinations of edge midpoints
-```
+
+```text
 
 ## Implementation Details
 
 ### Core Data Structure
 
 ```java
+
 public class Tet {
     int x, y, z;    // Anchor coordinates (minimum x,y,z)
     byte l;         // Level (0-20)
@@ -80,15 +86,17 @@ public class Tet {
         return coords;
     }
 }
-```
+
+```text
 
 ### Subdivision Tables
 
 #### Child Type Table (Bey Order)
+
 For parent type b, the types of its 8 children:
 
 | Parent | T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 |
-|--------|----|----|----|----|----|----|----|----|
+| -------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
 | 0      | 0  | 0  | 0  | 0  | 4  | 5  | 2  | 1  |
 | 1      | 1  | 1  | 1  | 1  | 3  | 2  | 5  | 0  |
 | 2      | 2  | 2  | 2  | 2  | 0  | 1  | 4  | 3  |
@@ -97,10 +105,11 @@ For parent type b, the types of its 8 children:
 | 5      | 5  | 5  | 5  | 5  | 1  | 0  | 3  | 4  |
 
 #### TM Order Mapping
+
 Maps Bey order to TM (tree-monotonic) order for space-filling curve:
 
 | Parent | TM[0] | TM[1] | TM[2] | TM[3] | TM[4] | TM[5] | TM[6] | TM[7] |
-|--------|-------|-------|-------|-------|-------|-------|-------|-------|
+| -------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- |
 | 0      | T0    | T1    | T4    | T7    | T2    | T3    | T6    | T5    |
 | 1      | T0    | T1    | T5    | T7    | T2    | T3    | T6    | T4    |
 | 2      | T0    | T3    | T4    | T7    | T1    | T2    | T6    | T5    |
@@ -111,6 +120,7 @@ Maps Bey order to TM (tree-monotonic) order for space-filling curve:
 ### Full Subdivision Implementation
 
 ```java
+
 public static Tet[] subdivide(Tet parent) {
     // Get parent vertices using subdivision-compatible coordinates
     Point3i[] vertices = parent.subdivisionCoordinates();
@@ -139,7 +149,8 @@ public static Tet[] subdivide(Tet parent) {
     
     return children;
 }
-```
+
+```text
 
 ## Efficient Single-Child Computation
 
@@ -150,6 +161,7 @@ Instead of computing all 8 children to get one (O(8) operation), we can compute 
 ### Implementation
 
 ```java
+
 public static Tet getBeyChild(Tet parent, int beyChildIndex) {
     Point3i[] vertices = parent.subdivisionCoordinates();
     
@@ -190,12 +202,13 @@ public static Tet getMortonChild(Tet parent, int mortonIndex) {
     int beyIndex = /* conversion logic */;
     return getBeyChild(parent, beyIndex);
 }
-```
+
+```text
 
 ### Performance Characteristics
 
 | Operation | Time (ns) | Throughput (calls/sec) | Notes |
-|-----------|-----------|------------------------|-------|
+| ----------- | ----------- | ------------------------ | ------- |
 | Full subdivision (8 children) | 233 | 4.3M | Baseline |
 | Efficient single child | 17.1 | 58.5M | 13.6x faster |
 | Old Tet.child() | 51.9 | 19.3M | Before optimization |
@@ -225,7 +238,7 @@ Created `subdivisionCoordinates()` method that provides Bey-compatible vertices 
 ### Results
 
 | Metric | Before | After |
-|--------|--------|-------|
+| -------- | -------- | ------- |
 | Geometric Containment | 37.5% | **100%** |
 | Volume Conservation | 100% | 100% |
 | Algorithm Complexity | High (corrected version) | Low (original Bey) |
@@ -241,13 +254,18 @@ Created `subdivisionCoordinates()` method that provides Bey-compatible vertices 
 ## Usage Guide
 
 ### Basic Subdivision
+
 ```java
+
 // Get all 8 children (for visualization, bulk operations)
 Tet[] children = parent.geometricSubdivide();
-```
+
+```text
 
 ### Efficient Single Child Access
+
 ```java
+
 // For spatial index traversal (TM order)
 Tet child = BeySubdivision.getTMChild(parent, tmIndex);
 
@@ -256,7 +274,8 @@ Tet child = BeySubdivision.getMortonChild(parent, mortonIndex);
 
 // Direct Bey order access
 Tet child = BeySubdivision.getBeyChild(parent, beyIndex);
-```
+
+```text
 
 ### When to Use Each Method
 

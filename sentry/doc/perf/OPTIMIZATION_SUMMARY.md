@@ -10,6 +10,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Optimization Phases Completed
 
 ### Phase 1: Quick Wins (Target: 30-40%, Achieved: ~40%)
+
 1. **LinkedList → ArrayList** (21-984% improvement)
    - Replaced LinkedList with ArrayList for O(1) random access
    - Dramatic improvements for large ear lists
@@ -27,6 +28,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
    - Added batch release and adaptive sizing capabilities
 
 ### Phase 2: Algorithmic Improvements (Target: 20-30%, Achieved: ~35%)
+
 1. **Ordinal Optimization** (10.2% improvement)
    - Inlined ordinalOf() logic in hot paths
    - Converted to switch expressions for better performance
@@ -41,6 +43,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
    - Pre-allocated arrays to reduce allocations
 
 ### Phase 3: Advanced Optimizations (Target: 30-50%, Mixed results)
+
 1. **SIMD Vectorization** (Infrastructure complete, -70% due to overhead)
    - Implemented full SIMD infrastructure with Maven profiles
    - Runtime detection and fallback mechanisms
@@ -54,6 +57,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
    - Mixed results, theoretical O(n^(1/6)) improvement not achieved
 
 ### Phase 4: Architectural Changes (Target: 50%+, Partially achieved)
+
 1. **Hybrid Predicates** (29.6-66% improvement for small grids)
    - Fast float approximations with exact fallback
    - Excellent performance for orientation tests
@@ -67,16 +71,19 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Key Metrics
 
 ### Baseline Performance
+
 - Flip operation: ~22 µs
 - getAdjacentVertex: 16.13 ns/call
 - LinkedList access: 17.39 ns/op
 
 ### Final Performance
+
 - Flip operation: 5.41 µs (76% improvement)
 - getAdjacentVertex: 9.08 ns/call (44% improvement)  
 - ArrayList access: 3.91 ns/op (4.45x faster)
 
 ### Test Results
+
 - All existing tests pass (after updating expected values)
 - Performance maintained across different input sizes
 - Correctness preserved throughout optimizations
@@ -99,6 +106,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Recent Updates (July 2025)
 
 ### TetrahedronPool Refactoring and Optimization
+
 - **Problem**: Static singleton pool shared across all MutableGrid instances
 - **Solution**: Instance-based pooling with thread-local context
 - **Implementation**:
@@ -123,6 +131,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Recent Updates (July 2025) - Phase 2
 
 ### Optional Pooling Implementation
+
 - **Problem**: TetrahedronPool was mandatory, complicating debugging and testing
 - **Solution**: Abstraction layer with pluggable allocation strategies
 - **Implementation**:
@@ -141,6 +150,7 @@ Successfully completed a comprehensive optimization of the Sentry module's Delau
 ## Recent Updates (July 2025) - Phase 3
 
 ### Rebuild Performance Optimizations
+
 - **Problem**: Small rebuilds (≤256 points) suffered from pooling context overhead
 - **Solution**: Automatic direct allocation for small rebuilds, bypassing pool management
 - **Implementation**:

@@ -9,6 +9,7 @@ This document provides detailed explanations of the algorithms used in the Sentr
 ### Delaunay Property
 
 A tetrahedralization is Delaunay if no vertex lies inside the circumsphere of any tetrahedron. This property ensures:
+
 - Maximizes minimum angles (avoids slivers)
 - Unique for non-degenerate point sets
 - Dual structure is the Voronoi diagram
@@ -17,9 +18,13 @@ A tetrahedralization is Delaunay if no vertex lies inside the circumsphere of an
 ### Tetrahedron Orientation
 
 Vertices are ordered (a, b, c, d) such that:
-```
+
+```text
+
 orient3d(a, b, c, d) > 0
-```
+
+```text
+
 This ensures consistent positive orientation for all geometric predicates.
 
 ## Core Algorithms
@@ -27,8 +32,11 @@ This ensures consistent positive orientation for all geometric predicates.
 ### 1. Geometric Predicates
 
 #### Orientation Test (orient3d)
+
 Determines which side of plane ABC point D lies on:
+
 ```java
+
 double orient3d(Point3f a, Point3f b, Point3f c, Point3f d) {
     return det(
         |ax - dx  ay - dy  az - dz|
@@ -36,14 +44,19 @@ double orient3d(Point3f a, Point3f b, Point3f c, Point3f d) {
         |cx - dx  cy - dy  cz - dz|
     );
 }
-```
+
+```text
+
 - Result > 0: D is above plane ABC
 - Result < 0: D is below plane ABC
 - Result = 0: D is coplanar with ABC
 
 #### InSphere Test
+
 Determines if point E lies inside circumsphere of tetrahedron ABCD:
+
 ```java
+
 double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
     return det(
         |ax - ex  ay - ey  az - ez  (ax-ex)² + (ay-ey)² + (az-ez)²|
@@ -52,7 +65,9 @@ double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
         |dx - ex  dy - ey  dz - ez  (dx-ex)² + (dy-ey)² + (dz-ez)²|
     );
 }
-```
+
+```text
+
 - Result > 0: E is inside circumsphere
 - Result < 0: E is outside circumsphere
 - Result = 0: E is on circumsphere
@@ -62,6 +77,7 @@ double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
 The randomized jump-and-walk algorithm efficiently locates containing tetrahedra:
 
 ```java
+
 Tetrahedron locate(Point3f target, Tetrahedron start) {
     Tetrahedron current = (start != null) ? start : randomTetrahedron();
     
@@ -81,7 +97,8 @@ Tetrahedron locate(Point3f target, Tetrahedron start) {
         }
     }
 }
-```
+
+```text
 
 **Optimizations:**
 - Start from last query result (temporal locality)
@@ -91,7 +108,9 @@ Tetrahedron locate(Point3f target, Tetrahedron start) {
 ### 3. Incremental Construction
 
 #### Point Insertion
+
 ```java
+
 void insert(Point3f p) {
     // 1. Locate containing tetrahedron
     Tetrahedron tet = locate(p);
@@ -111,10 +130,13 @@ void insert(Point3f p) {
     // 3. Restore Delaunay property
     propagateDelaunay(newTetrahedra);
 }
-```
+
+```text
 
 #### 1→4 Flip (Point Inside)
-```
+
+```text
+
     Before:           After:
        d                 d
       /|\               /|\
@@ -127,10 +149,13 @@ void insert(Point3f p) {
        b                 b
 
 Creates 4 new tetrahedra: (a,b,c,p), (a,b,p,d), (a,p,c,d), (p,b,c,d)
-```
+
+```text
 
 #### 2→3 Flip (Convex Edge)
-```
+
+```text
+
     Before:                After:
        a                     a
       /|\                   /|\
@@ -141,13 +166,15 @@ Creates 4 new tetrahedra: (a,b,c,p), (a,b,p,d), (a,p,c,d), (p,b,c,d)
        b                     b
 
 Transforms 2 tetrahedra sharing face abe into 3 tetrahedra
-```
+
+```text
 
 ### 4. Delaunay Property Restoration
 
 After insertion, non-Delaunay faces are flipped:
 
 ```java
+
 void propagateDelaunay(List<Tetrahedron> modified) {
     Queue<OrientedFace> toCheck = new LinkedList<>();
     
@@ -170,13 +197,15 @@ void propagateDelaunay(List<Tetrahedron> modified) {
         }
     }
 }
-```
+
+```text
 
 ### 5. Vertex Deletion
 
 The ear-based algorithm removes vertices by collapsing their star:
 
 ```java
+
 void delete(Vertex v) {
     // 1. Find star set (incident tetrahedra)
     Set<Tetrahedron> star = v.star();
@@ -194,10 +223,13 @@ void delete(Vertex v) {
     // 4. Fill final hole (4→1 flip)
     fillFinalHole(boundary);
 }
-```
+
+```text
 
 #### Ear Identification
+
 A boundary triangle is an "ear" if:
+
 1. It's convex (forms valid tetrahedron)
 2. No other boundary vertices lie inside its circumsphere
 
@@ -206,6 +238,7 @@ A boundary triangle is an "ear" if:
 For moving points, the module supports efficient updates:
 
 ```java
+
 void moveVertex(Vertex v, Point3f newLocation) {
     // 1. Check if movement crosses any faces
     List<Tetrahedron> affected = findAffectedTetrahedra(v, newLocation);
@@ -221,23 +254,29 @@ void moveVertex(Vertex v, Point3f newLocation) {
         insert(v);
     }
 }
-```
+
+```text
 
 ## Special Cases and Degeneracies
 
 ### Coplanar Points
+
 When 4+ points are coplanar:
+
 - Use symbolic perturbation (SoS)
 - Maintain consistency across predicates
 - Ensure termination of algorithms
 
 ### Collinear Points
+
 When 3+ points are collinear:
+
 - Create degenerate tetrahedra temporarily
 - Remove during post-processing
 - Maintain topological consistency
 
 ### Duplicate Points
+
 - Detect using tolerance (epsilon)
 - Merge or reject based on policy
 - Update references consistently
@@ -245,8 +284,11 @@ When 3+ points are collinear:
 ## Performance Optimizations
 
 ### 1. Stochastic Walk
+
 Instead of deterministic traversal:
+
 ```java
+
 Tetrahedron stochasticWalk(Point3f target) {
     Tetrahedron current = randomStart();
     Set<Tetrahedron> visited = new HashSet<>();
@@ -270,16 +312,21 @@ Tetrahedron stochasticWalk(Point3f target) {
     
     return current;
 }
-```
+
+```text
 
 ### 2. History DAG
+
 Maintain insertion history for faster point location:
+
 - Each tetrahedron points to its "children"
 - Walk down DAG to find current containing tetrahedron
 - Amortized O(log n) point location
 
 ### 3. Biased Randomized Insertion
+
 Insert points in randomized order biased by spatial distribution:
+
 - Reduces expected number of flips
 - Improves cache locality
 - Better parallelization potential
@@ -289,6 +336,7 @@ Insert points in randomized order biased by spatial distribution:
 The Voronoi diagram is the geometric dual of Delaunay:
 
 ```java
+
 VoronoiCell computeVoronoiCell(Vertex v) {
     VoronoiCell cell = new VoronoiCell();
     
@@ -311,22 +359,27 @@ VoronoiCell computeVoronoiCell(Vertex v) {
     
     return cell;
 }
-```
+
+```text
 
 ## Robustness Considerations
 
 ### Floating Point Issues
+
 - Use tolerance-based comparisons
 - Implement consistent tie-breaking
 - Consider interval arithmetic for critical operations
 
 ### Predicate Consistency
+
 - Ensure orient3d and insphere are consistent
 - Use same precision for all geometric computations
 - Implement symbolic perturbation if needed
 
 ### Topological Invariants
+
 Maintain at all times:
+
 1. Each tetrahedron has exactly 4 neighbors
 2. Neighbor relationships are symmetric
 3. Vertex-tetrahedron incidence is consistent

@@ -5,7 +5,9 @@ This document describes the comprehensive test suite for validating the MutableG
 ## Test Files
 
 ### 1. MutableGridTest.java
+
 The main test class containing:
+
 - **smokin()**: Original smoke test with 2048 points and motion simulation
 - **testBasicTracking()**: Basic vertex insertion and tracking
 - **testContainment()**: Point containment validation within grid bounds
@@ -23,7 +25,9 @@ The main test class containing:
 - **testManualFlipValidation()**: Manual validation with known point configurations
 
 ### 2. DelaunayValidationTest.java
+
 Focused Delaunay constraint validation with manual calculations:
+
 - **testRegularTetrahedron()**: Validation with perfect regular tetrahedron
 - **testCoSphericalPoints()**: Handling of points on same sphere
 - **testGridPoints()**: Regular 3D grid validation
@@ -33,7 +37,9 @@ Focused Delaunay constraint validation with manual calculations:
 - **testScalingBehavior()**: Performance scaling analysis
 
 ### 3. FlipAlgorithmValidationTest.java
+
 Detailed flip algorithm validation:
+
 - **test1to4Flip()**: Basic 1->4 flip operation
 - **testFlipTopology()**: Topological consistency after flips
 - **testFlip4to1()**: 4->1 flip validation
@@ -44,6 +50,7 @@ Detailed flip algorithm validation:
 ## Helper Methods Added
 
 ### Tetrahedron.java
+
 - **circumsphereRadius()**: Calculate circumsphere radius
 - **volume()**: Calculate tetrahedron volume
 - **isDegenerate()**: Check for near-zero volume
@@ -52,6 +59,7 @@ Detailed flip algorithm validation:
 - **getValidationMetrics()**: Comprehensive validation metrics
 
 ### Vertex.java
+
 - **getStarSize()**: Count incident tetrahedra
 - **isOnConvexHull()**: Check if vertex is on convex hull
 - **getAverageEdgeLength()**: Calculate average edge length to neighbors
@@ -69,6 +77,7 @@ Detailed flip algorithm validation:
 ## Test Results
 
 The tests reveal:
+
 - The implementation correctly handles most cases
 - Some Delaunay violations occur with specific point configurations
 - The tests successfully identify these violations for debugging
@@ -78,18 +87,27 @@ The tests reveal:
 ## Usage
 
 Run all tests:
+
 ```bash
+
 mvn test -pl sentry
-```
+
+```text
 
 Run specific test class:
+
 ```bash
+
 mvn test -Dtest=MutableGridTest -pl sentry
 mvn test -Dtest=DelaunayValidationTest -pl sentry
 mvn test -Dtest=FlipAlgorithmValidationTest -pl sentry
-```
+
+```text
 
 Run specific test method:
+
 ```bash
+
 mvn test -Dtest=MutableGridTest#testDelaunayPropertySmallSet -pl sentry
-```
+
+```text

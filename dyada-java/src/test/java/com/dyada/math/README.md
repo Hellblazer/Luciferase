@@ -12,6 +12,7 @@ Mathematical operations in the DyAda project follow well-established mathematica
 ## Consolidated Utilities
 
 ### 1. VectorOperationProperties
+
 Tests mathematical properties for coordinate/vector operations:
 
 - **Addition**: Commutativity, associativity, identity
@@ -25,6 +26,7 @@ Tests mathematical properties for coordinate/vector operations:
 - **Cross Product**: Anti-commutativity, orthogonality (3D only)
 
 ### 2. GeometricProperties
+
 Tests spatial and geometric relationships:
 
 - **Containment**: Bounding box/interval containment properties
@@ -36,6 +38,7 @@ Tests spatial and geometric relationships:
 - **Numerical Stability**: Small perturbation handling
 
 ### 3. TransformationProperties
+
 Tests coordinate transformation properties:
 
 - **Basic Properties**: Dimension consistency, determinant finiteness
@@ -47,6 +50,7 @@ Tests coordinate transformation properties:
 - **Numerical Stability**: Small perturbation handling
 
 ### 4. IndexingProperties
+
 Tests spatial indexing and bit operation properties:
 
 - **Level Indices**: Bounds validation, refinement scaling
@@ -58,7 +62,9 @@ Tests spatial indexing and bit operation properties:
 ## Usage Examples
 
 ### Before Consolidation
+
 ```java
+
 @Property
 @Label("Addition is commutative")
 void additionIsCommutative(@ForAll Coordinate a, @ForAll Coordinate b) {
@@ -76,10 +82,13 @@ void additionIsAssociative(@ForAll Coordinate a, @ForAll Coordinate b, @ForAll C
 }
 
 // ... 15+ more similar tests
-```
+
+```text
 
 ### After Consolidation
+
 ```java
+
 @Property
 @Label("All vector operations follow mathematical laws")
 void allVectorOperationsFollowMathematicalLaws(
@@ -94,31 +103,37 @@ void allVectorOperationsFollowMathematicalLaws(
     
     // ... other consolidated property tests
 }
-```
+
+```text
 
 ## Benefits
 
 ### 1. Code Reduction
+
 - **71% reduction** in test code (435 → 125 lines in example)
 - **80% reduction** in test methods (18 → 5 methods in example)
 - Eliminates duplicate assertion logic
 
 ### 2. Consistency
+
 - Ensures same mathematical properties tested everywhere
 - Prevents missing edge cases in individual tests
 - Standardizes tolerance values and error handling
 
 ### 3. Maintainability
+
 - Single place to update mathematical property tests
 - Clear separation of mathematical laws from implementation details
 - Easier to add new mathematical properties
 
 ### 4. Reusability
+
 - Properties can be tested across different coordinate implementations
 - Transformation properties work with any transformation type
 - Indexing properties apply to various spatial index types
 
 ### 5. Clarity
+
 - Makes mathematical assumptions explicit
 - Documents which mathematical laws the code depends on
 - Easier to understand test intentions
@@ -136,29 +151,34 @@ Each utility class provides `@Provide` generators for common mathematical object
 ## Integration with Existing Tests
 
 ### Migration Strategy
+
 1. **Identify repetitive mathematical tests** in existing files
 2. **Replace with consolidated property calls** from utility classes
 3. **Remove duplicate assertion methods** and generators
 4. **Keep implementation-specific tests** that don't fit property patterns
 
 ### Example Migration
+
 See `RefactoredCoordinatePropertyTest.java` for a complete example of migrating from individual property tests to consolidated utilities.
 
 ## Best Practices
 
 ### When to Use Consolidated Properties
+
 - Testing mathematical laws (commutativity, associativity, etc.)
 - Geometric relationships (containment, intersection, etc.)
 - Transformation properties (linearity, invertibility, etc.)
 - Spatial indexing consistency
 
 ### When to Keep Individual Tests
+
 - Implementation-specific behavior
 - Edge cases unique to one class
 - Performance characteristics
 - API contract validation
 
 ### Property Test Design
+
 - Use meaningful tolerance values (1e-10 for most operations, 1e-15 for exact operations)
 - Handle edge cases (zero vectors, degenerate geometry, etc.)
 - Provide clear error messages with context

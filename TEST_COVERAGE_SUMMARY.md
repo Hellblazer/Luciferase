@@ -15,7 +15,7 @@ This document provides a comprehensive overview of test coverage across the Luci
 ### Summary
 
 | Module | Test Files | Primary Focus | Status |
-|--------|-----------|---------------|--------|
+| -------- | ----------- | --------------- | -------- |
 | **lucien** | 198 | Spatial indexing (Octree, Tetree, Prism) | ✓ Comprehensive |
 | **render** | 26 | ESVO rendering, LWJGL integration | ✓ Good |
 | **sentry** | 15 | Delaunay tetrahedralization | ✓ Good |
@@ -35,7 +35,7 @@ The lucien module contains the core spatial indexing implementations and has the
 ### By Feature Area
 
 | Feature Area | Test Count | Coverage Level | Notes |
-|--------------|-----------|----------------|-------|
+| -------------- | ----------- | ---------------- | ------- |
 | **Tetree** | 65 | Excellent | Full S0-S5 subdivision, neighbor detection, containment |
 | **Octree** | 25 | Excellent | Morton curve operations, neighbor finding, balancing |
 | **Collision Detection** | 13 | Good | Broad/narrow phase, CCD, physics integration |
@@ -48,6 +48,7 @@ The lucien module contains the core spatial indexing implementations and has the
 ### Test Categories
 
 #### Unit Tests
+
 - **Spatial Key Operations**: Morton code encoding/decoding, TetreeKey parent/child navigation
 - **Geometry Primitives**: Point containment, AABB intersection, tetrahedral geometry
 - **Tree Operations**: Insert, remove, update, subdivision, balancing
@@ -55,12 +56,14 @@ The lucien module contains the core spatial indexing implementations and has the
 - **Query Operations**: K-nearest neighbors, range queries, frustum culling
 
 #### Integration Tests
+
 - **Multi-Entity Scenarios**: Large-scale insertions, concurrent operations
 - **Forest Coordination**: Cross-tree queries, ghost layer synchronization
 - **Collision Systems**: Complete collision detection pipelines
 - **Performance Validation**: Comparative benchmarks across spatial index types
 
 #### Benchmark Tests
+
 - **OctreeVsTetreeBenchmark**: Comparative performance metrics
 - **TetreeVsTetreeBenchmark**: Internal optimizations validation
 - **K-NN Performance**: Query performance across spatial index types
@@ -69,12 +72,14 @@ The lucien module contains the core spatial indexing implementations and has the
 ## Test Quality Standards
 
 ### Code Coverage Goals
+
 - **Unit Tests**: Aim for 80%+ line coverage on core algorithms
 - **Integration Tests**: Cover all major feature combinations
 - **Edge Cases**: Explicit tests for boundary conditions, degenerate cases
 - **Performance Tests**: Baseline metrics and regression detection
 
 ### Test Characteristics
+
 - **Fast Execution**: Most unit tests run in < 100ms
 - **Deterministic**: No random failures, seeded random values where needed
 - **Isolated**: Tests don't depend on external resources or other tests
@@ -83,32 +88,48 @@ The lucien module contains the core spatial indexing implementations and has the
 ## Testing Practices
 
 ### Dynamic Port Assignment
+
 All network-related tests use dynamically assigned ports to avoid conflicts:
+
 ```java
+
 ServerSocket socket = new ServerSocket(0); // Dynamic port
 int port = socket.getLocalPort();
-```
+
+```text
 
 ### GPU Test Requirements
+
 Tests requiring GPU/OpenCL access must use:
+
 ```java
+
 @EnabledIf("isGPUAvailable")
 class GPUTest {
     // dangerouslyDisableSandbox: true required in test configuration
 }
-```
+
+```text
 
 ### Verbose Test Output
+
 Test verbosity controlled via environment variable:
+
 ```bash
+
 VERBOSE_TESTS=true mvn test
-```
+
+```text
 
 ### Test Retry Configuration
+
 Flaky test handling (typically disabled for CI):
+
 ```bash
+
 mvn test -Dsurefire.rerunFailingTestsCount=0  # No retries
-```
+
+```text
 
 ## Coverage Gaps and Improvements
 
@@ -132,43 +153,60 @@ mvn test -Dsurefire.rerunFailingTestsCount=0  # No retries
 ## Running Tests
 
 ### All Tests
+
 ```bash
+
 mvn test
-```
+
+```text
 
 ### Module-Specific Tests
+
 ```bash
+
 mvn test -pl lucien
 mvn test -pl render
 mvn test -pl sentry
-```
+
+```text
 
 ### Specific Test Class
+
 ```bash
+
 mvn test -Dtest=OctreeTest
 mvn test -Dtest=TetreeTest
-```
+
+```text
 
 ### Performance Benchmarks
+
 ```bash
+
 mvn test -Pperformance
 mvn test -pl lucien -Dtest=OctreeVsTetreeBenchmark
-```
+
+```text
 
 ### Without Test Retries
+
 ```bash
+
 mvn test -Dsurefire.rerunFailingTestsCount=0
-```
+
+```text
 
 ## Test Maintenance
 
 ### Regular Activities
+
 - **Weekly**: Review failed tests in CI, address flaky tests
 - **Monthly**: Update performance baselines, review coverage reports
 - **Quarterly**: Comprehensive test suite review, remove obsolete tests
 - **As Needed**: Add tests for bug fixes, new features
 
 ### Test File Locations
+
 - **Unit Tests**: `{module}/src/test/java/com/hellblazer/...`
 - **Integration Tests**: Same location, typically named `*IntegrationTest.java`
 - **Benchmarks**: Same location, typically named `*Benchmark.java`
@@ -177,6 +215,7 @@ mvn test -Dsurefire.rerunFailingTestsCount=0
 ## Test Execution Time
 
 ### Typical Execution Times
+
 - **Lucien Unit Tests**: ~30-45 seconds (198 tests)
 - **Render Tests**: ~15-20 seconds (26 tests)
 - **Sentry Tests**: ~10-15 seconds (15 tests)
@@ -184,18 +223,21 @@ mvn test -Dsurefire.rerunFailingTestsCount=0
 - **Full Test Suite**: ~2-3 minutes (all modules)
 
 ### Performance Test Times
+
 - **Benchmark Suite**: ~5-10 minutes (depends on iterations)
 - **Stress Tests**: ~10-30 minutes (large datasets)
 
 ## Continuous Integration
 
 ### Test Execution in CI
+
 - **Pull Requests**: Run full test suite on all commits
 - **Main Branch**: Run tests + performance benchmarks
 - **Nightly**: Run extended test suite with stress tests
 - **Release**: Run all tests + generate coverage reports
 
 ### Test Failure Policy
+
 - **No Merge**: If any test fails in PR
 - **Immediate Fix**: If tests fail on main branch
 - **Investigation**: If tests are flaky (retry >1 time to pass)
@@ -210,7 +252,7 @@ mvn test -Dsurefire.rerunFailingTestsCount=0
 ## Version History
 
 | Date | Version | Changes |
-|------|---------|---------|
+| ------ | --------- | --------- |
 | 2025-12-08 | 1.0 | Initial test coverage summary created |
 
 ---

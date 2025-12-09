@@ -8,6 +8,7 @@ This directory contains comprehensive tests for the prism spatial index implemen
 ## Test Organization
 
 ### Functional Tests (Stable)
+
 These tests validate correctness and should be included in CI:
 
 - `LineTest.java` - 1D linear element tests (10 tests)
@@ -18,6 +19,7 @@ These tests validate correctness and should be included in CI:
 **Total:** 44 functional tests
 
 ### Performance Tests (Brittle)
+
 These tests measure performance and can be flaky due to system conditions:
 
 - `PrismPerformanceTest.java` - Performance benchmarks (9 tests)
@@ -27,28 +29,41 @@ These tests measure performance and can be flaky due to system conditions:
 ## Running Tests
 
 ### Run All Functional Tests
+
 ```bash
+
 mvn test -Dtest="*Line*Test,*Triangle*Test,*PrismKey*Test,*PrismGeometry*Test" -DexcludedGroups=performance
-```
+
+```text
 
 ### Run Only Performance Tests
+
 ```bash
+
 mvn test -Dtest=PrismPerformanceTest
-```
+
+```text
 
 ### Run All Tests (Including Performance)
+
 ```bash
+
 mvn test -Dtest="com.hellblazer.luciferase.lucien.prism.*Test"
-```
+
+```text
 
 ### Exclude Performance Tests from CI
+
 ```bash
+
 mvn test -DexcludedGroups=performance
-```
+
+```text
 
 ## Performance Expectations
 
 Current performance benchmarks (approximate):
+
 - Line SFC computation: ~10ns per call
 - Triangle SFC computation: ~10ns per call  
 - Prism SFC computation: ~18ns per call

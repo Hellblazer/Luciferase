@@ -20,8 +20,10 @@ The k-NN API allows you to:
 ### Basic k-NN Search
 
 ```java
+
 List<ID> kNearestNeighbors(Point3f queryPoint, int k, float maxDistance)
-```
+
+```text
 
 Finds the k nearest entities to a query point within a maximum distance.
 
@@ -38,6 +40,7 @@ Finds the k nearest entities to a query point within a maximum distance.
 **Example:**
 
 ```java
+
 // Find 5 nearest enemies to player
 Point3f playerPos = player.getPosition();
 List<ID> nearestEnemies = spatialIndex.kNearestNeighbors(playerPos, 5, 100.0f  // Within 100 units
@@ -52,13 +55,15 @@ ID closestEnemy = nearestEnemies.get(0);
 
 attack(closestEnemy);
 }
-```
+
+```text
 
 ### Extended k-NN Search (Implementation Pattern)
 
 While the core API provides basic k-NN, you can build extended functionality:
 
 ```java
+
 // Get k-NN with distances
 public List<EntityDistance<ID>> kNearestNeighborsWithDistance(Point3f queryPoint, int k, float maxDistance) {
 
@@ -73,13 +78,15 @@ public List<EntityDistance<ID>> kNearestNeighborsWithDistance(Point3f queryPoint
 
     return results;
 }
-```
+
+```text
 
 ## Use Cases
 
 ### 1. Proximity Detection
 
 ```java
+
 // Find nearby interactive objects
 public List<InteractableObject> findInteractables(Point3f playerPos) {
     float interactionRadius = 5.0f;
@@ -97,11 +104,13 @@ public List<InteractableObject> findInteractables(Point3f playerPos) {
 
     return interactables;
 }
-```
+
+```text
 
 ### 2. AI Target Selection
 
 ```java
+
 // AI finds nearest targets
 public ID selectTarget(Point3f aiPosition, TargetFilter filter) {
     int searchLimit = 20;
@@ -122,11 +131,13 @@ public ID selectTarget(Point3f aiPosition, TargetFilter filter) {
 
     return null; // No valid target found
 }
-```
+
+```text
 
 ### 3. Spatial Clustering
 
 ```java
+
 // Find cluster members around a seed point
 public List<ID> findClusterMembers(Point3f seedPoint, float clusterRadius) {
     // Use large k to get all entities within radius
@@ -137,11 +148,13 @@ public List<ID> findClusterMembers(Point3f seedPoint, float clusterRadius) {
     // Further processing for density-based clustering
     return filterByDensity(members, seedPoint, clusterRadius);
 }
-```
+
+```text
 
 ### 4. Collision Avoidance
 
 ```java
+
 // Steering behavior for collision avoidance
 public Vector3f calculateAvoidanceVector(ID entityId, float avoidanceRadius) {
     Point3f position = spatialIndex.getEntityPosition(entityId);
@@ -171,11 +184,13 @@ public Vector3f calculateAvoidanceVector(ID entityId, float avoidanceRadius) {
 
     return avoidance;
 }
-```
+
+```text
 
 ### 5. Spatial Sound System
 
 ```java
+
 // Find nearest sound sources for 3D audio
 public List<SoundSource> getNearestSounds(Point3f listenerPos) {
     float maxHearingDistance = 100.0f;
@@ -197,13 +212,15 @@ public List<SoundSource> getNearestSounds(Point3f listenerPos) {
 
     return sounds;
 }
-```
+
+```text
 
 ## Performance Optimization
 
 ### 1. Adaptive k Selection
 
 ```java
+
 // Dynamically adjust k based on density
 public List<ID> adaptiveKNN(Point3f queryPoint, float targetRadius) {
     // Start with small k
@@ -234,11 +251,13 @@ public List<ID> adaptiveKNN(Point3f queryPoint, float targetRadius) {
 
     return spatialIndex.kNearestNeighbors(queryPoint, k, searchRadius);
 }
-```
+
+```text
 
 ### 2. Cached k-NN Queries
 
 ```java
+
 public class CachedKNNQuery {
     private final SpatialIndex<ID, Content>  spatialIndex;
     private final Map<Point3f, CachedResult> cache          = new HashMap<>();
@@ -270,11 +289,13 @@ public class CachedKNNQuery {
         return results;
     }
 }
-```
+
+```text
 
 ### 3. Progressive k-NN Search
 
 ```java
+
 // Find neighbors progressively for responsive UI
 public class ProgressiveKNNSearch {
 
@@ -312,7 +333,8 @@ public class ProgressiveKNNSearch {
         }
     }
 }
-```
+
+```text
 
 ## Algorithm Details
 
@@ -353,6 +375,7 @@ The k-NN implementation uses a priority queue-based traversal:
 ## Example: Complete Proximity System
 
 ```java
+
 public class ProximitySystem {
     private final SpatialIndex<ID, GameObject> spatialIndex;
 
@@ -386,7 +409,8 @@ public class ProximitySystem {
 
     // Similar methods for allies, interactables, hazards...
 }
-```
+
+```text
 
 ## Performance Characteristics
 

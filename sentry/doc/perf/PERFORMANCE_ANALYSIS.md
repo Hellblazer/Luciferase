@@ -7,7 +7,7 @@ Profiling analysis reveals that 82% of CPU time is consumed by the `OrientedFace
 ## Profiling Results
 
 | Method | CPU Time | Call Count | Key Issues |
-|--------|----------|------------|------------|
+| -------- | ---------- | ------------ | ------------ |
 | `OrientedFace.flip()` | 82% | High | LinkedList operations, repeated calculations |
 | `OrientedFace.flip2to3()` | 20% | Medium | Object creation, patch operations |
 | `OrientedFace.flip3to2()` | 17% | Medium | Object creation, patch operations |
@@ -22,11 +22,13 @@ Profiling analysis reveals that 82% of CPU time is consumed by the `OrientedFace
 The geometric predicates are the fundamental bottleneck:
 
 ```java
+
 // leftOfPlaneFast() - 18 multiplications, 11 additions per call
 return adx * (bdy * cdz - bdz * cdy) + 
        bdx * (cdy * adz - cdz * ady) + 
        cdx * (ady * bdz - adz * bdy);
-```
+
+```text
 
 **Issues:**
 - No SIMD vectorization
@@ -39,11 +41,13 @@ return adx * (bdy * cdz - bdz * cdy) +
 Heavy object creation in flip operations:
 
 ```java
+
 // flip2to3() creates 3 new tetrahedra
 Tetrahedron n012 = new Tetrahedron(a, b, e, n);
 Tetrahedron n023 = new Tetrahedron(b, c, e, n);
 Tetrahedron n031 = new Tetrahedron(c, a, e, n);
-```
+
+```text
 
 **Issues:**
 - No object pooling
@@ -54,12 +58,15 @@ Tetrahedron n031 = new Tetrahedron(c, a, e, n);
 ### 3. Data Structure Inefficiencies (20%)
 
 #### LinkedList Usage
+
 ```java
+
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // LinkedList operations with O(n) access
     ears.get(i);  // O(n) operation
 }
-```
+
+```text
 
 **Issues:**
 - LinkedList has O(n) random access
@@ -68,7 +75,9 @@ public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
 - Frequent traversals in hot loops
 
 #### Neighbor Lookups
+
 ```java
+
 public V ordinalOf(Tetrahedron t) {
     if (getA() == t) return V.A;
     if (getB() == t) return V.B;
@@ -76,7 +85,8 @@ public V ordinalOf(Tetrahedron t) {
     if (getD() == t) return V.D;
     return null;
 }
-```
+
+```text
 
 **Issues:**
 - Linear search through vertices
@@ -86,14 +96,17 @@ public V ordinalOf(Tetrahedron t) {
 ### 4. Repeated Calculations (10%)
 
 #### getAdjacentVertex() Pattern
+
 ```java
+
 // Called multiple times without caching
 if (isReflex()) {  // calls getAdjacentVertex()
     if (isConvex()) {  // calls getAdjacentVertex() again
         // More calls to getAdjacentVertex()
     }
 }
-```
+
+```text
 
 **Issues:**
 - Same values computed multiple times
@@ -103,11 +116,13 @@ if (isReflex()) {  // calls getAdjacentVertex()
 ## Memory Access Patterns
 
 ### Cache Misses
+
 1. **LinkedList traversal**: Random memory access patterns
 2. **Object creation**: New memory allocations disrupt cache
 3. **Neighbor lookups**: Pointer chasing through object graph
 
 ### Memory Bandwidth
+
 - Excessive object allocations stress memory subsystem
 - Poor spatial locality in data structures
 - Inefficient use of cache lines
@@ -115,12 +130,14 @@ if (isReflex()) {  // calls getAdjacentVertex()
 ## Algorithmic Complexity Analysis
 
 ### Time Complexity
+
 - `flip()`: O(n) where n is number of ears
 - `patch()`: O(1) but with high constant factor
 - `ordinalOf()`: O(1) with 4 comparisons
 - Geometric predicates: O(1) with ~30 floating-point operations
 
 ### Space Complexity
+
 - Each flip operation allocates 2-3 new Tetrahedron objects
 - LinkedList overhead: 24 bytes per node
 - No memory reuse patterns
@@ -128,6 +145,7 @@ if (isReflex()) {  // calls getAdjacentVertex()
 ## Hot Path Analysis
 
 The critical path through the code:
+
 1. `MutableGrid.delete()` → 
 2. `OrientedFace.flip()` → 
 3. Multiple `isReflex()`/`isRegular()` calls →
@@ -140,6 +158,7 @@ This path is executed millions of times during typical operations.
 ## Comparison with State-of-the-Art
 
 Modern Delaunay implementations achieve better performance through:
+
 1. **CGAL**: Uses exact predicates with filtering
 2. **TetGen**: Employs spatial hashing for neighbor queries
 3. **Qhull**: Uses incremental construction with better caching

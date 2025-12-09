@@ -13,6 +13,7 @@ The Portal module's visualization framework provides a comprehensive system for 
 The primary base class for 3D applications:
 
 ```java
+
 public class MyApp extends MagicMirror {
     @Override
     protected void createScene() {
@@ -26,9 +27,11 @@ public class MyApp extends MagicMirror {
         launch(args);
     }
 }
-```
+
+```text
 
 Key features:
+
 - Automatic camera setup with mouse controls
 - Scene graph management
 - Keyboard shortcuts for common operations
@@ -39,6 +42,7 @@ Key features:
 Generic base for visualizing spatial indices:
 
 ```java
+
 public class MyTreeView extends SpatialIndexView<MortonKey, UUID, Entity> {
     @Override
     protected Node createNodeVisualization(MortonKey key, SpatialNode<UUID> node) {
@@ -58,7 +62,8 @@ public class MyTreeView extends SpatialIndexView<MortonKey, UUID, Entity> {
         return sphere;
     }
 }
-```
+
+```text
 
 ## Camera System
 
@@ -67,13 +72,16 @@ public class MyTreeView extends SpatialIndexView<MortonKey, UUID, Entity> {
 The framework provides multiple camera control systems:
 
 #### Mouse Controls (MagicMirror)
+
 - **Left Drag**: Rotate camera around scene
 - **Right Drag**: Zoom in/out
 - **Middle Drag**: Pan camera
 - **Scroll**: Zoom with modifiers (Ctrl/Shift for speed)
 
 #### First-Person Controls (CameraView)
+
 ```java
+
 CameraView cameraView = new CameraView(scene);
 cameraView.setPosition(0, 10, 50);
 cameraView.lookAt(0, 0, 0);
@@ -87,13 +95,15 @@ scene.setOnKeyPressed(event -> {
         case D: cameraView.strafeRight(1.0); break;
     }
 });
-```
+
+```text
 
 ### Camera Boom
 
 Advanced camera manipulation:
 
 ```java
+
 CameraBoom boom = new CameraBoom();
 boom.setDistance(100);
 boom.setElevation(30); // degrees
@@ -106,7 +116,8 @@ Timeline timeline = new Timeline(
 );
 timeline.setCycleCount(Timeline.INDEFINITE);
 timeline.play();
-```
+
+```text
 
 ## Transform System
 
@@ -115,6 +126,7 @@ timeline.play();
 Composable transform chains:
 
 ```java
+
 OrientedGroup group = new OrientedGroup();
 group.addTxfm(new Translate(10, 0, 0));
 group.addTxfm(new Rotate(45, Rotate.Y_AXIS));
@@ -122,11 +134,13 @@ group.addTxfm(new Scale(2, 2, 2));
 
 // Apply transforms in order
 group.getChildren().add(myNode);
-```
+
+```text
 
 ### Transform Utilities
 
 ```java
+
 // Xform utility class
 Xform xform = new Xform();
 xform.setTx(10);
@@ -137,7 +151,8 @@ xform.setScale(2);
 AutoScalingGroup autoScale = new AutoScalingGroup();
 autoScale.setTargetSize(100);
 autoScale.getChildren().add(variableSizeContent);
-```
+
+```text
 
 ## Grid Systems
 
@@ -146,25 +161,29 @@ autoScale.getChildren().add(variableSizeContent);
 Traditional 3D grid visualization:
 
 ```java
+
 CubicGrid grid = new CubicGrid(100, 10); // size, divisions
 grid.setAxisColor(Color.RED, Color.GREEN, Color.BLUE);
 grid.showGrid(true);
 grid.showAxes(true);
 scene.getChildren().add(grid);
-```
+
+```text
 
 ### Tetrahedral Grid
 
 Based on rhombic dodecahedron coordinates:
 
 ```java
+
 Tetrahedral tetGrid = new Tetrahedral();
 tetGrid.setScale(50);
 tetGrid.showVertices(true);
 tetGrid.showEdges(true);
 tetGrid.showFaces(false);
 scene.getChildren().add(tetGrid);
-```
+
+```text
 
 ## Visualization Properties
 
@@ -173,6 +192,7 @@ scene.getChildren().add(tetGrid);
 All visualization components use JavaFX properties:
 
 ```java
+
 SpatialIndexView view = new MyTreeView();
 
 // Configure with properties
@@ -189,11 +209,13 @@ view.showNodes.bind(showNodesCheck.selectedProperty());
 
 Slider opacitySlider = new Slider(0, 1, 0.3);
 view.nodeOpacity.bind(opacitySlider.valueProperty());
-```
+
+```text
 
 ### Level-Based Coloring
 
 ```java
+
 // Built-in gradient: blue (level 0) to red (level 20)
 Material material = view.getLevelMaterial(level);
 
@@ -202,13 +224,15 @@ view.setLevelColorMapper(level -> {
     double hue = 240 - (level * 12); // Blue to red
     return Color.hsb(hue, 1.0, 1.0);
 });
-```
+
+```text
 
 ## Scene Organization
 
 ### Scene Graph Structure
 
 ```java
+
 Group sceneRoot = new Group();
 
 // Organized groups with view order
@@ -227,11 +251,13 @@ overlayGroup.setViewOrder(-1.0); // Always on top
 sceneRoot.getChildren().addAll(
     backgroundGroup, nodeGroup, entityGroup, overlayGroup
 );
-```
+
+```text
 
 ### Lighting
 
 ```java
+
 // Ambient light for overall illumination
 AmbientLight ambient = new AmbientLight(Color.gray(0.3));
 
@@ -245,13 +271,15 @@ point.setTranslateX(50);
 point.setTranslateY(50);
 
 scene.getChildren().addAll(ambient, sun, point);
-```
+
+```text
 
 ## Interactive Features
 
 ### Selection System
 
 ```java
+
 view.setOnEntityClicked((id, entity, event) -> {
     if (event.isControlDown()) {
         // Multi-select
@@ -268,11 +296,13 @@ view.getSelectedEntities().addListener(
         System.out.println("Selected: " + view.getSelectedEntities());
     }
 );
-```
+
+```text
 
 ### Highlighting
 
 ```java
+
 // Highlight on hover
 view.setOnEntityHovered((id, entity, entered) -> {
     if (entered) {
@@ -281,13 +311,15 @@ view.setOnEntityHovered((id, entity, entered) -> {
         view.unhighlightEntity(id);
     }
 });
-```
+
+```text
 
 ## Performance Optimization
 
 ### Visibility Culling
 
 ```java
+
 // Only render nodes within level range
 view.minLevel.set(5);
 view.maxLevel.set(10);
@@ -295,11 +327,13 @@ view.maxLevel.set(10);
 // Distance-based culling
 view.setCullDistance(1000);
 view.setFarClip(2000);
-```
+
+```text
 
 ### Lazy Updates
 
 ```java
+
 // Batch updates
 view.beginUpdate();
 try {
@@ -310,11 +344,13 @@ try {
 } finally {
     view.endUpdate(); // Single render update
 }
-```
+
+```text
 
 ### Level of Detail
 
 ```java
+
 // Adjust detail based on camera distance
 cameraDistanceProperty.addListener((obs, old, dist) -> {
     if (dist.doubleValue() > 500) {
@@ -325,13 +361,15 @@ cameraDistanceProperty.addListener((obs, old, dist) -> {
         view.setEntityLOD(LOD.HIGH);
     }
 });
-```
+
+```text
 
 ## Common Patterns
 
 ### Custom Overlays
 
 ```java
+
 // Add 2D overlay on 3D scene
 VBox overlay = new VBox(10);
 overlay.setAlignment(Pos.TOP_LEFT);
@@ -346,11 +384,13 @@ overlay.getChildren().addAll(info, showGrid, zoom);
 // Add as 2D overlay
 SubScene subScene = view.getSubScene();
 StackPane stack = new StackPane(subScene, overlay);
-```
+
+```text
 
 ### Animation
 
 ```java
+
 // Animate spatial index updates
 Timeline updateTimeline = new Timeline(
     new KeyFrame(Duration.millis(100), e -> {
@@ -368,7 +408,8 @@ pan.setToX(100);
 pan.setToY(50);
 pan.setToZ(200);
 pan.play();
-```
+
+```text
 
 ## Best Practices
 

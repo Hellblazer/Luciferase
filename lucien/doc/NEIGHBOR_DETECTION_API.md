@@ -17,6 +17,7 @@ The Neighbor Detection API provides topological neighbor finding for spatial ind
 ## Quick Start
 
 ```java
+
 // Create neighbor detector for your spatial index type
 Octree<LongEntityID, String> octree = new Octree<>(idGenerator, 10, (byte) 21);
 NeighborDetector<MortonKey> detector = new MortonNeighborDetector(octree);
@@ -32,54 +33,66 @@ boolean atBoundary = detector.isBoundaryElement(key);
 
 // Get boundary directions
 Set<Direction> boundaryDirs = detector.getBoundaryDirections(key);
-```
+
+```text
 
 ## API Reference
 
 ### NeighborDetector Interface
 
 ```java
+
 public interface NeighborDetector<Key extends SpatialKey<Key>> {
     
     /**
+
      * Find neighbors based on ghost type.
      * 
      * @param key The spatial key to find neighbors for
      * @param ghostType Type of neighbors (FACES, EDGES, VERTICES)
      * @return List of neighbor keys
      */
+
     List<Key> findNeighbors(Key key, GhostType ghostType);
     
     /**
+
      * Find neighbors with ownership information.
      * 
      * @param key The spatial key
      * @param ghostType Type of neighbors
      * @return List of neighbors with owner rank information
      */
+
     default List<NeighborInfo<Key>> findNeighborsWithInfo(Key key, GhostType ghostType);
     
     /**
+
      * Check if element is at a boundary.
      * 
      * @param key The spatial key
      * @return true if element has missing neighbors
      */
+
     boolean isBoundaryElement(Key key);
     
     /**
+
      * Get directions where element is at boundary.
      * 
      * @param key The spatial key
      * @return Set of boundary directions
      */
+
     Set<Direction> getBoundaryDirections(Key key);
 }
-```
+
+```text
 
 ### Direction Enumeration
 
 ```java
+
 public enum Direction {
     // Primary face directions
     LEFT(-1, 0, 0),      // -X
@@ -105,18 +118,21 @@ public enum Direction {
     public boolean isPositive();
     public Point3f getOffset();
 }
-```
+
+```text
 
 ### NeighborInfo Record
 
 ```java
+
 public record NeighborInfo<Key extends SpatialKey<Key>>(
     Key neighborKey,
     int ownerRank,      // Process that owns this neighbor
     boolean isLocal,    // True if neighbor is on same process
     Direction direction // Direction from source to neighbor
 ) {}
-```
+
+```text
 
 ## Implementation Details
 
@@ -125,6 +141,7 @@ public record NeighborInfo<Key extends SpatialKey<Key>>(
 Efficient O(1) neighbor finding using bit manipulation:
 
 ```java
+
 public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
     
     @Override
@@ -159,13 +176,15 @@ public class MortonNeighborDetector implements NeighborDetector<MortonKey> {
         return neighbors;
     }
 }
-```
+
+```text
 
 ### Tetree Neighbor Detector
 
 Uses connectivity tables and type transitions:
 
 ```java
+
 public class TetreeNeighborDetector implements NeighborDetector<TetreeKey> {
     
     @Override
@@ -191,17 +210,21 @@ public class TetreeNeighborDetector implements NeighborDetector<TetreeKey> {
     }
     
     /**
+
      * Convert TetreeKey back to Tet for neighbor computation.
      */
+
     public Tet keyToTet(TetreeKey key);
 }
-```
+
+```text
 
 ## Usage Patterns
 
 ### Pattern 1: Simple Neighbor Queries
 
 ```java
+
 // Find all face neighbors
 NeighborDetector<MortonKey> detector = new MortonNeighborDetector(octree);
 List<MortonKey> faceNeighbors = detector.findNeighbors(key, GhostType.FACES);
@@ -215,11 +238,13 @@ for (MortonKey neighbor : faceNeighbors) {
         // Neighbor doesn't exist - potential ghost
     }
 }
-```
+
+```text
 
 ### Pattern 2: Boundary Detection
 
 ```java
+
 // Identify all boundary elements
 Set<MortonKey> boundaryElements = new HashSet<>();
 for (MortonKey key : octree.getSpatialKeys()) {
@@ -231,22 +256,26 @@ for (MortonKey key : octree.getSpatialKeys()) {
         System.out.println("Boundary at: " + dirs);
     }
 }
-```
+
+```text
 
 ### Pattern 3: Ghost Creation
 
 ```java
+
 // Use neighbor detection for ghost creation
 ElementGhostManager<MortonKey, ID, Content> ghostManager = 
     new ElementGhostManager<>(octree, detector, GhostType.FACES);
 
 // Detector is used internally to find ghost candidates
 ghostManager.createGhostLayer();
-```
+
+```text
 
 ### Pattern 4: Collision Optimization
 
 ```java
+
 // Use neighbors for collision detection optimization
 public List<CollisionPair> findPotentialCollisions(Key element) {
     List<CollisionPair> pairs = new ArrayList<>();
@@ -263,14 +292,15 @@ public List<CollisionPair> findPotentialCollisions(Key element) {
     
     return pairs;
 }
-```
+
+```text
 
 ## Performance Characteristics
 
 ### Morton Neighbor Detection (Octree)
 
 | Operation | Complexity | Typical Time |
-|-----------|------------|--------------|
+| ----------- | ------------ | -------------- |
 | Face neighbors | O(1) | ~10 ns |
 | Edge neighbors | O(1) | ~15 ns |
 | Vertex neighbors | O(1) | ~20 ns |
@@ -279,7 +309,7 @@ public List<CollisionPair> findPotentialCollisions(Key element) {
 ### Tetree Neighbor Detection
 
 | Operation | Complexity | Typical Time |
-|-----------|------------|--------------|
+| ----------- | ------------ | -------------- |
 | Face neighbors | O(level) | ~200 ns |
 | Edge neighbors | O(level) | ~300 ns |
 | Vertex neighbors | O(level) | ~400 ns |
@@ -290,6 +320,7 @@ public List<CollisionPair> findPotentialCollisions(Key element) {
 ### Custom Neighbor Filtering
 
 ```java
+
 // Filter neighbors based on custom criteria
 List<MortonKey> filteredNeighbors = detector.findNeighbors(key, GhostType.FACES)
     .stream()
@@ -298,11 +329,13 @@ List<MortonKey> filteredNeighbors = detector.findNeighbors(key, GhostType.FACES)
         return neighbor.level() >= key.level();
     })
     .collect(Collectors.toList());
-```
+
+```text
 
 ### Neighbor Caching
 
 ```java
+
 // Cache frequently accessed neighbors
 public class CachedNeighborDetector<Key> implements NeighborDetector<Key> {
     private final NeighborDetector<Key> delegate;
@@ -315,11 +348,13 @@ public class CachedNeighborDetector<Key> implements NeighborDetector<Key> {
             k -> delegate.findNeighbors(key, ghostType));
     }
 }
-```
+
+```text
 
 ### Multi-Level Neighbors
 
 ```java
+
 // Find neighbors at different levels
 public List<Key> findMultiLevelNeighbors(Key key, GhostType type) {
     List<Key> neighbors = new ArrayList<>();
@@ -341,7 +376,8 @@ public List<Key> findMultiLevelNeighbors(Key key, GhostType type) {
     
     return neighbors;
 }
-```
+
+```text
 
 ## Implementation Notes
 
@@ -362,6 +398,7 @@ public List<Key> findMultiLevelNeighbors(Key key, GhostType type) {
 ## Error Handling
 
 ```java
+
 try {
     List<Key> neighbors = detector.findNeighbors(key, ghostType);
 } catch (IllegalArgumentException e) {
@@ -371,7 +408,8 @@ try {
     // Spatial index in invalid state
     log.error("Spatial index error: {}", e.getMessage());
 }
-```
+
+```text
 
 ## Best Practices
 

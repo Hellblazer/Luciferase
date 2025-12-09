@@ -10,6 +10,7 @@
 ## Purpose
 
 This document tracks GPU compatibility across ESVO optimization Epics (0-5). It serves as:
+
 - Hardware requirement documentation for each Epic
 - Test result tracking across GPU vendors (NVIDIA, AMD, Intel, Apple)
 - Platform-specific configuration guide
@@ -24,14 +25,17 @@ This document tracks GPU compatibility across ESVO optimization Epics (0-5). It 
 Uses `GPUDeviceDetector` (Bead 0.2) via LWJGL OpenCL for GPU enumeration.
 
 **Test Command**:
+
 ```bash
+
 mvn test -Dtest=GPUDetectionTest -pl lucien
-```
+
+```text
 
 ### Known Tested Devices
 
 | Vendor | Device Name | Compute Units | Global Memory | OpenCL Version | Date Tested | Status |
-|--------|-------------|---------------|---------------|----------------|-------------|--------|
+| -------- | ------------- | --------------- | --------------- | ---------------- | ------------- | -------- |
 | Apple | Apple M4 Max | 40 | 107.52 GB | 1.2 | 2025-12-08 | ✅ Tested |
 | NVIDIA | (To be tested) | - | - | - | - | ⚪ Not Tested |
 | AMD | (To be tested) | - | - | - | - | ⚪ Not Tested |
@@ -57,7 +61,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Compatibility Status**:
 
 | GPU Type | Status | Notes | Test Date |
-|----------|--------|-------|-----------|
+| ---------- | -------- | ------- | ----------- |
 | Apple M4 Max | ✅ Passing | All tests pass, OpenCL 1.2 | 2025-12-08 |
 | NVIDIA RTX 30xx | ⚪ Not Tested | - | - |
 | NVIDIA RTX 40xx | ⚪ Not Tested | - | - |
@@ -103,7 +107,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Compatibility Status**:
 
 | GPU Type | Status | Notes | Test Date |
-|----------|--------|-------|-----------|
+| ---------- | -------- | ------- | ----------- |
 | Apple M4 Max | ⚪ Not Tested | OpenCL 1.2 capable | - |
 | NVIDIA RTX 30xx | ⚪ Not Tested | - | - |
 | NVIDIA RTX 40xx | ⚪ Not Tested | - | - |
@@ -136,7 +140,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Compatibility Status**:
 
 | GPU Type | Status | Notes | Test Date |
-|----------|--------|-------|-----------|
+| ---------- | -------- | ------- | ----------- |
 | Apple M4 Max | ⚪ Not Tested | OpenCL 1.2 capable | - |
 | NVIDIA RTX 30xx | ⚪ Not Tested | - | - |
 | NVIDIA RTX 40xx | ⚪ Not Tested | - | - |
@@ -176,7 +180,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Compatibility Status**:
 
 | GPU Type | VRAM | Status | Notes | Test Date |
-|----------|------|--------|-------|-----------|
+| ---------- | ------ | -------- | ------- | ----------- |
 | Apple M4 Max | Unified 107GB | ⚪ Not Tested | Unified memory architecture | - |
 | NVIDIA RTX 3060 | 8GB | ⚪ Not Tested | Reference target | - |
 | NVIDIA RTX 3080 | 10GB | ⚪ Not Tested | - | - |
@@ -205,7 +209,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Performance Targets**:
 
 | GPU Type | VRAM | Target FPS | Dataset Size | Status |
-|----------|------|------------|--------------|--------|
+| ---------- | ------ | ------------ | -------------- | -------- |
 | RTX 3060 / RX 6600 | 8GB | 30+ fps | 4096³ | ⚪ Not Tested |
 | RTX 4080 / RX 7800 | 16GB | 60+ fps | 4096³ | ⚪ Not Tested |
 | Apple M4 Max | Unified | 60+ fps | 4096³ | ⚪ Not Tested |
@@ -227,7 +231,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Compatibility Status**:
 
 | GPU Type | Epic 2 | Epic 3 | Epic 4 | Integrated | Test Date |
-|----------|--------|--------|--------|------------|-----------|
+| ---------- | -------- | -------- | -------- | ------------ | ----------- |
 | Apple M4 Max | ⚪ | ⚪ | ⚪ | ⚪ | - |
 | NVIDIA RTX 30xx | ⚪ | ⚪ | ⚪ | ⚪ | - |
 | NVIDIA RTX 40xx | ⚪ | ⚪ | ⚪ | ⚪ | - |
@@ -259,9 +263,12 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 
 **Steps**:
 1. Run GPU detection test:
+
    ```bash
+
    mvn test -Dtest=GPUDetectionTest -pl lucien
-   ```
+
+```text
 
 2. If tests skip with "OpenCL not available":
    - **macOS**: Add `-XstartOnFirstThread` to JVM args
@@ -269,38 +276,54 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
    - **CI**: Tests will gracefully skip (expected behavior)
 
 3. Capture device information:
+
    ```bash
+
    mvn test -Dtest=GPUDetectionTest#testMarkdownReportGeneration -pl lucien
-   ```
+
+```text
 
 4. Add detected device to "Known Tested Devices" table above
 
 ### Per-Epic Testing
 
 **Epic 0** (Baseline):
+
 ```bash
+
 # Test GPU enumeration
+
 mvn test -Dtest=GPUDetectionTest -pl lucien
 
 # Test capability reporting
+
 mvn test -Dtest=GPUCapabilityReporter* -pl lucien
 
 # Run quick benchmark
+
 mvn test -Dtest=GPUBenchmarkRunner* -pl lucien
-```
+
+```text
 
 **Epic 2** (Beam Optimization):
+
 ```bash
+
 # Run DSOC baseline tests
+
 mvn test -Dtest=*DSOC* -pl render
 
 # Enable beam optimization (TODO: after implementation)
 # mvn test -Dtest=BeamOptimizationTest -pl render
-```
+
+```text
 
 **Epic 3** (Contour Compression):
+
 ```bash
+
 # Verify contours exist
+
 grep -r "contourDescriptor" render/src/main/java/
 
 # Run compression tests (TODO: after implementation)
@@ -308,10 +331,13 @@ grep -r "contourDescriptor" render/src/main/java/
 
 # Visual regression test
 # mvn test -Dtest=VisualRegressionTest -pl render
-```
+
+```text
 
 **Epic 4** (Out-of-Core Streaming):
+
 ```bash
+
 # Generate test dataset (TODO: after implementation)
 # mvn test -Dtest=LargeDatasetGenerator -pl render
 
@@ -320,56 +346,78 @@ grep -r "contourDescriptor" render/src/main/java/
 
 # 24-hour stability test
 # mvn test -Dtest=StreamingStabilityTest -pl render -Dtest.duration=24h
-```
+
+```text
 
 **Epic 5** (Integration):
+
 ```bash
+
 # Run all Epic 2-4 tests
+
 mvn test -pl render -Dtest.group=epic2,epic3,epic4
 
 # Run integration test suite
 # mvn test -Dtest=IntegrationTestSuite -pl render
-```
+
+```text
 
 ### Platform-Specific Configuration
 
 #### macOS
 
 **Required JVM Args**:
+
 ```bash
+
 -XstartOnFirstThread  # For GLFW/OpenGL tests
-```
+
+```text
 
 **Maven Command**:
+
 ```bash
+
 mvn test -pl lucien -Dtest=GPUDetectionTest \
+
   -DargLine="-XstartOnFirstThread"
-```
+
+```text
 
 #### Linux
 
 **Required JVM Args**:
+
 ```bash
+
 -DdangerouslyDisableSandbox=true  # Sandbox blocks GPU access
-```
+
+```text
 
 **Maven Command**:
+
 ```bash
+
 mvn test -pl lucien -Dtest=GPUDetectionTest \
+
   -DargLine="-DdangerouslyDisableSandbox=true"
-```
+
+```text
 
 #### CI Environments
 
 **Behavior**: Tests gracefully skip when GPU/OpenCL unavailable
 
 **Expected Output**:
-```
+
+```text
+
 ⚠️  No GPU detected - GPU tests will be skipped
 This is expected in CI environments without GPU support
 Tests run: 8, Failures: 0, Errors: 0, Skipped: 8
 BUILD SUCCESS
-```
+
+```text
 
 ---
 
@@ -408,7 +456,7 @@ BUILD SUCCESS
 ## Status Legend
 
 | Symbol | Meaning | Description |
-|--------|---------|-------------|
+| -------- | --------- | ------------- |
 | ✅ | Tested & Passing | All tests pass, meets performance targets |
 | ⚠️ | Partial Support | Works but with limitations or reduced performance |
 | ❌ | Not Working | Tests fail or critical issues prevent usage |

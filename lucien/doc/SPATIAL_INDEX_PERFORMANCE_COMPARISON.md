@@ -41,6 +41,7 @@ The July 11, 2025 benchmarks show a complete reversal in insertion performance c
 ### Root Cause Analysis
 
 The performance reversal appears to be due to:
+
 - **ConcurrentSkipListMap Characteristics**: The skip list structure favors simpler key comparisons, benefiting Tetree
 - **Reduced Lock Contention**: Tetree's operations may have less contention in the concurrent structure
 - **Memory Layout**: Consolidated data structures may have better cache locality for Tetree operations
@@ -88,7 +89,7 @@ Prism represents a third approach to spatial indexing using rectangular subdivis
 ### Collision Detection Performance
 
 | Entity Count | Octree Insertion | Octree Detection | Tetree Insertion | Tetree Detection |
-|--------------|------------------|------------------|------------------|------------------|
+| -------------- | ------------------ | ------------------ | ------------------ | ------------------ |
 | 800 | 1.3 ms | 1.5 ms | 33 ms | 91 ms |
 | 1,500 | 2.2 ms | 2.7 ms | 12 ms | 208 ms |
 | 2,000 | 3.0 ms | 3.2 ms | - | - |
@@ -98,7 +99,7 @@ Octree maintains consistent performance while Tetree degrades significantly with
 ### Ray Intersection Performance
 
 | Rays | Entities | Octree Time | Throughput |
-|------|----------|-------------|------------|
+| ------ | ---------- | ------------- | ------------ |
 | 100 | 1,000 | 10 ms | 10K rays/sec |
 | 100 | 5,000 | 48 ms | 2K rays/sec |
 | 100 | 10,000 | 96 ms | 1K rays/sec |
@@ -108,7 +109,7 @@ Both implementations scale linearly with entity count for ray operations.
 ### TMIndex Performance Degradation
 
 | Level | tmIndex Time | Degradation vs Level 1 |
-|-------|--------------|------------------------|
+| ------- | -------------- | ------------------------ |
 | 1 | 0.069 μs | 1.0x |
 | 5 | 0.081 μs | 1.2x |
 | 10 | 0.147 μs | 2.1x |
@@ -120,7 +121,7 @@ This O(level) degradation was the core reason for Tetree's insertion performance
 ### Optimization Effectiveness
 
 | Optimization | Impact | Benefit |
-|--------------|--------|---------|
+| -------------- | -------- | --------- |
 | Parent caching | 17.3x speedup | Reduces parent() from O(level) to O(1) |
 | Single-child computation | 3.0x speedup | 17 ns vs 52 ns per child |
 | V2 tmIndex | 4.0x speedup | Simplified algorithm |
@@ -132,22 +133,26 @@ This O(level) degradation was the core reason for Tetree's insertion performance
 ## Historical Context
 
 ### Pre-Concurrent Optimization (July 8, 2025)
+
 - Octree was 1.3x to 15.3x faster for insertions
 - Tetree used only 20-23% of Octree's memory
 - Performance gap increased with entity count
 
 ### Post-Concurrent Optimization (July 11, 2025)
+
 - Complete reversal: Tetree now 2.1x to 6.2x faster for insertions
 - Memory usage increased to 65-73% of Octree
 - ConcurrentSkipListMap fundamentally changed performance dynamics
 
 ### Prism Integration (July 12, 2025)
+
 - Added as third spatial index option
 - Positioned between Octree and Tetree for most operations
 - Higher memory usage than both alternatives
 - Designed for anisotropic data distributions
 
 ### Latest Performance Update (July 25, 2025)
+
 - Tetree maintains insertion advantage (1.8x to 5.7x faster)
 - Octree shows strong range query performance (3.2x to 8.3x faster)
 - Memory usage nearly converged (only 1-20% difference)
@@ -155,6 +160,7 @@ This O(level) degradation was the core reason for Tetree's insertion performance
 - DSOC tests fixed to match current implementation behavior
 
 ### Optimization Timeline
+
 - Parent caching: 17.3x speedup
 - V2 tmIndex: 4x speedup  
 - Subdivision fixes: 38-96% improvement

@@ -7,9 +7,11 @@ Implemented targeted optimizations for MutableGrid rebuild operations that autom
 ## Problem Analysis
 
 ### Original Rebuild Performance
+
 The standard rebuild operation was designed for general-purpose usage with TetrahedronPool context management. While effective for large rebuilds, the pooling context overhead was negatively impacting performance for smaller rebuilds, particularly the common 256-point case.
 
 ### Bottleneck Identification
+
 - **Pooling Context Overhead**: Context setup and teardown for small operations
 - **Pool Management**: Object acquisition/release overhead when few objects are reused
 - **Context Switching**: Thread-local context management adds latency
@@ -17,16 +19,21 @@ The standard rebuild operation was designed for general-purpose usage with Tetra
 ## Optimization Implementation
 
 ### 1. Automatic Direct Allocation Threshold
+
 ```java
+
 // Automatically use direct allocation for small rebuilds
 boolean useDirectForRebuild = verticesList.size() <= 256 || 
     "true".equals(System.getProperty("sentry.rebuild.direct"));
-```
+
+```text
 
 **Rationale**: For rebuilds with ≤256 points, the pooling overhead exceeds the benefits. Direct allocation provides better performance for this common use case.
 
 ### 2. Context-Free Insertion Path
+
 ```java
+
 if (useDirectForRebuild) {
     // Skip context overhead entirely for direct allocation
     for (var v : verticesList) {
@@ -36,7 +43,8 @@ if (useDirectForRebuild) {
         }
     }
 }
-```
+
+```text
 
 **Benefits**:
 - Eliminates TetrahedronPoolContext.withAllocator() overhead
@@ -44,9 +52,11 @@ if (useDirectForRebuild) {
 - Avoids thread-local variable access
 
 ### 3. Hybrid Approach for Large Rebuilds
+
 For rebuilds > 256 points, maintains the original pooled approach to benefit from object reuse and memory management.
 
 ### 4. System Property Override
+
 Added `sentry.rebuild.direct` system property to force direct allocation for all rebuilds when needed for debugging or specific use cases.
 
 ## Performance Results
@@ -75,14 +85,16 @@ Added `sentry.rebuild.direct` system property to force direct allocation for all
 - **Active Pool Size**: 66 available tetrahedra
 
 ### Test Configuration
+
 - **Points**: 256 vertices per rebuild
 - **Iterations**: 10,000 rebuilds (smokin) / variable (RebuildPerformanceTest)
 - **Allocation Strategy**: Automatic (DIRECT for ≤256 points)
 - **Test Methods**: MutableGridTest.smokin(), RebuildPerformanceTest
 
 ### Performance Characteristics
+
 | Rebuild Size | Strategy | Expected Performance |
-|--------------|----------|---------------------|
+| -------------- | ---------- | --------------------- |
 | ≤256 points | Direct Allocation | 8.5% faster |
 | >256 points | Pooled Allocation | Maintained baseline |
 | Any size (with property) | Direct Allocation | Variable based on size |
@@ -90,6 +102,7 @@ Added `sentry.rebuild.direct` system property to force direct allocation for all
 ## Technical Implementation Details
 
 ### Method: rebuildOptimized()
+
 Located in `MutableGrid.java` starting at line 229, this method:
 
 1. **Analyzes rebuild size** to determine optimal allocation strategy
@@ -99,16 +112,21 @@ Located in `MutableGrid.java` starting at line 229, this method:
 5. **Inserts vertices** using appropriate allocation strategy
 
 ### Allocation Strategy Selection
+
 ```java
+
 TetrahedronAllocator rebuildAllocator = useDirectForRebuild ? 
     new DirectAllocator() : allocator;
-```
+
+```text
 
 The decision logic automatically selects:
+
 - **DirectAllocator**: For ≤256 points or when system property is set
 - **Existing allocator**: For larger rebuilds to maintain pooling benefits
 
 ### Context Management
+
 - **Direct path**: Bypasses TetrahedronPoolContext entirely
 - **Pooled path**: Uses single context for entire rebuild operation
 - **Warmup**: Maintains original allocator warmth with warmUp(128)
@@ -116,29 +134,40 @@ The decision logic automatically selects:
 ## Usage Guidelines
 
 ### Automatic Optimization
+
 The optimization is completely transparent to callers. Existing code using `MutableGrid.rebuild()` automatically benefits from the optimization without any changes.
 
 ### System Property Control
+
 For testing or specific requirements:
+
 ```bash
+
 -Dsentry.rebuild.direct=true  # Force direct allocation for all rebuilds
-```
+
+```text
 
 ### Performance Testing
+
 Use `MutableGridTest.smokin()` to benchmark rebuild performance:
+
 ```bash
+
 mvn test -Dtest=MutableGridTest#smokin
-```
+
+```text
 
 ## Impact Analysis
 
 ### Positive Impacts
+
 1. **8.5% performance improvement** for 256-point rebuilds
 2. **Automatic optimization** - no API changes required
 3. **Maintains existing benefits** for large rebuilds
 4. **Flexible control** via system property
 
 ### Considerations
+
 1. **Memory usage**: Direct allocation may use slightly more memory for small rebuilds
 2. **GC pressure**: More object creation for direct allocation, but offset by reduced context overhead
 3. **Threshold sensitivity**: 256-point threshold optimized for current use case
@@ -146,12 +175,14 @@ mvn test -Dtest=MutableGridTest#smokin
 ## Future Optimizations
 
 ### Potential Improvements
+
 1. **Adaptive thresholds**: Dynamic threshold based on runtime performance
 2. **Bulk insertion**: Batch vertex insertion for direct allocation path
 3. **Pre-sized collections**: Initialize data structures with known size
 4. **SIMD integration**: Apply SIMD optimizations to rebuild path
 
 ### Monitoring Opportunities
+
 1. **Rebuild size distribution**: Track typical rebuild sizes to refine threshold
 2. **Performance metrics**: Continuous monitoring of rebuild performance
 3. **Memory usage patterns**: Monitor GC impact of direct allocation
@@ -165,11 +196,13 @@ mvn test -Dtest=MutableGridTest#smokin
 ## Testing and Validation
 
 ### Performance Testing
+
 - **MutableGridTest.smokin()**: Primary performance benchmark
 - **AllocationPerformanceTest**: Memory allocation validation
 - **RebuildPerformanceTest**: Dedicated rebuild benchmarking
 
 ### Correctness Validation
+
 All existing tests continue to pass, ensuring algorithmic correctness is maintained across both direct and pooled allocation strategies.
 
 ## Conclusion

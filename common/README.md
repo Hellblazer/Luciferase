@@ -53,6 +53,7 @@ Common provides high-performance data structures and utility classes shared acro
 ### FloatArrayList
 
 ```java
+
 // Efficient float array without boxing
 var floats = new FloatArrayList(1000);
 floats.add(3.14f);
@@ -68,11 +69,13 @@ floats.set(0, 5.0f);
 
 // Iteration without boxing
 floats.forEach(f -> System.out.println(f));
-```
+
+```text
 
 ### OaHashSet
 
 ```java
+
 // Open-addressing hash set
 var set = new OaHashSet<String>(16, 0.75f);
 set.add("alpha");
@@ -86,11 +89,13 @@ set.forEach(System.out::println);
 
 // Bulk operations
 set.removeAll(otherSet);
-```
+
+```text
 
 ### Bounds3f
 
 ```java
+
 // Axis-aligned bounding box
 var bounds = new Bounds3f(
     new Point3f(0, 0, 0),    // min
@@ -111,11 +116,13 @@ boolean intersects = bounds.intersects(other);
 // Get center and extents
 var center = bounds.getCenter();
 var size = bounds.getSize();
-```
+
+```text
 
 ### ObjectPool
 
 ```java
+
 // Create object pool
 var pool = new ObjectPool<>(
     () -> new ExpensiveObject(),  // Factory
@@ -133,7 +140,8 @@ try {
 
 // Thread-safe variant
 var concurrentPool = new ConcurrentObjectPool<>(...);
-```
+
+```text
 
 ## Performance Benchmarks
 
@@ -158,6 +166,7 @@ var concurrentPool = new ConcurrentObjectPool<>(...);
 ### MathUtils
 
 ```java
+
 // Fast approximations
 float sqrt = MathUtils.fastSqrt(value);
 float invSqrt = MathUtils.fastInvSqrt(value);
@@ -172,11 +181,13 @@ float smooth = MathUtils.smoothstep(edge0, edge1, x);
 // Angle operations
 float radians = MathUtils.toRadians(degrees);
 float wrapped = MathUtils.wrapAngle(angle);
-```
+
+```text
 
 ### BitUtils
 
 ```java
+
 // Population count
 int bits = BitUtils.popCount(value);
 
@@ -191,7 +202,8 @@ boolean isSet = BitUtils.testBit(value, position);
 
 // Morton encoding (for spatial indexing)
 int morton = BitUtils.morton3D(x, y, z);
-```
+
+```text
 
 ## Thread Safety
 
@@ -204,6 +216,7 @@ int morton = BitUtils.morton3D(x, y, z);
 The module emphasizes zero-allocation patterns:
 
 ```java
+
 // Reuse temporary objects
 private final Point3f temp = new Point3f();
 
@@ -212,20 +225,26 @@ public void process(Point3f input) {
     temp.scale(2.0f);
     // ... use temp ...
 }
-```
+
+```text
 
 ## Testing
 
 ```bash
+
 # Run all common tests
+
 mvn test -pl common
 
 # Run performance benchmarks
+
 mvn test -pl common -Dtest=*Benchmark
 
 # Memory leak tests
+
 mvn test -pl common -Dtest=MemoryTest
-```
+
+```text
 
 ## Dependencies
 

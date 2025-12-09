@@ -36,6 +36,7 @@ This index guides you to performance-related documentation for the Luciferase sp
 ## Specialized Performance Reports
 
 All specialized performance metrics have been consolidated into [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md) for consistency.
+
 - Bulk operation strategies
 
 ### [SPATIAL_INDEX_PERFORMANCE_GUIDE.md](./SPATIAL_INDEX_PERFORMANCE_GUIDE.md)
@@ -70,24 +71,30 @@ All specialized performance metrics have been consolidated into [PERFORMANCE_MET
 ### Running Benchmarks
 
 ```bash
+
 # Three-way comparison (Octree vs Tetree vs Prism)
+
 mvn test -Dtest=OctreeVsTetreeBenchmark
 
 # Prism-specific benchmarks
+
 mvn test -Dtest=*PrismPerformanceTest
 
 # Anisotropic workload testing
+
 mvn test -Dtest=*AnisotropicTest
 
 # Quick validation
+
 mvn test -Dtest=QuickPerformanceTest
 
 # Full suite
+
 mvn test -Dtest=*PerformanceTest
 
 # DSOC performance tests (gated)
+
 export RUN_DSOC_PERF_TESTS=true
 mvn test -Dtest=DSOCPerformanceTest
-```
 
-
+```text

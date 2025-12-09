@@ -19,24 +19,36 @@ This checklist ensures all Luciferase documentation remains accurate, consistent
 ### 1. Gather Information
 
 - [ ] Check git log for major changes since last review
+
   ```bash
+
   git log --since="3 months ago" --pretty=format:"%h %ad %s" --date=short
-  ```
+
+```text
 
 - [ ] Review merged pull requests for documentation impact
+
   ```bash
+
   git log --since="3 months ago" --merges --oneline
-  ```
+
+```text
 
 - [ ] Collect performance benchmark results from last quarter
+
   ```bash
+
   find . -name "*benchmark*.txt" -mtime -90
-  ```
+
+```text
 
 - [ ] Note any reported documentation issues
+
   ```bash
+
   # Check issue tracker for documentation-related issues
-  ```
+
+```text
 
 ### 2. Create Review Workspace
 
@@ -91,12 +103,14 @@ These documents contain non-negotiable technical truths. Verify they remain accu
   - Update if structure changed
 
   ```bash
+
   # Count Java files per module
   for module in common grpc lucien render sentry portal von simulation; do
     count=$(find $module/src/main/java -name "*.java" 2>/dev/null | wc -l)
     echo "$module: $count classes"
   done
-  ```
+
+```text
 
 - [ ] **LUCIEN_ARCHITECTURE.md**
   - Verify package descriptions accurate
@@ -112,18 +126,24 @@ These documents contain non-negotiable technical truths. Verify they remain accu
 ### 2.2 Cross-Reference Validation
 
 - [ ] Run link checker on all architecture docs
+
   ```bash
+
   markdown-link-check ARCHITECTURE_SUMMARY.md
   markdown-link-check LUCIEN_ARCHITECTURE.md
   markdown-link-check portal/doc/PORTAL_ARCHITECTURE.md
-  ```
+
+```text
 
 - [ ] Verify all referenced files exist
+
   ```bash
+
   grep -r "\.md" --include="*ARCHITECTURE*.md" | grep -o "[A-Z_]*.md" | sort -u | while read f; do
     find . -name "$f" -type f || echo "MISSING: $f"
   done
-  ```
+
+```text
 
 ---
 
@@ -173,9 +193,12 @@ Review each API category:
 - [ ] Update examples if APIs changed
 
 ```bash
+
 # Extract Java code blocks from markdown
+
 find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
-```
+
+```text
 
 ---
 
@@ -190,13 +213,16 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   - Update if major performance changes occurred
 
 - [ ] **Run Key Benchmarks**
+
   ```bash
+
   # Run primary benchmark suite
   mvn clean test -Pperformance -q
 
   # Compare results with documented metrics
   diff performance-results/latest.txt lucien/doc/performance-results/baseline.txt
-  ```
+
+```text
 
 - [ ] **Update if Necessary**
   - If results differ by >10%, update PERFORMANCE_METRICS_MASTER.md
@@ -206,9 +232,12 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 ### 4.2 Performance Claims Audit
 
 - [ ] Search for all performance claims in documentation
+
   ```bash
+
   grep -r "faster\|slower\|performance\|benchmark" --include="*.md" . | grep -v ".git"
-  ```
+
+```text
 
 - [ ] Verify each claim includes:
   - Measurement date
@@ -231,13 +260,16 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   - Confirm GPU testing requirements current
 
 - [ ] **Run Test Count Validation**
+
   ```bash
+
   # Count test classes per module
   for module in common grpc lucien render sentry portal von simulation; do
     count=$(find $module/src/test/java -name "*Test.java" 2>/dev/null | wc -l)
     echo "$module: $count test classes"
   done
-  ```
+
+```text
 
 ### 5.2 Test Execution Verification
 
@@ -283,12 +315,15 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 
 - [ ] Review DOCUMENTATION_STANDARDS.md terminology table
 - [ ] Search for deprecated terms in documentation
+
   ```bash
+
   # Check for old terminology
   grep -r "distributed trees\|remote trees" --include="*.md" .
   grep -r "tree forest\|forest coordination" --include="*.md" .
   grep -r "rebalancing\|reorganization" --include="*.md" . | grep -v "tree balancing"
-  ```
+
+```text
 
 - [ ] Update documents using deprecated terminology
 - [ ] Add new standard terms if needed
@@ -296,10 +331,13 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 ### 7.2 Header Compliance
 
 - [ ] Verify all major docs have required headers
+
   ```bash
+
   # Check for missing "Last Updated" headers
   find . -name "*.md" -type f -exec grep -L "Last Updated" {} \;
-  ```
+
+```text
 
 - [ ] Update headers with current dates for modified docs
 - [ ] Add status indicators (Current/Archived/Draft) where missing
@@ -308,9 +346,12 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 ### 7.3 Cross-Reference Validation
 
 - [ ] Run comprehensive link check
+
   ```bash
+
   find . -name "*.md" -type f -exec markdown-link-check {} \; 2>&1 | tee link-check.log
-  ```
+
+```text
 
 - [ ] Fix all broken internal links
 - [ ] Update or remove broken external links
@@ -342,20 +383,26 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 ### 9.1 Identify Documentation Gaps
 
 - [ ] Check for undocumented public APIs
+
   ```bash
+
   # Find public classes without corresponding API docs
   find lucien/src/main/java -name "*.java" -type f | while read f; do
     class=$(basename "$f" .java)
     grep -r "$class" lucien/doc/*.md >/dev/null || echo "Undocumented: $class"
   done
-  ```
+
+```text
 
 - [ ] Look for modules without README files
+
   ```bash
+
   for dir in */; do
     [ -f "$dir/README.md" ] || echo "Missing README: $dir"
   done
-  ```
+
+```text
 
 - [ ] Check for features mentioned in code but not documented
 - [ ] Identify performance benchmarks without documentation
@@ -405,6 +452,7 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 Create file: `.github/reviews/review-YYYY-QQ-summary.md`
 
 ```markdown
+
 # Quarterly Documentation Review - Q[Q] YYYY
 
 **Review Date**: YYYY-MM-DD
@@ -438,7 +486,8 @@ Create file: `.github/reviews/review-YYYY-QQ-summary.md`
 ## Next Review Date
 
 [Date 3 months from now]
-```
+
+```text
 
 ### 3. Update Review Schedule
 
@@ -461,7 +510,7 @@ Create file: `.github/reviews/review-YYYY-QQ-summary.md`
 Track these metrics over time to assess documentation health:
 
 | Metric | Target | Q4 2025 | Q1 2026 | Q2 2026 | Q3 2026 |
-|--------|--------|---------|---------|---------|---------|
+| -------- | -------- | --------- | --------- | --------- | --------- |
 | % Docs Updated | >25% | - | - | - | - |
 | Broken Links | 0 | - | - | - | - |
 | Outdated Metrics (>6mo) | 0 | - | - | - | - |

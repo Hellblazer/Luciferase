@@ -9,11 +9,13 @@
 ## Quick Navigation
 
 ### Start Here
+
 - **NEW USER**: Read `KNOWLEDGE_BASE_SUMMARY.md` (5-10 min overview)
 - **IMPLEMENTER**: Read `SFT_KNN_IMPLEMENTATION_ROADMAP.md` (detailed tasks)
 - **RESEARCHER**: Read `SFT_MOTION_PLANNING_EXTRACTION.md` (comprehensive analysis)
 
 ### Tools
+
 - **Query Knowledge Base**: `scripts/query_sft_knowledge.py`
 - **Index Documents**: `scripts/chroma_sft_motion_planning_indexer.py`
 - **ChromaDB Storage**: `/tmp/lucien_knowledge/`
@@ -197,44 +199,56 @@
 ### Command Line Examples
 
 ```bash
+
 # List all documents
+
 python3 scripts/query_sft_knowledge.py list
 
 # Query about specific topic
+
 python3 scripts/query_sft_knowledge.py "Morton key pruning k-NN"
 
 # Interactive mode
+
 python3 scripts/query_sft_knowledge.py
+
 # Then type: "k-NN caching strategy"
-```
+
+```text
 
 ### Python API Examples
 
 ```python
+
 from scripts.chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 
 indexer = SFTMotionPlanningIndexer()
 
 # Query 1: Find all pruning-related docs
+
 results = indexer.query_collection("SFC pruning subtree elimination", n_results=5)
 
 # Query 2: Find caching strategy docs
+
 results = indexer.query_collection("k-NN result caching invalidation", n_results=5)
 
 # Query 3: Find collision optimization docs
+
 results = indexer.query_collection("collision detection via nearest neighbor", n_results=5)
 
 for result in results:
     print(f"ID: {result['id']}")
     print(f"Title: {result['metadata']['title']}")
     print(f"Content: {result['content'][:300]}...\n")
-```
+
+```text
 
 ---
 
 ## Implementation Checklist
 
 ### Phase 1 Preparation
+
 - [ ] Read `KNOWLEDGE_BASE_SUMMARY.md`
 - [ ] Read `lucien-02-sfc-pruning`
 - [ ] Read `sft-06-knn-optimization-lucien`
@@ -242,6 +256,7 @@ for result in results:
 - [ ] Design distance-to-Morton-depth mapping
 
 ### Phase 1 Implementation
+
 - [ ] Implement distance-to-depth function in MortonKey
 - [ ] Add SFC range estimation method
 - [ ] Modify KNearestNeighbor visitor to use subMap()
@@ -251,12 +266,14 @@ for result in results:
 - [ ] Update performance metrics documentation
 
 ### Phase 2 Preparation
+
 - [ ] Read `lucien-03-morton-knn-cache`
 - [ ] Read `lucien-05-collision-via-knn`
 - [ ] Design cache data structure and invalidation strategy
 - [ ] Review CollisionDetection.java
 
 ### Phase 2 Implementation
+
 - [ ] Create KNNCache class with version tracking
 - [ ] Implement cache invalidation logic
 - [ ] Integrate Phase 1 pruning with caching
@@ -265,11 +282,13 @@ for result in results:
 - [ ] Test dynamic entity movement scenarios
 
 ### Phase 3 Preparation (Optional)
+
 - [ ] Read `knn-06-concurrent-knn`
 - [ ] Review ConcurrentSkipListMap properties
 - [ ] Design region-based locking strategy
 
 ### Phase 3 Implementation
+
 - [ ] Implement RegionLocking class
 - [ ] Add version-based consistency model
 - [ ] Create concurrent stress tests
@@ -301,22 +320,26 @@ for result in results:
 
 ## Performance Progression
 
-```
+```text
+
 Baseline:                  1.5-2.0ms per k-NN query
 After Phase 1:            0.3-0.5ms (4-6x improvement)
 After Phase 2 (avg):      0.15-0.25ms (6-10x from baseline)
+
                           0.05-0.1ms for cache hits
                           0.3-0.5ms for cache misses
+
 After Phase 3:            Maintained under concurrent load
 Target:                   < 0.1ms for interactive motion planning
-```
+
+```text
 
 ---
 
 ## Document Metadata Summary
 
 | Doc ID | Category | Priority | Phase | Complexity | Time |
-|--------|----------|----------|-------|-----------|------|
+| -------- | ---------- | ---------- | ------- | ----------- | ------ |
 | `lucien-02-sfc-pruning` | Integration | CRITICAL | 1 | Medium | 1st |
 | `lucien-06-performance-targets` | Integration | HIGH | All | Low | 1st |
 | `knn-02-sfc-locality` | Optimization | HIGH | 1 | Medium | 1st |
@@ -334,21 +357,27 @@ Target:                   < 0.1ms for interactive motion planning
 ## Common Questions
 
 **Q: Where do I start?**
+
 A: Read `KNOWLEDGE_BASE_SUMMARY.md` first (5-10 minutes), then `lucien-02-sfc-pruning` for Phase 1 implementation.
 
 **Q: How long will implementation take?**
+
 A: Phase 1 (4 weeks), Phase 2 (3 weeks), Phase 3 (2 weeks) = ~10 weeks total for all phases.
 
 **Q: What speedup can I expect?**
+
 A: Phase 1 alone: 4-6x k-NN speedup. Combined (Phase 1+2): 6-10x average speedup with caching.
 
 **Q: Which document has the implementation details?**
+
 A: `lucien-02-sfc-pruning` for Phase 1, `lucien-03-morton-knn-cache` for Phase 2, `knn-06-concurrent-knn` for Phase 3.
 
 **Q: How do I query the knowledge base?**
+
 A: Use `scripts/query_sft_knowledge.py` with a query string, or use the Python API directly.
 
 **Q: What about Tetree optimization?**
+
 A: See `lucien-04-tetree-sfc-ordering` for Tetree-specific SFC properties and optimization approach.
 
 ---

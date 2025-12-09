@@ -45,7 +45,8 @@ Lucien provides the fundamental spatial data structures and algorithms for 3D sp
 
 ## Package Structure
 
-```
+```text
+
 com.hellblazer.luciferase.lucien/
 ├── core/           # Core spatial index classes (27 classes)
 ├── entity/         # Entity management (12 classes)
@@ -55,13 +56,15 @@ com.hellblazer.luciferase.lucien/
 ├── balancing/      # Tree balancing strategies (3 classes)
 ├── visitor/        # Visitor pattern traversal (6 classes)
 └── index/          # TM-index implementation (1 class)
-```
+
+```text
 
 ## Usage Examples
 
 ### Basic Octree Operations
 
 ```java
+
 // Create an Octree
 var octree = new Octree();
 octree.setMaxDepth(10);
@@ -81,11 +84,13 @@ octree.update(entityId, newPosition);
 
 // Remove entity
 octree.remove(entityId);
-```
+
+```text
 
 ### Tetree with Collision Detection
 
 ```java
+
 // Create Tetree with collision system
 var tetree = new Tetree();
 var collisionSystem = new CollisionSystem<>(tetree);
@@ -100,11 +105,13 @@ for (var collision : collisions) {
     System.out.println("Collision between " + 
         collision.getEntityA() + " and " + collision.getEntityB());
 }
-```
+
+```text
 
 ### Advanced Queries
 
 ```java
+
 // Ray intersection
 var ray = new Ray3f(origin, direction);
 var hits = octree.intersectRay(ray, maxDistance);
@@ -117,14 +124,15 @@ var visible = octree.queryFrustum(frustum);
 var center = new Point3f(0, 0, 0);
 var radius = 50.0f;
 var inRange = octree.findEntitiesInRadius(center, radius);
-```
+
+```text
 
 ## Performance Benchmarks
 
 Results for 10,000 entities on Apple M1:
 
 | Operation | Octree | Tetree |
-|-----------|--------|--------|
+| ----------- | -------- | -------- |
 | Insert | 285K ops/sec | 541K ops/sec |
 | Update | 189K ops/sec | 364K ops/sec |
 | Remove | 298K ops/sec | 476K ops/sec |
@@ -135,6 +143,7 @@ Results for 10,000 entities on Apple M1:
 ## Thread Safety
 
 All spatial index operations are thread-safe through:
+
 - ConcurrentSkipListMap for node storage
 - CopyOnWriteArrayList for entity lists
 - Fine-grained locking strategies
@@ -150,15 +159,20 @@ All spatial index operations are thread-safe through:
 ## Testing
 
 ```bash
+
 # Run all Lucien tests
+
 mvn test -pl lucien
 
 # Run specific test
+
 mvn test -pl lucien -Dtest=OctreeTest
 
 # Run performance benchmarks
+
 mvn test -pl lucien -Pperformance
-```
+
+```text
 
 ## Dependencies
 

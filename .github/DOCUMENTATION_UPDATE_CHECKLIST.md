@@ -9,6 +9,7 @@
 ## Quick Reference
 
 Use this checklist when:
+
 - ✅ Adding new features or APIs
 - ✅ Changing existing APIs or behavior
 - ✅ Fixing significant bugs
@@ -196,25 +197,34 @@ When restructuring code:
 ### Check for Outdated Documentation
 
 ```bash
+
 # Find docs older than 90 days
+
 find . -name "*.md" -type f -mtime +90 -not -path "*/node_modules/*" -not -path "*/.git/*"
 
 # Check for broken internal links (requires markdown-link-check)
+
 find . -name "*.md" -type f -exec markdown-link-check {} \;
-```
+
+```text
 
 ### Run Full Documentation Validation
 
 ```bash
+
 # Lint all markdown files
+
 markdownlint '**/*.md' --ignore node_modules --ignore .git
 
 # Check for TODO/FIXME in documentation
+
 grep -r "TODO\|FIXME" --include="*.md" .
 
 # Verify all referenced Java classes exist
+
 grep -r "\.java" --include="*.md" . | grep -o "[A-Z][a-zA-Z]*\.java" | sort -u
-```
+
+```text
 
 ---
 
@@ -231,6 +241,7 @@ grep -r "\.java" --include="*.md" . | grep -o "[A-Z][a-zA-Z]*\.java" | sort -u
 ### During Code Review
 
 Reviewer should verify:
+
 - [ ] Documentation updated appropriately
 - [ ] Examples compile and work
 - [ ] Terminology follows standards
@@ -251,6 +262,7 @@ Reviewer should verify:
 ### What if documentation impact is unclear?
 
 Ask yourself:
+
 - Did I add/change/remove any public API?
 - Did behavior change in a user-visible way?
 - Would someone reading the docs be confused by my changes?
@@ -267,6 +279,7 @@ If yes to any, update documentation.
 ### What if documentation is already incorrect?
 
 Fix it as part of your PR:
+
 1. Note the existing error in PR description
 2. Update documentation to be correct
 3. Add to HISTORICAL_FIXES_REFERENCE.md if significant
@@ -297,6 +310,7 @@ Fix it as part of your PR:
 ### New Feature Documentation Template
 
 ```markdown
+
 # Feature Name
 
 **Last Updated**: YYYY-MM-DD
@@ -316,6 +330,7 @@ Fix it as part of your PR:
 ## Usage Example
 
 ```java
+
 // Complete working example
 import com.hellblazer.luciferase.*;
 
@@ -324,7 +339,8 @@ public class Example {
         // Example code here
     }
 }
-```
+
+```text
 
 ## Configuration
 
@@ -338,11 +354,13 @@ public class Example {
 
 - [Link to API docs]
 - [Link to architecture docs]
-```
+
+```text
 
 ### API Change Migration Guide Template
 
 ```markdown
+
 # Migration Guide: [Feature Name] API Changes
 
 **Effective Date**: YYYY-MM-DD
@@ -358,16 +376,20 @@ public class Example {
 ### Before (Old API)
 
 ```java
+
 // Old code
 oldApi.doSomething(param);
-```
+
+```text
 
 ### After (New API)
 
 ```java
+
 // New code
 newApi.doSomething(param1, param2);
-```
+
+```text
 
 ## Rationale
 
@@ -377,7 +399,8 @@ newApi.doSomething(param1, param2);
 
 - **Deprecated**: [Date if applicable]
 - **Removed**: [Date if applicable]
-```
+
+```text
 
 ---
 

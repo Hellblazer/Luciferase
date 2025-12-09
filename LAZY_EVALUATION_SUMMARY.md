@@ -7,27 +7,32 @@ Implemented lazy evaluation and streaming approaches to avoid full range enumera
 ## Files Created
 
 ### 1. LazyRangeIterator.java
+
 - Iterator that generates TetreeKeys on-demand for spatial ranges
 - O(1) memory footprint regardless of range size
 - Supports early termination without wasting computation
 - Integrates seamlessly with Java Stream API
 
 ### 2. LazySFCRangeStream.java
+
 - Stream-based lazy evaluation using Java Spliterators
 - Provides lazy streams from SFC ranges or volume bounds
 - Efficient spliterator implementation for functional operations
 
 ### 3. RangeHandle.java
+
 - First-class handle representing a spatial range
 - Defers key generation until actually needed
 - Provides size estimates without enumeration
 - Supports both bounded and unbounded iteration
 
 ### 4. LazyRangeEvaluationTest.java
+
 - Test suite demonstrating lazy evaluation benefits
 - Verifies early termination, memory efficiency, and proper integration
 
 ### 5. LAZY_RANGE_EVALUATION.md (in lucien/doc/)
+
 - Comprehensive documentation of the lazy evaluation approaches
 - Performance benefits and usage examples
 - Future enhancement possibilities
@@ -35,7 +40,9 @@ Implemented lazy evaluation and streaming approaches to avoid full range enumera
 ## Key Changes to Existing Code
 
 ### Tet.java - Modified spatialRangeQueryKeys()
+
 ```java
+
 private Stream<TetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean includeIntersecting) {
     // Use lazy iterator for large volumes
     if (shouldUseLazyEnumeration(bounds)) {
@@ -46,7 +53,8 @@ private Stream<TetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean 
     return computeSFCRanges(bounds, includeIntersecting)
         .flatMap(range -> enumerateRange(range));
 }
-```
+
+```text
 
 ## Performance Benefits
 
@@ -58,6 +66,7 @@ private Stream<TetreeKey<?>> spatialRangeQueryKeys(VolumeBounds bounds, boolean 
 ## Example Usage
 
 ```java
+
 // Efficient existence check - minimal computation
 boolean exists = spatialRangeQueryKeys(bounds, false)
     .findAny()
@@ -67,11 +76,13 @@ boolean exists = spatialRangeQueryKeys(bounds, false)
 spatialRangeQueryKeys(bounds, true)
     .limit(1000)
     .forEach(processor);
-```
+
+```text
 
 ## Testing
 
 All tests pass successfully, demonstrating:
+
 - Lazy enumeration with early termination
 - Memory efficiency for large volumes
 - Proper integration with existing APIs

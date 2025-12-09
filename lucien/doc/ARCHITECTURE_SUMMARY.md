@@ -44,19 +44,22 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 
 ### Inheritance Hierarchy
 
-```
+```text
+
 SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
   └── AbstractSpatialIndex<Key, ID, Content> (base class with ~95% shared functionality)
       ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
       ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
       └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
-```
+
+```text
 
 ### Spatial Subdivision Strategies
 
 - **Octree**: Isotropic cubic subdivision using Morton curve space-filling curves
 - **Tetree**: Tetrahedral subdivision with S0-S5 characteristic tetrahedra
 - **Prism**: Anisotropic subdivision combining 2D triangular and 1D linear elements for applications requiring fine
+
   horizontal granularity and coarse vertical granularity
 
 ### Major Features
@@ -140,7 +143,9 @@ The current architecture prioritizes:
 2. **Code Reuse**: 90% shared implementation through inheritance
 3. **Maintainability**: Single place for algorithm changes
 4. **Extensibility**: Easy addition of new spatial subdivision strategies (demonstrated by Octree, Tetree, and Prism
+
    implementations)
+
 5. **Performance**: O(1) operations through HashMap-based storage
 6. **Scalability**: Forest architecture for distributed and large-scale applications
 

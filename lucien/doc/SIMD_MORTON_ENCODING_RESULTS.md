@@ -87,6 +87,7 @@ From `PERFORMANCE_METRICS_MASTER.md`:
 The scalar magic bits algorithm:
 
 ```java
+
 private static long splitBy3(long a) {
     long x = a & 0x1fffff;
     x = (x | x << 32) & 0x1f00000000ffff;
@@ -96,7 +97,8 @@ private static long splitBy3(long a) {
     x = (x | x << 2)  & 0x1249249249249249;
     return x;
 }
-```
+
+```text
 
 This is:
 
@@ -208,4 +210,3 @@ SIMD acceleration for Morton encoding is **not beneficial** on ARM NEON. The sca
 2. ✅ Close Epic 1 beads with findings (Bead 1.4 complete)
 3. Consider Epic 2 focusing on ray intersection SIMD (better SIMD candidate)
 4. Investigate tetrahedral SFC encoding SIMD potential (similar concerns likely apply)
-

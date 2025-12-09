@@ -47,7 +47,8 @@ Portal provides interactive 3D visualization capabilities for spatial data struc
 
 ## Architecture
 
-```
+```text
+
 com.hellblazer.luciferase.portal/
 ├── view/
 │   ├── View3D              # Main 3D viewport
@@ -66,13 +67,15 @@ com.hellblazer.luciferase.portal/
     ├── CameraController    # Camera input handling
     ├── SelectionTool       # Entity selection
     └── MeasurementTool     # Distance/volume tools
-```
+
+```text
 
 ## Usage Examples
 
 ### Basic 3D View Setup
 
 ```java
+
 import com.hellblazer.luciferase.portal.view.View3D;
 import javafx.application.Application;
 import javafx.scene.Scene;
@@ -98,11 +101,13 @@ public class Viewer extends Application {
         view3D.startAnimation();
     }
 }
-```
+
+```text
 
 ### Mesh Generation
 
 ```java
+
 import com.hellblazer.luciferase.portal.mesh.MeshGenerator;
 
 // Generate mesh from voxel octree
@@ -117,11 +122,13 @@ mesh = optimizer.simplify(mesh, 0.5); // 50% reduction
 var meshView = new MeshView(mesh);
 meshView.setMaterial(new PhongMaterial(Color.BLUE));
 view3D.addMesh(meshView);
-```
+
+```text
 
 ### Camera Control
 
 ```java
+
 // Setup orbit camera
 var camera = new OrbitCamera();
 camera.setTarget(new Point3D(0, 0, 0));
@@ -143,11 +150,13 @@ var timeline = new Timeline(
 );
 timeline.setCycleCount(Timeline.INDEFINITE);
 timeline.play();
-```
+
+```text
 
 ### Debug Visualization
 
 ```java
+
 // Enable debug overlays
 view3D.setDebugMode(true);
 
@@ -164,11 +173,13 @@ view3D.setShowStatistics(true);
 var stats = view3D.getStatistics();
 System.out.println("FPS: " + stats.getFps());
 System.out.println("Nodes: " + stats.getNodeCount());
-```
+
+```text
 
 ### Material and Lighting
 
 ```java
+
 // Create PBR material
 var material = new PBRMaterial();
 material.setBaseColor(Color.rgb(200, 100, 50));
@@ -184,14 +195,15 @@ var fillLight = new AmbientLight(Color.rgb(50, 50, 80));
 
 view3D.addLight(sunLight);
 view3D.addLight(fillLight);
-```
+
+```text
 
 ## Performance
 
 ### Rendering Benchmarks
 
 | Scene Complexity | FPS (JavaFX) | Draw Calls | Triangles |
-|-----------------|--------------|------------|-----------|
+| ----------------- | -------------- | ------------ | ----------- |
 | Simple (1K nodes) | 60 | 50 | 10K |
 | Medium (10K nodes) | 60 | 200 | 100K |
 | Complex (100K nodes) | 30 | 800 | 1M |
@@ -208,7 +220,7 @@ view3D.addLight(fillLight);
 ## Keyboard Shortcuts
 
 | Key | Action |
-|-----|--------|
+| ----- | -------- |
 | W/S | Move forward/backward |
 | A/D | Move left/right |
 | Q/E | Move up/down |
@@ -222,15 +234,20 @@ view3D.addLight(fillLight);
 ## Building
 
 ```bash
+
 # Build module
+
 mvn clean install -pl portal
 
 # Run demo application
+
 mvn javafx:run -pl portal
 
 # Package as standalone app
+
 mvn javafx:jlink -pl portal
-```
+
+```text
 
 ## Dependencies
 
@@ -242,12 +259,16 @@ mvn javafx:jlink -pl portal
 ## Testing
 
 ```bash
+
 # Run tests
+
 mvn test -pl portal
 
 # Run with visualization (requires display)
+
 mvn test -pl portal -DargLine="-Djava.awt.headless=false"
-```
+
+```text
 
 ## License
 

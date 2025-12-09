@@ -14,6 +14,7 @@ This document contains detailed historical bug fixes and implementation notes fr
 3. Add all dependencies to the root pom.xml `<dependencyManagement>` section with versions
 4. In module pom.xml files, reference dependencies WITHOUT version tags
 5. This ensures consistent versions across modules with centralized management
+
 Example: JMH has two artifacts (jmh-core, jmh-generator-annprocess) so uses ${jmh.version} property
 
 ## Morton Curve Correctness

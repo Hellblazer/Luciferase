@@ -37,7 +37,8 @@ Von (named after Von Neumann neighborhoods) provides distributed spatial awarene
 
 ## Architecture
 
-```
+```text
+
 com.hellblazer.luciferase.von/
 ├── network/
 │   ├── SpatialNode         # Network node with spatial awareness
@@ -58,13 +59,15 @@ com.hellblazer.luciferase.von/
     ├── SpatialMessage      # Message definitions
     ├── UpdateProtocol      # Update propagation
     └── QueryProtocol       # Distributed queries
-```
+
+```text
 
 ## Usage Examples
 
 ### Creating a Spatial Node
 
 ```java
+
 import com.hellblazer.luciferase.von.network.SpatialNode;
 
 // Create spatial node
@@ -81,11 +84,13 @@ node.start();
 
 // Join spatial network
 node.join("seed.example.com:8080");
-```
+
+```text
 
 ### Distributed Octree
 
 ```java
+
 import com.hellblazer.luciferase.von.distributed.DistributedOctree;
 
 // Create distributed octree
@@ -102,11 +107,13 @@ var options = QueryOptions.builder()
     .build();
 
 var results = octree.query(bounds, options);
-```
+
+```text
 
 ### Interest Management
 
 ```java
+
 import com.hellblazer.luciferase.von.perception.InterestManager;
 
 // Setup interest management
@@ -127,11 +134,13 @@ interest.setLevelOfDetail(distance -> {
     if (distance < 100) return DetailLevel.MEDIUM;
     return DetailLevel.LOW;
 });
-```
+
+```text
 
 ### Spatial Gossip
 
 ```java
+
 import com.hellblazer.luciferase.von.network.GossipProtocol;
 
 // Configure gossip protocol
@@ -151,11 +160,13 @@ var event = new SpatialEvent(
 );
 
 node.broadcast(event);
-```
+
+```text
 
 ### Consensus Operations
 
 ```java
+
 import com.hellblazer.luciferase.von.distributed.SpatialConsensus;
 
 // Propose spatial update with consensus
@@ -173,14 +184,15 @@ consensus.propose(proposal).thenAccept(result -> {
             result.getVotes() + " nodes");
     }
 });
-```
+
+```text
 
 ## Performance
 
 ### Network Metrics (100 nodes, 1000 entities)
 
 | Operation | Latency (p50) | Latency (p99) | Throughput |
-|-----------|---------------|---------------|------------|
+| ----------- | --------------- | --------------- | ------------ |
 | Insert Propagation | 12ms | 45ms | 8.3K/sec |
 | Query (Local) | 0.5ms | 2ms | 200K/sec |
 | Query (Distributed) | 15ms | 60ms | 6.6K/sec |
@@ -190,7 +202,7 @@ consensus.propose(proposal).thenAccept(result -> {
 ### Scalability
 
 | Nodes | Entities | Memory/Node | CPU/Node | Network |
-|-------|----------|-------------|----------|---------|
+| ------- | ---------- | ------------- | ---------- | --------- |
 | 10 | 1K | 50MB | 5% | 100KB/s |
 | 100 | 10K | 150MB | 15% | 500KB/s |
 | 1000 | 100K | 500MB | 25% | 2MB/s |
@@ -201,6 +213,7 @@ consensus.propose(proposal).thenAccept(result -> {
 ### Node Configuration
 
 ```yaml
+
 von:
   node:
     id: ${NODE_ID}
@@ -226,7 +239,8 @@ von:
     default-radius: 100
     update-rate: 30
     compression: true
-```
+
+```text
 
 ## Fault Tolerance
 
@@ -249,18 +263,24 @@ Von handles various failure scenarios:
 ## Testing
 
 ```bash
+
 # Unit tests
+
 mvn test -pl von
 
 # Integration tests (requires network)
+
 mvn test -pl von -Dtest=*IntegrationTest
 
 # Distributed tests (requires Docker)
+
 mvn test -pl von -Pdistr distributed
 
 # Performance benchmarks
+
 mvn test -pl von -Dtest=*Benchmark
-```
+
+```text
 
 ## Dependencies
 

@@ -13,10 +13,12 @@ The DSOC performance tests are gated to prevent them from running during normal 
 **Tags**: `@Tag("performance")`, `@Disabled`
 
 #### Tests Included:
+
 - `testDSOCPerformanceComparison()` - Compares DSOC vs non-DSOC performance across entity counts and occlusion ratios
 - `testDynamicScenePerformance()` - Tests dynamic scene with moving entities
 
 #### Test Scenarios:
+
 - Entity counts: 1,000, 10,000, 50,000
 - Occlusion ratios: 10%, 50%, 90%
 - Dynamic entity ratio: 20%
@@ -29,12 +31,14 @@ The DSOC performance tests are gated to prevent them from running during normal 
 **Tags**: `@Tag("benchmark")`, `@Disabled`
 
 #### Benchmark Methods:
+
 - `benchmarkOctreeWithDSOC()` - JMH benchmark for Octree with DSOC
 - `benchmarkOctreeWithoutDSOC()` - JMH benchmark for Octree without DSOC
 - `benchmarkTetreeWithDSOC()` - JMH benchmark for Tetree with DSOC
 - `benchmarkTetreeWithoutDSOC()` - JMH benchmark for Tetree without DSOC
 
 #### Parameterized Testing:
+
 - Entity counts: 1,000, 10,000, 100,000
 - Occlusion ratios: 10%, 30%, 50%, 70%, 90%
 - Dynamic entity ratios: 0%, 20%, 50%
@@ -53,12 +57,16 @@ Provides a JUnit wrapper for running JMH benchmarks.
 ### Method 1: Run Specific Test Class
 
 ```bash
+
 # Run basic performance tests
+
 mvn test -Dtest=DSOCPerformanceTest
 
 # Run JMH benchmark runner
+
 mvn test -Dtest=DSOCBenchmarkRunner
-```
+
+```text
 
 ### Method 2: Enable in IDE
 
@@ -69,18 +77,23 @@ mvn test -Dtest=DSOCBenchmarkRunner
 ### Method 3: Run by Tag (if tags are configured)
 
 ```bash
+
 # Run all performance tests
+
 mvn test -Dgroups=performance
 
 # Run all benchmarks
+
 mvn test -Dgroups=benchmark
-```
+
+```text
 
 ### Method 4: Profile-based Execution
 
 If you want to add Maven profiles for performance testing:
 
 ```xml
+
 <profile>
     <id>performance</id>
     <build>
@@ -95,21 +108,29 @@ If you want to add Maven profiles for performance testing:
         </plugins>
     </build>
 </profile>
-```
+
+```text
 
 Then run with:
+
 ```bash
+
 mvn test -Pperformance
-```
+
+```text
 
 ## Expected Results
 
 ### Basic Performance Test Output
-```
+
+```text
+
 === DSOC Performance Comparison ===
 
 Entities: 1000, Occlusion Ratio: 0.1
+
 ----------------------------------------
+
 Octree Results:
   Without DSOC: 0.15 ms/frame
   With DSOC:    3.27 ms/frame
@@ -117,17 +138,22 @@ Octree Results:
   Occlusion Rate: 31.2%
   Active TBVs: 0
   TBV Hit Rate: NaN%
-```
+
+```text
 
 ### JMH Benchmark Output
-```
+
+```text
+
 Benchmark                                          Mode  Cnt     Score    Error  Units
 DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678  us/op
-```
+
+```text
 
 ## Performance Characteristics
 
 ### Current Results Summary
+
 - **Small scenes (1K entities)**: 3ms DSOC overhead
 - **Medium scenes (10K entities)**: Overhead still significant
 - **Large scenes (50K entities)**: DSOC becomes competitive (58-61% of original time)
@@ -135,12 +161,14 @@ DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678 
 - **TBV activation**: Currently 0 (static test scenes)
 
 ### When DSOC Provides Benefits
+
 1. **Large entity counts** (10,000+ entities)
 2. **High occlusion scenarios** (dense urban, indoor scenes)
 3. **Scenes with significant depth complexity**
 4. **Applications where 3ms overhead is acceptable for rendering quality**
 
 ### When DSOC May Not Help
+
 1. **Small entity counts** (<5,000 entities)
 2. **Open environments** with minimal occlusion
 3. **Highly dynamic scenes** with rapid camera movement
@@ -149,16 +177,19 @@ DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678 
 ## Test Configuration
 
 ### Memory Requirements
+
 - Tests allocate large entity datasets (up to 50K entities)
 - Z-buffers consume 4-16MB depending on resolution
 - Recommend 4GB+ heap space for full test suite
 
 ### Execution Time
+
 - Basic performance tests: ~90 seconds
 - JMH benchmarks: 5-30 minutes depending on parameters
 - Full parameterized runs: 1+ hours
 
 ### System Requirements
+
 - Multi-core system recommended for JMH benchmarks
 - Sufficient RAM for large entity datasets
 - Minimal background processes for accurate timing
@@ -166,6 +197,7 @@ DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678 
 ## Interpreting Results
 
 ### Key Metrics
+
 - **Frame time**: Average milliseconds per frustum cull operation
 - **Speedup**: Ratio of non-DSOC to DSOC time (>1.0 means DSOC is faster)
 - **Occlusion rate**: Percentage of entities culled by occlusion
@@ -173,6 +205,7 @@ DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678 
 - **TBV hit rate**: Accuracy of TBV predictions
 
 ### Performance Analysis
+
 1. **Baseline establishment**: Run without DSOC first
 2. **Overhead measurement**: Compare DSOC vs non-DSOC times
 3. **Scaling analysis**: Test across multiple entity counts
@@ -202,11 +235,13 @@ DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678 
 ## Integration with CI
 
 These tests are **intentionally excluded** from CI and normal builds to prevent:
+
 - Extended build times
 - Resource consumption on build servers
 - Flaky test failures due to timing sensitivity
 
 To run in CI environments:
+
 1. Create separate performance testing jobs
 2. Use dedicated high-performance agents
 3. Run on schedule rather than per-commit
@@ -215,6 +250,7 @@ To run in CI environments:
 ## Documentation Updates
 
 When modifying performance tests:
+
 1. Update this guide with new test scenarios
 2. Document expected performance characteristics
 3. Update baseline measurements after significant changes
