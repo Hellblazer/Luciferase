@@ -16,14 +16,28 @@
  */
 package com.hellblazer.luciferase.portal.esvo;
 
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
+import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.CameraView;
+import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
+import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
+import com.hellblazer.luciferase.portal.esvo.renderer.OctreeRenderer;
 import com.hellblazer.luciferase.portal.esvo.ui.OctreeControlPanel;
+import com.hellblazer.luciferase.portal.mesh.octree.OctreeNodeMeshRenderer;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.scene.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.PhongMaterial;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * ESVO Octree Inspector - Interactive JavaFX application for exploring and visualizing
@@ -46,6 +60,8 @@ import javafx.stage.Stage;
  */
 public class OctreeInspectorApp extends Application {
     
+    private static final Logger log = LoggerFactory.getLogger(OctreeInspectorApp.class);
+    
     // UI Components
     private CameraView cameraView;
     private OctreeControlPanel controlPanel;
@@ -58,11 +74,34 @@ public class OctreeInspectorApp extends Application {
     private Group rayGroup;
     private Group voxelGroup;
     
+    // ESVO Components
+    private ESVOBridge esvoBridge;
+    private OctreeRenderer octreeRenderer;
+    private ProceduralVoxelGenerator voxelGenerator;
+    private ESVOOctreeData currentOctree;
+    
+    // Background executor for octree building
+    private final ExecutorService buildExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "OctreeBuilder");
+        t.setDaemon(true);
+        return t;
+    });
+    
     // Current state
     private int currentLevel = 10;
     
     @Override
     public void start(Stage primaryStage) {
+        // Initialize ESVO components
+        esvoBridge = new ESVOBridge();
+        voxelGenerator = new ProceduralVoxelGenerator();
+        octreeRenderer = new OctreeRenderer(currentLevel, 
+                                           OctreeNodeMeshRenderer.Strategy.BATCHED,
+                                           OctreeRenderer.ColorScheme.DEPTH_GRADIENT,
+                                           true);
+        
+        log.info("ESVO components initialized");
+        
         // Create the main layout
         BorderPane root = new BorderPane();
         
@@ -131,6 +170,16 @@ public class OctreeInspectorApp extends Application {
         
         // Print usage instructions
         printInstructions();
+        
+        // Generate initial demo octree
+        generateDemoOctree();
+    }
+    
+    @Override
+    public void stop() throws Exception {
+        log.info("Shutting down OctreeInspectorApp");
+        buildExecutor.shutdown();
+        super.stop();
     }
     
     /**
@@ -288,9 +337,80 @@ public class OctreeInspectorApp extends Application {
      * Handle octree level change from control panel.
      */
     private void handleLevelChange(int newLevel) {
+        if (newLevel == currentLevel) {
+            return; // No change
+        }
+        
+        log.info("Level changed from {} to {}", currentLevel, newLevel);
         currentLevel = newLevel;
-        // TODO: Rebuild octree with new level in Phase 2
-        System.out.println("Level changed to: " + newLevel);
+        
+        // Rebuild octree with new depth
+        generateDemoOctree();
+    }
+    
+    /**
+     * Generate and visualize a demo octree.
+     * Uses a sphere shape for demonstration.
+     */
+    private void generateDemoOctree() {
+        log.info("Generating demo octree at depth {}", currentLevel);
+        
+        // Build octree in background thread
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                // Generate sphere voxels
+                var voxels = voxelGenerator.generateSphere(64);
+                log.info("Generated {} voxels", voxels.size());
+                
+                // Build ESVO octree
+                var octree = esvoBridge.buildOctree(voxels, currentLevel);
+                log.info("Built octree with {} nodes", octree.getNodeCount());
+                
+                return octree;
+            } catch (Exception e) {
+                log.error("Failed to build octree", e);
+                return null;
+            }
+        }, buildExecutor)
+        .thenAcceptAsync(octree -> {
+            if (octree != null) {
+                // Update visualization on JavaFX thread
+                updateOctreeVisualization(octree);
+            }
+        }, Platform::runLater);
+    }
+    
+    /**
+     * Update the octree visualization with new data.
+     * Must be called on JavaFX Application Thread.
+     */
+    private void updateOctreeVisualization(ESVOOctreeData octree) {
+        try {
+            // Clear existing octree visualization
+            octreeGroup.getChildren().clear();
+            
+            // Store current octree
+            currentOctree = octree;
+            
+            // Re-create renderer with current depth
+            octreeRenderer = new OctreeRenderer(currentLevel,
+                                               OctreeNodeMeshRenderer.Strategy.BATCHED,
+                                               OctreeRenderer.ColorScheme.DEPTH_GRADIENT,
+                                               true);
+            
+            // Render all levels
+            var renderedGroup = octreeRenderer.renderAllLevels(octree);
+            octreeGroup.getChildren().add(renderedGroup);
+            
+            // Show octree by default
+            octreeGroup.setVisible(true);
+            controlPanel.setShowOctree(true);
+            
+            log.info("Octree visualization updated: {} nodes rendered", octree.getNodeCount());
+            
+        } catch (Exception e) {
+            log.error("Failed to update octree visualization", e);
+        }
     }
     
     /**
