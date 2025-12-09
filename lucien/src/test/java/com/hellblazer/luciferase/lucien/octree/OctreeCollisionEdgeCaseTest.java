@@ -253,15 +253,12 @@ public class OctreeCollisionEdgeCaseTest {
 
     @Test
     void testNegativeCoordinateCollisions() {
-        // Test collision detection with negative coordinates
+        // Test that negative coordinates are properly rejected
         Point3f pos1 = new Point3f(-100, -100, -100);
-        Point3f pos2 = new Point3f(-100.05f, -100.05f, -100.05f);
-
-        LongEntityID id1 = octree.insert(pos1, (byte) 10, "Entity1");
-        LongEntityID id2 = octree.insert(pos2, (byte) 10, "Entity2");
-
-        Optional<SpatialIndex.CollisionPair<LongEntityID, String>> collision = octree.checkCollision(id1, id2);
-        assertTrue(collision.isPresent(), "Negative coordinate entities should collide when close");
+        
+        assertThrows(IllegalArgumentException.class, () -> {
+            octree.insert(pos1, (byte) 10, "Entity1");
+        }, "Negative coordinates should throw IllegalArgumentException");
     }
 
     @Test

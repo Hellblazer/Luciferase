@@ -52,7 +52,9 @@ public class SpatialIndexProfilerTest {
         for (int i = 0; i < 50; i++) {
             final int index = i;
             var result = profiler.profile(SpatialIndexProfiler.OperationType.QUERY_POINT, () -> {
-                return octree.entitiesInRegion(new Spatial.Cube(index * 10 - 1, index * 10 - 1, index * 10 - 1, 2));
+                // Use max(0, ...) to avoid negative coordinates when index=0
+                float queryMin = Math.max(0, index * 10 - 1);
+                return octree.entitiesInRegion(new Spatial.Cube(queryMin, queryMin, queryMin, 2));
             });
             assertNotNull(result);
         }
