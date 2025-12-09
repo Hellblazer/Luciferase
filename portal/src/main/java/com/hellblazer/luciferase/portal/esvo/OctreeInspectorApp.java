@@ -1,0 +1,332 @@
+/*
+ * Copyright (c) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.portal.esvo;
+
+import com.hellblazer.luciferase.portal.CameraView;
+import com.hellblazer.luciferase.portal.esvo.ui.OctreeControlPanel;
+import javafx.application.Application;
+import javafx.scene.*;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.paint.Color;
+import javafx.scene.paint.PhongMaterial;
+import javafx.stage.Stage;
+
+/**
+ * ESVO Octree Inspector - Interactive JavaFX application for exploring and visualizing
+ * ESVO octree structures with procedural geometry generation and real-time rendering.
+ * 
+ * This application provides:
+ * - Interactive 3D camera controls via CameraView
+ * - Procedural voxel geometry generation (sphere, cube, torus, fractals)
+ * - ESVO octree building and visualization
+ * - Ray casting visualization and traversal debugging
+ * - Performance metrics and statistics overlay
+ * 
+ * Architecture:
+ * - Uses CameraView for camera management (first-person navigation)
+ * - BorderPane layout: center for 3D content, right for control panel
+ * - Separate scene graph groups for different visualization layers
+ * - Background thread processing for octree building
+ * 
+ * @author hal.hildebrand
+ */
+public class OctreeInspectorApp extends Application {
+    
+    // UI Components
+    private CameraView cameraView;
+    private OctreeControlPanel controlPanel;
+    
+    // 3D Scene Groups
+    private Group worldGroup;
+    private Group axisGroup;
+    private Group gridGroup;
+    private Group octreeGroup;
+    private Group rayGroup;
+    private Group voxelGroup;
+    
+    // Current state
+    private int currentLevel = 10;
+    
+    @Override
+    public void start(Stage primaryStage) {
+        // Create the main layout
+        BorderPane root = new BorderPane();
+        
+        // Create the 3D world with organized scene groups
+        worldGroup = new Group();
+        axisGroup = new Group();
+        gridGroup = new Group();
+        octreeGroup = new Group();
+        rayGroup = new Group();
+        voxelGroup = new Group();
+        
+        // Build initial scene content
+        buildAxes();
+        buildGrid();
+        
+        // Add all groups to world (order matters for rendering)
+        worldGroup.getChildren().addAll(gridGroup, axisGroup, voxelGroup, octreeGroup, rayGroup);
+        
+        // Add ambient lighting to illuminate all elements
+        AmbientLight ambientLight = new AmbientLight(Color.WHITE);
+        worldGroup.getChildren().add(ambientLight);
+        
+        // Create SubScene for 3D content with anti-aliasing
+        SubScene subScene = new SubScene(worldGroup, 800, 600, true, SceneAntialiasing.BALANCED);
+        subScene.setFill(Color.LIGHTGRAY);
+        
+        // Create and configure CameraView with first-person navigation
+        cameraView = new CameraView(subScene);
+        cameraView.setFirstPersonNavigationEabled(true);
+        cameraView.startViewing();
+        
+        // Bind camera view size to window (accounting for control panel width)
+        cameraView.fitWidthProperty().bind(root.widthProperty().subtract(350));
+        cameraView.fitHeightProperty().bind(root.heightProperty());
+        
+        // Create control panel with event handlers
+        controlPanel = new OctreeControlPanel(
+            cameraView,
+            this::handleResetCamera,
+            this::handleToggleAxes,
+            this::handleToggleGrid,
+            this::handleToggleOctree,
+            this::handleToggleVoxels,
+            this::handleToggleRays,
+            this::handleLevelChange
+        );
+        
+        // Set initial visibility states
+        controlPanel.setShowAxes(true);
+        controlPanel.setShowGrid(true);
+        controlPanel.setShowOctree(false);  // Initially empty
+        controlPanel.setShowVoxels(false);  // Initially empty
+        controlPanel.setShowRays(false);
+        
+        // Layout: 3D view in center, controls on right
+        root.setCenter(cameraView);
+        root.setRight(controlPanel);
+        
+        // Create main scene
+        Scene scene = new Scene(root, 1200, 800);
+        
+        // Configure and show stage
+        primaryStage.setTitle("ESVO Octree Inspector");
+        primaryStage.setScene(scene);
+        primaryStage.show();
+        
+        // Print usage instructions
+        printInstructions();
+    }
+    
+    /**
+     * Build coordinate axes for spatial reference.
+     */
+    private void buildAxes() {
+        // Create bright, visible materials for axes
+        PhongMaterial redMaterial = new PhongMaterial(Color.RED.brighter());
+        redMaterial.setSpecularColor(Color.WHITE);
+        redMaterial.setSpecularPower(5);
+        
+        PhongMaterial greenMaterial = new PhongMaterial(Color.LIME);
+        greenMaterial.setSpecularColor(Color.WHITE);
+        greenMaterial.setSpecularPower(5);
+        
+        PhongMaterial blueMaterial = new PhongMaterial(Color.CYAN);
+        blueMaterial.setSpecularColor(Color.WHITE);
+        blueMaterial.setSpecularPower(5);
+        
+        // Create axis lines
+        double axisLength = 200;
+        double axisThickness = 2;
+        
+        // X axis (red) - extends along X
+        var xAxis = new javafx.scene.shape.Box(axisLength, axisThickness, axisThickness);
+        xAxis.setMaterial(redMaterial);
+        axisGroup.getChildren().add(xAxis);
+        
+        // Y axis (green) - extends along Y
+        var yAxis = new javafx.scene.shape.Box(axisThickness, axisLength, axisThickness);
+        yAxis.setMaterial(greenMaterial);
+        axisGroup.getChildren().add(yAxis);
+        
+        // Z axis (blue) - extends along Z
+        var zAxis = new javafx.scene.shape.Box(axisThickness, axisThickness, axisLength);
+        zAxis.setMaterial(blueMaterial);
+        axisGroup.getChildren().add(zAxis);
+        
+        // Add arrow indicators at positive ends
+        addAxisArrows(axisLength / 2);
+        
+        axisGroup.setVisible(true);
+    }
+    
+    /**
+     * Add arrow indicators at the ends of axes.
+     */
+    private void addAxisArrows(double distance) {
+        PhongMaterial redMaterial = new PhongMaterial(Color.RED);
+        PhongMaterial greenMaterial = new PhongMaterial(Color.GREEN);
+        PhongMaterial blueMaterial = new PhongMaterial(Color.BLUE);
+        
+        // X axis arrow (pointing in +X direction)
+        var xArrow = new javafx.scene.shape.Cylinder(3, 6);
+        xArrow.setMaterial(redMaterial);
+        xArrow.setTranslateX(distance);
+        xArrow.setRotationAxis(javafx.scene.transform.Rotate.Z_AXIS);
+        xArrow.setRotate(90);
+        axisGroup.getChildren().add(xArrow);
+        
+        // Y axis arrow (pointing in +Y direction)
+        var yArrow = new javafx.scene.shape.Cylinder(3, 6);
+        yArrow.setMaterial(greenMaterial);
+        yArrow.setTranslateY(distance);
+        axisGroup.getChildren().add(yArrow);
+        
+        // Z axis arrow (pointing in +Z direction)
+        var zArrow = new javafx.scene.shape.Cylinder(3, 6);
+        zArrow.setMaterial(blueMaterial);
+        zArrow.setTranslateZ(distance);
+        zArrow.setRotationAxis(javafx.scene.transform.Rotate.X_AXIS);
+        zArrow.setRotate(90);
+        axisGroup.getChildren().add(zArrow);
+    }
+    
+    /**
+     * Build reference grid (placeholder for adaptive grid).
+     */
+    private void buildGrid() {
+        // TODO: Integrate AdaptiveGrid in Phase 2
+        // For now, create a simple reference grid
+        PhongMaterial gridMaterial = new PhongMaterial(Color.GRAY.deriveColor(0, 1, 1, 0.3));
+        
+        double gridSize = 200;
+        int gridLines = 10;
+        double spacing = gridSize / gridLines;
+        
+        for (int i = -gridLines / 2; i <= gridLines / 2; i++) {
+            double pos = i * spacing;
+            
+            // Lines parallel to X axis
+            var lineX = new javafx.scene.shape.Box(gridSize, 0.5, 0.5);
+            lineX.setMaterial(gridMaterial);
+            lineX.setTranslateZ(pos);
+            gridGroup.getChildren().add(lineX);
+            
+            // Lines parallel to Z axis
+            var lineZ = new javafx.scene.shape.Box(0.5, 0.5, gridSize);
+            lineZ.setMaterial(gridMaterial);
+            lineZ.setTranslateX(pos);
+            gridGroup.getChildren().add(lineZ);
+        }
+        
+        gridGroup.setVisible(true);
+    }
+    
+    /**
+     * Reset camera to default position and orientation.
+     */
+    private void handleResetCamera() {
+        cameraView.resetCamera();
+    }
+    
+    /**
+     * Toggle visibility of coordinate axes.
+     */
+    private void handleToggleAxes() {
+        boolean shouldBeVisible = controlPanel.getShowAxesState();
+        axisGroup.setVisible(shouldBeVisible);
+    }
+    
+    /**
+     * Toggle visibility of reference grid.
+     */
+    private void handleToggleGrid() {
+        boolean shouldBeVisible = controlPanel.getShowGridState();
+        gridGroup.setVisible(shouldBeVisible);
+    }
+    
+    /**
+     * Toggle visibility of octree visualization.
+     */
+    private void handleToggleOctree() {
+        boolean shouldBeVisible = controlPanel.getShowOctreeState();
+        octreeGroup.setVisible(shouldBeVisible);
+    }
+    
+    /**
+     * Toggle visibility of voxel visualization.
+     */
+    private void handleToggleVoxels() {
+        boolean shouldBeVisible = controlPanel.getShowVoxelsState();
+        voxelGroup.setVisible(shouldBeVisible);
+    }
+    
+    /**
+     * Toggle visibility of ray casting visualization.
+     */
+    private void handleToggleRays() {
+        boolean shouldBeVisible = controlPanel.getShowRaysState();
+        rayGroup.setVisible(shouldBeVisible);
+    }
+    
+    /**
+     * Handle octree level change from control panel.
+     */
+    private void handleLevelChange(int newLevel) {
+        currentLevel = newLevel;
+        // TODO: Rebuild octree with new level in Phase 2
+        System.out.println("Level changed to: " + newLevel);
+    }
+    
+    /**
+     * Print usage instructions to console.
+     */
+    private void printInstructions() {
+        System.out.println("\n=== ESVO Octree Inspector ===");
+        System.out.println("Interactive visualization tool for ESVO octree structures");
+        System.out.println();
+        System.out.println("Navigation:");
+        System.out.println("- Mouse drag: Rotate camera");
+        System.out.println("- Mouse wheel: Zoom in/out");
+        System.out.println("- WASD keys: Move camera (when first-person mode enabled)");
+        System.out.println();
+        System.out.println("Control Panel (right side):");
+        System.out.println("- Octree Parameters: Adjust depth and resolution");
+        System.out.println("- Shape Selection: Choose procedural geometry");
+        System.out.println("- Visualization: Toggle display elements");
+        System.out.println("- Camera: Reset view and adjust settings");
+        System.out.println();
+        System.out.println("Legend:");
+        System.out.println("- Red axis: X direction");
+        System.out.println("- Green axis: Y direction");
+        System.out.println("- Blue axis: Z direction");
+        System.out.println("- Gray grid: XZ plane reference");
+        System.out.println();
+        System.out.println("Ready for octree visualization!");
+    }
+    
+    /**
+     * Launcher class for proper JavaFX application startup.
+     * Use this pattern to avoid JavaFX initialization issues.
+     */
+    public static class Launcher {
+        public static void main(String[] args) {
+            Application.launch(OctreeInspectorApp.class, args);
+        }
+    }
+}
