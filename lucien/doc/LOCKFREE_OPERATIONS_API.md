@@ -468,6 +468,7 @@ if (analyzer.getOverallConflictRate() > 0.05f) {
 - Monitor memory usage per entity
 
 ### 3. Error Handling
+
 - Always handle movement failures gracefully
 - Implement retry logic with exponential backoff
 - Use versioned state to detect and resolve conflicts

@@ -87,9 +87,11 @@ Add to `.vscode/settings.json`:
 ## Troubleshooting
 
 ### Error: "Preview features are not enabled"
+
 **Solution**: Add `--enable-preview` to both compile and runtime flags
 
 ### Error: "Module jdk.incubator.vector not found"
+
 **Solution**: Ensure you're using Java 21+ and add `--add-modules jdk.incubator.vector`
 
 ### SIMD not detected at runtime

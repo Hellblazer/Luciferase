@@ -463,9 +463,9 @@ Add to `.vscode/settings.json`:
 - [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md) - Performance baselines
 
 ### External Resources
+
 - [JEP 448: Vector API (Sixth Incubator)](https://openjdk.org/jeps/448) - Java 24 Vector API
 - [JEP 469: Vector API (Seventh Incubator)](https://openjdk.org/jeps/469) - Java 25 Vector API
-- [Vector API Programmer's Guide](https://cr.openjdk.org/~jrose/vectors/vector-api-guide.html)
 
 ### Related Issues
 - **Luciferase-e1.0**: SIMD Infrastructure Setup (this document)
