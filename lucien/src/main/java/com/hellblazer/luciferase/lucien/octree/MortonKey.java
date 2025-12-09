@@ -70,13 +70,21 @@ public final class MortonKey implements SpatialKey<MortonKey> {
      * Factory method to create a MortonKey from coordinates and level. This is a convenience method that delegates to
      * Morton curve calculation.
      *
-     * @param x     the x coordinate
-     * @param y     the y coordinate
-     * @param z     the z coordinate
+     * @param x     the x coordinate (must be non-negative)
+     * @param y     the y coordinate (must be non-negative)
+     * @param z     the z coordinate (must be non-negative)
      * @param level the hierarchical level
      * @return a new MortonKey
+     * @throws IllegalArgumentException if any coordinate is negative
      */
     public static MortonKey fromCoordinates(int x, int y, int z, byte level) {
+        // Validate coordinates are non-negative
+        if (x < 0 || y < 0 || z < 0) {
+            throw new IllegalArgumentException(
+                String.format("Negative coordinates not supported: (%d,%d,%d)", x, y, z)
+            );
+        }
+        
         // Use the Constants method which properly handles level encoding
         var point = new javax.vecmath.Point3f(x, y, z);
         var mortonCode = Constants.calculateMortonIndex(point, level);
@@ -295,13 +303,21 @@ public final class MortonKey implements SpatialKey<MortonKey> {
      * Note: Returns a conservative estimate (may include entities outside the sphere).
      * Caller must filter by actual distance.
      * 
-     * @param center the center point of the search sphere
-     * @param radius the search radius
+     * @param center the center point of the search sphere (must have non-negative coordinates)
+     * @param radius the search radius (must be positive)
      * @return SFCRange covering the spherical region (conservative estimate)
+     * @throws IllegalArgumentException if radius is non-positive or center has negative coordinates
      */
     public static SFCRange estimateSFCRange(Point3f center, float radius) {
         if (radius <= 0) {
             throw new IllegalArgumentException("Search radius must be positive, got: " + radius);
+        }
+        
+        // Validate center coordinates are non-negative
+        if (center.x < 0 || center.y < 0 || center.z < 0) {
+            throw new IllegalArgumentException(
+                "Negative center coordinates not supported: " + center
+            );
         }
         
         // Step 1: Estimate appropriate depth for this radius
