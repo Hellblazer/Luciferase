@@ -33,8 +33,9 @@ OctreeInspectorApp
 │       └── CameraView (portal.CameraView)
 │
 ├── Data Pipeline
-│   ├── ProceduralVoxelGenerator → VoxelData
-│   ├── ESVOCPUBuilder → ESVOOctreeData
+│   ├── ProceduralVoxelGenerator → List<Point3i>
+│   ├── OctreeBuilder.buildFromVoxels() → ESVOOctreeData
+│   ├── RayTraversalUtils → EnhancedRay/MultiLevelOctree
 │   └── OctreeRenderer → JavaFX Geometry
 │
 └── Control Systems
@@ -201,31 +202,40 @@ public class ESVOBridge {
     
     /**
      * Build ESVO octree from voxel data.
+     * Uses OctreeBuilder.buildFromVoxels() from render module.
      * 
-     * @param voxels List of voxel coordinates
+     * @param voxels List of voxel coordinates (Point3i from common module)
      * @param maxDepth Maximum octree depth (1-15)
      * @return ESVO octree data structure
      */
     public ESVOOctreeData buildOctree(List<Point3i> voxels, int maxDepth) {
-        // Use ESVOCPUBuilder from render module
-        var builder = new ESVOCPUBuilder(maxDepth);
-        
-        // Convert voxels to builder input format
-        for (Point3i voxel : voxels) {
-            builder.addVoxel(voxel.x, voxel.y, voxel.z);
-        }
-        
-        // Build and return octree
-        return builder.build();
+        // Use OctreeBuilder.buildFromVoxels() from render module
+        // Point3i is from com.hellblazer.luciferase.geometry package in common module
+        var builder = new OctreeBuilder();
+        return builder.buildFromVoxels(voxels, maxDepth);
     }
     
     /**
      * Cast ray through octree and return traversal data.
+     * Uses RayTraversalUtils for simplified ray creation.
+     * 
+     * @param octree ESVO octree data
+     * @param cameraOrigin Camera position in world space [0,1]
+     * @param cameraDirection Camera look direction
+     * @return Traversal result with hit information
      */
-    public RayTraversalResult castRay(ESVOOctreeData octree, 
-                                      Ray3D ray) {
-        var traversal = new StackBasedRayTraversal(octree);
-        return traversal.traverse(ray.origin, ray.direction);
+    public DeepTraversalResult castRay(ESVOOctreeData octree, 
+                                      Vector3f cameraOrigin,
+                                      Vector3f cameraDirection) {
+        // Create ray using RayTraversalUtils (handles [0,1] → [1,2] transformation)
+        var ray = RayTraversalUtils.createRayFromCamera(cameraOrigin, cameraDirection);
+        
+        // Create octree for traversal
+        var multiLevelOctree = RayTraversalUtils.createOctreeFromData(octree, octree.getMaxDepth());
+        
+        // Traverse and return result
+        var traversal = new StackBasedRayTraversal();
+        return traversal.traverse(multiLevelOctree, ray);
     }
     
     /**
@@ -238,12 +248,15 @@ public class ESVOBridge {
 ```
 
 **Integration Points**:
-1. **ESVOCPUBuilder**: Octree construction
-2. **ESVOOctreeData**: Core data structure
-3. **StackBasedRayTraversal**: Ray casting
-4. **ESVOPerformanceMonitor**: Metrics collection
-5. **ESVONodeGeometry**: Node bounds calculation
-6. **ESVOTopology**: Parent/child relationships
+1. **OctreeBuilder**: Octree construction via `buildFromVoxels(List<Point3i>, int depth)`
+2. **Point3i**: Voxel coordinate type from `com.hellblazer.luciferase.geometry` (common module)
+3. **RayTraversalUtils**: Simplified ray creation and octree conversion utilities
+4. **ESVOOctreeData**: Core data structure for octree storage
+5. **StackBasedRayTraversal**: Ray casting via `traverse(MultiLevelOctree, EnhancedRay)`
+6. **DeepTraversalResult**: Traversal result with hit information and visited nodes
+7. **ESVOPerformanceMonitor**: Metrics collection
+8. **ESVONodeGeometry**: Node bounds calculation
+9. **ESVOTopology**: Parent/child relationships
 
 ### 4. OctreeRenderer
 
@@ -1012,7 +1025,23 @@ All three can be worked in parallel since they have no mutual dependencies.
 
 ---
 
-**Document Version**: 1.0  
+**Document Version**: 1.1  
 **Last Updated**: 2025-12-09  
 **Author**: Claude Code (Plan-based Design)  
-**Status**: Ready for Review
+**Status**: APIs Verified and Updated
+
+## Revision History
+
+### Version 1.1 (2025-12-09) - API Verification Update
+- **Fixed ESVOBridge.buildOctree()**: Now uses `OctreeBuilder.buildFromVoxels(List<Point3i>, int depth)` instead of non-existent ESVOCPUBuilder
+- **Fixed ESVOBridge.castRay()**: Now uses `RayTraversalUtils.createRayFromCamera()` and `RayTraversalUtils.createOctreeFromData()` for proper coordinate transformation and data structure conversion
+- **Updated return type**: Changed from `RayTraversalResult` to `DeepTraversalResult` to match actual API
+- **Documented Point3i**: Clarified that Point3i is from `com.hellblazer.luciferase.geometry` package in common module
+- **Added RayTraversalUtils**: Documented the new utility class for simplified ray creation and octree conversion
+- **Updated Data Pipeline**: Reflects actual flow: ProceduralVoxelGenerator → List<Point3i> → OctreeBuilder → ESVOOctreeData
+- **Updated Integration Points**: Added 9 integration points including RayTraversalUtils, DeepTraversalResult, and Point3i
+
+### Version 1.0 (2025-12-09) - Initial Architecture
+- Complete architecture design for ESVO Octree Inspector
+- Component specifications for all major classes
+- Data flow diagrams and event handling architecture
