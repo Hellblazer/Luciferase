@@ -24,8 +24,6 @@ import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
 import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
 import com.hellblazer.luciferase.portal.esvo.renderer.OctreeRenderer;
 import com.hellblazer.luciferase.portal.esvo.renderer.VoxelRenderer;
-import com.hellblazer.luciferase.portal.esvo.ui.OctreeControlPanel;
-import com.hellblazer.luciferase.portal.esvo.ui.OctreeStructureDiagram;
 import com.hellblazer.luciferase.portal.esvo.visualization.RayCastVisualizer;
 import com.hellblazer.luciferase.portal.mesh.octree.OctreeNodeMeshRenderer;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
@@ -41,7 +39,10 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.PhongMaterial;
 import javafx.stage.Stage;
-import javafx.scene.control.SplitPane;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,10 +84,41 @@ public class OctreeInspectorApp extends Application {
     private static final Logger log = LoggerFactory.getLogger(OctreeInspectorApp.class);
     
     // UI Components
+    private BorderPane root;
     private CameraView cameraView;
-    private OctreeControlPanel controlPanel;
-    private OctreeStructureDiagram structureDiagram;
-    private SplitPane mainSplitPane;
+    private TreeView<String> octreeTreeView;
+    private TabPane rightTabPane;
+    
+    // Status bar labels
+    private Label statusLabel;
+    private Label nodesLabel;
+    private Label fpsLabel;
+    private Label memoryLabel;
+    private Label levelLabel;
+    
+    // UI controls
+    private TextArea rayStatsTextArea;
+    private TextArea nodePropsTextArea;
+    private Button screenshotBtn;
+    private Button recordBtn;
+    private Button resetViewBtn;
+    private CheckBox showAxesCheck;
+    private CheckBox showGridCheck;
+    private CheckBox showOctreeCheck;
+    private CheckBox showVoxelsCheck;
+    private CheckBox showRaysCheck;
+    private CheckBox firstPersonCheck;
+    private CheckBox rayInteractiveCheck;
+    private Spinner<Integer> depthSpinner;
+    private Spinner<Integer> resolutionSpinner;
+    private ComboBox<ProceduralVoxelGenerator.Shape> shapeComboBox;
+    private ComboBox<VoxelRenderer.MaterialScheme> materialComboBox;
+    private ToggleGroup renderModeGroup;
+    private Slider minLevelSlider;
+    private Slider maxLevelSlider;
+    private Slider isolatedLevelSlider;
+    private CheckBox isolateLevelCheck;
+    private CheckBox ghostModeCheck;
     
     // 3D Scene Groups
     private Group worldGroup;
@@ -170,47 +202,19 @@ public class OctreeInspectorApp extends Application {
         cameraView.setFirstPersonNavigationEabled(true);
         cameraView.startViewing();
         
-        // Create octree structure diagram
-        structureDiagram = new OctreeStructureDiagram();
+        // Create UI sections using helper methods
+        ToolBar toolbar = createTopToolbar();
+        VBox leftPanel = createLeftPanel();
+        TabPane rightPanel = createRightTabPane();
+        HBox statusBar = createStatusBar();
         
-        // Create split pane for 3D view and structure diagram
-        mainSplitPane = new SplitPane();
-        mainSplitPane.getItems().addAll(cameraView, structureDiagram);
-        mainSplitPane.setDividerPositions(0.7); // 70% for 3D view, 30% for diagram
-        
-        // Bind sizes
-        cameraView.fitWidthProperty().bind(mainSplitPane.widthProperty().multiply(0.7));
-        cameraView.fitHeightProperty().bind(root.heightProperty());
-        
-        // Create control panel with event handlers
-        controlPanel = new OctreeControlPanel(
-            cameraView,
-            this::handleResetCamera,
-            this::handleToggleAxes,
-            this::handleToggleGrid,
-            this::handleToggleOctree,
-            this::handleToggleVoxels,
-            this::handleToggleRays,
-            this::handleLevelChange,
-            this::handleShapeChange,
-            this::handleRenderModeChange,
-            this::handleMaterialSchemeChange,
-            this::handleCameraPreset,
-            this::handleLodChanged,
-            this::handleScreenshot,
-            this::handleToggleRecording
-        );
-        
-        // Set initial visibility states
-        controlPanel.setShowAxes(true);
-        controlPanel.setShowGrid(true);
-        controlPanel.setShowOctree(false);  // Initially empty
-        controlPanel.setShowVoxels(false);  // Initially empty
-        controlPanel.setShowRays(false);
-        
-        // Layout: split pane in center, controls on right
-        root.setCenter(mainSplitPane);
-        root.setRight(controlPanel);
+        // Assemble new layout
+        root = new BorderPane();  // Store reference for screenshot/recording
+        root.setTop(toolbar);
+        root.setLeft(leftPanel);
+        root.setCenter(cameraView);  // CameraView directly in center
+        root.setRight(rightPanel);
+        root.setBottom(statusBar);
         
         // Create main scene
         Scene scene = new Scene(root, 1200, 800);
@@ -219,31 +223,23 @@ public class OctreeInspectorApp extends Application {
         scene.setOnKeyPressed(event -> {
             switch (event.getCode()) {
                 case X:
-                    controlPanel.setShowAxes(!controlPanel.getShowAxesState());
+                    showAxesCheck.setSelected(!showAxesCheck.isSelected());
                     handleToggleAxes();
                     break;
                 case G:
-                    controlPanel.setShowGrid(!controlPanel.getShowGridState());
+                    showGridCheck.setSelected(!showGridCheck.isSelected());
                     handleToggleGrid();
                     break;
                 case O:
-                    controlPanel.setShowOctree(!controlPanel.getShowOctreeState());
+                    showOctreeCheck.setSelected(!showOctreeCheck.isSelected());
                     handleToggleOctree();
                     break;
                 case V:
-                    controlPanel.setShowVoxels(!controlPanel.getShowVoxelsState());
+                    showVoxelsCheck.setSelected(!showVoxelsCheck.isSelected());
                     handleToggleVoxels();
                     break;
-                case P:
-                    // Toggle performance overlay
-                    if (controlPanel.getPerformanceOverlayState() != null) {
-                        controlPanel.setShowPerformanceOverlay(!controlPanel.getPerformanceOverlayState());
-                    }
-                    break;
                 case R:
-                    if (!event.isConsumed()) {
-                        handleResetCamera();
-                    }
+                    handleResetCamera();
                     break;
                 case S:
                     handleScreenshot();
@@ -303,7 +299,14 @@ public class OctreeInspectorApp extends Application {
                 // Update performance overlay every 500ms
                 if (now - lastUpdate >= UPDATE_INTERVAL) {
                     var summary = performanceMonitor.getPerformanceSummary();
-                    controlPanel.updatePerformanceMetrics(summary.toString());
+                    // Update status bar labels
+                    fpsLabel.setText(String.format("FPS: %.1f", summary.currentFPS()));
+                    
+                    // Calculate memory usage
+                    var runtime = Runtime.getRuntime();
+                    var usedMemoryMB = (runtime.totalMemory() - runtime.freeMemory()) / (1024.0 * 1024.0);
+                    memoryLabel.setText(String.format("Memory: %.1f MB", usedMemoryMB));
+                    
                     lastUpdate = now;
                 }
             }
@@ -428,7 +431,7 @@ public class OctreeInspectorApp extends Application {
      * Toggle visibility of coordinate axes.
      */
     private void handleToggleAxes() {
-        boolean shouldBeVisible = controlPanel.getShowAxesState();
+        boolean shouldBeVisible = showAxesCheck.isSelected();
         axisGroup.setVisible(shouldBeVisible);
     }
     
@@ -436,7 +439,7 @@ public class OctreeInspectorApp extends Application {
      * Toggle visibility of reference grid.
      */
     private void handleToggleGrid() {
-        boolean shouldBeVisible = controlPanel.getShowGridState();
+        boolean shouldBeVisible = showGridCheck.isSelected();
         gridGroup.setVisible(shouldBeVisible);
     }
     
@@ -444,7 +447,7 @@ public class OctreeInspectorApp extends Application {
      * Toggle visibility of octree visualization.
      */
     private void handleToggleOctree() {
-        boolean shouldBeVisible = controlPanel.getShowOctreeState();
+        boolean shouldBeVisible = showOctreeCheck.isSelected();
         octreeGroup.setVisible(shouldBeVisible);
     }
     
@@ -452,7 +455,7 @@ public class OctreeInspectorApp extends Application {
      * Toggle visibility of voxel visualization.
      */
     private void handleToggleVoxels() {
-        boolean shouldBeVisible = controlPanel.getShowVoxelsState();
+        boolean shouldBeVisible = showVoxelsCheck.isSelected();
         voxelGroup.setVisible(shouldBeVisible);
     }
     
@@ -460,7 +463,7 @@ public class OctreeInspectorApp extends Application {
      * Toggle visibility of ray casting visualization.
      */
     private void handleToggleRays() {
-        boolean shouldBeVisible = controlPanel.getShowRaysState();
+        boolean shouldBeVisible = showRaysCheck.isSelected();
         rayGroup.setVisible(shouldBeVisible);
     }
     
@@ -497,7 +500,7 @@ public class OctreeInspectorApp extends Application {
         // Recreate voxel renderer with new render mode
         voxelRenderer = VoxelRenderer.builder()
                                      .voxelSize(1.5)
-                                     .materialScheme(controlPanel.getSelectedMaterialScheme())
+                                     .materialScheme(materialComboBox.getValue())
                                      .renderMode(newMode)
                                      .build();
         
@@ -513,11 +516,23 @@ public class OctreeInspectorApp extends Application {
     private void handleMaterialSchemeChange(VoxelRenderer.MaterialScheme newScheme) {
         log.info("Material scheme changed to: {}", newScheme);
         
+        // Get current render mode from toggle group
+        VoxelRenderer.RenderMode currentMode = VoxelRenderer.RenderMode.FILLED; // default
+        if (renderModeGroup.getSelectedToggle() != null) {
+            RadioButton selected = (RadioButton) renderModeGroup.getSelectedToggle();
+            String text = selected.getText();
+            if ("Wireframe".equals(text)) {
+                currentMode = VoxelRenderer.RenderMode.WIREFRAME;
+            } else if ("Points".equals(text)) {
+                currentMode = VoxelRenderer.RenderMode.POINTS;
+            }
+        }
+        
         // Recreate voxel renderer with new material scheme
         voxelRenderer = VoxelRenderer.builder()
                                      .voxelSize(1.5)
                                      .materialScheme(newScheme)
-                                     .renderMode(controlPanel.getSelectedRenderMode())
+                                     .renderMode(currentMode)
                                      .build();
         
         // Re-render voxels if we have current data
@@ -546,12 +561,12 @@ public class OctreeInspectorApp extends Application {
         
         log.info("LOD settings changed - updating octree visualization");
         
-        // Get LOD settings from control panel
-        int minLevel = controlPanel.getMinLevel();
-        int maxLevel = controlPanel.getMaxLevel();
-        boolean isolateLevel = controlPanel.isIsolateLevelEnabled();
-        int isolatedLevel = controlPanel.getIsolatedLevel();
-        boolean ghostMode = controlPanel.isGhostModeEnabled();
+        // Get LOD settings from UI controls
+        int minLevel = (int) minLevelSlider.getValue();
+        int maxLevel = (int) maxLevelSlider.getValue();
+        boolean isolateLevel = isolateLevelCheck.isSelected();
+        int isolatedLevel = (int) isolatedLevelSlider.getValue();
+        boolean ghostMode = ghostModeCheck.isSelected();
         
         // Clear existing octree visualization
         octreeGroup.getChildren().clear();
@@ -594,13 +609,12 @@ public class OctreeInspectorApp extends Application {
         // Save current camera state before rebuilding
         var savedCameraState = cameraView.saveCameraState();
         
-        // Show progress indicator and update status
-        controlPanel.showRebuildProgress();
-        controlPanel.setRebuildStatus("Building...");
+        // Update status bar
+        statusLabel.setText("Status: Building...");
         
-        // Get current shape and resolution from control panel
-        var shape = controlPanel.getSelectedShape();
-        int resolution = controlPanel.getResolution();
+        // Get current shape and resolution from UI controls
+        var shape = shapeComboBox.getValue();
+        int resolution = resolutionSpinner.getValue();
         
         log.info("Generating demo octree: shape={}, resolution={}, depth={}", 
                  ProceduralVoxelGenerator.getShapeName(shape), resolution, currentLevel);
@@ -639,13 +653,12 @@ public class OctreeInspectorApp extends Application {
                 // Restore camera state to maintain user's view
                 cameraView.restoreCameraState(savedCameraState);
                 
-                // Hide progress indicator and update status
-                controlPanel.hideRebuildProgress();
-                controlPanel.setRebuildStatus("Ready");
+                // Update status bar
+                statusLabel.setText("Status: Ready");
+                nodesLabel.setText("Nodes: " + resultOctree.getNodeCount());
             } else {
                 // Handle build failure
-                controlPanel.hideRebuildProgress();
-                controlPanel.setRebuildStatus("Build Failed");
+                statusLabel.setText("Status: Build Failed");
             }
         }, Platform::runLater);
     }
@@ -674,10 +687,10 @@ public class OctreeInspectorApp extends Application {
             
             // Show octree by default
             octreeGroup.setVisible(true);
-            controlPanel.setShowOctree(true);
+            showOctreeCheck.setSelected(true);
             
-            // Update structure diagram
-            structureDiagram.setOctreeData(octree, currentLevel);
+            // Update octree tree view
+            populateOctreeTree(octree);
             
             log.info("Octree visualization updated: {} nodes rendered", octree.getNodeCount());
             
@@ -704,7 +717,7 @@ public class OctreeInspectorApp extends Application {
             
             // Show voxels by default
             voxelGroup.setVisible(true);
-            controlPanel.setShowVoxels(true);
+            showVoxelsCheck.setSelected(true);
             
             log.info("Voxel visualization updated: {} voxels rendered at resolution {}", voxels.size(), resolution);
             
@@ -720,7 +733,7 @@ public class OctreeInspectorApp extends Application {
      */
     private void handleMouseClick(MouseEvent event) {
         // Check if we should cast a ray based on interactive mode
-        boolean isInteractiveMode = controlPanel.isRayCastingModeEnabled();
+        boolean isInteractiveMode = rayInteractiveCheck.isSelected();
         boolean shouldCastRay = event.getButton() == MouseButton.PRIMARY && 
                                (isInteractiveMode || event.isControlDown());
         
@@ -731,7 +744,7 @@ public class OctreeInspectorApp extends Application {
         // Check if octree is available
         if (currentOctree == null || !esvoBridge.hasOctree()) {
             log.warn("No octree available for ray casting");
-            controlPanel.updateRayStatistics("No octree available.\nGenerate an octree first.");
+            rayStatsTextArea.setText("No octree available.\nGenerate an octree first.");
             return;
         }
         
@@ -772,16 +785,16 @@ public class OctreeInspectorApp extends Application {
                 
                 // Display statistics in UI
                 String stats = formatRayStatistics(result, normalizedOrigin, direction);
-                controlPanel.updateRayStatistics(stats);
+                rayStatsTextArea.setText(stats);
                 
                 // Auto-enable ray visualization if it was off
                 if (!rayGroup.isVisible()) {
                     rayGroup.setVisible(true);
-                    controlPanel.setShowRays(true);
+                    showRaysCheck.setSelected(true);
                 }
             } else {
                 log.warn("Ray casting returned null result");
-                controlPanel.updateRayStatistics("Ray cast failed.\nNo result returned.");
+                rayStatsTextArea.setText("Ray cast failed.\nNo result returned.");
             }
             
         } catch (Exception e) {
@@ -884,8 +897,8 @@ public class OctreeInspectorApp extends Application {
             String filename = String.format("octree_screenshot_%s.png", timestamp);
             Path outputPath = screenshotsDir.resolve(filename);
             
-            // Capture the main split pane (includes both 3D view and structure diagram)
-            WritableImage snapshot = mainSplitPane.snapshot(null, null);
+            // Capture the entire root BorderPane
+            WritableImage snapshot = root.snapshot(null, null);
             
             // Convert to BufferedImage for saving
             var bufferedImage = SwingFXUtils.fromFXImage(snapshot, null);
@@ -907,11 +920,11 @@ public class OctreeInspectorApp extends Application {
             }
             
             log.info(stats);
-            controlPanel.setRebuildStatus("Screenshot: " + filename);
+            statusLabel.setText("Status: Screenshot saved - " + filename);
             
         } catch (IOException e) {
             log.error("Failed to save screenshot", e);
-            controlPanel.setRebuildStatus("Screenshot failed!");
+            statusLabel.setText("Status: Screenshot failed!");
         }
     }
     
@@ -925,7 +938,7 @@ public class OctreeInspectorApp extends Application {
         if (isRecording) {
             // Start recording - reset frame counter
             frameCounter = 0;
-            controlPanel.updateRecordingStatus(frameCounter);
+            statusLabel.setText("Status: Recording started (0 frames)");
             log.info("Recording started - frames will be captured in recordings/ directory");
             
             // Create recordings directory if it doesn't exist
@@ -938,12 +951,12 @@ public class OctreeInspectorApp extends Application {
             } catch (IOException e) {
                 log.error("Failed to create recordings directory", e);
                 isRecording = false; // Disable recording on failure
-                controlPanel.setRebuildStatus("Recording failed - can't create directory");
+                statusLabel.setText("Status: Recording failed - can't create directory");
             }
         } else {
             // Stop recording
             log.info("Recording stopped - {} frames captured", frameCounter);
-            controlPanel.setRebuildStatus(String.format("Recording complete: %d frames", frameCounter));
+            statusLabel.setText(String.format("Status: Recording complete - %d frames", frameCounter));
         }
     }
     
@@ -961,8 +974,8 @@ public class OctreeInspectorApp extends Application {
             String filename = String.format("octree_frame_%06d.png", frameCounter);
             Path outputPath = Paths.get("recordings").resolve(filename);
             
-            // Capture the main split pane
-            WritableImage snapshot = mainSplitPane.snapshot(null, null);
+            // Capture the entire root BorderPane
+            WritableImage snapshot = root.snapshot(null, null);
             
             // Convert to BufferedImage for saving
             var bufferedImage = SwingFXUtils.fromFXImage(snapshot, null);
@@ -970,9 +983,8 @@ public class OctreeInspectorApp extends Application {
             // Save as PNG
             ImageIO.write(bufferedImage, "png", outputPath.toFile());
             
-            // Update UI with frame count (every 10 frames to avoid excessive updates)
+            // Log progress (every 10 frames to avoid excessive logging)
             if (frameCounter % 10 == 0) {
-                controlPanel.updateRecordingStatus(frameCounter);
                 log.debug("Recording frame {} captured", frameCounter);
             }
             
@@ -1013,6 +1025,430 @@ public class OctreeInspectorApp extends Application {
         System.out.println("- Gray grid: XZ plane reference");
         System.out.println();
         System.out.println("Ready for octree visualization!");
+    }
+    
+    /**
+     * Create the top toolbar with action buttons.
+     */
+    private ToolBar createTopToolbar() {
+        ToolBar toolbar = new ToolBar();
+        toolbar.setStyle("-fx-background-color: #2b2b2b; -fx-padding: 5;");
+        
+        // Screenshot button
+        screenshotBtn = new Button("📸 Screenshot");
+        screenshotBtn.setTooltip(new Tooltip("Capture current view (S)"));
+        screenshotBtn.setOnAction(e -> handleScreenshot());
+        
+        // Record button
+        recordBtn = new Button("⏺ Record");
+        recordBtn.setTooltip(new Tooltip("Toggle frame recording"));
+        recordBtn.setOnAction(e -> handleToggleRecording());
+        
+        // Reset view button
+        resetViewBtn = new Button("↺ Reset View");
+        resetViewBtn.setTooltip(new Tooltip("Reset camera (R)"));
+        resetViewBtn.setOnAction(e -> handleResetCamera());
+        
+        // Export button (placeholder)
+        Button exportBtn = new Button("💾 Export");
+        exportBtn.setTooltip(new Tooltip("Export octree data"));
+        exportBtn.setOnAction(e -> log.info("Export not yet implemented"));
+        
+        toolbar.getItems().addAll(screenshotBtn, recordBtn, resetViewBtn, exportBtn);
+        
+        return toolbar;
+    }
+    
+    /**
+     * Create the left panel with octree hierarchy tree.
+     */
+    private VBox createLeftPanel() {
+        VBox leftPanel = new VBox(5);
+        leftPanel.setPrefWidth(200);
+        leftPanel.setMaxWidth(200);
+        leftPanel.setStyle("-fx-background-color: #2b2b2b; -fx-padding: 5;");
+        
+        Label titleLabel = new Label("Octree Hierarchy");
+        titleLabel.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+        
+        octreeTreeView = new TreeView<>();
+        octreeTreeView.setStyle("-fx-background-color: #1e1e1e;");
+        octreeTreeView.setRoot(new TreeItem<>("No octree loaded"));
+        octreeTreeView.setShowRoot(true);
+        
+        // Handle tree selection
+        octreeTreeView.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && nodePropsTextArea != null) {
+                nodePropsTextArea.setText("Selected: " + newVal.getValue());
+            }
+        });
+        
+        VBox.setVgrow(octreeTreeView, Priority.ALWAYS);
+        leftPanel.getChildren().addAll(titleLabel, octreeTreeView);
+        
+        return leftPanel;
+    }
+    
+    /**
+     * Create the right tab pane with View/Properties/Rendering/Analysis tabs.
+     */
+    private TabPane createRightTabPane() {
+        rightTabPane = new TabPane();
+        rightTabPane.setPrefWidth(350);
+        rightTabPane.setMaxWidth(350);
+        rightTabPane.setStyle("-fx-background-color: #2b2b2b;");
+        
+        // Create tabs
+        Tab viewTab = createViewTab();
+        Tab propsTab = createPropertiesTab();
+        Tab renderTab = createRenderingTab();
+        Tab analysisTab = createAnalysisTab();
+        
+        rightTabPane.getTabs().addAll(viewTab, propsTab, renderTab, analysisTab);
+        rightTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        
+        return rightTabPane;
+    }
+    
+    /**
+     * Create the View tab with camera and display controls.
+     */
+    private Tab createViewTab() {
+        Tab tab = new Tab("View");
+        ScrollPane scroll = new ScrollPane();
+        scroll.setFitToWidth(true);
+        scroll.setStyle("-fx-background-color: #1e1e1e;");
+        
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.setStyle("-fx-background-color: #1e1e1e;");
+        
+        // Display options
+        TitledPane displayPane = new TitledPane();
+        displayPane.setText("Display Options");
+        VBox displayContent = new VBox(5);
+        
+        showAxesCheck = new CheckBox("Show Axes (X)");
+        showAxesCheck.setSelected(true);
+        showAxesCheck.setStyle("-fx-text-fill: white;");
+        showAxesCheck.setOnAction(e -> handleToggleAxes());
+        
+        showGridCheck = new CheckBox("Show Grid (G)");
+        showGridCheck.setSelected(true);
+        showGridCheck.setStyle("-fx-text-fill: white;");
+        showGridCheck.setOnAction(e -> handleToggleGrid());
+        
+        showOctreeCheck = new CheckBox("Show Octree (O)");
+        showOctreeCheck.setStyle("-fx-text-fill: white;");
+        showOctreeCheck.setOnAction(e -> handleToggleOctree());
+        
+        showVoxelsCheck = new CheckBox("Show Voxels (V)");
+        showVoxelsCheck.setStyle("-fx-text-fill: white;");
+        showVoxelsCheck.setOnAction(e -> handleToggleVoxels());
+        
+        showRaysCheck = new CheckBox("Show Rays");
+        showRaysCheck.setStyle("-fx-text-fill: white;");
+        showRaysCheck.setOnAction(e -> handleToggleRays());
+        
+        displayContent.getChildren().addAll(showAxesCheck, showGridCheck, showOctreeCheck, showVoxelsCheck, showRaysCheck);
+        displayPane.setContent(displayContent);
+        displayPane.setExpanded(true);
+        
+        // Camera controls
+        TitledPane cameraPane = new TitledPane();
+        cameraPane.setText("Camera Controls");
+        VBox cameraContent = new VBox(5);
+        
+        Button resetBtn = new Button("Reset View");
+        resetBtn.setOnAction(e -> handleResetCamera());
+        
+        firstPersonCheck = new CheckBox("First Person Mode");
+        firstPersonCheck.setStyle("-fx-text-fill: white;");
+        firstPersonCheck.setSelected(true);
+        firstPersonCheck.setOnAction(e -> cameraView.setFirstPersonNavigationEabled(firstPersonCheck.isSelected()));
+        
+        cameraContent.getChildren().addAll(resetBtn, firstPersonCheck);
+        cameraPane.setContent(cameraContent);
+        
+        content.getChildren().addAll(displayPane, cameraPane);
+        scroll.setContent(content);
+        tab.setContent(scroll);
+        
+        return tab;
+    }
+    
+    /**
+     * Create the Properties tab for node details.
+     */
+    private Tab createPropertiesTab() {
+        Tab tab = new Tab("Properties");
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.setStyle("-fx-background-color: #1e1e1e;");
+        
+        Label infoLabel = new Label("Click on tree node to view properties");
+        infoLabel.setStyle("-fx-text-fill: #888;");
+        
+        nodePropsTextArea = new TextArea();
+        nodePropsTextArea.setEditable(false);
+        nodePropsTextArea.setStyle("-fx-control-inner-background: #1e1e1e; -fx-text-fill: white;");
+        nodePropsTextArea.setText("No node selected");
+        VBox.setVgrow(nodePropsTextArea, Priority.ALWAYS);
+        
+        content.getChildren().addAll(infoLabel, nodePropsTextArea);
+        tab.setContent(content);
+        
+        return tab;
+    }
+    
+    /**
+     * Create the Rendering tab for octree and voxel rendering controls.
+     */
+    private Tab createRenderingTab() {
+        Tab tab = new Tab("Rendering");
+        ScrollPane scroll = new ScrollPane();
+        scroll.setFitToWidth(true);
+        scroll.setStyle("-fx-background-color: #1e1e1e;");
+        
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.setStyle("-fx-background-color: #1e1e1e;");
+        
+        // Octree Parameters
+        TitledPane octreePane = new TitledPane();
+        octreePane.setText("Octree Parameters");
+        GridPane octreeGrid = new GridPane();
+        octreeGrid.setHgap(10);
+        octreeGrid.setVgap(5);
+        
+        Label depthLabel = new Label("Depth:");
+        depthLabel.setStyle("-fx-text-fill: white;");
+        depthSpinner = new Spinner<>(1, 20, currentLevel);
+        depthSpinner.setEditable(true);
+        depthSpinner.valueProperty().addListener((obs, oldVal, newVal) -> handleLevelChange(newVal));
+        
+        Label resLabel = new Label("Resolution:");
+        resLabel.setStyle("-fx-text-fill: white;");
+        resolutionSpinner = new Spinner<>(10, 200, 50, 10);
+        resolutionSpinner.setEditable(true);
+        
+        Label shapeLabel = new Label("Shape:");
+        shapeLabel.setStyle("-fx-text-fill: white;");
+        shapeComboBox = new ComboBox<>();
+        shapeComboBox.getItems().addAll(ProceduralVoxelGenerator.Shape.values());
+        shapeComboBox.setValue(ProceduralVoxelGenerator.Shape.SPHERE);
+        shapeComboBox.setOnAction(e -> handleShapeChange(shapeComboBox.getValue()));
+        
+        Button rebuildBtn = new Button("Rebuild Octree");
+        rebuildBtn.setMaxWidth(Double.MAX_VALUE);
+        rebuildBtn.setOnAction(e -> generateDemoOctree());
+        
+        octreeGrid.add(depthLabel, 0, 0);
+        octreeGrid.add(depthSpinner, 1, 0);
+        octreeGrid.add(resLabel, 0, 1);
+        octreeGrid.add(resolutionSpinner, 1, 1);
+        octreeGrid.add(shapeLabel, 0, 2);
+        octreeGrid.add(shapeComboBox, 1, 2);
+        octreeGrid.add(rebuildBtn, 0, 3, 2, 1);
+        
+        octreePane.setContent(octreeGrid);
+        octreePane.setExpanded(true);
+        
+        // LOD Controls
+        TitledPane lodPane = new TitledPane();
+        lodPane.setText("LOD Controls");
+        GridPane lodGrid = new GridPane();
+        lodGrid.setHgap(10);
+        lodGrid.setVgap(5);
+        
+        Label minLevelLabel = new Label("Min Level:");
+        minLevelLabel.setStyle("-fx-text-fill: white;");
+        minLevelSlider = new Slider(0, 20, 0);
+        minLevelSlider.setShowTickLabels(true);
+        minLevelSlider.setShowTickMarks(true);
+        minLevelSlider.setMajorTickUnit(5);
+        
+        Label maxLevelLabel = new Label("Max Level:");
+        maxLevelLabel.setStyle("-fx-text-fill: white;");
+        maxLevelSlider = new Slider(0, 20, 20);
+        maxLevelSlider.setShowTickLabels(true);
+        maxLevelSlider.setShowTickMarks(true);
+        maxLevelSlider.setMajorTickUnit(5);
+        
+        isolateLevelCheck = new CheckBox("Isolate Level");
+        isolateLevelCheck.setStyle("-fx-text-fill: white;");
+        
+        Label isolatedLabel = new Label("Isolated Level:");
+        isolatedLabel.setStyle("-fx-text-fill: white;");
+        isolatedLevelSlider = new Slider(0, 20, 10);
+        isolatedLevelSlider.setShowTickLabels(true);
+        isolatedLevelSlider.setShowTickMarks(true);
+        isolatedLevelSlider.setMajorTickUnit(5);
+        
+        ghostModeCheck = new CheckBox("Ghost Mode");
+        ghostModeCheck.setStyle("-fx-text-fill: white;");
+        
+        lodGrid.add(minLevelLabel, 0, 0);
+        lodGrid.add(minLevelSlider, 1, 0);
+        lodGrid.add(maxLevelLabel, 0, 1);
+        lodGrid.add(maxLevelSlider, 1, 1);
+        lodGrid.add(isolateLevelCheck, 0, 2, 2, 1);
+        lodGrid.add(isolatedLabel, 0, 3);
+        lodGrid.add(isolatedLevelSlider, 1, 3);
+        lodGrid.add(ghostModeCheck, 0, 4, 2, 1);
+        
+        lodPane.setContent(lodGrid);
+        
+        // Voxel Rendering
+        TitledPane voxelPane = new TitledPane();
+        voxelPane.setText("Voxel Rendering");
+        VBox voxelContent = new VBox(5);
+        
+        Label modeLabel = new Label("Render Mode:");
+        modeLabel.setStyle("-fx-text-fill: white;");
+        
+        renderModeGroup = new ToggleGroup();
+        RadioButton filledRadio = new RadioButton("Filled");
+        filledRadio.setToggleGroup(renderModeGroup);
+        filledRadio.setSelected(true);
+        filledRadio.setStyle("-fx-text-fill: white;");
+        filledRadio.setOnAction(e -> handleRenderModeChange(VoxelRenderer.RenderMode.FILLED));
+        
+        RadioButton wireframeRadio = new RadioButton("Wireframe");
+        wireframeRadio.setToggleGroup(renderModeGroup);
+        wireframeRadio.setStyle("-fx-text-fill: white;");
+        wireframeRadio.setOnAction(e -> handleRenderModeChange(VoxelRenderer.RenderMode.WIREFRAME));
+        
+        RadioButton pointsRadio = new RadioButton("Points");
+        pointsRadio.setToggleGroup(renderModeGroup);
+        pointsRadio.setStyle("-fx-text-fill: white;");
+        pointsRadio.setOnAction(e -> handleRenderModeChange(VoxelRenderer.RenderMode.POINTS));
+        
+        Label materialLabel = new Label("Material Scheme:");
+        materialLabel.setStyle("-fx-text-fill: white;");
+        materialComboBox = new ComboBox<>();
+        materialComboBox.getItems().addAll(VoxelRenderer.MaterialScheme.values());
+        materialComboBox.setValue(VoxelRenderer.MaterialScheme.POSITION_GRADIENT);
+        materialComboBox.setOnAction(e -> handleMaterialSchemeChange(materialComboBox.getValue()));
+        
+        voxelContent.getChildren().addAll(modeLabel, filledRadio, wireframeRadio, pointsRadio, 
+                                          materialLabel, materialComboBox);
+        voxelPane.setContent(voxelContent);
+        
+        content.getChildren().addAll(octreePane, lodPane, voxelPane);
+        scroll.setContent(content);
+        tab.setContent(scroll);
+        
+        return tab;
+    }
+    
+    /**
+     * Create the Analysis tab for performance and ray casting stats.
+     */
+    private Tab createAnalysisTab() {
+        Tab tab = new Tab("Analysis");
+        ScrollPane scroll = new ScrollPane();
+        scroll.setFitToWidth(true);
+        scroll.setStyle("-fx-background-color: #1e1e1e;");
+        
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.setStyle("-fx-background-color: #1e1e1e;");
+        
+        // Performance Metrics (placeholder - will be updated by animation timer)
+        TitledPane perfPane = new TitledPane();
+        perfPane.setText("Performance Metrics");
+        VBox perfContent = new VBox(5);
+        
+        Label perfLabel = new Label("Performance metrics will appear here");
+        perfLabel.setStyle("-fx-text-fill: #888;");
+        perfContent.getChildren().add(perfLabel);
+        perfPane.setContent(perfContent);
+        
+        // Ray Casting
+        TitledPane rayPane = new TitledPane();
+        rayPane.setText("Ray Casting");
+        VBox rayContent = new VBox(5);
+        
+        rayInteractiveCheck = new CheckBox("Interactive Mode");
+        rayInteractiveCheck.setStyle("-fx-text-fill: white;");
+        
+        rayStatsTextArea = new TextArea();
+        rayStatsTextArea.setEditable(false);
+        rayStatsTextArea.setStyle("-fx-control-inner-background: #1e1e1e; -fx-text-fill: white; -fx-font-family: monospace;");
+        rayStatsTextArea.setText("No ray cast yet.\nCtrl+Click to cast ray.");
+        rayStatsTextArea.setPrefRowCount(10);
+        
+        rayContent.getChildren().addAll(rayInteractiveCheck, rayStatsTextArea);
+        rayPane.setContent(rayContent);
+        rayPane.setExpanded(true);
+        
+        content.getChildren().addAll(perfPane, rayPane);
+        scroll.setContent(content);
+        tab.setContent(scroll);
+        
+        return tab;
+    }
+    
+    /**
+     * Create the bottom status bar with live metrics.
+     */
+    private HBox createStatusBar() {
+        HBox statusBar = new HBox(10);
+        statusBar.setPadding(new Insets(5));
+        statusBar.setAlignment(Pos.CENTER_LEFT);
+        statusBar.setStyle("-fx-background-color: #2b2b2b; -fx-border-color: #444; -fx-border-width: 1 0 0 0;");
+        
+        statusLabel = new Label("Status: Ready");
+        statusLabel.setStyle("-fx-text-fill: white;");
+        
+        Separator sep1 = new Separator();
+        sep1.setOrientation(javafx.geometry.Orientation.VERTICAL);
+        
+        nodesLabel = new Label("Nodes: --");
+        nodesLabel.setStyle("-fx-text-fill: white;");
+        
+        Separator sep2 = new Separator();
+        sep2.setOrientation(javafx.geometry.Orientation.VERTICAL);
+        
+        fpsLabel = new Label("FPS: --");
+        fpsLabel.setStyle("-fx-text-fill: white;");
+        
+        Separator sep3 = new Separator();
+        sep3.setOrientation(javafx.geometry.Orientation.VERTICAL);
+        
+        memoryLabel = new Label("Memory: --");
+        memoryLabel.setStyle("-fx-text-fill: white;");
+        
+        Separator sep4 = new Separator();
+        sep4.setOrientation(javafx.geometry.Orientation.VERTICAL);
+        
+        levelLabel = new Label("Level: " + currentLevel);
+        levelLabel.setStyle("-fx-text-fill: white;");
+        
+        statusBar.getChildren().addAll(statusLabel, sep1, nodesLabel, sep2, fpsLabel, sep3, memoryLabel, sep4, levelLabel);
+        
+        return statusBar;
+    }
+    
+    /**
+     * Populate the octree tree view with octree structure.
+     */
+    private void populateOctreeTree(ESVOOctreeData octree) {
+        if (octreeTreeView == null || octree == null) {
+            return;
+        }
+        
+        TreeItem<String> root = new TreeItem<>("Octree Root (" + octree.getNodeCount() + " nodes)");
+        root.setExpanded(true);
+        
+        // Add level nodes
+        for (int i = 0; i <= currentLevel; i++) {
+            TreeItem<String> levelItem = new TreeItem<>("Level " + i);
+            root.getChildren().add(levelItem);
+        }
+        
+        octreeTreeView.setRoot(root);
     }
     
     /**
