@@ -221,14 +221,43 @@ public class LuciferaseLauncher extends Application {
     }
     
     /**
-     * Launch a demo application in a new thread.
+     * Launch a demo application as a separate Maven process.
+     * Uses mvn exec:java to ensure all dependencies are on the classpath.
      */
     private void launchDemo(Class<? extends Application> appClass, String demoName) {
         log.info("Launching: {}", demoName);
         
         new Thread(() -> {
             try {
-                Application.launch(appClass);
+                // Determine the main class to launch
+                String mainClass = appClass.getName();
+                if (appClass == OctreeInspectorApp.class) {
+                    mainClass = "com.hellblazer.luciferase.portal.esvo.OctreeInspectorApp$Launcher";
+                }
+                
+                // Get the project directory (go up from wherever we are to find pom.xml)
+                String userDir = System.getProperty("user.dir");
+                
+                // Build maven command
+                ProcessBuilder pb = new ProcessBuilder(
+                    "mvn",
+                    "exec:java",
+                    "-pl", "portal",
+                    "-Dexec.mainClass=" + mainClass,
+                    "-q"  // Quiet mode
+                );
+                
+                // Set working directory to project root
+                pb.directory(new java.io.File(userDir));
+                
+                // Inherit environment and redirect output
+                pb.inheritIO();
+                
+                // Start the process
+                Process process = pb.start();
+                
+                log.info("Started {} via Maven (PID: {})", demoName, process.pid());
+                
             } catch (Exception e) {
                 log.error("Failed to launch {}", demoName, e);
                 Platform.runLater(() -> {
@@ -237,7 +266,7 @@ public class LuciferaseLauncher extends Application {
                     );
                     alert.setTitle("Launch Error");
                     alert.setHeaderText("Failed to launch " + demoName);
-                    alert.setContentText(e.getMessage());
+                    alert.setContentText("Error: " + e.getMessage() + "\n\nMake sure you run the launcher from the project root directory.");
                     alert.showAndWait();
                 });
             }
