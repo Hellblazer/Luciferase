@@ -32,7 +32,9 @@ import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTrave
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.*;
+import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
@@ -43,7 +45,15 @@ import javafx.scene.control.SplitPane;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.imageio.ImageIO;
 import javax.vecmath.Vector3f;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -284,6 +294,11 @@ public class OctreeInspectorApp extends Application {
             public void handle(long now) {
                 // Record frame start for FPS tracking
                 performanceMonitor.startFrame();
+                
+                // Capture frame if recording is enabled
+                if (isRecording) {
+                    captureFrame();
+                }
                 
                 // Update performance overlay every 500ms
                 if (now - lastUpdate >= UPDATE_INTERVAL) {
@@ -854,12 +869,50 @@ public class OctreeInspectorApp extends Application {
      */
     private void handleScreenshot() {
         log.info("Screenshot requested");
-        // TODO: Implement screenshot functionality using JavaFX WritableImage and SnapshotParameters
-        // - Capture mainSplitPane or cameraView snapshot
-        // - Generate filename with timestamp: octree_screenshot_YYYYMMDD_HHMMSS.png
-        // - Include octree statistics in metadata or overlay
-        // - Save to screenshots/ directory
-        log.warn("Screenshot functionality not yet implemented");
+        
+        try {
+            // Create screenshots directory if it doesn't exist
+            Path screenshotsDir = Paths.get("screenshots");
+            if (!Files.exists(screenshotsDir)) {
+                Files.createDirectories(screenshotsDir);
+                log.info("Created screenshots directory: {}", screenshotsDir.toAbsolutePath());
+            }
+            
+            // Generate timestamp-based filename
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+            String timestamp = LocalDateTime.now().format(formatter);
+            String filename = String.format("octree_screenshot_%s.png", timestamp);
+            Path outputPath = screenshotsDir.resolve(filename);
+            
+            // Capture the main split pane (includes both 3D view and structure diagram)
+            WritableImage snapshot = mainSplitPane.snapshot(null, null);
+            
+            // Convert to BufferedImage for saving
+            var bufferedImage = SwingFXUtils.fromFXImage(snapshot, null);
+            
+            // Save as PNG
+            ImageIO.write(bufferedImage, "png", outputPath.toFile());
+            
+            // Log success with statistics
+            String stats = String.format("Screenshot saved: %s (%.1f KB, %dx%d)",
+                filename,
+                outputPath.toFile().length() / 1024.0,
+                (int) snapshot.getWidth(),
+                (int) snapshot.getHeight());
+            
+            if (currentOctree != null) {
+                stats += String.format(" [Octree: %d nodes, depth %d]",
+                    currentOctree.getNodeCount(),
+                    currentLevel);
+            }
+            
+            log.info(stats);
+            controlPanel.setRebuildStatus("Screenshot: " + filename);
+            
+        } catch (IOException e) {
+            log.error("Failed to save screenshot", e);
+            controlPanel.setRebuildStatus("Screenshot failed!");
+        }
     }
     
     /**
@@ -870,22 +923,63 @@ public class OctreeInspectorApp extends Application {
         isRecording = !isRecording;
         
         if (isRecording) {
-            // Start recording
+            // Start recording - reset frame counter
             frameCounter = 0;
             controlPanel.updateRecordingStatus(frameCounter);
-            log.info("Recording started");
-            // TODO: Implement frame recording in animation timer
-            // - Hook into performanceUpdateTimer or create dedicated recording timer
-            // - Capture frame on each animation frame
-            // - Save as octree_frame_NNNNNN.png
-            // - Update frame counter and UI
+            log.info("Recording started - frames will be captured in recordings/ directory");
+            
+            // Create recordings directory if it doesn't exist
+            try {
+                Path recordingsDir = Paths.get("recordings");
+                if (!Files.exists(recordingsDir)) {
+                    Files.createDirectories(recordingsDir);
+                    log.info("Created recordings directory: {}", recordingsDir.toAbsolutePath());
+                }
+            } catch (IOException e) {
+                log.error("Failed to create recordings directory", e);
+                isRecording = false; // Disable recording on failure
+                controlPanel.setRebuildStatus("Recording failed - can't create directory");
+            }
         } else {
             // Stop recording
             log.info("Recording stopped - {} frames captured", frameCounter);
-            // TODO: Stop frame capture
+            controlPanel.setRebuildStatus(String.format("Recording complete: %d frames", frameCounter));
         }
-        
-        log.warn("Frame recording functionality not yet implemented");
+    }
+    
+    /**
+     * Capture a single frame during recording.
+     * Called from the animation timer when recording is active.
+     * Saves frames as octree_frame_000001.png, octree_frame_000002.png, etc.
+     */
+    private void captureFrame() {
+        try {
+            // Increment frame counter
+            frameCounter++;
+            
+            // Generate filename with zero-padded frame number
+            String filename = String.format("octree_frame_%06d.png", frameCounter);
+            Path outputPath = Paths.get("recordings").resolve(filename);
+            
+            // Capture the main split pane
+            WritableImage snapshot = mainSplitPane.snapshot(null, null);
+            
+            // Convert to BufferedImage for saving
+            var bufferedImage = SwingFXUtils.fromFXImage(snapshot, null);
+            
+            // Save as PNG
+            ImageIO.write(bufferedImage, "png", outputPath.toFile());
+            
+            // Update UI with frame count (every 10 frames to avoid excessive updates)
+            if (frameCounter % 10 == 0) {
+                controlPanel.updateRecordingStatus(frameCounter);
+                log.debug("Recording frame {} captured", frameCounter);
+            }
+            
+        } catch (IOException e) {
+            log.error("Failed to capture frame {}", frameCounter, e);
+            // Don't stop recording on single frame failure - just log it
+        }
     }
     
     /**
