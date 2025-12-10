@@ -630,21 +630,24 @@ public class OctreeInspectorApp extends Application {
                 var octree = esvoBridge.buildOctree(voxels, currentLevel);
                 log.info("Built octree with {} nodes", octree.getNodeCount());
                 
-                // Return shape, resolution, voxels, and octree
-                return new Object[] { shape, resolution, voxels, octree };
+                // Return shape, resolution, voxels, and octree (success)
+                return new Object[] { true, shape, resolution, voxels, octree, null };
             } catch (Exception e) {
                 log.error("Failed to build octree", e);
-                return null;
+                // Return failure with exception
+                return new Object[] { false, shape, resolution, null, null, e };
             }
         }, buildExecutor)
         .thenAcceptAsync(result -> {
-            if (result != null) {
+            boolean success = (Boolean) result[0];
+            
+            if (success) {
                 @SuppressWarnings("unchecked")
-                var resultShape = (ProceduralVoxelGenerator.Shape) result[0];
-                var resultResolution = (Integer) result[1];
+                var resultShape = (ProceduralVoxelGenerator.Shape) result[1];
+                var resultResolution = (Integer) result[2];
                 @SuppressWarnings("unchecked")
-                var resultVoxels = (List<Point3i>) result[2];
-                var resultOctree = (ESVOOctreeData) result[3];
+                var resultVoxels = (List<Point3i>) result[3];
+                var resultOctree = (ESVOOctreeData) result[4];
                 
                 // Update visualization on JavaFX thread
                 updateOctreeVisualization(resultOctree);
@@ -657,8 +660,11 @@ public class OctreeInspectorApp extends Application {
                 statusLabel.setText("Status: Ready");
                 nodesLabel.setText("Nodes: " + resultOctree.getNodeCount());
             } else {
-                // Handle build failure
-                statusLabel.setText("Status: Build Failed");
+                // Handle build failure - show exception message
+                var exception = (Exception) result[5];
+                String errorMsg = exception != null ? exception.getMessage() : "Unknown error";
+                statusLabel.setText("Status: Build Failed - " + errorMsg);
+                log.error("Octree build failed: {}", errorMsg);
             }
         }, Platform::runLater);
     }
