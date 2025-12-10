@@ -172,7 +172,11 @@ class SIMDMortonEncoderTest {
     void testBatchSizeQuery() {
         int batchSize = SIMDMortonEncoder.getBatchSize();
         assertTrue(batchSize > 0, "Batch size should be positive");
-        assertTrue(batchSize <= 8, "Batch size should be reasonable (≤ 8 for most architectures)");
+        // Batch size reflects hardware SIMD capabilities
+        // Common values: 2 (128-bit), 4 (256-bit), 8 (512-bit), 16 (AVX-512 on some CPUs)
+        assertTrue(batchSize <= 64, "Batch size should be reasonable (≤ 64 for current architectures)");
+        // Verify it's a power of 2 (typical for SIMD vector lengths)
+        assertTrue((batchSize & (batchSize - 1)) == 0, "Batch size should be a power of 2");
     }
     
     @Test
