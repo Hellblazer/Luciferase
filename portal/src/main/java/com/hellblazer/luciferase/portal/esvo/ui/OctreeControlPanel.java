@@ -88,6 +88,9 @@ public class OctreeControlPanel extends VBox {
     private CheckBox rayCastingModeCheckBox;
     private TextArea rayStatisticsArea;
     
+    // Performance Overlay Controls
+    private CheckBox showPerformanceOverlayCheckBox;
+    
     public OctreeControlPanel(CameraView cameraView, 
                              Runnable resetCamera,
                              Runnable toggleAxes, 
@@ -592,6 +595,12 @@ public class OctreeControlPanel extends VBox {
         Label performanceLabel = new Label("Performance Metrics");
         performanceLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
         
+        showPerformanceOverlayCheckBox = new CheckBox("Show Performance Overlay (P)");
+        showPerformanceOverlayCheckBox.setSelected(true);
+        showPerformanceOverlayCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            performanceMetrics.setVisible(newVal);
+        });
+        
         performanceMetrics = new TextArea();
         performanceMetrics.setEditable(false);
         performanceMetrics.setPrefRowCount(6);
@@ -680,6 +689,7 @@ public class OctreeControlPanel extends VBox {
             rebuildBox,
             performanceSeparator,
             performanceLabel,
+            showPerformanceOverlayCheckBox,
             performanceMetrics,
             shortcutSeparator,
             shortcutLabel,

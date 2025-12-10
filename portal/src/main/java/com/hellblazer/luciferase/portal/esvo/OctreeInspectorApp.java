@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.portal.esvo;
 
+import com.hellblazer.luciferase.esvo.app.ESVOPerformanceMonitor;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.CameraView;
@@ -28,6 +29,7 @@ import com.hellblazer.luciferase.portal.esvo.ui.OctreeStructureDiagram;
 import com.hellblazer.luciferase.portal.esvo.visualization.RayCastVisualizer;
 import com.hellblazer.luciferase.portal.mesh.octree.OctreeNodeMeshRenderer;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
+import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.*;
@@ -91,6 +93,8 @@ public class OctreeInspectorApp extends Application {
     private ProceduralVoxelGenerator voxelGenerator;
     private ESVOOctreeData currentOctree;
     private RayCastVisualizer rayCastVisualizer;
+    private ESVOPerformanceMonitor performanceMonitor;
+    private AnimationTimer performanceUpdateTimer;
     
     // Background executor for octree building
     private final ExecutorService buildExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -117,6 +121,7 @@ public class OctreeInspectorApp extends Application {
                                      .renderMode(VoxelRenderer.RenderMode.FILLED)
                                      .build();
         rayCastVisualizer = new RayCastVisualizer();
+        performanceMonitor = new ESVOPerformanceMonitor();
         
         log.info("ESVO components initialized");
         
@@ -202,6 +207,9 @@ public class OctreeInspectorApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
         
+        // Start performance monitoring
+        startPerformanceMonitoring();
+        
         // Print usage instructions
         printInstructions();
         
@@ -212,8 +220,38 @@ public class OctreeInspectorApp extends Application {
     @Override
     public void stop() throws Exception {
         log.info("Shutting down OctreeInspectorApp");
+        if (performanceUpdateTimer != null) {
+            performanceUpdateTimer.stop();
+        }
         buildExecutor.shutdown();
         super.stop();
+    }
+    
+    /**
+     * Start performance monitoring with AnimationTimer.
+     * Updates FPS and performance metrics at regular intervals.
+     */
+    private void startPerformanceMonitoring() {
+        performanceUpdateTimer = new AnimationTimer() {
+            private long lastUpdate = 0;
+            private static final long UPDATE_INTERVAL = 500_000_000; // 500ms in nanoseconds
+            
+            @Override
+            public void handle(long now) {
+                // Record frame start for FPS tracking
+                performanceMonitor.startFrame();
+                
+                // Update performance overlay every 500ms
+                if (now - lastUpdate >= UPDATE_INTERVAL) {
+                    var summary = performanceMonitor.getPerformanceSummary();
+                    controlPanel.updatePerformanceMetrics(summary.toString());
+                    lastUpdate = now;
+                }
+            }
+        };
+        performanceUpdateTimer.start();
+        
+        log.info("Performance monitoring started");
     }
     
     /**
@@ -668,6 +706,10 @@ public class OctreeInspectorApp extends Application {
             // Visualize the ray
             if (result != null) {
                 visualizeRayCast(normalizedOrigin, direction, result);
+                
+                // Record traversal statistics for performance monitoring
+                int voxelsHit = result.hit ? 1 : 0;
+                performanceMonitor.recordTraversal(1, result.iterations, voxelsHit);
                 
                 // Display statistics in UI
                 String stats = formatRayStatistics(result, normalizedOrigin, direction);
