@@ -91,6 +91,12 @@ public class OctreeControlPanel extends VBox {
     // Performance Overlay Controls
     private CheckBox showPerformanceOverlayCheckBox;
     
+    // Screenshot/Recording Controls
+    private final Runnable onScreenshot;
+    private final Runnable onToggleRecording;
+    private CheckBox recordingCheckBox;
+    private Label recordingStatusLabel;
+    
     public OctreeControlPanel(CameraView cameraView, 
                              Runnable resetCamera,
                              Runnable toggleAxes, 
@@ -103,7 +109,9 @@ public class OctreeControlPanel extends VBox {
                              Consumer<VoxelRenderer.RenderMode> onRenderModeChanged,
                              Consumer<VoxelRenderer.MaterialScheme> onMaterialSchemeChanged,
                              Runnable onCameraPreset,
-                             Runnable onLodChanged) {
+                             Runnable onLodChanged,
+                             Runnable onScreenshot,
+                             Runnable onToggleRecording) {
         this.cameraView = cameraView;
         this.resetCamera = resetCamera;
         this.toggleAxes = toggleAxes;
@@ -117,6 +125,8 @@ public class OctreeControlPanel extends VBox {
         this.onMaterialSchemeChanged = onMaterialSchemeChanged;
         this.onCameraPreset = onCameraPreset;
         this.onLodChanged = onLodChanged;
+        this.onScreenshot = onScreenshot;
+        this.onToggleRecording = onToggleRecording;
         
         setPadding(new Insets(10));
         setSpacing(10);
@@ -617,6 +627,31 @@ public class OctreeControlPanel extends VBox {
         performanceMetrics.setStyle("-fx-font-family: monospace; -fx-font-size: 10; -fx-control-inner-background: #ffffff;");
         performanceMetrics.setText("No metrics available yet.\nGenerate octree to see performance data.");
         
+        // Screenshot & Recording Section
+        Separator screenshotSeparator = new Separator();
+        
+        Label screenshotLabel = new Label("Screenshot & Recording");
+        screenshotLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        Button screenshotButton = new Button("Take Screenshot (S)");
+        screenshotButton.setMaxWidth(Double.MAX_VALUE);
+        screenshotButton.setTooltip(new Tooltip("Capture current view to PNG file with octree statistics"));
+        screenshotButton.setOnAction(e -> {
+            if (onScreenshot != null) onScreenshot.run();
+        });
+        
+        recordingCheckBox = new CheckBox("Record Frame Sequence");
+        recordingCheckBox.setSelected(false);
+        recordingCheckBox.setTooltip(new Tooltip("Record each frame to separate PNG files for video creation"));
+        recordingCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            if (onToggleRecording != null) onToggleRecording.run();
+            recordingStatusLabel.setVisible(newVal);
+        });
+        
+        recordingStatusLabel = new Label("Recording: 0 frames");
+        recordingStatusLabel.setStyle("-fx-font-size: 10; -fx-text-fill: #cc0000; -fx-font-weight: bold;");
+        recordingStatusLabel.setVisible(false);
+        
         // Keyboard Shortcuts Section
         Separator shortcutSeparator = new Separator();
         
@@ -647,6 +682,7 @@ public class OctreeControlPanel extends VBox {
             "  V - Show/Hide Voxels\n" +
             "  P - Show/Hide Performance\n" +
             "  R - Reset Camera\n" +
+            "  S - Take Screenshot\n" +
             "\n" +
             "Modifiers:\n" +
             "  SHIFT - Fast movement\n" +
@@ -702,6 +738,11 @@ public class OctreeControlPanel extends VBox {
             performanceLabel,
             showPerformanceOverlayCheckBox,
             performanceMetrics,
+            screenshotSeparator,
+            screenshotLabel,
+            screenshotButton,
+            recordingCheckBox,
+            recordingStatusLabel,
             shortcutSeparator,
             shortcutLabel,
             shortcutsArea
@@ -936,6 +977,17 @@ public class OctreeControlPanel extends VBox {
     public void setShowPerformanceOverlay(boolean show) {
         if (showPerformanceOverlayCheckBox != null) {
             showPerformanceOverlayCheckBox.setSelected(show);
+        }
+    }
+    
+    /**
+     * Update the recording status label with current frame count.
+     * 
+     * @param frameCount the number of frames recorded so far
+     */
+    public void updateRecordingStatus(int frameCount) {
+        if (recordingStatusLabel != null) {
+            recordingStatusLabel.setText("Recording: " + frameCount + " frames");
         }
     }
 }

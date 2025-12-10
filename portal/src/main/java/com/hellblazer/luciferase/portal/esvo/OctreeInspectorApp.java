@@ -106,6 +106,10 @@ public class OctreeInspectorApp extends Application {
     // Current state
     private int currentLevel = 10;
     
+    // Screenshot/Recording state
+    private boolean isRecording = false;
+    private int frameCounter = 0;
+    
     @Override
     public void start(Stage primaryStage) {
         // Initialize ESVO components
@@ -182,7 +186,9 @@ public class OctreeInspectorApp extends Application {
             this::handleRenderModeChange,
             this::handleMaterialSchemeChange,
             this::handleCameraPreset,
-            this::handleLodChanged
+            this::handleLodChanged,
+            this::handleScreenshot,
+            this::handleToggleRecording
         );
         
         // Set initial visibility states
@@ -228,6 +234,9 @@ public class OctreeInspectorApp extends Application {
                     if (!event.isConsumed()) {
                         handleResetCamera();
                     }
+                    break;
+                case S:
+                    handleScreenshot();
                     break;
                 default:
                     break;
@@ -837,6 +846,46 @@ public class OctreeInspectorApp extends Application {
         }
         
         return stats.toString();
+    }
+    
+    /**
+     * Handle screenshot capture request.
+     * Captures the current 3D view and saves it as a PNG file with metadata.
+     */
+    private void handleScreenshot() {
+        log.info("Screenshot requested");
+        // TODO: Implement screenshot functionality using JavaFX WritableImage and SnapshotParameters
+        // - Capture mainSplitPane or cameraView snapshot
+        // - Generate filename with timestamp: octree_screenshot_YYYYMMDD_HHMMSS.png
+        // - Include octree statistics in metadata or overlay
+        // - Save to screenshots/ directory
+        log.warn("Screenshot functionality not yet implemented");
+    }
+    
+    /**
+     * Handle toggle recording request.
+     * Toggles frame sequence recording on/off.
+     */
+    private void handleToggleRecording() {
+        isRecording = !isRecording;
+        
+        if (isRecording) {
+            // Start recording
+            frameCounter = 0;
+            controlPanel.updateRecordingStatus(frameCounter);
+            log.info("Recording started");
+            // TODO: Implement frame recording in animation timer
+            // - Hook into performanceUpdateTimer or create dedicated recording timer
+            // - Capture frame on each animation frame
+            // - Save as octree_frame_NNNNNN.png
+            // - Update frame counter and UI
+        } else {
+            // Stop recording
+            log.info("Recording stopped - {} frames captured", frameCounter);
+            // TODO: Stop frame capture
+        }
+        
+        log.warn("Frame recording functionality not yet implemented");
     }
     
     /**
