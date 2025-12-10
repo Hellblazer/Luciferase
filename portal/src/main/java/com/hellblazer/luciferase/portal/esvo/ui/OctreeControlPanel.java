@@ -50,6 +50,7 @@ public class OctreeControlPanel extends VBox {
     private final Consumer<VoxelRenderer.RenderMode> onRenderModeChanged;
     private final Consumer<VoxelRenderer.MaterialScheme> onMaterialSchemeChanged;
     private final Runnable onCameraPreset;
+    private final Runnable onLodChanged;
     
     // Control references for external access
     private CheckBox panModeCheckBox;
@@ -73,6 +74,16 @@ public class OctreeControlPanel extends VBox {
     private ProgressIndicator rebuildProgressIndicator;
     private Label rebuildStatusLabel;
     
+    // LOD Controls
+    private Slider minLevelSlider;
+    private Slider maxLevelSlider;
+    private Label minLevelValueLabel;
+    private Label maxLevelValueLabel;
+    private CheckBox isolateLevelCheckBox;
+    private Slider isolatedLevelSlider;
+    private Label isolatedLevelValueLabel;
+    private CheckBox ghostModeCheckBox;
+    
     public OctreeControlPanel(CameraView cameraView, 
                              Runnable resetCamera,
                              Runnable toggleAxes, 
@@ -84,7 +95,8 @@ public class OctreeControlPanel extends VBox {
                              Consumer<ProceduralVoxelGenerator.Shape> onShapeChanged,
                              Consumer<VoxelRenderer.RenderMode> onRenderModeChanged,
                              Consumer<VoxelRenderer.MaterialScheme> onMaterialSchemeChanged,
-                             Runnable onCameraPreset) {
+                             Runnable onCameraPreset,
+                             Runnable onLodChanged) {
         this.cameraView = cameraView;
         this.resetCamera = resetCamera;
         this.toggleAxes = toggleAxes;
@@ -97,6 +109,7 @@ public class OctreeControlPanel extends VBox {
         this.onRenderModeChanged = onRenderModeChanged;
         this.onMaterialSchemeChanged = onMaterialSchemeChanged;
         this.onCameraPreset = onCameraPreset;
+        this.onLodChanged = onLodChanged;
         
         setPadding(new Insets(10));
         setSpacing(10);
@@ -418,6 +431,119 @@ public class OctreeControlPanel extends VBox {
             if (toggleRays != null) toggleRays.run();
         });
         
+        // Level of Detail (LOD) Controls Section
+        Separator lodSeparator = new Separator();
+        
+        Label lodLabel = new Label("Level of Detail (LOD)");
+        lodLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        GridPane lodPane = new GridPane();
+        lodPane.setHgap(10);
+        lodPane.setVgap(5);
+        
+        // Min Level Slider
+        Label minLevelLabel = new Label("Min Level:");
+        minLevelSlider = new Slider(0, 15, 0);
+        minLevelSlider.setShowTickLabels(true);
+        minLevelSlider.setShowTickMarks(true);
+        minLevelSlider.setMajorTickUnit(3);
+        minLevelSlider.setMinorTickCount(2);
+        minLevelSlider.setSnapToTicks(true);
+        minLevelSlider.setPrefWidth(150);
+        
+        minLevelValueLabel = new Label("0");
+        minLevelSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            int minLevel = newVal.intValue();
+            minLevelValueLabel.setText(String.valueOf(minLevel));
+            
+            // Ensure min <= max
+            if (minLevel > maxLevelSlider.getValue()) {
+                maxLevelSlider.setValue(minLevel);
+            }
+            
+            if (onLodChanged != null) {
+                onLodChanged.run();
+            }
+        });
+        
+        lodPane.add(minLevelLabel, 0, 0);
+        lodPane.add(minLevelSlider, 1, 0);
+        lodPane.add(minLevelValueLabel, 2, 0);
+        
+        // Max Level Slider
+        Label maxLevelLabel = new Label("Max Level:");
+        maxLevelSlider = new Slider(0, 15, 15);
+        maxLevelSlider.setShowTickLabels(true);
+        maxLevelSlider.setShowTickMarks(true);
+        maxLevelSlider.setMajorTickUnit(3);
+        maxLevelSlider.setMinorTickCount(2);
+        maxLevelSlider.setSnapToTicks(true);
+        maxLevelSlider.setPrefWidth(150);
+        
+        maxLevelValueLabel = new Label("15");
+        maxLevelSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            int maxLevel = newVal.intValue();
+            maxLevelValueLabel.setText(String.valueOf(maxLevel));
+            
+            // Ensure min <= max
+            if (maxLevel < minLevelSlider.getValue()) {
+                minLevelSlider.setValue(maxLevel);
+            }
+            
+            if (onLodChanged != null) {
+                onLodChanged.run();
+            }
+        });
+        
+        lodPane.add(maxLevelLabel, 0, 1);
+        lodPane.add(maxLevelSlider, 1, 1);
+        lodPane.add(maxLevelValueLabel, 2, 1);
+        
+        // Isolate Level Checkbox
+        isolateLevelCheckBox = new CheckBox("Isolate Single Level");
+        isolateLevelCheckBox.setSelected(false);
+        isolateLevelCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            isolatedLevelSlider.setDisable(!newVal);
+            if (onLodChanged != null) {
+                onLodChanged.run();
+            }
+        });
+        
+        // Isolated Level Slider
+        Label isolatedLevelLabel = new Label("Level:");
+        isolatedLevelSlider = new Slider(0, 15, 10);
+        isolatedLevelSlider.setShowTickLabels(true);
+        isolatedLevelSlider.setShowTickMarks(true);
+        isolatedLevelSlider.setMajorTickUnit(3);
+        isolatedLevelSlider.setMinorTickCount(2);
+        isolatedLevelSlider.setSnapToTicks(true);
+        isolatedLevelSlider.setPrefWidth(150);
+        isolatedLevelSlider.setDisable(true); // Initially disabled
+        
+        isolatedLevelValueLabel = new Label("10");
+        isolatedLevelSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
+            int level = newVal.intValue();
+            isolatedLevelValueLabel.setText(String.valueOf(level));
+            
+            if (!isolatedLevelSlider.isDisabled() && onLodChanged != null) {
+                onLodChanged.run();
+            }
+        });
+        
+        lodPane.add(isolateLevelCheckBox, 0, 2, 3, 1);
+        lodPane.add(isolatedLevelLabel, 0, 3);
+        lodPane.add(isolatedLevelSlider, 1, 3);
+        lodPane.add(isolatedLevelValueLabel, 2, 3);
+        
+        // Ghost Mode Checkbox
+        ghostModeCheckBox = new CheckBox("Ghost Mode (Semi-transparent)");
+        ghostModeCheckBox.setSelected(false);
+        ghostModeCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+            if (onLodChanged != null) {
+                onLodChanged.run();
+            }
+        });
+        
         // Rebuild Progress Section
         Separator rebuildSeparator = new Separator();
         
@@ -516,6 +642,10 @@ public class OctreeControlPanel extends VBox {
             showOctreeCheckBox,
             showVoxelsCheckBox,
             showRaysCheckBox,
+            lodSeparator,
+            lodLabel,
+            lodPane,
+            ghostModeCheckBox,
             rebuildSeparator,
             rebuildLabel,
             rebuildBox,
@@ -672,5 +802,50 @@ public class OctreeControlPanel extends VBox {
         if (rebuildStatusLabel != null) {
             rebuildStatusLabel.setText(status);
         }
+    }
+    
+    /**
+     * Get the minimum octree level to display.
+     * 
+     * @return the minimum level (0-15)
+     */
+    public int getMinLevel() {
+        return (int) minLevelSlider.getValue();
+    }
+    
+    /**
+     * Get the maximum octree level to display.
+     * 
+     * @return the maximum level (0-15)
+     */
+    public int getMaxLevel() {
+        return (int) maxLevelSlider.getValue();
+    }
+    
+    /**
+     * Check if isolate level mode is enabled.
+     * 
+     * @return true if isolating a single level, false otherwise
+     */
+    public boolean isIsolateLevelEnabled() {
+        return isolateLevelCheckBox.isSelected();
+    }
+    
+    /**
+     * Get the isolated level to display (only valid when isolate mode is enabled).
+     * 
+     * @return the isolated level (0-15)
+     */
+    public int getIsolatedLevel() {
+        return (int) isolatedLevelSlider.getValue();
+    }
+    
+    /**
+     * Check if ghost mode is enabled for hidden levels.
+     * 
+     * @return true if ghost mode is enabled, false otherwise
+     */
+    public boolean isGhostModeEnabled() {
+        return ghostModeCheckBox.isSelected();
     }
 }

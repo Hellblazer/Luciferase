@@ -176,7 +176,8 @@ public class OctreeInspectorApp extends Application {
             this::handleShapeChange,
             this::handleRenderModeChange,
             this::handleMaterialSchemeChange,
-            this::handleCameraPreset
+            this::handleCameraPreset,
+            this::handleLodChanged
         );
         
         // Set initial visibility states
@@ -435,6 +436,57 @@ public class OctreeInspectorApp extends Application {
     private void handleCameraPreset() {
         log.info("Camera preset clicked - not yet implemented");
         // TODO: Implement camera preset positions in Phase 3.2+
+    }
+    
+    /**
+     * Handle LOD (Level of Detail) control changes from control panel.
+     * Updates the octree visualization to show/hide specific levels based on LOD settings.
+     */
+    private void handleLodChanged() {
+        if (currentOctree == null) {
+            return; // No octree to update
+        }
+        
+        log.info("LOD settings changed - updating octree visualization");
+        
+        // Get LOD settings from control panel
+        int minLevel = controlPanel.getMinLevel();
+        int maxLevel = controlPanel.getMaxLevel();
+        boolean isolateLevel = controlPanel.isIsolateLevelEnabled();
+        int isolatedLevel = controlPanel.getIsolatedLevel();
+        boolean ghostMode = controlPanel.isGhostModeEnabled();
+        
+        // Clear existing octree visualization
+        octreeGroup.getChildren().clear();
+        
+        // Re-create renderer with current depth
+        octreeRenderer = new OctreeRenderer(currentLevel,
+                                           OctreeNodeMeshRenderer.Strategy.BATCHED,
+                                           OctreeRenderer.ColorScheme.DEPTH_GRADIENT,
+                                           true);
+        
+        // Render with LOD settings
+        Group renderedGroup;
+        if (isolateLevel) {
+            // Render only the isolated level
+            log.info("Rendering isolated level: {}", isolatedLevel);
+            renderedGroup = octreeRenderer.render(currentOctree, isolatedLevel, isolatedLevel);
+        } else {
+            // Render level range
+            log.info("Rendering level range: {} to {}", minLevel, maxLevel);
+            renderedGroup = octreeRenderer.render(currentOctree, minLevel, maxLevel);
+        }
+        
+        octreeGroup.getChildren().add(renderedGroup);
+        
+        // Apply ghost mode if enabled (semi-transparent rendering)
+        if (ghostMode) {
+            renderedGroup.setOpacity(0.3);
+        } else {
+            renderedGroup.setOpacity(1.0);
+        }
+        
+        log.info("LOD visualization updated");
     }
     
     /**
