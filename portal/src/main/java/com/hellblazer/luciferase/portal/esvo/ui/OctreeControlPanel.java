@@ -151,6 +151,7 @@ public class OctreeControlPanel extends VBox {
         depthSlider.setMinorTickCount(1);
         depthSlider.setSnapToTicks(true);
         depthSlider.setPrefWidth(200);
+        depthSlider.setTooltip(new Tooltip("Octree subdivision depth (1-15). Higher values = more detail but slower performance."));
         
         depthValueLabel = new Label("10");
         depthSlider.valueProperty().addListener((obs, oldVal, newVal) -> {
@@ -180,6 +181,7 @@ public class OctreeControlPanel extends VBox {
         shapeSelector.getItems().addAll(ProceduralVoxelGenerator.Shape.values());
         shapeSelector.setValue(ProceduralVoxelGenerator.Shape.SPHERE);
         shapeSelector.setMaxWidth(Double.MAX_VALUE);
+        shapeSelector.setTooltip(new Tooltip("Select procedural shape to visualize in octree"));
         shapeSelector.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(ProceduralVoxelGenerator.Shape item, boolean empty) {
@@ -308,6 +310,7 @@ public class OctreeControlPanel extends VBox {
         // Pan Mode
         panModeCheckBox = new CheckBox("Pan Mode (SPACE)");
         panModeCheckBox.setSelected(cameraView.isPanning());
+        panModeCheckBox.setTooltip(new Tooltip("Enable pan mode to move camera with WASD keys. Press SPACE to toggle."));
         panModeCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             cameraView.setPanning(newVal);
         });
@@ -406,6 +409,7 @@ public class OctreeControlPanel extends VBox {
         // Show Axes
         showAxesCheckBox = new CheckBox("Show Axes (X)");
         showAxesCheckBox.setSelected(true);
+        showAxesCheckBox.setTooltip(new Tooltip("Display coordinate axes. Toggle with X key."));
         showAxesCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             if (toggleAxes != null) toggleAxes.run();
         });
@@ -413,6 +417,7 @@ public class OctreeControlPanel extends VBox {
         // Show Grid
         showGridCheckBox = new CheckBox("Show Grid (G)");
         showGridCheckBox.setSelected(true);
+        showGridCheckBox.setTooltip(new Tooltip("Display ground grid. Toggle with G key."));
         showGridCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             if (toggleGrid != null) toggleGrid.run();
         });
@@ -420,6 +425,7 @@ public class OctreeControlPanel extends VBox {
         // Show Octree
         showOctreeCheckBox = new CheckBox("Show Octree (O)");
         showOctreeCheckBox.setSelected(false);
+        showOctreeCheckBox.setTooltip(new Tooltip("Display octree structure wireframe. Toggle with O key."));
         showOctreeCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             if (toggleOctree != null) toggleOctree.run();
         });
@@ -427,6 +433,7 @@ public class OctreeControlPanel extends VBox {
         // Show Voxels
         showVoxelsCheckBox = new CheckBox("Show Voxels (V)");
         showVoxelsCheckBox.setSelected(false);
+        showVoxelsCheckBox.setTooltip(new Tooltip("Display voxel geometry. Toggle with V key."));
         showVoxelsCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             if (toggleVoxels != null) toggleVoxels.run();
         });
@@ -434,6 +441,7 @@ public class OctreeControlPanel extends VBox {
         // Show Rays
         showRaysCheckBox = new CheckBox("Show Rays");
         showRaysCheckBox.setSelected(false);
+        showRaysCheckBox.setTooltip(new Tooltip("Display ray visualization lines for debugging."));
         showRaysCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             if (toggleRays != null) toggleRays.run();
         });
@@ -597,6 +605,7 @@ public class OctreeControlPanel extends VBox {
         
         showPerformanceOverlayCheckBox = new CheckBox("Show Performance Overlay (P)");
         showPerformanceOverlayCheckBox.setSelected(true);
+        showPerformanceOverlayCheckBox.setTooltip(new Tooltip("Display real-time performance metrics overlay. Toggle with P key."));
         showPerformanceOverlayCheckBox.selectedProperty().addListener((obs, oldVal, newVal) -> {
             performanceMetrics.setVisible(newVal);
         });
@@ -623,6 +632,7 @@ public class OctreeControlPanel extends VBox {
             "  W/S - Forward/Backward\n" +
             "  A/D - Strafe Left/Right\n" +
             "  Q/E - Up/Down\n" +
+            "  SPACE - Toggle Pan Mode\n" +
             "\n" +
             "Mouse:\n" +
             "  Left Drag - Rotate\n" +
@@ -635,6 +645,7 @@ public class OctreeControlPanel extends VBox {
             "  G - Show/Hide Grid\n" +
             "  O - Show/Hide Octree\n" +
             "  V - Show/Hide Voxels\n" +
+            "  P - Show/Hide Performance\n" +
             "  R - Reset Camera\n" +
             "\n" +
             "Modifiers:\n" +
@@ -905,6 +916,26 @@ public class OctreeControlPanel extends VBox {
     public void updateRayStatistics(String statistics) {
         if (rayStatisticsArea != null) {
             rayStatisticsArea.setText(statistics);
+        }
+    }
+    
+    /**
+     * Check if the performance overlay is currently visible.
+     * 
+     * @return true if performance overlay is shown, false otherwise, null if not initialized
+     */
+    public Boolean getPerformanceOverlayState() {
+        return showPerformanceOverlayCheckBox != null ? showPerformanceOverlayCheckBox.isSelected() : null;
+    }
+    
+    /**
+     * Set the performance overlay visibility programmatically.
+     * 
+     * @param show true to show the overlay, false to hide it
+     */
+    public void setShowPerformanceOverlay(boolean show) {
+        if (showPerformanceOverlayCheckBox != null) {
+            showPerformanceOverlayCheckBox.setSelected(show);
         }
     }
 }

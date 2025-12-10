@@ -199,6 +199,41 @@ public class OctreeInspectorApp extends Application {
         // Create main scene
         Scene scene = new Scene(root, 1200, 800);
         
+        // Add keyboard shortcuts for feature toggles
+        scene.setOnKeyPressed(event -> {
+            switch (event.getCode()) {
+                case X:
+                    controlPanel.setShowAxes(!controlPanel.getShowAxesState());
+                    handleToggleAxes();
+                    break;
+                case G:
+                    controlPanel.setShowGrid(!controlPanel.getShowGridState());
+                    handleToggleGrid();
+                    break;
+                case O:
+                    controlPanel.setShowOctree(!controlPanel.getShowOctreeState());
+                    handleToggleOctree();
+                    break;
+                case V:
+                    controlPanel.setShowVoxels(!controlPanel.getShowVoxelsState());
+                    handleToggleVoxels();
+                    break;
+                case P:
+                    // Toggle performance overlay
+                    if (controlPanel.getPerformanceOverlayState() != null) {
+                        controlPanel.setShowPerformanceOverlay(!controlPanel.getPerformanceOverlayState());
+                    }
+                    break;
+                case R:
+                    if (!event.isConsumed()) {
+                        handleResetCamera();
+                    }
+                    break;
+                default:
+                    break;
+            }
+        });
+        
         // Add mouse click handler for ray casting
         subScene.setOnMouseClicked(this::handleMouseClick);
         
