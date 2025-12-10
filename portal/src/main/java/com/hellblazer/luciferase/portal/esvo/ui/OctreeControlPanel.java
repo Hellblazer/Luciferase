@@ -84,6 +84,10 @@ public class OctreeControlPanel extends VBox {
     private Label isolatedLevelValueLabel;
     private CheckBox ghostModeCheckBox;
     
+    // Ray Casting Controls
+    private CheckBox rayCastingModeCheckBox;
+    private TextArea rayStatisticsArea;
+    
     public OctreeControlPanel(CameraView cameraView, 
                              Runnable resetCamera,
                              Runnable toggleAxes, 
@@ -544,6 +548,26 @@ public class OctreeControlPanel extends VBox {
             }
         });
         
+        // Ray Casting Interactive Mode Section
+        Separator rayCastingSeparator = new Separator();
+        
+        Label rayCastingLabel = new Label("Ray Casting Interactive Mode");
+        rayCastingLabel.setFont(Font.font("System", FontWeight.BOLD, 14));
+        
+        rayCastingModeCheckBox = new CheckBox("Enable Interactive Ray Casting");
+        rayCastingModeCheckBox.setSelected(false);
+        rayCastingModeCheckBox.setTooltip(new Tooltip("When enabled, click anywhere in scene to cast rays. Otherwise use Ctrl+Click."));
+        
+        Label rayStatsLabel = new Label("Ray Statistics:");
+        rayStatsLabel.setFont(Font.font("System", FontWeight.BOLD, 12));
+        
+        rayStatisticsArea = new TextArea();
+        rayStatisticsArea.setEditable(false);
+        rayStatisticsArea.setPrefRowCount(8);
+        rayStatisticsArea.setWrapText(true);
+        rayStatisticsArea.setStyle("-fx-font-family: monospace; -fx-font-size: 10; -fx-control-inner-background: #ffffff;");
+        rayStatisticsArea.setText("No ray cast yet.\nClick in scene to cast a ray.");
+        
         // Rebuild Progress Section
         Separator rebuildSeparator = new Separator();
         
@@ -646,6 +670,11 @@ public class OctreeControlPanel extends VBox {
             lodLabel,
             lodPane,
             ghostModeCheckBox,
+            rayCastingSeparator,
+            rayCastingLabel,
+            rayCastingModeCheckBox,
+            rayStatsLabel,
+            rayStatisticsArea,
             rebuildSeparator,
             rebuildLabel,
             rebuildBox,
@@ -847,5 +876,25 @@ public class OctreeControlPanel extends VBox {
      */
     public boolean isGhostModeEnabled() {
         return ghostModeCheckBox.isSelected();
+    }
+    
+    /**
+     * Check if interactive ray casting mode is enabled.
+     * 
+     * @return true if interactive mode is enabled, false for Ctrl+Click only
+     */
+    public boolean isRayCastingModeEnabled() {
+        return rayCastingModeCheckBox.isSelected();
+    }
+    
+    /**
+     * Update the ray statistics display with information from a ray cast.
+     * 
+     * @param statistics the formatted ray statistics text to display
+     */
+    public void updateRayStatistics(String statistics) {
+        if (rayStatisticsArea != null) {
+            rayStatisticsArea.setText(statistics);
+        }
     }
 }

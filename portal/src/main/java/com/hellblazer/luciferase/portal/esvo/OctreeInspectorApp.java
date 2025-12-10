@@ -618,17 +618,23 @@ public class OctreeInspectorApp extends Application {
     
     /**
      * Handle mouse clicks for ray casting visualization.
-     * Ctrl+Click casts a ray from camera through the click point.
+     * - Interactive mode: any click casts a ray
+     * - Non-interactive: Ctrl+Click casts a ray
      */
     private void handleMouseClick(MouseEvent event) {
-        // Only cast rays on Ctrl+Click (left button)
-        if (!event.isControlDown() || event.getButton() != MouseButton.PRIMARY) {
+        // Check if we should cast a ray based on interactive mode
+        boolean isInteractiveMode = controlPanel.isRayCastingModeEnabled();
+        boolean shouldCastRay = event.getButton() == MouseButton.PRIMARY && 
+                               (isInteractiveMode || event.isControlDown());
+        
+        if (!shouldCastRay) {
             return;
         }
         
         // Check if octree is available
         if (currentOctree == null || !esvoBridge.hasOctree()) {
             log.warn("No octree available for ray casting");
+            controlPanel.updateRayStatistics("No octree available.\nGenerate an octree first.");
             return;
         }
         
@@ -663,8 +669,9 @@ public class OctreeInspectorApp extends Application {
             if (result != null) {
                 visualizeRayCast(normalizedOrigin, direction, result);
                 
-                // Log statistics
-                rayCastVisualizer.createStatisticsDisplay(result);
+                // Display statistics in UI
+                String stats = formatRayStatistics(result, normalizedOrigin, direction);
+                controlPanel.updateRayStatistics(stats);
                 
                 // Auto-enable ray visualization if it was off
                 if (!rayGroup.isVisible()) {
@@ -673,6 +680,7 @@ public class OctreeInspectorApp extends Application {
                 }
             } else {
                 log.warn("Ray casting returned null result");
+                controlPanel.updateRayStatistics("Ray cast failed.\nNo result returned.");
             }
             
         } catch (Exception e) {
@@ -701,6 +709,57 @@ public class OctreeInspectorApp extends Application {
         } catch (Exception e) {
             log.error("Failed to visualize ray cast", e);
         }
+    }
+    
+    /**
+     * Format ray casting statistics for UI display.
+     * 
+     * @param result The ray traversal result
+     * @param origin Ray origin point
+     * @param direction Ray direction vector
+     * @return Formatted statistics string
+     */
+    private String formatRayStatistics(DeepTraversalResult result, Vector3f origin, Vector3f direction) {
+        StringBuilder stats = new StringBuilder();
+        
+        // Ray parameters
+        stats.append("RAY CAST RESULTS\n");
+        stats.append("================\n\n");
+        stats.append(String.format("Origin:    (%.3f, %.3f, %.3f)\n", origin.x, origin.y, origin.z));
+        stats.append(String.format("Direction: (%.3f, %.3f, %.3f)\n", direction.x, direction.y, direction.z));
+        stats.append("\n");
+        
+        // Hit status
+        stats.append(String.format("Hit:       %s\n", result.hit ? "YES" : "NO"));
+        
+        if (result.hit) {
+            // Hit details
+            stats.append(String.format("Distance:  %.3f\n", result.distance));
+            
+            if (result.hitPoint != null) {
+                stats.append(String.format("Hit Point: (%.3f, %.3f, %.3f)\n", 
+                    result.hitPoint.x, result.hitPoint.y, result.hitPoint.z));
+            }
+            
+            if (result.normal != null) {
+                stats.append(String.format("Normal:    (%.3f, %.3f, %.3f)\n", 
+                    result.normal.x, result.normal.y, result.normal.z));
+            }
+        }
+        
+        stats.append("\n");
+        
+        // Traversal statistics
+        stats.append("TRAVERSAL STATISTICS\n");
+        stats.append("====================\n");
+        stats.append(String.format("Traversal Depth: %d\n", result.traversalDepth));
+        stats.append(String.format("Iterations:      %d\n", result.iterations));
+        
+        if (result.hit && result.leafNode >= 0) {
+            stats.append(String.format("Leaf Node:       %d\n", result.leafNode));
+        }
+        
+        return stats.toString();
     }
     
     /**
