@@ -220,39 +220,189 @@ public class Octree<ID extends EntityID, Content> extends AbstractSpatialIndex<M
     // Removed ensureAncestorNodes - not needed in pointerless SFC implementation
 
 
+    // ===== LITMAX/BIGMIN Range Query Optimization =====
+
+    /**
+     * Compute the SFC intervals that cover a query region Q using LITMAX/BIGMIN.
+     *
+     * For a 3D query box, this algorithm produces optimal contiguous Morton intervals
+     * by exploiting the Z-order curve structure.
+     *
+     * @param queryBounds the query region bounds
+     * @param level       the refinement level for the query
+     * @return list of MortonKey intervals (start, end pairs)
+     */
+    public List<MortonKeyInterval> cellsQ(VolumeBounds queryBounds, byte level) {
+        var intervals = new ArrayList<MortonKeyInterval>();
+        var cellSize = Constants.lengthAtLevel(level);
+
+        // Compute integer bounds (grid cell coordinates)
+        var minX = (int) Math.floor(queryBounds.minX() / cellSize);
+        var minY = (int) Math.floor(queryBounds.minY() / cellSize);
+        var minZ = (int) Math.floor(queryBounds.minZ() / cellSize);
+        var maxX = (int) Math.floor(queryBounds.maxX() / cellSize);
+        var maxY = (int) Math.floor(queryBounds.maxY() / cellSize);
+        var maxZ = (int) Math.floor(queryBounds.maxZ() / cellSize);
+
+        // Clamp to valid ranges
+        minX = Math.max(0, minX);
+        minY = Math.max(0, minY);
+        minZ = Math.max(0, minZ);
+        maxX = Math.max(0, maxX);
+        maxY = Math.max(0, maxY);
+        maxZ = Math.max(0, maxZ);
+
+        // Start with the minimum Morton code in the query region
+        var minMorton = MortonCurve.encode(minX, minY, minZ);
+        var maxMorton = MortonCurve.encode(maxX, maxY, maxZ);
+
+        if (minMorton > maxMorton) {
+            var temp = minMorton;
+            minMorton = maxMorton;
+            maxMorton = temp;
+        }
+
+        // Iterate through the Morton range, finding intervals using LITMAX/BIGMIN
+        var current = minMorton;
+        while (current <= maxMorton) {
+            // Find the start of the next interval (first code in query >= current)
+            var intervalStart = findNextInQuery(current, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
+            if (intervalStart < 0) {
+                break; // No more codes in query
+            }
+
+            // Find the end of this interval (last contiguous code in query)
+            var intervalEnd = findIntervalEnd(intervalStart, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
+
+            intervals.add(new MortonKeyInterval(
+                new MortonKey(intervalStart, level),
+                new MortonKey(intervalEnd, level)
+            ));
+
+            // Move past this interval
+            current = intervalEnd + 1;
+        }
+
+        return intervals;
+    }
+
+    /**
+     * Find the next Morton code >= start that's inside the query box.
+     */
+    private long findNextInQuery(long start, int minX, int minY, int minZ,
+                                  int maxX, int maxY, int maxZ, long maxMorton) {
+        var current = start;
+        while (current <= maxMorton) {
+            var coords = MortonCurve.decode(current);
+            if (coords[0] >= minX && coords[0] <= maxX &&
+                coords[1] >= minY && coords[1] <= maxY &&
+                coords[2] >= minZ && coords[2] <= maxZ) {
+                return current;
+            }
+
+            // Use BIGMIN to jump to the next potentially valid Morton code
+            current = bigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
+            if (current < 0 || current > maxMorton) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Find the end of the contiguous interval starting at intervalStart.
+     */
+    private long findIntervalEnd(long intervalStart, int minX, int minY, int minZ,
+                                  int maxX, int maxY, int maxZ, long maxMorton) {
+        var current = intervalStart;
+        while (current < maxMorton) {
+            var next = current + 1;
+            var coords = MortonCurve.decode(next);
+
+            // Check if next is still in query
+            if (coords[0] >= minX && coords[0] <= maxX &&
+                coords[1] >= minY && coords[1] <= maxY &&
+                coords[2] >= minZ && coords[2] <= maxZ) {
+                current = next;
+            } else {
+                break;
+            }
+        }
+        return current;
+    }
+
+    /**
+     * BIGMIN: Find the smallest Morton code > current that could be in the query box.
+     */
+    private long bigmin(long current, int minX, int minY, int minZ,
+                        int maxX, int maxY, int maxZ) {
+        var coords = MortonCurve.decode(current);
+        var x = coords[0];
+        var y = coords[1];
+        var z = coords[2];
+
+        long nextMorton = current + 1;
+
+        if (x < minX || y < minY || z < minZ) {
+            // Current is before query in some dimension - jump to query corner
+            nextMorton = MortonCurve.encode(
+                Math.max(x, minX),
+                Math.max(y, minY),
+                Math.max(z, minZ)
+            );
+            if (nextMorton <= current) {
+                nextMorton = current + 1;
+            }
+        } else if (x > maxX || y > maxY || z > maxZ) {
+            // Current is past query in some dimension
+            return -1; // Signal to stop searching
+        }
+
+        return nextMorton;
+    }
+
+    /**
+     * Represents a contiguous interval of Morton codes.
+     */
+    public record MortonKeyInterval(MortonKey start, MortonKey end) {
+        public boolean contains(MortonKey key) {
+            return key.compareTo(start) >= 0 && key.compareTo(end) <= 0;
+        }
+    }
+
     // ===== Frustum Intersection Implementation =====
 
     @Override
     protected Set<MortonKey> findNodesIntersectingBounds(VolumeBounds bounds) {
         var intersectingNodes = new HashSet<MortonKey>();
 
-        // For Octree, we can use Morton code ordering for efficient range queries
-        // The spatialIndex keys are already ordered by Morton code
+        // Use LITMAX/BIGMIN for efficient range query
+        var intervals = cellsQ(bounds, maxDepth);
 
-        // Calculate the Morton code range that could contain nodes intersecting the bounds
-        // This is more efficient than checking every node
+        for (var interval : intervals) {
+            // Use the sorted spatial index for efficient range query within each interval
+            var subMap = spatialIndex.subMap(interval.start(), true, interval.end(), true);
+            for (var entry : subMap.entrySet()) {
+                var nodeKey = entry.getKey();
+                // Verify the node actually intersects bounds (filter false positives from level differences)
+                var coords = MortonCurve.decode(nodeKey.getMortonCode());
+                var level = nodeKey.getLevel();
+                var cellSize = Constants.lengthAtLevel(level);
 
-        // Find the minimum and maximum Morton codes that could intersect
-        for (var nodeKey : spatialIndex.keySet()) {
-            // Decode the Morton code to get cell coordinates
-            var coords = MortonCurve.decode(nodeKey.getMortonCode());
-            var level = nodeKey.getLevel();
-            var cellSize = Constants.lengthAtLevel(level);
+                var cellMinX = coords[0];
+                var cellMinY = coords[1];
+                var cellMinZ = coords[2];
+                var cellMaxX = cellMinX + cellSize;
+                var cellMaxY = cellMinY + cellSize;
+                var cellMaxZ = cellMinZ + cellSize;
 
-            // Calculate cell bounds
-            var cellMinX = coords[0];
-            var cellMinY = coords[1];
-            var cellMinZ = coords[2];
-            var cellMaxX = cellMinX + cellSize;
-            var cellMaxY = cellMinY + cellSize;
-            var cellMaxZ = cellMinZ + cellSize;
+                var intersects = !(cellMaxX < bounds.minX() || cellMinX > bounds.maxX()
+                                || cellMaxY < bounds.minY() || cellMinY > bounds.maxY()
+                                || cellMaxZ < bounds.minZ() || cellMinZ > bounds.maxZ());
 
-            // Check AABB intersection
-            var intersects = !(cellMaxX < bounds.minX() || cellMinX > bounds.maxX() || cellMaxY < bounds.minY()
-                               || cellMinY > bounds.maxY() || cellMaxZ < bounds.minZ() || cellMinZ > bounds.maxZ());
-
-            if (intersects && spatialIndex.containsKey(nodeKey)) {
-                intersectingNodes.add(nodeKey);
+                if (intersects) {
+                    intersectingNodes.add(nodeKey);
+                }
             }
         }
 
