@@ -35,13 +35,12 @@
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-swing</artifactId>
         </dependency>
-
-        <!-- Test Only Dependencies Below This Line-->
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <scope>test</scope>
         </dependency>
+
+        <!-- Test Only Dependencies Below This Line-->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

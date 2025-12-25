@@ -146,7 +146,7 @@ public class OctreeInspectorApp extends Application {
     });
     
     // Current state
-    private int currentLevel = 10;
+    private int currentLevel = 6;  // Reduced from 10 to stay within 14-bit child pointer limit
     
     // Screenshot/Recording state
     private boolean isRecording = false;
@@ -162,7 +162,7 @@ public class OctreeInspectorApp extends Application {
                                            OctreeRenderer.ColorScheme.DEPTH_GRADIENT,
                                            true);
         voxelRenderer = VoxelRenderer.builder()
-                                     .voxelSize(1.5)
+                                     .voxelSize(5.0)  // Increased from 1.5 to be visible at camera distance (-1500)
                                      .materialScheme(VoxelRenderer.MaterialScheme.POSITION_GRADIENT)
                                      .renderMode(VoxelRenderer.RenderMode.FILLED)
                                      .build();
@@ -218,6 +218,12 @@ public class OctreeInspectorApp extends Application {
         
         // Create main scene
         Scene scene = new Scene(root, 1200, 800);
+        
+        // Bind CameraView size to fill available space in BorderPane center
+        // This is critical - without these bindings, the viewport will be 0x0 and nothing renders!
+        cameraView.fitWidthProperty().bind(scene.widthProperty().subtract(leftPanel.widthProperty()).subtract(rightPanel.widthProperty()));
+        cameraView.fitHeightProperty().bind(scene.heightProperty().subtract(toolbar.heightProperty()).subtract(statusBar.heightProperty()));
+        cameraView.setPreserveRatio(false);  // Fill the entire center area
         
         // Add keyboard shortcuts for feature toggles
         scene.setOnKeyPressed(event -> {
@@ -499,7 +505,7 @@ public class OctreeInspectorApp extends Application {
         
         // Recreate voxel renderer with new render mode
         voxelRenderer = VoxelRenderer.builder()
-                                     .voxelSize(1.5)
+                                     .voxelSize(5.0)
                                      .materialScheme(materialComboBox.getValue())
                                      .renderMode(newMode)
                                      .build();
@@ -530,7 +536,7 @@ public class OctreeInspectorApp extends Application {
         
         // Recreate voxel renderer with new material scheme
         voxelRenderer = VoxelRenderer.builder()
-                                     .voxelSize(1.5)
+                                     .voxelSize(5.0)
                                      .materialScheme(newScheme)
                                      .renderMode(currentMode)
                                      .build();
@@ -616,14 +622,24 @@ public class OctreeInspectorApp extends Application {
         var shape = shapeComboBox.getValue();
         int resolution = resolutionSpinner.getValue();
         
+        // Validate resolution for dense shapes to avoid exceeding 14-bit ESVO limit (16,383 nodes max)
+        // Cube generates (resolution-6)³ voxels, which can easily exceed the limit
+        int adjustedResolution = resolution;
+        if (shape == ProceduralVoxelGenerator.Shape.CUBE && resolution > 24) {
+            adjustedResolution = 24;  // 24 generates ~8,000 voxels, well within limit
+            log.warn("Resolution reduced from {} to {} for CUBE to stay within 14-bit limit", resolution, adjustedResolution);
+            statusLabel.setText(String.format("Status: Building (resolution auto-reduced %d → %d for CUBE)...", resolution, adjustedResolution));
+        }
+        final int finalResolution = adjustedResolution;
+        
         log.info("Generating demo octree: shape={}, resolution={}, depth={}", 
-                 ProceduralVoxelGenerator.getShapeName(shape), resolution, currentLevel);
+                 ProceduralVoxelGenerator.getShapeName(shape), finalResolution, currentLevel);
         
         // Build octree in background thread
         CompletableFuture.supplyAsync(() -> {
             try {
                 // Generate voxels for selected shape
-                var voxels = voxelGenerator.generate(shape, resolution);
+                var voxels = voxelGenerator.generate(shape, finalResolution);
                 log.info("Generated {} voxels", voxels.size());
                 
                 // Build ESVO octree
@@ -1133,6 +1149,7 @@ public class OctreeInspectorApp extends Application {
         TitledPane displayPane = new TitledPane();
         displayPane.setText("Display Options");
         VBox displayContent = new VBox(5);
+        displayContent.setStyle("-fx-background-color: #1e1e1e;");  // Dark background for visibility
         
         showAxesCheck = new CheckBox("Show Axes (X)");
         showAxesCheck.setSelected(true);
@@ -1235,7 +1252,7 @@ public class OctreeInspectorApp extends Application {
         
         Label resLabel = new Label("Resolution:");
         resLabel.setStyle("-fx-text-fill: white;");
-        resolutionSpinner = new Spinner<>(10, 200, 50, 10);
+        resolutionSpinner = new Spinner<>(10, 200, 32, 10);  // Reduced from 50 to stay within 14-bit limit
         resolutionSpinner.setEditable(true);
         
         Label shapeLabel = new Label("Shape:");
