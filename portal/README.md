@@ -1,5 +1,8 @@
 # Luciferase Portal - Visualization Suite
 
+**Last Updated**: 2025-12-25
+**Status**: Current
+
 Interactive JavaFX visualization applications for spatial data structures, physics, and geometry.
 
 ## Quick Start

@@ -1,6 +1,6 @@
 # Ghost Layer Performance Analysis
 
-**Last Updated**: December 8, 2025  
+**Last Updated**: 2025-12-08  
 **Status**: Current  
 **Related Issue**: Luciferase-gh0
 

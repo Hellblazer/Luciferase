@@ -1,6 +1,6 @@
 # Performance Metrics Master Reference
 
-**Last Updated**: December 25, 2025
+**Last Updated**: 2025-12-25
 **Purpose**: Single source of truth for all spatial index performance metrics
 
 > **IMPORTANT**: All performance documentation should reference these numbers. Do not duplicate performance metrics in other files.
