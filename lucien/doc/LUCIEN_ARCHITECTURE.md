@@ -1,6 +1,6 @@
 # Lucien Module Architecture
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-25
 **Status**: Current
 
 ## Overview
@@ -46,6 +46,9 @@ com.hellblazer.luciferase.lucien/
 │   ├── OctreeSubdivisionStrategy - Subdivision policy
 │   ├── Octant - Octant enumeration
 │   └── internal/NodeDistance - Node distance utilities
+├── sfc/ (2 classes)
+│   ├── SFCArrayIndex - Flat SFC-sorted array index (2.9x faster insertions)
+│   └── MortonKeyInterval - Morton code range for cells(Q) algorithm
 ├── tetree/ (34 classes)
 │   ├── Core: Tetree, Tet, TetrahedralGeometry, TetrahedralSearchBase
 │   ├── Keys: TetreeKey, CompactTetreeKey, LazyTetreeKey
@@ -140,6 +143,7 @@ com.hellblazer.luciferase.lucien/
 SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
     └── AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
             ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
+            ├── SFCArrayIndex<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
             ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
             └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
 
@@ -224,6 +228,100 @@ The `Octree` class provides Morton curve-based cubic spatial subdivision:
 - `calculateSpatialIndex()` - Computes Morton code from position
 - `getMortonCodeRange()` - Optimized range calculation using Morton properties
 - `addNeighboringNodes()` - 26-neighbor cubic traversal
+
+## SFCArrayIndex Implementation (December 2025)
+
+The `SFCArrayIndex` class provides a flat SFC-sorted array-based spatial index optimized for high insertion rates and range queries:
+
+### Unique Characteristics
+
+- Flat array structure (no tree hierarchy)
+- Same Morton encoding as Octree for spatial ordering
+- cells(Q) algorithm for optimal range query intervals (≤8 intervals for any 3D query)
+- No subdivision overhead - entities stored directly in sorted order
+- Based on de Berg et al. 2025 research on SFC-based spatial indexing
+
+### Performance vs Octree
+
+| Operation | SFCArrayIndex vs Octree |
+|-----------|-------------------------|
+| Insertion | **2.9x faster** |
+| Range Query | **2x faster** |
+| k-NN Query | 15% slower |
+| Memory | **33% less** |
+
+### cells(Q) Algorithm
+
+The cells(Q) algorithm computes contiguous Morton code intervals for 3D query regions:
+
+```java
+// Compute optimal SFC intervals for query bounds
+List<MortonKeyInterval> intervals = sfcArray.cellsQ(queryBounds, level);
+// Guaranteed: intervals.size() ≤ 8 for any axis-aligned 3D query
+```
+
+This leverages the RSFC (Recursive Space-Filling Curve) property where axis-aligned
+hypercubes map to contiguous Morton intervals.
+
+### Key Methods
+
+- `calculateSpatialIndex()` - Uses Morton encoding (same as Octree)
+- `cellsQ()` - Computes optimal SFC intervals for range queries
+- `handleNodeSubdivision()` - No-op (flat structure)
+- `hasChildren()` - Always returns false (no tree hierarchy)
+
+### When to Use SFCArrayIndex
+
+- High insertion rate workloads
+- Frequent range query operations
+- Memory-constrained environments
+- Bulk data loading scenarios
+
+## SpatialIndexFactory (December 2025)
+
+The `SpatialIndexFactory` provides a unified API for creating spatial indices based on workload characteristics:
+
+### WorkloadType-Based Selection
+
+```java
+// Create index based on workload
+var index = SpatialIndexFactory.createForWorkload(WorkloadType.HIGH_INSERTION_RATE);  // → SFCArrayIndex
+var index = SpatialIndexFactory.createForWorkload(WorkloadType.KNN_HEAVY);            // → Octree
+```
+
+### Workload Recommendations
+
+| WorkloadType | Recommended Index |
+|--------------|-------------------|
+| HIGH_INSERTION_RATE | SFCArrayIndex |
+| RANGE_QUERY_HEAVY | SFCArrayIndex |
+| MEMORY_CONSTRAINED | SFCArrayIndex |
+| KNN_HEAVY | Octree |
+| TREE_TRAVERSAL | Octree |
+| BALANCED | Octree |
+
+### Builder Pattern
+
+```java
+var index = SpatialIndexFactory.builder(idGenerator)
+    .forWorkload(WorkloadType.HIGH_INSERTION_RATE)
+    .maxDepth((byte) 15)
+    .maxEntitiesPerNode(20)
+    .build();
+```
+
+### Automatic Recommendation
+
+```java
+// Get recommendation based on workload metrics
+IndexType recommended = SpatialIndexFactory.recommend(
+    100000,  // expected entity count
+    1000,    // insertions/sec
+    100,     // range queries/sec
+    50,      // k-NN queries/sec
+    0        // memory constraint (0 = unlimited)
+);
+```
 
 ## Tetree Implementation
 
@@ -1044,17 +1142,40 @@ The unified architecture allows easy switching between spatial index types based
 - Specialized use case optimization
 - Less general-purpose than Octree/Tetree
 
+### SFCArrayIndex - High-Throughput Flat Index
+
+**Use SFCArrayIndex when:**
+
+- High insertion rates are required (bulk loading, streaming data)
+- Range queries dominate the workload
+- Memory is constrained
+- Tree traversal and hierarchical operations not needed
+- k-NN queries are not the primary use case
+
+**Advantages:**
+
+- 2.9x faster insertions than Octree
+- 2x faster range queries than Octree
+- 33% less memory than Octree
+- No subdivision overhead
+
+**Trade-offs:**
+
+- 15% slower k-NN queries
+- No tree-specific operations (traversal, balancing)
+- Flat structure only
+
 ### Decision Matrix
 
-| Criterion                  | Octree | Tetree        | Prism             |
-| ---------------------------- | -------- | --------------- | ------------------- |
-| **Coordinate Constraints** | None   | Positive only | x + y < worldSize |
-| **Memory Usage**           | High   | Low           | Medium            |
-| **Insertion Speed**        | Slow   | Fast          | Medium            |
-| **k-NN Performance**       | Medium | Fast          | Medium            |
-| **Range Queries**          | Fast   | Slow          | Medium            |
-| **Use Case Generality**    | High   | High          | Specialized       |
-| **Geometric Complexity**   | Low    | High          | Medium            |
+| Criterion                  | Octree | SFCArrayIndex | Tetree        | Prism             |
+| ---------------------------- | -------- | --------------- | --------------- | ------------------- |
+| **Coordinate Constraints** | None   | None          | Positive only | x + y < worldSize |
+| **Memory Usage**           | High   | **Low (67%)** | Low           | Medium            |
+| **Insertion Speed**        | Slow   | **Very Fast** | Fast          | Medium            |
+| **k-NN Performance**       | Medium | Slightly Slower | Fast        | Medium            |
+| **Range Queries**          | Fast   | **Very Fast** | Slow          | Medium            |
+| **Tree Traversal**         | Yes    | No            | Yes           | Yes               |
+| **Use Case Generality**    | High   | Medium        | High          | Specialized       |
 
 ## Performance Characteristics
 
@@ -1097,16 +1218,18 @@ The module includes comprehensive test coverage:
 
 ## Current State
 
-As of July 2025, the lucien module represents a complete spatial indexing solution with:
+As of December 2025, the lucien module represents a complete spatial indexing solution with:
 
-- Three distinct spatial indexing strategies (Octree, Tetree, Prism)
+- Four distinct spatial indexing strategies (Octree, SFCArrayIndex, Tetree, Prism)
+- SpatialIndexFactory for workload-based index selection
 - Unified API enabling easy switching between implementations
 - All planned enhancements implemented
 - Comprehensive API documentation
-- Proven performance characteristics across all three approaches
+- Proven performance characteristics across all four approaches
 - Robust test coverage
 - Specialized optimization for different data patterns and use cases
 
 The architecture successfully balances simplicity with advanced features, providing both ease of use and high
-performance for diverse 3D spatial indexing needs. The addition of Prism extends the system to handle anisotropic data
-patterns, completing the coverage of major spatial subdivision strategies.
+performance for diverse 3D spatial indexing needs. The addition of SFCArrayIndex (December 2025) provides a
+high-throughput alternative to Octree for workloads dominated by insertions and range queries, achieving
+2.9x faster insertions and 33% less memory usage.
