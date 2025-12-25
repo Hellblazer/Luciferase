@@ -4355,19 +4355,26 @@ implements SpatialIndex<Key, ID, Content> {
     @SuppressWarnings("unchecked")
     private void performKNNSFCRangePruningMorton(Point3f queryPoint, int k, float maxDistance,
                                                 PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
+        // When maxDistance is very large, SFC range pruning at level 0 won't work properly
+        // because entities are stored at a finer level. Fall back to full scan.
+        if (maxDistance >= Constants.MAX_COORD) {
+            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
+            return;
+        }
+
         // Estimate SFC range covering the search sphere
         var sfcRange = com.hellblazer.luciferase.lucien.octree.MortonKey.estimateSFCRange(queryPoint, maxDistance);
-        
+
         // Use subMap to iterate only over keys in the SFC range (this is the optimization!)
         var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
-        
+
         // Process entities in nodes within the SFC range
         for (var entry : rangeMap.entrySet()) {
             var node = entry.getValue();
             if (node == null) {
                 continue;
             }
-            
+
             for (var entityId : node.getEntityIds()) {
                 if (!addedToCandidates.contains(entityId)) {
                     var entityPos = getCachedEntityPosition(entityId);
@@ -4376,7 +4383,7 @@ implements SpatialIndex<Key, ID, Content> {
                         if (distance <= maxDistance) {
                             candidates.add(new EntityDistance<>(entityId, distance));
                             addedToCandidates.add(entityId);
-                            
+
                             // Maintain max heap of size k
                             if (candidates.size() > k) {
                                 var removed = candidates.poll();
@@ -4395,19 +4402,26 @@ implements SpatialIndex<Key, ID, Content> {
     @SuppressWarnings("unchecked")
     private void performKNNSFCRangePruningTetree(Point3f queryPoint, int k, float maxDistance,
                                                 PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
+        // When maxDistance is very large, SFC range pruning at level 0 won't work properly
+        // because entities are stored at a finer level. Fall back to full scan.
+        if (maxDistance >= Constants.MAX_COORD) {
+            performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
+            return;
+        }
+
         // Estimate SFC range covering the search sphere
         var sfcRange = com.hellblazer.luciferase.lucien.tetree.TetreeKey.estimateSFCRange(queryPoint, maxDistance);
-        
+
         // Use subMap to iterate only over keys in the SFC range (this is the optimization!)
         var rangeMap = spatialIndex.subMap((Key) sfcRange.lower(), (Key) sfcRange.upper());
-        
+
         // Process entities in nodes within the SFC range
         for (var entry : rangeMap.entrySet()) {
             var node = entry.getValue();
             if (node == null) {
                 continue;
             }
-            
+
             for (var entityId : node.getEntityIds()) {
                 if (!addedToCandidates.contains(entityId)) {
                     var entityPos = getCachedEntityPosition(entityId);
@@ -4416,7 +4430,41 @@ implements SpatialIndex<Key, ID, Content> {
                         if (distance <= maxDistance) {
                             candidates.add(new EntityDistance<>(entityId, distance));
                             addedToCandidates.add(entityId);
-                            
+
+                            // Maintain max heap of size k
+                            if (candidates.size() > k) {
+                                var removed = candidates.poll();
+                                addedToCandidates.remove(removed.entityId());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Full scan k-NN search for unlimited distance queries.
+     * Used when maxDistance is so large that SFC range pruning won't work correctly.
+     */
+    private void performFullScanKNN(Point3f queryPoint, int k, float maxDistance,
+                                    PriorityQueue<EntityDistance<ID>> candidates, Set<ID> addedToCandidates) {
+        // Iterate through all nodes in the spatial index
+        for (var entry : spatialIndex.entrySet()) {
+            var node = entry.getValue();
+            if (node == null) {
+                continue;
+            }
+
+            for (var entityId : node.getEntityIds()) {
+                if (!addedToCandidates.contains(entityId)) {
+                    var entityPos = getCachedEntityPosition(entityId);
+                    if (entityPos != null) {
+                        var distance = queryPoint.distance(entityPos);
+                        if (distance <= maxDistance) {
+                            candidates.add(new EntityDistance<>(entityId, distance));
+                            addedToCandidates.add(entityId);
+
                             // Maintain max heap of size k
                             if (candidates.size() > k) {
                                 var removed = candidates.poll();

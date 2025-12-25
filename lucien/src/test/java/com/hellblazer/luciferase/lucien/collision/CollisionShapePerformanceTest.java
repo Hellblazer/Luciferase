@@ -66,10 +66,12 @@ public class CollisionShapePerformanceTest {
         List<LongEntityID> entities = new ArrayList<>();
         
         for (int i = 0; i < entityCount; i++) {
+            // Margin of 20 ensures collision shapes don't extend into negative space
+            float margin = 20f;
             var pos = new Point3f(
-                random.nextFloat() * 1000,
-                random.nextFloat() * 1000,
-                random.nextFloat() * 1000
+                margin + random.nextFloat() * (1000 - 2 * margin),
+                margin + random.nextFloat() * (1000 - 2 * margin),
+                margin + random.nextFloat() * (1000 - 2 * margin)
             );
             var id = octree.insert(pos, (byte) 10, "Entity" + i);
             entities.add(id);

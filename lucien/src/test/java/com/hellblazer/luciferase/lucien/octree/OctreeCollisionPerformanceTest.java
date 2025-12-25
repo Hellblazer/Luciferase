@@ -368,10 +368,13 @@ public class OctreeCollisionPerformanceTest {
     private List<LongEntityID> insertRandomBoundedEntities(int count, float worldSize) {
         List<LongEntityID> entities = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            Point3f center = new Point3f(random.nextFloat() * worldSize, random.nextFloat() * worldSize,
-                                         random.nextFloat() * worldSize);
-
             float size = 10f + random.nextFloat() * 20f; // Bounds size 10-30
+            float margin = size / 2; // Ensure bounds don't go negative
+            Point3f center = new Point3f(
+                margin + random.nextFloat() * (worldSize - size),
+                margin + random.nextFloat() * (worldSize - size),
+                margin + random.nextFloat() * (worldSize - size));
+
             EntityBounds bounds = new EntityBounds(
             new Point3f(center.x - size / 2, center.y - size / 2, center.z - size / 2),
             new Point3f(center.x + size / 2, center.y + size / 2, center.z + size / 2));
