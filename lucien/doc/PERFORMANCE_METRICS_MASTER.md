@@ -1,13 +1,13 @@
 # Performance Metrics Master Reference
 
-**Last Updated**: December 8, 2025
+**Last Updated**: December 25, 2025
 **Purpose**: Single source of truth for all spatial index performance metrics
 
 > **IMPORTANT**: All performance documentation should reference these numbers. Do not duplicate performance metrics in other files.
 
-> **NOTE**: Performance metrics include complete comparisons of Octree, Tetree, and Prism spatial indices.
+> **NOTE**: Performance metrics include complete comparisons of all 4 spatial indices: Octree, Tetree, SFCArrayIndex, and Prism.
 
-> **NEW**: Epic 0 baseline benchmarks established (December 8, 2025). k-NN optimization Phase 2 (caching) and Phase 3a (concurrent) complete as of December 6, 2025.
+> **NEW**: SFCArrayIndex benchmarks added (December 25, 2025). LITMAX/BIGMIN optimization complete for Octree, Tetree, and SFCArrayIndex. k-NN unlimited distance fix deployed.
 
 ## Epic 0: Baseline Measurements (Bead 0.1 - December 8, 2025)
 
@@ -109,10 +109,79 @@ cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien
 # Rendering performance (Epic 4) - requires GPU and datasets
 
 cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien.benchmark.baseline.RenderingPerformanceBaselineBenchmark -DdangerouslyDisableSandbox=true
-
-```text
+```
 
 **Note**: Actual baseline numbers will be populated when benchmarks are run. Epic 1-4 optimizations will be measured against these baselines.
+
+## SFCArrayIndex & LITMAX/BIGMIN Optimization (December 25, 2025)
+
+### FourWaySpatialIndexBenchmark Results
+
+Comprehensive comparison of Octree, Tetree, and SFCArrayIndex after LITMAX/BIGMIN cells(Q) optimization.
+Note: Prism excluded from this benchmark due to triangular domain constraints.
+
+**Test Configuration**: World size 10,000 units, level 10, k=10 for k-NN, 5 benchmark iterations
+
+#### 1,000 Entities
+
+| Operation | SFCArrayIndex | Octree | Tetree |
+|-----------|---------------|--------|--------|
+| Insertion | 1.00x (fastest) | 2.71x | 2.72x |
+| Range Query | 1.00x (fastest) | 2.05x | 6.42x |
+| K-NN | 1.00x (fastest) | 3.21x | 4.13x |
+
+#### 10,000 Entities
+
+| Operation | SFCArrayIndex | Octree | Tetree |
+|-----------|---------------|--------|--------|
+| Insertion | 1.00x (fastest) | 1.16x | 3.86x |
+| Range Query | 1.00x (tied) | 1.00x (tied) | 1.35x |
+| K-NN | 2.05x | 1.95x | 1.00x (fastest) |
+
+#### 50,000 Entities
+
+| Operation | SFCArrayIndex | Octree | Tetree |
+|-----------|---------------|--------|--------|
+| Insertion | 1.00x (fastest) | 1.16x | 3.04x |
+| Range Query | 3.25x | 3.38x | 1.00x (fastest) |
+| K-NN | 3.37x | 5.16x | 1.00x (fastest) |
+
+**Key Findings**:
+- **Performance Crossover**: SFCArrayIndex dominates at small scale (<10K), Tetree dominates at large scale (50K+)
+- **LITMAX/BIGMIN Impact**: Tetree range queries improved dramatically with grid-cell based optimization
+- **Use SFCArrayIndex** for: Write-heavy workloads, static datasets, memory-constrained environments
+- **Use Tetree** for: Read-heavy workloads with 10K+ entities
+
+### LITMAX/BIGMIN Algorithm Implementation
+
+All three indexes now implement the LITMAX/BIGMIN algorithm from de Berg et al. (2025):
+
+| Index | cells(Q) Method | Notes |
+|-------|----------------|-------|
+| Octree | Direct Morton intervals | `MortonKeyInterval` return type |
+| SFCArrayIndex | Direct Morton intervals | Same as Octree |
+| Tetree | Grid-cell hybrid | Morton on grid cells, enumerate 6 tets per cell |
+
+**Tetree Special Case**: TetreeKeys encode 6 bits/level (3 xyz + 3 type), breaking Morton order. Solution: Apply LITMAX/BIGMIN to underlying grid cells, then enumerate all 6 tetrahedra (S0-S5) per cell.
+
+### k-NN Unlimited Distance Fix (December 25, 2025)
+
+Fixed bug where `kNearestNeighbors(point, k, Float.MAX_VALUE)` returned 0 results.
+
+**Root Cause**: SFC range calculated at level 0 (coarsest) while entities stored at finer level (e.g., 15). Morton codes at different levels are incompatible.
+
+**Solution**: Full scan fallback when `maxDistance >= Constants.MAX_COORD`
+
+```java
+if (maxDistance >= Constants.MAX_COORD) {
+    performFullScanKNN(queryPoint, k, maxDistance, candidates, addedToCandidates);
+    return;
+}
+```
+
+**Tests Fixed**: `OctreeKNearestNeighborTest.testKNNPerformance`, `OctreeBalancingTest.testNodeSplitting`, `SpatialIndexKNNGeometricValidationTest.testAdaptiveRadiusExpansion`
+
+---
 
 ## Current Performance Metrics (August 3, 2025)
 
@@ -276,18 +345,28 @@ Based on GhostPerformanceBenchmark results with virtual thread architecture and 
 
 ## Recommendations
 
+### Use SFCArrayIndex When:
+
+- Working with small to medium datasets (< 10K entities)
+- Insert/write performance is critical (fastest of all indexes)
+- Static or infrequently modified data (optimal for query-after-load patterns)
+- Memory is constrained (33% less memory than tree structures)
+- Simple flat structure preferred over tree complexity
+
 ### Use Octree When:
 
-- Range queries are performance critical (3.2x to 8.3x faster)
+- Range queries are performance critical (3.2x to 8.3x faster than Tetree at small scale)
 - Balanced performance across all operations required
 - Traditional cubic subdivision is preferred
+- Medium-scale datasets (1K-50K entities)
 
 ### Use Tetree When:
 
-- Insert performance is critical (1.8x to 5.7x faster)
-- Update performance matters (1.7x to 3.0x faster)
-- Working with large datasets (10K+ entities)
+- Working with large datasets (50K+ entities) - fastest for queries at scale
+- Update performance matters (1.7x to 3.0x faster than Octree)
 - Tetrahedral space partitioning is beneficial for your domain
+- Read-heavy workloads with infrequent writes
+- LITMAX/BIGMIN optimization provides best gains at large scale
 
 ### Use Prism When:
 

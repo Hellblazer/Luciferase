@@ -1,6 +1,6 @@
 # Luciferase
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-25
 **Status**: Current
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
@@ -16,6 +16,8 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 - Spatial Indexing Systems
   - Octree: Cubic spatial subdivision using Morton space-filling curves (21 levels, 2 billion nodes)
   - Tetree: Tetrahedral spatial subdivision using TM-index curves (21 levels, matching Octree capacity)
+  - SFCArrayIndex: Flat Morton-sorted array for memory-efficient static datasets (fastest inserts)
+  - Prism: Anisotropic subdivision with triangular/linear elements (terrain, stratified data)
   
 - Capabilities
   - Multi-entity support per spatial location
@@ -30,6 +32,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
   - Lock-free entity movement protocols
   - Object pooling for GC reduction
   - SIMD operations support
+  - LITMAX/BIGMIN algorithm for efficient SFC range queries
   
 - Visualization & Rendering
   - JavaFX 3D visualization
@@ -82,8 +85,7 @@ cd Luciferase
 # Run benchmarks (optional)
 
 ./mvnw test -Pperformance
-
-```text
+```
 
 ## Quick Start
 
@@ -111,8 +113,7 @@ var neighbors = octree.findKNearestNeighbors(position, 5);
 // Perform ray intersection
 var ray = new Ray3f(origin, direction);
 var hits = octree.intersectRay(ray);
-
-```text
+```
 
 ### ESVO Rendering
 
@@ -132,8 +133,7 @@ var intersections = traversal.traverse(ray);
 
 // Serialize for efficient memory transfer
 var gpuBuffer = ESVOSerializer.serialize(octreeData);
-
-```text
+```
 
 ## Performance
 

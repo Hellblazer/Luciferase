@@ -131,8 +131,7 @@ com.hellblazer.luciferase.lucien/
 │   └── SpatialIndexProfiler - Performance profiling utilities
 └── index/ (0 classes)
     └── [Empty directory]
-
-```text
+```
 
 ## Class Hierarchy
 
@@ -146,8 +145,7 @@ SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interfa
             ├── SFCArrayIndex<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
             ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
             └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
-
-```text
+```
 
 ### Node Storage (Phase 6.2 Update)
 
@@ -157,8 +155,7 @@ As of July 10, 2025, the node storage hierarchy has been simplified:
 
 SpatialNodeStorage<ID> (interface)
     └── SpatialNodeImpl<ID> (unified implementation used by both Octree and Tetree)
-
-```text
+```
 
 The previous `OctreeNode` and `TetreeNodeImpl` classes have been eliminated in favor of a single unified node
 implementation.
@@ -186,7 +183,7 @@ ConcurrentSkipListMap providing both O(log n) access and sorted iteration with t
 
 - **Entity Management**: insert(), remove(), update(), lookup()
 - **Spatial Queries**: boundedBy(), bounding(), enclosing()
-- **k-NN Search**: Complete k-nearest neighbor implementation
+- **k-NN Search**: Complete k-nearest neighbor implementation with full-scan fallback for unlimited distance queries
 - **Range Queries**: Optimized spatial range query with customizable index calculation
 - **Node Lifecycle**: insertAtPosition(), onNodeRemoved(), handleNodeSubdivision()
 
@@ -491,10 +488,9 @@ spatialIndex.updateCamera(viewMatrix, projMatrix, cameraPos);
 spatialIndex.nextFrame();
 
 // Frustum culling automatically includes occlusion
-List<FrustumIntersection<ID, Content>> visible = 
+List<FrustumIntersection<ID, Content>> visible =
     spatialIndex.frustumCullVisible(frustum, cameraPos);
-
-```text
+```
 
 ### Temporal Bounding Volumes (TBVs)
 
@@ -772,8 +768,7 @@ public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Cont
     // ID: Entity identifier type
     // Content: User-defined content type
 }
-
-```text
+```
 
 **SpatialKey Architecture**:
 
@@ -843,8 +838,7 @@ Level 21 Encoding (6 bits total):
 - 2 bits stored in high long positions 60-61
 - Preserves space-filling curve ordering
 - Enables efficient parent/child computation
-
-```text
+```
 
 **Key Features**:
 - Maintains SFC ordering properties despite split encoding
@@ -860,8 +854,7 @@ protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low lo
 protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long  
 protected static final long LEVEL_21_LOW_MASK = 0xFL;      // 4 bits: 0b1111
 protected static final long LEVEL_21_HIGH_MASK = 0x3L;     // 2 bits: 0b11
-
-```text
+```
 
 This design achieves full Octree-equivalent refinement levels while maintaining the memory efficiency and performance characteristics of the tetrahedral space-filling curve.
 
@@ -979,8 +972,7 @@ DynamicForestManager<MortonKey, LongEntityID, String> manager = new DynamicFores
 manager.
 
 enableAutoManagement(60000); // Check every minute
-
-```text
+```
 
 ## Forest Architecture
 

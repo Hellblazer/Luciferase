@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-25
 **Status**: Current
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -54,7 +54,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 | -------- | ------------- |
 | **common** | Optimized collections (`FloatArrayList`, `OaHashSet`), geometry utilities |
 | **grpc** | Protocol buffer definitions for serialization |
-| **lucien** | Core spatial indexing (Octree, Tetree, Prism) - 185 Java files, 17 packages |
+| **lucien** | Core spatial indexing (Octree, Tetree, SFCArrayIndex, Prism) - 190+ Java files, 18 packages |
 | **render** | ESVO implementation with LWJGL rendering, FFM integration |
 | **sentry** | Delaunay tetrahedralization for kinetic point tracking |
 | **portal** | JavaFX 3D visualization and mesh handling |
@@ -67,13 +67,14 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 
 ### Lucien Module - Spatial Indexing
 
-**Total**: 185 Java files organized across 17 packages (expanded from 98 in June 2025)
+**Total**: 190+ Java files organized across 18 packages (expanded from 98 in June 2025)
 
 - **Root Package** (29 classes): Core abstractions, spatial types, geometry utilities, performance optimization
 - **Entity Management** (13 classes): Complete entity lifecycle management
 - **Octree** (6 classes): Morton curve-based cubic subdivision with O(1) operations
 - **Tetree** (34 classes): Tetrahedral subdivision with S0-S5 characteristic tetrahedra, 21-level support
 - **Prism** (8 classes): Anisotropic spatial subdivision with triangular/linear elements
+- **SFC** (5 classes): SFCArrayIndex flat Morton-sorted array, LITMAX/BIGMIN optimization
 - **Collision** (29 classes): Comprehensive collision detection with CCD and physics subpackages
 - **Balancing** (4 classes): Tree balancing strategies
 - **Visitor** (6 classes): Tree traversal visitor pattern
@@ -90,7 +91,7 @@ Luciferase is a 3D spatial data structure and visualization library with these c
 ### Key Architecture (Current State)
 
 - **Generic SpatialKey Design**: `AbstractSpatialIndex<Key extends SpatialKey<Key>, ID, Content>` with type-safe spatial keys
-- **Dual Key Types**: `MortonKey` for Octree, `TetreeKey` for Tetree - both extend `SpatialKey<Key>`
+- **Dual Key Types**: `MortonKey` for Octree and SFCArrayIndex, `TetreeKey` for Tetree - both extend `SpatialKey<Key>`
 - **Unified API**: 95% shared functionality across spatial index types via generics
 - **Thread-Safe**: ConcurrentSkipListMap for O(log n) operations with concurrent access
 - **Multi-Entity Support**: Multiple entities per spatial location with CopyOnWriteArrayList
