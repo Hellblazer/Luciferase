@@ -1176,7 +1176,7 @@ The unified architecture allows easy switching between spatial index types based
 | **Tree Traversal**         | Yes    | No            | Yes           | Yes               |
 | **Use Case Generality**    | High   | Medium        | High          | Specialized       |
 
-## Performance Characteristics
+## Performance Summary
 
 For current performance metrics and detailed comparisons, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md).
 

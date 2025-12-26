@@ -138,7 +138,7 @@ var gpuBuffer = ESVOSerializer.serialize(octreeData);
 ## Performance
 
 > **Note**: Performance benchmarks should be run on your specific hardware for accurate results.
-> 
+>
 > To run benchmarks on your system:
 > ```bash
 > mvn test -Pperformance
