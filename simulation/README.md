@@ -40,7 +40,6 @@ The Simulation module provides a comprehensive physics engine and animation fram
 ### Core Components
 
 ```text
-
 simulation/
 ├── core/
 │   ├── PhysicsEngine.java       # Main physics simulation loop
@@ -68,14 +67,13 @@ simulation/
     ├── FluidSimulation.java     # SPH fluid simulation
     └── ParticleForces.java      # Particle-specific forces
 
-```text
+```
 
 ## Usage Examples
 
 ### Basic Physics Simulation
 
 ```java
-
 // Create physics engine with fixed timestep
 var physics = new PhysicsEngine(1.0 / 60.0); // 60 FPS
 
@@ -99,12 +97,11 @@ while (running) {
     // Update visual representation
 }
 
-```text
+```
 
 ### Flocking Behavior
 
 ```java
-
 // Create flocking system
 var flock = new FlockingSystem()
     .withCohesionWeight(1.0f)
@@ -121,12 +118,11 @@ for (int i = 0; i < 100; i++) {
 // Update flock
 flock.update(deltaTime);
 
-```text
+```
 
 ### Keyframe Animation
 
 ```java
-
 // Create animation clip
 var clip = new AnimationClip("walk_cycle");
 
@@ -143,12 +139,11 @@ animator.playClip(clip, true); // Loop animation
 animator.update(deltaTime);
 Transform current = animator.getCurrentTransform();
 
-```text
+```
 
 ### Particle System
 
 ```java
-
 // Create particle emitter
 var emitter = new ParticleEmitter()
     .withEmissionRate(100) // particles per second
@@ -167,7 +162,7 @@ particles.addForce(new WindForce(new Vector3f(5, 0, 0)));
 // Update particles
 particles.update(deltaTime);
 
-```text
+```
 
 ## Performance Characteristics
 
@@ -198,7 +193,6 @@ particles.update(deltaTime);
 ### With Lucien Spatial Index
 
 ```java
-
 // Use spatial index for efficient neighbor queries
 var spatialIndex = new Octree<>(bounds);
 var flocking = new FlockingSystem(spatialIndex);
@@ -206,12 +200,11 @@ var flocking = new FlockingSystem(spatialIndex);
 // Spatial index accelerates collision detection
 var collisions = new CollisionSystem(spatialIndex);
 
-```text
+```
 
 ### With Portal Visualization
 
 ```java
-
 // Connect simulation to 3D visualization
 var simulation = new SimulationEngine();
 var visualizer = new Portal3DVisualizer();
@@ -220,25 +213,23 @@ simulation.onUpdate(entities -> {
     visualizer.updateEntities(entities);
 });
 
-```text
+```
 
 ### With Von Distribution
 
 ```java
-
 // Distribute simulation across nodes
 var distributed = new DistributedSimulation();
 distributed.partitionSpace(spatialIndex);
 distributed.synchronize(vonNetwork);
 
-```text
+```
 
 ## Configuration
 
 ### Physics Settings
 
 ```java
-
 // Configure physics engine
 PhysicsConfig config = new PhysicsConfig()
     .withGravity(9.81f)
@@ -250,12 +241,11 @@ PhysicsConfig config = new PhysicsConfig()
 
 var physics = new PhysicsEngine(config);
 
-```text
+```
 
 ### Animation Settings
 
 ```java
-
 // Configure animation system
 AnimationConfig config = new AnimationConfig()
     .withInterpolation(InterpolationType.CUBIC)
@@ -265,7 +255,7 @@ AnimationConfig config = new AnimationConfig()
 
 var animator = new AnimationEngine(config);
 
-```text
+```
 
 ## Thread Safety
 
@@ -279,7 +269,6 @@ The simulation module supports concurrent execution:
 ## Testing
 
 ```bash
-
 # Run simulation tests
 
 mvn test -pl simulation
@@ -292,7 +281,7 @@ mvn test -pl simulation -Dtest=PhysicsBenchmark
 
 mvn test -pl simulation -Dtest=AnimationTest
 
-```text
+```
 
 ## Dependencies
 

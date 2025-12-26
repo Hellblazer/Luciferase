@@ -47,7 +47,6 @@ lucien module, enabling developers and users to:
 #### 1. Base Classes
 
 ```java
-
 // Abstract base for spatial index visualization
 public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID, Content> {
     protected AbstractSpatialIndex<Key, ID, Content> spatialIndex;
@@ -62,12 +61,11 @@ public abstract class SpatialIndexView<Key extends SpatialKey<Key>, ID, Content>
     public abstract void visualizeQuery(SpatialQuery query);
 }
 
-```text
+```
 
 #### 2. Octree Visualization
 
 ```java
-
 public class OctreeVisualization<ID, Content> extends SpatialIndexView<MortonKey, ID, Content> {
     private Octree<ID, Content> octree;
     private Map<Integer, Color> levelColors;
@@ -80,12 +78,11 @@ public class OctreeVisualization<ID, Content> extends SpatialIndexView<MortonKey
     private void animateSubdivision(MortonKey parentKey);
 }
 
-```text
+```
 
 #### 3. Tetree Visualization
 
 ```java
-
 public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey, ID, Content> {
     private Tetree<ID, Content> tetree;
     private       Map<Integer, Color> levelColors;
@@ -97,7 +94,7 @@ public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey
     private void showBeyerSubdivision();
 }
 
-```text
+```
 
 ### Visual Design Specifications
 
@@ -253,7 +250,6 @@ public class TetreeVisualization<ID, Content> extends SpatialIndexView<TetreeKey
 ## Example Usage (Current Implementation)
 
 ```java
-
 // Visualize an Octree
 Octree<String, Point3f> octree = new Octree<>();
 // ... populate octree ...
@@ -273,7 +269,7 @@ TransformBasedTetreeVisualization<Long, EntityData> viz =
 viz.showS0S5Subdivision(true, 3); // Show 3 levels
 viz.showAnimatedRefinement(true, 5, 500); // Animate 5 levels
 
-```text
+```
 
 ## Completed Features and Future Enhancements
 

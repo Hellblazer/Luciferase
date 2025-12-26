@@ -31,34 +31,30 @@ These tests measure performance and can be flaky due to system conditions:
 ### Run All Functional Tests
 
 ```bash
-
 mvn test -Dtest="*Line*Test,*Triangle*Test,*PrismKey*Test,*PrismGeometry*Test" -DexcludedGroups=performance
 
-```text
+```
 
 ### Run Only Performance Tests
 
 ```bash
-
 mvn test -Dtest=PrismPerformanceTest
 
-```text
+```
 
 ### Run All Tests (Including Performance)
 
 ```bash
-
 mvn test -Dtest="com.hellblazer.luciferase.lucien.prism.*Test"
 
-```text
+```
 
 ### Exclude Performance Tests from CI
 
 ```bash
-
 mvn test -DexcludedGroups=performance
 
-```text
+```
 
 ## Performance Expectations
 

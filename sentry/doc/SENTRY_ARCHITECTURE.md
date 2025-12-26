@@ -10,14 +10,13 @@ The Sentry module implements a 3D Delaunay tetrahedralization data structure opt
 ## Module Structure
 
 ```text
-
 sentry/
 ├── src/main/java/com/hellblazer/sentry/
 │   ├── cast/              # Spatial publish/subscribe framework
 │   └── (core classes)     # Base Delaunay tetrahedralization
 └── doc/                   # Documentation
 
-```text
+```
 
 ## Core Architecture
 
@@ -66,13 +65,12 @@ The Delaunay property is maintained through local topological operations:
 #### Flip Algorithm
 
 ```text
-
 1. Insert point, creating initial tetrahedra
 2. Check Delaunay property for each new face
 3. Flip non-Delaunay faces recursively
 4. Continue until all faces satisfy Delaunay property
 
-```text
+```
 
 ### 3. Spatial Publish/Subscribe Framework
 
@@ -96,20 +94,18 @@ Publishers announce their location/influence zones while subscribers monitor reg
 Uses a randomized jump-and-walk algorithm:
 
 ```text
-
 1. Start from random/known tetrahedron
 2. Test which face the target point is outside
 3. Move to adjacent tetrahedron through that face
 4. Repeat until containing tetrahedron found
 
-```text
+```
 
 Expected time: O(n^(1/3)) for uniformly distributed points
 
 ### Incremental Construction
 
 ```text
-
 1. Create initial "Big Tetrahedron" containing universe
 2. For each point to insert:
 
@@ -118,20 +114,19 @@ Expected time: O(n^(1/3)) for uniformly distributed points
    c. Restore Delaunay property via flips
    d. Propagate flips until convergence
 
-```text
+```
 
 ### Vertex Deletion
 
 Uses ear-based algorithm:
 
 ```text
-
 1. Find star set (all tetrahedra incident to vertex)
 2. Identify "ears" (convex boundary triangles)
 3. Remove ears iteratively
 4. Fill final hole when only 4 faces remain
 
-```text
+```
 
 ## Performance Characteristics
 
@@ -172,17 +167,15 @@ Uses ear-based algorithm:
 ### Basic Tetrahedralization
 
 ```java
-
 MutableGrid grid = new MutableGrid();
 Vertex v = grid.add(new Point3f(x, y, z));
 grid.delete(v);
 
-```text
+```
 
 ### Spatial Awareness
 
 ```java
-
 SphericalPublish publisher = new SphericalPublish();
 publisher.setLocation(new Point3f(0, 0, 0));
 publisher.setRadius(10.0f);
@@ -191,7 +184,7 @@ SphericalSubscription subscriber = new SphericalSubscription();
 subscriber.setLocation(new Point3f(5, 5, 5));
 subscriber.setRadius(5.0f);
 
-```text
+```
 
 ## Integration with Luciferase
 

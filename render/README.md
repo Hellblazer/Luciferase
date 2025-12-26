@@ -46,13 +46,12 @@ The module implements the Laine & Karras 2010 ESVO algorithm:
 The render module integrates with the resource module for GPU memory management:
 
 ```java
-
 // Automatic GPU buffer management
 var bufferManager = new GPUBufferManager(resourceManager);
 var nodeBuffer = bufferManager.allocateNodeBuffer(nodeCount);
 var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
 
-```text
+```
 
 ### Thread Safety
 
@@ -88,7 +87,6 @@ var rayBuffer = bufferManager.allocateRayBuffer(rayCount);
 ### Basic Rendering Setup
 
 ```java
-
 // Initialize render pipeline
 var config = RenderConfig.builder()
     .resolution(1920, 1080)
@@ -105,12 +103,11 @@ pipeline.setOctree(octree);
 // Render frame
 pipeline.renderFrame(camera, lights);
 
-```text
+```
 
 ### ESVO Ray Traversal
 
 ```java
-
 // Setup ESVO traversal
 var esvo = new ESVORenderer(resourceManager);
 esvo.setOctree(octreeData);
@@ -119,25 +116,23 @@ esvo.setCamera(camera);
 // Execute GPU traversal
 var intersections = esvo.traverse(rays);
 
-```text
+```
 
 ### Debug Visualization
 
 ```java
-
 // Enable debug overlays
 pipeline.setDebugMode(DebugMode.SHOW_OCTREE_STRUCTURE);
 pipeline.setDebugMode(DebugMode.SHOW_RAY_PATHS);
 pipeline.setDebugMode(DebugMode.SHOW_TRAVERSAL_STATS);
 
-```text
+```
 
 ## Testing
 
 ### Unit Tests
 
 ```bash
-
 # Run all render tests
 
 mvn test -pl render
@@ -147,12 +142,11 @@ mvn test -pl render
 mvn test -pl render -Dtest=ESVOTraversalTest
 mvn test -pl render -Dtest=ContourExtractionTest
 
-```text
+```
 
 ### Performance Tests
 
 ```bash
-
 # Run performance benchmarks
 
 mvn test -pl render -Dtest=RenderBenchmark
@@ -161,7 +155,7 @@ mvn test -pl render -Dtest=RenderBenchmark
 
 mvn test -pl render -Dtest=GPUProfileTest -Pgpu-profile
 
-```text
+```
 
 ### Validation Tests
 
@@ -225,19 +219,17 @@ Expected metrics to measure:
 The render module uses the `gpu-test-framework` module for GPU-related testing:
 
 ```xml
-
 <dependency>
     <groupId>com.hellblazer.luciferase</groupId>
     <artifactId>gpu-test-framework</artifactId>
     <scope>test</scope>
 </dependency>
 
-```text
+```
 
 ### Running Tests
 
 ```bash
-
 # Run all render tests
 
 mvn test -pl render
@@ -250,7 +242,7 @@ mvn test -pl render -Dgpu.profile=true
 
 mvn test -pl render -Dtest=ESVORendererTest
 
-```text
+```
 
 ### Test Categories
 
@@ -278,7 +270,6 @@ mvn test -pl render -Dtest=ESVORendererTest
 ### Render Configuration Options
 
 ```java
-
 RenderConfig.builder()
     .resolution(width, height)
     .maxOctreeDepth(23)          // CUDA reference: 23 levels
@@ -289,7 +280,7 @@ RenderConfig.builder()
     .ambientOcclusion(true)      // Screen-space AO
     .build();
 
-```text
+```
 
 ### Shader Configuration
 
@@ -321,11 +312,10 @@ Shaders are loaded from `resources/shaders/`:
 ### Debug Logging
 
 ```xml
-
 <logger name="com.hellblazer.luciferase.render" level="DEBUG"/>
 <logger name="com.hellblazer.luciferase.render.shader" level="TRACE"/>
 
-```text
+```
 
 ## References
 

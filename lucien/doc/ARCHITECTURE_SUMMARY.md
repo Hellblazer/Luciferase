@@ -45,14 +45,13 @@ For detailed package structure and class descriptions, see [LUCIEN_ARCHITECTURE.
 ### Inheritance Hierarchy
 
 ```text
-
 SpatialIndex<Key extends SpatialKey<Key>, ID, Content> (interface)
   └── AbstractSpatialIndex<Key, ID, Content> (base class with ~95% shared functionality)
       ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
       ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
       └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
 
-```text
+```
 
 ### Spatial Subdivision Strategies
 

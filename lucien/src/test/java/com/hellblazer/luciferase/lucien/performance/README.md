@@ -56,16 +56,14 @@ Performance tests are disabled by default to avoid running during regular test c
 ### Enable Performance Tests
 
 ```bash
-
 export RUN_SPATIAL_INDEX_PERF_TESTS=true
 mvn test -pl lucien
 
-```text
+```
 
 ### Run Specific Performance Tests
 
 ```bash
-
 # Run only Octree creation performance tests
 
 mvn test -pl lucien -Dtest=OctreeCreationPerformanceTest
@@ -74,7 +72,7 @@ mvn test -pl lucien -Dtest=OctreeCreationPerformanceTest
 
 mvn test -pl lucien -Dtest=*QueryPerformanceTest
 
-```text
+```
 
 ## Test Configuration
 
@@ -123,7 +121,6 @@ To add new performance tests:
 Example:
 
 ```java
-
 public abstract class MyNewPerformanceTest<ID extends EntityID, Content>
 extends AbstractSpatialIndexPerformanceTest<ID, Content> {
 
@@ -136,7 +133,7 @@ extends AbstractSpatialIndexPerformanceTest<ID, Content> {
     }
 }
 
-```text
+```
 
 ## Interpreting Results
 

@@ -297,7 +297,6 @@
 ### Create Baseline
 
 ```bash
-
 # Checkout clean main branch
 
 git checkout main
@@ -315,12 +314,11 @@ mvn clean test -Pbenchmark-baseline -Dtest=SentryBenchmark
 
 cp target/benchmark-results.json benchmarks/baseline-$(date +%Y%m%d).json
 
-```text
+```
 
 ### Start Optimization Work
 
 ```bash
-
 # Create optimization branch
 
 git checkout -b sentry-opt-phase1
@@ -329,12 +327,11 @@ git checkout -b sentry-opt-phase1
 
 git checkout -b sentry-opt-arraylist
 
-```text
+```
 
 ### Run Benchmarks
 
 ```bash
-
 # Run current benchmarks
 
 mvn clean test -Pbenchmark -Dtest=SentryBenchmark
@@ -345,4 +342,4 @@ java -cp target/test-classes com.hellblazer.sentry.bench.CompareResults \
   benchmarks/baseline.json \
   target/benchmark-results.json
 
-```text
+```

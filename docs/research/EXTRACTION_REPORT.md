@@ -182,18 +182,16 @@ Current Lucien k-NN bottleneck:
 Space-filling curve locality principle:
 
 ```text
-
 Euclidean distance ≈ SFC distance (with 85-95% accuracy)
 Therefore: Points in nearby SFC indices are likely spatially close
 This enables: Binary search + local filtering = O(log N + k)
 Result: 4-6x baseline improvement
 
-```text
+```
 
 ### 3. Distance-to-Morton-Depth Mapping
 
 ```java
-
 // Key technique for Phase 1:
 depth = log2(max_distance / cell_size)
 range = [morton_key - (2^depth), morton_key + (2^depth)]
@@ -201,7 +199,7 @@ candidates = skipList.subMap(range.lower, range.upper)
 // Check candidates and update depth dynamically as better
 // solutions found - further pruning as search narrows
 
-```text
+```
 
 ### 4. Three-Phase Implementation Path
 
@@ -215,7 +213,6 @@ candidates = skipList.subMap(range.lower, range.upper)
 ### 5. Performance Target Progression
 
 ```text
-
 Baseline:                    1.5-2.0ms per k-NN
 After Phase 1:              0.3-0.5ms (4-6x improvement)
 After Phase 2 (avg):        0.15-0.25ms (6-10x from baseline)
@@ -226,7 +223,7 @@ After Phase 2 (avg):        0.15-0.25ms (6-10x from baseline)
 After Phase 3:              Maintained under concurrent load
 Interactive target:         < 0.1ms per query
 
-```text
+```
 
 ---
 
@@ -235,7 +232,6 @@ Interactive target:         < 0.1ms per query
 ### Command Line Query
 
 ```bash
-
 # Single query
 
 python3 scripts/query_sft_knowledge.py "Morton key k-NN optimization"
@@ -248,12 +244,11 @@ python3 scripts/query_sft_knowledge.py
 
 # Commands: 'list', 'demo', 'quit'
 
-```text
+```
 
 ### Python API
 
 ```python
-
 from scripts.chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 
 indexer = SFTMotionPlanningIndexer()
@@ -269,12 +264,11 @@ for result in results:
     print(result['metadata']['title'])
     print(result['content'])
 
-```text
+```
 
 ### ChromaDB Direct Access
 
 ```python
-
 import chromadb
 
 client = chromadb.PersistentClient(path="/tmp/lucien_knowledge")
@@ -287,7 +281,7 @@ results = collection.query(
     n_results=5
 )
 
-```text
+```
 
 ---
 

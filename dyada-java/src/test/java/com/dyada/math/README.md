@@ -64,7 +64,6 @@ Tests spatial indexing and bit operation properties:
 ### Before Consolidation
 
 ```java
-
 @Property
 @Label("Addition is commutative")
 void additionIsCommutative(@ForAll Coordinate a, @ForAll Coordinate b) {
@@ -83,12 +82,11 @@ void additionIsAssociative(@ForAll Coordinate a, @ForAll Coordinate b, @ForAll C
 
 // ... 15+ more similar tests
 
-```text
+```
 
 ### After Consolidation
 
 ```java
-
 @Property
 @Label("All vector operations follow mathematical laws")
 void allVectorOperationsFollowMathematicalLaws(
@@ -104,7 +102,7 @@ void allVectorOperationsFollowMathematicalLaws(
     // ... other consolidated property tests
 }
 
-```text
+```
 
 ## Benefits
 

@@ -22,7 +22,6 @@ Space-filling trees enable **4-6x speedup for k-NN queries** through SFC-aware p
 ### Category: SFC Core Concepts (8 documents)
 
 ```text
-
 sft-01-overview              → Space-Filling Trees fundamentals
 sft-02-vs-rrt                → Comparison with RRT algorithms
 sft-03-incremental-search    → Incremental/anytime search strategies
@@ -32,12 +31,11 @@ sft-06-knn-optimization-lucien → Direct application to Lucien indices
 sft-07-performance           → Performance characteristics & benchmarks
 sft-08-collision-detection   → Collision acceleration via SFC ordering
 
-```text
+```
 
 ### Category: k-NN Optimization (7 documents)
 
 ```text
-
 knn-01-bottleneck            → k-NN as RRT bottleneck (70-90% CPU time)
 knn-02-sfc-locality          → Locality preservation in SFC ordering
 knn-03-incremental-knn       → Dynamic k-NN maintenance & updates
@@ -46,12 +44,11 @@ knn-05-radius-search         → Radius-based queries using SFC ranges
 knn-06-concurrent-knn        → Lock-free concurrent k-NN search
 knn-07-metric-space          → Non-Euclidean k-NN with metric spaces
 
-```text
+```
 
 ### Category: Lucien Integration (6 documents)
 
 ```text
-
 lucien-01-current-knn        → Current Lucien k-NN implementation analysis
 lucien-02-sfc-pruning        → SFC-based subtree pruning (Priority 1)
 lucien-03-morton-knn-cache   → k-NN result caching strategy (Priority 2)
@@ -59,7 +56,7 @@ lucien-04-tetree-sfc-ordering → Tetree SFC properties & optimization
 lucien-05-collision-via-knn  → Collision detection via k-NN filtering
 lucien-06-performance-targets → Phase-based implementation roadmap
 
-```text
+```
 
 ---
 
@@ -86,13 +83,12 @@ lucien-06-performance-targets → Phase-based implementation roadmap
 **Example**:
 
 ```text
-
 Query: Find k-NN near position P with radius R
 Traditional: Check all N points -> O(N)
 SFC-based:  Binary search SFC range [P-R, P+R] -> O(log N + k)
 Speedup: 3-5x typical improvement
 
-```text
+```
 
 ---
 
@@ -101,7 +97,6 @@ Speedup: 3-5x typical improvement
 **Key Technique for Phase 1 Implementation**:
 
 ```text
-
 Given:
 
 - Query position P
@@ -119,7 +114,7 @@ Result:
 - Maintains correctness (all true k-NN still found)
 - Expected speedup: 4-6x
 
-```text
+```
 
 ---
 
@@ -128,7 +123,6 @@ Result:
 **Phase 2 Optimization**:
 
 ```text
-
 Cache Structure:
 
 - Key: Morton cell index
@@ -142,7 +136,7 @@ Effectiveness:
 - Cache hit cost: 0.05-0.1ms (vs 0.5ms compute)
 - Speedup: 20-30x for hits
 
-```text
+```
 
 ---
 
@@ -151,7 +145,6 @@ Effectiveness:
 **Phase 3 Optimization**:
 
 ```text
-
 Strategy:
 
 - Region-based locking (partition SFC space)
@@ -164,7 +157,7 @@ Benefits:
 - 60-80% contention reduction vs global lock
 - Scales to 100+ concurrent queries
 
-```text
+```
 
 ---
 
@@ -231,7 +224,6 @@ Benefits:
 ### Option 1: Command Line Query
 
 ```bash
-
 cd /Users/hal.hildebrand/git/Luciferase
 
 # Run query tool
@@ -242,23 +234,21 @@ python3 scripts/query_sft_knowledge.py "k-NN optimization"
 
 python3 scripts/query_sft_knowledge.py "How to implement SFC pruning?"
 
-```text
+```
 
 ### Option 2: Interactive Mode
 
 ```bash
-
 python3 scripts/query_sft_knowledge.py
 
 # Then enter queries at prompt
 # Commands: list (show all docs), demo (run examples), quit
 
-```text
+```
 
 ### Option 3: Python API
 
 ```python
-
 from scripts.chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 
 indexer = SFTMotionPlanningIndexer()
@@ -268,7 +258,7 @@ for result in results:
     print(f"Title: {result['metadata']['title']}")
     print(f"Content: {result['content'][:500]}")
 
-```text
+```
 
 ---
 
@@ -311,18 +301,16 @@ Continuous curves that visit every point in space with preserved locality:
 ### SFC-Based k-NN Algorithm
 
 ```text
-
 1. Estimate SFC range from distance radius
 2. Binary search SFC indices for range boundaries
 3. Iterate candidates within range, filter by actual distance
 4. Complexity: O(log N + k) vs O(N) naive approach
 
-```text
+```
 
 ### Pruning Effectiveness
 
 ```text
-
 Branch-and-bound principle:
 
 - If minimum distance to cell > current best distance
@@ -330,7 +318,7 @@ Branch-and-bound principle:
 - Eliminate from search
 - Reduces candidates by 60-95% depending on sparsity
 
-```text
+```
 
 ---
 

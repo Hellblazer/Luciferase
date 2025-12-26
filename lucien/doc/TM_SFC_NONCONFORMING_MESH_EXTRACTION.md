@@ -15,7 +15,6 @@ A **hanging node** occurs in non-conforming adaptive meshes when a parent elemen
 **Example:**
 
 ```text
-
 Conforming mesh:        Non-conforming (hanging node):
 +---+---+              +-------+
 |   |   |              |       | <- Refined neighbor
@@ -23,14 +22,13 @@ Conforming mesh:        Non-conforming (hanging node):
 |   |   |              |   | H | <- Hanging node H
 +---+---+              +---+---+
 
-```text
+```
 
 ### 1.2 Luciferase Implementation
 
 **Tet SFC Approach (Bey Refinement):**
 
 ```java
-
 // In Tetree/Tet.java:
 // Bey refinement creates 8 children per tetrahedron using vertex midpoints
 // This naturally handles hanging nodes through topology-aware child generation
@@ -47,7 +45,7 @@ public Tet child(int childIndex) {
     // Total: 8 children perfectly tiling parent volume
 }
 
-```text
+```
 
 **Hanging Face Handling:**
 - **S0-S5 Subdivision**: The 6 tetrahedral types tile each cubic cell
@@ -62,7 +60,6 @@ public Tet child(int childIndex) {
 **Key Principle**: The TM (tree-monotonic) space-filling curve preserves topological order during refinement.
 
 ```java
-
 // TetreeConnectivity.java
 private static final byte[][] INDEX_TO_BEY_NUMBER = {
     // Maps Morton index to Bey child ID based on parent type
@@ -70,7 +67,7 @@ private static final byte[][] INDEX_TO_BEY_NUMBER = {
     // in tree-monotonic order, enabling efficient traversal and neighbor finding
 };
 
-```text
+```
 
 **Algorithm Steps:**
 1. **Bey Refinement**: Create 8 children using vertex midpoints
@@ -89,12 +86,11 @@ private static final byte[][] INDEX_TO_BEY_NUMBER = {
 **Luciferase Implementation:**
 
 ```java
-
 // Bey refinement IS red refinement for tetrahedra
 Tet[] children = tet.children(); // Always produces 8 children
 // Children are congruent and cover parent volume completely
 
-```text
+```
 
 **Properties:**
 - Isotropic: All dimensions refined equally
@@ -108,7 +104,6 @@ Tet[] children = tet.children(); // Always produces 8 children
 **Luciferase Application:**
 
 ```java
-
 // Adaptive refinement strategy: analyzeCell() returns RefinementDecision
 public enum RefinementDecision {
     REFINE,     // Apply red refinement (8 children)
@@ -121,7 +116,7 @@ public enum RefinementDecision {
 // - Neighbor at level L-1 → Creates hanging nodes
 // - Ghost layer handles seamless operations despite non-conformity
 
-```text
+```
 
 **Why Both Strategies Matter:**
 - **Red**: Fine-grain control, optimal element quality
@@ -133,7 +128,6 @@ public enum RefinementDecision {
 **Balancing Requirement**: To avoid excessive hanging nodes:
 
 ```java
-
 // TreeBalancingStrategy.java
 public interface TreeBalancingStrategy<ID extends EntityID> {
     // Prevent overly deep local refinement
@@ -146,12 +140,11 @@ public interface TreeBalancingStrategy<ID extends EntityID> {
     boolean shouldRebalanceTree(TreeBalancingStats stats);
 }
 
-```text
+```
 
 **Conformity Enforcement:**
 
 ```text
-
 1-Irregular (1-Conforming):
 
   - Max depth difference between neighbors = 1
@@ -170,7 +163,7 @@ public interface TreeBalancingStrategy<ID extends EntityID> {
   - Full non-conforming mesh
   - Requires complete ghost infrastructure (Luciferase provides)
 
-```text
+```
 
 ---
 
@@ -182,7 +175,6 @@ public interface TreeBalancingStrategy<ID extends EntityID> {
 **Solution**: Tree-monotonic space-filling curve
 
 ```java
-
 // TetreeConnectivity provides TM ordering
 // Maps Bey index (0-7) to TM index (0-7)
 
@@ -195,7 +187,7 @@ for (int tmIndex = 0; tmIndex < 8; tmIndex++) {
     Tet child = getChild(beyIndex); // Children in TM order
 }
 
-```text
+```
 
 **Benefits:**
 1. **Locality**: Spatially close children are numbered close
@@ -209,7 +201,6 @@ for (int tmIndex = 0; tmIndex < 8; tmIndex++) {
 **Luciferase Solution:**
 
 ```java
-
 // NeighborDetector interface
 public interface NeighborDetector<Key extends SpatialKey<Key>> {
     // Find all topological neighbors (face, edge, vertex)
@@ -238,14 +229,13 @@ public class ElementGhostManager<Key, ID, Content> {
     }
 }
 
-```text
+```
 
 ### 3.3 Ghost Layer Architecture
 
 **Purpose**: Enable local computation without explicit communication in distributed environments.
 
 ```text
-
 Local domain:           Ghost domain (non-local):
 +--------+              +--------+
 | Element| -> Ghost --> | Ghost  |
@@ -258,12 +248,11 @@ Benefits:
 - No communication during computation phase
 - Communication deferred to ghost sync phase
 
-```text
+```
 
 **Implementation Details:**
 
 ```java
-
 // GhostLayer.java
 public class GhostLayer<Key, ID, Content> {
     // Ghost elements indexed by spatial key
@@ -287,7 +276,7 @@ public enum GhostAlgorithm {
     ADAPTIVE,     // Learn from usage
 }
 
-```text
+```
 
 ---
 
@@ -308,7 +297,6 @@ public enum GhostAlgorithm {
 **TreeBalancingStrategy Interface:**
 
 ```java
-
 public interface TreeBalancingStrategy<ID extends EntityID> {
     // Node-level decisions
     int getSplitThreshold(int level, int maxEntitiesPerNode);
@@ -340,14 +328,13 @@ class ConservativeBalancingStrategy {
     // Only rebalance in extreme cases
 }
 
-```text
+```
 
 ### 4.3 Balancing Stages
 
 **Stage 1: Local Node Decisions**
 
 ```java
-
 // Check if node exceeds thresholds
 BalancingAction action = balancer.checkNodeBalance(nodeIndex);
 
@@ -367,12 +354,11 @@ switch (action.type()) {
     }
 }
 
-```text
+```
 
 **Stage 2: Tree Rebalancing**
 
 ```java
-
 // Triggered when:
 // - Load variance exceeds threshold
 // - Too many empty nodes
@@ -382,12 +368,11 @@ switch (action.type()) {
 TreeBalancer.RebalancingResult result = spatialIndex.rebalanceTree();
 // Result includes: nodes created, removed, merged, split, entities relocated
 
-```text
+```
 
 **Stage 3: Adaptive Strategies**
 
 ```java
-
 // Monitor performance and adapt strategy
 class AdaptiveBalancingSystem {
     public void adapt(TreeBalancingStats stats) {
@@ -401,14 +386,13 @@ class AdaptiveBalancingSystem {
     }
 }
 
-```text
+```
 
 ### 4.4 Balancing + Ghost Layer Interaction
 
 **Constraint**: Hanging node depth must be controlled to limit ghost overhead.
 
 ```text
-
 Depth difference:  Ghost overhead:    Balancing action:
 Level 0-1          ~8 ghosts          Acceptable (green refinement)
 Level 0-2          ~64 ghosts         Monitor (second-level neighbors)
@@ -421,7 +405,7 @@ Forest-level balancing:
 - Load balance entities across trees
 - Coordinate ghost exchanges between trees
 
-```text
+```
 
 ---
 
@@ -436,7 +420,6 @@ Forest-level balancing:
 **Implementation Pattern:**
 
 ```java
-
 // Create adaptive forest with mixed strategies
 AdaptiveForest<TetreeKey, LongEntityID, GameObject> forest =
     new AdaptiveForest<>(config, tetreeFactory);
@@ -450,14 +433,13 @@ forest.setMergeThreshold(20);           // Merge when <20 entities
 // Interior trees remain balanced and conforming
 // Boundary regions use non-conforming ghosts as needed
 
-```text
+```
 
 ### 5.2 Ghost Layer Conformity Enforcement
 
 **Principle**: Use ghosts to enforce conformity where it matters.
 
 ```java
-
 // Conformity levels via ghost algorithms
 GhostAlgorithm conformityStrategy = switch(conformityLevel) {
     case STRICT ->      // Multi-level ghosts enforce 1-conformity
@@ -470,14 +452,13 @@ GhostAlgorithm conformityStrategy = switch(conformityLevel) {
 
 ghostManager.setGhostAlgorithm(conformityStrategy);
 
-```text
+```
 
 ### 5.3 Migration Between Conforming and Non-Conforming
 
 **Tetree to Octree Migration**:
 
 ```java
-
 // When non-conformity becomes excessive:
 Octree<MortonKey, LongEntityID, Content> octree =
     Octree.fromTetree(tetree);
@@ -485,12 +466,11 @@ Octree<MortonKey, LongEntityID, Content> octree =
 // Octree provides strict conforming guarantee
 // but loses tetrahedral efficiency
 
-```text
+```
 
 **Octree to Tetree Migration**:
 
 ```java
-
 // When tetrahedral efficiency needed:
 Tetree<TetreeKey, LongEntityID, Content> tetree =
     Tetree.fromOctree(octree);
@@ -498,7 +478,7 @@ Tetree<TetreeKey, LongEntityID, Content> tetree =
 // Gains tetrahedral efficiency
 // Incurs non-conformity cost (manageable with ghosts)
 
-```text
+```
 
 ---
 
@@ -509,7 +489,6 @@ Tetree<TetreeKey, LongEntityID, Content> tetree =
 **Bey's Refinement Property:**
 
 ```text
-
 Parent tetrahedron with 4 vertices V0, V1, V2, V3
 
 Refinement creates:
@@ -525,12 +504,11 @@ Result: NO hanging nodes at element level
 - Faces are either shared or internal
 - Vertices at element boundaries defined at parent level
 
-```text
+```
 
 **Type Mapping Preserves Continuity:**
 
 ```java
-
 // Each child has a type that encodes its relationship to parent
 private static final byte[][] TYPE_TO_TYPE_OF_CHILD = {
     // Parent type -> Child types in order
@@ -538,14 +516,13 @@ private static final byte[][] TYPE_TO_TYPE_OF_CHILD = {
     // with sibling and neighbor elements
 };
 
-```text
+```
 
 ### 6.2 When Hanging Nodes DO Occur: Mixed Refinement
 
 **Scenario**: Parent P refined, neighbor N stays at parent level.
 
 ```text
-
 Before refinement:     After P refined (N not refined):
 +-------+              +---+---+
 |   P   |              |C0 |C1 |
@@ -555,12 +532,11 @@ Before refinement:     After P refined (N not refined):
                        |   N   |
                        +-------+
 
-```text
+```
 
 **Luciferase Handling:**
 
 ```java
-
 // GhostLayer automatically creates ghost copies
 ElementGhostManager ghostMgr = new ElementGhostManager<>(
     spatialIndex,
@@ -586,7 +562,7 @@ for (Key boundaryKey : boundaryElements) {
 // Even though N is unrefined (hanging nodes exist)
 // Ghosts make them "visible" to algorithms
 
-```text
+```
 
 ### 6.3 Hanging Node Depth Control
 
@@ -595,7 +571,6 @@ for (Key boundaryKey : boundaryElements) {
 **Solution: Balancing Strategies**
 
 ```java
-
 // In AdaptiveRefinementStrategy
 public RefinementDecision analyzeCell(RefinementContext context, ...) {
     int hangingNodeDepth = estimateHangingNodeDepth(context);
@@ -619,7 +594,7 @@ boolean validateRefinementDecisions(Map<LevelIndex, RefinementDecision> decision
     // Prevent local refinement from being too aggressive
 }
 
-```text
+```
 
 ---
 
@@ -635,7 +610,6 @@ boolean validateRefinementDecisions(Map<LevelIndex, RefinementDecision> decision
 ### 7.2 Implementation Patterns
 
 ```java
-
 // Pattern 1: Adaptive refinement with non-conformity control
 Tetree<TetreeKey, LongEntityID, Content> tetree = new Tetree<>(idGen, maxLevel);
 AdaptiveRefinementStrategy strategy = new AdaptiveRefinementStrategy() {
@@ -657,7 +631,7 @@ TreeBalancingStrategy<LongEntityID> balancing =
 spatialIndex.setBalancingStrategy(balancing);
 spatialIndex.setAutoBalancingEnabled(true);
 
-```text
+```
 
 ### 7.3 Trade-offs
 

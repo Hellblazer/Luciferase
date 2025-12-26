@@ -7,7 +7,6 @@ The locate algorithm finds which tetrahedron contains a given point by walking t
 ### Algorithm Steps
 
 ```text
-
 locate(query_point, start_tetrahedron):
     current = start_tetrahedron
     
@@ -33,7 +32,7 @@ locate(query_point, start_tetrahedron):
         // Continue walk from neighbor
         current = neighbor
 
-```text
+```
 
 ### Key Observations:
 
@@ -46,7 +45,6 @@ locate(query_point, start_tetrahedron):
 ### 2.1 flip1to4 (Vertex Inside Tetrahedron)
 
 ```text
-
 flip1to4(tetrahedron, new_vertex):
     // Create 4 new tetrahedra
     t0 = new Tetrahedron(a, b, c, new_vertex)
@@ -89,14 +87,13 @@ flip1to4(tetrahedron, new_vertex):
     
     return ears
 
-```text
+```
 
 ### 2.2 Patch Operation
 
 The patch operation updates bidirectional neighbor relationships:
 
 ```text
-
 patch(face_vertex, new_tetrahedron, new_face):
     old_neighbor = this.getNeighbor(face_vertex)
     if old_neighbor != null:
@@ -108,14 +105,13 @@ patch(face_vertex, new_tetrahedron, new_face):
     
     new_tetrahedron.setNeighbor(new_face, old_neighbor)
 
-```text
+```
 
 ## 3. Insertion Algorithm
 
 The complete point insertion algorithm:
 
 ```text
-
 insert(vertex, containing_tetrahedron):
     // Initial flip based on vertex position
     if vertex inside containing_tetrahedron:
@@ -134,14 +130,13 @@ insert(vertex, containing_tetrahedron):
             new_ears = face.flip(vertex)
             ears.extend(new_ears)
 
-```text
+```
 
 ## 4. Ear Processing (Delaunay Restoration)
 
 After insertion, we must restore the Delaunay property:
 
 ```text
-
 OrientedFace.flip(vertex):
     incident = this.getIncident()
     adjacent = this.getAdjacent()
@@ -163,7 +158,7 @@ OrientedFace.flip(vertex):
             // Handle degenerate case
             return handleDegenerateCase()
 
-```text
+```
 
 ## 5. Critical Implementation Details
 

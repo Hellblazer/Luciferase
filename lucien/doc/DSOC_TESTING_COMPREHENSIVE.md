@@ -11,7 +11,6 @@ This guide provides thorough testing strategies for validating a Dynamic Scene O
 #### TBV Creation Tests
 
 ```cpp
-
 TEST(TBVCreation, BasicCreation) {
     DynamicObject obj;
     obj.position = Vector3(0, 0, 0);
@@ -62,12 +61,11 @@ TEST(TBVCreation, BoundsValidation) {
     }
 }
 
-```text
+```
 
 #### TBV Expiration Tests
 
 ```cpp
-
 TEST(TBVExpiration, TimeBasedExpiration) {
     TBV tbv;
     tbv.validity_start = 100;
@@ -86,14 +84,13 @@ TEST(TBVExpiration, NeverExpireTBV) {
     ASSERT_FALSE(tbv.is_expired(INT_MAX));
 }
 
-```text
+```
 
 ### 2. Spatial Structure Update Tests
 
 #### Octree LCA Tests
 
 ```cpp
-
 TEST(OctreeLCA, SameNode) {
     Octree octree(AABB(Vector3(-100), Vector3(100)));
     Vector3 pos1(10, 10, 10);
@@ -133,12 +130,11 @@ TEST(OctreeLCA, MovementEfficiency) {
     ASSERT_GT(GetNodeDepth(lca_small), GetNodeDepth(lca_large));
 }
 
-```text
+```
 
 #### Update Operation Tests
 
 ```cpp
-
 TEST(SpatialUpdate, ObjectMovement) {
     Octree octree(AABB(Vector3(-100), Vector3(100)));
     DynamicObject obj;
@@ -162,12 +158,11 @@ TEST(SpatialUpdate, ObjectMovement) {
     ASSERT_FALSE(NodeContainsObject(initial_node, obj));
 }
 
-```text
+```
 
 ### 3. Visibility State Management Tests
 
 ```cpp
-
 TEST(VisibilityState, StateTransitions) {
     DynamicObject obj;
     obj.state = VISIBLE;
@@ -215,14 +210,13 @@ TEST(VisibilityState, ConcurrentStateAccess) {
     ASSERT_EQ(visibility_count + hidden_count, 10000);
 }
 
-```text
+```
 
 ## Integration Testing
 
 ### 1. Full Pipeline Tests
 
 ```cpp
-
 TEST(DSOCIntegration, BasicRenderLoop) {
     // Setup scene
     Scene scene;
@@ -261,12 +255,11 @@ TEST(DSOCIntegration, BasicRenderLoop) {
     }
 }
 
-```text
+```
 
 ### 2. TBV Integration Tests
 
 ```cpp
-
 TEST(TBVIntegration, HiddenObjectTracking) {
     Scene scene = create_test_scene();
     DSOC_System dsoc(scene);
@@ -299,14 +292,13 @@ TEST(TBVIntegration, HiddenObjectTracking) {
     ASSERT_TRUE(dsoc.was_spatially_updated(obj.id));
 }
 
-```text
+```
 
 ## Black Box Testing
 
 ### 1. Correctness Tests (Without Implementation Knowledge)
 
 ```cpp
-
 TEST(BlackBox, VisibilityCorrectness) {
     // Test that visible objects are always rendered
     auto test_scene = [](Vector3 camera_pos, Vector3 object_pos) {
@@ -359,12 +351,11 @@ TEST(BlackBox, TemporalConsistency) {
     }
 }
 
-```text
+```
 
 ### 2. Behavioral Tests
 
 ```cpp
-
 TEST(BlackBox, MultiObjectBehavior) {
     DSOC_System dsoc;
     Camera camera(Vector3(0,10,0), Vector3(0,-1,0));  // Top-down
@@ -394,14 +385,13 @@ TEST(BlackBox, MultiObjectBehavior) {
     ASSERT_EQ(visible.size(), 1);
 }
 
-```text
+```
 
 ## White Box Testing
 
 ### 1. Algorithm-Specific Tests
 
 ```cpp
-
 TEST(WhiteBox, LCAOptimization) {
     Octree octree(AABB(Vector3(-1000), Vector3(1000)));
     DynamicObject obj;
@@ -456,12 +446,11 @@ TEST(WhiteBox, TBVMerging) {
     ASSERT_GT(tbv_count, 0);   // But not all merged
 }
 
-```text
+```
 
 ### 2. Data Structure Validation
 
 ```cpp
-
 TEST(WhiteBox, SpatialStructureIntegrity) {
     DSOC_System dsoc;
     
@@ -508,14 +497,13 @@ TEST(WhiteBox, SpatialStructureIntegrity) {
     ASSERT_TRUE(valid);
 }
 
-```text
+```
 
 ## Edge Case Testing
 
 ### 1. Extreme Movement Tests
 
 ```cpp
-
 TEST(EdgeCases, Teleportation) {
     DSOC_System dsoc;
     DynamicObject obj;
@@ -570,12 +558,11 @@ TEST(EdgeCases, OscillatingObject) {
     }
 }
 
-```text
+```
 
 ### 2. Boundary Condition Tests
 
 ```cpp
-
 TEST(EdgeCases, SceneBoundaryBehavior) {
     AABB scene_bounds(Vector3(-100), Vector3(100));
     DSOC_System dsoc(scene_bounds);
@@ -621,12 +608,11 @@ TEST(EdgeCases, MassiveObjectCount) {
     ASSERT_LT(duration, 1000);  // Less than 1 second
 }
 
-```text
+```
 
 ### 3. Numerical Precision Tests
 
 ```cpp
-
 TEST(EdgeCases, FloatingPointPrecision) {
     DSOC_System dsoc;
     
@@ -647,14 +633,13 @@ TEST(EdgeCases, FloatingPointPrecision) {
     ASSERT_NO_THROW(dsoc.render_frame({obj}, Camera()));
 }
 
-```text
+```
 
 ## Performance Testing
 
 ### 1. Benchmark Configuration
 
 ```cpp
-
 struct BenchmarkScene {
     int static_object_count;
     int dynamic_object_count;
@@ -687,12 +672,11 @@ struct BenchmarkScene {
     }
 };
 
-```text
+```
 
 ### 2. Performance Test Suite
 
 ```cpp
-
 TEST(Performance, ScalabilityWithHiddenObjects) {
     // Based on paper's Figure 12c and 13b
     const int STATIC_POLYGONS = 16250;
@@ -753,12 +737,11 @@ TEST(Performance, FrameRateAnalysis) {
     ASSERT_GE(frames_rendered, 10);  // At least 10 FPS
 }
 
-```text
+```
 
 ### 3. Comparative Performance Tests
 
 ```cpp
-
 TEST(Performance, LCAUpdateEfficiency) {
     // Based on paper's test with moving cube
     Octree octree(AABB(Vector3(-1000), Vector3(1000)));
@@ -802,12 +785,11 @@ TEST(Performance, LCAUpdateEfficiency) {
     }
 }
 
-```text
+```
 
 ### 4. Memory Performance Tests
 
 ```cpp
-
 TEST(Performance, MemoryUsage) {
     DSOC_System dsoc;
     
@@ -840,12 +822,11 @@ TEST(Performance, MemoryUsage) {
     ASSERT_GT(after_clear, baseline + (before_clear - baseline) * 0.5);
 }
 
-```text
+```
 
 ## Stress Testing
 
 ```cpp
-
 TEST(StressTest, ContinuousOperation) {
     DSOC_System dsoc;
     std::random_device rd;
@@ -908,12 +889,11 @@ TEST(StressTest, WorstCaseScenario) {
     ASSERT_LT(duration, std::chrono::seconds(10));
 }
 
-```text
+```
 
 ## Regression Testing
 
 ```cpp
-
 class DSOCRegressionTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -955,12 +935,11 @@ TEST_F(DSOCRegressionTest, PaperTestScene2) {
     ASSERT_NEAR(speedup, 2.7, 0.2);  // Paper reports 2.7x speedup
 }
 
-```text
+```
 
 ## Validation Test Utilities
 
 ```cpp
-
 // Helper class for thorough validation
 class DSOCValidator {
 public:
@@ -1002,6 +981,6 @@ public:
     }
 };
 
-```text
+```
 
 This comprehensive testing guide covers all aspects of validating a DSOC implementation, from unit tests through performance benchmarks, ensuring both correctness and efficiency.

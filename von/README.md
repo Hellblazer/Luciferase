@@ -38,7 +38,6 @@ Von (named after Von Neumann neighborhoods) provides distributed spatial awarene
 ## Architecture
 
 ```text
-
 com.hellblazer.luciferase.von/
 ├── network/
 │   ├── SpatialNode         # Network node with spatial awareness
@@ -60,14 +59,13 @@ com.hellblazer.luciferase.von/
     ├── UpdateProtocol      # Update propagation
     └── QueryProtocol       # Distributed queries
 
-```text
+```
 
 ## Usage Examples
 
 ### Creating a Spatial Node
 
 ```java
-
 import com.hellblazer.luciferase.von.network.SpatialNode;
 
 // Create spatial node
@@ -85,12 +83,11 @@ node.start();
 // Join spatial network
 node.join("seed.example.com:8080");
 
-```text
+```
 
 ### Distributed Octree
 
 ```java
-
 import com.hellblazer.luciferase.von.distributed.DistributedOctree;
 
 // Create distributed octree
@@ -108,12 +105,11 @@ var options = QueryOptions.builder()
 
 var results = octree.query(bounds, options);
 
-```text
+```
 
 ### Interest Management
 
 ```java
-
 import com.hellblazer.luciferase.von.perception.InterestManager;
 
 // Setup interest management
@@ -135,12 +131,11 @@ interest.setLevelOfDetail(distance -> {
     return DetailLevel.LOW;
 });
 
-```text
+```
 
 ### Spatial Gossip
 
 ```java
-
 import com.hellblazer.luciferase.von.network.GossipProtocol;
 
 // Configure gossip protocol
@@ -161,12 +156,11 @@ var event = new SpatialEvent(
 
 node.broadcast(event);
 
-```text
+```
 
 ### Consensus Operations
 
 ```java
-
 import com.hellblazer.luciferase.von.distributed.SpatialConsensus;
 
 // Propose spatial update with consensus
@@ -185,7 +179,7 @@ consensus.propose(proposal).thenAccept(result -> {
     }
 });
 
-```text
+```
 
 ## Performance
 
@@ -213,7 +207,6 @@ consensus.propose(proposal).thenAccept(result -> {
 ### Node Configuration
 
 ```yaml
-
 von:
   node:
     id: ${NODE_ID}
@@ -240,7 +233,7 @@ von:
     update-rate: 30
     compression: true
 
-```text
+```
 
 ## Fault Tolerance
 
@@ -263,7 +256,6 @@ Von handles various failure scenarios:
 ## Testing
 
 ```bash
-
 # Unit tests
 
 mvn test -pl von
@@ -280,7 +272,7 @@ mvn test -pl von -Pdistr distributed
 
 mvn test -pl von -Dtest=*Benchmark
 
-```text
+```
 
 ## Dependencies
 

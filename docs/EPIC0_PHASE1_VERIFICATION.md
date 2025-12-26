@@ -60,7 +60,6 @@ JMH (Java Microbenchmark Harness) is properly configured for performance benchma
 **Dependencies** (in `pom.xml`):
 
 ```xml
-
 <dependency>
     <groupId>org.openjdk.jmh</groupId>
     <artifactId>jmh-core</artifactId>
@@ -74,7 +73,7 @@ JMH (Java Microbenchmark Harness) is properly configured for performance benchma
     <scope>test</scope>
 </dependency>
 
-```text
+```
 
 **Location**:
 - Root `pom.xml`: Dependency management with version property
@@ -85,10 +84,9 @@ JMH (Java Microbenchmark Harness) is properly configured for performance benchma
 Benchmarks can be run with standard Maven test goal:
 
 ```bash
-
 mvn test -Dtest=*Benchmark*
 
-```text
+```
 
 ### Conclusion
 
@@ -126,7 +124,6 @@ GPU testing infrastructure exists but requires platform-specific configuration.
     -DargLine="-XstartOnFirstThread"
 
 ```text
-
 #### Linux/CI
 
 - **Required**: `dangerouslyDisableSandbox=true` (sandbox blocks GPU access)
@@ -138,12 +135,11 @@ GPU testing infrastructure exists but requires platform-specific configuration.
 
     -DargLine="-DdangerouslyDisableSandbox=true"
 
-```text
+```
 
 ### Test Output (macOS without flag)
 
 ```text
-
 === GPU Diagnostic Test Starting ===
 Platform: macOS
 Architecture: ARM64
@@ -155,7 +151,7 @@ macOS -XstartOnFirstThread: false
    Add to JVM options: -XstartOnFirstThread
    Using JUnit assumption to skip test gracefully
 
-```text
+```
 
 ### Note on Bead 0.2
 

@@ -89,25 +89,22 @@ The tests reveal:
 Run all tests:
 
 ```bash
-
 mvn test -pl sentry
 
-```text
+```
 
 Run specific test class:
 
 ```bash
-
 mvn test -Dtest=MutableGridTest -pl sentry
 mvn test -Dtest=DelaunayValidationTest -pl sentry
 mvn test -Dtest=FlipAlgorithmValidationTest -pl sentry
 
-```text
+```
 
 Run specific test method:
 
 ```bash
-
 mvn test -Dtest=MutableGridTest#testDelaunayPropertySmallSet -pl sentry
 
-```text
+```

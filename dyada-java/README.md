@@ -44,7 +44,6 @@ DyAda Java is a sophisticated computational geometry library that implements ada
 ### Package Structure
 
 ```text
-
 com.dyada
 ├── core/                           # Fundamental data structures
 │   ├── coordinates/               # Spatial coordinate systems
@@ -91,7 +90,7 @@ com.dyada
 └── exceptions/                   # Custom exception hierarchy
     └── TransformationException.java # Transformation errors
 
-```text
+```
 
 ### Design Patterns
 
@@ -104,7 +103,6 @@ com.dyada
 ### Type Safety Enhancements
 
 ```java
-
 // Sealed class hierarchy for refinement strategies
 public sealed interface AdaptiveRefinementStrategy 
     permits ErrorBasedRefinement, GradientBasedRefinement {
@@ -139,14 +137,13 @@ public Coordinate transform(Coordinate input, TransformationType type) {
     };
 }
 
-```text
+```
 
 ## Quick Start
 
 ### Basic Setup
 
 ```java
-
 import com.dyada.refinement.*;
 import com.dyada.core.coordinates.*;
 import com.dyada.discretization.*;
@@ -164,12 +161,11 @@ var bounds = new Bounds(
 // - tolerance: 0.1 (refinement threshold)
 var mesh = new AdaptiveMesh(bounds, 4, 8, 0.1);
 
-```text
+```
 
 ### Entity Management
 
 ```java
-
 // Insert entities at specific locations
 mesh.insertEntity("sensor1", new Coordinate(new double[]{2.5, 3.7}));
 mesh.insertEntity("sensor2", new Coordinate(new double[]{7.2, 1.8}));
@@ -186,12 +182,11 @@ var stats = mesh.getStatistics();
 System.out.printf("Active cells: %d, Entities: %d, Max level: %d%n",
     stats.activeCells(), stats.entityCount(), stats.maxLevel());
 
-```text
+```
 
 ### Adaptive Refinement
 
 ```java
-
 // Configure refinement criteria
 var criteria = RefinementCriteria.builder()
     .refinementThreshold(0.01)    // Refine when error > 1%
@@ -211,12 +206,11 @@ var result = mesh.refineAdaptively(errorStrategy, criteria);
 System.out.printf("Refined %d cells, created %d new cells%n", 
     result.cellsRefined(), result.newActiveCells());
 
-```text
+```
 
 ### Spatial Queries
 
 ```java
-
 // Range queries - find all entities within a spatial region
 var queryBounds = new CoordinateInterval(
     new Coordinate(new double[]{1.0, 1.0}),
@@ -231,12 +225,11 @@ var entitiesInRadius = mesh.queryRadius(center, 2.0);
 // Nearest neighbor queries
 var nearestNeighbors = mesh.queryNearestNeighbors(center, 3);
 
-```text
+```
 
 ### Coordinate Transformations
 
 ```java
-
 import com.dyada.transformations.*;
 
 // Linear transformation (2D scaling)
@@ -268,12 +261,11 @@ var affine = AffineTransformation.builder()
     .build();
 var affineResult = affine.transform(point);
 
-```text
+```
 
 ### Spatial Discretization
 
 ```java
-
 import com.dyada.discretization.*;
 import com.dyada.core.descriptors.*;
 
@@ -303,12 +295,11 @@ queryEngine.insert("item2", new Coordinate(new double[]{75.0, 60.0}));
 var nearestItems = queryEngine.kNearestNeighbors(location, 5);
 var itemsInRange = queryEngine.rangeQuery(queryBounds);
 
-```text
+```
 
 ### Morton Order Operations
 
 ```java
-
 import com.dyada.core.linearization.*;
 import com.dyada.performance.*;
 
@@ -332,12 +323,11 @@ long optimizedCode = optimizer.encode(coord, 10); // 10-bit precision
 // Decode Morton code back to coordinates
 var decoded = optimizer.decode(optimizedCode, 2, 10); // 2D, 10-bit
 
-```text
+```
 
 ### BitArray Operations
 
 ```java
-
 import com.dyada.core.bitarray.*;
 
 // Create and manipulate bit arrays
@@ -360,14 +350,13 @@ bitArray1.stream().forEach(bit -> {
     // Process each bit
 });
 
-```text
+```
 
 ## Advanced Usage
 
 ### Custom Refinement Strategies
 
 ```java
-
 public class GradientBasedStrategy implements AdaptiveRefinementStrategy {
     private final double gradientThreshold;
     private final double coarseningFactor;
@@ -410,12 +399,11 @@ public class GradientBasedStrategy implements AdaptiveRefinementStrategy {
     }
 }
 
-```text
+```
 
 ### Custom Coordinate Transformations
 
 ```java
-
 public class PolarTransformation implements CoordinateTransformation {
     @Override
     public Coordinate transform(Coordinate source) throws TransformationException {
@@ -449,12 +437,11 @@ var polar = new PolarTransformation();
 var cartesian = polar.transform(new Coordinate(new double[]{5.0, Math.PI/4}));
 // Result: [3.536, 3.536] (approximately)
 
-```text
+```
 
 ### Performance Optimization
 
 ```java
-
 import com.dyada.performance.*;
 
 // Configure parallel operations
@@ -483,12 +470,11 @@ cache.configure()
 // Cache expensive coordinate transformations
 var cachedTransform = cache.memoize(expensiveTransformation);
 
-```text
+```
 
 ### Multi-Scale Indexing
 
 ```java
-
 import com.dyada.core.*;
 
 // Create multi-scale index for different resolution requirements
@@ -511,7 +497,7 @@ var index1 = multiIndex.getIndex(1);
 var updated = multiIndex.updateLevel(0, (byte) 3);
 var modified = multiIndex.updateIndex(2, 45);
 
-```text
+```
 
 ## Performance Benchmarks
 
@@ -557,7 +543,6 @@ var modified = multiIndex.updateIndex(2, 45);
 ### Dependencies
 
 ```xml
-
 <dependencies>
     <!-- Core dependencies -->
     <dependency>
@@ -581,12 +566,11 @@ var modified = multiIndex.updateIndex(2, 45);
     </dependency>
 </dependencies>
 
-```text
+```
 
 ## Build Commands
 
 ```bash
-
 # Clean and compile the library
 
 mvn clean compile
@@ -617,14 +601,13 @@ mvn clean package
 
 mvn install
 
-```text
+```
 
 ## Integration Examples
 
 ### Spring Boot Integration
 
 ```java
-
 @Configuration
 @EnableConfigurationProperties(DyAdaProperties.class)
 public class DyAdaConfig {
@@ -678,12 +661,11 @@ public class DyAdaProperties {
     }
 }
 
-```text
+```
 
 ### Application Configuration
 
 ```yaml
-
 # application.yml
 
 dyada:
@@ -697,12 +679,11 @@ dyada:
     enabled: true
     thread-count: 8
 
-```text
+```
 
 ### JavaFX Visualization
 
 ```java
-
 public class MeshVisualization extends Application {
     private AdaptiveMesh mesh;
     private Timeline animation;
@@ -766,7 +747,7 @@ public class MeshVisualization extends Application {
     }
 }
 
-```text
+```
 
 ## Testing Strategy
 
@@ -817,7 +798,6 @@ public class MeshVisualization extends Application {
 ### Running Tests
 
 ```bash
-
 # Run all tests with coverage
 
 mvn clean test jacoco:report
@@ -836,7 +816,7 @@ mvn test -Dtest.verbose=true
 
 mvn test -Dargline="--enable-preview -Xmx4g"
 
-```text
+```
 
 ## Contributing
 
@@ -851,7 +831,6 @@ mvn test -Dargline="--enable-preview -Xmx4g"
 ### Contribution Process
 
 ```bash
-
 # Fork and clone the repository
 
 git clone https://github.com/your-username/dyada-java.git
@@ -877,7 +856,7 @@ git commit -m "Add: your feature description"
 
 git push origin feature/your-feature-name
 
-```text
+```
 
 ### Code Quality Standards
 

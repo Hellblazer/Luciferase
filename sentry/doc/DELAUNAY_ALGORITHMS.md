@@ -20,10 +20,9 @@ A tetrahedralization is Delaunay if no vertex lies inside the circumsphere of an
 Vertices are ordered (a, b, c, d) such that:
 
 ```text
-
 orient3d(a, b, c, d) > 0
 
-```text
+```
 
 This ensures consistent positive orientation for all geometric predicates.
 
@@ -36,7 +35,6 @@ This ensures consistent positive orientation for all geometric predicates.
 Determines which side of plane ABC point D lies on:
 
 ```java
-
 double orient3d(Point3f a, Point3f b, Point3f c, Point3f d) {
     return det(
         |ax - dx  ay - dy  az - dz|
@@ -45,7 +43,7 @@ double orient3d(Point3f a, Point3f b, Point3f c, Point3f d) {
     );
 }
 
-```text
+```
 
 - Result > 0: D is above plane ABC
 - Result < 0: D is below plane ABC
@@ -56,7 +54,6 @@ double orient3d(Point3f a, Point3f b, Point3f c, Point3f d) {
 Determines if point E lies inside circumsphere of tetrahedron ABCD:
 
 ```java
-
 double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
     return det(
         |ax - ex  ay - ey  az - ez  (ax-ex)² + (ay-ey)² + (az-ez)²|
@@ -66,7 +63,7 @@ double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
     );
 }
 
-```text
+```
 
 - Result > 0: E is inside circumsphere
 - Result < 0: E is outside circumsphere
@@ -77,7 +74,6 @@ double insphere(Point3f a, Point3f b, Point3f c, Point3f d, Point3f e) {
 The randomized jump-and-walk algorithm efficiently locates containing tetrahedra:
 
 ```java
-
 Tetrahedron locate(Point3f target, Tetrahedron start) {
     Tetrahedron current = (start != null) ? start : randomTetrahedron();
     
@@ -98,7 +94,7 @@ Tetrahedron locate(Point3f target, Tetrahedron start) {
     }
 }
 
-```text
+```
 
 **Optimizations:**
 - Start from last query result (temporal locality)
@@ -110,7 +106,6 @@ Tetrahedron locate(Point3f target, Tetrahedron start) {
 #### Point Insertion
 
 ```java
-
 void insert(Point3f p) {
     // 1. Locate containing tetrahedron
     Tetrahedron tet = locate(p);
@@ -131,12 +126,11 @@ void insert(Point3f p) {
     propagateDelaunay(newTetrahedra);
 }
 
-```text
+```
 
 #### 1→4 Flip (Point Inside)
 
 ```text
-
     Before:           After:
        d                 d
       /|\               /|\
@@ -150,12 +144,11 @@ void insert(Point3f p) {
 
 Creates 4 new tetrahedra: (a,b,c,p), (a,b,p,d), (a,p,c,d), (p,b,c,d)
 
-```text
+```
 
 #### 2→3 Flip (Convex Edge)
 
 ```text
-
     Before:                After:
        a                     a
       /|\                   /|\
@@ -167,14 +160,13 @@ Creates 4 new tetrahedra: (a,b,c,p), (a,b,p,d), (a,p,c,d), (p,b,c,d)
 
 Transforms 2 tetrahedra sharing face abe into 3 tetrahedra
 
-```text
+```
 
 ### 4. Delaunay Property Restoration
 
 After insertion, non-Delaunay faces are flipped:
 
 ```java
-
 void propagateDelaunay(List<Tetrahedron> modified) {
     Queue<OrientedFace> toCheck = new LinkedList<>();
     
@@ -198,14 +190,13 @@ void propagateDelaunay(List<Tetrahedron> modified) {
     }
 }
 
-```text
+```
 
 ### 5. Vertex Deletion
 
 The ear-based algorithm removes vertices by collapsing their star:
 
 ```java
-
 void delete(Vertex v) {
     // 1. Find star set (incident tetrahedra)
     Set<Tetrahedron> star = v.star();
@@ -224,7 +215,7 @@ void delete(Vertex v) {
     fillFinalHole(boundary);
 }
 
-```text
+```
 
 #### Ear Identification
 
@@ -238,7 +229,6 @@ A boundary triangle is an "ear" if:
 For moving points, the module supports efficient updates:
 
 ```java
-
 void moveVertex(Vertex v, Point3f newLocation) {
     // 1. Check if movement crosses any faces
     List<Tetrahedron> affected = findAffectedTetrahedra(v, newLocation);
@@ -255,7 +245,7 @@ void moveVertex(Vertex v, Point3f newLocation) {
     }
 }
 
-```text
+```
 
 ## Special Cases and Degeneracies
 
@@ -288,7 +278,6 @@ When 3+ points are collinear:
 Instead of deterministic traversal:
 
 ```java
-
 Tetrahedron stochasticWalk(Point3f target) {
     Tetrahedron current = randomStart();
     Set<Tetrahedron> visited = new HashSet<>();
@@ -313,7 +302,7 @@ Tetrahedron stochasticWalk(Point3f target) {
     return current;
 }
 
-```text
+```
 
 ### 2. History DAG
 
@@ -336,7 +325,6 @@ Insert points in randomized order biased by spatial distribution:
 The Voronoi diagram is the geometric dual of Delaunay:
 
 ```java
-
 VoronoiCell computeVoronoiCell(Vertex v) {
     VoronoiCell cell = new VoronoiCell();
     
@@ -360,7 +348,7 @@ VoronoiCell computeVoronoiCell(Vertex v) {
     return cell;
 }
 
-```text
+```
 
 ## Robustness Considerations
 

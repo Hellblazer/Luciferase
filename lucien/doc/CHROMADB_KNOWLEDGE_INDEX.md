@@ -10,7 +10,6 @@ This document describes how the TM-SFC non-conforming meshes knowledge is struct
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "high",
@@ -20,7 +19,7 @@ This document describes how the TM-SFC non-conforming meshes knowledge is struct
   "source_file": "TM_SFC_NONCONFORMING_MESH_EXTRACTION.md#1"
 }
 
-```text
+```
 
 **Content Summary**:
 - Definition: Elements created when parent subdivided, neighbor stays unrefined
@@ -37,7 +36,6 @@ This document describes how the TM-SFC non-conforming meshes knowledge is struct
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "critical",
@@ -48,7 +46,7 @@ This document describes how the TM-SFC non-conforming meshes knowledge is struct
   "source_file": "BEY_TETRAHEDRAL_SUBDIVISION.md"
 }
 
-```text
+```
 
 **Content Summary**:
 - Edge midpoints: 6 vertices at tetrahedron edge midpoints
@@ -60,13 +58,12 @@ This document describes how the TM-SFC non-conforming meshes knowledge is struct
 **Implementation Details**:
 
 ```text
-
 Child generation pattern:
   T0-T3: Corner tetrahedra (parent anchor + edge midpoints)
   T4-T7: Interior tetrahedra (split octahedron)
   Result: 100% cube tiling, no gaps/overlaps
 
-```text
+```
 
 ---
 
@@ -76,7 +73,6 @@ Child generation pattern:
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "critical",
@@ -87,7 +83,7 @@ Child generation pattern:
   "source_file": "TM_SFC_NONCONFORMING_MESH_EXTRACTION.md#3.1"
 }
 
-```text
+```
 
 **Content Summary**:
 - Tree-monotonic property: Children numbered to preserve spatial locality
@@ -99,13 +95,12 @@ Child generation pattern:
 **Mapping Table**:
 
 ```text
-
 Parent Type 0: TM Order = [T0, T1, T4, T7, T2, T3, T6, T5]
 
   - Maps to TetreeConnectivity lookup tables
   - Preserves neighbor relationships for ghost creation
 
-```text
+```
 
 ---
 
@@ -115,7 +110,6 @@ Parent Type 0: TM Order = [T0, T1, T4, T7, T2, T3, T6, T5]
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "high",
@@ -126,7 +120,7 @@ Parent Type 0: TM Order = [T0, T1, T4, T7, T2, T3, T6, T5]
   "source_file": "GHOST_API.md"
 }
 
-```text
+```
 
 **Content Summary**:
 - Purpose: Enable local computation without explicit communication
@@ -138,13 +132,12 @@ Parent Type 0: TM Order = [T0, T1, T4, T7, T2, T3, T6, T5]
 **Algorithm Selection**:
 
 ```text
-
 MINIMAL:      Direct neighbors only (lowest memory)
 CONSERVATIVE: Direct + second-level neighbors (balanced)
 AGGRESSIVE:   Multiple levels for maximum performance
 ADAPTIVE:     Learns from usage patterns
 
-```text
+```
 
 **Key Classes**:
 - `GhostLayer<Key, ID, Content>`: Stores ghost elements
@@ -160,7 +153,6 @@ ADAPTIVE:     Learns from usage patterns
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "high",
@@ -171,7 +163,7 @@ ADAPTIVE:     Learns from usage patterns
   "source_file": "TREE_BALANCING_API.md"
 }
 
-```text
+```
 
 **Content Summary**:
 - Problem: Unconstrained refinement creates excessive hanging nodes
@@ -183,7 +175,6 @@ ADAPTIVE:     Learns from usage patterns
 **Strategy Thresholds**:
 
 ```text
-
 Default:
 
   - Split at 80% capacity
@@ -202,17 +193,16 @@ Conservative:
   - Merge rarely
   - Only rebalance in extreme cases
 
-```text
+```
 
 **Conformity Enforcement**:
 
 ```text
-
 1-Irregular (1-Conforming):   Max depth diff = 1
 2-Irregular (2-Conforming):   Max depth diff = 2
 3+ Irregular:                  Unrestricted (requires ghosts)
 
-```text
+```
 
 ---
 
@@ -222,7 +212,6 @@ Conservative:
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "high",
@@ -233,7 +222,7 @@ Conservative:
   "source_file": "AdaptiveRefinementStrategy.java"
 }
 
-```text
+```
 
 **Content Summary**:
 - Strategy interface: Analyze cells and make refinement decisions
@@ -245,7 +234,6 @@ Conservative:
 **Refinement Decision Context**:
 
 ```java
-
 record RefinementContext(
     LevelIndex cellIndex,
     Coordinate cellCenter,
@@ -254,19 +242,18 @@ record RefinementContext(
     Object cellData
 )
 
-```text
+```
 
 **Depth Control**:
 
 ```text
-
 MAX_HANGING_NODE_DEPTH = 3
 
 - If depth > 3: Return COARSEN
 - Prevents exponential ghost overhead
 - Balances mesh quality and efficiency
 
-```text
+```
 
 ---
 
@@ -276,7 +263,6 @@ MAX_HANGING_NODE_DEPTH = 3
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "high",
@@ -287,7 +273,7 @@ MAX_HANGING_NODE_DEPTH = 3
   "source_file": "FOREST_MANAGEMENT_API.md"
 }
 
-```text
+```
 
 **Content Summary**:
 - Hybrid approach: Conforming interior, non-conforming boundaries
@@ -299,7 +285,6 @@ MAX_HANGING_NODE_DEPTH = 3
 **Integration Pattern**:
 
 ```text
-
 Interior regions (simple):       Boundary regions (adaptive):
 
   - Octree (conforming)           - Tetree (non-conforming)
@@ -307,7 +292,7 @@ Interior regions (simple):       Boundary regions (adaptive):
   - Predictable queries           - Feature capture
   - No ghost overhead             - Ghost infrastructure
 
-```text
+```
 
 ---
 
@@ -317,7 +302,6 @@ Interior regions (simple):       Boundary regions (adaptive):
 **Metadata**:
 
 ```json
-
 {
   "paper": "tm_sfc_nonconforming",
   "relevance_to_lucien": "medium",
@@ -328,7 +312,7 @@ Interior regions (simple):       Boundary regions (adaptive):
   "source_file": "TM_SFC_NONCONFORMING_MESH_EXTRACTION.md#2"
 }
 
-```text
+```
 
 **Content Summary**:
 - Red refinement: Isotropic subdivision into 8 congruent children (Bey)
@@ -340,7 +324,6 @@ Interior regions (simple):       Boundary regions (adaptive):
 **Comparison Table**:
 
 ```text
-
 Aspect          Red (Bey)              Green (Bisection)
 Children        8 (always)             2 (always)
 Isotropy        Yes                    No (anisotropic)
@@ -349,7 +332,7 @@ Element quality Good (similar sizes)   Fair (can degrade)
 Hanging nodes   At boundaries only     Minimal
 Economy         Moderate               Higher
 
-```text
+```
 
 ---
 
@@ -358,7 +341,6 @@ Economy         Moderate               Higher
 ### Query 1: Find hanging node handling approaches
 
 ```text
-
 Query: "How are hanging nodes handled in non-conforming meshes?"
 Expected Results: Documents 1, 2, 4, 5, 6
 
@@ -370,12 +352,11 @@ Relevant sections:
 - Balancing controls hanging node depth (Doc 5)
 - Adaptive strategies validate decisions (Doc 6)
 
-```text
+```
 
 ### Query 2: Implement distributed spatial index with ghosts
 
 ```text
-
 Query: "What's the architecture for ghost elements in distributed tetrees?"
 Expected Results: Documents 3, 4, 7
 
@@ -386,12 +367,11 @@ Relevant sections:
 - GhostAlgorithm selection (Doc 4)
 - Integration with forest management (Doc 7)
 
-```text
+```
 
 ### Query 3: Balance non-conforming refinement
 
 ```text
-
 Query: "How to prevent excessive hanging nodes while maintaining adaptivity?"
 Expected Results: Documents 5, 6, 8
 
@@ -402,12 +382,11 @@ Relevant sections:
 - Hanging node depth limits (Doc 5)
 - Red/green refinement trade-offs (Doc 8)
 
-```text
+```
 
 ### Query 4: Optimize tetrahedral vs. cubic meshes
 
 ```text
-
 Query: "When should I use Tetree vs. Octree for adaptive meshes?"
 Expected Results: Documents 2, 7, 8
 
@@ -417,7 +396,7 @@ Relevant sections:
 - Hybrid conforming/non-conforming strategy (Doc 7)
 - Red refinement properties (Doc 8)
 
-```text
+```
 
 ---
 
@@ -444,7 +423,6 @@ Each document is embedded for semantic search on:
 ### Query Workflow
 
 ```text
-
 User Query (natural language)
     ↓
 ChromaDB semantic search (finds relevant documents by embedding)
@@ -458,7 +436,7 @@ Results ranked by:
     3. Recency of documentation
     4. Cross-references (related documents)
 
-```text
+```
 
 ---
 
@@ -492,7 +470,6 @@ Results ranked by:
 ## Summary: Document Connectivity Graph
 
 ```text
-
 Hanging Nodes (1)
     ├─→ Bey Refinement (2)
     │   └─→ TM-SFC Ordering (3)
@@ -516,7 +493,7 @@ Read Order for Learning:
 7. Strategy: Hybrid Approaches (7) - when to use Tetree vs Octree
 8. Detail: Red/Green Refinement (8) - refinement options
 
-```text
+```
 
 ---
 

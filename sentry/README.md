@@ -37,7 +37,6 @@ Sentry provides robust 3D Delaunay tetrahedralization with support for kinetic (
 ## Architecture
 
 ```text
-
 com.hellblazer.luciferase.sentry/
 ├── Tetrahedralization      # Main tetrahedralization class
 ├── Vertex                  # 3D vertex representation
@@ -50,14 +49,13 @@ com.hellblazer.luciferase.sentry/
 │   └── PackedWalker
 └── parallel/              # Parallel algorithms
 
-```text
+```
 
 ## Usage Examples
 
 ### Basic Tetrahedralization
 
 ```java
-
 import com.hellblazer.luciferase.sentry.Tetrahedralization;
 import com.hellblazer.luciferase.sentry.Vertex;
 
@@ -77,12 +75,11 @@ mesh.build();
 var point = new Point3d(0.25, 0.25, 0.25);
 var tet = mesh.locate(point);
 
-```text
+```
 
 ### Kinetic Points
 
 ```java
-
 // Create kinetic tetrahedralization
 var kinetic = new KineticTetrahedralization();
 
@@ -95,12 +92,11 @@ kinetic.updateTime(deltaTime);
 // Maintain Delaunay property
 kinetic.repair();
 
-```text
+```
 
 ### Convex Hull
 
 ```java
-
 // Compute 3D convex hull
 var points = List.of(
     new Point3d(0, 0, 0),
@@ -113,12 +109,11 @@ var points = List.of(
 var hull = ConvexHull3D.compute(points);
 var faces = hull.getFaces();
 
-```text
+```
 
 ### Voronoi Diagram
 
 ```java
-
 // Generate Voronoi diagram (dual of Delaunay)
 var voronoi = mesh.getVoronoiDiagram();
 
@@ -126,7 +121,7 @@ var voronoi = mesh.getVoronoiDiagram();
 var cell = voronoi.getCell(vertex);
 var cellFaces = cell.getFaces();
 
-```text
+```
 
 ## Performance
 
@@ -151,7 +146,6 @@ var cellFaces = cell.getFaces();
 Sentry uses robust geometric predicates to handle numerical precision:
 
 ```java
-
 // Orientation predicate (sign of volume)
 var orient = OrientationPredicate.orient3d(p1, p2, p3, p4);
 
@@ -161,12 +155,11 @@ var inSphere = InSpherePredicate.inSphere(p1, p2, p3, p4, query);
 // Collinearity test
 var collinear = GeometricPredicates.areCollinear(p1, p2, p3);
 
-```text
+```
 
 ## Testing
 
 ```bash
-
 # Run all Sentry tests
 
 mvn test -pl sentry
@@ -183,7 +176,7 @@ mvn test -pl sentry -Dtest=Packed*Test
 
 mvn test -pl sentry -Dtest=*Benchmark
 
-```text
+```
 
 ## Known Issues
 

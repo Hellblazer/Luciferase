@@ -19,10 +19,9 @@ Frustum culling allows you to:
 ### Find All Visible Entities
 
 ```java
-
 List<ID> frustumCullVisible(Frustum3D frustum)
 
-```text
+```
 
 Finds all entities that are potentially visible within the frustum. This performs frustum culling by testing spatial nodes against the frustum planes.
 
@@ -37,7 +36,6 @@ Finds all entities that are potentially visible within the frustum. This perform
 **Example:**
 
 ```java
-
 // Create a perspective frustum using camera parameters
 Frustum3D frustum = new Frustum3D(
     nearPlane,    // Near plane
@@ -63,14 +61,13 @@ for (int i = 0; i < visibleEntities.size(); i++) {
     }
 }
 
-```text
+```
 
 ## Creating Frustums
 
 The `Frustum3D` class represents a viewing frustum defined by 6 planes:
 
 ```java
-
 // Define frustum with 6 planes
 Plane3D nearPlane = new Plane3D(normal, distance);
 Plane3D farPlane = new Plane3D(normal, distance);
@@ -85,14 +82,13 @@ Frustum3D frustum = new Frustum3D(
     topPlane, bottomPlane
 );
 
-```text
+```
 
 ## Use Cases
 
 ### 1. Basic Rendering Pipeline
 
 ```java
-
 public void render(Camera camera) {
     Frustum3D frustum = camera.getFrustum();
     
@@ -110,12 +106,11 @@ public void render(Camera camera) {
     }
 }
 
-```text
+```
 
 ### 2. Shadow Map Generation
 
 ```java
-
 public void generateShadowMap(Light light) {
     // Create frustum from light's perspective
     Frustum3D lightFrustum = createLightFrustum(light);
@@ -133,12 +128,11 @@ public void generateShadowMap(Light light) {
     }
 }
 
-```text
+```
 
 ### 3. LOD System Integration
 
 ```java
-
 public void renderWithLOD(Camera camera) {
     Frustum3D frustum = camera.getFrustum();
     Point3f cameraPos = camera.getPosition();
@@ -166,7 +160,7 @@ public void renderWithLOD(Camera camera) {
     }
 }
 
-```text
+```
 
 ## Performance Considerations
 
@@ -197,7 +191,6 @@ public void renderWithLOD(Camera camera) {
 ## Example: Complete Rendering System
 
 ```java
-
 public class RenderingSystem {
     private SpatialIndex<Key, ID, RenderableContent> spatialIndex;
 
@@ -238,4 +231,4 @@ public class RenderingSystem {
     }
 }
 
-```text
+```

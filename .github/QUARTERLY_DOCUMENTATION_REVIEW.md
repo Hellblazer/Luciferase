@@ -25,14 +25,13 @@ This checklist ensures all Luciferase documentation remains accurate, consistent
   git log --since="3 months ago" --pretty=format:"%h %ad %s" --date=short
 
 ```text
-
 - [ ] Review merged pull requests for documentation impact
 
   ```bash
 
   git log --since="3 months ago" --merges --oneline
 
-```text
+```
 
 - [ ] Collect performance benchmark results from last quarter
 
@@ -41,14 +40,13 @@ This checklist ensures all Luciferase documentation remains accurate, consistent
   find . -name "*benchmark*.txt" -mtime -90
 
 ```text
-
 - [ ] Note any reported documentation issues
 
   ```bash
 
   # Check issue tracker for documentation-related issues
 
-```text
+```
 
 ### 2. Create Review Workspace
 
@@ -111,7 +109,6 @@ These documents contain non-negotiable technical truths. Verify they remain accu
   done
 
 ```text
-
 - [ ] **LUCIEN_ARCHITECTURE.md**
   - Verify package descriptions accurate
   - Check class counts per package
@@ -133,7 +130,7 @@ These documents contain non-negotiable technical truths. Verify they remain accu
   markdown-link-check LUCIEN_ARCHITECTURE.md
   markdown-link-check portal/doc/PORTAL_ARCHITECTURE.md
 
-```text
+```
 
 - [ ] Verify all referenced files exist
 
@@ -144,7 +141,6 @@ These documents contain non-negotiable technical truths. Verify they remain accu
   done
 
 ```text
-
 ---
 
 ## Section 3: API Documentation Review (90 minutes)
@@ -192,14 +188,13 @@ Review each API category:
 - [ ] Test examples run without errors
 - [ ] Update examples if APIs changed
 
-```bash
+```
 
 # Extract Java code blocks from markdown
 
 find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 
 ```text
-
 ---
 
 ## Section 4: Performance Documentation Review (60 minutes)
@@ -222,7 +217,7 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   # Compare results with documented metrics
   diff performance-results/latest.txt lucien/doc/performance-results/baseline.txt
 
-```text
+```
 
 - [ ] **Update if Necessary**
   - If results differ by >10%, update PERFORMANCE_METRICS_MASTER.md
@@ -238,7 +233,6 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   grep -r "faster\|slower\|performance\|benchmark" --include="*.md" . | grep -v ".git"
 
 ```text
-
 - [ ] Verify each claim includes:
   - Measurement date
   - Benchmark name
@@ -269,7 +263,7 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
     echo "$module: $count test classes"
   done
 
-```text
+```
 
 ### 5.2 Test Execution Verification
 
@@ -324,7 +318,6 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   grep -r "rebalancing\|reorganization" --include="*.md" . | grep -v "tree balancing"
 
 ```text
-
 - [ ] Update documents using deprecated terminology
 - [ ] Add new standard terms if needed
 
@@ -337,7 +330,7 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   # Check for missing "Last Updated" headers
   find . -name "*.md" -type f -exec grep -L "Last Updated" {} \;
 
-```text
+```
 
 - [ ] Update headers with current dates for modified docs
 - [ ] Add status indicators (Current/Archived/Draft) where missing
@@ -352,7 +345,6 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   find . -name "*.md" -type f -exec markdown-link-check {} \; 2>&1 | tee link-check.log
 
 ```text
-
 - [ ] Fix all broken internal links
 - [ ] Update or remove broken external links
 - [ ] Verify file path references point to existing files
@@ -392,7 +384,7 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
     grep -r "$class" lucien/doc/*.md >/dev/null || echo "Undocumented: $class"
   done
 
-```text
+```
 
 - [ ] Look for modules without README files
 
@@ -403,7 +395,6 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
   done
 
 ```text
-
 - [ ] Check for features mentioned in code but not documented
 - [ ] Identify performance benchmarks without documentation
 
@@ -451,7 +442,7 @@ find . -name "*_API.md" -exec grep -Pzo '```java\n.*?\n```' {} \;
 
 Create file: `.github/reviews/review-YYYY-QQ-summary.md`
 
-```markdown
+```
 
 # Quarterly Documentation Review - Q[Q] YYYY
 
@@ -488,7 +479,6 @@ Create file: `.github/reviews/review-YYYY-QQ-summary.md`
 [Date 3 months from now]
 
 ```text
-
 ### 3. Update Review Schedule
 
 - [ ] Set calendar reminder for next review (3 months)

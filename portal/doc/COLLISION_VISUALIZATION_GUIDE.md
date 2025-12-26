@@ -11,7 +11,6 @@ The collision visualization system provides comprehensive tools for debugging an
 The main visualization engine that provides real-time rendering of collision data:
 
 ```java
-
 CollisionVisualizer visualizer = new CollisionVisualizer();
 
 // Configure visualization options
@@ -24,14 +23,13 @@ visualizer.showVelocityVectors.set(true);
 // Add to scene
 scene.getChildren().add(visualizer.getVisualization());
 
-```text
+```
 
 ### CollisionDebugViewer
 
 A complete application for interactive collision testing:
 
 ```java
-
 public class MyCollisionTest extends CollisionDebugViewer {
     @Override
     protected void setupInitialShapes() {
@@ -41,7 +39,7 @@ public class MyCollisionTest extends CollisionDebugViewer {
     }
 }
 
-```text
+```
 
 ## Supported Shape Types
 
@@ -65,55 +63,50 @@ All collision shapes can be visualized:
 ### Shape Rendering
 
 ```java
-
 // Customize shape appearance
 visualizer.setShapeColor(Color.GREEN);
 visualizer.setShapeOpacity(0.7);
 visualizer.setWireframeLineWidth(2.0);
 
-```text
+```
 
 ### Contact Points
 
 Contact points are shown as small spheres with normal vectors:
 
 ```java
-
 // Configure contact visualization
 visualizer.showContacts.set(true);
 visualizer.setContactColor(Color.RED);
 visualizer.setNormalLength(0.5); // Length of normal arrows
 
-```text
+```
 
 ### Penetration Vectors
 
 Shows penetration depth and direction for overlapping shapes:
 
 ```java
-
 visualizer.showPenetrationVectors.set(true);
 visualizer.setPenetrationColor(Color.YELLOW);
 
-```text
+```
 
 ### Velocity Vectors
 
 Displays velocity and force vectors for moving objects:
 
 ```java
-
 visualizer.showVelocityVectors.set(true);
 visualizer.setVelocityScale(0.1); // Scale factor for vector length
 
-```text
+```
 
 ## Spatial Index Visualization
 
 The SpatialIndexDebugVisualizer shows spatial partitioning:
 
 ```java
-
 SpatialIndexDebugVisualizer<MortonKey, UUID, Entity> indexViz = 
     new SpatialIndexDebugVisualizer<>(octree);
 
@@ -126,7 +119,7 @@ indexViz.setNodeOpacity(0.3);
 indexViz.showHotspots.set(true);
 indexViz.setHotspotThreshold(10); // Min collisions for hotspot
 
-```text
+```
 
 ## Performance Monitoring
 
@@ -135,7 +128,6 @@ indexViz.setHotspotThreshold(10); // Min collisions for hotspot
 Track performance metrics:
 
 ```java
-
 CollisionProfiler profiler = new CollisionProfiler();
 
 // Start profiling
@@ -147,14 +139,13 @@ profiler.endOperation("broadPhase");
 String report = profiler.generateReport();
 System.out.println(report);
 
-```text
+```
 
 ### Performance Visualization
 
 Real-time performance display:
 
 ```java
-
 PerformanceVisualization perfViz = new PerformanceVisualization();
 perfViz.showFPS.set(true);
 perfViz.showTimings.set(true);
@@ -163,14 +154,13 @@ perfViz.showMemoryUsage.set(true);
 // Add to overlay
 overlayGroup.getChildren().add(perfViz.getOverlay());
 
-```text
+```
 
 ## Debug Recording
 
 Record and replay collision scenarios:
 
 ```java
-
 CollisionEventRecorder recorder = new CollisionEventRecorder();
 
 // Start recording
@@ -186,7 +176,7 @@ recorder.saveSession("debug_session.json");
 recorder.loadSession("debug_session.json");
 recorder.startReplay();
 
-```text
+```
 
 ## Interactive Controls
 
@@ -215,7 +205,6 @@ The CollisionDebugViewer provides these controls:
 ### Basic Setup
 
 ```java
-
 // Create visualization components
 CollisionVisualizer visualizer = new CollisionVisualizer();
 CollisionProfiler profiler = new CollisionProfiler();
@@ -233,12 +222,11 @@ collisionSystem.addListener(new CollisionListener() {
     }
 });
 
-```text
+```
 
 ### Custom Shape Rendering
 
 ```java
-
 // Add custom shape renderer
 visualizer.addShapeRenderer(MyCustomShape.class, 
     (shape, material) -> {
@@ -250,12 +238,11 @@ visualizer.addShapeRenderer(MyCustomShape.class,
     }
 );
 
-```text
+```
 
 ### Debugging Specific Collisions
 
 ```java
-
 // Highlight specific collision pairs
 visualizer.setHighlightFilter((shapeA, shapeB) -> {
     return shapeA.getType() == ShapeType.SPHERE && 
@@ -268,7 +255,7 @@ visualizer.setColorMapper((collision) -> {
     return Color.hsb(120 - Math.min(frequency, 120), 1, 1);
 });
 
-```text
+```
 
 ## Performance Tips
 

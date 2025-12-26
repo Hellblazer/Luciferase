@@ -9,7 +9,6 @@ geometric containment.
 ## Cube Vertex Numbering
 
 ```text
-
       6 -------- 7
      /|         /|
     / |        / |
@@ -26,7 +25,7 @@ V1 = (h, 0, 0)    V5 = (h, 0, h)
 V2 = (0, h, 0)    V6 = (0, h, h)
 V3 = (h, h, 0)    V7 = (h, h, h)
 
-```text
+```
 
 ## The 6 Tetrahedra
 
@@ -48,7 +47,6 @@ Points within the cube can be deterministically assigned to exactly one tetrahed
 ### Algorithm
 
 ```java
-
 private static byte classifyPointInCube(float x, float y, float z) {
     // Coordinates normalized to [0,1] within cube
     
@@ -69,7 +67,7 @@ private static byte classifyPointInCube(float x, float y, float z) {
     }
 }
 
-```text
+```
 
 ### Classification Rules
 

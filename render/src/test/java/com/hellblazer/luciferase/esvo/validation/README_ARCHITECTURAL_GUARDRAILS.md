@@ -20,11 +20,10 @@ These tests serve as **architectural guardrails** that:
 ### ✅ ESVONodeUnified.java (8 bytes) - SINGLE SOURCE OF TRUTH
 
 ```java
-
 private int childDescriptor;    // [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
 private int contourDescriptor;  // [contour_ptr(24)|contour_mask(8)]
 
-```text
+```
 
 **All other node structures have been unified to use this implementation:**
 - ESVODataStructures.OctreeNode → Uses ESVONodeUnified

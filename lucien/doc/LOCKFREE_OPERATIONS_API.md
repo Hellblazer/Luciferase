@@ -34,7 +34,6 @@ Measured performance (July 2025 benchmarks):
 High-performance entity movement with atomic four-phase protocol.
 
 ```java
-
 // Create lock-free entity mover
 LockFreeEntityMover<LongEntityID, String> mover = 
     new LockFreeEntityMover<>(spatialIndex);
@@ -59,7 +58,7 @@ List<EntityMovement<LongEntityID>> movements = Arrays.asList(
 
 List<Boolean> results = mover.moveEntitiesBatch(movements);
 
-```text
+```
 
 **Four-Phase Atomic Protocol:**
 1. **PREPARE**: Validate movement and reserve target location
@@ -78,7 +77,6 @@ List<Boolean> results = mover.moveEntitiesBatch(movements);
 Lock-free spatial node implementation using atomic collections.
 
 ```java
-
 // Atomic spatial node operations
 AtomicSpatialNode<LongEntityID> node = new AtomicSpatialNode<>();
 
@@ -103,7 +101,7 @@ Set<LongEntityID> toRemove = Set.of(id4, id5);
 
 BatchUpdateResult result = node.updateEntitiesBatch(toAdd, toRemove);
 
-```text
+```
 
 **Implementation Details:**
 - Uses `CopyOnWriteArraySet` for entity storage
@@ -116,7 +114,6 @@ BatchUpdateResult result = node.updateEntitiesBatch(toAdd, toRemove);
 Immutable versioned state for optimistic concurrency control.
 
 ```java
-
 // Create versioned entity state
 Point3f position = new Point3f(100, 100, 100);
 String content = "Player Character";
@@ -141,7 +138,7 @@ VersionedEntityState<LongEntityID, String> updatedState =
 // Version comparison
 boolean isNewer = newState.getVersion() > state.getVersion();
 
-```text
+```
 
 **Versioning Properties:**
 - **Monotonic Versions**: Versions always increase
@@ -154,7 +151,6 @@ boolean isNewer = newState.getVersion() > state.getVersion();
 ### Concurrent Entity Updates
 
 ```java
-
 // High-throughput content updates
 ExecutorService executor = Executors.newFixedThreadPool(8);
 List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -186,12 +182,11 @@ for (int i = 0; i < 10000; i++) {
 
 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-```text
+```
 
 ### Atomic Movement Protocols
 
 ```java
-
 // Safe movement with conflict detection
 public boolean safeMove(LongEntityID entityId, Point3f from, Point3f to, byte level) {
     // Phase 1: Prepare movement
@@ -216,12 +211,11 @@ public boolean validateAndMove(LongEntityID entityId, Point3f expectedPos,
     return mover.moveEntityIfAt(entityId, expectedPos, newPos, level);
 }
 
-```text
+```
 
 ### Batch Operations
 
 ```java
-
 // High-performance batch movements
 List<EntityMovement<LongEntityID>> movements = new ArrayList<>();
 
@@ -250,14 +244,13 @@ for (int i = 0; i < movements.size(); i++) {
     }
 }
 
-```text
+```
 
 ## Performance Optimization
 
 ### Memory Management
 
 ```java
-
 // Efficient object reuse
 ObjectPool<VersionedEntityState<LongEntityID, String>> statePool = 
     new ObjectPool<>(VersionedEntityState::new);
@@ -275,12 +268,11 @@ try {
 // Pre-allocated movement contexts
 ObjectPool<MovementContext> contextPool = new ObjectPool<>(MovementContext::new);
 
-```text
+```
 
 ### Contention Reduction
 
 ```java
-
 // Partitioned operations to reduce contention
 int partitionCount = Runtime.getRuntime().availableProcessors();
 List<LockFreeEntityMover<LongEntityID, String>> partitionedMovers = 
@@ -292,12 +284,11 @@ LockFreeEntityMover<LongEntityID, String> mover = partitionedMovers.get(partitio
 
 boolean success = mover.moveEntity(entityId, oldPos, newPos, level);
 
-```text
+```
 
 ### Adaptive Backoff
 
 ```java
-
 // Adaptive backoff for high contention scenarios
 public class AdaptiveBackoffMover<ID extends EntityID, Content> {
     private final LockFreeEntityMover<ID, Content> mover;
@@ -320,14 +311,13 @@ public class AdaptiveBackoffMover<ID extends EntityID, Content> {
     }
 }
 
-```text
+```
 
 ## Integration Examples
 
 ### Real-Time Game Updates
 
 ```java
-
 // High-frequency entity updates for game simulation
 public class GameEntityUpdater {
     private final LockFreeEntityMover<LongEntityID, GameEntity> mover;
@@ -361,12 +351,11 @@ public class GameEntityUpdater {
     }
 }
 
-```text
+```
 
 ### Distributed System Integration
 
 ```java
-
 // Lock-free operations for distributed spatial systems
 public class DistributedSpatialNode {
     private final AtomicSpatialNode<UUIDEntityID> localNode;
@@ -397,12 +386,11 @@ public class DistributedSpatialNode {
     }
 }
 
-```text
+```
 
 ### Physics Simulation
 
 ```java
-
 // Lock-free physics updates
 public class PhysicsSimulation {
     private final LockFreeEntityMover<LongEntityID, PhysicsEntity> mover;
@@ -439,14 +427,13 @@ public class PhysicsSimulation {
     }
 }
 
-```text
+```
 
 ## Monitoring and Diagnostics
 
 ### Performance Metrics
 
 ```java
-
 // Get detailed performance statistics
 MovementStatistics stats = mover.getMovementStatistics();
 
@@ -462,12 +449,11 @@ MemoryStatistics memStats = spatialIndex.getMemoryStatistics();
 System.out.printf("Memory per entity: %d bytes%n", memStats.getBytesPerEntity());
 System.out.printf("Total memory usage: %.2f MB%n", memStats.getTotalMemoryMB());
 
-```text
+```
 
 ### Conflict Analysis
 
 ```java
-
 // Analyze movement conflicts
 ConflictAnalyzer analyzer = new ConflictAnalyzer(mover);
 
@@ -483,7 +469,7 @@ if (analyzer.getOverallConflictRate() > 0.05f) {
     spatialIndex.increasePartitioning(hotspots);
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -524,7 +510,6 @@ All lock-free operations provide:
 ## Error Handling
 
 ```java
-
 try {
     boolean success = mover.moveEntity(entityId, oldPos, newPos, level);
     if (!success) {
@@ -547,6 +532,6 @@ try {
     logger.error("Movement failed", e);
 }
 
-```text
+```
 
 The Lock-Free Operations API provides maximum performance for concurrent spatial operations while maintaining correctness and thread safety through careful atomic protocol design.

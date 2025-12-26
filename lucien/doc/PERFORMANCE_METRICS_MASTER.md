@@ -93,7 +93,6 @@ Measures FPS (frames per second) with various dataset sizes before GPU optimizat
 ### Running the Baseline Benchmarks
 
 ```bash
-
 # Morton encoding (Epic 1)
 
 cd lucien && ../mvnw exec:java -Dexec.mainClass=com.hellblazer.luciferase.lucien.benchmark.baseline.MortonEncodingBaselineBenchmark

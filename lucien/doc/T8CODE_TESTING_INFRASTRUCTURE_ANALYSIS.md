@@ -18,18 +18,16 @@ The t8code project uses a C/C++ testing approach based on MPI parallel execution
 #### Test Directory Organization
 
 ```text
-
 t8code/test/
 ├── Makefile.am           # Automake configuration
 ├── t8_test_*.c/.cxx     # Individual test executables
 └── testfiles/           # Test data files (e.g., mesh files)
 
-```text
+```
 
 #### Typical Test Pattern
 
 ```c++
-
 int main(int argc, char **argv) {
     int mpiret;
     
@@ -53,7 +51,7 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-```text
+```
 
 ### 3. Test Categories
 
@@ -86,7 +84,6 @@ int main(int argc, char **argv) {
 #### Automake Configuration
 
 ```makefile
-
 # From test/Makefile.am
 
 t8code_test_programs = \
@@ -98,7 +95,7 @@ t8code_test_programs = \
 TESTS += $(t8code_test_programs)
 check_PROGRAMS += $(t8code_test_programs)
 
-```text
+```
 
 #### Test Execution
 
@@ -111,7 +108,6 @@ check_PROGRAMS += $(t8code_test_programs)
 #### SC Library Tools
 
 ```c
-
 sc_flopinfo_t fi, snapshot;
 sc_statinfo_t stats[1];
 
@@ -130,7 +126,7 @@ sc_stats_set1(&stats[0], snapshot.iwtime, "Operation Name");
 sc_stats_compute(sc_MPI_COMM_WORLD, 1, stats);
 sc_stats_print(t8_get_package_id(), SC_LP_STATISTICS, 1, stats, 1, 1);
 
-```text
+```
 
 ### 6. Test Data Management
 

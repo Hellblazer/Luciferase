@@ -27,10 +27,9 @@ Uses `GPUDeviceDetector` (Bead 0.2) via LWJGL OpenCL for GPU enumeration.
 **Test Command**:
 
 ```bash
-
 mvn test -Dtest=GPUDetectionTest -pl lucien
 
-```text
+```
 
 ### Known Tested Devices
 
@@ -269,7 +268,6 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
    mvn test -Dtest=GPUDetectionTest -pl lucien
 
 ```text
-
 2. If tests skip with "OpenCL not available":
    - **macOS**: Add `-XstartOnFirstThread` to JVM args
    - **Linux**: Add `-DdangerouslyDisableSandbox=true`
@@ -281,7 +279,7 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 
    mvn test -Dtest=GPUDetectionTest#testMarkdownReportGeneration -pl lucien
 
-```text
+```
 
 4. Add detected device to "Known Tested Devices" table above
 
@@ -290,7 +288,6 @@ mvn test -Dtest=GPUDetectionTest -pl lucien
 **Epic 0** (Baseline):
 
 ```bash
-
 # Test GPU enumeration
 
 mvn test -Dtest=GPUDetectionTest -pl lucien
@@ -303,12 +300,11 @@ mvn test -Dtest=GPUCapabilityReporter* -pl lucien
 
 mvn test -Dtest=GPUBenchmarkRunner* -pl lucien
 
-```text
+```
 
 **Epic 2** (Beam Optimization):
 
 ```bash
-
 # Run DSOC baseline tests
 
 mvn test -Dtest=*DSOC* -pl render
@@ -316,12 +312,11 @@ mvn test -Dtest=*DSOC* -pl render
 # Enable beam optimization (TODO: after implementation)
 # mvn test -Dtest=BeamOptimizationTest -pl render
 
-```text
+```
 
 **Epic 3** (Contour Compression):
 
 ```bash
-
 # Verify contours exist
 
 grep -r "contourDescriptor" render/src/main/java/
@@ -332,12 +327,11 @@ grep -r "contourDescriptor" render/src/main/java/
 # Visual regression test
 # mvn test -Dtest=VisualRegressionTest -pl render
 
-```text
+```
 
 **Epic 4** (Out-of-Core Streaming):
 
 ```bash
-
 # Generate test dataset (TODO: after implementation)
 # mvn test -Dtest=LargeDatasetGenerator -pl render
 
@@ -347,12 +341,11 @@ grep -r "contourDescriptor" render/src/main/java/
 # 24-hour stability test
 # mvn test -Dtest=StreamingStabilityTest -pl render -Dtest.duration=24h
 
-```text
+```
 
 **Epic 5** (Integration):
 
 ```bash
-
 # Run all Epic 2-4 tests
 
 mvn test -pl render -Dtest.group=epic2,epic3,epic4
@@ -360,7 +353,7 @@ mvn test -pl render -Dtest.group=epic2,epic3,epic4
 # Run integration test suite
 # mvn test -Dtest=IntegrationTestSuite -pl render
 
-```text
+```
 
 ### Platform-Specific Configuration
 
@@ -369,40 +362,36 @@ mvn test -pl render -Dtest.group=epic2,epic3,epic4
 **Required JVM Args**:
 
 ```bash
-
 -XstartOnFirstThread  # For GLFW/OpenGL tests
 
-```text
+```
 
 **Maven Command**:
 
 ```bash
-
 mvn test -pl lucien -Dtest=GPUDetectionTest \
 
   -DargLine="-XstartOnFirstThread"
 
-```text
+```
 
 #### Linux
 
 **Required JVM Args**:
 
 ```bash
-
 -DdangerouslyDisableSandbox=true  # Sandbox blocks GPU access
 
-```text
+```
 
 **Maven Command**:
 
 ```bash
-
 mvn test -pl lucien -Dtest=GPUDetectionTest \
 
   -DargLine="-DdangerouslyDisableSandbox=true"
 
-```text
+```
 
 #### CI Environments
 
@@ -411,13 +400,12 @@ mvn test -pl lucien -Dtest=GPUDetectionTest \
 **Expected Output**:
 
 ```text
-
 ⚠️  No GPU detected - GPU tests will be skipped
 This is expected in CI environments without GPU support
 Tests run: 8, Failures: 0, Errors: 0, Skipped: 8
 BUILD SUCCESS
 
-```text
+```
 
 ---
 

@@ -83,14 +83,13 @@ Systematic 10-section review process for quarterly documentation audits:
 **Access**: Use ChromaDB search tools to query semantic knowledge
 
 ```text
-
 mcp__chromadb__search_similar({
   query: "How does tetrahedral subdivision work?",
   collection_name: "luciferase-critical-knowledge",
   num_results: 5
 })
 
-```text
+```
 
 ---
 
@@ -131,13 +130,12 @@ mcp__chromadb__search_similar({
 **Access**: Use memory bank read tools
 
 ```text
-
 mcp__allPepper-memory-bank__memory_bank_read({
   projectName: "Luciferase",
   fileName: "architecture-overview.md"
 })
 
-```text
+```
 
 ---
 
@@ -164,11 +162,10 @@ Comprehensive 10-step validation:
 **Usage**:
 
 ```bash
-
 ./scripts/validate-documentation.sh
 ./scripts/validate-documentation.sh --fix  # Auto-fix mode
 
-```text
+```
 
 **Exit Code**: 0 = passed, 1 = failed (use in CI/CD)
 
@@ -188,11 +185,10 @@ Automates performance documentation updates:
 **Usage**:
 
 ```bash
-
 ./scripts/update-performance-docs.sh
 ./scripts/update-performance-docs.sh benchmark-output.txt
 
-```text
+```
 
 ---
 
@@ -264,7 +260,6 @@ Added entries for generated documentation artifacts:
 **Using ChromaDB**:
 
 ```javascript
-
 // Search for architecture knowledge
 mcp__chromadb__search_similar({
   query: "How does the ghost layer work?",
@@ -286,12 +281,11 @@ mcp__chromadb__search_similar({
   num_results: 1
 })
 
-```text
+```
 
 **Using Memory Bank**:
 
 ```javascript
-
 // List all Luciferase files
 mcp__allPepper-memory-bank__list_project_files({
   projectName: "Luciferase"
@@ -303,14 +297,13 @@ mcp__allPepper-memory-bank__memory_bank_read({
   fileName: "testing-guide.md"
 })
 
-```text
+```
 
 ---
 
 ## Directory Structure
 
 ```text
-
 Luciferase/
 ├── .github/
 │   ├── workflows/
@@ -332,7 +325,7 @@ Luciferase/
 ├── KNOWLEDGE_CONSOLIDATION_INDEX.md           # Central index
 └── IMPLEMENTATION_SUMMARY.md                  # This file
 
-```text
+```
 
 ---
 

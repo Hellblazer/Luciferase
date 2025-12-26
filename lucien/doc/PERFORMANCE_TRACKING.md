@@ -107,7 +107,6 @@ For current performance metrics, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE
 Run the following tests to verify performance:
 
 ```bash
-
 # Three-way comparison (Octree vs Tetree vs Prism)
 
 mvn test -Dtest=OctreeVsTetreeBenchmark
@@ -140,14 +139,13 @@ mvn test -Dtest=*MemoryPerformanceTest
 
 mvn test -Dtest=*PerformanceTest
 
-```text
+```
 
 ### Prism-Specific Benchmark Instructions
 
 For anisotropic workload testing:
 
 ```bash
-
 # Test directional data patterns
 
 mvn test -Dtest=PrismAnisotropicWorkloadTest
@@ -160,7 +158,7 @@ mvn test -Dtest=PrismIsotropicComparisonTest
 
 mvn test -Dtest=PrismStreamingDataTest
 
-```text
+```
 
 ## Performance Guidelines
 

@@ -258,7 +258,6 @@
 **✅ ACTUAL RESULTS (December 6, 2025)**
 
 ```text
-
 Baseline (August 2025):      0.103ms per k-NN query (10K entities, k=20)
                               ↓
 Phase 1 (SFC Pruning):        [SKIPPED - went directly to Phase 2]
@@ -281,7 +280,7 @@ Phase 3b/3c (Region Locking): [SKIPPED - baseline performance exceeds requiremen
 ACHIEVED: 0.0015ms per query (cache hit) - 69× better than baseline
           3M queries/sec concurrent - far exceeds motion planning requirements
 
-```text
+```
 
 **Original Targets vs Actual Performance:**
 
@@ -329,7 +328,6 @@ ACHIEVED: 0.0015ms per query (cache hit) - 69× better than baseline
 ### Using Command Line
 
 ```bash
-
 # Query about k-NN optimization
 
 python3 scripts/query_sft_knowledge.py "k-NN optimization space-filling curves"
@@ -338,12 +336,11 @@ python3 scripts/query_sft_knowledge.py "k-NN optimization space-filling curves"
 
 python3 scripts/query_sft_knowledge.py "Morton key caching k-NN"
 
-```text
+```
 
 ### Using Python API
 
 ```python
-
 from scripts.chroma_sft_motion_planning_indexer import SFTMotionPlanningIndexer
 
 indexer = SFTMotionPlanningIndexer()
@@ -359,7 +356,7 @@ for result in results:
     print(f"Title: {result['metadata']['title']}")
     print(f"Content: {result['content']}")
 
-```text
+```
 
 ---
 

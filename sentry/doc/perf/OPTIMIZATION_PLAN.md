@@ -15,7 +15,6 @@ This document outlines a comprehensive optimization strategy for the Sentry modu
 **Implementation**:
 
 ```java
-
 // Change from:
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // LinkedList<OrientedFace> ears
@@ -27,7 +26,7 @@ public Tetrahedron flip(Vertex n, ArrayList<OrientedFace> ears) {
     ears.ensureCapacity(expectedSize);
 }
 
-```text
+```
 
 **Benefits**:
 - O(1) random access vs O(n)
@@ -41,7 +40,6 @@ public Tetrahedron flip(Vertex n, ArrayList<OrientedFace> ears) {
 **Implementation**:
 
 ```java
-
 public abstract class OrientedFace {
     private Vertex cachedAdjacentVertex;
     private boolean adjacentVertexCached = false;
@@ -60,7 +58,7 @@ public abstract class OrientedFace {
     }
 }
 
-```text
+```
 
 #### 1.3 Implement Object Pooling for Tetrahedra
 
@@ -69,7 +67,6 @@ public abstract class OrientedFace {
 **Implementation**:
 
 ```java
-
 public class TetrahedronPool {
     private final Queue<Tetrahedron> pool = new ConcurrentLinkedQueue<>();
     private final int maxPoolSize = 10000;
@@ -91,7 +88,7 @@ public class TetrahedronPool {
     }
 }
 
-```text
+```
 
 ### Phase 2: Algorithmic Improvements (2-4 weeks, 20-30% improvement)
 
@@ -102,7 +99,6 @@ public class TetrahedronPool {
 **Implementation**:
 
 ```java
-
 // Add vertex ID field
 public class Vertex {
     private final int id;  // Unique identifier
@@ -119,7 +115,7 @@ public V ordinalOf(Tetrahedron t) {
     return null;
 }
 
-```text
+```
 
 #### 2.2 Batch Geometric Predicate Calculations
 
@@ -128,7 +124,6 @@ public V ordinalOf(Tetrahedron t) {
 **Implementation**:
 
 ```java
-
 public class GeometricPredicateCache {
     // Cache orientation results for vertex triples
     private final Map<VertexTriple, Double> orientationCache;
@@ -143,7 +138,7 @@ public class GeometricPredicateCache {
     }
 }
 
-```text
+```
 
 #### 2.3 Early Exit Optimizations
 
@@ -152,7 +147,6 @@ public class GeometricPredicateCache {
 **Implementation**:
 
 ```java
-
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // Quick check for common cases
     if (ears.size() == 4) {
@@ -173,7 +167,7 @@ public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // Continue with optimized algorithm...
 }
 
-```text
+```
 
 ### Phase 3: Advanced Optimizations (4-8 weeks, 30-50% improvement)
 
@@ -184,7 +178,6 @@ public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
 **Implementation**:
 
 ```java
-
 // Use JDK 16+ Vector API
 public class SimdGeometry {
     private static final VectorSpecies<Double> SPECIES = DoubleVector.SPECIES_256;
@@ -200,7 +193,7 @@ public class SimdGeometry {
     }
 }
 
-```text
+```
 
 #### 3.2 Parallel Flip Operations
 
@@ -209,7 +202,6 @@ public class SimdGeometry {
 **Implementation**:
 
 ```java
-
 public class ParallelDelaunay {
     private final ForkJoinPool pool = new ForkJoinPool();
     
@@ -224,7 +216,7 @@ public class ParallelDelaunay {
     }
 }
 
-```text
+```
 
 #### 3.3 Spatial Indexing for Neighbor Queries
 
@@ -233,7 +225,6 @@ public class ParallelDelaunay {
 **Implementation**:
 
 ```java
-
 public class SpatialIndex {
     private final Map<SpatialKey, List<Tetrahedron>> index;
     
@@ -244,7 +235,7 @@ public class SpatialIndex {
     }
 }
 
-```text
+```
 
 ### Phase 4: Architectural Changes (8-12 weeks, 50%+ improvement)
 

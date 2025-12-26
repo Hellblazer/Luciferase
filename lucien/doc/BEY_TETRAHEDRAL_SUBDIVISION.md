@@ -25,7 +25,6 @@ Bey refinement is NOT about subdividing a tetrahedron at cube positions. It's a 
 Given a parent tetrahedron with vertices V0, V1, V2, V3:
 
 ```text
-
 6 Edge Midpoints:
 
 - M01 = (V0 + V1) / 2  
@@ -47,14 +46,13 @@ Octahedral tetrahedra (from split octahedron):
 
 - T4-T7: Various combinations of edge midpoints
 
-```text
+```
 
 ## Implementation Details
 
 ### Core Data Structure
 
 ```java
-
 public class Tet {
     int x, y, z;    // Anchor coordinates (minimum x,y,z)
     byte l;         // Level (0-20)
@@ -87,7 +85,7 @@ public class Tet {
     }
 }
 
-```text
+```
 
 ### Subdivision Tables
 
@@ -120,7 +118,6 @@ Maps Bey order to TM (tree-monotonic) order for space-filling curve:
 ### Full Subdivision Implementation
 
 ```java
-
 public static Tet[] subdivide(Tet parent) {
     // Get parent vertices using subdivision-compatible coordinates
     Point3i[] vertices = parent.subdivisionCoordinates();
@@ -150,7 +147,7 @@ public static Tet[] subdivide(Tet parent) {
     return children;
 }
 
-```text
+```
 
 ## Efficient Single-Child Computation
 
@@ -161,7 +158,6 @@ Instead of computing all 8 children to get one (O(8) operation), we can compute 
 ### Implementation
 
 ```java
-
 public static Tet getBeyChild(Tet parent, int beyChildIndex) {
     Point3i[] vertices = parent.subdivisionCoordinates();
     
@@ -203,7 +199,7 @@ public static Tet getMortonChild(Tet parent, int mortonIndex) {
     return getBeyChild(parent, beyIndex);
 }
 
-```text
+```
 
 ### Performance Characteristics
 
@@ -256,16 +252,14 @@ Created `subdivisionCoordinates()` method that provides Bey-compatible vertices 
 ### Basic Subdivision
 
 ```java
-
 // Get all 8 children (for visualization, bulk operations)
 Tet[] children = parent.geometricSubdivide();
 
-```text
+```
 
 ### Efficient Single Child Access
 
 ```java
-
 // For spatial index traversal (TM order)
 Tet child = BeySubdivision.getTMChild(parent, tmIndex);
 
@@ -275,7 +269,7 @@ Tet child = BeySubdivision.getMortonChild(parent, mortonIndex);
 // Direct Bey order access
 Tet child = BeySubdivision.getBeyChild(parent, beyIndex);
 
-```text
+```
 
 ### When to Use Each Method
 

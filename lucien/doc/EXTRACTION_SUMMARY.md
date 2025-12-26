@@ -136,7 +136,6 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 ## Hanging Node Handling: Complete Flow
 
 ```text
-
 1. DETECTION (ElementGhostManager)
 
    ├─ identify boundary elements
@@ -166,7 +165,7 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
    ├─ gRPC-based distributed exchange
    └─ Virtual thread support for scalability
 
-```text
+```
 
 ---
 
@@ -175,45 +174,41 @@ Successfully extracted and indexed comprehensive knowledge from the paper "A tet
 ### Feature 1: Hanging Node Depth Control
 
 ```java
-
 // From AdaptiveRefinementStrategy
 if (estimateHangingNodeDepth(context) > MAX_HANGING_NODE_DEPTH) {
     return RefinementDecision.COARSEN;  // Prevent excessive depth
 }
 
-```text
+```
 
 **Constraint**: MAX = 3 levels prevents exponential ghost overhead
 
 ### Feature 2: Adaptive Balancing
 
 ```java
-
 // From TreeBalancingStrategy
 shouldRebalanceTree() {
     return stats.loadVariance() > threshold ||
            stats.emptyNodes() > threshold;
 }
 
-```text
+```
 
 **Effect**: Prevents overly deep local refinement
 
 ### Feature 3: Multi-Level Neighbor Detection
 
 ```java
-
 // From NeighborDetector
 findNeighbors(key, GhostType.FACES)  // Face-adjacent at any level
 
-```text
+```
 
 **Scope**: Handles neighbors at same level, parent level, and child level
 
 ### Feature 4: Ghost Algorithm Selection
 
 ```java
-
 // From ElementGhostManager
 GhostAlgorithm strategy = switch(conformityLevel) {
     case STRICT -> GhostAlgorithm.CONSERVATIVE;
@@ -221,21 +216,20 @@ GhostAlgorithm strategy = switch(conformityLevel) {
     case PERMISSIVE -> GhostAlgorithm.MINIMAL;
 }
 
-```text
+```
 
 **Flexibility**: Choose ghost overhead vs. completeness
 
 ### Feature 5: Conformity Migration
 
 ```java
-
 // When non-conformity becomes excessive
 Octree octree = Octree.fromTetree(tetree);
 
 // When tetrahedral efficiency needed
 Tetree tetree = Tetree.fromOctree(octree);
 
-```text
+```
 
 **Escape hatch**: Switch spatial index types when needed
 
@@ -278,7 +272,6 @@ Tetree tetree = Tetree.fromOctree(octree);
 ### Enhancement Path
 
 ```text
-
 Current: Ghost infrastructure exists
     ↓
 Enhance: Add hanging node metrics
@@ -287,7 +280,7 @@ Optimize: Adaptive ghost selection
     ↓
 Scale: Distributed ghost coordination
 
-```text
+```
 
 ### Code Locations
 
@@ -303,7 +296,6 @@ Scale: Distributed ghost coordination
 ### Example 1: Learning TM-SFC Properties
 
 ```text
-
 Q: "What are the properties of tree-monotonic space-filling curves?"
 Expected Doc: tm_sfc_003_tm_sfc_ordering
 
@@ -314,12 +306,11 @@ Retrieved:
 - Enables efficient neighbor detection
 - Reduces ghost communication overhead
 
-```text
+```
 
 ### Example 2: Implementing Hanging Node Control
 
 ```text
-
 Q: "How to prevent excessive hanging nodes?"
 Expected Docs: tm_sfc_005 (balancing), tm_sfc_006 (refinement)
 
@@ -330,12 +321,11 @@ Retrieved:
 - RefinementDecision validation
 - Adaptive threshold adjustment
 
-```text
+```
 
 ### Example 3: Designing Ghost Strategy
 
 ```text
-
 Q: "What ghost algorithms are available and when to use them?"
 Expected Doc: tm_sfc_004_ghost_layer
 
@@ -347,12 +337,11 @@ Retrieved:
 - ADAPTIVE (learn from usage)
 - Selection based on conformity level
 
-```text
+```
 
 ### Example 4: Tetree vs Octree Decision
 
 ```text
-
 Q: "Should I use Tetree or Octree for adaptive meshes?"
 Expected Docs: tm_sfc_007 (hybrid), tm_sfc_002 (bey efficiency)
 
@@ -363,7 +352,7 @@ Retrieved:
 - Hybrid: Tetree boundaries + Octree interior
 - Migration available both directions
 
-```text
+```
 
 ---
 

@@ -33,7 +33,6 @@ The ghost layer implementation consists of multiple integrated components:
 ### Ghost Types
 
 ```java
-
 public enum GhostType {
     NONE,       // No ghost elements
     FACES,      // Face-adjacent neighbors only
@@ -41,7 +40,7 @@ public enum GhostType {
     VERTICES    // All neighbors (face, edge, vertex)
 }
 
-```text
+```
 
 **Performance Impact by Type:**
 
@@ -52,7 +51,6 @@ public enum GhostType {
 ### Ghost Algorithms
 
 ```java
-
 public enum GhostAlgorithm {
     MINIMAL,      // Only direct neighbors (lowest memory)
     CONSERVATIVE, // Direct + second-level neighbors (balanced) [DEFAULT]
@@ -61,7 +59,7 @@ public enum GhostAlgorithm {
     CUSTOM        // User-provided algorithm
 }
 
-```text
+```
 
 **Performance Characteristics:**
 
@@ -402,7 +400,6 @@ Based on application characteristics, use the following configurations:
 #### Real-Time Simulation (Latency-Sensitive)
 
 ```java
-
 // Configuration for low-latency distributed simulation
 octree.setGhostType(GhostType.FACES);  // Minimal ghost set
 var manager = new ElementGhostManager<>(
@@ -412,14 +409,13 @@ var manager = new ElementGhostManager<>(
     GhostAlgorithm.MINIMAL  // Lowest overhead
 );
 
-```text
+```
 
 **Expected Performance**: < 10ms p99 latency, < 10 MB/s bandwidth
 
 #### High-Throughput Batch Processing
 
 ```java
-
 // Configuration for throughput-optimized batch processing
 octree.setGhostType(GhostType.VERTICES);  // Complete coverage
 var manager = new ElementGhostManager<>(
@@ -429,14 +425,13 @@ var manager = new ElementGhostManager<>(
     GhostAlgorithm.AGGRESSIVE  // Maximum coverage
 );
 
-```text
+```
 
 **Expected Performance**: > 100 MB/s throughput, tolerates higher latency
 
 #### Balanced General-Purpose
 
 ```java
-
 // Default balanced configuration
 octree.setGhostType(GhostType.FACES);
 var manager = new ElementGhostManager<>(
@@ -446,7 +441,7 @@ var manager = new ElementGhostManager<>(
     GhostAlgorithm.CONSERVATIVE  // Recommended default
 );
 
-```text
+```
 
 **Expected Performance**: 15-25ms p99 latency, 50-80 MB/s throughput
 
@@ -461,14 +456,13 @@ For optimal network performance:
    ghostManager.setChannelPoolSize(8);  // 8 channels per endpoint
 
 ```text
-
 2. **Enable Compression**: For large payloads over WAN
 
    ```java
 
    ghostManager.setCompressionEnabled(true);
 
-```text
+```
 
 3. **Tune Virtual Thread Pool**: Match to expected concurrency
 
@@ -479,14 +473,13 @@ For optimal network performance:
    );
 
 ```text
-
 4. **Batch Ghost Requests**: Reduce round-trip overhead
 
    ```java
 
    ghostManager.batchRequestGhosts(targetRanks, treeIds, GhostType.FACES);
 
-```text
+```
 
 ### Memory Optimization
 
@@ -500,7 +493,6 @@ For memory-constrained environments:
    ghostManager.cleanupStaleGhosts(maxAgeMs);
 
 ```text
-
 3. **Selective Ghost Types**: Use FACES instead of VERTICES (saves ~60% memory)
 
 ## Performance Regression Testing
@@ -509,7 +501,7 @@ For memory-constrained environments:
 
 The `GhostPerformanceBenchmark.java` provides comprehensive regression testing:
 
-```bash
+```
 
 # Run all ghost performance benchmarks
 
@@ -521,7 +513,6 @@ mvn test -Dtest=GhostPerformanceBenchmark
 mvn test -Dtest=GhostPerformanceBenchmark#benchmarkGhostCreationOverhead
 
 ```text
-
 ### Performance Baselines
 
 Maintain these baselines for regression detection:
@@ -538,7 +529,7 @@ Maintain these baselines for regression detection:
 
 Ghost performance benchmarks are skipped in CI environments:
 
-```java
+```
 
 @BeforeEach
 void setUp() {
@@ -548,7 +539,6 @@ void setUp() {
 }
 
 ```text
-
 **Rationale**: Performance benchmarks require stable, dedicated hardware. CI environments have variable performance characteristics unsuitable for regression detection.
 
 **Recommendation**: Run performance benchmarks on dedicated performance testing infrastructure before releases.

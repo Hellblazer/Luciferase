@@ -22,13 +22,12 @@ Bulk operations optimize performance through:
 ### Basic Batch Insertion
 
 ```java
-
 List<ID> insertBatch(
     List<Point3f> positions, 
     List<Content> contents, 
     byte level)
 
-```text
+```
 
 Insert multiple entities in a single operation.
 
@@ -45,7 +44,6 @@ Insert multiple entities in a single operation.
 **Example:**
 
 ```java
-
 // Prepare data
 List<Point3f> positions = new ArrayList<>();
 List<String> contents = new ArrayList<>();
@@ -72,15 +70,14 @@ add("Entity "+i);
 // Bulk insert
 List<ID> entityIds = spatialIndex.insertBatch(positions, contents, (byte) 10);
 
-```text
+```
 
 ### Batch Insertion with Spanning
 
 ```java
-
 List<ID> insertBatchWithSpanning(List<EntityBounds> bounds, List<Content> contents, byte level)
 
-```text
+```
 
 Insert entities with bounds that may span multiple spatial nodes.
 
@@ -93,7 +90,6 @@ Insert entities with bounds that may span multiple spatial nodes.
 **Example:**
 
 ```java
-
 List<EntityBounds> bounds = new ArrayList<>();
 List<MeshData> contents = new ArrayList<>();
 
@@ -110,23 +106,21 @@ add(mesh.getData());
 // Insert with automatic spanning
 List<ID> meshIds = spatialIndex.insertBatchWithSpanning(bounds, contents, (byte) 8);
 
-```text
+```
 
 ### Parallel Batch Operations
 
 ```java
-
 ParallelOperationResult<ID> insertBatchParallel(List<Point3f> positions, List<Content> contents, byte level)
 throws InterruptedException
 
-```text
+```
 
 Use multiple threads for very large datasets (100K+ entities).
 
 **Example:**
 
 ```java
-
 // For 1 million entities
 ParallelOperationResult<ID> result = spatialIndex.insertBatchParallel(millionPositions, millionContents, (byte) 10);
 
@@ -140,24 +134,22 @@ System.out.
 
 println("Throughput: "+result.getThroughput() +" entities/sec");
 
-```text
+```
 
 ## Configuration
 
 ### BulkOperationConfig
 
 ```java
-
 void configureBulkOperations(BulkOperationConfig config)
 
-```text
+```
 
 Configure bulk operation behavior for optimal performance.
 
 **Configuration Options:**
 
 ```java
-
 BulkOperationConfig config = BulkOperationConfig.highPerformance().withBatchSize(
                                                 10000)              // Entities per batch
                                                 .withDeferredSubdivision(true)     // Delay node splits
@@ -172,24 +164,22 @@ spatialIndex.
 
 configureBulkOperations(config);
 
-```text
+```
 
 ### Bulk Loading Mode
 
 ```java
-
 void enableBulkLoading()
 
 void finalizeBulkLoading()
 
-```text
+```
 
 Enable special mode for maximum insertion performance.
 
 **Example:**
 
 ```java
-
 // Enable bulk loading mode
 spatialIndex.enableBulkLoading();
 
@@ -206,18 +196,17 @@ spatialIndex.
 
 finalizeBulkLoading();
 
-```text
+```
 
 ## Configuration Presets
 
 ### High Performance
 
 ```java
-
 // Maximum speed for large datasets
 BulkOperationConfig config = BulkOperationConfig.highPerformance();
 
-```text
+```
 
 Optimizes for:
 
@@ -229,11 +218,10 @@ Optimizes for:
 ### Memory Efficient
 
 ```java
-
 // Minimize memory usage
 BulkOperationConfig config = BulkOperationConfig.memoryEfficient();
 
-```text
+```
 
 Optimizes for:
 
@@ -244,11 +232,10 @@ Optimizes for:
 ### Balanced
 
 ```java
-
 // Good general-purpose settings
 BulkOperationConfig config = BulkOperationConfig.balanced();
 
-```text
+```
 
 Balanced trade-off between speed and memory.
 
@@ -257,52 +244,47 @@ Balanced trade-off between speed and memory.
 ### 1. Dynamic Level Selection
 
 ```java
-
 // Automatically choose optimal starting level
 config.withDynamicLevelSelection(true);
 
 // The system analyzes data distribution and selects level
 byte optimalLevel = LevelSelector.selectOptimalLevel(positions, maxEntitiesPerNode);
 
-```text
+```
 
 ### 2. Pre-allocation
 
 ```java
-
 // Pre-allocate memory for known data size
 spatialIndex.preAllocateNodes(expectedEntityCount, NodeEstimator.SpatialDistribution.UNIFORM);
 
-```text
+```
 
 ### 3. Morton Code Sorting
 
 ```java
-
 // Enable spatial sorting for better cache locality
 config.withPreSortByMorton(true);
 
 // Sorted insertions create more balanced trees
 
-```text
+```
 
 ### 4. Deferred Subdivision
 
 ```java
-
 // Delay node splitting until all data is inserted
 config.withDeferredSubdivision(true);
 
 // Subdivisions happen during finalizeBulkLoading()
 
-```text
+```
 
 ## Use Cases
 
 ### 1. Point Cloud Loading
 
 ```java
-
 public void loadPointCloud(PointCloudFile file) {
     // Configure for dense point data
     BulkOperationConfig config = BulkOperationConfig.highPerformance()
@@ -322,12 +304,11 @@ public void loadPointCloud(PointCloudFile file) {
     spatialIndex.finalizeBulkLoading();
 }
 
-```text
+```
 
 ### 2. Mesh Scene Loading
 
 ```java
-
 public void loadScene(SceneFile scene) {
     List<EntityBounds> allBounds = new ArrayList<>();
     List<MeshContent> allMeshes = new ArrayList<>();
@@ -351,12 +332,11 @@ public void loadScene(SceneFile scene) {
     List<ID> meshIds = spatialIndex.insertBatchWithSpanning(allBounds, allMeshes, (byte) 8);
 }
 
-```text
+```
 
 ### 3. Streaming Data
 
 ```java
-
 public void processStreamingData(DataStream stream) {
     // Configure for continuous batching
     BulkOperationConfig config = BulkOperationConfig.balanced().withBatchSize(5000).withDeferredSubdivision(true);
@@ -384,12 +364,11 @@ public void processStreamingData(DataStream stream) {
     }
 }
 
-```text
+```
 
 ### 4. Large Dataset Import
 
 ```java
-
 public void importLargeDataset(String[] files) {
     // Configure for high performance bulk loading
     BulkOperationConfig config = BulkOperationConfig.highPerformance()
@@ -411,7 +390,7 @@ public void importLargeDataset(String[] files) {
     spatialIndex.finalizeBulkLoading();
 }
 
-```text
+```
 
 ## Performance Benchmarks
 
@@ -435,7 +414,6 @@ Based on testing with uniform random distribution (June 2025):
 ## Error Handling
 
 ```java
-
 try{
 List<ID> ids = spatialIndex.insertBatch(positions, contents, level);
 
@@ -462,14 +440,13 @@ log.
 error("Out of memory - reduce batch size");
 }
 
-```text
+```
 
 ## Memory Considerations
 
 Estimate memory usage:
 
 ```java
-
 long estimatedMemory = 
     entityCount * 350 +              // ~350 bytes per entity
     estimatedNodes * 200 +           // ~200 bytes per node
@@ -479,7 +456,7 @@ if (estimatedMemory > Runtime.getRuntime().maxMemory() * 0.8) {
     // Use smaller batches or enable streaming mode
 }
 
-```text
+```
 
 ## Conclusion
 

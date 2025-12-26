@@ -36,14 +36,13 @@ JavaFX 3D limitations:
 Cell sizes across levels:
 
 ```text
-
 Level 0:  2^21 = 2,097,152 units (entire space)
 Level 5:  2^16 = 65,536 units
 Level 10: 2^11 = 2,048 units
 Level 15: 2^6  = 64 units
 Level 20: 2^1  = 2 units
 
-```text
+```
 
 Dynamic range: 1,048,576:1 ratio between level 0 and level 20
 
@@ -58,7 +57,6 @@ Analysis of existing code reveals:
    transform.appendTranslation(anchor.x, anchor.y, anchor.z);
 
 ```text
-
 2. **AutoScalingGroup**: Disabled (`autoScale = false`), suggesting past issues
 
 3. **Grid visualization**: Fixed extents, no level adaptation
@@ -94,7 +92,7 @@ Evidence from codebase:
 
 ### Component Design
 
-```text
+```
 
 ┌─────────────────────────────┐
 │     ScalingStrategy         │
@@ -119,10 +117,9 @@ Evidence from codebase:
 └──────────────┘ └──────────────┘
 
 ```text
-
 ### Coordinate Transformation Pipeline
 
-```text
+```
 
 Stage 1: Normalization
 ━━━━━━━━━━━━━━━━━━━━━
@@ -149,12 +146,11 @@ Output: Screen Coordinates
 Transform: Applied by JavaFX rendering pipeline
 
 ```text
-
 ## Implementation Specifications
 
 ### 1. ScalingStrategy Class
 
-```java
+```
 
 public class ScalingStrategy {
     private static final double MAX_COORDINATE = Constants.MAX_EXTENT; // 2^21
@@ -196,10 +192,9 @@ public class ScalingStrategy {
 }
 
 ```text
-
 ### 2. Modified CellViews Transform
 
-```java
+```
 
 public class CellViews {
     private final ScalingStrategy scalingStrategy = new ScalingStrategy();
@@ -241,10 +236,9 @@ public class CellViews {
 }
 
 ```text
-
 ### 3. AdaptiveGrid Implementation
 
-```java
+```
 
 public class AdaptiveGrid extends Grid {
     private final ScalingStrategy scalingStrategy = new ScalingStrategy();
@@ -291,10 +285,9 @@ public class AdaptiveGrid extends Grid {
 }
 
 ```text
-
 ### 4. Camera Management
 
-```java
+```
 
 public class AdaptiveCameraController {
     private final PerspectiveCamera camera;
@@ -343,12 +336,11 @@ public class AdaptiveCameraController {
 }
 
 ```text
-
 ## Integration Strategy
 
 ### 1. Component Integration Flow
 
-```text
+```
 
 TetreeInspector
       │
@@ -362,7 +354,6 @@ TetreeInspector
       └── AdaptiveCameraController → uses ScalingStrategy
 
 ```text
-
 ### 2. Backward Compatibility
 
 - Existing coordinate-based APIs remain unchanged
@@ -381,7 +372,7 @@ TetreeInspector
 
 ### Multi-Resolution Grid Design
 
-```text
+```
 
 Level 0-5 (Coarse):
 ━━━━━━━━━━━━━━━━━
@@ -419,10 +410,9 @@ Level 16-20 (Ultra-fine):
 - Color: Very light gray
 
 ```text
-
 ### Level-of-Detail (LOD) Implementation
 
-```java
+```
 
 public class GridLODManager {
     private static final int MAX_VISIBLE_LINES = 10000;
@@ -448,7 +438,6 @@ public class GridLODManager {
 }
 
 ```text
-
 ### Performance Optimizations
 
 1. **Line Pooling**: Reuse JavaFX Cylinder objects
@@ -461,7 +450,7 @@ public class GridLODManager {
 
 ### 1. Unit Tests
 
-```java
+```
 
 @Test
 public void testScalingStrategyNormalization() {
@@ -494,7 +483,6 @@ public void testLevelTransformScaling() {
 }
 
 ```text
-
 ### 2. Visual Validation
 
 1. **Scale Consistency Test**: 
@@ -569,33 +557,30 @@ Target metrics:
 
 #### Normalization
 
-```text
+```
 
 normalized_coord = spatial_index_coord / 2^21
 
 ```text
-
 #### Level Scaling
 
-```text
+```
 
 scale_factor = view_size / (2^(21-level))
 
 ```text
-
 #### View Transformation
 
-```text
+```
 
 view_coord = (normalized_coord - 0.5) * view_size
 
 ```text
-
 ### B. Reference Implementation
 
 Simple example of complete transformation:
 
-```java
+```
 
 // Input: Spatial index position at level 10
 Point3f spatialPos = new Point3f(1048576, 524288, 262144);
@@ -620,7 +605,6 @@ Point3f viewPos = new Point3f(
 );
 
 ```text
-
 ### C. Performance Considerations
 
 1. **Transform Caching**: Cache computed transforms per spatial key

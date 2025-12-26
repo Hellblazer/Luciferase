@@ -18,18 +18,16 @@ All primary documentation files (not included: code comments, inline documentati
 ### Minimal Header
 
 ```markdown
-
 # Document Title
 
 **Last Updated**: YYYY-MM-DD
 **Status**: Current | Archived | Draft
 
-```text
+```
 
 ### Recommended Header (for significant documents)
 
 ```markdown
-
 # Document Title
 
 **Last Updated**: December 6, 2025
@@ -39,12 +37,11 @@ All primary documentation files (not included: code comments, inline documentati
 **Related Documents**: [List of cross-references]
 **Confidence Level**: [95%+ recommended, less for in-progress items]
 
-```text
+```
 
 ### Archive Header (for deprecated documents)
 
 ```markdown
-
 # Document Title [ARCHIVED]
 
 **Deprecated**: December 1, 2025
@@ -53,7 +50,7 @@ All primary documentation files (not included: code comments, inline documentati
 **Last Updated**: [Date when deprecated]
 **Historical Context**: [Brief explanation of what this document covers and why it's historical]
 
-```text
+```
 
 ---
 
@@ -103,12 +100,11 @@ All performance-related statements must include:
 **Example Format**:
 
 ```text
-
 Tetree performs 5.7x faster than Octree for insertions with 1,000 entities
 (OctreeVsTetreeVsPrismBenchmark, August 3, 2025, Mac OS X aarch64, Java 24)
 See PERFORMANCE_METRICS_MASTER.md for complete results.
 
-```text
+```
 
 ### 5. Code Example Standards
 
@@ -123,22 +119,20 @@ All code examples must:
 **Poor Example**:
 
 ```java
-
 octree.insert(id, pos);
 
-```text
+```
 
 **Good Example**:
 
 ```java
-
 // Insert an entity at a specific position
 var octree = new Octree<>(bounds, maxLevel);
 var entityId = new LongEntityID(42L);
 var position = new Point3f(10, 20, 30);
 octree.insert(entityId, position);
 
-```text
+```
 
 ---
 
@@ -166,7 +160,6 @@ octree.insert(entityId, position);
 When merging a major feature, update these documents in order:
 
 ```markdown
-
 ## Documentation Update Checklist
 
 When merging a feature branch with significant changes:
@@ -181,7 +174,7 @@ When merging a feature branch with significant changes:
 - [ ] Review all cross-references for correctness
 - [ ] Request review from documentation owner
 
-```text
+```
 
 ---
 
@@ -200,7 +193,6 @@ When a document becomes obsolete:
 ### Deprecation Header Template
 
 ```markdown
-
 # Document Title [ARCHIVED]
 
 **Status**: ARCHIVED
@@ -218,7 +210,7 @@ When a document becomes obsolete:
 
 [Content of original document...]
 
-```text
+```
 
 ---
 
@@ -347,7 +339,6 @@ Historical documents have special status:
 Consider implementing:
 
 ```bash
-
 # Check all markdown files
 
 markdownlint lucien/doc/*.md portal/doc/*.md
@@ -361,7 +352,7 @@ markdown-link-check lucien/doc/**/*.md
 grep -r "Last Updated.*[0-9][0-9][0-9][0-9]-[01][0-9]-" lucien/doc/ | \
   grep -v "$(date -d '90 days ago' +'%Y-%m')"
 
-```text
+```
 
 ---
 

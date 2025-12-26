@@ -27,7 +27,6 @@ Create a Maven profile that enables preview features:
 Use runtime checks to conditionally enable SIMD:
 
 ```java
-
 public class SIMDSupport {
     private static final boolean VECTOR_API_AVAILABLE;
     
@@ -49,14 +48,13 @@ public class SIMDSupport {
     }
 }
 
-```text
+```
 
 ## Implementation Plan
 
 ### 1. Add Preview Profile to pom.xml
 
 ```xml
-
 <profiles>
     <!-- Standard profile - no preview features -->
     <profile>
@@ -101,12 +99,11 @@ public class SIMDSupport {
     </profile>
 </profiles>
 
-```text
+```
 
 ### 2. Create Abstraction Layer
 
 ```java
-
 // GeometricPredicates.java
 public interface GeometricPredicates {
     double orientation(double ax, double ay, double az, 
@@ -151,14 +148,13 @@ public class GeometricPredicatesFactory {
     }
 }
 
-```text
+```
 
 ### 3. CI Configuration
 
 #### GitHub Actions
 
 ```yaml
-
 jobs:
   # Standard build - always runs
   build:
@@ -187,14 +183,13 @@ jobs:
 
       - run: mvn clean test -Psimd-preview
 
-```text
+```
 
 ### 4. Development Workflow
 
 #### For regular development:
 
 ```bash
-
 # Standard build - no preview features
 
 mvn clean install
@@ -203,12 +198,11 @@ mvn clean install
 
 mvn test
 
-```text
+```
 
 #### For SIMD development:
 
 ```bash
-
 # Build with preview features
 
 mvn clean install -Psimd-preview
@@ -226,7 +220,7 @@ java --enable-preview --add-modules jdk.incubator.vector \
 
      MainClass
 
-```text
+```
 
 ## Benefits
 

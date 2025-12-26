@@ -57,7 +57,6 @@ Provides a JUnit wrapper for running JMH benchmarks.
 ### Method 1: Run Specific Test Class
 
 ```bash
-
 # Run basic performance tests
 
 mvn test -Dtest=DSOCPerformanceTest
@@ -66,7 +65,7 @@ mvn test -Dtest=DSOCPerformanceTest
 
 mvn test -Dtest=DSOCBenchmarkRunner
 
-```text
+```
 
 ### Method 2: Enable in IDE
 
@@ -77,7 +76,6 @@ mvn test -Dtest=DSOCBenchmarkRunner
 ### Method 3: Run by Tag (if tags are configured)
 
 ```bash
-
 # Run all performance tests
 
 mvn test -Dgroups=performance
@@ -86,14 +84,13 @@ mvn test -Dgroups=performance
 
 mvn test -Dgroups=benchmark
 
-```text
+```
 
 ### Method 4: Profile-based Execution
 
 If you want to add Maven profiles for performance testing:
 
 ```xml
-
 <profile>
     <id>performance</id>
     <build>
@@ -109,22 +106,20 @@ If you want to add Maven profiles for performance testing:
     </build>
 </profile>
 
-```text
+```
 
 Then run with:
 
 ```bash
-
 mvn test -Pperformance
 
-```text
+```
 
 ## Expected Results
 
 ### Basic Performance Test Output
 
 ```text
-
 === DSOC Performance Comparison ===
 
 Entities: 1000, Occlusion Ratio: 0.1
@@ -139,16 +134,15 @@ Octree Results:
   Active TBVs: 0
   TBV Hit Rate: NaN%
 
-```text
+```
 
 ### JMH Benchmark Output
 
 ```text
-
 Benchmark                                          Mode  Cnt     Score    Error  Units
 DSOCPerformanceBenchmark.benchmarkOctreeWithDSOC  avgt   10  3274.123 ± 45.678  us/op
 
-```text
+```
 
 ## Performance Characteristics
 

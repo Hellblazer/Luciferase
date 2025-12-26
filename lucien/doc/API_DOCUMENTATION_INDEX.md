@@ -144,44 +144,40 @@ Multi-tree coordination and specialized forest types:
 **Level 1 - Basic Operations:**
 
 ```java
-
 // Core spatial indexing
 SpatialIndex + EntityManager + basic queries
 
-```text
+```
 
 APIs: [Core Spatial Index](CORE_SPATIAL_INDEX_API.md), [Entity Management](ENTITY_MANAGEMENT_API.md)
 
 **Level 2 - Advanced Queries:**
 
 ```java
-
 // Add specialized query capabilities  
 + k-NN search + ray intersection + collision detection
 
-```text
+```
 
 APIs: [K-Nearest Neighbors](K_NEAREST_NEIGHBORS_API.md), [Ray Intersection](RAY_INTERSECTION_API.md), [Collision Detection](COLLISION_DETECTION_API.md)
 
 **Level 3 - Performance Optimization:**
 
 ```java
-
 // High-performance operations
 + bulk operations + lock-free updates + tree balancing
 
-```text
+```
 
 APIs: [Bulk Operations](BULK_OPERATIONS_API.md), [Lock-Free Operations](LOCKFREE_OPERATIONS_API.md), [Tree Balancing](TREE_BALANCING_API.md)
 
 **Level 4 - Scale and Specialization:**
 
 ```java
-
 // Multi-tree and advanced features
 + forest management + specialized forests + advanced traversal
 
-```text
+```
 
 APIs: [Forest Management](FOREST_MANAGEMENT_API.md), [Tree Traversal](TREE_TRAVERSAL_API.md)
 
@@ -192,54 +188,49 @@ APIs: [Forest Management](FOREST_MANAGEMENT_API.md), [Tree Traversal](TREE_TRAVE
 **Basic Setup:**
 
 ```java
-
 // See: Core Spatial Index API
 Octree<LongEntityID, GameObject> spatialIndex = new Octree<>(idGen, 10, (byte) 20);
 EntityManager<LongEntityID, GameObject> entityManager = new EntityManager<>(spatialIndex, idGen);
 
-```text
+```
 
 **High-Performance Queries:**
 
 ```java  
-
 // See: K-Nearest Neighbors API + Lock-Free Operations API
 List<LongEntityID> nearest = spatialIndex.kNearestNeighbors(position, 10);
 LockFreeEntityMover<LongEntityID, GameObject> mover = new LockFreeEntityMover<>(spatialIndex);
 
-```text
+```
 
 **Multi-Tree Setup:**
 
 ```java
-
 // See: Forest Management API
 Forest<MortonKey, LongEntityID, GameObject> forest = new Forest<>();
 AdaptiveForest<MortonKey, LongEntityID, GameObject> adaptive = new AdaptiveForest<>(config, treeFactory);
 
-```text
+```
 
 **Physics Integration:**
 
 ```java
-
 // See: Collision Detection API + Ray Intersection API  
 CollisionSystem<LongEntityID, GameObject> collision = new CollisionSystem<>(spatialIndex);
 Optional<RayIntersection<LongEntityID, GameObject>> hit = spatialIndex.rayIntersectFirst(ray);
 
-```text
+```
 
 **Distributed Ghost Support:**
 
 ```java
-
 // See: Ghost API + Neighbor Detection API
 spatialIndex.setGhostType(GhostType.FACES);
 spatialIndex.createGhostLayer();
 GhostCommunicationManager ghostManager = new GhostCommunicationManager(50051, spatialIndex, registry);
 ghostManager.syncGhosts(Arrays.asList("tree1", "tree2"), GhostType.FACES);
 
-```text
+```
 
 ## Performance Reference
 

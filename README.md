@@ -68,7 +68,6 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 ## Build Instructions
 
 ```bash
-
 # Clone the repository
 
 git clone https://github.com/Hellblazer/Luciferase.git
@@ -92,7 +91,6 @@ cd Luciferase
 ### Basic Octree Usage
 
 ```java
-
 import com.hellblazer.luciferase.lucien.grid.Octree;
 
 // Create an octree with bounds
@@ -118,7 +116,6 @@ var hits = octree.intersectRay(ray);
 ### ESVO Rendering
 
 ```java
-
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 

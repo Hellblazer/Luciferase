@@ -87,7 +87,6 @@ From `PERFORMANCE_METRICS_MASTER.md`:
 The scalar magic bits algorithm:
 
 ```java
-
 private static long splitBy3(long a) {
     long x = a & 0x1fffff;
     x = (x | x << 32) & 0x1f00000000ffff;
@@ -98,7 +97,7 @@ private static long splitBy3(long a) {
     return x;
 }
 
-```text
+```
 
 This is:
 

@@ -12,7 +12,6 @@ The Forest Management API provides multi-tree spatial indexing capabilities, ena
 The main forest management class that coordinates multiple spatial index trees.
 
 ```java
-
 // Create a forest
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>();
 
@@ -31,7 +30,7 @@ List<LongEntityID> results = forest.findKNearestNeighbors(position, 10);
 forest.insertEntity(entityId, position, content);
 forest.removeEntity(entityId);
 
-```text
+```
 
 **Key Methods:**
 - `addTree(AbstractSpatialIndex, TreeMetadata)` - Add a tree with metadata
@@ -48,7 +47,6 @@ forest.removeEntity(entityId);
 Specialized forest implementation for creating uniform grids of spatial index trees.
 
 ```java
-
 // Create a 4x4x4 grid of octrees
 GridForest<MortonKey, LongEntityID, String> gridForest = 
     GridForest.createOctreeGrid(
@@ -61,7 +59,7 @@ GridForest<MortonKey, LongEntityID, String> gridForest =
 GridForest<TetreeKey, LongEntityID, String> tetGrid = 
     GridForest.createTetreeGrid(origin, size, 2, 2, 2);
 
-```text
+```
 
 **Factory Methods:**
 - `createOctreeGrid(Point3f origin, Vector3f size, int x, int y, int z)` - Uniform octree grid
@@ -72,7 +70,6 @@ GridForest<TetreeKey, LongEntityID, String> tetGrid =
 Dynamic forest that automatically adapts tree structure based on entity density.
 
 ```java
-
 // Create adaptive forest with density-based subdivision
 AdaptiveForest<MortonKey, LongEntityID, String> adaptiveForest = 
     new AdaptiveForest<>(config, () -> new Octree<>(idGen, 10, (byte)20));
@@ -86,7 +83,7 @@ adaptiveForest.enableBackgroundAdaptation(30000); // Check every 30 seconds
 // The forest automatically handles subdivision and merging
 adaptiveForest.insertEntity(entityId, position, content);
 
-```text
+```
 
 **Key Features:**
 - **Automatic Subdivision**: Creates new trees when density exceeds thresholds
@@ -99,7 +96,6 @@ adaptiveForest.insertEntity(entityId, position, content);
 Multi-level forest for level-of-detail (LOD) management based on viewer distance.
 
 ```java
-
 // Create hierarchical forest with 3 LOD levels
 HierarchicalForest<MortonKey, LongEntityID, String> hierForest = 
     new HierarchicalForest<>(Arrays.asList(10.0f, 50.0f, 200.0f), treeFactory);
@@ -116,7 +112,7 @@ List<LongEntityID> currentLOD = hierForest.findKNearestNeighbors(
 List<LongEntityID> allLevels = hierForest.findKNearestNeighbors(
     position, 10, QueryMode.ALL_LEVELS);
 
-```text
+```
 
 **Query Modes:**
 - `CURRENT_LOD` - Query only current level based on viewer distance
@@ -131,7 +127,6 @@ List<LongEntityID> allLevels = hierForest.findKNearestNeighbors(
 Manages entity lifecycle across multiple trees with automatic tree assignment.
 
 ```java
-
 ForestEntityManager<LongEntityID, String> entityManager = 
     new ForestEntityManager<>(forest);
 
@@ -146,7 +141,7 @@ entityManager.removeEntity(entityId);
 // Query entities across all trees
 List<LongEntityID> nearby = entityManager.findKNearestNeighbors(position, 5);
 
-```text
+```
 
 **Assignment Strategies:**
 - `ROUND_ROBIN` - Distribute evenly across trees
@@ -158,14 +153,13 @@ List<LongEntityID> nearby = entityManager.findKNearestNeighbors(position, 5);
 Enhanced entity manager for adaptive forests with density tracking.
 
 ```java
-
 AdaptiveForestEntityManager<LongEntityID, String> adaptiveEM = 
     new AdaptiveForestEntityManager<>(adaptiveForest);
 
 // Automatically tracks entity density for adaptation decisions
 adaptiveEM.insertEntity(position, content); // Triggers adaptation if needed
 
-```text
+```
 
 ## Dynamic Management
 
@@ -174,7 +168,6 @@ adaptiveEM.insertEntity(position, content); // Triggers adaptation if needed
 Manages runtime forest operations including tree splitting, merging, and load balancing.
 
 ```java
-
 DynamicForestManager<MortonKey, LongEntityID, String> manager = 
     new DynamicForestManager<>(forest, entityManager, treeFactory);
 
@@ -186,7 +179,7 @@ manager.splitTree(treeId, SplitStrategy.OCTANT);
 manager.mergeTrees(Arrays.asList(treeId1, treeId2));
 manager.rebalanceForest();
 
-```text
+```
 
 **Features:**
 - **Automatic Splitting**: Split overloaded trees
@@ -199,7 +192,6 @@ manager.rebalanceForest();
 Implements load balancing strategies for optimal entity distribution.
 
 ```java
-
 ForestLoadBalancer<MortonKey, LongEntityID, String> balancer = 
     new ForestLoadBalancer<>(forest);
 
@@ -214,7 +206,7 @@ balancer.rebalance();
 // Get load metrics
 LoadMetrics metrics = balancer.getLoadMetrics(treeId);
 
-```text
+```
 
 ## Connectivity and Ghost Zones
 
@@ -223,7 +215,6 @@ LoadMetrics metrics = balancer.getLoadMetrics(treeId);
 Manages spatial relationships between trees in the forest.
 
 ```java
-
 TreeConnectivityManager<MortonKey, LongEntityID, String> connectivity = 
     new TreeConnectivityManager<>(forest);
 
@@ -236,14 +227,13 @@ boolean adjacent = connectivity.areAdjacent(treeId1, treeId2);
 // Get shared boundary information
 BoundaryInfo boundary = connectivity.getSharedBoundary(treeId1, treeId2);
 
-```text
+```
 
 ### GhostZoneManager
 
 Manages ghost entities across tree boundaries for seamless operations.
 
 ```java
-
 GhostZoneManager<LongEntityID, String> ghostManager = 
     new GhostZoneManager<>(forest, 5.0f); // 5-unit ghost zone width
 
@@ -255,7 +245,7 @@ ghostManager.updateGhostZones(); // Sync all ghost zones
 List<LongEntityID> withGhosts = ghostManager.queryWithGhostZones(
     treeId, position, radius);
 
-```text
+```
 
 ## Configuration
 
@@ -264,7 +254,6 @@ List<LongEntityID> withGhosts = ghostManager.queryWithGhostZones(
 Configuration object for forest behavior and policies.
 
 ```java
-
 ForestConfig config = new ForestConfig()
     .withOverlappingTrees(false)           // No tree overlap
     .withGhostZones(true, 10.0f)          // 10-unit ghost zones
@@ -275,7 +264,7 @@ ForestConfig config = new ForestConfig()
 
 Forest<MortonKey, LongEntityID, String> forest = new Forest<>(config);
 
-```text
+```
 
 ## Performance Considerations
 
@@ -284,7 +273,6 @@ Forest<MortonKey, LongEntityID, String> forest = new Forest<>(config);
 All forest operations are thread-safe with optimized concurrent access:
 
 ```java
-
 // Thread-safe forest operations
 ExecutorService executor = Executors.newFixedThreadPool(8);
 
@@ -296,7 +284,7 @@ List<CompletableFuture<Void>> futures = IntStream.range(0, 1000)
 
 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-```text
+```
 
 ### Memory Efficiency
 
@@ -312,14 +300,13 @@ Forest implementations use optimized data structures:
 Cross-tree queries are automatically parallelized:
 
 ```java
-
 // Parallel execution across trees (default: available processors)
 forest.setParallelism(Runtime.getRuntime().availableProcessors());
 
 // Queries automatically use parallel streams for multi-tree operations
 List<LongEntityID> results = forest.findKNearestNeighbors(position, 10);
 
-```text
+```
 
 ## Best Practices
 
@@ -352,7 +339,6 @@ List<LongEntityID> results = forest.findKNearestNeighbors(position, 10);
 Forest operations include comprehensive error handling:
 
 ```java
-
 try {
     forest.insertEntity(entityId, position, content);
 } catch (TreeNotFoundException e) {
@@ -363,20 +349,19 @@ try {
     // Handle general forest errors
 }
 
-```text
+```
 
 ## Integration with Single Trees
 
 Forest APIs are compatible with single tree operations:
 
 ```java
-
 // Get specific tree for direct operations
 AbstractSpatialIndex<MortonKey, LongEntityID, String> tree = forest.getTree(treeId);
 
 // Use tree directly when needed
 tree.insert(entityId, position, level, content);
 
-```text
+```
 
 This provides flexibility to use forest-wide operations or direct tree access as needed.

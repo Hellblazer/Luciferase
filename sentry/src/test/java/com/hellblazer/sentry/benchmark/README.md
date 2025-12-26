@@ -43,29 +43,26 @@ This directory contains JMH benchmarks for measuring Sentry module performance.
 ### Using the script (recommended)
 
 ```bash
-
 cd /path/to/Luciferase
 ./sentry/run-baseline-benchmark.sh
 
-```text
+```
 
 ### Manual execution:
 
 ```bash
-
 mvn -f sentry/pom.xml clean test-compile
 java -cp [classpath] org.openjdk.jmh.Main FlipOperationBenchmark
 
-```text
+```
 
 ### Using BenchmarkRunner:
 
 ```bash
-
 mvn -f sentry/pom.xml clean test-compile
 java -cp [classpath] com.hellblazer.sentry.benchmark.BenchmarkRunner
 
-```text
+```
 
 ## Results
 
@@ -102,7 +99,6 @@ Benchmark results are saved in:
 For quick performance testing without JMH:
 
 ```bash
-
 # Object Pool Benchmark
 
 java -cp "sentry/target/test-classes:sentry/target/classes:$(mvn -f sentry/pom.xml dependency:build-classpath -q -DincludeScope=test -Dmdep.outputFile=/dev/stdout)" com.hellblazer.sentry.benchmark.ObjectPoolBenchmark
@@ -115,7 +111,7 @@ java -cp "sentry/target/test-classes:sentry/target/classes:$(mvn -f sentry/pom.x
 
 java -cp "sentry/target/test-classes:sentry/target/classes:$(mvn -f sentry/pom.xml dependency:build-classpath -q -DincludeScope=test -Dmdep.outputFile=/dev/stdout)" com.hellblazer.sentry.benchmark.OptimizedBenchmarkRunner
 
-```text
+```
 
 ## Next Steps
 

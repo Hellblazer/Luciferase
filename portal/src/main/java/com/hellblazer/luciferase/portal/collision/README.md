@@ -14,7 +14,6 @@ This package provides a comprehensive collision detection debugging and visualiz
 Renders collision shapes as wireframe visualizations.
 
 ```java
-
 // Render a sphere wireframe
 var sphere = new SphereShape(new Point3f(0, 0, 0), 1.0f);
 Node wireframe = CollisionShapeRenderer.renderWireframe(sphere, Color.CYAN);
@@ -24,14 +23,13 @@ Node contact = CollisionShapeRenderer.createContactPoint(
     contactPoint, contactNormal, Color.YELLOW
 );
 
-```text
+```
 
 ### 2. **CollisionVisualizer**
 
 Complete real-time visualization system with property bindings.
 
 ```java
-
 var visualizer = new CollisionVisualizer();
 
 // Add shapes and bodies
@@ -49,14 +47,13 @@ scene.getChildren().add(visualizer.getRootGroup());
 // Update each frame
 visualizer.update();
 
-```text
+```
 
 ### 3. **CollisionProfiler**
 
 Thread-safe performance profiling for collision operations.
 
 ```java
-
 var profiler = CollisionProfiler.getInstance();
 
 // Time operations
@@ -71,14 +68,13 @@ profiler.recordCollisionPair("Sphere", "Box", true);
 String report = profiler.generateReport();
 System.out.println(report);
 
-```text
+```
 
 ### 4. **CollisionEventRecorder**
 
 Record and replay collision events for debugging.
 
 ```java
-
 var recorder = new CollisionEventRecorder();
 
 // Start recording
@@ -93,14 +89,13 @@ recorder.isRecordingProperty().set(false);
 recorder.startReplay();
 recorder.stepReplay(); // Step through recorded events
 
-```text
+```
 
 ### 5. **SpatialIndexDebugVisualizer**
 
 Visualize spatial partitioning and collision hotspots.
 
 ```java
-
 var spatialVisualizer = new SpatialIndexDebugVisualizer();
 
 // Track collision shapes
@@ -114,21 +109,20 @@ spatialVisualizer.showNodesProperty().set(true);
 spatialVisualizer.minLevelProperty().set(0);
 spatialVisualizer.maxLevelProperty().set(10);
 
-```text
+```
 
 ### 6. **CollisionDebugViewer**
 
 Complete interactive demonstration application.
 
 ```java
-
 public class MyCollisionDemo extends CollisionDebugViewer {
     public static void main(String[] args) {
         launch(args);
     }
 }
 
-```text
+```
 
 ## Features
 
@@ -168,7 +162,6 @@ public class MyCollisionDemo extends CollisionDebugViewer {
 ## Usage Example
 
 ```java
-
 public class CollisionDebugExample extends Abstract3DApp {
     
     private CollisionVisualizer visualizer;
@@ -228,7 +221,7 @@ public class CollisionDebugExample extends Abstract3DApp {
     }
 }
 
-```text
+```
 
 ## Configuration
 
@@ -264,7 +257,6 @@ public class CollisionDebugExample extends Abstract3DApp {
 The collision visualization system is part of the portal module:
 
 ```bash
-
 # Compile
 
 mvn compile -pl portal
@@ -277,7 +269,7 @@ mvn test -pl portal
 
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.collision.CollisionDebugViewer"
 
-```text
+```
 
 ## Dependencies
 

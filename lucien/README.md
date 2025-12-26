@@ -46,7 +46,6 @@ Lucien provides the fundamental spatial data structures and algorithms for 3D sp
 ## Package Structure
 
 ```text
-
 com.hellblazer.luciferase.lucien/
 ├── core/           # Core spatial index classes (27 classes)
 ├── entity/         # Entity management (12 classes)
@@ -57,14 +56,13 @@ com.hellblazer.luciferase.lucien/
 ├── visitor/        # Visitor pattern traversal (6 classes)
 └── index/          # TM-index implementation (1 class)
 
-```text
+```
 
 ## Usage Examples
 
 ### Basic Octree Operations
 
 ```java
-
 // Create an Octree
 var octree = new Octree();
 octree.setMaxDepth(10);
@@ -85,12 +83,11 @@ octree.update(entityId, newPosition);
 // Remove entity
 octree.remove(entityId);
 
-```text
+```
 
 ### Tetree with Collision Detection
 
 ```java
-
 // Create Tetree with collision system
 var tetree = new Tetree();
 var collisionSystem = new CollisionSystem<>(tetree);
@@ -106,12 +103,11 @@ for (var collision : collisions) {
         collision.getEntityA() + " and " + collision.getEntityB());
 }
 
-```text
+```
 
 ### Advanced Queries
 
 ```java
-
 // Ray intersection
 var ray = new Ray3f(origin, direction);
 var hits = octree.intersectRay(ray, maxDistance);
@@ -125,7 +121,7 @@ var center = new Point3f(0, 0, 0);
 var radius = 50.0f;
 var inRange = octree.findEntitiesInRadius(center, radius);
 
-```text
+```
 
 ## Performance Benchmarks
 
@@ -159,7 +155,6 @@ All spatial index operations are thread-safe through:
 ## Testing
 
 ```bash
-
 # Run all Lucien tests
 
 mvn test -pl lucien
@@ -172,7 +167,7 @@ mvn test -pl lucien -Dtest=OctreeTest
 
 mvn test -pl lucien -Pperformance
 
-```text
+```
 
 ## Dependencies
 

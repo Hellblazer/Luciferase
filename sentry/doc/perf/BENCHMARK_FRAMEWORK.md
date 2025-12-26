@@ -11,7 +11,6 @@ This document outlines a comprehensive benchmarking framework for measuring and 
 #### Geometric Predicate Benchmarks
 
 ```java
-
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @State(Scope.Thread)
@@ -50,12 +49,11 @@ public class GeometricPredicateBenchmark {
     }
 }
 
-```text
+```
 
 #### Data Structure Benchmarks
 
 ```java
-
 @State(Scope.Thread)
 public class DataStructureBenchmark {
     
@@ -94,14 +92,13 @@ public class DataStructureBenchmark {
     }
 }
 
-```text
+```
 
 ### 2. Component Benchmarks
 
 #### Flip Operation Benchmark
 
 ```java
-
 @State(Scope.Thread)
 public class FlipBenchmark {
     
@@ -129,14 +126,13 @@ public class FlipBenchmark {
     }
 }
 
-```text
+```
 
 ### 3. End-to-End Benchmarks
 
 #### Complete Tetrahedralization Benchmark
 
 ```java
-
 public class TetrahedralizationBenchmark {
     
     @Param({"100", "1000", "10000", "100000"})
@@ -162,7 +158,7 @@ public class TetrahedralizationBenchmark {
     }
 }
 
-```text
+```
 
 ## Performance Metrics
 
@@ -185,7 +181,6 @@ public class TetrahedralizationBenchmark {
 ### 1. JMH Configuration
 
 ```xml
-
 <dependency>
     <groupId>org.openjdk.jmh</groupId>
     <artifactId>jmh-core</artifactId>
@@ -204,12 +199,11 @@ public class TetrahedralizationBenchmark {
     </configuration>
 </plugin>
 
-```text
+```
 
 ### 2. Profiling Integration
 
 ```java
-
 public class ProfiledBenchmark {
     
     @Fork(jvmArgs = {
@@ -225,12 +219,11 @@ public class ProfiledBenchmark {
     }
 }
 
-```text
+```
 
 ### 3. Performance Monitoring
 
 ```java
-
 public class PerformanceMonitor {
     
     private final MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
@@ -253,14 +246,13 @@ public class PerformanceMonitor {
     }
 }
 
-```text
+```
 
 ## Validation Framework
 
 ### 1. Correctness Validation
 
 ```java
-
 public class CorrectnessValidator {
     
     @Test
@@ -294,12 +286,11 @@ public class CorrectnessValidator {
     }
 }
 
-```text
+```
 
 ### 2. Performance Regression Detection
 
 ```java
-
 public class RegressionDetector {
     
     private static final double REGRESSION_THRESHOLD = 1.05; // 5% regression
@@ -317,14 +308,13 @@ public class RegressionDetector {
     }
 }
 
-```text
+```
 
 ## Benchmark Execution Pipeline
 
 ### 1. Automated Benchmark Suite
 
 ```bash
-
 #!/bin/bash
 
 # run-benchmarks.sh
@@ -366,12 +356,11 @@ java -jar jmh-benchmarks.jar \
 
     ".*E2E.*"
 
-```text
+```
 
 ### 2. Result Analysis
 
 ```java
-
 public class BenchmarkAnalyzer {
     
     public void analyzResults(String jsonFile) {
@@ -395,14 +384,13 @@ public class BenchmarkAnalyzer {
     }
 }
 
-```text
+```
 
 ## Continuous Performance Testing
 
 ### 1. CI Integration
 
 ```yaml
-
 # .github/workflows/performance.yml
 
 name: Performance Tests
@@ -445,12 +433,11 @@ jobs:
           name: benchmark-results
           path: target/benchmark-results.json
 
-```text
+```
 
 ### 2. Performance Dashboard
 
 ```java
-
 @RestController
 public class PerformanceDashboard {
     
@@ -467,7 +454,7 @@ public class PerformanceDashboard {
     }
 }
 
-```text
+```
 
 ## Best Practices
 

@@ -77,36 +77,33 @@ The Sentry module has undergone extensive optimization. Most planned optimizatio
 ### Test Rebuild Performance
 
 ```bash
-
 # Test the optimized 256-point rebuild case
 
 mvn test -Dtest=MutableGridTest#smokin
 
 # Expected: ~0.77ms per rebuild
 
-```text
+```
 
 ### Test Pooling Efficiency
 
 ```bash
-
 # Run pooling benchmarks
 
 mvn test -Dtest=TetrahedronPoolTest
 
 # Expected: 86%+ reuse rate, ~30µs insertion time
 
-```text
+```
 
 ### Run Full Performance Suite
 
 ```bash
-
 # Execute all performance benchmarks
 
 mvn clean test -Pperformance
 
-```text
+```
 
 ## Integration Status
 
@@ -123,7 +120,6 @@ All optimizations are **production-ready** and integrated into the main codebase
 ### System Properties
 
 ```bash
-
 # Force direct allocation for rebuilds (bypass pooling)
 
 -Dsentry.rebuild.direct=true
@@ -132,12 +128,11 @@ All optimizations are **production-ready** and integrated into the main codebase
 
 -Dsentry.allocation.strategy=direct  # or pooled (default)
 
-```text
+```
 
 ### Programmatic Configuration
 
 ```java
-
 // Create grid with specific allocation strategy
 MutableGrid grid = new MutableGrid(AllocationStrategy.DIRECT);
 
@@ -145,7 +140,7 @@ MutableGrid grid = new MutableGrid(AllocationStrategy.DIRECT);
 String stats = grid.getAllocator().getStatistics();
 String landmarks = grid.getLandmarkStatistics();
 
-```text
+```
 
 ## Performance Monitoring
 
@@ -159,7 +154,6 @@ String landmarks = grid.getLandmarkStatistics();
 ### Diagnostic Tools
 
 ```java
-
 // Pool statistics
 TetrahedronAllocator allocator = grid.getAllocator();
 System.out.println(allocator.getStatistics());
@@ -167,7 +161,7 @@ System.out.println(allocator.getStatistics());
 // Landmark performance
 System.out.println(grid.getLandmarkStatistics());
 
-```text
+```
 
 ## Remaining Optimization Opportunities
 

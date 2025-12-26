@@ -27,7 +27,6 @@ The TetreeKey encodes the complete ancestor chain from root to node:
 The `tmIndex()` method must walk up the parent chain to collect ancestor types:
 
 ```java
-
 // V2 optimization: Build parent chain in reverse order
 byte[] types = new byte[l];
 Tet current = this;
@@ -40,7 +39,7 @@ for (int i = l - 1; i >= 0; i--) {
     }
 }
 
-```text
+```
 
 **Performance Impact (Before July 11 Optimizations):**
 
@@ -113,7 +112,6 @@ Each of the 6 tetrahedral types has different vertex arrangements:
 - Enables spatial query optimization
 
 ```java
-
 record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
     Stream<SFCRange> mergeWith(SFCRange other) {
         if (this.end.canMergeWith(other.start)) {
@@ -123,7 +121,7 @@ record SFCRange(TetreeKey<?> start, TetreeKey<?> end) {
     }
 }
 
-```text
+```
 
 ## Design Trade-offs
 

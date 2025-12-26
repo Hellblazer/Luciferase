@@ -72,7 +72,6 @@ All specialized performance metrics have been consolidated into [PERFORMANCE_MET
 ### Running Benchmarks
 
 ```bash
-
 # Three-way comparison (Octree vs Tetree vs Prism)
 
 mvn test -Dtest=OctreeVsTetreeBenchmark
@@ -98,4 +97,4 @@ mvn test -Dtest=*PerformanceTest
 export RUN_DSOC_PERF_TESTS=true
 mvn test -Dtest=DSOCPerformanceTest
 
-```text
+```

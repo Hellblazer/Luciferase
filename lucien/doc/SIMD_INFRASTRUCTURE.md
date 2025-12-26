@@ -31,7 +31,6 @@ Provides:
 - **Status Reporting**: Human-readable status messages for debugging
 
 ```java
-
 // Check if SIMD is available
 if (VectorAPISupport.isAvailable()) {
     // Use SIMD-optimized implementation
@@ -43,7 +42,7 @@ if (VectorAPISupport.isAvailable()) {
 VectorCapability cpu = VectorAPISupport.getCPUCapability();
 int lanes = cpu.getLanes(); // Vector lanes for 64-bit elements
 
-```text
+```
 
 ### 2. CPU Capability Detection
 
@@ -68,7 +67,6 @@ The system automatically detects CPU vector capabilities:
 Located: `lucien/pom.xml`
 
 ```xml
-
 <profile>
     <id>simd-preview</id>
     <properties>
@@ -103,7 +101,7 @@ Located: `lucien/pom.xml`
     </build>
 </profile>
 
-```text
+```
 
 **Key Points:**
 - Adds `jdk.incubator.vector` module to compiler and runtime
@@ -117,7 +115,6 @@ Located: `lucien/pom.xml`
 #### Without SIMD (Default)
 
 ```bash
-
 # Standard build - works on any Java 24+
 
 mvn clean install
@@ -130,12 +127,11 @@ mvn test
 
 mvn test -Dtest=VectorAPISupportTest
 
-```text
+```
 
 #### With SIMD Enabled
 
 ```bash
-
 # Build with SIMD support
 
 mvn clean install -Psimd-preview
@@ -148,14 +144,13 @@ mvn test -Psimd-preview
 
 mvn test -Psimd-preview -Dtest=VectorAPISupportTest
 
-```text
+```
 
 ### Runtime Configuration
 
 #### Via System Property
 
 ```bash
-
 # Enable SIMD at runtime (requires Vector API in classpath)
 
 java -Dlucien.enableSIMD=true \
@@ -163,12 +158,11 @@ java -Dlucien.enableSIMD=true \
      --add-modules jdk.incubator.vector \
      -jar your-app.jar
 
-```text
+```
 
 #### Programmatic Control
 
 ```java
-
 // Enable SIMD
 boolean success = VectorAPISupport.setEnabled(true);
 if (!success) {
@@ -183,7 +177,7 @@ if (VectorAPISupport.isAvailable()) {
     System.out.println("SIMD is enabled");
 }
 
-```text
+```
 
 ### Benchmarking
 
@@ -192,7 +186,6 @@ if (VectorAPISupport.isAvailable()) {
 Located: `lucien/src/test/java/com/hellblazer/luciferase/lucien/benchmark/simd/SIMDMortonBenchmarkHarness.java`
 
 ```bash
-
 # Run baseline (scalar) benchmarks
 
 mvn test -Dtest=SIMDMortonBenchmarkHarness
@@ -205,7 +198,7 @@ mvn test -Dtest=SIMDMortonBenchmarkHarness -Psimd-preview
 
 mvn test -Dtest=SIMDMortonBenchmarkHarness#benchmarkMortonEncode -Psimd-preview
 
-```text
+```
 
 **Benchmark Parameters:**
 - `level`: Octree level (10, 15, 20)
@@ -229,33 +222,29 @@ The Vector API is an incubator module in Java 24, requiring explicit opt-in:
 **Compiler Argument:**
 
 ```text
-
 --add-modules jdk.incubator.vector
 
-```text
+```
 
 **Runtime Argument:**
 
 ```text
-
 --add-modules jdk.incubator.vector
 
-```text
+```
 
 **Incubator Warning:**
 
 ```text
-
 WARNING: Using incubator modules: jdk.incubator.vector
 
-```text
+```
 
 This warning is expected and harmless.
 
 ### CPU Feature Detection Algorithm
 
 ```java
-
 private static VectorCapability detectCPUCapability() {
     var arch = System.getProperty("os.arch", "").toLowerCase();
     
@@ -273,7 +262,7 @@ private static VectorCapability detectCPUCapability() {
     return VectorCapability.SCALAR;
 }
 
-```text
+```
 
 **Limitations:**
 
@@ -296,7 +285,6 @@ The infrastructure is designed for graceful degradation:
 **Example:**
 
 ```java
-
 // This pattern works regardless of Vector API availability
 if (VectorAPISupport.isAvailable()) {
     return simdMortonEncoder.encode(x, y, z);
@@ -304,7 +292,7 @@ if (VectorAPISupport.isAvailable()) {
     return scalarMortonEncoder.encode(x, y, z);
 }
 
-```text
+```
 
 ## Testing
 
@@ -321,7 +309,6 @@ if (VectorAPISupport.isAvailable()) {
 ### Running Tests
 
 ```bash
-
 # Run all infrastructure tests
 
 mvn test -Dtest=VectorAPISupportTest
@@ -334,12 +321,11 @@ mvn test -Dtest=VectorAPISupportTest -Psimd-preview
 
 mvn test -Dtest=SIMDMortonBenchmarkHarness -Psimd-preview
 
-```text
+```
 
 ### Test Output Example
 
 ```text
-
 === Platform Information ===
 OS: Mac OS X
 Architecture: aarch64
@@ -353,7 +339,7 @@ CPU Capability: ARM NEON (128-bit)
 Vector API Present: true
 SIMD Available: true
 
-```text
+```
 
 ## Performance Expectations
 
@@ -399,15 +385,13 @@ SIMD Available: true
 **Symptoms:**
 
 ```text
-
 Vector API not available (--add-modules jdk.incubator.vector required)
 
-```text
+```
 
 **Solution:**
 
 ```bash
-
 # Use the simd-preview profile
 
 mvn test -Psimd-preview
@@ -416,18 +400,17 @@ mvn test -Psimd-preview
 
 mvn test -Dargline="--add-modules jdk.incubator.vector"
 
-```text
+```
 
 ### Issue: SIMD Requested But Not Enabled
 
 **Symptoms:**
 
 ```text
-
 WARNING: SIMD requested but not available!
 Status: Vector API not available
 
-```text
+```
 
 **Solution:**
 
@@ -440,11 +423,10 @@ Status: Vector API not available
 **Symptoms:**
 
 ```text
-
 cannot find symbol: class Ray3D
 cannot find symbol: class ESVONode
 
-```text
+```
 
 **Explanation:**
 
@@ -465,11 +447,10 @@ Only Epic 1 (Morton encoding) benchmarks are active in Bead 1.0.
 2. **Add VM Options for Run Configurations:**
 
 ```text
-
    --add-modules jdk.incubator.vector
    -Dlucien.enableSIMD=true
 
-```text
+```
 
 3. **Maven Profile:**
    - View → Tool Windows → Maven
@@ -480,7 +461,6 @@ Only Epic 1 (Morton encoding) benchmarks are active in Bead 1.0.
 Add to `.vscode/settings.json`:
 
 ```json
-
 {
   "java.jdt.ls.vmargs": "--add-modules jdk.incubator.vector",
   "java.test.config": {
@@ -492,7 +472,7 @@ Add to `.vscode/settings.json`:
   }
 }
 
-```text
+```
 
 ### Eclipse
 
@@ -505,11 +485,10 @@ Add to `.vscode/settings.json`:
    - Arguments → VM arguments:
 
 ```text
-
      --add-modules jdk.incubator.vector
      -Dlucien.enableSIMD=true
 
-```text
+```
 
 ## Future Work
 

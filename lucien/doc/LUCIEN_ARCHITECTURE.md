@@ -21,7 +21,6 @@ and full ghost layer implementation with gRPC communication.
 ## Package Structure
 
 ```text
-
 com.hellblazer.luciferase.lucien/
 ├── Root package (29 classes + 2 images)
 │   ├── Core abstractions: SpatialIndex, AbstractSpatialIndex, 
@@ -138,7 +137,6 @@ com.hellblazer.luciferase.lucien/
 ### Core Inheritance Structure
 
 ```text
-
 SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
     └── AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
             ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
@@ -152,7 +150,6 @@ SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interfa
 As of July 10, 2025, the node storage hierarchy has been simplified:
 
 ```text
-
 SpatialNodeStorage<ID> (interface)
     └── SpatialNodeImpl<ID> (unified implementation used by both Octree and Tetree)
 ```
@@ -483,7 +480,6 @@ The DSOC system provides efficient occlusion culling for dynamic scenes by maint
 DSOC seamlessly integrates with the existing spatial index operations:
 
 ```java
-
 // Enable DSOC on any spatial index
 spatialIndex.enableDSOC(config, bufferWidth, bufferHeight);
 
@@ -766,7 +762,6 @@ adaptive/hierarchical forests.
 All spatial classes use consistent generics with type-safe keys:
 
 ```java
-
 public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Content> {
     // Key: Type-safe spatial key (MortonKey or ExtendedTetreeKey)
     // ID: Entity identifier type
@@ -837,7 +832,6 @@ The TetreeKey system provides efficient spatial key encoding for tetrahedral sub
 Level 21 uses innovative split encoding to achieve full 21-level support:
 
 ```text
-
 Level 21 Encoding (6 bits total):
 
 - 4 bits stored in low long positions 60-63
@@ -856,7 +850,6 @@ Level 21 Encoding (6 bits total):
 **Constants and Masks**:
 
 ```java
-
 protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low long
 protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long  
 protected static final long LEVEL_21_LOW_MASK = 0xFL;      // 4 bits: 0b1111
@@ -905,7 +898,6 @@ The simplified architecture focuses on:
 ## Usage Example
 
 ```java
-
 // Create an octree
 Octree<LongEntityID, String> octree = new Octree<>(new SequentialLongIDGenerator(), 10,  // max entities per node
                                                    (byte) 20  // max depth

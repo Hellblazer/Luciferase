@@ -96,7 +96,6 @@ Maintains relationships between bodies:
 The physics response system integrates with the existing collision detection:
 
 ```java
-
 // Collision detection provides contact info
 CollisionResult collision = collisionDetector.checkCollision(shapeA, shapeB);
 
@@ -105,7 +104,7 @@ if (collision.collides) {
     ImpulseResolver.resolveCollision(bodyA, bodyB, collision);
 }
 
-```text
+```
 
 ## Performance Characteristics
 
@@ -117,7 +116,6 @@ if (collision.collides) {
 ## Usage Example
 
 ```java
-
 // Create rigid bodies
 var sphereInertia = InertiaTensor.sphere(10.0f, 1.0f);
 var bodyA = new RigidBody(10.0f, sphereInertia);
@@ -135,7 +133,7 @@ if (collision.collides) {
     ImpulseResolver.resolveCollision(bodyA, bodyB, collision);
 }
 
-```text
+```
 
 ## Future Enhancements
 

@@ -21,7 +21,6 @@ The Ghost API provides comprehensive distributed spatial index support through g
 ### Basic Ghost Setup
 
 ```java
-
 // Enable ghost layer on spatial index
 spatialIndex.setGhostType(GhostType.FACES);
 spatialIndex.createGhostLayer();
@@ -32,12 +31,11 @@ List<ID> nearbyEntities = spatialIndex.findEntitiesIncludingGhosts(position, rad
 // Get neighbor information including ghosts
 List<NeighborInfo<Key>> neighbors = spatialIndex.findNeighborsIncludingGhosts(key);
 
-```text
+```
 
 ### Distributed Ghost Communication
 
 ```java
-
 // Create content serializer registry
 ContentSerializerRegistry registry = new ContentSerializerRegistry();
 registry.register(String.class, new StringContentSerializer());
@@ -68,14 +66,13 @@ sync.thenAccept(response -> {
     System.out.println("Synchronized " + response.getTotalElements() + " ghosts");
 });
 
-```text
+```
 
 ## API Reference
 
 ### Ghost Types
 
 ```java
-
 public enum GhostType {
     NONE,       // No ghost elements
     FACES,      // Face-adjacent neighbors only
@@ -83,12 +80,11 @@ public enum GhostType {
     VERTICES    // All neighbors (face, edge, vertex)
 }
 
-```text
+```
 
 ### Spatial Index Ghost Methods
 
 ```java
-
 public interface SpatialIndex<Key, ID, Content> {
     // Ghost configuration
     void setGhostType(GhostType ghostType);
@@ -104,14 +100,13 @@ public interface SpatialIndex<Key, ID, Content> {
     List<NeighborInfo<Key>> findNeighborsIncludingGhosts(Key spatialKey);
 }
 
-```text
+```
 
 ### ElementGhostManager
 
 Manages element-level ghost detection and creation:
 
 ```java
-
 // Create element ghost manager with algorithm selection
 ElementGhostManager<Key, ID, Content> ghostManager = new ElementGhostManager<>(
     spatialIndex,
@@ -132,12 +127,11 @@ boolean isBoundary = ghostManager.isBoundaryElement(key);
 // Get all boundary elements
 Set<Key> boundaryElements = ghostManager.getBoundaryElements();
 
-```text
+```
 
 ### Ghost Algorithms
 
 ```java
-
 public enum GhostAlgorithm {
     MINIMAL,      // Only direct neighbors (lowest memory)
     CONSERVATIVE, // Direct + second-level neighbors (balanced)
@@ -146,12 +140,11 @@ public enum GhostAlgorithm {
     CUSTOM        // User-provided algorithm
 }
 
-```text
+```
 
 ### Neighbor Detection
 
 ```java
-
 // Get neighbor detector for your spatial index type
 NeighborDetector<MortonKey> octreeDetector = new MortonNeighborDetector(octree);
 NeighborDetector<TetreeKey> tetreeDetector = new TetreeNeighborDetector(tetree);
@@ -164,12 +157,11 @@ List<MortonKey> allNeighbors = octreeDetector.findNeighbors(key, GhostType.VERTI
 Set<Direction> boundaryDirs = octreeDetector.getBoundaryDirections(key);
 boolean atBoundary = octreeDetector.isBoundaryElement(key);
 
-```text
+```
 
 ### Ghost Communication
 
 ```java
-
 // Server-side ghost service
 GhostExchangeServiceImpl service = new GhostExchangeServiceImpl(
     spatialIndex,
@@ -207,14 +199,13 @@ updateStream.onNext(GhostUpdate.newBuilder()
     .setInsert(ghostElement)
     .build());
 
-```text
+```
 
 ### Content Serialization
 
 Implement custom serializers for your content types:
 
 ```java
-
 public class GameObjectSerializer implements ContentSerializer<GameObject> {
     @Override
     public byte[] serialize(GameObject obj) {
@@ -232,7 +223,7 @@ public class GameObjectSerializer implements ContentSerializer<GameObject> {
 // Register serializer
 registry.register(GameObject.class, new GameObjectSerializer());
 
-```text
+```
 
 ## Usage Patterns
 
@@ -241,7 +232,6 @@ registry.register(GameObject.class, new GameObjectSerializer());
 For single-process testing or simple ghost requirements:
 
 ```java
-
 // Enable ghosts at initialization
 Octree<LongEntityID, String> octree = new Octree<>(idGenerator, 10, (byte) 21);
 octree.setGhostType(GhostType.FACES);
@@ -250,14 +240,13 @@ octree.createGhostLayer();
 // Use ghost-aware queries
 List<LongEntityID> nearby = octree.findEntitiesIncludingGhosts(position, 100.0f);
 
-```text
+```
 
 ### Pattern 2: Distributed Forest with Ghosts
 
 For multi-tree distributed systems:
 
 ```java
-
 // Create adaptive forest with ghost support
 AdaptiveForest<MortonKey, LongEntityID, Content> forest = new AdaptiveForest<>(
     entityManager,
@@ -275,14 +264,13 @@ DistributedGhostManager<MortonKey, LongEntityID, Content> distManager =
 
 distManager.synchronizeAllTrees();
 
-```text
+```
 
 ### Pattern 3: Custom Ghost Algorithm
 
 For specialized ghost requirements:
 
 ```java
-
 // Implement custom ghost selection
 GhostAlgorithm customAlgorithm = new GhostAlgorithm() {
     @Override
@@ -309,7 +297,7 @@ ElementGhostManager<Key, ID, Content> manager = new ElementGhostManager<>(
     customAlgorithm
 );
 
-```text
+```
 
 ## Performance Considerations
 
@@ -348,7 +336,6 @@ Based on benchmarks, the ghost layer achieves:
    ghostCommunicationManager.bulkSync(treeIds, GhostType.FACES);
 
 ```text
-
 4. **Virtual Thread Tuning**:
 
    ```java
@@ -357,12 +344,11 @@ Based on benchmarks, the ghost layer achieves:
    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
    ghostManager.setExecutor(executor);
 
-```text
+```
 
 ## Error Handling
 
 ```java
-
 try {
     ghostManager.syncGhosts(treeIds, GhostType.FACES)
         .exceptionally(throwable -> {
@@ -385,7 +371,7 @@ try {
     }
 }
 
-```text
+```
 
 ## Best Practices
 

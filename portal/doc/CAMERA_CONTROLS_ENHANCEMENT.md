@@ -34,11 +34,10 @@ Enhanced the CameraView class with comprehensive panning capabilities and improv
 ### 4. Configurable Navigation Speeds
 
 ```java
-
 // Set custom navigation speeds
 cameraView.setNavigationSpeeds(panSpeed, rotateSpeed, zoomSpeed);
 
-```text
+```
 
 ### 5. New Public Methods
 
@@ -66,7 +65,6 @@ cameraView.setNavigationSpeeds(panSpeed, rotateSpeed, zoomSpeed);
 ## Usage Example
 
 ```java
-
 CameraView cameraView = new CameraView(subScene);
 cameraView.setFirstPersonNavigationEabled(true);
 
@@ -79,7 +77,7 @@ cameraView.setPanning(true);
 // Start the view timer
 cameraView.startViewing();
 
-```text
+```
 
 ## Benefits
 

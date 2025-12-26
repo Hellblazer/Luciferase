@@ -14,7 +14,6 @@ The DSOC system provides efficient occlusion culling for dynamic scenes by maint
 Configures all aspects of the DSOC system with a fluent API pattern.
 
 ```java
-
 // Create default configuration
 DSOCConfiguration config = DSOCConfiguration.defaultConfig();
 
@@ -39,7 +38,7 @@ DSOCConfiguration config = new DSOCConfiguration()
     .withEnableHierarchicalOcclusion(true)
     .withZPyramidLevels(6);
 
-```text
+```
 
 #### Key Configuration Options
 
@@ -57,7 +56,6 @@ DSOCConfiguration config = new DSOCConfiguration()
 DSOC is enabled on a spatial index instance:
 
 ```java
-
 // Create spatial index with DSOC
 Octree<LongEntityID, String> octree = new Octree<>(idGenerator);
 octree.enableDSOC(config, 1024, 768); // width, height for Z-buffer
@@ -67,42 +65,39 @@ if (octree.isDSOCEnabled()) {
     // DSOC operations available
 }
 
-```text
+```
 
 ### 3. Camera Updates
 
 Update camera matrices for occlusion testing:
 
 ```java
-
 float[] viewMatrix = /* 4x4 view matrix */;
 float[] projectionMatrix = /* 4x4 projection matrix */;
 Point3f cameraPosition = new Point3f(x, y, z);
 
 octree.updateCamera(viewMatrix, projectionMatrix, cameraPosition);
 
-```text
+```
 
 ### 4. Frame Management
 
 DSOC tracks frames for temporal coherence:
 
 ```java
-
 // Advance to next frame
 long currentFrame = octree.nextFrame();
 
 // Get current frame
 long frame = octree.getCurrentFrame();
 
-```text
+```
 
 ### 5. Frustum Culling with DSOC
 
 When DSOC is enabled, frustum culling automatically performs occlusion culling:
 
 ```java
-
 // Create frustum
 Frustum3D frustum = Frustum3D.createPerspective(
     cameraPos, lookAt, up,
@@ -113,25 +108,23 @@ Frustum3D frustum = Frustum3D.createPerspective(
 List<FrustumIntersection<ID, Content>> visible = 
     octree.frustumCullVisible(frustum, cameraPosition);
 
-```text
+```
 
 ### 6. Entity Visibility Management
 
 Force immediate visibility updates for specific entities:
 
 ```java
-
 // Force entity to be checked on next frame
 octree.forceEntityUpdate(entityId);
 
-```text
+```
 
 ### 7. Statistics and Monitoring
 
 Get detailed DSOC performance statistics:
 
 ```java
-
 Map<String, Object> stats = octree.getDSOCStatistics();
 
 // Available statistics:
@@ -149,7 +142,7 @@ Map<String, Object> stats = octree.getDSOCStatistics();
 // Reset statistics
 octree.resetDSOCStatistics();
 
-```text
+```
 
 ## TBV Strategies
 
@@ -158,7 +151,6 @@ octree.resetDSOCStatistics();
 Adapts TBV parameters based on entity behavior:
 
 ```java
-
 TBVStrategy strategy = AdaptiveTBVStrategy.defaultStrategy();
 // Or with custom parameters
 TBVStrategy strategy = new AdaptiveTBVStrategy(
@@ -167,36 +159,33 @@ TBVStrategy strategy = new AdaptiveTBVStrategy(
     expansionFactor: 1.2f
 );
 
-```text
+```
 
 ### 2. FixedDurationTBVStrategy
 
 Uses fixed duration for all TBVs:
 
 ```java
-
 TBVStrategy strategy = new FixedDurationTBVStrategy(60); // 60 frames
 
-```text
+```
 
 ### 3. VelocityBasedTBVStrategy
 
 Calculates TBV size based on entity velocity:
 
 ```java
-
 TBVStrategy strategy = new VelocityBasedTBVStrategy(
     velocityMultiplier: 1.5f,
     minDuration: 20,
     maxDuration: 200
 );
 
-```text
+```
 
 ## Complete Example
 
 ```java
-
 public class DSOCExample {
     public void demonstrateDSOC() {
         // Create spatial index
@@ -262,7 +251,7 @@ public class DSOCExample {
     }
 }
 
-```text
+```
 
 ## Performance Considerations
 
@@ -290,7 +279,6 @@ public class DSOCExample {
 DSOC integrates seamlessly with existing spatial index operations:
 
 ```java
-
 // All standard operations work with DSOC enabled
 octree.insert(id, position, level, content);
 octree.removeEntity(id);
@@ -303,4 +291,4 @@ octree.updateCamera(view, proj, pos);
 octree.nextFrame();
 octree.getDSOCStatistics();
 
-```text
+```

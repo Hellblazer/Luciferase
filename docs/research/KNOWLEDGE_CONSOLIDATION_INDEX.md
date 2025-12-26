@@ -263,7 +263,6 @@ Source: HISTORICAL_FIXES_REFERENCE.md
 ### New Files (5 total)
 
 ```text
-
 /Users/hal.hildebrand/git/Luciferase/
 ├── KNOWLEDGE_CONSOLIDATION_INDEX.md (this file)
 ├── CONSOLIDATION_EXECUTIVE_SUMMARY.md (results overview)
@@ -272,19 +271,18 @@ Source: HISTORICAL_FIXES_REFERENCE.md
 ├── TEST_COVERAGE_SUMMARY.md (test infrastructure)
 └── KNOWLEDGE_MANAGEMENT_GUIDE.md (navigation guide)
 
-```text
+```
 
 ### Updated Files (4 total)
 
 ```text
-
 /Users/hal.hildebrand/git/Luciferase/
 ├── CLAUDE.md (removed invalid references)
 ├── README.md (clarified ESVO status)
 ├── HISTORICAL_FIXES_REFERENCE.md (added context)
 └── lucien/doc/LUCIEN_ARCHITECTURE.md (clarified package counts)
 
-```text
+```
 
 ---
 

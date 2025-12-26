@@ -24,7 +24,6 @@ This guide provides an overview of testing strategies for the Dynamic Scene Occl
 ### Run DSOC Performance Tests
 
 ```bash
-
 # Enable performance tests temporarily
 
 export RUN_DSOC_PERF_TESTS=true
@@ -37,12 +36,11 @@ mvn test -Dtest=DSOCPerformanceTest
 
 mvn test -Dtest=DSOCBenchmarkRunner
 
-```text
+```
 
 ### Run Integration Tests
 
 ```bash
-
 # Run DSOC integration tests
 
 mvn test -Dtest=*DSOCIntegrationTest
@@ -51,7 +49,7 @@ mvn test -Dtest=*DSOCIntegrationTest
 
 mvn test -Dtest=*DSOCIntegrationTest -DdsocEnabled=true
 
-```text
+```
 
 ## Test Categories
 
@@ -88,33 +86,30 @@ mvn test -Dtest=*DSOCIntegrationTest -DdsocEnabled=true
 ### Scenario 1: Basic Occlusion
 
 ```java
-
 // Test that DSOC correctly culls occluded entities
 spatialIndex.enableDSOC(config, 512, 512);
 // Add occluders and test entities
 // Verify culling results
 
-```text
+```
 
 ### Scenario 2: Performance Protection
 
 ```java
-
 // Test auto-disable kicks in when performance degrades
 // Create scenario with poor occlusion
 // Verify DSOC auto-disables
 
-```text
+```
 
 ### Scenario 3: Dynamic Scenes
 
 ```java
-
 // Test with moving entities
 // Verify TBV updates correctly
 // Check performance metrics
 
-```text
+```
 
 ## Best Practices
 

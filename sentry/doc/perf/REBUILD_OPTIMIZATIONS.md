@@ -21,19 +21,17 @@ The standard rebuild operation was designed for general-purpose usage with Tetra
 ### 1. Automatic Direct Allocation Threshold
 
 ```java
-
 // Automatically use direct allocation for small rebuilds
 boolean useDirectForRebuild = verticesList.size() <= 256 || 
     "true".equals(System.getProperty("sentry.rebuild.direct"));
 
-```text
+```
 
 **Rationale**: For rebuilds with ≤256 points, the pooling overhead exceeds the benefits. Direct allocation provides better performance for this common use case.
 
 ### 2. Context-Free Insertion Path
 
 ```java
-
 if (useDirectForRebuild) {
     // Skip context overhead entirely for direct allocation
     for (var v : verticesList) {
@@ -44,7 +42,7 @@ if (useDirectForRebuild) {
     }
 }
 
-```text
+```
 
 **Benefits**:
 - Eliminates TetrahedronPoolContext.withAllocator() overhead
@@ -114,11 +112,10 @@ Located in `MutableGrid.java` starting at line 229, this method:
 ### Allocation Strategy Selection
 
 ```java
-
 TetrahedronAllocator rebuildAllocator = useDirectForRebuild ? 
     new DirectAllocator() : allocator;
 
-```text
+```
 
 The decision logic automatically selects:
 
@@ -142,20 +139,18 @@ The optimization is completely transparent to callers. Existing code using `Muta
 For testing or specific requirements:
 
 ```bash
-
 -Dsentry.rebuild.direct=true  # Force direct allocation for all rebuilds
 
-```text
+```
 
 ### Performance Testing
 
 Use `MutableGridTest.smokin()` to benchmark rebuild performance:
 
 ```bash
-
 mvn test -Dtest=MutableGridTest#smokin
 
-```text
+```
 
 ## Impact Analysis
 

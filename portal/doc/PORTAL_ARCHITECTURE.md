@@ -10,7 +10,6 @@ The Portal module provides comprehensive 3D visualization and mesh handling capa
 ## Module Structure
 
 ```text
-
 portal/
 ├── src/main/java/com/hellblazer/luciferase/portal/
 │   ├── mesh/              # 3D mesh handling and polyhedra
@@ -20,7 +19,7 @@ portal/
 ├── doc/                   # Documentation
 └── pom.xml               # Maven configuration
 
-```text
+```
 
 ## Core Components
 
@@ -133,14 +132,13 @@ Specialized visualizations for spatial index structures:
 ### Scene Graph Organization
 
 ```text
-
 sceneRoot
 ├── nodeGroup      # Spatial index nodes
 ├── entityGroup    # Entity visualizations
 ├── queryGroup     # Query result overlays
 └── overlayGroup   # UI overlays and indicators
 
-```text
+```
 
 ### Material and Rendering
 
@@ -161,7 +159,6 @@ sceneRoot
 ### Basic 3D Application
 
 ```java
-
 public class MyApp extends MagicMirror {
     @Override
     protected void createScene() {
@@ -169,28 +166,26 @@ public class MyApp extends MagicMirror {
     }
 }
 
-```text
+```
 
 ### Spatial Index Visualization
 
 ```java
-
 public class MyTreeView extends SpatialIndexView<MortonKey, UUID, Entity> {
     // Implement abstract methods
 }
 
-```text
+```
 
 ### Collision Debugging
 
 ```java
-
 CollisionVisualizer viz = new CollisionVisualizer();
 viz.showShapes.set(true);
 viz.showContacts.set(true);
 scene.getChildren().add(viz.getVisualization());
 
-```text
+```
 
 ## Dependencies
 

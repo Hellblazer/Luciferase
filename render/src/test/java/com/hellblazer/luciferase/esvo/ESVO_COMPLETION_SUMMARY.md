@@ -44,11 +44,10 @@ The ESVO (Efficient Sparse Voxel Octrees) implementation has been successfully c
 #### ESVONodeUnified.java
 
 ```java
-
 private int childDescriptor;    // [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
 private int contourDescriptor;  // [contour_ptr(24)|contour_mask(8)]
 
-```text
+```
 
 **Key Features**:
 - Exact 8-byte CUDA int2 compliance
@@ -59,7 +58,6 @@ private int contourDescriptor;  // [contour_ptr(24)|contour_mask(8)]
 #### Child Indexing Algorithm
 
 ```java
-
 public int getChildOffset(int childIdx) {
     if (!hasChild(childIdx)) {
         throw new IllegalArgumentException("Child " + childIdx + " does not exist");
@@ -69,7 +67,7 @@ public int getChildOffset(int childIdx) {
     return Integer.bitCount(bitsBeforeChild);
 }
 
-```text
+```
 
 #### Coordinate Space (CoordinateSpace.java)
 
@@ -109,14 +107,13 @@ public int getChildOffset(int childIdx) {
 **Fix**: Changed to unsigned right shift (`>>>`) for proper 24-bit extraction
 
 ```java
-
 // Before (incorrect - sign extension)
 return (contourDescriptor >> CONTOUR_PTR_SHIFT) & 0xFFFFFF;
 
 // After (correct - unsigned)
 return (contourDescriptor >>> CONTOUR_PTR_SHIFT) & 0xFFFFFF;
 
-```text
+```
 
 ### 2. Serialization Buffer Position (ESVOSerializer.java:writeNodes)
 
@@ -124,12 +121,11 @@ return (contourDescriptor >>> CONTOUR_PTR_SHIFT) & 0xFFFFFF;
 **Fix**: Removed node filtering that skipped zero-descriptor nodes
 
 ```java
-
 // Always create and store nodes, even if descriptors are zero
 ESVONodeUnified node = new ESVONodeUnified(childDescriptor, contourDescriptor);
 octree.setNode(i, node);
 
-```text
+```
 
 ### 3. Child Pointer 14-Bit Limit (StackBasedRayTraversal.java:174)
 
@@ -137,7 +133,6 @@ octree.setNode(i, node);
 **Fix**: Bounded allocation within 14-bit range
 
 ```java
-
 // Before (could exceed limit)
 return parentIndex * 8 + 1;
 
@@ -145,7 +140,7 @@ return parentIndex * 8 + 1;
 var baseOffset = Math.min(parentIndex + 1, 16383);
 return Math.min(baseOffset, 16383);
 
-```text
+```
 
 ### 4. Compressed Deserialization NPE (ESVODeserializer.java:deserializeCompressed)
 

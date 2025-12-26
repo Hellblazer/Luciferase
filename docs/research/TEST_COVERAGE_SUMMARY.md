@@ -36,7 +36,6 @@ The Luciferase project maintains extensive test coverage across spatial indexing
 #### Core Functionality Tests
 
 ```text
-
 com.hellblazer.luciferase.lucien.tests/
 ├── octree/
 │   ├── OctreeTest.java - Basic operations
@@ -134,7 +133,7 @@ com.hellblazer.luciferase.lucien.tests/
 └── migration/
     └── SpatialIndexConverterTest.java - Type migration
 
-```text
+```
 
 #### Test Coverage Breakdown
 
@@ -239,7 +238,6 @@ com.hellblazer.luciferase.lucien.tests/
 All performance tests use JMH (Java Microbenchmark Harness):
 
 ```bash
-
 # Run all performance tests
 
 mvn clean test -Pperformance
@@ -252,7 +250,7 @@ mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark
 
 mvn test -Pperformance -DAssertOption=-da
 
-```text
+```
 
 ### Key Benchmarks
 
@@ -274,13 +272,12 @@ mvn test -Pperformance -DAssertOption=-da
 GPU tests require sandbox to be disabled:
 
 ```xml
-
 <!-- In pom.xml -->
 <configuration>
   <dangerouslyDisableSandbox>true</dangerouslyDisableSandbox>
 </configuration>
 
-```text
+```
 
 ### GPU Test Categories
 
@@ -292,7 +289,6 @@ GPU tests require sandbox to be disabled:
 ### Running GPU Tests
 
 ```bash
-
 # Run GPU tests (requires GPU and dangerouslyDisableSandbox: true)
 
 mvn test -Pperformance -DgpuTests=true
@@ -301,7 +297,7 @@ mvn test -Pperformance -DgpuTests=true
 
 mvn test -Dtest=OpenCLComputeTest -DgpuTests=true
 
-```text
+```
 
 ---
 
@@ -365,14 +361,13 @@ Some tests are intentionally disabled:
 Generated after test run:
 
 ```bash
-
 mvn clean verify
 
 # Generated in target/site/jacoco/
 
 open target/site/jacoco/index.html
 
-```text
+```
 
 ### Current Coverage
 
@@ -417,7 +412,6 @@ open target/site/jacoco/index.html
 ### Standard Test Run
 
 ```bash
-
 # Full test suite (excludes performance, GPU)
 
 mvn clean test
@@ -434,12 +428,11 @@ mvn test -Dtest=OctreeTest
 
 mvn test -Dtest=OctreeTest#testInsert
 
-```text
+```
 
 ### Performance Tests
 
 ```bash
-
 # All performance benchmarks
 
 mvn test -Pperformance
@@ -452,24 +445,22 @@ mvn test -pl lucien -Dtest=OctreeVsTetreeVsPrismBenchmark
 
 mvn test -Pperformance -DAssertOption=-da
 
-```text
+```
 
 ### GPU Tests
 
 ```bash
-
 # Requires GPU and dangerouslyDisableSandbox: true
 
 mvn test -Pperformance -DgpuTests=true
 
-```text
+```
 
 ### Test Output
 
 Enable verbose test output:
 
 ```bash
-
 # Show test output
 
 VERBOSE_TESTS=1 mvn test
@@ -478,7 +469,7 @@ VERBOSE_TESTS=1 mvn test
 
 mvn test
 
-```text
+```
 
 ---
 
@@ -525,7 +516,6 @@ When refactoring code:
 ### GitHub Actions Workflow
 
 ```yaml
-
 name: Build and Test
 on: [push, pull_request]
 jobs:
@@ -542,7 +532,7 @@ jobs:
 
         uses: codecov/codecov-action@v1
 
-```text
+```
 
 ### Pre-merge Requirements
 

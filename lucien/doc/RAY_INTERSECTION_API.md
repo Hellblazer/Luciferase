@@ -20,7 +20,6 @@ The `Ray3D` class represents a ray in 3D space with:
 - **Max Distance**: Optional maximum distance (default: unbounded)
 
 ```java
-
 // Create a bounded ray
 Ray3D ray = new Ray3D(origin, direction, maxDistance);
 
@@ -30,7 +29,7 @@ Ray3D unboundedRay = new Ray3D(origin, direction);
 // Create a ray from two points
 Ray3D pointToPoint = Ray3D.fromPoints(start, end);
 
-```text
+```
 
 ### RayIntersection
 
@@ -48,17 +47,15 @@ The `RayIntersection` record contains detailed information about a ray-entity in
 ### 1. Find All Intersections
 
 ```java
-
 List<RayIntersection<ID, Content>> rayIntersectAll(Ray3D ray)
 
-```text
+```
 
 Finds all entities that intersect with the given ray, sorted by distance from the ray origin.
 
 **Example:**
 
 ```java
-
 Ray3D ray = Ray3D.fromPointsUnbounded(new Point3f(0, 0, 0), new Point3f(100, 100, 100));
 List<RayIntersection<LongEntityID, String>> intersections = spatialIndex.rayIntersectAll(ray);
 
@@ -71,22 +68,20 @@ println("Hit entity "+hit.entityId() +" at distance "+hit.
 distance());
 }
 
-```text
+```
 
 ### 2. Find First Intersection
 
 ```java
-
 Optional<RayIntersection<ID, Content>> rayIntersectFirst(Ray3D ray)
 
-```text
+```
 
 Finds the closest entity that intersects with the ray. This method is optimized for early termination.
 
 **Example:**
 
 ```java
-
 Optional<RayIntersection<LongEntityID, String>> firstHit = spatialIndex.rayIntersectFirst(ray);
 if(firstHit.
 
@@ -97,26 +92,24 @@ RayIntersection<LongEntityID, String> hit = firstHit.get();
 println("First hit at distance: "+hit.distance());
 }
 
-```text
+```
 
 ### 3. Find Intersections Within Distance
 
 ```java
-
 List<RayIntersection<ID, Content>> rayIntersectWithin(Ray3D ray, float maxDistance)
 
-```text
+```
 
 Finds all entities that intersect with the ray within a specified maximum distance.
 
 **Example:**
 
 ```java
-
 // Find all intersections within 100 units
 List<RayIntersection<LongEntityID, String>> nearHits = spatialIndex.rayIntersectWithin(ray, 100.0f);
 
-```text
+```
 
 ## Intersection Types
 
@@ -156,7 +149,6 @@ For entities with bounds, ray-AABB (Axis-Aligned Bounding Box) intersection is p
 ### Line-of-Sight Queries
 
 ```java
-
 public boolean hasLineOfSight(Point3f from, Point3f to, ID excludeEntity) {
     Ray3D ray = Ray3D.fromPoints(from, to);
     Optional<RayIntersection<ID, Content>> hit = spatialIndex.rayIntersectFirst(ray);
@@ -164,12 +156,11 @@ public boolean hasLineOfSight(Point3f from, Point3f to, ID excludeEntity) {
     return hit.isEmpty() || hit.get().entityId().equals(excludeEntity);
 }
 
-```text
+```
 
 ### Projectile Simulation
 
 ```java
-
 public void simulateProjectile(Point3f origin, Vector3f velocity, float maxRange) {
     Ray3D trajectory = new Ray3D(origin, velocity, maxRange);
 
@@ -181,12 +172,11 @@ public void simulateProjectile(Point3f origin, Vector3f velocity, float maxRange
     }
 }
 
-```text
+```
 
 ### Area Scanning
 
 ```java
-
 public List<ID> scanCone(Point3f apex, Vector3f direction, float angle, float range) {
     List<ID> entitiesInCone = new ArrayList<>();
 
@@ -203,7 +193,7 @@ public List<ID> scanCone(Point3f apex, Vector3f direction, float angle, float ra
     return entitiesInCone.stream().distinct().collect(Collectors.toList());
 }
 
-```text
+```
 
 ## Best Practices
 
@@ -230,7 +220,6 @@ consistency during concurrent operations.
 ## Integration Example
 
 ```java
-
 public class VisibilitySystem {
     private final SpatialIndex<LongEntityID, GameObject> spatialIndex;
 
@@ -256,4 +245,4 @@ public class VisibilitySystem {
     }
 }
 
-```text
+```

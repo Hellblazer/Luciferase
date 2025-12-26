@@ -12,7 +12,6 @@ The current implementation uses a "walking" algorithm:
 4. Repeat until the containing tetrahedron is found
 
 ```java
-
 public Tetrahedron locate(Tuple3f query, Random entropy) {
     // Check each face orientation
     for (V face : Grid.VERTICES) {
@@ -23,7 +22,7 @@ public Tetrahedron locate(Tuple3f query, Random entropy) {
     }
 }
 
-```text
+```
 
 ### Performance Characteristics
 
@@ -44,7 +43,6 @@ public Tetrahedron locate(Tuple3f query, Random entropy) {
 #### Option 1: Grid-Based Spatial Hash
 
 ```java
-
 public class SpatialHashIndex {
     private final Map<Integer, List<Tetrahedron>> grid;
     private final double cellSize;
@@ -67,12 +65,11 @@ public class SpatialHashIndex {
     }
 }
 
-```text
+```
 
 #### Option 2: Hierarchical Index (Octree)
 
 ```java
-
 public class OctreeIndex {
     private class Node {
         Bounds bounds;
@@ -93,12 +90,11 @@ public class OctreeIndex {
     }
 }
 
-```text
+```
 
 #### Option 3: Jump-and-Walk
 
 ```java
-
 public class JumpAndWalkIndex {
     // Sample of well-distributed tetrahedra
     private final Tetrahedron[] landmarks;
@@ -112,7 +108,7 @@ public class JumpAndWalkIndex {
     }
 }
 
-```text
+```
 
 ## Implementation Challenges
 

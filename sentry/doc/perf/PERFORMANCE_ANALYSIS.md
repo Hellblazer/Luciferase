@@ -22,13 +22,12 @@ Profiling analysis reveals that 82% of CPU time is consumed by the `OrientedFace
 The geometric predicates are the fundamental bottleneck:
 
 ```java
-
 // leftOfPlaneFast() - 18 multiplications, 11 additions per call
 return adx * (bdy * cdz - bdz * cdy) + 
        bdx * (cdy * adz - cdz * ady) + 
        cdx * (ady * bdz - adz * bdy);
 
-```text
+```
 
 **Issues:**
 - No SIMD vectorization
@@ -41,13 +40,12 @@ return adx * (bdy * cdz - bdz * cdy) +
 Heavy object creation in flip operations:
 
 ```java
-
 // flip2to3() creates 3 new tetrahedra
 Tetrahedron n012 = new Tetrahedron(a, b, e, n);
 Tetrahedron n023 = new Tetrahedron(b, c, e, n);
 Tetrahedron n031 = new Tetrahedron(c, a, e, n);
 
-```text
+```
 
 **Issues:**
 - No object pooling
@@ -60,13 +58,12 @@ Tetrahedron n031 = new Tetrahedron(c, a, e, n);
 #### LinkedList Usage
 
 ```java
-
 public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
     // LinkedList operations with O(n) access
     ears.get(i);  // O(n) operation
 }
 
-```text
+```
 
 **Issues:**
 - LinkedList has O(n) random access
@@ -77,7 +74,6 @@ public Tetrahedron flip(Vertex n, List<OrientedFace> ears) {
 #### Neighbor Lookups
 
 ```java
-
 public V ordinalOf(Tetrahedron t) {
     if (getA() == t) return V.A;
     if (getB() == t) return V.B;
@@ -86,7 +82,7 @@ public V ordinalOf(Tetrahedron t) {
     return null;
 }
 
-```text
+```
 
 **Issues:**
 - Linear search through vertices
@@ -98,7 +94,6 @@ public V ordinalOf(Tetrahedron t) {
 #### getAdjacentVertex() Pattern
 
 ```java
-
 // Called multiple times without caching
 if (isReflex()) {  // calls getAdjacentVertex()
     if (isConvex()) {  // calls getAdjacentVertex() again
@@ -106,7 +101,7 @@ if (isReflex()) {  // calls getAdjacentVertex()
     }
 }
 
-```text
+```
 
 **Issues:**
 - Same values computed multiple times

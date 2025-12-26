@@ -83,7 +83,6 @@ Total estimated effort: 2-3 weeks for remaining enhancements.
 **Implementation**:
 
 ```java
-
 public class DegeneracyHandler {
     // Symbolic perturbation to prevent exact degeneracies
     public Point3f perturb(Point3f p, int index) {
@@ -105,7 +104,7 @@ public class DegeneracyHandler {
     }
 }
 
-```text
+```
 
 ### 2. Voronoi Region Computation
 
@@ -120,7 +119,6 @@ public class DegeneracyHandler {
 **Code Structure**:
 
 ```java
-
 public VoronoiRegion voronoiRegion(Vertex v) {
     List<Point3f> voronoiVertices = new ArrayList<>();
     List<VoronoiFace> faces = new ArrayList<>();
@@ -144,7 +142,7 @@ public VoronoiRegion voronoiRegion(Vertex v) {
     return new VoronoiRegion(v, voronoiVertices, faces);
 }
 
-```text
+```
 
 ### 3. Performance Optimizations
 
