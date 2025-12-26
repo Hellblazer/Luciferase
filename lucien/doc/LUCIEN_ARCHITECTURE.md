@@ -453,23 +453,27 @@ The DSOC system provides efficient occlusion culling for dynamic scenes by maint
 ### Core Components
 
 **HierarchicalZBuffer**: Multi-level depth pyramid for efficient occlusion queries
+
 - Configurable resolution and pyramid levels (typically 6 levels)
 - Thread-safe operations with read-write locking
 - Optimized depth testing with early rejection
 - Camera matrix support for view-space transformations
 
 **HierarchicalOcclusionCuller**: Generic occlusion culling implementation
+
 - Supports both node-level and entity-level occlusion testing
 - Integration with VisibilityStateManager for TBV handling
 - Comprehensive statistics collection for performance monitoring
 - Configurable occlusion testing strategies
 
 **VisibilityStateManager**: Tracks entity visibility states across frames
+
 - Manages transitions between VISIBLE, HIDDEN_WITH_TBV, and HIDDEN_EXPIRED states
 - Creates and maintains Temporal Bounding Volumes for occluded entities
 - Implements deferred update strategies for performance optimization
 
 **DSOCConfiguration**: Flexible configuration system with fluent API
+
 - Pre-configured profiles: defaultConfig(), highPerformance(), highQuality()
 - TBV strategies: Adaptive, Fixed Duration, Velocity-based
 - Fine-grained control over update intervals, quality thresholds, and memory limits
@@ -815,13 +819,15 @@ The TetreeKey system provides efficient spatial key encoding for tetrahedral sub
 
 ### Dual Implementation Strategy
 
-**CompactTetreeKey (Levels 0-10)**:
+**CompactTetreeKey (Levels 0-10)**
+
 - Single 64-bit long storage for optimal performance
 - Handles 95%+ of typical use cases efficiently
 - 6 bits per level encoding (3 coordinate + 3 type bits)
 - Maximum 60 bits used (10 levels × 6 bits)
 
-**ExtendedTetreeKey (Levels 0-21)**:
+**ExtendedTetreeKey (Levels 0-21)**
+
 - Dual 64-bit long storage (128-bit total)
 - Standard encoding for levels 0-20
 - Special bit packing for level 21 using leftover bits
@@ -840,7 +846,8 @@ Level 21 Encoding (6 bits total):
 - Enables efficient parent/child computation
 ```
 
-**Key Features**:
+**Key Features**
+
 - Maintains SFC ordering properties despite split encoding
 - No performance penalty for levels 0-20
 - Seamless factory method selection based on level
@@ -873,9 +880,9 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 ### Key Addition (June 2025)
 
 - **SpatialKey Architecture**: Type-safe spatial keys to prevent index collisions
-    - Resolves Tetree's non-unique SFC index issue
-    - Provides type safety between Octree and Tetree operations
-    - Maintains performance with minimal object allocation overhead
+  - Resolves Tetree's non-unique SFC index issue
+  - Provides type safety between Octree and Tetree operations
+  - Maintains performance with minimal object allocation overhead
 
 ### What This Architecture Does NOT Include
 

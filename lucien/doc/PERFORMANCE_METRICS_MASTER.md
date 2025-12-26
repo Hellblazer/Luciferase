@@ -146,7 +146,8 @@ Note: Prism excluded from this benchmark due to triangular domain constraints.
 | Range Query | 3.25x | 3.38x | 1.00x (fastest) |
 | K-NN | 3.37x | 5.16x | 1.00x (fastest) |
 
-**Key Findings**:
+**Key Findings**
+
 - **Performance Crossover**: SFCArrayIndex dominates at small scale (<10K), Tetree dominates at large scale (50K+)
 - **LITMAX/BIGMIN Impact**: Tetree range queries improved dramatically with grid-cell based optimization
 - **Use SFCArrayIndex** for: Write-heavy workloads, static datasets, memory-constrained environments
@@ -345,7 +346,7 @@ Based on GhostPerformanceBenchmark results with virtual thread architecture and 
 
 ## Recommendations
 
-### Use SFCArrayIndex When:
+### Use SFCArrayIndex When
 
 - Working with small to medium datasets (< 10K entities)
 - Insert/write performance is critical (fastest of all indexes)
@@ -353,14 +354,14 @@ Based on GhostPerformanceBenchmark results with virtual thread architecture and 
 - Memory is constrained (33% less memory than tree structures)
 - Simple flat structure preferred over tree complexity
 
-### Use Octree When:
+### Use Octree When
 
 - Range queries are performance critical (3.2x to 8.3x faster than Tetree at small scale)
 - Balanced performance across all operations required
 - Traditional cubic subdivision is preferred
 - Medium-scale datasets (1K-50K entities)
 
-### Use Tetree When:
+### Use Tetree When
 
 - Working with large datasets (50K+ entities) - fastest for queries at scale
 - Update performance matters (1.7x to 3.0x faster than Octree)
@@ -368,7 +369,7 @@ Based on GhostPerformanceBenchmark results with virtual thread architecture and 
 - Read-heavy workloads with infrequent writes
 - LITMAX/BIGMIN optimization provides best gains at large scale
 
-### Use Prism When:
+### Use Prism When
 
 - Insert performance is paramount (60-153x faster than Octree)
 - Data has anisotropic distribution (fine horizontal, coarse vertical)
@@ -378,7 +379,7 @@ Based on GhostPerformanceBenchmark results with virtual thread architecture and 
 - Custom subdivision requirements
 - Insertion performance vs Tetree is acceptable tradeoff
 
-### Use k-NN Caching When:
+### Use k-NN Caching When
 
 - Repeated k-NN queries at same or nearby locations (50-102× speedup on cache hits)
 - Spatial modifications are infrequent relative to queries (1:10 ratio or better)
