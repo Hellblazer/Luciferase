@@ -7,6 +7,7 @@
 ## Executive Summary
 
 This document analyzes three rendering strategies for ESVO octree node visualization in JavaFX:
+
 - **INSTANCING**: Individual Box shapes per node
 - **BATCHED**: Single merged TriangleMesh
 - **HYBRID**: Reference mesh with MeshView instances
@@ -33,32 +34,38 @@ Based on benchmark results with node counts from 100 to 2000, **BATCHED** provid
 ### Performance Characteristics
 
 #### INSTANCING Strategy
+
 - **Pros**:
   - Simplest implementation
   - Easy to debug
   - Supports per-node materials
   - Good for <500 nodes
+
 - **Cons**:
   - Linear scene graph growth
   - Higher memory overhead
   - Slower at large scales
 
 #### BATCHED Strategy
+
 - **Pros**:
   - Best performance at 500+ nodes
   - Constant scene graph size (2 nodes)
   - Minimal memory overhead
   - Scalable to 10,000+ nodes
+
 - **Cons**:
   - More complex implementation
   - No per-node material support
   - Harder to debug
 
 #### HYBRID Strategy
+
 - **Pros**:
   - Balanced complexity
   - Shared mesh reduces memory slightly
   - Transform-based positioning
+
 - **Cons**:
   - No clear advantage over INSTANCING
   - Still linear scene graph growth
@@ -86,7 +93,7 @@ The production implementation should:
 
 ### When to Use Other Strategies
 
-- **INSTANCING**: 
+- **INSTANCING**:
   - Debug visualization (per-node highlighting)
   - Small static scenes (<50 nodes)
   - When per-node material variation is required
@@ -115,6 +122,7 @@ sceneRoot.getChildren().add(visualization);
 ### Mesh Generation Details
 
 The BATCHED strategy:
+
 1. Collects all node bounds from ESVONodeGeometry
 2. Generates 8 vertices per cube (min/max corners)
 3. Creates 12 triangles per cube (2 per face)
@@ -124,11 +132,13 @@ The BATCHED strategy:
 ### Memory Efficiency
 
 For N nodes:
+
 - **INSTANCING**: N × Box object + N scene graph nodes
 - **BATCHED**: 1 × TriangleMesh (8N vertices, 12N triangles) + 2 scene graph nodes
 - **HYBRID**: 1 × reference mesh + N × MeshView + N scene graph nodes
 
 At 1000 nodes:
+
 - INSTANCING: ~1000 objects in scene graph
 - BATCHED: 2 objects in scene graph (67× reduction)
 
@@ -137,7 +147,8 @@ At 1000 nodes:
 ### Level-of-Detail (LOD)
 
 Implement adaptive rendering based on camera distance:
-```
+
+```text
 if (nodeCount < 50) use INSTANCING (micro-optimization)
 else use BATCHED
 ```
@@ -145,6 +156,7 @@ else use BATCHED
 ### Frustum Culling
 
 Only render nodes within camera view frustum:
+
 ```java
 List<Integer> visibleNodes = spatialIndex.queryFrustum(cameraFrustum);
 Group visualization = renderer.render(visibleNodes);
@@ -153,6 +165,7 @@ Group visualization = renderer.render(visibleNodes);
 ### Progressive Rendering
 
 For very large octrees (10,000+ nodes):
+
 1. Render coarse levels immediately
 2. Stream fine levels progressively
 3. Update mesh incrementally
@@ -160,6 +173,7 @@ For very large octrees (10,000+ nodes):
 ## Benchmark Methodology
 
 ### Test Configuration
+
 - **Hardware**: Apple Silicon (ARM64)
 - **JavaFX**: Version 24
 - **Java**: Version 24 with vector incubator modules
@@ -172,6 +186,7 @@ For very large octrees (10,000+ nodes):
 Location: `portal/src/test/java/com/hellblazer/luciferase/portal/mesh/octree/OctreeNodeMeshRendererBenchmark.java`
 
 The benchmark measures:
+
 - Rendering time (averaged over 10 iterations)
 - Scene graph node count
 - Memory characteristics (via node counting)
@@ -179,6 +194,7 @@ The benchmark measures:
 ## Conclusion
 
 The **BATCHED** strategy is the clear winner for ESVO Inspector's octree visualization needs, providing:
+
 - **30-40% faster** rendering at 500+ nodes
 - **500× fewer** scene graph nodes at 1000 nodes
 - **Scalable** to 10,000+ nodes without degradation

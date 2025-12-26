@@ -34,6 +34,7 @@ Interactive octree visualization with:
 - Real-time performance metrics
 
 **Direct launch**:
+
 ```bash
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.esvo.OctreeInspectorApp\$Launcher"
 ```
@@ -52,6 +53,7 @@ Physics and collision detection visualization with:
 - Interactive physics simulation
 
 **Direct launch**:
+
 ```bash
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.collision.CollisionDebugViewer"
 ```
@@ -63,6 +65,7 @@ mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.coll
 Tetrahedral space partitioning tree visualization.
 
 **Direct launch**:
+
 ```bash
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh.explorer.TetreeInspector"
 ```
@@ -74,6 +77,7 @@ mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh
 Cubic grid and neighborhood exploration.
 
 **Direct launch**:
+
 ```bash
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh.explorer.grid.GridInspector"
 ```
@@ -85,6 +89,7 @@ mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh
 3D geometry and mesh visualization.
 
 **Direct launch**:
+
 ```bash
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh.explorer.GeometryViewer"
 ```
@@ -96,6 +101,7 @@ mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh
 Reaction-diffusion grid visualization.
 
 **Direct launch**:
+
 ```bash
 mvn exec:java -pl portal -Dexec.mainClass="com.hellblazer.luciferase.portal.mesh.explorer.RDGridViewer"
 ```

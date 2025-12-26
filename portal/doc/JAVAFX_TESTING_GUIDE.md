@@ -1,7 +1,7 @@
 # JavaFX Testing Guide
 
-**Date**: 2025-12-09  
-**Task**: Luciferase-c3l (Phase 0.5)  
+**Date**: 2025-12-09
+**Task**: Luciferase-c3l (Phase 0.5)
 **Author**: Phase 0 Infrastructure - ESVO Inspector
 
 ## Overview
@@ -49,6 +49,7 @@ mvn test -pl portal -Dtestfx.headless=true
 ### Automatic Initialization
 
 The `JavaFXTestBase` class automatically:
+
 - Initializes the JavaFX toolkit before tests run
 - Ensures proper cleanup after tests complete
 - Handles threading requirements
@@ -57,6 +58,7 @@ The `JavaFXTestBase` class automatically:
 ### Key Methods
 
 #### `runOnFxThreadAndWait(Runnable)`
+
 Executes code on the JavaFX Application Thread and waits for completion:
 
 ```java
@@ -72,6 +74,7 @@ public void testSceneGraph() throws Exception {
 ```
 
 #### `isJavaFXInitialized()`
+
 Checks if JavaFX toolkit is initialized:
 
 ```java
@@ -92,6 +95,7 @@ mvn test -Dtestfx.headless=true
 ```
 
 This automatically configures:
+
 - `java.awt.headless=true`
 - `prism.order=sw` (software rendering)
 - `prism.text=t2k`
@@ -278,6 +282,7 @@ public void testMaterialProperties() throws Exception {
 ## Example Tests
 
 See `JavaFXTestBaseExample.java` for comprehensive examples of:
+
 - Basic node creation
 - Scene graph operations
 - Material properties
@@ -290,6 +295,7 @@ See `JavaFXTestBaseExample.java` for comprehensive examples of:
 ### Test Hangs or Times Out
 
 If tests hang, check:
+
 1. All JavaFX operations are inside `runOnFxThreadAndWait()`
 2. No infinite loops in test code
 3. Timeout values are sufficient (default 5 seconds)
@@ -317,6 +323,7 @@ public void test() throws Exception {
 ### Headless Mode Fails
 
 If headless tests fail, ensure:
+
 1. Using `-Dtestfx.headless=true` flag
 2. Not trying to display actual windows
 3. Not using features requiring GPU (use software rendering)
@@ -358,6 +365,7 @@ TestFX version is managed in the root `pom.xml`: **4.0.18**
 ### Initialization
 
 JavaFX initialization happens once per JVM using:
+
 - `AtomicBoolean` flag to prevent re-initialization
 - `CountDownLatch` for synchronization
 - Separate thread for `Application.launch()`
@@ -373,6 +381,7 @@ JavaFX initialization happens once per JVM using:
 ## Future Enhancements
 
 Potential improvements for Phase 1+:
+
 - Add TestFX robot support for interaction testing
 - Screenshot capture for visual regression testing
 - Performance benchmarking helpers
