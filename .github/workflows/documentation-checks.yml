@@ -54,6 +54,8 @@ jobs:
           markdownlint '**/*.md' \
             --ignore node_modules \
             --ignore .git \
+            --ignore Octree \
+            --ignore t8code \
             --config .github/markdownlint-config.json
         
       - name: Comment PR with results

@@ -2392,44 +2392,271 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
         return rayTraversal;
     }
 
+    // ===== LITMAX/BIGMIN Grid-Based Range Query Optimization =====
+
     /**
-     * Standard range computation for normal-sized entities FIXED: Use actual spatial indices instead of incorrect SFC
-     * computation
+     * Compute grid cell intervals using LITMAX/BIGMIN algorithm.
+     * This uses Morton codes for grid cell identification, which allows efficient
+     * range queries even though TetreeKeys themselves don't follow Morton order.
+     *
+     * @param queryBounds the query region bounds
+     * @param level       the refinement level for the query
+     * @return list of grid cell Morton code intervals
+     */
+    public List<GridCellInterval> cellsQ(VolumeBounds queryBounds, byte level) {
+        var intervals = new ArrayList<GridCellInterval>();
+        var cellSize = Constants.lengthAtLevel(level);
+
+        // Compute grid cell coordinates
+        var minX = Math.max(0, (int) Math.floor(queryBounds.minX() / cellSize));
+        var minY = Math.max(0, (int) Math.floor(queryBounds.minY() / cellSize));
+        var minZ = Math.max(0, (int) Math.floor(queryBounds.minZ() / cellSize));
+        var maxX = Math.max(0, (int) Math.floor(queryBounds.maxX() / cellSize));
+        var maxY = Math.max(0, (int) Math.floor(queryBounds.maxY() / cellSize));
+        var maxZ = Math.max(0, (int) Math.floor(queryBounds.maxZ() / cellSize));
+
+        // Compute Morton code range
+        var minMorton = MortonCurve.encode(minX, minY, minZ);
+        var maxMorton = MortonCurve.encode(maxX, maxY, maxZ);
+
+        if (minMorton > maxMorton) {
+            var temp = minMorton;
+            minMorton = maxMorton;
+            maxMorton = temp;
+        }
+
+        // Use LITMAX/BIGMIN to find contiguous intervals
+        var current = minMorton;
+        while (current <= maxMorton) {
+            var intervalStart = findNextGridCellInQuery(current, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
+            if (intervalStart < 0) {
+                break;
+            }
+
+            var intervalEnd = findGridCellIntervalEnd(intervalStart, minX, minY, minZ, maxX, maxY, maxZ, maxMorton);
+            intervals.add(new GridCellInterval(intervalStart, intervalEnd, level));
+            current = intervalEnd + 1;
+        }
+
+        return intervals;
+    }
+
+    /**
+     * Find the next Morton code >= start that's inside the query box.
+     */
+    private long findNextGridCellInQuery(long start, int minX, int minY, int minZ,
+                                         int maxX, int maxY, int maxZ, long maxMorton) {
+        var current = start;
+        while (current <= maxMorton) {
+            var coords = MortonCurve.decode(current);
+            if (coords[0] >= minX && coords[0] <= maxX &&
+                coords[1] >= minY && coords[1] <= maxY &&
+                coords[2] >= minZ && coords[2] <= maxZ) {
+                return current;
+            }
+
+            // Use BIGMIN to jump to next potentially valid Morton code
+            current = gridCellBigmin(current, minX, minY, minZ, maxX, maxY, maxZ);
+            if (current < 0 || current > maxMorton) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Find the end of the contiguous interval starting at intervalStart.
+     */
+    private long findGridCellIntervalEnd(long intervalStart, int minX, int minY, int minZ,
+                                         int maxX, int maxY, int maxZ, long maxMorton) {
+        var current = intervalStart;
+        while (current < maxMorton) {
+            var next = current + 1;
+            var coords = MortonCurve.decode(next);
+
+            if (coords[0] >= minX && coords[0] <= maxX &&
+                coords[1] >= minY && coords[1] <= maxY &&
+                coords[2] >= minZ && coords[2] <= maxZ) {
+                current = next;
+            } else {
+                break;
+            }
+        }
+        return current;
+    }
+
+    /**
+     * BIGMIN for grid cells: Find the smallest Morton code > current that could be in the query box.
+     */
+    private long gridCellBigmin(long current, int minX, int minY, int minZ,
+                                int maxX, int maxY, int maxZ) {
+        var coords = MortonCurve.decode(current);
+        var x = coords[0];
+        var y = coords[1];
+        var z = coords[2];
+
+        long nextMorton = current + 1;
+
+        if (x < minX || y < minY || z < minZ) {
+            // Current is before query in some dimension - jump to query corner
+            nextMorton = MortonCurve.encode(
+                Math.max(x, minX),
+                Math.max(y, minY),
+                Math.max(z, minZ)
+            );
+            if (nextMorton <= current) {
+                nextMorton = current + 1;
+            }
+        } else if (x > maxX || y > maxY || z > maxZ) {
+            return -1; // Signal to stop searching
+        }
+
+        return nextMorton;
+    }
+
+    /**
+     * Get TetreeKeys for all tetrahedra in the given grid cell intervals.
+     * For each grid cell, we enumerate all 6 tetrahedra (types 0-5).
+     *
+     * @param intervals  the grid cell intervals from cellsQ()
+     * @param bounds     the query bounds for geometry filtering
+     * @param includeIntersecting whether to include intersecting tetrahedra
+     * @return set of TetreeKeys for tetrahedra in the query region
+     */
+    private NavigableSet<TetreeKey<? extends TetreeKey>> tetreeKeysFromGridCells(
+            List<GridCellInterval> intervals, VolumeBounds bounds, boolean includeIntersecting) {
+        NavigableSet<TetreeKey<? extends TetreeKey>> result = new TreeSet<>();
+
+        for (var interval : intervals) {
+            var level = interval.level();
+            var cellSize = Constants.lengthAtLevel(level);
+
+            // Enumerate Morton codes in this interval
+            for (long morton = interval.start(); morton <= interval.end(); morton++) {
+                var coords = MortonCurve.decode(morton);
+                var x = coords[0] * cellSize;
+                var y = coords[1] * cellSize;
+                var z = coords[2] * cellSize;
+
+                // For each grid cell, enumerate all 6 tetrahedra
+                for (byte type = 0; type < 6; type++) {
+                    var tet = new Tet(x, y, z, level, type);
+
+                    // Check if this tetrahedron intersects/is contained in bounds
+                    boolean matches;
+                    if (includeIntersecting) {
+                        matches = Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
+                    } else {
+                        matches = Tet.tetrahedronContainedInVolumeBounds(tet, bounds);
+                    }
+
+                    if (matches) {
+                        var tetKey = tet.tmIndex();
+                        // Only add if this key exists in our spatial index
+                        if (spatialIndex.containsKey(tetKey)) {
+                            result.add(tetKey);
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Represents a contiguous interval of grid cell Morton codes.
+     */
+    public record GridCellInterval(long start, long end, byte level) {
+        public long cellCount() {
+            return end - start + 1;
+        }
+    }
+
+    /**
+     * Standard range computation for normal-sized entities.
+     * Uses LITMAX/BIGMIN grid-based optimization for large indexes.
      */
     private NavigableSet<TetreeKey<? extends TetreeKey>> getStandardEntitySpatialRange(VolumeBounds bounds,
                                                                                        boolean includeIntersecting) {
         NavigableSet<TetreeKey<? extends TetreeKey>> result = new TreeSet<>();
 
-        // CRITICAL FIX: The fundamental issue is that computeSFCRanges() is broken.
-        // Instead of using computed SFC ranges that don't match reality, we need to
-        // check all existing spatial indices and test them individually.
+        // For small indexes, linear scan is actually faster due to lower overhead
+        int indexSize = spatialIndex.size();
+        if (indexSize < 100) {
+            // Linear scan for small indexes
+            for (TetreeKey<? extends TetreeKey> spatialKey : spatialIndex.keySet()) {
+                try {
+                    Tet tet = Tet.tetrahedron(spatialKey);
 
-        // This is less efficient but correct. The SFC range computation logic
-        // would need a complete rewrite to work properly with the Tet.tmIndex() algorithm.
-
-        for (TetreeKey<? extends TetreeKey> spatialKey : spatialIndex.keySet()) {
-            try {
-                Tet tet = Tet.tetrahedron(spatialKey);
-
-                if (includeIntersecting) {
-                    // Check if tetrahedron intersects the bounds
-                    boolean intersects = Tet.tetrahedronIntersectsVolumeBounds(tet, bounds);
-                    if (intersects) {
-                        result.add(spatialKey);
+                    if (includeIntersecting) {
+                        if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                            result.add(spatialKey);
+                        }
+                    } else {
+                        if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                            result.add(spatialKey);
+                        }
                     }
-                } else {
-                    // Check if tetrahedron is contained within bounds
-                    if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
-                        result.add(spatialKey);
-                    }
+                } catch (Exception e) {
+                    continue;
                 }
-            } catch (Exception e) {
-                // Skip invalid indices
-                continue;
             }
+            return result;
         }
 
-        return result;
+        // Use LITMAX/BIGMIN grid-based optimization for larger indexes
+        // Query at the level determined by the query bounds size
+        byte queryLevel = findOptimalQueryLevel(bounds);
+
+        var intervals = cellsQ(bounds, queryLevel);
+
+        // If we'd enumerate more cells than the index size, fall back to linear scan
+        long totalCells = intervals.stream().mapToLong(GridCellInterval::cellCount).sum() * 6;
+        if (totalCells > indexSize) {
+            // Linear scan is more efficient
+            for (TetreeKey<? extends TetreeKey> spatialKey : spatialIndex.keySet()) {
+                try {
+                    Tet tet = Tet.tetrahedron(spatialKey);
+
+                    if (includeIntersecting) {
+                        if (Tet.tetrahedronIntersectsVolumeBounds(tet, bounds)) {
+                            result.add(spatialKey);
+                        }
+                    } else {
+                        if (Tet.tetrahedronContainedInVolumeBounds(tet, bounds)) {
+                            result.add(spatialKey);
+                        }
+                    }
+                } catch (Exception e) {
+                    continue;
+                }
+            }
+            return result;
+        }
+
+        // Use grid-based lookup
+        return tetreeKeysFromGridCells(intervals, bounds, includeIntersecting);
+    }
+
+    /**
+     * Find optimal query level based on query bounds size and index characteristics.
+     */
+    private byte findOptimalQueryLevel(VolumeBounds bounds) {
+        float maxExtent = Math.max(
+            Math.max(bounds.maxX() - bounds.minX(), bounds.maxY() - bounds.minY()),
+            bounds.maxZ() - bounds.minZ()
+        );
+
+        // Find the level where cell size roughly matches the query extent
+        // This balances between too many cells (fine level) and missing data (coarse level)
+        for (byte level = 1; level <= maxDepth; level++) {
+            int cellSize = Constants.lengthAtLevel(level);
+            if (cellSize <= maxExtent * 2) {
+                return level;
+            }
+        }
+        return maxDepth;
     }
 
     /**

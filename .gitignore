@@ -5,6 +5,7 @@
 **/.idea
 /bin/
 /.mvn/jvm.config
+**/.pm
 
 **/.claude
 /t8code/

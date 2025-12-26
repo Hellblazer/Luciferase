@@ -1,6 +1,6 @@
 # Lucien Module Architecture
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-25
 **Status**: Current
 
 ## Overview
@@ -46,6 +46,9 @@ com.hellblazer.luciferase.lucien/
 │   ├── OctreeSubdivisionStrategy - Subdivision policy
 │   ├── Octant - Octant enumeration
 │   └── internal/NodeDistance - Node distance utilities
+├── sfc/ (2 classes)
+│   ├── SFCArrayIndex - Flat SFC-sorted array index (2.9x faster insertions)
+│   └── MortonKeyInterval - Morton code range for cells(Q) algorithm
 ├── tetree/ (34 classes)
 │   ├── Core: Tetree, Tet, TetrahedralGeometry, TetrahedralSearchBase
 │   ├── Keys: TetreeKey, CompactTetreeKey, LazyTetreeKey
@@ -128,8 +131,7 @@ com.hellblazer.luciferase.lucien/
 │   └── SpatialIndexProfiler - Performance profiling utilities
 └── index/ (0 classes)
     └── [Empty directory]
-
-```text
+```
 
 ## Class Hierarchy
 
@@ -140,10 +142,10 @@ com.hellblazer.luciferase.lucien/
 SpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content> (interface)
     └── AbstractSpatialIndex<Key extends SpatialKey<Key>, ID extends EntityID, Content>
             ├── Octree<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
+            ├── SFCArrayIndex<ID, Content> extends AbstractSpatialIndex<MortonKey, ID, Content>
             ├── Tetree<ID, Content> extends AbstractSpatialIndex<TetreeKey, ID, Content>
             └── Prism<ID, Content> extends AbstractSpatialIndex<PrismKey, ID, Content>
-
-```text
+```
 
 ### Node Storage (Phase 6.2 Update)
 
@@ -153,8 +155,7 @@ As of July 10, 2025, the node storage hierarchy has been simplified:
 
 SpatialNodeStorage<ID> (interface)
     └── SpatialNodeImpl<ID> (unified implementation used by both Octree and Tetree)
-
-```text
+```
 
 The previous `OctreeNode` and `TetreeNodeImpl` classes have been eliminated in favor of a single unified node
 implementation.
@@ -182,7 +183,7 @@ ConcurrentSkipListMap providing both O(log n) access and sorted iteration with t
 
 - **Entity Management**: insert(), remove(), update(), lookup()
 - **Spatial Queries**: boundedBy(), bounding(), enclosing()
-- **k-NN Search**: Complete k-nearest neighbor implementation
+- **k-NN Search**: Complete k-nearest neighbor implementation with full-scan fallback for unlimited distance queries
 - **Range Queries**: Optimized spatial range query with customizable index calculation
 - **Node Lifecycle**: insertAtPosition(), onNodeRemoved(), handleNodeSubdivision()
 
@@ -224,6 +225,100 @@ The `Octree` class provides Morton curve-based cubic spatial subdivision:
 - `calculateSpatialIndex()` - Computes Morton code from position
 - `getMortonCodeRange()` - Optimized range calculation using Morton properties
 - `addNeighboringNodes()` - 26-neighbor cubic traversal
+
+## SFCArrayIndex Implementation (December 2025)
+
+The `SFCArrayIndex` class provides a flat SFC-sorted array-based spatial index optimized for high insertion rates and range queries:
+
+### Unique Characteristics
+
+- Flat array structure (no tree hierarchy)
+- Same Morton encoding as Octree for spatial ordering
+- cells(Q) algorithm for optimal range query intervals (≤8 intervals for any 3D query)
+- No subdivision overhead - entities stored directly in sorted order
+- Based on de Berg et al. 2025 research on SFC-based spatial indexing
+
+### Performance vs Octree
+
+| Operation | SFCArrayIndex vs Octree |
+|-----------|-------------------------|
+| Insertion | **2.9x faster** |
+| Range Query | **2x faster** |
+| k-NN Query | 15% slower |
+| Memory | **33% less** |
+
+### cells(Q) Algorithm
+
+The cells(Q) algorithm computes contiguous Morton code intervals for 3D query regions:
+
+```java
+// Compute optimal SFC intervals for query bounds
+List<MortonKeyInterval> intervals = sfcArray.cellsQ(queryBounds, level);
+// Guaranteed: intervals.size() ≤ 8 for any axis-aligned 3D query
+```
+
+This leverages the RSFC (Recursive Space-Filling Curve) property where axis-aligned
+hypercubes map to contiguous Morton intervals.
+
+### Key Methods
+
+- `calculateSpatialIndex()` - Uses Morton encoding (same as Octree)
+- `cellsQ()` - Computes optimal SFC intervals for range queries
+- `handleNodeSubdivision()` - No-op (flat structure)
+- `hasChildren()` - Always returns false (no tree hierarchy)
+
+### When to Use SFCArrayIndex
+
+- High insertion rate workloads
+- Frequent range query operations
+- Memory-constrained environments
+- Bulk data loading scenarios
+
+## SpatialIndexFactory (December 2025)
+
+The `SpatialIndexFactory` provides a unified API for creating spatial indices based on workload characteristics:
+
+### WorkloadType-Based Selection
+
+```java
+// Create index based on workload
+var index = SpatialIndexFactory.createForWorkload(WorkloadType.HIGH_INSERTION_RATE);  // → SFCArrayIndex
+var index = SpatialIndexFactory.createForWorkload(WorkloadType.KNN_HEAVY);            // → Octree
+```
+
+### Workload Recommendations
+
+| WorkloadType | Recommended Index |
+|--------------|-------------------|
+| HIGH_INSERTION_RATE | SFCArrayIndex |
+| RANGE_QUERY_HEAVY | SFCArrayIndex |
+| MEMORY_CONSTRAINED | SFCArrayIndex |
+| KNN_HEAVY | Octree |
+| TREE_TRAVERSAL | Octree |
+| BALANCED | Octree |
+
+### Builder Pattern
+
+```java
+var index = SpatialIndexFactory.builder(idGenerator)
+    .forWorkload(WorkloadType.HIGH_INSERTION_RATE)
+    .maxDepth((byte) 15)
+    .maxEntitiesPerNode(20)
+    .build();
+```
+
+### Automatic Recommendation
+
+```java
+// Get recommendation based on workload metrics
+IndexType recommended = SpatialIndexFactory.recommend(
+    100000,  // expected entity count
+    1000,    // insertions/sec
+    100,     // range queries/sec
+    50,      // k-NN queries/sec
+    0        // memory constraint (0 = unlimited)
+);
+```
 
 ## Tetree Implementation
 
@@ -358,23 +453,27 @@ The DSOC system provides efficient occlusion culling for dynamic scenes by maint
 ### Core Components
 
 **HierarchicalZBuffer**: Multi-level depth pyramid for efficient occlusion queries
+
 - Configurable resolution and pyramid levels (typically 6 levels)
 - Thread-safe operations with read-write locking
 - Optimized depth testing with early rejection
 - Camera matrix support for view-space transformations
 
 **HierarchicalOcclusionCuller**: Generic occlusion culling implementation
+
 - Supports both node-level and entity-level occlusion testing
 - Integration with VisibilityStateManager for TBV handling
 - Comprehensive statistics collection for performance monitoring
 - Configurable occlusion testing strategies
 
 **VisibilityStateManager**: Tracks entity visibility states across frames
+
 - Manages transitions between VISIBLE, HIDDEN_WITH_TBV, and HIDDEN_EXPIRED states
 - Creates and maintains Temporal Bounding Volumes for occluded entities
 - Implements deferred update strategies for performance optimization
 
 **DSOCConfiguration**: Flexible configuration system with fluent API
+
 - Pre-configured profiles: defaultConfig(), highPerformance(), highQuality()
 - TBV strategies: Adaptive, Fixed Duration, Velocity-based
 - Fine-grained control over update intervals, quality thresholds, and memory limits
@@ -393,10 +492,9 @@ spatialIndex.updateCamera(viewMatrix, projMatrix, cameraPos);
 spatialIndex.nextFrame();
 
 // Frustum culling automatically includes occlusion
-List<FrustumIntersection<ID, Content>> visible = 
+List<FrustumIntersection<ID, Content>> visible =
     spatialIndex.frustumCullVisible(frustum, cameraPos);
-
-```text
+```
 
 ### Temporal Bounding Volumes (TBVs)
 
@@ -674,8 +772,7 @@ public class SpatialClass<Key extends SpatialKey<Key>, ID extends EntityID, Cont
     // ID: Entity identifier type
     // Content: User-defined content type
 }
-
-```text
+```
 
 **SpatialKey Architecture**:
 
@@ -722,13 +819,15 @@ The TetreeKey system provides efficient spatial key encoding for tetrahedral sub
 
 ### Dual Implementation Strategy
 
-**CompactTetreeKey (Levels 0-10)**:
+**CompactTetreeKey (Levels 0-10)**
+
 - Single 64-bit long storage for optimal performance
 - Handles 95%+ of typical use cases efficiently
 - 6 bits per level encoding (3 coordinate + 3 type bits)
 - Maximum 60 bits used (10 levels × 6 bits)
 
-**ExtendedTetreeKey (Levels 0-21)**:
+**ExtendedTetreeKey (Levels 0-21)**
+
 - Dual 64-bit long storage (128-bit total)
 - Standard encoding for levels 0-20
 - Special bit packing for level 21 using leftover bits
@@ -745,10 +844,10 @@ Level 21 Encoding (6 bits total):
 - 2 bits stored in high long positions 60-61
 - Preserves space-filling curve ordering
 - Enables efficient parent/child computation
+```
 
-```text
+**Key Features**
 
-**Key Features**:
 - Maintains SFC ordering properties despite split encoding
 - No performance penalty for levels 0-20
 - Seamless factory method selection based on level
@@ -762,8 +861,7 @@ protected static final int  LEVEL_21_LOW_BITS_SHIFT = 60;  // Position in low lo
 protected static final int  LEVEL_21_HIGH_BITS_SHIFT = 60; // Position in high long  
 protected static final long LEVEL_21_LOW_MASK = 0xFL;      // 4 bits: 0b1111
 protected static final long LEVEL_21_HIGH_MASK = 0x3L;     // 2 bits: 0b11
-
-```text
+```
 
 This design achieves full Octree-equivalent refinement levels while maintaining the memory efficiency and performance characteristics of the tetrahedral space-filling curve.
 
@@ -782,9 +880,9 @@ The codebase underwent dramatic simplification in 2025, focusing on core spatial
 ### Key Addition (June 2025)
 
 - **SpatialKey Architecture**: Type-safe spatial keys to prevent index collisions
-    - Resolves Tetree's non-unique SFC index issue
-    - Provides type safety between Octree and Tetree operations
-    - Maintains performance with minimal object allocation overhead
+  - Resolves Tetree's non-unique SFC index issue
+  - Provides type safety between Octree and Tetree operations
+  - Maintains performance with minimal object allocation overhead
 
 ### What This Architecture Does NOT Include
 
@@ -881,8 +979,7 @@ DynamicForestManager<MortonKey, LongEntityID, String> manager = new DynamicFores
 manager.
 
 enableAutoManagement(60000); // Check every minute
-
-```text
+```
 
 ## Forest Architecture
 
@@ -1044,19 +1141,42 @@ The unified architecture allows easy switching between spatial index types based
 - Specialized use case optimization
 - Less general-purpose than Octree/Tetree
 
+### SFCArrayIndex - High-Throughput Flat Index
+
+**Use SFCArrayIndex when:**
+
+- High insertion rates are required (bulk loading, streaming data)
+- Range queries dominate the workload
+- Memory is constrained
+- Tree traversal and hierarchical operations not needed
+- k-NN queries are not the primary use case
+
+**Advantages:**
+
+- 2.9x faster insertions than Octree
+- 2x faster range queries than Octree
+- 33% less memory than Octree
+- No subdivision overhead
+
+**Trade-offs:**
+
+- 15% slower k-NN queries
+- No tree-specific operations (traversal, balancing)
+- Flat structure only
+
 ### Decision Matrix
 
-| Criterion                  | Octree | Tetree        | Prism             |
-| ---------------------------- | -------- | --------------- | ------------------- |
-| **Coordinate Constraints** | None   | Positive only | x + y < worldSize |
-| **Memory Usage**           | High   | Low           | Medium            |
-| **Insertion Speed**        | Slow   | Fast          | Medium            |
-| **k-NN Performance**       | Medium | Fast          | Medium            |
-| **Range Queries**          | Fast   | Slow          | Medium            |
-| **Use Case Generality**    | High   | High          | Specialized       |
-| **Geometric Complexity**   | Low    | High          | Medium            |
+| Criterion                  | Octree | SFCArrayIndex | Tetree        | Prism             |
+| ---------------------------- | -------- | --------------- | --------------- | ------------------- |
+| **Coordinate Constraints** | None   | None          | Positive only | x + y < worldSize |
+| **Memory Usage**           | High   | **Low (67%)** | Low           | Medium            |
+| **Insertion Speed**        | Slow   | **Very Fast** | Fast          | Medium            |
+| **k-NN Performance**       | Medium | Slightly Slower | Fast        | Medium            |
+| **Range Queries**          | Fast   | **Very Fast** | Slow          | Medium            |
+| **Tree Traversal**         | Yes    | No            | Yes           | Yes               |
+| **Use Case Generality**    | High   | Medium        | High          | Specialized       |
 
-## Performance Characteristics
+## Performance Summary
 
 For current performance metrics and detailed comparisons, see [PERFORMANCE_METRICS_MASTER.md](PERFORMANCE_METRICS_MASTER.md).
 
@@ -1097,16 +1217,18 @@ The module includes comprehensive test coverage:
 
 ## Current State
 
-As of July 2025, the lucien module represents a complete spatial indexing solution with:
+As of December 2025, the lucien module represents a complete spatial indexing solution with:
 
-- Three distinct spatial indexing strategies (Octree, Tetree, Prism)
+- Four distinct spatial indexing strategies (Octree, SFCArrayIndex, Tetree, Prism)
+- SpatialIndexFactory for workload-based index selection
 - Unified API enabling easy switching between implementations
 - All planned enhancements implemented
 - Comprehensive API documentation
-- Proven performance characteristics across all three approaches
+- Proven performance characteristics across all four approaches
 - Robust test coverage
 - Specialized optimization for different data patterns and use cases
 
 The architecture successfully balances simplicity with advanced features, providing both ease of use and high
-performance for diverse 3D spatial indexing needs. The addition of Prism extends the system to handle anisotropic data
-patterns, completing the coverage of major spatial subdivision strategies.
+performance for diverse 3D spatial indexing needs. The addition of SFCArrayIndex (December 2025) provides a
+high-throughput alternative to Octree for workloads dominated by insertions and range queries, achieving
+2.9x faster insertions and 33% less memory usage.

@@ -1,7 +1,7 @@
 # ESVO Octree Inspector - Architecture Design
 
-**Task ID**: Luciferase-q65  
-**Created**: 2025-12-09  
+**Task ID**: Luciferase-q65
+**Created**: 2025-12-09
 **Status**: Phase 1.1 Complete
 
 ## Executive Summary
@@ -12,7 +12,7 @@ This document defines the architecture for the ESVO Octree Inspector, a comprehe
 
 ### Component Hierarchy
 
-```
+```text
 OctreeInspectorApp
 ├── JavaFX Application Layer (extends Application)
 │   ├── Stage (primary window)
@@ -46,7 +46,7 @@ OctreeInspectorApp
 
 ### Module Integration Map
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    PORTAL MODULE                             │
 │  ┌────────────────────────────────────────────────────┐    │
@@ -92,7 +92,7 @@ OctreeInspectorApp
 
 ### 1. OctreeInspectorApp (Main Application)
 
-**Package**: `com.hellblazer.luciferase.portal.esvo`  
+**Package**: `com.hellblazer.luciferase.portal.esvo`
 **Pattern**: JavaFX Application with Launcher inner class
 
 ```java
@@ -142,6 +142,7 @@ public class OctreeInspectorApp extends Application {
 ```
 
 **Key Design Decisions**:
+
 - Extends `Application` directly (not Abstract3DApp) for more control
 - Uses CameraView from portal module for camera management
 - Follows TetreeInspector pattern for proven architecture
@@ -149,7 +150,7 @@ public class OctreeInspectorApp extends Application {
 
 ### 2. ProceduralVoxelGenerator
 
-**Package**: `com.hellblazer.luciferase.portal.esvo.generator`  
+**Package**: `com.hellblazer.luciferase.portal.esvo.generator`
 **Purpose**: Generate demo geometry for octree visualization
 
 ```java
@@ -187,6 +188,7 @@ public class ProceduralVoxelGenerator {
 ```
 
 **Design Rationale**:
+
 - Enum-based shape selection for type safety
 - Configurable resolution for performance testing
 - Returns voxel coordinates (not boolean array) for memory efficiency
@@ -194,7 +196,7 @@ public class ProceduralVoxelGenerator {
 
 ### 3. ESVO Integration Layer
 
-**Package**: `com.hellblazer.luciferase.portal.esvo.bridge`  
+**Package**: `com.hellblazer.luciferase.portal.esvo.bridge`
 **Purpose**: Bridge between portal (JavaFX) and render (ESVO) modules
 
 ```java
@@ -248,6 +250,7 @@ public class ESVOBridge {
 ```
 
 **Integration Points**:
+
 1. **OctreeBuilder**: Octree construction via `buildFromVoxels(List<Point3i>, int depth)`
 2. **Point3i**: Voxel coordinate type from `com.hellblazer.luciferase.geometry` (common module)
 3. **RayTraversalUtils**: Simplified ray creation and octree conversion utilities
@@ -260,7 +263,7 @@ public class ESVOBridge {
 
 ### 4. OctreeRenderer
 
-**Package**: `com.hellblazer.luciferase.portal.esvo.renderer`  
+**Package**: `com.hellblazer.luciferase.portal.esvo.renderer`
 **Purpose**: Visualize octree nodes as JavaFX geometry
 
 ```java
@@ -317,6 +320,7 @@ public class OctreeRenderer {
 ```
 
 **Rendering Strategy**:
+
 - Use **BATCHED** strategy by default (30-40% faster from Phase 0.4 analysis)
 - Leverage `OctreeNodeMeshRenderer` from Phase 0.4 prototype
 - Use `ESVONodeGeometry.getNodeBounds()` for accurate node positioning
@@ -324,7 +328,7 @@ public class OctreeRenderer {
 
 ### 5. RayVisualizer
 
-**Package**: `com.hellblazer.luciferase.portal.esvo.renderer`  
+**Package**: `com.hellblazer.luciferase.portal.esvo.renderer`
 **Purpose**: Visualize ray casting and traversal
 
 ```java
@@ -380,7 +384,7 @@ public class RayVisualizer {
 
 ### 6. ControlPanel
 
-**Package**: `com.hellblazer.luciferase.portal.esvo.ui`  
+**Package**: `com.hellblazer.luciferase.portal.esvo.ui`
 **Purpose**: UI controls for interactive manipulation
 
 ```java
@@ -441,7 +445,8 @@ public class ControlPanel extends VBox {
 ```
 
 **UI Layout**:
-```
+
+```text
 ┌─────────────────────────────┐
 │ Octree Parameters           │
 │  Depth: [====●=====] 10     │
@@ -470,7 +475,7 @@ public class ControlPanel extends VBox {
 
 ### 7. CameraView Integration
 
-**Existing Component**: `com.hellblazer.luciferase.portal.CameraView`  
+**Existing Component**: `com.hellblazer.luciferase.portal.CameraView`
 **Usage Pattern** (from TetreeInspector):
 
 ```java
@@ -495,6 +500,7 @@ root.setCenter(cameraView);
 ```
 
 **Benefits**:
+
 - Proven camera control system
 - Mouse + keyboard navigation
 - First-person mode support
@@ -503,7 +509,7 @@ root.setCenter(cameraView);
 
 ### 8. AdaptiveGrid Integration
 
-**Existing Component**: `com.hellblazer.luciferase.portal.mesh.explorer.grid.AdaptiveGrid`  
+**Existing Component**: `com.hellblazer.luciferase.portal.mesh.explorer.grid.AdaptiveGrid`
 **Usage Pattern** (from TetreeInspector):
 
 ```java
@@ -528,6 +534,7 @@ gridGroup.getChildren().add(grid);
 ```
 
 **Grid Behavior**:
+
 - Automatically scales to match octree level
 - Updates when level changes
 - Color-coded axes (X=red, Y=green, Z=blue)
@@ -537,7 +544,7 @@ gridGroup.getChildren().add(grid);
 
 ### 1. Initialization Flow
 
-```
+```text
 Application Start
     ↓
 OctreeInspectorApp.start()
@@ -585,7 +592,7 @@ OctreeInspectorApp.start()
 
 ### 2. Octree Rebuild Flow
 
-```
+```text
 User Changes Parameter (depth/resolution/shape)
     ↓
 ControlPanel fires event
@@ -633,7 +640,7 @@ ControlPanel fires event
 
 ### 3. Ray Casting Flow
 
-```
+```text
 User Clicks on 3D Scene
     ↓
 Mouse Event → 2D Screen Coordinates
@@ -746,8 +753,9 @@ public class InteractionController {
 
 ### 1. Rendering Optimization
 
-**Problem**: Deep octrees (15 levels) can have 100K+ nodes  
+**Problem**: Deep octrees (15 levels) can have 100K+ nodes
 **Solutions**:
+
 - Use **BATCHED** rendering strategy (single TriangleMesh)
 - Implement frustum culling (don't render off-screen nodes)
 - Level-of-detail: Show only visible level range
@@ -775,7 +783,7 @@ public class OctreeRenderer {
 
 ### 2. Background Processing
 
-**Problem**: Octree building can block UI thread  
+**Problem**: Octree building can block UI thread
 **Solution**: Use background threads with proper synchronization
 
 ```java
@@ -810,8 +818,9 @@ public class RebuildController {
 
 ### 3. Memory Management
 
-**Problem**: Large octrees consume significant memory  
+**Problem**: Large octrees consume significant memory
 **Solutions**:
+
 - Reuse geometry objects (pooling)
 - Clear unused groups promptly
 - Lazy loading for voxel rendering
@@ -902,6 +911,7 @@ public class OctreeInspectorIntegrationTest extends JavaFXTestBase {
 ### Visual Tests
 
 Manual verification checklist:
+
 - [ ] Application launches without errors
 - [ ] 3D scene renders with correct perspective
 - [ ] Camera controls respond smoothly
@@ -913,7 +923,7 @@ Manual verification checklist:
 
 ## File Structure
 
-```
+```text
 portal/src/main/java/com/hellblazer/luciferase/portal/esvo/
 ├── OctreeInspectorApp.java              # Main application
 ├── bridge/
@@ -947,12 +957,14 @@ portal/doc/
 ## Dependencies Summary
 
 ### Direct Dependencies (Existing)
+
 - **portal → render**: For ESVO components
 - **portal → common**: For utilities
 - **JavaFX 24**: UI framework
 - **javax.vecmath**: Vector mathematics
 
 ### New Dependencies (Phase 0 Complete)
+
 - ✅ **TestFX 4.0.18**: UI testing (Phase 0.5)
 - ✅ **ESVONodeGeometry**: Node bounds (Phase 0.2)
 - ✅ **ESVOTopology**: Parent/child relationships (Phase 0.3)
@@ -964,16 +976,19 @@ portal/doc/
 ### High-Risk Areas
 
 1. **Performance with Deep Octrees**
+
    - Risk: 100K+ nodes may cause low FPS
    - Mitigation: BATCHED rendering, frustum culling, LOD
    - Fallback: Limit visible nodes, warn user
 
 2. **Complex UI Interactions**
+
    - Risk: UI freeze during octree rebuild
    - Mitigation: Background threads, progress indicators
    - Fallback: Disable controls during rebuild
 
 3. **Memory Consumption**
+
    - Risk: Large octrees consume excessive memory
    - Mitigation: Object pooling, lazy loading, streaming
    - Fallback: Limit octree depth, reduce resolution
@@ -981,11 +996,13 @@ portal/doc/
 ### Medium-Risk Areas
 
 1. **Cross-Module Integration**
+
    - Risk: API mismatches between portal and render
    - Mitigation: Clear interfaces, integration tests
    - Fallback: Adapter pattern for compatibility
 
 2. **Ray Casting Accuracy**
+
    - Risk: Ray-to-screen conversion errors
    - Mitigation: Test with known hit points
    - Fallback: Visual debugging mode
@@ -1025,14 +1042,15 @@ All three can be worked in parallel since they have no mutual dependencies.
 
 ---
 
-**Document Version**: 1.1  
-**Last Updated**: 2025-12-09  
-**Author**: Claude Code (Plan-based Design)  
+**Document Version**: 1.1
+**Last Updated**: 2025-12-09
+**Author**: Claude Code (Plan-based Design)
 **Status**: APIs Verified and Updated
 
 ## Revision History
 
 ### Version 1.1 (2025-12-09) - API Verification Update
+
 - **Fixed ESVOBridge.buildOctree()**: Now uses `OctreeBuilder.buildFromVoxels(List<Point3i>, int depth)` instead of non-existent ESVOCPUBuilder
 - **Fixed ESVOBridge.castRay()**: Now uses `RayTraversalUtils.createRayFromCamera()` and `RayTraversalUtils.createOctreeFromData()` for proper coordinate transformation and data structure conversion
 - **Updated return type**: Changed from `RayTraversalResult` to `DeepTraversalResult` to match actual API
@@ -1042,6 +1060,7 @@ All three can be worked in parallel since they have no mutual dependencies.
 - **Updated Integration Points**: Added 9 integration points including RayTraversalUtils, DeepTraversalResult, and Point3i
 
 ### Version 1.0 (2025-12-09) - Initial Architecture
+
 - Complete architecture design for ESVO Octree Inspector
 - Component specifications for all major classes
 - Data flow diagrams and event handling architecture
