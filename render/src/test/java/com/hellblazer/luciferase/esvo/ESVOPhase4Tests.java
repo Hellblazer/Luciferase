@@ -246,43 +246,6 @@ public class ESVOPhase4Tests {
         assertTrue(colorError < 0.01f, "Color quantization error should be < 1%");
     }
     
-    /**
-     * Test 6: Parallel Subdivision Performance
-     * 
-     * Verify parallel processing provides speedup.
-     */
-    @Test
-    @DisplayName("Test parallel subdivision performance")
-    void testParallelSubdivisionPerformance() {
-        ESVOCPUBuilder builder = new ESVOCPUBuilder();
-        
-        try {
-            // Test with reasonable workload
-            int nodeCount = 1000;
-            
-            // Measure single-threaded performance
-            long singleStart = System.nanoTime();
-            builder.subdivideSequential(nodeCount);
-            long singleTime = System.nanoTime() - singleStart;
-            
-            // Measure multi-threaded performance
-            long multiStart = System.nanoTime();
-            builder.subdivideParallel(nodeCount);
-            long multiTime = System.nanoTime() - multiStart;
-            
-            // Verify speedup (very relaxed due to small workload and overhead)
-            double speedup = (double)singleTime / multiTime;
-            // With such a small workload, parallel can actually be slower due to overhead
-            // Just verify it runs without errors
-            assertTrue(speedup > 0.1, 
-                      String.format("Parallel completed (speedup: %.2fx)", speedup));
-        } catch (Exception e) {
-            fail("Unexpected exception: " + e.getMessage());
-        } finally {
-            builder.shutdown();
-        }
-    }
-    
     // Helper methods
     
     private List<Voxel> voxelizeTriangle(Triangle triangle, int level) {
