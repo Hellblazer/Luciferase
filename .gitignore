@@ -36,3 +36,4 @@ performance-results/summary-*.txt
 .gitattributes
 /.vscode/settings.json
 portal/logs/
+/.pm-archives
