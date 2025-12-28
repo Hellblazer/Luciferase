@@ -64,7 +64,7 @@ public class ESVOPerformanceBenchmark {
     private boolean initializeGPU() {
         try {
             // Check if OpenCL is available
-            if (supportMatrix.getBackendSupport(TestSupportMatrix.Backend.OPENCL) 
+            if (supportMatrix.getBackendSupport(TestSupportMatrix.Backend.OPENCL)
                 == TestSupportMatrix.SupportLevel.NOT_AVAILABLE) {
                 return false;
             }
@@ -380,44 +380,66 @@ public class ESVOPerformanceBenchmark {
     }
     
     private OctreeNode[] generateOctree(int maxDepth) {
-        // Generate a balanced octree with some filled voxels
-        int nodeCount = (int)((Math.pow(8, maxDepth + 1) - 1) / 7);
-        nodeCount = Math.min(nodeCount, 100_000); // Cap for memory
-        
-        var nodes = new OctreeNode[nodeCount];
+        // Generate a densely-packed octree with no null entries
+        // Use a list to build nodes, then convert to array
+        var nodeList = new ArrayList<OctreeNode>();
         var random = new Random(42);
-        
-        // Root node
-        nodes[0] = new OctreeNode();
-        nodes[0].childDescriptor = 1; // Points to first child
-        nodes[0].minValue = 0;
-        nodes[0].maxValue = 1;
-        
-        int currentIndex = 1;
-        for (int i = 0; i < Math.min(nodeCount / 8, nodes.length); i++) {
-            if (nodes[i] != null && (nodes[i].childDescriptor & 0x80000000) == 0 && currentIndex + 8 < nodes.length) {
-                nodes[i].childDescriptor = currentIndex;
-                
+
+        // Root node - will update child pointer later
+        var root = new OctreeNode();
+        root.minValue = 0;
+        root.maxValue = 1;
+        nodeList.add(root);
+
+        // Queue of (nodeIndex, depth) pairs to process
+        var queue = new ArrayList<int[]>();
+        queue.add(new int[]{0, 0});
+
+        int maxNodes = 100_000; // Cap for memory
+
+        while (!queue.isEmpty() && nodeList.size() < maxNodes) {
+            var entry = queue.remove(0);
+            int nodeIndex = entry[0];
+            int depth = entry[1];
+
+            var node = nodeList.get(nodeIndex);
+
+            // Decide if this should be a leaf
+            boolean makeLeaf = depth >= maxDepth ||
+                               random.nextFloat() > 0.8 ||
+                               nodeList.size() + 8 > maxNodes;
+
+            if (makeLeaf) {
+                // Mark as leaf with random attributes
+                node.childDescriptor = 0x80000000;
+                node.attributes = random.nextFloat() > 0.3 ? random.nextInt(255) + 1 : 0;
+            } else {
                 // Create 8 children
+                int firstChildIndex = nodeList.size();
+                node.childDescriptor = firstChildIndex;
+
                 for (int j = 0; j < 8; j++) {
-                    boolean isLeaf = random.nextFloat() > 0.7 || currentIndex + 8 >= nodes.length;
-                    nodes[currentIndex] = new OctreeNode();
-                    
-                    if (isLeaf) {
-                        nodes[currentIndex].childDescriptor = 0x80000000; // Mark as leaf
-                        nodes[currentIndex].attributes = random.nextFloat() > 0.5 ? random.nextInt(255) + 1 : 0;
-                    } else {
-                        nodes[currentIndex].childDescriptor = currentIndex + 8;
-                    }
-                    
-                    nodes[currentIndex].minValue = 0;
-                    nodes[currentIndex].maxValue = 1;
-                    currentIndex++;
+                    var child = new OctreeNode();
+                    child.minValue = 0;
+                    child.maxValue = 1;
+                    nodeList.add(child);
+
+                    // Add to queue for further processing
+                    queue.add(new int[]{firstChildIndex + j, depth + 1});
                 }
             }
         }
-        
-        return nodes;
+
+        // Mark any remaining queued nodes as leaves
+        for (var entry : queue) {
+            var node = nodeList.get(entry[0]);
+            if ((node.childDescriptor & 0x80000000) == 0 && node.childDescriptor == 0) {
+                node.childDescriptor = 0x80000000;
+                node.attributes = random.nextFloat() > 0.3 ? random.nextInt(255) + 1 : 0;
+            }
+        }
+
+        return nodeList.toArray(new OctreeNode[0]);
     }
     
     private void printBenchmarkSummary(List<BenchmarkResult> results) {
