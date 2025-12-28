@@ -77,6 +77,23 @@
             <classifier>${lwjgl.natives}</classifier>
         </dependency>
 
+        <!-- LWJGL Vulkan -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-vulkan</artifactId>
+        </dependency>
+
+        <!-- LWJGL Shaderc for SPIR-V compilation -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-shaderc</artifactId>
+            <classifier>${lwjgl.natives}</classifier>
+        </dependency>
+
         <!-- Vector Math -->
         <dependency>
             <groupId>javax.vecmath</groupId>

@@ -308,6 +308,26 @@
                 <version>${lwjgl.version}</version>
             </dependency>
 
+            <!-- Vulkan bindings -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-vulkan</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+
+            <!-- Shaderc for SPIR-V compilation -->
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-shaderc</artifactId>
+                <version>${lwjgl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-shaderc</artifactId>
+                <version>${lwjgl.version}</version>
+                <classifier>${lwjgl.natives}</classifier>
+            </dependency>
+
             <!-- JMH Benchmarking -->
             <dependency>
                 <groupId>org.openjdk.jmh</groupId>
