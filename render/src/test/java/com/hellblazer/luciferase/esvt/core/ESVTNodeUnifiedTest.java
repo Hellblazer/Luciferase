@@ -51,8 +51,13 @@ public class ESVTNodeUnifiedTest {
     void testNodeWithType() {
         for (byte type = 0; type < 6; type++) {
             var node = new ESVTNodeUnified(type);
-            assertTrue(node.isValid(), "Node should be valid by default");
+            // Validity is now derived from masks (matches ESVO)
+            assertFalse(node.isValid(), "Node without children/leaves should not be valid");
             assertEquals(type, node.getTetType(), "Type should match constructor arg");
+
+            // Set masks to make valid
+            node.setChildMask(0x01);
+            assertTrue(node.isValid(), "Node with children should be valid");
         }
     }
 
@@ -130,12 +135,16 @@ public class ESVTNodeUnifiedTest {
         node.setChildPtr(1000);
         assertEquals(1000, node.getChildPtr());
 
-        // Max value: 14 bits = 16383
-        node.setChildPtr(16383);
-        assertEquals(16383, node.getChildPtr());
+        // Test 16384 - now valid with 15 bits (was invalid with 14 bits)
+        node.setChildPtr(16384);
+        assertEquals(16384, node.getChildPtr());
+
+        // Max value: 15 bits = 32767
+        node.setChildPtr(32767);
+        assertEquals(32767, node.getChildPtr());
 
         // Over max should throw
-        assertThrows(IllegalArgumentException.class, () -> node.setChildPtr(16384));
+        assertThrows(IllegalArgumentException.class, () -> node.setChildPtr(32768));
     }
 
     @Test
@@ -226,14 +235,20 @@ public class ESVTNodeUnifiedTest {
 
     @Test
     void testValidFlag() {
+        // Validity is now derived from masks (matches ESVO approach)
         var node = new ESVTNodeUnified();
-        assertFalse(node.isValid());
+        assertFalse(node.isValid(), "Empty node should be invalid");
 
-        node.setValid(true);
-        assertTrue(node.isValid());
+        // Setting childMask makes it valid
+        node.setChildMask(0x01);
+        assertTrue(node.isValid(), "Node with children should be valid");
 
-        node.setValid(false);
-        assertFalse(node.isValid());
+        node.setChildMask(0x00);
+        assertFalse(node.isValid(), "Node without children should be invalid");
+
+        // Setting leafMask also makes it valid
+        node.setLeafMask(0xFF);
+        assertTrue(node.isValid(), "Node with leaves should be valid");
     }
 
     @Test

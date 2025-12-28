@@ -29,12 +29,11 @@ import java.nio.ByteBuffer;
  *
  * Structure: 8 bytes total (matches ESVO)
  *
- * childDescriptor (32 bits):
+ * childDescriptor (32 bits) - matches ESVO layout exactly:
  *   Bits 0-7:   leafmask (8 bits) - which children are leaves
  *   Bits 8-15:  childmask (8 bits) - which children exist (Bey 8-way subdivision)
  *   Bit 16:     far flag (1 bit) - far pointer flag
- *   Bits 17-30: childptr (14 bits) - child pointer offset
- *   Bit 31:     valid flag (1 bit) - node validity
+ *   Bits 17-31: childptr (15 bits) - child pointer offset (max 32767)
  *
  * contourDescriptor (32 bits):
  *   Bits 0:     reserved (1 bit) - padding
@@ -57,14 +56,14 @@ public final class ESVTNodeUnified {
     private int childDescriptor;    // First 32 bits
     private int contourDescriptor;  // Second 32 bits
 
-    // === Bit masks for childDescriptor (same as ESVO) ===
+    // === Bit masks for childDescriptor (matches ESVO exactly) ===
     private static final int LEAF_MASK_BITS = 0xFF;             // Bits 0-7: leafmask
     private static final int CHILD_MASK_BITS = 0xFF00;          // Bits 8-15: childmask
     private static final int CHILD_MASK_SHIFT = 8;
     private static final int FAR_FLAG_BIT = 0x10000;            // Bit 16: far flag
-    private static final int CHILD_PTR_MASK = 0x7FFE0000;       // Bits 17-30: childptr (14 bits)
+    private static final int CHILD_PTR_MASK = 0xFFFE0000;       // Bits 17-31: childptr (15 bits)
     private static final int CHILD_PTR_SHIFT = 17;
-    private static final int VALID_FLAG_BIT = 0x80000000;       // Bit 31: valid flag
+    private static final int MAX_CHILD_PTR = (1 << 15) - 1;     // 32767 - max direct pointer
 
     // === Bit masks for contourDescriptor (ESVT-specific) ===
     private static final int TET_TYPE_MASK = 0x0E;              // Bits 1-3: tet type (3 bits)
@@ -98,7 +97,7 @@ public final class ESVTNodeUnified {
      * Create node with tetrahedron type
      */
     public ESVTNodeUnified(byte tetType) {
-        this.childDescriptor = VALID_FLAG_BIT; // Valid by default
+        this.childDescriptor = 0; // Validity derived from masks
         this.contourDescriptor = (tetType & 0x7) << TET_TYPE_SHIFT;
     }
 
@@ -191,15 +190,15 @@ public final class ESVTNodeUnified {
     // === Child Pointer Operations (bits 17-30) ===
 
     /**
-     * Get child pointer offset (14 bits)
+     * Get child pointer offset (15 bits, max 32767)
      */
     public int getChildPtr() {
-        return (childDescriptor & CHILD_PTR_MASK) >> CHILD_PTR_SHIFT;
+        return (childDescriptor & CHILD_PTR_MASK) >>> CHILD_PTR_SHIFT;
     }
 
     public void setChildPtr(int ptr) {
-        if (ptr < 0 || ptr >= (1 << 14)) {
-            throw new IllegalArgumentException("Child pointer must fit in 14 bits, got: " + ptr);
+        if (ptr < 0 || ptr > MAX_CHILD_PTR) {
+            throw new IllegalArgumentException("Child pointer must fit in 15 bits (max " + MAX_CHILD_PTR + "), got: " + ptr);
         }
         childDescriptor = (childDescriptor & ~CHILD_PTR_MASK) |
                          (ptr << CHILD_PTR_SHIFT);
@@ -219,18 +218,23 @@ public final class ESVTNodeUnified {
         }
     }
 
-    // === Valid Flag Operations (bit 31) ===
+    // === Valid Flag Operations (derived from childMask, like ESVO) ===
 
+    /**
+     * Check if this node is valid. A node is valid if it has children or is a leaf.
+     * This matches ESVO's approach where validity is derived from the masks.
+     */
     public boolean isValid() {
-        return (childDescriptor & VALID_FLAG_BIT) != 0;
+        return getChildMask() != 0 || getLeafMask() != 0;
     }
 
+    /**
+     * Set valid flag. For compatibility - sets childMask to 0xFF if valid with no children.
+     * @deprecated Use setChildMask/setLeafMask directly instead
+     */
+    @Deprecated
     public void setValid(boolean valid) {
-        if (valid) {
-            childDescriptor |= VALID_FLAG_BIT;
-        } else {
-            childDescriptor &= ~VALID_FLAG_BIT;
-        }
+        // No-op for backward compatibility - validity is now derived from masks
     }
 
     // === Contour Operations (4 faces for tetrahedra) ===
