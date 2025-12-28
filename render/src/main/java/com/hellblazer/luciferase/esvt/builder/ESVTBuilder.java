@@ -131,23 +131,49 @@ public class ESVTBuilder {
      * @return ESVTData ready for GPU transfer
      */
     public ESVTData buildFromVoxels(List<Point3i> voxels, int maxDepth) {
+        // Default: use voxel bounding box for scaling
+        return buildFromVoxels(voxels, maxDepth, -1);
+    }
+
+    /**
+     * Build ESVT from voxel coordinates with explicit grid resolution.
+     *
+     * <p>When gridResolution is positive, coordinates are scaled relative to
+     * [0, gridResolution-1] bounds, preserving spatial relationships. When negative,
+     * coordinates are scaled to fit the actual voxel bounding box (legacy behavior).
+     *
+     * @param voxels         List of voxel coordinates (Point3i with x, y, z)
+     * @param maxDepth       Maximum tree depth (determines resolution)
+     * @param gridResolution Full grid size (e.g., 64 for 64x64x64), or -1 for auto
+     * @return ESVTData ready for GPU transfer
+     */
+    public ESVTData buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
         if (voxels == null || voxels.isEmpty()) {
             log.warn("Empty voxel list, returning empty ESVT");
             return new ESVTData(new ESVTNodeUnified[0], 0, 0, 0, 0);
         }
 
-        log.debug("Building ESVT from {} voxels at maxDepth {}", voxels.size(), maxDepth);
+        log.debug("Building ESVT from {} voxels at maxDepth {}, gridResolution {}",
+                voxels.size(), maxDepth, gridResolution);
 
-        // Compute bounding box for coordinate transformation
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
-        for (var voxel : voxels) {
-            minX = Math.min(minX, voxel.x);
-            minY = Math.min(minY, voxel.y);
-            minZ = Math.min(minZ, voxel.z);
-            maxX = Math.max(maxX, voxel.x);
-            maxY = Math.max(maxY, voxel.y);
-            maxZ = Math.max(maxZ, voxel.z);
+        // Determine coordinate bounds
+        int minX, minY, minZ, maxX, maxY, maxZ;
+        if (gridResolution > 0) {
+            // Use explicit grid bounds - preserves spatial relationships
+            minX = minY = minZ = 0;
+            maxX = maxY = maxZ = gridResolution - 1;
+        } else {
+            // Compute bounding box from actual voxels (legacy behavior)
+            minX = minY = minZ = Integer.MAX_VALUE;
+            maxX = maxY = maxZ = Integer.MIN_VALUE;
+            for (var voxel : voxels) {
+                minX = Math.min(minX, voxel.x);
+                minY = Math.min(minY, voxel.y);
+                minZ = Math.min(minZ, voxel.z);
+                maxX = Math.max(maxX, voxel.x);
+                maxY = Math.max(maxY, voxel.y);
+                maxZ = Math.max(maxZ, voxel.z);
+            }
         }
 
         // Tetree uses coordinates up to 2^21, but we scale to fit within the usable range
@@ -174,7 +200,7 @@ public class ESVTBuilder {
         offsetY += (targetRange - rangeY * scale) / 2.0f;
         offsetZ += (targetRange - rangeZ * scale) / 2.0f;
 
-        log.debug("Transforming voxels: bbox=[{},{},{}]-[{},{},{}], scale={}, target=[{},{}]",
+        log.debug("Transforming voxels: grid=[{},{},{}]-[{},{},{}], scale={}, target=[{},{}]",
                 minX, minY, minZ, maxX, maxY, maxZ, scale, targetMin, targetMax);
 
         // Create Tetree with appropriate configuration

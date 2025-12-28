@@ -73,8 +73,25 @@ public class ESVTBridge {
      * @return This bridge instance for method chaining
      */
     public ESVTBridge buildFromVoxels(List<Point3i> voxels, int maxDepth) {
+        return buildFromVoxels(voxels, maxDepth, -1);
+    }
+
+    /**
+     * Build an ESVT tree from voxel coordinates with explicit grid resolution.
+     *
+     * <p>When gridResolution is positive, the voxels are scaled relative to
+     * [0, gridResolution-1] bounds, preserving spatial relationships. This is
+     * essential for shapes like inscribed spheres where the voxels don't fill
+     * the entire grid.
+     *
+     * @param voxels List of voxel positions (Point3i x,y,z)
+     * @param maxDepth Maximum tree depth (determines resolution)
+     * @param gridResolution Full grid size (e.g., 64 for 64x64x64), or -1 for auto
+     * @return This bridge instance for method chaining
+     */
+    public ESVTBridge buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
         long startNs = System.nanoTime();
-        this.data = builder.buildFromVoxels(voxels, maxDepth);
+        this.data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
         this.lastBuildTimeNs = System.nanoTime() - startNs;
         return this;
     }

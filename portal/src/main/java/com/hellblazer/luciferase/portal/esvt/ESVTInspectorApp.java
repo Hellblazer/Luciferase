@@ -338,10 +338,10 @@ public class ESVTInspectorApp extends Application {
             int resolution = 1 << currentLevel;
             List<Point3i> voxels = voxelGenerator.generate(shape, resolution);
 
-            log.info("Generated {} voxels for {}", voxels.size(), shape);
+            log.info("Generated {} voxels for {} at resolution {}", voxels.size(), shape, resolution);
 
-            // Build ESVT
-            return esvtBridge.buildFromVoxels(voxels, currentLevel).getData();
+            // Build ESVT with explicit grid resolution to preserve spatial relationships
+            return esvtBridge.buildFromVoxels(voxels, currentLevel, resolution).getData();
         }, buildExecutor).thenAcceptAsync(data -> {
             currentData = data;
             esvtRenderer.setData(data);
