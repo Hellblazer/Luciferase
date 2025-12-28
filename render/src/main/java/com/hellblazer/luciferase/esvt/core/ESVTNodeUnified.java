@@ -275,6 +275,15 @@ public final class ESVTNodeUnified {
         return (getContourMask() & (1 << faceIdx)) != 0;
     }
 
+    /**
+     * Check if this node has any contour data.
+     *
+     * @return true if any face has contour data
+     */
+    public boolean hasContour() {
+        return getContourMask() != 0;
+    }
+
     // === Sparse Indexing Algorithm (same as ESVO) ===
 
     /**

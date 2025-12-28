@@ -16,9 +16,9 @@
  */
 package com.hellblazer.luciferase.esvt.traversal;
 
+import com.hellblazer.luciferase.esvt.core.ESVTContour;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
 import com.hellblazer.luciferase.lucien.Constants;
-import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -70,6 +70,11 @@ public final class ESVTTraversal {
     // Current tetrahedron vertices (tracked during traversal)
     private final float[] currentVerts = new float[12]; // 4 vertices * 3 coords
 
+    // Scratch space for contour refinement
+    private final Vector3f contourRayOrigin = new Vector3f();
+    private final Vector3f contourRayDir = new Vector3f();
+    private final Vector3f contourNormal = new Vector3f();
+
     /**
      * Create a new traversal instance.
      * Each instance has its own scratch space for thread safety.
@@ -92,6 +97,19 @@ public final class ESVTTraversal {
      * @return Traversal result with hit information
      */
     public ESVTResult castRay(ESVTRay ray, ESVTNodeUnified[] nodes, int rootIdx) {
+        return castRay(ray, nodes, null, rootIdx);
+    }
+
+    /**
+     * Cast a ray through the ESVT structure with contour refinement.
+     *
+     * @param ray The ray to cast (origin, direction)
+     * @param nodes Array of ESVT nodes
+     * @param contours Array of contour data (may be null for no refinement)
+     * @param rootIdx Index of root node (usually 0)
+     * @return Traversal result with hit information
+     */
+    public ESVTResult castRay(ESVTRay ray, ESVTNodeUnified[] nodes, int[] contours, int rootIdx) {
         var result = new ESVTResult();
         ray.prepareForTraversal();
         stack.reset();
@@ -185,16 +203,83 @@ public final class ESVTTraversal {
 
                 // Check if this is a leaf
                 if (node.isChildLeaf(childIdx)) {
-                    // HIT - return result
+                    // Get child node for contour data
+                    int childNodeIdx = node.getChildIndex(childIdx);
+                    var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
+                        ? nodes[childNodeIdx] : null;
+
+                    // Apply contour refinement if available
+                    float refinedT = childTEntry;
+                    Vector3f refinedNormal = null;
+
+                    if (contours != null && childNode != null && childNode.hasContour()) {
+                        // Get contour for entry face
+                        int contourMask = childNode.getContourMask();
+                        if ((contourMask & (1 << childEntryFace)) != 0) {
+                            int contourPtr = childNode.getContourPtr();
+                            int contourOffset = Integer.bitCount(contourMask & ((1 << childEntryFace) - 1));
+                            int contourIdx = contourPtr + contourOffset;
+
+                            if (contourIdx >= 0 && contourIdx < contours.length) {
+                                int contour = contours[contourIdx];
+
+                                // Compute tetrahedron scale from current level
+                                float tetScale = (float) Math.pow(0.5, MAX_DEPTH - 1 - scale);
+
+                                // Set up ray for contour intersection
+                                contourRayOrigin.set(rayOrigin.x, rayOrigin.y, rayOrigin.z);
+                                contourRayDir.set(rayDir.x, rayDir.y, rayDir.z);
+
+                                // Intersect ray with contour
+                                float[] contourHit = ESVTContour.intersectRay(
+                                    contour, contourRayOrigin, contourRayDir, tetScale);
+
+                                if (contourHit == null) {
+                                    // Contour indicates no hit - continue searching
+                                    continue;
+                                }
+
+                                // Refine hit to contour surface
+                                var decoded = ESVTContour.decodeNormal(contour);
+                                float[] posThick = ESVTContour.decodePosThick(contour);
+                                float contourPos = posThick[0] * tetScale;
+
+                                // Calculate refined t at contour plane center
+                                float denom = decoded.x * rayDir.x + decoded.y * rayDir.y + decoded.z * rayDir.z;
+                                if (Math.abs(denom) > 1e-10f) {
+                                    float originDot = decoded.x * rayOrigin.x + decoded.y * rayOrigin.y + decoded.z * rayOrigin.z;
+                                    float newT = (contourPos - originDot) / denom;
+                                    if (newT >= childTEntry && newT <= tetResult.tExit) {
+                                        refinedT = newT;
+                                        refinedNormal = decoded;
+                                        refinedNormal.normalize();
+
+                                        // Ensure normal faces ray
+                                        if (refinedNormal.x * rayDir.x + refinedNormal.y * rayDir.y + refinedNormal.z * rayDir.z > 0) {
+                                            refinedNormal.negate();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Set hit result
                     byte childType = node.getChildType(childIdx);
-                    result.setHit(childTEntry,
-                        rayOrigin.x + childTEntry * rayDir.x,
-                        rayOrigin.y + childTEntry * rayDir.y,
-                        rayOrigin.z + childTEntry * rayDir.z,
+                    result.setHit(refinedT,
+                        rayOrigin.x + refinedT * rayDir.x,
+                        rayOrigin.y + refinedT * rayDir.y,
+                        rayOrigin.z + refinedT * rayDir.z,
                         parentIdx, childIdx, childType,
                         (byte) childEntryFace, scale);
                     result.exitFace = (byte) tetResult.exitFace;
                     result.iterations = iterations;
+
+                    // Store contour normal if we have one
+                    if (refinedNormal != null) {
+                        result.normal = refinedNormal;
+                    }
+
                     return result;
                 }
 

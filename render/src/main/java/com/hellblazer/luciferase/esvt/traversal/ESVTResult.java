@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.esvt.traversal;
 
 import javax.vecmath.Point3f;
+import javax.vecmath.Vector3f;
 
 /**
  * Result of ESVT ray traversal.
@@ -38,6 +39,9 @@ public final class ESVTResult {
     public float x;
     public float y;
     public float z;
+
+    /** Surface normal at hit (may be null if no contour refinement) */
+    public Vector3f normal;
 
     /** Index of the node containing the hit */
     public int nodeIndex;
@@ -84,6 +88,7 @@ public final class ESVTResult {
         this.x = 0;
         this.y = 0;
         this.z = 0;
+        this.normal = null;
         this.nodeIndex = -1;
         this.childIndex = -1;
         this.tetType = -1;
