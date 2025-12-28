@@ -224,8 +224,8 @@ public final class ESVTTraversal {
 
                 // Check if this is a leaf (using Morton index)
                 if (node.isChildLeaf(mortonIdx)) {
-                    // Get child node for contour data
-                    int childNodeIdx = node.getChildIndex(mortonIdx, farPointers);
+                    // Get child node for contour data (relative pointer + current node index)
+                    int childNodeIdx = node.getChildIndex(mortonIdx, parentIdx, farPointers);
                     var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
                         ? nodes[childNodeIdx] : null;
 
@@ -322,8 +322,8 @@ public final class ESVTTraversal {
                 currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
                 currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
-                // Move to child (using Morton index for tree operations)
-                int childNodeIdx = node.getChildIndex(mortonIdx, farPointers);
+                // Move to child (using Morton index for tree operations, relative pointer)
+                int childNodeIdx = node.getChildIndex(mortonIdx, parentIdx, farPointers);
                 parentIdx = childNodeIdx;
                 // Read child type directly from the child node (types are propagated during build)
                 parentType = (childNodeIdx >= 0 && childNodeIdx < nodes.length)

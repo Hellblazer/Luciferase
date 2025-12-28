@@ -155,17 +155,17 @@ public class ESVTNodeUnifiedTest {
         node.setChildMask(0x25); // 0010_0101 = children 0, 2, 5
         node.setChildPtr(100);
 
-        // Child 0 is at offset 0
+        // Child 0 is at offset 0 (relative pointer, node at index 0)
         assertEquals(0, node.getChildOffset(0));
-        assertEquals(100, node.getChildIndex(0));
+        assertEquals(100, node.getChildIndex(0, 0)); // currentNodeIdx=0
 
         // Child 2 is at offset 1 (one child before it)
         assertEquals(1, node.getChildOffset(2));
-        assertEquals(101, node.getChildIndex(2));
+        assertEquals(101, node.getChildIndex(2, 0)); // currentNodeIdx=0
 
         // Child 5 is at offset 2 (two children before it)
         assertEquals(2, node.getChildOffset(5));
-        assertEquals(102, node.getChildIndex(5));
+        assertEquals(102, node.getChildIndex(5, 0)); // currentNodeIdx=0
 
         // Child count
         assertEquals(3, node.getChildCount());

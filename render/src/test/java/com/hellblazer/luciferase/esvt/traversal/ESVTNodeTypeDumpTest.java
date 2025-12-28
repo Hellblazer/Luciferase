@@ -61,7 +61,7 @@ class ESVTNodeTypeDumpTest {
             }
 
             int beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[rootType][mortonIdx];
-            int childNodeIdx = nodes[0].getChildIndex(mortonIdx);
+            int childNodeIdx = nodes[0].getChildIndex(mortonIdx, 0); // root at index 0
             byte storedType = nodes[childNodeIdx].getTetType();
             byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[rootType][beyIdx];
             byte derivedType = nodes[0].getChildType(mortonIdx);  // Uses stored parent type + lookup table
@@ -77,7 +77,7 @@ class ESVTNodeTypeDumpTest {
         for (int mortonIdx = 0; mortonIdx < 8; mortonIdx++) {
             if (nodes[0].hasChild(mortonIdx)) {
                 int beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[rootType][mortonIdx];
-                int childNodeIdx = nodes[0].getChildIndex(mortonIdx);
+                int childNodeIdx = nodes[0].getChildIndex(mortonIdx, 0); // root at index 0
                 byte storedType = nodes[childNodeIdx].getTetType();
                 byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[rootType][beyIdx];
 

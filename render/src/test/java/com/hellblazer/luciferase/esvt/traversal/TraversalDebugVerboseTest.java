@@ -115,7 +115,7 @@ class TraversalDebugVerboseTest {
                     childVerts[0], childVerts[1], childVerts[2], childVerts[3], tetResult);
 
                 boolean isLeaf = node.isChildLeaf(mortonIdx);
-                int childNodeIdx = node.getChildIndex(mortonIdx);
+                int childNodeIdx = node.getChildIndex(mortonIdx, parentIdx);
                 byte childType = nodes[childNodeIdx].getTetType();
 
                 System.out.printf(" - hasChild=true, hit=%b, isLeaf=%b, childIdx=%d, childType=%d%n",

@@ -596,17 +596,21 @@ public class ESVTBuilder {
                 node.setLeafMask(leafMask);
 
                 if (minChildIdx != Integer.MAX_VALUE) {
-                    if (minChildIdx <= MAX_CHILD_PTR) {
-                        // Direct pointer fits in 15 bits
-                        node.setChildPtr(minChildIdx);
+                    // Use relative offset from current node index (not absolute index)
+                    // This keeps pointers small in BFS-ordered trees
+                    int relativeOffset = minChildIdx - i;
+
+                    if (relativeOffset >= 0 && relativeOffset <= MAX_CHILD_PTR) {
+                        // Relative offset fits in 15 bits
+                        node.setChildPtr(relativeOffset);
                     } else {
-                        // Need far pointer - store actual index in farPointers array
+                        // Need far pointer for unusual tree structure
                         int farIndex = farPointersList.size();
-                        farPointersList.add(minChildIdx);
+                        farPointersList.add(relativeOffset);
                         node.setChildPtr(farIndex);
                         node.setFar(true);
-                        log.debug("Node {} using far pointer: farIdx={} -> actualIdx={}",
-                            i, farIndex, minChildIdx);
+                        log.debug("Node {} using far pointer: farIdx={} -> relativeOffset={}",
+                            i, farIndex, relativeOffset);
                     }
                 }
             } else {

@@ -119,7 +119,7 @@ class ESVTTraversalDebugTest {
                 childrenHit++;
                 // Check if leaf
                 boolean isLeaf = nodes[0].isChildLeaf(mortonIdx);
-                int childNodeIdx = nodes[0].getChildIndex(mortonIdx);
+                int childNodeIdx = nodes[0].getChildIndex(mortonIdx, 0); // root at index 0
                 System.out.printf("    isLeaf=%b, childNodeIdx=%d%n", isLeaf, childNodeIdx);
             }
         }

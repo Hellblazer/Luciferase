@@ -333,14 +333,14 @@ class ESVTTraversalTest {
         node.setChildMask(0b00100101);  // Children 0, 2, 5 exist
         node.setChildPtr(100);
 
-        // Child 0 is first (offset 0)
-        assertEquals(100, node.getChildIndex(0));
+        // Child 0 is first (offset 0), relative pointer from node at index 0
+        assertEquals(100, node.getChildIndex(0, 0));
 
         // Child 2 is second (offset 1, after child 0)
-        assertEquals(101, node.getChildIndex(2));
+        assertEquals(101, node.getChildIndex(2, 0));
 
         // Child 5 is third (offset 2, after children 0 and 2)
-        assertEquals(102, node.getChildIndex(5));
+        assertEquals(102, node.getChildIndex(5, 0));
     }
 
     // === Performance Sanity Check ===

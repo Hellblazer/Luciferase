@@ -75,7 +75,7 @@ class ESVTPortalIntegrationTest {
         // Check children at first level
         for (int i = 0; i < 8; i++) {
             if (root.hasChild(i)) {
-                int childIdx = root.getChildIndex(i);
+                int childIdx = root.getChildIndex(i, 0); // root at index 0
                 var childNode = data.nodes()[childIdx];
                 System.out.printf("  Child %d: idx=%d, valid=%b, childMask=0x%02X, leafMask=0x%02X%n",
                     i, childIdx, childNode.isValid(), childNode.getChildMask(), childNode.getLeafMask());

@@ -314,29 +314,31 @@ public final class ESVTNodeUnified {
 
     /**
      * Calculate the actual index of a child in the sparse array.
-     * Note: Does not handle far pointers - use getChildIndex(childIdx, farPointers) instead
-     * when far pointers may be present.
+     * Uses relative pointer - adds currentNodeIdx to the stored offset.
      *
      * @param childIdx The child index (0-7)
+     * @param currentNodeIdx The index of this node in the array
      * @return The actual index in the node array
      */
-    public int getChildIndex(int childIdx) {
-        return getChildPtr() + getChildOffset(childIdx);
+    public int getChildIndex(int childIdx, int currentNodeIdx) {
+        return currentNodeIdx + getChildPtr() + getChildOffset(childIdx);
     }
 
     /**
      * Calculate the actual index of a child, resolving far pointers if needed.
+     * Uses relative pointer - adds currentNodeIdx to the stored offset.
      *
      * @param childIdx The child index (0-7)
+     * @param currentNodeIdx The index of this node in the array
      * @param farPointers Array of far pointers (may be null or empty)
      * @return The actual index in the node array
      */
-    public int getChildIndex(int childIdx, int[] farPointers) {
-        int basePtr = getChildPtr();
-        if (isFar() && farPointers != null && basePtr < farPointers.length) {
-            basePtr = farPointers[basePtr];
+    public int getChildIndex(int childIdx, int currentNodeIdx, int[] farPointers) {
+        int relativeOffset = getChildPtr();
+        if (isFar() && farPointers != null && relativeOffset < farPointers.length) {
+            relativeOffset = farPointers[relativeOffset];
         }
-        return basePtr + getChildOffset(childIdx);
+        return currentNodeIdx + relativeOffset + getChildOffset(childIdx);
     }
 
     /**

@@ -148,7 +148,7 @@ class PortalEquivalentTest {
                 childVerts[0], childVerts[1], childVerts[2], childVerts[3], tetResult);
             
             boolean isLeaf = nodes[0].isChildLeaf(mortonIdx);
-            int childNodeIdx = nodes[0].getChildIndex(mortonIdx);
+            int childNodeIdx = nodes[0].getChildIndex(mortonIdx, 0); // root at index 0
             
             System.out.printf("  Morton %d (Bey %d): hit=%b, isLeaf=%b, childIdx=%d, verts=[%s, %s, %s, %s]%n",
                 mortonIdx, beyIdx, hits, isLeaf, childNodeIdx,

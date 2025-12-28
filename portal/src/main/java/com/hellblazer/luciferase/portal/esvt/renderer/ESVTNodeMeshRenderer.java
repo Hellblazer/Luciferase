@@ -222,18 +222,18 @@ public class ESVTNodeMeshRenderer {
                 byte childType = TetreeConnectivity.getChildType(tetType, childPos);
 
                 if ((leafMask & (1 << childPos)) != 0) {
-                    // This child is a leaf
+                    // This child is a leaf (relative pointer + current node index)
                     leaves.add(new NodeRenderInfo(
-                        node.getChildIndex(childPos, farPointers),
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
                         childType,
                         childOrigin,
                         childSize,
                         level + 1
                     ));
                 } else {
-                    // Recurse into non-leaf child
+                    // Recurse into non-leaf child (relative pointer + current node index)
                     collectLeavesRecursive(
-                        node.getChildIndex(childPos, farPointers),
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
                         childType,
                         childOrigin,
                         childSize,
@@ -278,7 +278,7 @@ public class ESVTNodeMeshRenderer {
                 // Don't recurse into leaf children (they have no further structure)
                 if ((leafMask & (1 << childPos)) == 0) {
                     collectNodesInRangeRecursive(
-                        node.getChildIndex(childPos, farPointers),
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
                         childType,
                         childOrigin,
                         childSize,
@@ -288,9 +288,9 @@ public class ESVTNodeMeshRenderer {
                         nodes
                     );
                 } else if (level + 1 >= minLevel && level + 1 <= maxLevel) {
-                    // Add leaf child if in range
+                    // Add leaf child if in range (relative pointer + current node index)
                     nodes.add(new NodeRenderInfo(
-                        node.getChildIndex(childPos, farPointers),
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
                         childType,
                         childOrigin,
                         childSize,
