@@ -218,12 +218,15 @@ public class ESVTNodeMeshRenderer {
 
         // Debug: Log root node state
         var root = data.nodes()[0];
-        log.debug("collectLeaves: {} nodes, rootType={}, maxDepth={}, root.childMask=0x{}, root.leafMask=0x{}, root.isValid={}",
+        log.debug("collectLeaves: {} nodes, rootType={}, maxDepth={}, root.childMask=0x{}, root.leafMask=0x{}, root.isValid={}, hasVoxelCoords={}",
             data.nodes().length, data.rootType(), data.maxDepth(),
-            Integer.toHexString(root.getChildMask()), Integer.toHexString(root.getLeafMask()), root.isValid());
+            Integer.toHexString(root.getChildMask()), Integer.toHexString(root.getLeafMask()), root.isValid(),
+            data.hasVoxelCoords());
 
+        // Track leaf index during traversal
+        int[] leafCounter = {0};  // Use array to allow mutation in lambda/inner class
         collectLeavesRecursive(0, (byte) data.rootType(), new Point3f(0, 0, 0),
-                               1 << data.maxDepth(), 0, leaves);
+                               1 << data.maxDepth(), 0, leaves, leafCounter);
         log.debug("collectLeaves: Found {} leaves", leaves.size());
         return leaves;
     }
@@ -245,7 +248,7 @@ public class ESVTNodeMeshRenderer {
      * Recursive traversal to collect leaf nodes.
      */
     private void collectLeavesRecursive(int nodeIdx, byte tetType, Point3f origin,
-                                         int size, int level, List<NodeRenderInfo> leaves) {
+                                         int size, int level, List<NodeRenderInfo> leaves, int[] leafCounter) {
         if (nodeIdx >= data.nodes().length) {
             if (level == 0) log.debug("collectLeavesRecursive: nodeIdx {} >= nodes.length {}", nodeIdx, data.nodes().length);
             return;
@@ -274,23 +277,36 @@ public class ESVTNodeMeshRenderer {
                 byte childType = TetreeConnectivity.getChildType(tetType, childPos);
 
                 if ((leafMask & (1 << childPos)) != 0) {
-                    // This child is a leaf (relative pointer + current node index)
+                    // This child is a leaf
+                    int leafIdx = leafCounter[0]++;
+
+                    // Get voxel coordinates if available
+                    int voxelX = 0, voxelY = 0, voxelZ = 0;
+                    if (data.hasVoxelCoords() && leafIdx < data.leafCount()) {
+                        voxelX = data.getLeafVoxelX(leafIdx);
+                        voxelY = data.getLeafVoxelY(leafIdx);
+                        voxelZ = data.getLeafVoxelZ(leafIdx);
+                    }
+
                     leaves.add(new NodeRenderInfo(
                         node.getChildIndex(childPos, nodeIdx, farPointers),
                         childType,
                         childOrigin,
                         childSize,
-                        level + 1
+                        level + 1,
+                        leafIdx,
+                        voxelX, voxelY, voxelZ
                     ));
                 } else {
-                    // Recurse into non-leaf child (relative pointer + current node index)
+                    // Recurse into non-leaf child
                     collectLeavesRecursive(
                         node.getChildIndex(childPos, nodeIdx, farPointers),
                         childType,
                         childOrigin,
                         childSize,
                         level + 1,
-                        leaves
+                        leaves,
+                        leafCounter
                     );
                 }
             }
@@ -422,13 +438,28 @@ public class ESVTNodeMeshRenderer {
         var mesh = referenceMeshes[info.tetType];
         var meshView = new MeshView(mesh);
 
-        // Apply scale and translation, transformed to world coordinates
-        // info.size is in voxel units, multiply by worldScale
-        // info.origin is in voxel units, multiply by worldScale and add offset
-        double scaledSize = info.size * worldScale;
-        double worldX = info.origin.x * worldScale + worldOffset;
-        double worldY = info.origin.y * worldScale + worldOffset;
-        double worldZ = info.origin.z * worldScale + worldOffset;
+        double worldX, worldY, worldZ;
+        double scaledSize;
+
+        // Check if we have voxel coordinates to use (preferred for accuracy)
+        if (data.hasVoxelCoords() && info.leafIndex >= 0) {
+            // Use stored voxel coordinates for accurate world positioning
+            // Map voxel [0, gridResolution-1] to world [-worldSize/2, +worldSize/2]
+            double voxelScale = 400.0 / data.gridResolution();  // worldSize = 400
+            worldX = info.voxelX * voxelScale - 200.0;
+            worldY = info.voxelY * voxelScale - 200.0;
+            worldZ = info.voxelZ * voxelScale - 200.0;
+            // Voxel size in world coordinates
+            scaledSize = voxelScale;
+        } else {
+            // Fallback: use computed tree positions (legacy, less accurate)
+            // info.size is in tree units, multiply by worldScale
+            // info.origin is in tree units, multiply by worldScale and add offset
+            scaledSize = info.size * worldScale;
+            worldX = info.origin.x * worldScale + worldOffset;
+            worldY = info.origin.y * worldScale + worldOffset;
+            worldZ = info.origin.z * worldScale + worldOffset;
+        }
 
         meshView.setScaleX(scaledSize);
         meshView.setScaleY(scaledSize);
@@ -534,8 +565,17 @@ public class ESVTNodeMeshRenderer {
     private record NodeRenderInfo(
         int nodeIdx,
         byte tetType,
-        Point3f origin,
+        Point3f origin,        // Computed from tree structure (legacy)
         int size,
-        int level
-    ) {}
+        int level,
+        int leafIndex,         // Index in leaf array, or -1 if not a leaf
+        int voxelX,            // Original voxel X coordinate (if available)
+        int voxelY,            // Original voxel Y coordinate (if available)
+        int voxelZ             // Original voxel Z coordinate (if available)
+    ) {
+        // Constructor for backward compatibility (no voxel info)
+        NodeRenderInfo(int nodeIdx, byte tetType, Point3f origin, int size, int level) {
+            this(nodeIdx, tetType, origin, size, level, -1, 0, 0, 0);
+        }
+    }
 }

@@ -40,7 +40,9 @@ public record ESVTData(
     int rootType,
     int maxDepth,
     int leafCount,
-    int internalCount
+    int internalCount,
+    int gridResolution,           // Original voxel grid size (0 if not from voxels)
+    int[] leafVoxelCoords         // Packed voxel coords: leafIdx*3+{0,1,2} = {x,y,z}
 ) {
 
     /**
@@ -48,7 +50,7 @@ public record ESVTData(
      */
     public ESVTData(ESVTNodeUnified[] nodes, int rootType, int maxDepth,
                     int leafCount, int internalCount) {
-        this(nodes, new int[0], new int[0], rootType, maxDepth, leafCount, internalCount);
+        this(nodes, new int[0], new int[0], rootType, maxDepth, leafCount, internalCount, 0, new int[0]);
     }
 
     /**
@@ -56,7 +58,15 @@ public record ESVTData(
      */
     public ESVTData(ESVTNodeUnified[] nodes, int[] contours, int rootType, int maxDepth,
                     int leafCount, int internalCount) {
-        this(nodes, contours, new int[0], rootType, maxDepth, leafCount, internalCount);
+        this(nodes, contours, new int[0], rootType, maxDepth, leafCount, internalCount, 0, new int[0]);
+    }
+
+    /**
+     * Constructor with far pointers but no voxel coordinate info (backward compatible).
+     */
+    public ESVTData(ESVTNodeUnified[] nodes, int[] contours, int[] farPointers,
+                    int rootType, int maxDepth, int leafCount, int internalCount) {
+        this(nodes, contours, farPointers, rootType, maxDepth, leafCount, internalCount, 0, new int[0]);
     }
 
     /**
@@ -92,6 +102,40 @@ public record ESVTData(
      */
     public boolean hasFarPointers() {
         return farPointers != null && farPointers.length > 0;
+    }
+
+    /**
+     * Check if this data has voxel coordinate information
+     */
+    public boolean hasVoxelCoords() {
+        return gridResolution > 0 && leafVoxelCoords != null && leafVoxelCoords.length > 0;
+    }
+
+    /**
+     * Get the voxel X coordinate for a leaf.
+     * @param leafIndex Index of the leaf (0 to leafCount-1)
+     * @return Voxel X coordinate
+     */
+    public int getLeafVoxelX(int leafIndex) {
+        return leafVoxelCoords[leafIndex * 3];
+    }
+
+    /**
+     * Get the voxel Y coordinate for a leaf.
+     * @param leafIndex Index of the leaf (0 to leafCount-1)
+     * @return Voxel Y coordinate
+     */
+    public int getLeafVoxelY(int leafIndex) {
+        return leafVoxelCoords[leafIndex * 3 + 1];
+    }
+
+    /**
+     * Get the voxel Z coordinate for a leaf.
+     * @param leafIndex Index of the leaf (0 to leafCount-1)
+     * @return Voxel Z coordinate
+     */
+    public int getLeafVoxelZ(int leafIndex) {
+        return leafVoxelCoords[leafIndex * 3 + 2];
     }
 
     /**
@@ -228,7 +272,7 @@ public record ESVTData(
 
     @Override
     public String toString() {
-        return String.format("ESVTData[nodes=%d, contours=%d, farPtrs=%d, rootType=%d, depth=%d, leaves=%d, internal=%d, size=%dKB]",
-            nodeCount(), contourCount(), farPointerCount(), rootType, maxDepth, leafCount, internalCount, sizeInBytes() / 1024);
+        return String.format("ESVTData[nodes=%d, contours=%d, farPtrs=%d, rootType=%d, depth=%d, leaves=%d, internal=%d, grid=%d, hasVoxelCoords=%b, size=%dKB]",
+            nodeCount(), contourCount(), farPointerCount(), rootType, maxDepth, leafCount, internalCount, gridResolution, hasVoxelCoords(), sizeInBytes() / 1024);
     }
 }

@@ -158,6 +158,7 @@ public class ESVTBuilder {
 
         // Determine coordinate bounds
         int minX, minY, minZ, maxX, maxY, maxZ;
+        int effectiveGridResolution = gridResolution;
         if (gridResolution > 0) {
             // Use explicit grid bounds - preserves spatial relationships
             minX = minY = minZ = 0;
@@ -174,6 +175,8 @@ public class ESVTBuilder {
                 maxY = Math.max(maxY, voxel.y);
                 maxZ = Math.max(maxZ, voxel.z);
             }
+            // For legacy mode, compute effective grid resolution
+            effectiveGridResolution = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ)) + 1;
         }
 
         // Tetree uses coordinates up to 2^21, but we scale to fit within the usable range
@@ -210,6 +213,10 @@ public class ESVTBuilder {
         // Enable bulk loading for better performance with large voxel sets
         tetree.enableBulkLoading();
 
+        // Track mapping from Tetree position (as string key) to original voxel
+        // Key is "x,y,z,level" of the Tet position in Tetree coordinates
+        var positionToVoxel = new HashMap<String, Point3i>();
+
         // Insert all voxels as point entities at the specified depth with transformed coordinates
         byte level = (byte) maxDepth;
         int inserted = 0;
@@ -221,6 +228,10 @@ public class ESVTBuilder {
             var position = new Point3f(tx, ty, tz);
             try {
                 tetree.insert(position, level, "voxel_" + inserted);
+                // Get the Tet for this position to use as lookup key
+                var tet = Tet.locatePointS0Tree(tx, ty, tz, level);
+                var posKey = tet.x + "," + tet.y + "," + tet.z + "," + tet.l();
+                positionToVoxel.put(posKey, voxel);
                 inserted++;
             } catch (Exception e) {
                 log.trace("Skipping voxel at ({},{},{}) -> ({},{},{}): {}",
@@ -234,8 +245,94 @@ public class ESVTBuilder {
         log.debug("Inserted {} of {} voxels into Tetree (scaled to [{},{}] range)",
                 inserted, voxels.size(), targetMin, targetMax);
 
-        // Build ESVT from the populated Tetree
-        return build(tetree);
+        // Build ESVT from the populated Tetree with voxel position tracking
+        return buildWithVoxelTracking(tetree, positionToVoxel, effectiveGridResolution);
+    }
+
+    /**
+     * Build ESVT with voxel position tracking.
+     * Like build() but also captures original voxel positions for leaves.
+     *
+     * @param tetree The source Tetree spatial index
+     * @param positionToVoxel Map from Tet position key to original voxel
+     * @param gridResolution The original voxel grid resolution
+     * @return ESVTData with voxel coordinate info
+     */
+    private <ID extends EntityID, Content> ESVTData buildWithVoxelTracking(
+            Tetree<ID, Content> tetree,
+            Map<String, Point3i> positionToVoxel,
+            int gridResolution) {
+
+        log.debug("Building ESVT with voxel tracking from Tetree with {} entities", tetree.entityCount());
+
+        // Phase 1: Collect all leaf nodes and build complete tree structure
+        var allNodes = buildTreeFromLeaves(tetree);
+        if (allNodes.isEmpty()) {
+            log.warn("Empty Tetree, returning empty ESVT");
+            return new ESVTData(new ESVTNodeUnified[0], 0, 0, 0, 0);
+        }
+        log.debug("After buildTreeFromLeaves: {} nodes", allNodes.size());
+
+        // Phase 2: Sort nodes in breadth-first order (by level, then by key)
+        var nodeList = sortBreadthFirst(allNodes);
+
+        // Phase 3: Build index map for pointer computation
+        var indexMap = buildIndexMap(nodeList);
+
+        // Phase 4: Propagate types top-down from root
+        var correctedTypes = propagateTypesTopDown(nodeList, indexMap, allNodes);
+
+        // Phase 5: Create ESVT nodes with correct pointers and corrected types
+        var buildResult = createNodes(nodeList, correctedTypes, indexMap, allNodes);
+
+        // Phase 6: Compute statistics and collect leaf voxel positions
+        int leafCount = 0;
+        int internalCount = 0;
+        int maxDepth = 0;
+
+        // First pass: count leaves
+        for (var entry : nodeList) {
+            int level = entry.key.getLevel();
+            maxDepth = Math.max(maxDepth, level);
+            if (entry.isLeaf) {
+                leafCount++;
+            } else {
+                internalCount++;
+            }
+        }
+
+        // Second pass: collect leaf voxel positions
+        int[] leafVoxelCoords = new int[leafCount * 3];
+        int leafIdx = 0;
+        for (var entry : nodeList) {
+            if (entry.isLeaf) {
+                // Look up original voxel position
+                var posKey = entry.tet.x + "," + entry.tet.y + "," + entry.tet.z + "," + entry.tet.l();
+                var voxel = positionToVoxel.get(posKey);
+                if (voxel != null) {
+                    leafVoxelCoords[leafIdx * 3] = voxel.x;
+                    leafVoxelCoords[leafIdx * 3 + 1] = voxel.y;
+                    leafVoxelCoords[leafIdx * 3 + 2] = voxel.z;
+                } else {
+                    // Fallback: use tet position (should not happen if mapping is correct)
+                    log.warn("No voxel mapping found for leaf at {}", posKey);
+                    leafVoxelCoords[leafIdx * 3] = 0;
+                    leafVoxelCoords[leafIdx * 3 + 1] = 0;
+                    leafVoxelCoords[leafIdx * 3 + 2] = 0;
+                }
+                leafIdx++;
+            }
+        }
+
+        // Root type comes from the key
+        int rootType = nodeList.isEmpty() ? 0 : nodeList.get(0).tetType;
+
+        log.info("Built ESVT with voxel tracking: {} nodes, depth {}, {} leaves, {} internal, grid={}, {} far pointers",
+                buildResult.nodes.length, maxDepth, leafCount, internalCount, gridResolution, buildResult.farPointers.length);
+
+        return new ESVTData(buildResult.nodes, new int[0], buildResult.farPointers,
+                           rootType, maxDepth, leafCount, internalCount,
+                           gridResolution, leafVoxelCoords);
     }
 
     /**
