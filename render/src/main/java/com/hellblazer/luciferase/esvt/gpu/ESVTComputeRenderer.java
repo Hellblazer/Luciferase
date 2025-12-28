@@ -60,6 +60,16 @@ public final class ESVTComputeRenderer {
     public static final int ESVT_BUFFER_BINDING = 0;
     public static final int OUTPUT_IMAGE_BINDING = 1;
     public static final int CAMERA_UBO_BINDING = 2;
+    public static final int RENDER_FLAGS_UBO_BINDING = 3;
+    public static final int COARSE_OUTPUT_BINDING = 4;
+    public static final int COARSE_INPUT_BINDING = 5;
+
+    // Beam optimization constants
+    public static final int DEFAULT_COARSE_SIZE = 4;
+
+    // Render flag bits (must match shader)
+    private static final int FLAG_COARSE_PASS = 1;
+    private static final int FLAG_USE_COARSE_DATA = 2;
 
     // Resource manager for GPU resources
     private final UnifiedResourceManager resourceManager = UnifiedResourceManager.getInstance();
@@ -68,10 +78,22 @@ public final class ESVTComputeRenderer {
     private ShaderResource raycastComputeShader;
     private ShaderProgramResource raycastProgram;
     private BufferResource cameraUBO;
+    private BufferResource renderFlagsUBO;
     private TextureResource outputTexture;
+    private TextureResource coarseTexture;
+    private int coarseSampler;
 
     // Camera UBO size: 4 matrices (4x4) + 2 vec4 (position+nearPlane, direction+farPlane)
     private static final int CAMERA_UBO_SIZE = 64 * 4 + 16 * 2;
+
+    // RenderFlags UBO size: uint flags + int coarseSize + int frameWidth + int frameHeight (16 bytes aligned)
+    private static final int RENDER_FLAGS_UBO_SIZE = 16;
+
+    // Beam optimization state
+    private int coarseSize = DEFAULT_COARSE_SIZE;
+    private int coarseWidth;
+    private int coarseHeight;
+    private boolean beamOptimizationEnabled = false;
 
     private int frameWidth;
     private int frameHeight;
@@ -144,6 +166,9 @@ public final class ESVTComputeRenderer {
         // Update camera uniforms
         updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
 
+        // Set render flags to 0 (no beam optimization)
+        updateRenderFlags(0);
+
         // Bind output texture
         glBindImageTexture(OUTPUT_IMAGE_BINDING, outputTexture.getOpenGLId(), 0, false, 0,
                           GL_WRITE_ONLY, GL_RGBA8);
@@ -195,6 +220,135 @@ public final class ESVTComputeRenderer {
     }
 
     /**
+     * Render a frame using beam optimization (two-pass rendering).
+     * First pass renders at coarse resolution to gather t-min values,
+     * second pass uses coarse data to skip empty space.
+     *
+     * @param esvtMemory GPU memory containing ESVT node data
+     * @param viewMatrix Camera view matrix
+     * @param projMatrix Camera projection matrix
+     * @param objectToWorld Transform from object to world space
+     * @param tetreeToObject Transform from tetree [0,1] to object space
+     */
+    public void renderFrameWithBeamOptimization(ESVTGPUMemory esvtMemory,
+                                                 Matrix4f viewMatrix, Matrix4f projMatrix,
+                                                 Matrix4f objectToWorld, Matrix4f tetreeToObject) {
+        if (!initialized) {
+            throw new IllegalStateException("Renderer not initialized");
+        }
+
+        if (disposed) {
+            throw new IllegalStateException("Renderer has been disposed");
+        }
+
+        // Bind ESVT data
+        esvtMemory.bindToShader(ESVT_BUFFER_BINDING);
+
+        // Update camera uniforms
+        updateCameraUniforms(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
+
+        // Use compute shader program
+        glUseProgram(raycastProgram.getOpenGLId());
+
+        // =====================================================================
+        // PASS 1: Coarse pass - render at reduced resolution, store t-min
+        // =====================================================================
+        updateRenderFlags(FLAG_COARSE_PASS);
+
+        // Bind coarse texture for output
+        glBindImageTexture(COARSE_OUTPUT_BINDING, coarseTexture.getOpenGLId(), 0, false, 0,
+                          GL_WRITE_ONLY, GL_R32F);
+
+        // Dispatch at coarse resolution
+        int coarseGroupsX = (coarseWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
+        int coarseGroupsY = (coarseHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
+
+        glDispatchCompute(coarseGroupsX, coarseGroupsY, WORKGROUP_SIZE_Z);
+
+        // Ensure coarse pass writes are complete
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+
+        // =====================================================================
+        // PASS 2: Fine pass - full resolution with beam optimization
+        // =====================================================================
+        updateRenderFlags(FLAG_USE_COARSE_DATA);
+
+        // Bind coarse texture for reading (as sampler)
+        glActiveTexture(GL_TEXTURE0 + COARSE_INPUT_BINDING);
+        glBindTexture(GL_TEXTURE_2D, coarseTexture.getOpenGLId());
+        glBindSampler(COARSE_INPUT_BINDING, coarseSampler);
+
+        // Bind output texture for writing
+        glBindImageTexture(OUTPUT_IMAGE_BINDING, outputTexture.getOpenGLId(), 0, false, 0,
+                          GL_WRITE_ONLY, GL_RGBA8);
+
+        // Dispatch at full resolution
+        int fineGroupsX = (frameWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
+        int fineGroupsY = (frameHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
+
+        glDispatchCompute(fineGroupsX, fineGroupsY, WORKGROUP_SIZE_Z);
+
+        // Ensure fine pass writes are complete
+        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+        // Reset render flags
+        updateRenderFlags(0);
+
+        // Check for errors
+        int error = glGetError();
+        if (error != GL_NO_ERROR) {
+            throw new RuntimeException(String.format("OpenGL error during beam-optimized rendering: 0x%X", error));
+        }
+    }
+
+    /**
+     * Enable or disable beam optimization for subsequent render calls
+     *
+     * @param enabled true to enable beam optimization
+     */
+    public void setBeamOptimizationEnabled(boolean enabled) {
+        this.beamOptimizationEnabled = enabled;
+    }
+
+    /**
+     * Check if beam optimization is enabled
+     */
+    public boolean isBeamOptimizationEnabled() {
+        return beamOptimizationEnabled;
+    }
+
+    /**
+     * Set the coarse size for beam optimization
+     *
+     * @param size Resolution divisor (e.g., 4 means 1/4 resolution for coarse pass)
+     */
+    public void setCoarseSize(int size) {
+        if (size < 1 || size > 16) {
+            throw new IllegalArgumentException("Coarse size must be between 1 and 16");
+        }
+        if (this.coarseSize != size) {
+            this.coarseSize = size;
+            if (initialized) {
+                // Recreate coarse texture with new size
+                if (coarseTexture != null) {
+                    coarseTexture.close();
+                }
+                if (coarseSampler != 0) {
+                    glDeleteSamplers(coarseSampler);
+                }
+                createCoarseTexture();
+            }
+        }
+    }
+
+    /**
+     * Get the current coarse size
+     */
+    public int getCoarseSize() {
+        return coarseSize;
+    }
+
+    /**
      * Get the output texture ID for display or further processing
      */
     public int getOutputTexture() {
@@ -229,6 +383,13 @@ public final class ESVTComputeRenderer {
         if (initialized) {
             if (outputTexture != null) {
                 outputTexture.close();
+            }
+            if (coarseTexture != null) {
+                coarseTexture.close();
+            }
+            if (coarseSampler != 0) {
+                glDeleteSamplers(coarseSampler);
+                coarseSampler = 0;
             }
             createOutputTexture();
 
@@ -274,9 +435,24 @@ public final class ESVTComputeRenderer {
                 cameraUBO = null;
             }
 
+            if (renderFlagsUBO != null) {
+                renderFlagsUBO.close();
+                renderFlagsUBO = null;
+            }
+
             if (outputTexture != null) {
                 outputTexture.close();
                 outputTexture = null;
+            }
+
+            if (coarseTexture != null) {
+                coarseTexture.close();
+                coarseTexture = null;
+            }
+
+            if (coarseSampler != 0) {
+                glDeleteSamplers(coarseSampler);
+                coarseSampler = 0;
             }
         } catch (Exception e) {
             log.error("Error disposing GPU resources", e);
@@ -318,10 +494,49 @@ public final class ESVTComputeRenderer {
     private void createUniformBuffers() {
         cameraUBO = resourceManager.createUniformBuffer(CAMERA_UBO_SIZE, "ESVTCameraUBO");
         glBindBufferBase(GL_UNIFORM_BUFFER, CAMERA_UBO_BINDING, cameraUBO.getOpenGLId());
+
+        renderFlagsUBO = resourceManager.createUniformBuffer(RENDER_FLAGS_UBO_SIZE, "ESVTRenderFlagsUBO");
+        glBindBufferBase(GL_UNIFORM_BUFFER, RENDER_FLAGS_UBO_BINDING, renderFlagsUBO.getOpenGLId());
     }
 
     private void createOutputTexture() {
         outputTexture = resourceManager.createTexture2D(frameWidth, frameHeight, GL_RGBA8, "ESVTOutputTexture");
+
+        // Create coarse texture for beam optimization
+        createCoarseTexture();
+    }
+
+    private void createCoarseTexture() {
+        // Calculate coarse dimensions (add 1 to ensure coverage at boundaries)
+        coarseWidth = (frameWidth + coarseSize - 1) / coarseSize + 1;
+        coarseHeight = (frameHeight + coarseSize - 1) / coarseSize + 1;
+
+        // Create R32F texture for storing t-min values
+        coarseTexture = resourceManager.createTexture2D(coarseWidth, coarseHeight, GL_R32F, "ESVTCoarseTexture");
+
+        // Create sampler for coarse texture (nearest filtering for exact pixel access)
+        coarseSampler = glGenSamplers();
+        glSamplerParameteri(coarseSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glSamplerParameteri(coarseSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glSamplerParameteri(coarseSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(coarseSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        log.debug("Created coarse texture: {}x{} (from {}x{} with coarseSize={})",
+                 coarseWidth, coarseHeight, frameWidth, frameHeight, coarseSize);
+    }
+
+    private void updateRenderFlags(int flags) {
+        try (MemoryStack stack = stackPush()) {
+            var buffer = stack.mallocInt(4);
+            buffer.put(flags);
+            buffer.put(coarseSize);
+            buffer.put(frameWidth);
+            buffer.put(frameHeight);
+            buffer.flip();
+
+            glBindBuffer(GL_UNIFORM_BUFFER, renderFlagsUBO.getOpenGLId());
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, buffer);
+        }
     }
 
     private void updateCameraUniforms(Matrix4f viewMatrix, Matrix4f projMatrix,

@@ -120,6 +120,29 @@ layout(std140, binding = 2) uniform CameraData {
 } camera;
 
 // ============================================================================
+// BEAM OPTIMIZATION
+// ============================================================================
+
+// Render flags (set via uniform)
+layout(std140, binding = 3) uniform RenderFlags {
+    uint flags;          // Bit 0: coarse pass, Bit 1: use coarse data
+    int coarseSize;      // Resolution divisor (typically 4)
+    int frameWidth;      // Full resolution width
+    int frameHeight;     // Full resolution height
+} renderFlags;
+
+// Flag constants
+const uint FLAG_COARSE_PASS = 1u;
+const uint FLAG_USE_COARSE_DATA = 2u;
+
+// Coarse buffer for beam optimization (stores t-min values)
+// Binding 4: Write in coarse pass
+layout(r32f, binding = 4) uniform image2D coarseOutput;
+
+// Binding 5: Read in fine pass (as texture for bilinear sampling)
+layout(binding = 5) uniform sampler2D coarseInput;
+
+// ============================================================================
 // RAY STRUCTURE
 // ============================================================================
 
@@ -399,6 +422,45 @@ void getRootVertices(int tetType, out vec3 v0, out vec3 v1, out vec3 v2, out vec
 }
 
 // ============================================================================
+// BEAM OPTIMIZATION HELPERS
+// ============================================================================
+
+// Get conservative t-min from coarse buffer by sampling 2x2 neighbors
+float getConservativeTmin(ivec2 finePixel) {
+    int coarseSize = max(1, renderFlags.coarseSize);
+
+    // Calculate coarse pixel coordinates
+    int coarseX = finePixel.x / coarseSize;
+    int coarseY = finePixel.y / coarseSize;
+
+    // Sample 2x2 coarse pixels and take minimum
+    float minT = 1e30;
+
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
+            // Use texelFetch for exact pixel sampling
+            ivec2 samplePos = ivec2(coarseX + dx, coarseY + dy);
+
+            // Bounds check
+            ivec2 coarseSize2D = textureSize(coarseInput, 0);
+            if (samplePos.x >= 0 && samplePos.x < coarseSize2D.x &&
+                samplePos.y >= 0 && samplePos.y < coarseSize2D.y) {
+                float t = texelFetch(coarseInput, samplePos, 0).r;
+                if (t < minT && t > 0.0) {
+                    minT = t;
+                }
+            }
+        }
+    }
+
+    // Apply safety epsilon (0.99) to ensure we don't skip valid intersections
+    if (minT < 1e29) {
+        return minT * 0.99;
+    }
+    return 0.0;
+}
+
+// ============================================================================
 // RAY GENERATION
 // ============================================================================
 
@@ -478,6 +540,11 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
         return;
     }
 
+    // Beam optimization: skip if root hit is before our conservative tmin
+    if (rootHit.tExit < ray.tmin) {
+        return;  // Entire root is before where we expect to find geometry
+    }
+
     // Initialize traversal state
     uint parentIdx = 0u;
     int parentType = rootType;
@@ -529,6 +596,11 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             // Test ray-child intersection
             TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
             if (!childHit.hit) {
+                continue;
+            }
+
+            // Beam optimization: skip children entirely behind our tmin
+            if (childHit.tExit < ray.tmin) {
                 continue;
             }
 
@@ -632,12 +704,55 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
 
-    // Bounds check
+    // Check if this is a coarse pass
+    bool isCoarsePass = (renderFlags.flags & FLAG_COARSE_PASS) != 0u;
+    bool useCoarseData = (renderFlags.flags & FLAG_USE_COARSE_DATA) != 0u;
+
+    // ========================================================================
+    // COARSE PASS: Render at reduced resolution, store t-min
+    // ========================================================================
+    if (isCoarsePass) {
+        // Bounds check for coarse output
+        ivec2 coarseSize = imageSize(coarseOutput);
+        if (pixel.x >= coarseSize.x || pixel.y >= coarseSize.y)
+            return;
+
+        // Map coarse pixel to center of corresponding fine pixel block
+        int blockSize = max(1, renderFlags.coarseSize);
+        ivec2 finePixel = pixel * blockSize + ivec2(blockSize / 2);
+
+        // Generate ray for this coarse pixel
+        Ray ray = generateRay(finePixel);
+
+        // Cast ray through ESVT
+        vec3 hitPoint, hitNormal;
+        bool didHit;
+        castRayESVT(ray, hitPoint, hitNormal, didHit);
+
+        // Store t-min (distance to first hit)
+        float tMin = didHit ? length(hitPoint - ray.origin) : 1e30;
+        imageStore(coarseOutput, pixel, vec4(tMin, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    // ========================================================================
+    // FINE PASS: Full resolution render with optional beam optimization
+    // ========================================================================
+
+    // Bounds check for output image
     if (pixel.x >= imageSize(outputImage).x || pixel.y >= imageSize(outputImage).y)
         return;
 
     // Generate ray
     Ray ray = generateRay(pixel);
+
+    // Apply beam optimization if coarse data is available
+    if (useCoarseData) {
+        float conservativeTmin = getConservativeTmin(pixel);
+        if (conservativeTmin > ray.tmin) {
+            ray.tmin = conservativeTmin;
+        }
+    }
 
     // Cast ray through ESVT
     vec3 hitPoint, hitNormal;
