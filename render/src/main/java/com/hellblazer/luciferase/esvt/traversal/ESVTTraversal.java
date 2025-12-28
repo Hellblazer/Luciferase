@@ -152,7 +152,7 @@ public final class ESVTTraversal {
                 entryFace = result.entryFace;
                 tMax = result.t;
                 scale++;
-                siblingPos = 0;
+                siblingPos = stack.readSiblingPos(scale); // Resume from next untested sibling
                 continue;
             }
 
@@ -198,8 +198,9 @@ public final class ESVTTraversal {
                     return result;
                 }
 
-                // Non-leaf - push current state including vertices
+                // Non-leaf - push current state including vertices and sibling position
                 stack.write(scale, parentIdx, tMax, parentType, (byte) entryFace);
+                stack.writeSiblingPos(scale, (byte) (pos + 1)); // Resume from next sibling after pop
                 stack.writeVerts(scale,
                     currentVerts[0], currentVerts[1], currentVerts[2],
                     currentVerts[3], currentVerts[4], currentVerts[5],
@@ -247,10 +248,8 @@ public final class ESVTTraversal {
                     System.arraycopy(restoredVerts, 0, currentVerts, 0, 12);
                 }
 
-                // Continue with next sibling at parent level
-                // We need to track which sibling we were at...
-                // For now, restart from beginning (less optimal but correct)
-                siblingPos = 0;
+                // Resume from next untested sibling
+                siblingPos = stack.readSiblingPos(scale);
             }
         }
 

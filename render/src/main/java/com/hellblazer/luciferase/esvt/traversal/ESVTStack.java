@@ -43,6 +43,7 @@ public final class ESVTStack {
     private final float[] tMaxStack;    // tMax values for each level
     private final byte[] typeStack;     // Tet types (0-5) at each level
     private final byte[] entryFaceStack; // Entry face (0-3) at each level
+    private final byte[] siblingPosStack; // Sibling position (0-3) for resuming after pop
     // Parent vertices at each level (4 vertices * 3 coords = 12 floats per level)
     private final float[][] vertsStack; // [level][12] for v0.xyz, v1.xyz, v2.xyz, v3.xyz
 
@@ -54,6 +55,7 @@ public final class ESVTStack {
         this.tMaxStack = new float[STACK_SIZE];
         this.typeStack = new byte[STACK_SIZE];
         this.entryFaceStack = new byte[STACK_SIZE];
+        this.siblingPosStack = new byte[STACK_SIZE];
         this.vertsStack = new float[STACK_SIZE][12];
         reset();
     }
@@ -67,6 +69,7 @@ public final class ESVTStack {
             tMaxStack[i] = 0.0f;
             typeStack[i] = -1;
             entryFaceStack[i] = -1;
+            siblingPosStack[i] = 0;
             java.util.Arrays.fill(vertsStack[i], 0.0f);
         }
     }
@@ -135,6 +138,31 @@ public final class ESVTStack {
             return vertsStack[scale];
         }
         return null;
+    }
+
+    /**
+     * Write sibling position to stack at given scale level.
+     *
+     * @param scale Scale level
+     * @param siblingPos Sibling position (0-3) to resume from after pop
+     */
+    public void writeSiblingPos(int scale, byte siblingPos) {
+        if (scale >= 0 && scale < STACK_SIZE) {
+            siblingPosStack[scale] = siblingPos;
+        }
+    }
+
+    /**
+     * Read sibling position from stack at given scale level.
+     *
+     * @param scale Scale level
+     * @return Sibling position (0-3), or 0 if invalid
+     */
+    public byte readSiblingPos(int scale) {
+        if (scale >= 0 && scale < STACK_SIZE) {
+            return siblingPosStack[scale];
+        }
+        return 0;
     }
 
     /**
