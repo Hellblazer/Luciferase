@@ -545,6 +545,194 @@ class ESVTTraversalBenchmark {
         System.out.println("      (macOS is limited to OpenGL 4.1, no compute shaders)");
     }
 
+    /**
+     * Benchmark beam optimization effectiveness.
+     * Compares traversal with and without beam optimization.
+     */
+    @Test
+    @EnabledIfEnvironmentVariable(named = "RUN_PERFORMANCE_TESTS", matches = "true")
+    void benchmarkBeamOptimization() {
+        System.out.println("\n" + "=".repeat(70));
+        System.out.println("ESVT Beam Optimization Benchmark");
+        System.out.println("=".repeat(70));
+        System.out.println();
+
+        int frameWidth = 256;
+        int frameHeight = 256;
+        int coarseSize = 4;
+        int depth = 3;
+
+        var nodes = createDenseTree(depth);
+        System.out.printf("Tree depth: %d, Nodes: %d%n", depth, nodes.length);
+        System.out.printf("Frame: %dx%d, Coarse: %dx%d (1/%d)%n",
+            frameWidth, frameHeight, frameWidth/coarseSize, frameHeight/coarseSize, coarseSize);
+        System.out.println();
+
+        // Generate rays for full frame (grid pattern for coherence)
+        int totalRays = frameWidth * frameHeight;
+        var fineRays = generateFrameRays(frameWidth, frameHeight);
+        int[][] finePixelCoords = generatePixelCoords(frameWidth, frameHeight);
+
+        // Generate coarse rays
+        int coarseWidth = (frameWidth + coarseSize - 1) / coarseSize + 1;
+        int coarseHeight = (frameHeight + coarseSize - 1) / coarseSize + 1;
+        var coarseRays = generateCoarseRays(frameWidth, frameHeight, coarseSize);
+
+        // Benchmark WITHOUT beam optimization
+        long startNoBeam = System.nanoTime();
+        int hitsNoBeam = 0;
+        long iterationsNoBeam = 0;
+        for (var ray : fineRays) {
+            var result = traversal.castRay(ray, nodes, 0);
+            if (result.isHit()) hitsNoBeam++;
+            iterationsNoBeam += result.iterations;
+        }
+        long timeNoBeam = System.nanoTime() - startNoBeam;
+
+        // Benchmark WITH beam optimization
+        var beamOpt = new ESVTBeamOptimization(frameWidth, frameHeight, coarseSize);
+
+        // Re-generate rays (beam optimization modifies tMin)
+        fineRays = generateFrameRays(frameWidth, frameHeight);
+        coarseRays = generateCoarseRays(frameWidth, frameHeight, coarseSize);
+
+        long startWithBeam = System.nanoTime();
+        // Coarse pass
+        beamOpt.executeCoarsePass(coarseRays, nodes, 0);
+        // Fine pass with beam optimization
+        int hitsWithBeam = 0;
+        long iterationsWithBeam = 0;
+        for (int y = 0; y < frameHeight; y++) {
+            for (int x = 0; x < frameWidth; x++) {
+                int idx = y * frameWidth + x;
+                beamOpt.applyToRay(fineRays[idx], x, y);
+                var result = traversal.castRay(fineRays[idx], nodes, 0);
+                if (result.isHit()) hitsWithBeam++;
+                iterationsWithBeam += result.iterations;
+            }
+        }
+        long timeWithBeam = System.nanoTime() - startWithBeam;
+
+        // Results
+        double msNoBeam = timeNoBeam / 1_000_000.0;
+        double msWithBeam = timeWithBeam / 1_000_000.0;
+        double raysPerMsNoBeam = totalRays / msNoBeam;
+        double raysPerMsWithBeam = totalRays / msWithBeam;
+        double avgIterNoBeam = (double) iterationsNoBeam / totalRays;
+        double avgIterWithBeam = (double) iterationsWithBeam / totalRays;
+
+        System.out.println("Without Beam Optimization:");
+        System.out.printf("  Time: %.2f ms, %.0f rays/ms%n", msNoBeam, raysPerMsNoBeam);
+        System.out.printf("  Hits: %d (%.1f%%), Avg iterations: %.1f%n",
+            hitsNoBeam, 100.0 * hitsNoBeam / totalRays, avgIterNoBeam);
+        System.out.println();
+
+        System.out.println("With Beam Optimization:");
+        System.out.printf("  Time: %.2f ms, %.0f rays/ms%n", msWithBeam, raysPerMsWithBeam);
+        System.out.printf("  Hits: %d (%.1f%%), Avg iterations: %.1f%n",
+            hitsWithBeam, 100.0 * hitsWithBeam / totalRays, avgIterWithBeam);
+        System.out.printf("  Coarse stats: %s%n", beamOpt.getStats());
+        System.out.println();
+
+        double iterReduction = 100.0 * (1 - (double) iterationsWithBeam / iterationsNoBeam);
+        double speedup = raysPerMsWithBeam / raysPerMsNoBeam;
+
+        System.out.println("Beam Optimization Impact:");
+        System.out.printf("  Iteration reduction: %.1f%%%n", iterReduction);
+        System.out.printf("  Speed change: %.2fx%n", speedup);
+        System.out.println();
+
+        // The beam optimization adds overhead (coarse pass + sampling)
+        // but should reduce iterations. Net benefit depends on tree depth.
+        if (iterReduction > 0) {
+            System.out.println("H4 RESULT: Iteration reduction confirmed");
+        } else {
+            System.out.println("H4 RESULT: No iteration reduction (may need deeper trees)");
+        }
+    }
+
+    /**
+     * Generate rays covering a full frame in grid pattern.
+     */
+    private ESVTRay[] generateFrameRays(int width, int height) {
+        var rays = new ESVTRay[width * height];
+        var origin = new Point3f(-1, TET0_CENTROID_Y, TET0_CENTROID_Z);
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                // Map pixel to target inside tetrahedron
+                float u = (x + 0.5f) / width;
+                float v = (y + 0.5f) / height;
+
+                // Interpolate within tetrahedron bounds
+                float tx = u * 0.8f + 0.1f;
+                float ty = v * u * 0.8f + 0.1f;
+                float tz = u * (1-v) * 0.8f + 0.1f;
+
+                float dx = tx - origin.x;
+                float dy = ty - origin.y;
+                float dz = tz - origin.z;
+                float len = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+                rays[y * width + x] = new ESVTRay(
+                    new Point3f(origin),
+                    new Vector3f(dx/len, dy/len, dz/len)
+                );
+            }
+        }
+        return rays;
+    }
+
+    /**
+     * Generate coarse rays for beam optimization.
+     */
+    private ESVTRay[] generateCoarseRays(int frameWidth, int frameHeight, int coarseSize) {
+        int coarseWidth = (frameWidth + coarseSize - 1) / coarseSize + 1;
+        int coarseHeight = (frameHeight + coarseSize - 1) / coarseSize + 1;
+
+        var rays = new ESVTRay[coarseWidth * coarseHeight];
+        var origin = new Point3f(-1, TET0_CENTROID_Y, TET0_CENTROID_Z);
+
+        for (int cy = 0; cy < coarseHeight; cy++) {
+            for (int cx = 0; cx < coarseWidth; cx++) {
+                // Map coarse pixel to frame center
+                float u = ((cx * coarseSize) + coarseSize/2.0f) / frameWidth;
+                float v = ((cy * coarseSize) + coarseSize/2.0f) / frameHeight;
+
+                u = Math.min(u, 1.0f);
+                v = Math.min(v, 1.0f);
+
+                float tx = u * 0.8f + 0.1f;
+                float ty = v * u * 0.8f + 0.1f;
+                float tz = u * (1-v) * 0.8f + 0.1f;
+
+                float dx = tx - origin.x;
+                float dy = ty - origin.y;
+                float dz = tz - origin.z;
+                float len = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+                rays[cy * coarseWidth + cx] = new ESVTRay(
+                    new Point3f(origin),
+                    new Vector3f(dx/len, dy/len, dz/len)
+                );
+            }
+        }
+        return rays;
+    }
+
+    /**
+     * Generate pixel coordinate array for beam optimization.
+     */
+    private int[][] generatePixelCoords(int width, int height) {
+        var coords = new int[width * height][2];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                coords[y * width + x] = new int[]{x, y};
+            }
+        }
+        return coords;
+    }
+
     // === Result Classes ===
 
     private record TraversalResult(int hits, long totalIterations) {}
