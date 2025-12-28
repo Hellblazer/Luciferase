@@ -53,7 +53,9 @@ public class ESVTRenderer {
         /** Render wireframe outlines */
         WIREFRAME,
         /** Render both solid and wireframe */
-        SOLID_WITH_WIREFRAME
+        SOLID_WITH_WIREFRAME,
+        /** GPU raycast rendering using compute shader */
+        GPU_RAYCAST
     }
 
     private final int maxDepth;
@@ -155,6 +157,11 @@ public class ESVTRenderer {
                 group.getChildren().add(meshRenderer.renderLeaves(colorScheme, opacity));
                 group.getChildren().add(meshRenderer.renderLeafWireframes());
             }
+            case GPU_RAYCAST -> {
+                // GPU rendering is handled separately via ESVTGPURenderBridge
+                // Return empty group - the app will overlay GPU-rendered image
+                log.debug("GPU_RAYCAST mode - mesh rendering skipped, using GPU bridge");
+            }
         }
 
         currentRendering = group;
@@ -227,6 +234,20 @@ public class ESVTRenderer {
      */
     public RenderMode getRenderMode() {
         return renderMode;
+    }
+
+    /**
+     * Check if the current render mode requires GPU rendering.
+     */
+    public boolean isGPUMode() {
+        return renderMode == RenderMode.GPU_RAYCAST;
+    }
+
+    /**
+     * Check if a render mode requires GPU rendering.
+     */
+    public static boolean isGPUMode(RenderMode mode) {
+        return mode == RenderMode.GPU_RAYCAST;
     }
 
     /**

@@ -20,25 +20,30 @@ import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.CameraView;
 import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
+import com.hellblazer.luciferase.portal.esvt.renderer.ESVTGPURenderBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTNodeMeshRenderer;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTRenderer;
+import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.*;
 import javafx.scene.control.*;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3f;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ESVT (Efficient Sparse Voxel Tetrahedra) Inspector Application.
@@ -81,6 +86,13 @@ public class ESVTInspectorApp extends Application {
     private ESVTRenderer esvtRenderer;
     private ESVTVoxelGenerator voxelGenerator;
     private ESVTData currentData;
+
+    // GPU Rendering Components
+    private ESVTGPURenderBridge gpuBridge;
+    private ImageView gpuImageView;
+    private AnimationTimer gpuRenderTimer;
+    private final AtomicBoolean gpuRenderPending = new AtomicBoolean(false);
+    private boolean gpuModeActive = false;
 
     // UI Controls
     private Spinner<Integer> depthSpinner;
@@ -363,13 +375,29 @@ public class ESVTInspectorApp extends Application {
     private void updateRendering() {
         if (currentData == null) return;
 
+        var renderMode = renderModeComboBox.getValue();
+        boolean isGpuMode = ESVTRenderer.isGPUMode(renderMode);
+
+        // Handle GPU mode transitions
+        if (isGpuMode && !gpuModeActive) {
+            enableGpuMode();
+        } else if (!isGpuMode && gpuModeActive) {
+            disableGpuMode();
+        }
+
+        if (isGpuMode) {
+            // GPU mode - rendering handled by animation timer
+            return;
+        }
+
+        // Standard JavaFX rendering
         esvtGroup.getChildren().clear();
 
         // Create new renderer with current settings
         var newRenderer = ESVTRenderer.builder()
             .maxDepth(currentLevel)
             .colorScheme(colorSchemeComboBox.getValue())
-            .renderMode(renderModeComboBox.getValue())
+            .renderMode(renderMode)
             .opacity(opacitySlider.getValue())
             .build();
         newRenderer.setData(currentData);
@@ -386,6 +414,154 @@ public class ESVTInspectorApp extends Application {
 
         // Note: Scaling and centering is now handled in ESVTNodeMeshRenderer
         // with default worldSize=400, so meshes span [-200, +200] in each axis
+    }
+
+    /**
+     * Enable GPU rendering mode.
+     */
+    private void enableGpuMode() {
+        if (gpuModeActive) return;
+
+        statusLabel.setText("Initializing GPU renderer...");
+
+        // Hide JavaFX 3D content
+        esvtGroup.getChildren().clear();
+
+        // Create GPU image view if needed
+        if (gpuImageView == null) {
+            gpuImageView = new ImageView();
+            gpuImageView.setPreserveRatio(true);
+        }
+
+        // Get dimensions from CameraView
+        int width = (int) Math.max(800, cameraView.getFitWidth());
+        int height = (int) Math.max(600, cameraView.getFitHeight());
+
+        // Initialize GPU bridge
+        if (gpuBridge == null) {
+            gpuBridge = new ESVTGPURenderBridge(width, height);
+        }
+
+        gpuBridge.initialize().thenCompose(v -> {
+            // Upload current data
+            return gpuBridge.uploadData(currentData);
+        }).thenRunAsync(() -> {
+            // Add GPU image view to scene
+            if (!root.getChildren().contains(gpuImageView)) {
+                // Stack GPU image over the CameraView
+                var stack = new StackPane(cameraView, gpuImageView);
+                root.setCenter(stack);
+            }
+
+            gpuImageView.setImage(gpuBridge.getOutputImage());
+            gpuImageView.setFitWidth(width);
+            gpuImageView.setFitHeight(height);
+
+            // Start render timer
+            startGpuRenderTimer();
+
+            gpuModeActive = true;
+            statusLabel.setText("GPU rendering active");
+        }, Platform::runLater).exceptionally(ex -> {
+            log.error("Failed to initialize GPU renderer", ex);
+            Platform.runLater(() -> {
+                statusLabel.setText("GPU init failed: " + ex.getMessage());
+                // Fall back to CPU rendering
+                renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
+            });
+            return null;
+        });
+    }
+
+    /**
+     * Disable GPU rendering mode.
+     */
+    private void disableGpuMode() {
+        if (!gpuModeActive) return;
+
+        // Stop render timer
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+            gpuRenderTimer = null;
+        }
+
+        // Restore standard layout
+        root.setCenter(cameraView);
+
+        gpuModeActive = false;
+        statusLabel.setText("CPU rendering active");
+    }
+
+    /**
+     * Start the GPU render animation timer.
+     */
+    private void startGpuRenderTimer() {
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+        }
+
+        gpuRenderTimer = new AnimationTimer() {
+            private long lastRender = 0;
+            private static final long RENDER_INTERVAL_NS = 33_333_333L; // ~30 FPS
+
+            @Override
+            public void handle(long now) {
+                if (now - lastRender < RENDER_INTERVAL_NS) return;
+                if (!gpuModeActive || gpuBridge == null || !gpuBridge.isInitialized()) return;
+                if (gpuRenderPending.get()) return; // Still processing previous frame
+
+                lastRender = now;
+                gpuRenderPending.set(true);
+
+                // Update camera from CameraView
+                updateGpuCamera();
+
+                // Request GPU render
+                gpuBridge.renderAsync(image -> {
+                    gpuImageView.setImage(image);
+                    gpuRenderPending.set(false);
+                });
+            }
+        };
+        gpuRenderTimer.start();
+    }
+
+    /**
+     * Update GPU camera matrices from CameraView.
+     */
+    private void updateGpuCamera() {
+        if (gpuBridge == null || cameraView == null) return;
+
+        // Get camera from CameraView
+        var camera = cameraView.getCamera();
+        if (!(camera instanceof PerspectiveCamera perspCamera)) return;
+
+        // Extract camera position from transforms
+        var transforms = perspCamera.getTransforms();
+        float camX = 0, camY = 0, camZ = -500; // Default position
+
+        // Try to get actual camera position
+        if (!transforms.isEmpty()) {
+            var localToScene = perspCamera.getLocalToSceneTransform();
+            camX = (float) localToScene.getTx();
+            camY = (float) localToScene.getTy();
+            camZ = (float) localToScene.getTz();
+        }
+
+        // Set camera parameters
+        gpuBridge.setCamera(
+            new Vector3f(camX, camY, camZ),
+            new Vector3f(0, 0, 0),  // Look at origin
+            new Vector3f(0, 1, 0),  // Up vector
+            (float) perspCamera.getFieldOfView(),
+            (float) perspCamera.getNearClip(),
+            (float) perspCamera.getFarClip()
+        );
+
+        // Set identity transforms (ESVT centered at origin)
+        var identity = new Matrix4f();
+        identity.setIdentity();
+        gpuBridge.setTransforms(identity, identity);
     }
 
     /**
@@ -472,6 +648,23 @@ public class ESVTInspectorApp extends Application {
      */
     private void shutdown() {
         log.info("Shutting down ESVT Inspector");
+
+        // Stop GPU rendering
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+            gpuRenderTimer = null;
+        }
+
+        // Close GPU bridge
+        if (gpuBridge != null) {
+            try {
+                gpuBridge.close();
+            } catch (Exception e) {
+                log.error("Error closing GPU bridge", e);
+            }
+            gpuBridge = null;
+        }
+
         buildExecutor.shutdownNow();
     }
 
