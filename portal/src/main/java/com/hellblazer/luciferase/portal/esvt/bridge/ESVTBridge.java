@@ -120,7 +120,7 @@ public class ESVTBridge {
         ray.normalizeDirection();
 
         var traversal = traversalTL.get();
-        var result = traversal.castRay(ray, data.nodes(), 0);
+        var result = traversal.castRay(ray, data.nodes(), null, data.farPointers(), 0);
 
         // Update metrics
         totalRaysCast.incrementAndGet();
@@ -162,7 +162,7 @@ public class ESVTBridge {
         }
 
         var traversal = traversalTL.get();
-        var results = traversal.castRays(rays, data.nodes(), 0);
+        var results = traversal.castRays(rays, data.nodes(), null, data.farPointers(), 0);
 
         // Update metrics
         for (var result : results) {
@@ -191,8 +191,8 @@ public class ESVTBridge {
         ray.normalizeDirection();
 
         var traversal = traversalTL.get();
-        // Use the contours array if available
-        var result = traversal.castRay(ray, data.nodes(), data.contours(), 0);
+        // Use the contours array and far pointers if available
+        var result = traversal.castRay(ray, data.nodes(), data.contours(), data.farPointers(), 0);
 
         totalRaysCast.incrementAndGet();
         if (result.isHit()) {

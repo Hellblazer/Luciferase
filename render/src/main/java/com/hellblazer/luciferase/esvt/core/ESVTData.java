@@ -36,6 +36,7 @@ import java.nio.ByteOrder;
 public record ESVTData(
     ESVTNodeUnified[] nodes,
     int[] contours,
+    int[] farPointers,
     int rootType,
     int maxDepth,
     int leafCount,
@@ -43,11 +44,19 @@ public record ESVTData(
 ) {
 
     /**
-     * Compact constructor that creates ESVTData without contours.
+     * Compact constructor that creates ESVTData without contours or far pointers.
      */
     public ESVTData(ESVTNodeUnified[] nodes, int rootType, int maxDepth,
                     int leafCount, int internalCount) {
-        this(nodes, new int[0], rootType, maxDepth, leafCount, internalCount);
+        this(nodes, new int[0], new int[0], rootType, maxDepth, leafCount, internalCount);
+    }
+
+    /**
+     * Constructor with contours but no far pointers.
+     */
+    public ESVTData(ESVTNodeUnified[] nodes, int[] contours, int rootType, int maxDepth,
+                    int leafCount, int internalCount) {
+        this(nodes, contours, new int[0], rootType, maxDepth, leafCount, internalCount);
     }
 
     /**
@@ -72,6 +81,34 @@ public record ESVTData(
     }
 
     /**
+     * Get the number of far pointers
+     */
+    public int farPointerCount() {
+        return farPointers != null ? farPointers.length : 0;
+    }
+
+    /**
+     * Check if this data has far pointers
+     */
+    public boolean hasFarPointers() {
+        return farPointers != null && farPointers.length > 0;
+    }
+
+    /**
+     * Resolve child pointer, handling far pointers if needed.
+     *
+     * @param node The node to get child pointer from
+     * @return The actual child index in the nodes array
+     */
+    public int resolveChildPtr(ESVTNodeUnified node) {
+        int ptr = node.getChildPtr();
+        if (node.isFar() && farPointers != null && ptr < farPointers.length) {
+            return farPointers[ptr];
+        }
+        return ptr;
+    }
+
+    /**
      * Get the size in bytes of the node array
      */
     public int nodeSizeInBytes() {
@@ -86,10 +123,17 @@ public record ESVTData(
     }
 
     /**
-     * Get the total size in bytes (nodes + contours)
+     * Get the size in bytes of the far pointer array
+     */
+    public int farPointerSizeInBytes() {
+        return farPointerCount() * 4; // 4 bytes per int
+    }
+
+    /**
+     * Get the total size in bytes (nodes + contours + far pointers)
      */
     public int sizeInBytes() {
-        return nodeSizeInBytes() + contourSizeInBytes();
+        return nodeSizeInBytes() + contourSizeInBytes() + farPointerSizeInBytes();
     }
 
     /**
@@ -184,7 +228,7 @@ public record ESVTData(
 
     @Override
     public String toString() {
-        return String.format("ESVTData[nodes=%d, contours=%d, rootType=%d, depth=%d, leaves=%d, internal=%d, size=%dKB]",
-            nodeCount(), contourCount(), rootType, maxDepth, leafCount, internalCount, sizeInBytes() / 1024);
+        return String.format("ESVTData[nodes=%d, contours=%d, farPtrs=%d, rootType=%d, depth=%d, leaves=%d, internal=%d, size=%dKB]",
+            nodeCount(), contourCount(), farPointerCount(), rootType, maxDepth, leafCount, internalCount, sizeInBytes() / 1024);
     }
 }

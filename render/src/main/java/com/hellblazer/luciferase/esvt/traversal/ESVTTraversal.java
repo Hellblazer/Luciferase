@@ -98,7 +98,7 @@ public final class ESVTTraversal {
      * @return Traversal result with hit information
      */
     public ESVTResult castRay(ESVTRay ray, ESVTNodeUnified[] nodes, int rootIdx) {
-        return castRay(ray, nodes, null, rootIdx);
+        return castRay(ray, nodes, null, null, rootIdx);
     }
 
     /**
@@ -111,6 +111,20 @@ public final class ESVTTraversal {
      * @return Traversal result with hit information
      */
     public ESVTResult castRay(ESVTRay ray, ESVTNodeUnified[] nodes, int[] contours, int rootIdx) {
+        return castRay(ray, nodes, contours, null, rootIdx);
+    }
+
+    /**
+     * Cast a ray through the ESVT structure with contour refinement and far pointer support.
+     *
+     * @param ray The ray to cast (origin, direction)
+     * @param nodes Array of ESVT nodes
+     * @param contours Array of contour data (may be null for no refinement)
+     * @param farPointers Array of far pointers for large trees (may be null)
+     * @param rootIdx Index of root node (usually 0)
+     * @return Traversal result with hit information
+     */
+    public ESVTResult castRay(ESVTRay ray, ESVTNodeUnified[] nodes, int[] contours, int[] farPointers, int rootIdx) {
         var result = new ESVTResult();
         ray.prepareForTraversal();
         stack.reset();
@@ -211,7 +225,7 @@ public final class ESVTTraversal {
                 // Check if this is a leaf (using Morton index)
                 if (node.isChildLeaf(mortonIdx)) {
                     // Get child node for contour data
-                    int childNodeIdx = node.getChildIndex(mortonIdx);
+                    int childNodeIdx = node.getChildIndex(mortonIdx, farPointers);
                     var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
                         ? nodes[childNodeIdx] : null;
 
@@ -309,7 +323,7 @@ public final class ESVTTraversal {
                 currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
                 // Move to child (using Morton index for tree operations)
-                int childNodeIdx = node.getChildIndex(mortonIdx);
+                int childNodeIdx = node.getChildIndex(mortonIdx, farPointers);
                 parentIdx = childNodeIdx;
                 // Read child type directly from the child node (types are propagated during build)
                 parentType = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
@@ -566,9 +580,16 @@ public final class ESVTTraversal {
      * Cast multiple rays (batch processing).
      */
     public ESVTResult[] castRays(ESVTRay[] rays, ESVTNodeUnified[] nodes, int rootIdx) {
+        return castRays(rays, nodes, null, null, rootIdx);
+    }
+
+    /**
+     * Cast multiple rays with contour refinement and far pointer support (batch processing).
+     */
+    public ESVTResult[] castRays(ESVTRay[] rays, ESVTNodeUnified[] nodes, int[] contours, int[] farPointers, int rootIdx) {
         var results = new ESVTResult[rays.length];
         for (int i = 0; i < rays.length; i++) {
-            results[i] = castRay(rays[i], nodes, rootIdx);
+            results[i] = castRay(rays[i], nodes, contours, farPointers, rootIdx);
         }
         return results;
     }

@@ -314,12 +314,29 @@ public final class ESVTNodeUnified {
 
     /**
      * Calculate the actual index of a child in the sparse array.
+     * Note: Does not handle far pointers - use getChildIndex(childIdx, farPointers) instead
+     * when far pointers may be present.
      *
      * @param childIdx The child index (0-7)
      * @return The actual index in the node array
      */
     public int getChildIndex(int childIdx) {
         return getChildPtr() + getChildOffset(childIdx);
+    }
+
+    /**
+     * Calculate the actual index of a child, resolving far pointers if needed.
+     *
+     * @param childIdx The child index (0-7)
+     * @param farPointers Array of far pointers (may be null or empty)
+     * @return The actual index in the node array
+     */
+    public int getChildIndex(int childIdx, int[] farPointers) {
+        int basePtr = getChildPtr();
+        if (isFar() && farPointers != null && basePtr < farPointers.length) {
+            basePtr = farPointers[basePtr];
+        }
+        return basePtr + getChildOffset(childIdx);
     }
 
     /**

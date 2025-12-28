@@ -89,7 +89,7 @@ public class ESVTBuilder {
         var correctedTypes = propagateTypesTopDown(nodeList, indexMap, allNodes);
 
         // Phase 5: Create ESVT nodes with correct pointers and corrected types
-        var nodes = createNodes(nodeList, correctedTypes, indexMap, allNodes);
+        var buildResult = createNodes(nodeList, correctedTypes, indexMap, allNodes);
 
         // Phase 6: Compute statistics
         int leafCount = 0;
@@ -109,10 +109,11 @@ public class ESVTBuilder {
         // Root type comes from the key
         int rootType = nodeList.isEmpty() ? 0 : nodeList.get(0).tetType;
 
-        log.info("Built ESVT: {} nodes, depth {}, {} leaves, {} internal",
-                nodes.length, maxDepth, leafCount, internalCount);
+        log.info("Built ESVT: {} nodes, depth {}, {} leaves, {} internal, {} far pointers",
+                buildResult.nodes.length, maxDepth, leafCount, internalCount, buildResult.farPointers.length);
 
-        return new ESVTData(nodes, rootType, maxDepth, leafCount, internalCount);
+        return new ESVTData(buildResult.nodes, new int[0], buildResult.farPointers,
+                           rootType, maxDepth, leafCount, internalCount);
     }
 
     /**
@@ -516,19 +517,29 @@ public class ESVTBuilder {
         return types;
     }
 
+    /** Maximum child pointer value that fits in 15 bits */
+    private static final int MAX_CHILD_PTR = (1 << 15) - 1; // 32767
+
+    /** Result of createNodes containing both nodes and any far pointers needed */
+    private record NodeBuildResult(ESVTNodeUnified[] nodes, int[] farPointers) {}
+
     /**
      * Create ESVT nodes from collected entries.
      *
      * <p>Uses explicit parent-child relationships for finding children.
      * Children are stored contiguously in Morton order.</p>
      *
+     * <p>When child pointers exceed 15 bits (32767), far pointers are used:
+     * the actual pointer is stored in a separate array and the node's childPtr
+     * becomes an index into that array with the far flag set.</p>
+     *
      * @param nodeList List of node entries in breadth-first order
      * @param correctedTypes Array of types corrected via top-down propagation
      * @param indexMap Map from TetreeKey to node index
      * @param nodeMap Map from TetreeKey to NodeEntry
-     * @return Array of ESVTNodeUnified ready for GPU transfer
+     * @return NodeBuildResult containing nodes and any far pointers
      */
-    private ESVTNodeUnified[] createNodes(
+    private NodeBuildResult createNodes(
             List<NodeEntry> nodeList,
             byte[] correctedTypes,
             Map<TetreeKey<? extends TetreeKey<?>>, Integer> indexMap,
@@ -548,11 +559,11 @@ public class ESVTBuilder {
         }
 
         var nodes = new ESVTNodeUnified[nodeList.size()];
+        var farPointersList = new ArrayList<Integer>();
 
         for (int i = 0; i < nodeList.size(); i++) {
             var entry = nodeList.get(i);
             var node = new ESVTNodeUnified(correctedTypes[i]);
-            node.setValid(true);
 
             if (!entry.isLeaf) {
                 int childMask = 0;
@@ -585,7 +596,18 @@ public class ESVTBuilder {
                 node.setLeafMask(leafMask);
 
                 if (minChildIdx != Integer.MAX_VALUE) {
-                    node.setChildPtr(minChildIdx);
+                    if (minChildIdx <= MAX_CHILD_PTR) {
+                        // Direct pointer fits in 15 bits
+                        node.setChildPtr(minChildIdx);
+                    } else {
+                        // Need far pointer - store actual index in farPointers array
+                        int farIndex = farPointersList.size();
+                        farPointersList.add(minChildIdx);
+                        node.setChildPtr(farIndex);
+                        node.setFar(true);
+                        log.debug("Node {} using far pointer: farIdx={} -> actualIdx={}",
+                            i, farIndex, minChildIdx);
+                    }
                 }
             } else {
                 node.setLeafMask(0xFF);
@@ -595,6 +617,12 @@ public class ESVTBuilder {
             nodes[i] = node;
         }
 
-        return nodes;
+        // Convert far pointers list to array
+        int[] farPointers = farPointersList.stream().mapToInt(Integer::intValue).toArray();
+        if (farPointers.length > 0) {
+            log.info("Created {} far pointers for large tree", farPointers.length);
+        }
+
+        return new NodeBuildResult(nodes, farPointers);
     }
 }
