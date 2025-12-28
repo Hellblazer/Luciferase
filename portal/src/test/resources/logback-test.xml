@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender for test output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File appender for test logs -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>target/test.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <!-- Enable debug for ESVT builder -->
+    <logger name="com.hellblazer.luciferase.esvt.builder" level="DEBUG"/>
+
+    <!-- Enable debug for portal ESVT components -->
+    <logger name="com.hellblazer.luciferase.portal.esvt" level="DEBUG"/>
+
+    <!-- Enable debug for Tetree operations -->
+    <logger name="com.hellblazer.luciferase.lucien.tetree" level="DEBUG"/>
+
+    <!-- Turn off verbose logging for test framework -->
+    <logger name="org.junit" level="WARN"/>
+</configuration>
