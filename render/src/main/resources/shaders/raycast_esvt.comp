@@ -104,6 +104,12 @@ layout(std430, binding = 0) readonly buffer ESVTBuffer {
     uvec2 nodes[];  // First uint = childDescriptor, Second uint = contourDescriptor
 } esvt;
 
+// SSBO for contour data (32-bit encoded contour values)
+// Each contour encodes: normal (18 bits) + position (7 bits) + thickness (7 bits)
+layout(std430, binding = 6) readonly buffer ContourBuffer {
+    int contours[];  // Encoded contour values
+} contourData;
+
 // Output image
 layout(rgba8, binding = 1) uniform image2D outputImage;
 
@@ -233,6 +239,151 @@ uint getChildIndex(uvec2 node, int childIdx, uint parentIdx) {
     }
 
     return parentIdx + childPtr + offset;
+}
+
+// ============================================================================
+// CONTOUR ACCESS FUNCTIONS
+// ============================================================================
+
+// Get contour mask (bits 4-7 of contour descriptor) - 4 bits for 4 tet faces
+uint getContourMask(uvec2 node) {
+    return (node.y >> 4) & 0xFu;
+}
+
+// Get contour pointer (bits 12-31 of contour descriptor)
+uint getContourPtr(uvec2 node) {
+    return node.y >> 12;
+}
+
+// Check if face has a contour
+bool hasContour(uvec2 node, int faceIdx) {
+    return (getContourMask(node) & (1u << faceIdx)) != 0u;
+}
+
+// ============================================================================
+// CONTOUR DECODING FUNCTIONS
+// Matches ESVTContour.java encoding exactly
+// ============================================================================
+
+// Constants for contour decoding
+const float EXP2_NEG25 = 1.0 / 33554432.0;  // 2^-25
+const float EXP2_NEG26 = 1.0 / 67108864.0;  // 2^-26
+
+// Decode normal from encoded contour value (matches ESVTContour.decodeNormal)
+vec3 decodeContourNormal(int value) {
+    // Sign-extending shifts and scale
+    float x = float(value << 14) * EXP2_NEG26;
+    float y = float(value << 20) * EXP2_NEG26;
+    float z = float(value << 26) * EXP2_NEG26;
+    return vec3(x, y, z);
+}
+
+// Decode position and thickness (matches ESVTContour.decodePosThick)
+vec2 decodeContourPosThick(int value) {
+    float pos = float(value << 7) * EXP2_NEG25 * 0.75;
+    float thick = float(uint(value)) * 0.75 * EXP2_NEG25;
+    return vec2(pos, thick);
+}
+
+// Ray-contour intersection
+// Returns vec2(tEntry, tExit) or vec2(-1, -1) if no intersection
+vec2 intersectContour(int contour, vec3 rayOrigin, vec3 rayDir, float tetScale) {
+    vec3 normal = decodeContourNormal(contour);
+    vec2 posThick = decodeContourPosThick(contour);
+
+    float pos = posThick.x * tetScale;
+    float halfThick = posThick.y * tetScale * 0.5;
+
+    // Compute dot products
+    float denom = dot(normal, rayDir);
+    float originDot = dot(normal, rayOrigin);
+
+    // Handle near-parallel case
+    if (abs(denom) < 1e-10) {
+        // Ray parallel to plane - check if inside slab
+        float dist = abs(originDot - pos);
+        if (dist <= halfThick) {
+            return vec2(-1e30, 1e30);  // Infinite range
+        }
+        return vec2(-1.0, -1.0);  // No intersection
+    }
+
+    // Compute intersection with both planes of the slab
+    float t1 = (pos - halfThick - originDot) / denom;
+    float t2 = (pos + halfThick - originDot) / denom;
+
+    // Ensure t1 <= t2
+    if (t1 > t2) {
+        float tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+    }
+
+    return vec2(t1, t2);
+}
+
+// Apply contour refinement to a hit
+// Refines the hit t-parameter using contour data if available
+// Returns: vec3(refinedT, normalX, normalY) where normal.z is computed from normalization
+// Returns (-1, 0, 0) if contours indicate no hit
+struct ContourRefinement {
+    float t;
+    vec3 normal;
+    bool valid;
+};
+
+ContourRefinement refineHitWithContours(uvec2 node, int entryFace, float tEntry, float tExit,
+                                        vec3 rayOrigin, vec3 rayDir, float tetScale) {
+    ContourRefinement result;
+    result.t = tEntry;
+    result.normal = vec3(0.0);
+    result.valid = true;
+
+    uint contourMask = getContourMask(node);
+    if (contourMask == 0u) {
+        // No contours - use basic hit
+        return result;
+    }
+
+    // Get contour pointer and compute offset for this face
+    uint contourPtr = getContourPtr(node);
+    uint contourOffset = bitCount(contourMask & ((1u << entryFace) - 1u));
+
+    // Check if entry face has a contour
+    if (hasContour(node, entryFace)) {
+        int contour = contourData.contours[contourPtr + contourOffset];
+
+        // Intersect ray with contour slab
+        vec2 contourHit = intersectContour(contour, rayOrigin, rayDir, tetScale);
+
+        if (contourHit.x > 0.0 && contourHit.y > 0.0) {
+            // Refine hit to contour surface
+            // The actual surface is at the center of the slab
+            vec3 contourNormal = decodeContourNormal(contour);
+            vec2 posThick = decodeContourPosThick(contour);
+            float pos = posThick.x * tetScale;
+
+            // Calculate refined t
+            float denom = dot(contourNormal, rayDir);
+            if (abs(denom) > 1e-10) {
+                float refinedT = (pos - dot(contourNormal, rayOrigin)) / denom;
+                if (refinedT >= tEntry && refinedT <= tExit) {
+                    result.t = refinedT;
+                    result.normal = normalize(contourNormal);
+
+                    // Ensure normal faces ray
+                    if (dot(result.normal, rayDir) > 0) {
+                        result.normal = -result.normal;
+                    }
+                }
+            }
+        } else if (contourHit.x == -1.0 && contourHit.y == -1.0) {
+            // Ray misses contour slab - no hit
+            result.valid = false;
+        }
+    }
+
+    return result;
 }
 
 // ============================================================================
@@ -607,26 +758,42 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
             // Check LOD termination
             float raySize = childHit.tEntry * ray.dir_sz + ray.orig_sz;
             if (raySize >= scaleExp2 * 0.5) {
-                // Hit - voxel small enough
+                // LOD termination - voxel small enough
+                // Get child node for contour data
+                uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                uvec2 childNode = esvt.nodes[childNodeIdx];
+                float childScale = scaleExp2 * 0.5;
+
+                // Apply contour refinement if available
+                ContourRefinement contourRef = refineHitWithContours(
+                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                    ray.origin, ray.direction, childScale);
+
+                if (!contourRef.valid) {
+                    // Contour indicates no hit - continue searching
+                    continue;
+                }
+
                 didHit = true;
-                hitPoint = ray.origin + ray.direction * childHit.tEntry;
+                hitPoint = ray.origin + ray.direction * contourRef.t;
 
-                // Calculate normal from entry face
-                int childType = PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
-                vec3 fv0, fv1, fv2;
-                int entryF = childHit.entryFace;
+                // Use contour normal if available, otherwise calculate from face
+                if (length(contourRef.normal) > 0.5) {
+                    hitNormal = contourRef.normal;
+                } else {
+                    // Calculate normal from entry face
+                    vec3 fv0, fv1, fv2;
+                    int entryF = childHit.entryFace;
 
-                // Get face vertices for normal calculation
-                if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                    if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
 
-                hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-
-                // Ensure normal faces ray
-                if (dot(hitNormal, ray.direction) > 0) {
-                    hitNormal = -hitNormal;
+                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                    if (dot(hitNormal, ray.direction) > 0) {
+                        hitNormal = -hitNormal;
+                    }
                 }
 
                 return;
@@ -634,23 +801,41 @@ void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool 
 
             // Check if this is a leaf
             if (isChildLeaf(node, childIdx)) {
-                // HIT - return result
+                // Leaf hit - get child node for contour data
+                uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                uvec2 childNode = esvt.nodes[childNodeIdx];
+                float childScale = scaleExp2 * 0.5;
+
+                // Apply contour refinement if available
+                ContourRefinement contourRef = refineHitWithContours(
+                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                    ray.origin, ray.direction, childScale);
+
+                if (!contourRef.valid) {
+                    // Contour indicates no hit - continue searching
+                    continue;
+                }
+
                 didHit = true;
-                hitPoint = ray.origin + ray.direction * childHit.tEntry;
+                hitPoint = ray.origin + ray.direction * contourRef.t;
 
-                // Calculate normal from entry face
-                int childType = PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
-                vec3 fv0, fv1, fv2;
-                int entryF = childHit.entryFace;
+                // Use contour normal if available, otherwise calculate from face
+                if (length(contourRef.normal) > 0.5) {
+                    hitNormal = contourRef.normal;
+                } else {
+                    // Calculate normal from entry face
+                    vec3 fv0, fv1, fv2;
+                    int entryF = childHit.entryFace;
 
-                if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                    if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
 
-                hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                if (dot(hitNormal, ray.direction) > 0) {
-                    hitNormal = -hitNormal;
+                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                    if (dot(hitNormal, ray.direction) > 0) {
+                        hitNormal = -hitNormal;
+                    }
                 }
 
                 return;
