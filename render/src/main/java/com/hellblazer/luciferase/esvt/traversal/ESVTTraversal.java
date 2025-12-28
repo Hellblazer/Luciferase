@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.esvt.traversal;
 import com.hellblazer.luciferase.esvt.core.ESVTContour;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
 import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -175,20 +176,26 @@ public final class ESVTTraversal {
             }
 
             // Get children at entry face in front-to-back order
+            // NOTE: childOrder contains BEY indices from CHILDREN_AT_FACE table
             byte[] childOrder = ESVTChildOrder.getChildOrder(parentType, entryFace);
 
             // Try each child starting from siblingPos
             boolean descended = false;
             for (int pos = siblingPos; pos < 4; pos++) {
-                int childIdx = childOrder[pos];
+                int beyIdx = childOrder[pos];  // This is a BEY index!
 
-                // Check if child exists
-                if (!node.hasChild(childIdx)) {
+                // Convert Bey index to Morton index for tree operations
+                // ESVTNodeUnified stores children in Morton order, not Bey order
+                int mortonIdx = TetreeConnectivity.BEY_NUMBER_TO_INDEX[parentType][beyIdx];
+
+                // Check if child exists (using Morton index for tree storage)
+                if (!node.hasChild(mortonIdx)) {
                     continue;
                 }
 
-                // Get child vertices using actual parent position
-                getChildVerticesFromParent(currentVerts, childIdx, scratchVerts);
+                // Get child vertices using Morton index
+                // getChildVerticesFromParent() converts Morton to Bey internally
+                getChildVerticesFromParent(currentVerts, mortonIdx, parentType, scratchVerts);
 
                 // Test ray-child intersection
                 if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
@@ -201,10 +208,10 @@ public final class ESVTTraversal {
                 float childTEntry = tetResult.tEntry;
                 int childEntryFace = tetResult.entryFace;
 
-                // Check if this is a leaf
-                if (node.isChildLeaf(childIdx)) {
+                // Check if this is a leaf (using Morton index)
+                if (node.isChildLeaf(mortonIdx)) {
                     // Get child node for contour data
-                    int childNodeIdx = node.getChildIndex(childIdx);
+                    int childNodeIdx = node.getChildIndex(mortonIdx);
                     var childNode = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
                         ? nodes[childNodeIdx] : null;
 
@@ -264,13 +271,16 @@ public final class ESVTTraversal {
                         }
                     }
 
-                    // Set hit result
-                    byte childType = node.getChildType(childIdx);
+                    // Set hit result (using Morton index for tree operations)
+                    // Read child type from child node (types are propagated during build)
+                    byte childType = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
+                        ? nodes[childNodeIdx].getTetType()
+                        : 0;
                     result.setHit(refinedT,
                         rayOrigin.x + refinedT * rayDir.x,
                         rayOrigin.y + refinedT * rayDir.y,
                         rayOrigin.z + refinedT * rayDir.z,
-                        parentIdx, childIdx, childType,
+                        parentIdx, mortonIdx, childType,
                         (byte) childEntryFace, scale);
                     result.exitFace = (byte) tetResult.exitFace;
                     result.iterations = iterations;
@@ -298,9 +308,13 @@ public final class ESVTTraversal {
                 currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
                 currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
-                // Move to child
-                parentIdx = node.getChildIndex(childIdx);
-                parentType = node.getChildType(childIdx);
+                // Move to child (using Morton index for tree operations)
+                int childNodeIdx = node.getChildIndex(mortonIdx);
+                parentIdx = childNodeIdx;
+                // Read child type directly from the child node (types are propagated during build)
+                parentType = (childNodeIdx >= 0 && childNodeIdx < nodes.length)
+                    ? nodes[childNodeIdx].getTetType()
+                    : 0;
                 entryFace = childEntryFace >= 0 ? childEntryFace : 0;
                 tMin = childTEntry;
                 tMax = tetResult.tExit;
@@ -375,11 +389,19 @@ public final class ESVTTraversal {
      * - 4 corner children (at each parent vertex)
      * - 4 octahedral children (in the center region)
      *
+     * <p><b>Important:</b> Child indices in the tree are Morton-ordered, but vertex
+     * computation requires Bey ordering. This method converts Morton to Bey internally
+     * using TetreeConnectivity.INDEX_TO_BEY_NUMBER.
+     *
      * @param parentVerts Parent vertices as float[12] (v0.xyz, v1.xyz, v2.xyz, v3.xyz)
-     * @param childIdx Child index (0-7)
+     * @param mortonIdx Morton-ordered child index (0-7) from tree traversal
+     * @param parentType Type of parent tetrahedron (0-5) for Morton-to-Bey conversion
      * @param childVerts Output array for child vertex positions
      */
-    private void getChildVerticesFromParent(float[] parentVerts, int childIdx, Point3f[] childVerts) {
+    private void getChildVerticesFromParent(float[] parentVerts, int mortonIdx, byte parentType, Point3f[] childVerts) {
+        // Convert Morton index to Bey index using type-dependent lookup
+        int beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[parentType][mortonIdx];
+
         // Extract parent vertices
         float p0x = parentVerts[0], p0y = parentVerts[1], p0z = parentVerts[2];
         float p1x = parentVerts[3], p1y = parentVerts[4], p1z = parentVerts[5];
@@ -394,52 +416,55 @@ public final class ESVTTraversal {
         float m13x = (p1x + p3x) * 0.5f, m13y = (p1y + p3y) * 0.5f, m13z = (p1z + p3z) * 0.5f;
         float m23x = (p2x + p3x) * 0.5f, m23y = (p2y + p3y) * 0.5f, m23z = (p2z + p3z) * 0.5f;
 
-        // Bey subdivision children
-        switch (childIdx) {
-            case 0 -> { // Corner child at v0
+        // Bey subdivision children (using Bey index, not Morton index)
+        // Reference: BeySubdivision.java subdivide() method
+        // Corner children (0-3): corner vertex is at position 0 to match traversal expectations
+        // Octahedral children (4-7): vertices selected from edge midpoints
+        switch (beyIdx) {
+            case 0 -> { // Corner child at v0: vertices [v0, m01, m02, m03]
                 childVerts[0].set(p0x, p0y, p0z);
                 childVerts[1].set(m01x, m01y, m01z);
                 childVerts[2].set(m02x, m02y, m02z);
                 childVerts[3].set(m03x, m03y, m03z);
             }
-            case 1 -> { // Corner child at v1
-                childVerts[0].set(p1x, p1y, p1z);
-                childVerts[1].set(m01x, m01y, m01z);
+            case 1 -> { // T1 = [x01, x1, x12, x13] - anchor at m01, corner v1 at position 1
+                childVerts[0].set(m01x, m01y, m01z);
+                childVerts[1].set(p1x, p1y, p1z);
                 childVerts[2].set(m12x, m12y, m12z);
                 childVerts[3].set(m13x, m13y, m13z);
             }
-            case 2 -> { // Corner child at v2
-                childVerts[0].set(p2x, p2y, p2z);
-                childVerts[1].set(m02x, m02y, m02z);
-                childVerts[2].set(m12x, m12y, m12z);
+            case 2 -> { // T2 = [x02, x12, x2, x23] - anchor at m02, corner v2 at position 2
+                childVerts[0].set(m02x, m02y, m02z);
+                childVerts[1].set(m12x, m12y, m12z);
+                childVerts[2].set(p2x, p2y, p2z);
                 childVerts[3].set(m23x, m23y, m23z);
             }
-            case 3 -> { // Corner child at v3
-                childVerts[0].set(p3x, p3y, p3z);
+            case 3 -> { // T3 = [x03, x13, x23, x3] - anchor at m03, corner v3 at position 3
+                childVerts[0].set(m03x, m03y, m03z);
+                childVerts[1].set(m13x, m13y, m13z);
+                childVerts[2].set(m23x, m23y, m23z);
+                childVerts[3].set(p3x, p3y, p3z);
+            }
+            case 4 -> { // Octahedral: T4 = [x01, x02, x03, x13] (fixed: was m12, should be m13)
+                childVerts[0].set(m01x, m01y, m01z);
+                childVerts[1].set(m02x, m02y, m02z);
+                childVerts[2].set(m03x, m03y, m03z);
+                childVerts[3].set(m13x, m13y, m13z);
+            }
+            case 5 -> { // Octahedral: T5 = [x01, x02, x12, x13]
+                childVerts[0].set(m01x, m01y, m01z);
+                childVerts[1].set(m02x, m02y, m02z);
+                childVerts[2].set(m12x, m12y, m12z);
+                childVerts[3].set(m13x, m13y, m13z);
+            }
+            case 6 -> { // Octahedral: T6 = [x02, x03, x13, x23] (fixed: was m12, should be m13)
+                childVerts[0].set(m02x, m02y, m02z);
                 childVerts[1].set(m03x, m03y, m03z);
                 childVerts[2].set(m13x, m13y, m13z);
                 childVerts[3].set(m23x, m23y, m23z);
             }
-            case 4 -> { // Octahedral child 0
-                childVerts[0].set(m01x, m01y, m01z);
-                childVerts[1].set(m02x, m02y, m02z);
-                childVerts[2].set(m03x, m03y, m03z);
-                childVerts[3].set(m12x, m12y, m12z);
-            }
-            case 5 -> { // Octahedral child 1
-                childVerts[0].set(m01x, m01y, m01z);
-                childVerts[1].set(m02x, m02y, m02z);
-                childVerts[2].set(m12x, m12y, m12z);
-                childVerts[3].set(m13x, m13y, m13z);
-            }
-            case 6 -> { // Octahedral child 2
+            case 7 -> { // Octahedral: T7 = [x02, x12, x13, x23] (fixed: was m03, should be m02)
                 childVerts[0].set(m02x, m02y, m02z);
-                childVerts[1].set(m03x, m03y, m03z);
-                childVerts[2].set(m12x, m12y, m12z);
-                childVerts[3].set(m23x, m23y, m23z);
-            }
-            case 7 -> { // Octahedral child 3
-                childVerts[0].set(m03x, m03y, m03z);
                 childVerts[1].set(m12x, m12y, m12z);
                 childVerts[2].set(m13x, m13y, m13z);
                 childVerts[3].set(m23x, m23y, m23z);

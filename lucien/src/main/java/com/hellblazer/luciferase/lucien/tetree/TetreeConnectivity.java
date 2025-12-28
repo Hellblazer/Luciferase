@@ -268,6 +268,29 @@ public final class TetreeConnectivity {
      */
     public static final byte[] BEY_ID_TO_VERTEX = { 0, 1, 2, 3, 1, 1, 2, 2 };
 
+    /**
+     * Bey number to Morton index mapping - inverse of INDEX_TO_BEY_NUMBER.
+     * Maps from Bey child ID (0-7) to Morton child index used for tree storage.
+     *
+     * This is essential for ray traversal where CHILDREN_AT_FACE provides Bey indices,
+     * but ESVTNodeUnified stores children indexed by Morton order.
+     *
+     * [parent_type][bey_number] -> morton_index
+     */
+    public static final byte[][] BEY_NUMBER_TO_INDEX = {
+    // Parent type 0: Bey {0,1,2,3,4,5,6,7} -> Morton {0,1,4,7,2,3,6,5}
+    { 0, 1, 4, 7, 2, 3, 6, 5 },
+    // Parent type 1
+    { 0, 1, 5, 7, 3, 2, 6, 4 },
+    // Parent type 2
+    { 0, 3, 4, 7, 1, 2, 6, 5 },
+    // Parent type 3
+    { 0, 1, 6, 7, 3, 2, 4, 5 },
+    // Parent type 4
+    { 0, 3, 5, 7, 1, 2, 4, 6 },
+    // Parent type 5
+    { 0, 3, 6, 7, 2, 1, 4, 5 } };
+
     // Static initializer for computed tables
     static {
         // Initialize sibling relationships (all children of same parent are siblings)
@@ -299,11 +322,23 @@ public final class TetreeConnectivity {
      * its parent according to Bey's tetrahedral refinement scheme.
      *
      * @param parentType Type of parent tetrahedron (0-5)
-     * @param childIndex Index of child (0-7)
+     * @param childIndex Index of child (0-7) in Morton order
      * @return Bey child ID
      */
     public static byte getBeyChildId(byte parentType, int childIndex) {
         return INDEX_TO_BEY_NUMBER[parentType][childIndex];
+    }
+
+    /**
+     * Get Morton child index for parent type and Bey child ID. This is the inverse of getBeyChildId().
+     * Essential for ray traversal where CHILDREN_AT_FACE provides Bey indices but tree storage uses Morton order.
+     *
+     * @param parentType Type of parent tetrahedron (0-5)
+     * @param beyChildId Bey child ID (0-7)
+     * @return Morton child index for tree storage
+     */
+    public static byte getMortonChildId(byte parentType, int beyChildId) {
+        return BEY_NUMBER_TO_INDEX[parentType][beyChildId];
     }
 
     /**

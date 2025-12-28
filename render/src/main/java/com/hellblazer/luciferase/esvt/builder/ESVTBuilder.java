@@ -34,21 +34,21 @@ import java.util.*;
 /**
  * Builds ESVT GPU-ready data structure from a Tetree spatial index.
  *
- * The builder collects all nodes with entities from the Tetree and constructs
+ * <p>The builder collects all nodes with entities from the Tetree and constructs
  * the full tree hierarchy by creating virtual parent nodes. Nodes are allocated
  * in breadth-first order for GPU cache efficiency. Each node is converted to an
  * 8-byte ESVTNodeUnified with:
- * - Child mask (8 bits for Bey 8-way subdivision)
- * - Leaf mask (8 bits)
- * - Child pointer (14 bits, relative offset)
- * - Tetrahedron type (3 bits, 0-5 for S0-S5)
+ * <ul>
+ *   <li>Child mask (8 bits for Bey 8-way subdivision)</li>
+ *   <li>Leaf mask (8 bits)</li>
+ *   <li>Child pointer (14 bits, relative offset)</li>
+ *   <li>Tetrahedron type (3 bits, 0-5 for S0-S5)</li>
+ * </ul>
  *
- * The builder handles:
- * - Bottom-up tree construction from sparse leaf nodes
- * - Node allocation in breadth-first order
- * - Child pointer computation
- * - Type propagation from parent to children
- * - Sparse child indexing using popcount
+ * <p><b>Key Design Principle:</b> Type is derived directly from the TetreeKey via
+ * {@code Tet.tetrahedron(key).type()}. The TetreeKey encodes 6 bits per level
+ * (3 type bits + 3 coordinate bits), so type information is already available
+ * in the key. No separate type propagation is needed.
  *
  * @author hal.hildebrand
  */
@@ -73,6 +73,7 @@ public class ESVTBuilder {
             log.warn("Empty Tetree, returning empty ESVT");
             return new ESVTData(new ESVTNodeUnified[0], 0, 0, 0, 0);
         }
+        log.debug("After buildTreeFromLeaves: {} nodes", allNodes.size());
 
         // Phase 2: Sort nodes in breadth-first order (by level, then by key)
         var nodeList = sortBreadthFirst(allNodes);
@@ -98,7 +99,7 @@ public class ESVTBuilder {
             }
         }
 
-        // Root type is always 0 (S0) for a standard Tetree starting point
+        // Root type comes from the key
         int rootType = nodeList.isEmpty() ? 0 : nodeList.get(0).tetType;
 
         log.info("Built ESVT: {} nodes, depth {}, {} leaves, {} internal",
@@ -110,6 +111,12 @@ public class ESVTBuilder {
     /**
      * Convenience method to build ESVT data directly from voxel coordinates.
      * Creates a Tetree internally, populates it with voxels, then builds the ESVT.
+     *
+     * <p><b>Coordinate Transformation:</b> Input voxels are automatically transformed
+     * to the Tetree's coordinate space (which uses integer Morton coordinates up to 2^21).
+     * The transformation maps the voxel bounding box to fill most of the coordinate space
+     * while preserving aspect ratio. ESVT ray traversal then interprets this tree in
+     * normalized [0,1] space.
      *
      * @param voxels   List of voxel coordinates (Point3i with x, y, z)
      * @param maxDepth Maximum tree depth (determines resolution)
@@ -123,6 +130,45 @@ public class ESVTBuilder {
 
         log.debug("Building ESVT from {} voxels at maxDepth {}", voxels.size(), maxDepth);
 
+        // Compute bounding box for coordinate transformation
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (var voxel : voxels) {
+            minX = Math.min(minX, voxel.x);
+            minY = Math.min(minY, voxel.y);
+            minZ = Math.min(minZ, voxel.z);
+            maxX = Math.max(maxX, voxel.x);
+            maxY = Math.max(maxY, voxel.y);
+            maxZ = Math.max(maxZ, voxel.z);
+        }
+
+        // Tetree uses coordinates up to 2^21, but we scale to fit within the usable range
+        // based on maxDepth. At level L, cell size = 2^(21-L), so we want coordinates
+        // that map cleanly to cells at the target depth.
+        float rangeX = maxX - minX + 1;
+        float rangeY = maxY - minY + 1;
+        float rangeZ = maxZ - minZ + 1;
+        float maxRange = Math.max(rangeX, Math.max(rangeY, rangeZ));
+
+        // Target range: use 80% of the coordinate space to leave margin
+        int tetreeMaxCoord = (1 << 21) - 1;
+        float targetMin = tetreeMaxCoord * 0.1f;
+        float targetMax = tetreeMaxCoord * 0.9f;
+        float targetRange = targetMax - targetMin;
+
+        float scale = targetRange / maxRange;
+        float offsetX = targetMin - minX * scale;
+        float offsetY = targetMin - minY * scale;
+        float offsetZ = targetMin - minZ * scale;
+
+        // Center smaller dimensions within the target range
+        offsetX += (targetRange - rangeX * scale) / 2.0f;
+        offsetY += (targetRange - rangeY * scale) / 2.0f;
+        offsetZ += (targetRange - rangeZ * scale) / 2.0f;
+
+        log.debug("Transforming voxels: bbox=[{},{},{}]-[{},{},{}], scale={}, target=[{},{}]",
+                minX, minY, minZ, maxX, maxY, maxZ, scale, targetMin, targetMax);
+
         // Create Tetree with appropriate configuration
         var idGenerator = new SequentialLongIDGenerator();
         var tetree = new Tetree<LongEntityID, String>(idGenerator, 100, (byte) maxDepth);
@@ -130,31 +176,37 @@ public class ESVTBuilder {
         // Enable bulk loading for better performance with large voxel sets
         tetree.enableBulkLoading();
 
-        // Insert all voxels as point entities at the specified depth
+        // Insert all voxels as point entities at the specified depth with transformed coordinates
         byte level = (byte) maxDepth;
         int inserted = 0;
         for (var voxel : voxels) {
-            // Convert Point3i to Point3f - voxels are integer grid coordinates
-            var position = new Point3f(voxel.x, voxel.y, voxel.z);
+            // Transform voxel coordinates to Tetree coordinate space
+            float tx = voxel.x * scale + offsetX;
+            float ty = voxel.y * scale + offsetY;
+            float tz = voxel.z * scale + offsetZ;
+            var position = new Point3f(tx, ty, tz);
             try {
                 tetree.insert(position, level, "voxel_" + inserted);
                 inserted++;
             } catch (Exception e) {
-                log.trace("Skipping voxel at ({},{},{}): {}", voxel.x, voxel.y, voxel.z, e.getMessage());
+                log.trace("Skipping voxel at ({},{},{}) -> ({},{},{}): {}",
+                        voxel.x, voxel.y, voxel.z, tx, ty, tz, e.getMessage());
             }
         }
 
         // Finalize bulk loading
         tetree.finalizeBulkLoading();
 
-        log.debug("Inserted {} of {} voxels into Tetree", inserted, voxels.size());
+        log.debug("Inserted {} of {} voxels into Tetree (scaled to [{},{}] range)",
+                inserted, voxels.size(), targetMin, targetMax);
 
         // Build ESVT from the populated Tetree
         return build(tetree);
     }
 
     /**
-     * Entry representing a node during building
+     * Entry representing a node during building.
+     * Type is derived from the TetreeKey via Tet.tetrahedron(key).type().
      */
     private record NodeEntry(
         TetreeKey<? extends TetreeKey<?>> key,
@@ -166,6 +218,10 @@ public class ESVTBuilder {
     /**
      * Build complete tree structure from leaf nodes.
      * This creates virtual parent nodes for all ancestors of leaf nodes.
+     *
+     * <p>Type is derived from TetreeKey for each node - no manual propagation needed.
+     * The key insight is that TetreeKey encodes 6 bits per level (3 type + 3 coord),
+     * and Tet.tetrahedron(key).type() correctly decodes the type.</p>
      */
     @SuppressWarnings("unchecked")
     private <ID extends EntityID, Content> Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> buildTreeFromLeaves(
@@ -177,13 +233,14 @@ public class ESVTBuilder {
         log.debug("Building tree from {} leaf nodes", leafKeys.size());
 
         // First pass: add all leaf nodes
+        // Type is derived from the key itself via Tet.tetrahedron(key).type()
         for (var leafKey : leafKeys) {
             var tet = Tet.tetrahedron(leafKey);
             allNodes.put(leafKey, new NodeEntry(
                 (TetreeKey<? extends TetreeKey<?>>) leafKey,
                 tet,
-                tet.type(),
-                true  // Initially mark as leaf
+                tet.type(),  // Type derived from key
+                true
             ));
         }
 
@@ -196,25 +253,16 @@ public class ESVTBuilder {
                 var parentKey = (TetreeKey<? extends TetreeKey<?>>) parent.tmIndex();
 
                 if (!allNodes.containsKey(parentKey)) {
-                    // Create parent node (not a leaf since it has children)
+                    // Create parent node - type is from parent.type() which was computed
+                    // consistently via parent() chain
                     allNodes.put(parentKey, new NodeEntry(
                         parentKey,
                         parent,
-                        parent.type(),
+                        parent.type(),  // Type from parent() computation
                         false
                     ));
-                } else {
-                    // Parent already exists - mark it as internal if needed
-                    var existing = allNodes.get(parentKey);
-                    if (existing.isLeaf) {
-                        allNodes.put(parentKey, new NodeEntry(
-                            parentKey,
-                            parent,
-                            parent.type(),
-                            false
-                        ));
-                    }
                 }
+                // If parent already exists, keep it as-is (it has the correct type)
 
                 current = parent;
             }
@@ -225,7 +273,7 @@ public class ESVTBuilder {
         for (var entry : allNodes.entrySet()) {
             var key = entry.getKey();
             var nodeEntry = entry.getValue();
-            boolean hasChildren = hasChildrenInSet(nodeEntry.tet, allNodes);
+            boolean hasChildren = hasChildrenInMap(nodeEntry.tet, allNodes);
             finalNodes.put(key, new NodeEntry(
                 nodeEntry.key,
                 nodeEntry.tet,
@@ -238,15 +286,16 @@ public class ESVTBuilder {
     }
 
     /**
-     * Check if a tet has any children in the node set
+     * Check if a tet has any children in the node map.
+     * Uses TetreeKey (tmIndex) for lookup.
      */
     @SuppressWarnings("unchecked")
-    private boolean hasChildrenInSet(Tet tet, Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodes) {
+    private boolean hasChildrenInMap(Tet tet, Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodeMap) {
         for (int childIdx = 0; childIdx < 8; childIdx++) {
             try {
                 var childTet = tet.child(childIdx);
                 var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
-                if (nodes.containsKey(childKey)) {
+                if (nodeMap.containsKey(childKey)) {
                     return true;
                 }
             } catch (Exception e) {
@@ -257,16 +306,35 @@ public class ESVTBuilder {
     }
 
     /**
-     * Sort nodes in breadth-first order (by level ascending, then by key)
+     * Sort nodes in breadth-first order with siblings in Morton order.
+     *
+     * <p>Critical for sparse child indexing: ESVTNodeUnified.getChildIndex() uses
+     * popcount-based sparse indexing that assumes children are stored contiguously
+     * in Morton order.</p>
+     *
+     * <p>Sort order: level (ascending) → parent key → Morton index (consecutiveIndex)</p>
      */
+    @SuppressWarnings("unchecked")
     private List<NodeEntry> sortBreadthFirst(Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
         var nodeList = new ArrayList<>(allNodes.values());
 
-        // Sort by level (ascending - root first), then by key for deterministic ordering
+        // Sort by level, then parent key, then Morton index (consecutiveIndex)
         nodeList.sort((a, b) -> {
+            // 1. Sort by level (root first)
             int levelCmp = Byte.compare(a.key.getLevel(), b.key.getLevel());
             if (levelCmp != 0) return levelCmp;
-            return a.key.compareTo(b.key);
+
+            // 2. Group siblings by parent key
+            TetreeKey<?> aParent = (a.tet.l() > 0) ? (TetreeKey<?>) a.tet.parent().tmIndex() : null;
+            TetreeKey<?> bParent = (b.tet.l() > 0) ? (TetreeKey<?>) b.tet.parent().tmIndex() : null;
+            if (aParent == null && bParent == null) return 0;
+            if (aParent == null) return -1;
+            if (bParent == null) return 1;
+            int parentCmp = aParent.compareTo((TetreeKey) bParent);
+            if (parentCmp != 0) return parentCmp;
+
+            // 3. Sort siblings by Morton index (consecutiveIndex is unique within level)
+            return Long.compare(a.tet.consecutiveIndex(), b.tet.consecutiveIndex());
         });
 
         return nodeList;
@@ -284,13 +352,17 @@ public class ESVTBuilder {
     }
 
     /**
-     * Create ESVT nodes from collected entries
+     * Create ESVT nodes from collected entries.
+     *
+     * <p>Uses TetreeKey (tmIndex) for finding children. The child's tmIndex should
+     * match what was stored during buildTreeFromLeaves because both use the same
+     * consistent path for key computation.</p>
      */
     @SuppressWarnings("unchecked")
     private ESVTNodeUnified[] createNodes(
             List<NodeEntry> nodeList,
             Map<TetreeKey<? extends TetreeKey<?>>, Integer> indexMap,
-            Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
+            Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodeMap) {
 
         var nodes = new ESVTNodeUnified[nodeList.size()];
 
@@ -303,24 +375,21 @@ public class ESVTBuilder {
                 // Find children and build child mask
                 int childMask = 0;
                 int leafMask = 0;
-                int firstChildIdx = -1;
+                int minChildIdx = Integer.MAX_VALUE;
 
-                // Check all 8 possible Bey children
+                // Check all 8 possible children using TetreeKey lookup
                 for (int childIdx = 0; childIdx < 8; childIdx++) {
                     try {
                         var childTet = entry.tet.child(childIdx);
                         var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
 
-                        if (indexMap.containsKey(childKey)) {
+                        var childIdxInArray = indexMap.get(childKey);
+                        if (childIdxInArray != null) {
                             childMask |= (1 << childIdx);
-                            int childNodeIdx = indexMap.get(childKey);
-
-                            if (firstChildIdx < 0) {
-                                firstChildIdx = childNodeIdx;
-                            }
+                            minChildIdx = Math.min(minChildIdx, childIdxInArray);
 
                             // Check if child is a leaf
-                            var childEntry = allNodes.get(childKey);
+                            var childEntry = nodeMap.get(childKey);
                             if (childEntry != null && childEntry.isLeaf) {
                                 leafMask |= (1 << childIdx);
                             }
@@ -333,14 +402,13 @@ public class ESVTBuilder {
                 node.setChildMask(childMask);
                 node.setLeafMask(leafMask);
 
-                if (firstChildIdx >= 0) {
-                    // Child pointer is the absolute index in the node array
-                    node.setChildPtr(firstChildIdx);
+                if (minChildIdx != Integer.MAX_VALUE) {
+                    node.setChildPtr(minChildIdx);
                 }
             } else {
                 // Leaf node - set leaf-specific data
-                node.setLeafMask(0xFF); // All positions are "leaf" (no children)
-                node.setChildMask(0);   // No children
+                node.setLeafMask(0xFF);  // All positions are "leaf" (no children)
+                node.setChildMask(0);    // No children
             }
 
             nodes[i] = node;

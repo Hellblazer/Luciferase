@@ -29,6 +29,9 @@
         <appender-ref ref="FILE"/>
     </root>
 
+    <!-- Enable debug for ESVT builder -->
+    <logger name="com.hellblazer.luciferase.esvt.builder" level="DEBUG"/>
+
     <!-- Turn off verbose logging for JMH benchmarks -->
     <logger name="org.openjdk.jmh" level="WARN"/>
 
