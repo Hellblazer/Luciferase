@@ -19,11 +19,13 @@ package com.hellblazer.luciferase.esvt.builder;
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
 import com.hellblazer.luciferase.geometry.Point3i;
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,10 +83,15 @@ public class ESVTBuilder {
         // Phase 3: Build index map for pointer computation
         var indexMap = buildIndexMap(nodeList);
 
-        // Phase 4: Create ESVT nodes with correct pointers
-        var nodes = createNodes(nodeList, indexMap, allNodes);
+        // Phase 4: Propagate types top-down from root
+        // This is critical: types must be derived from parent's type + Morton child index,
+        // NOT from bottom-up computation which may be inconsistent
+        var correctedTypes = propagateTypesTopDown(nodeList, indexMap, allNodes);
 
-        // Phase 5: Compute statistics
+        // Phase 5: Create ESVT nodes with correct pointers and corrected types
+        var nodes = createNodes(nodeList, correctedTypes, indexMap, allNodes);
+
+        // Phase 6: Compute statistics
         int leafCount = 0;
         int internalCount = 0;
         int maxDepth = 0;
@@ -206,22 +213,25 @@ public class ESVTBuilder {
 
     /**
      * Entry representing a node during building.
-     * Type is derived from the TetreeKey via Tet.tetrahedron(key).type().
+     * Stores TetreeKey for unique identification (includes type).
      */
     private record NodeEntry(
         TetreeKey<? extends TetreeKey<?>> key,
         Tet tet,
         byte tetType,
-        boolean isLeaf
+        boolean isLeaf,
+        TetreeKey<? extends TetreeKey<?>> parentKey  // Explicit parent reference
     ) {}
 
     /**
      * Build complete tree structure from leaf nodes.
-     * This creates virtual parent nodes for all ancestors of leaf nodes.
+     * Uses TetreeKey (with type) for unique identification.
+     * Stores explicit parent-child relationships instead of recomputing via child().
      *
-     * <p>Type is derived from TetreeKey for each node - no manual propagation needed.
-     * The key insight is that TetreeKey encodes 6 bits per level (3 type + 3 coord),
-     * and Tet.tetrahedron(key).type() correctly decodes the type.</p>
+     * <p><b>S0 Tree Filtering:</b> Only nodes that are valid in the S0 Bey tree are included.
+     * The Tetree is defined to be rooted in S0, so any nodes with types that don't match
+     * the S0 Bey traversal are filtered out. This handles legacy data or any edge cases
+     * where non-S0 nodes might exist.
      */
     @SuppressWarnings("unchecked")
     private <ID extends EntityID, Content> Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> buildTreeFromLeaves(
@@ -229,42 +239,68 @@ public class ESVTBuilder {
 
         var allNodes = new HashMap<TetreeKey<? extends TetreeKey<?>>, NodeEntry>();
         var leafKeys = tetree.getSortedSpatialIndices();
+        // Track children for each parent: parentKey -> list of child keys
+        var parentToChildren = new HashMap<TetreeKey<? extends TetreeKey<?>>, List<TetreeKey<? extends TetreeKey<?>>>>();
 
         log.debug("Building tree from {} leaf nodes", leafKeys.size());
 
-        // First pass: add all leaf nodes
-        // Type is derived from the key itself via Tet.tetrahedron(key).type()
+        // First pass: add all leaf nodes, using S0 tree canonical form
+        // We use Tet.locatePointS0Tree to get the canonical S0 representation
+        // This deduplicates nodes that have same (x,y,z,level) but different stored types
+        var seenPositions = new HashSet<String>();
+        int skipped = 0;
+
         for (var leafKey : leafKeys) {
             var tet = Tet.tetrahedron(leafKey);
-            allNodes.put(leafKey, new NodeEntry(
-                (TetreeKey<? extends TetreeKey<?>>) leafKey,
-                tet,
-                tet.type(),  // Type derived from key
-                true
-            ));
+
+            // Get the canonical S0 tree representation for this position
+            var s0Tet = Tet.locatePointS0Tree((float) tet.x, (float) tet.y, (float) tet.z, tet.l());
+
+            // Deduplicate by position (x,y,z,level) - only keep first occurrence
+            var posKey = s0Tet.x + "," + s0Tet.y + "," + s0Tet.z + "," + s0Tet.l();
+            if (seenPositions.contains(posKey)) {
+                skipped++;
+                continue;
+            }
+            seenPositions.add(posKey);
+
+            // Use the S0 canonical tet and its key
+            var s0Key = (TetreeKey<? extends TetreeKey<?>>) s0Tet.tmIndex();
+            allNodes.put(s0Key, new NodeEntry(s0Key, s0Tet, s0Tet.type(), true, null));
         }
 
-        // Second pass: trace up from each leaf to create parent nodes
-        for (var leafKey : leafKeys) {
-            var current = Tet.tetrahedron(leafKey);
+        if (skipped > 0) {
+            log.debug("Filtered out {} duplicate/non-S0 tree nodes", skipped);
+        }
+
+        // Second pass: trace up from each included leaf to create parent nodes
+        // Store explicit parent-child relationships
+        // Only trace from leaves that were included (exist in allNodes)
+        for (var entry : new ArrayList<>(allNodes.values())) {
+            var current = entry.tet;
+            var currentKey = entry.key;
 
             while (current.l() > 0) {
                 var parent = current.parent();
                 var parentKey = (TetreeKey<? extends TetreeKey<?>>) parent.tmIndex();
 
-                if (!allNodes.containsKey(parentKey)) {
-                    // Create parent node - type is from parent.type() which was computed
-                    // consistently via parent() chain
-                    allNodes.put(parentKey, new NodeEntry(
-                        parentKey,
-                        parent,
-                        parent.type(),  // Type from parent() computation
-                        false
-                    ));
+                // Register this child with its parent
+                parentToChildren.computeIfAbsent(parentKey, k -> new ArrayList<>()).add(currentKey);
+
+                // Update current node's parent reference
+                var existing = allNodes.get(currentKey);
+                if (existing != null && existing.parentKey == null) {
+                    allNodes.put(currentKey, new NodeEntry(
+                        existing.key, existing.tet, existing.tetType, existing.isLeaf, parentKey));
                 }
-                // If parent already exists, keep it as-is (it has the correct type)
+
+                // Create parent node if it doesn't exist
+                if (!allNodes.containsKey(parentKey)) {
+                    allNodes.put(parentKey, new NodeEntry(parentKey, parent, parent.type(), false, null));
+                }
 
                 current = parent;
+                currentKey = parentKey;
             }
         }
 
@@ -273,13 +309,9 @@ public class ESVTBuilder {
         for (var entry : allNodes.entrySet()) {
             var key = entry.getKey();
             var nodeEntry = entry.getValue();
-            boolean hasChildren = hasChildrenInMap(nodeEntry.tet, allNodes);
+            boolean hasChildren = parentToChildren.containsKey(key);
             finalNodes.put(key, new NodeEntry(
-                nodeEntry.key,
-                nodeEntry.tet,
-                nodeEntry.tetType,
-                !hasChildren
-            ));
+                nodeEntry.key, nodeEntry.tet, nodeEntry.tetType, !hasChildren, nodeEntry.parentKey));
         }
 
         return finalNodes;
@@ -287,7 +319,7 @@ public class ESVTBuilder {
 
     /**
      * Check if a tet has any children in the node map.
-     * Uses TetreeKey (tmIndex) for lookup.
+     * Uses TetreeKey for lookup.
      */
     @SuppressWarnings("unchecked")
     private boolean hasChildrenInMap(Tet tet, Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodeMap) {
@@ -306,42 +338,108 @@ public class ESVTBuilder {
     }
 
     /**
-     * Sort nodes in breadth-first order with siblings in Morton order.
+     * Sort nodes in breadth-first order with siblings CONTIGUOUS in Morton order.
      *
-     * <p>Critical for sparse child indexing: ESVTNodeUnified.getChildIndex() uses
-     * popcount-based sparse indexing that assumes children are stored contiguously
-     * in Morton order.</p>
-     *
-     * <p>Sort order: level (ascending) → parent key → Morton index (consecutiveIndex)</p>
+     * <p>Uses explicit parent-child relationships from tree building, not recomputed
+     * via child(). Children are sorted by their Morton child index within the parent.</p>
      */
     @SuppressWarnings("unchecked")
     private List<NodeEntry> sortBreadthFirst(Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
-        var nodeList = new ArrayList<>(allNodes.values());
+        if (allNodes.isEmpty()) {
+            return new ArrayList<>();
+        }
 
-        // Sort by level, then parent key, then Morton index (consecutiveIndex)
-        nodeList.sort((a, b) -> {
-            // 1. Sort by level (root first)
-            int levelCmp = Byte.compare(a.key.getLevel(), b.key.getLevel());
-            if (levelCmp != 0) return levelCmp;
+        // Build parent -> children map from explicit parentKey references
+        var parentToChildren = new HashMap<TetreeKey<? extends TetreeKey<?>>, List<NodeEntry>>();
+        for (var entry : allNodes.values()) {
+            if (entry.parentKey != null) {
+                parentToChildren.computeIfAbsent(entry.parentKey, k -> new ArrayList<>()).add(entry);
+            }
+        }
 
-            // 2. Group siblings by parent key
-            TetreeKey<?> aParent = (a.tet.l() > 0) ? (TetreeKey<?>) a.tet.parent().tmIndex() : null;
-            TetreeKey<?> bParent = (b.tet.l() > 0) ? (TetreeKey<?>) b.tet.parent().tmIndex() : null;
-            if (aParent == null && bParent == null) return 0;
-            if (aParent == null) return -1;
-            if (bParent == null) return 1;
-            int parentCmp = aParent.compareTo((TetreeKey) bParent);
-            if (parentCmp != 0) return parentCmp;
+        // Sort each parent's children by Morton index
+        for (var children : parentToChildren.values()) {
+            children.sort(Comparator.comparingInt(e -> computeMortonChildIndex(e.tet)));
+        }
 
-            // 3. Sort siblings by Morton index (consecutiveIndex is unique within level)
-            return Long.compare(a.tet.consecutiveIndex(), b.tet.consecutiveIndex());
-        });
+        // Find root (level 0)
+        NodeEntry root = null;
+        for (var entry : allNodes.values()) {
+            if (entry.key.getLevel() == 0) {
+                root = entry;
+                break;
+            }
+        }
 
-        return nodeList;
+        if (root == null) {
+            log.warn("No root node found, falling back to simple sort");
+            var list = new ArrayList<>(allNodes.values());
+            list.sort(Comparator.comparingInt(e -> e.key.getLevel()));
+            return list;
+        }
+
+        // BFS traversal using explicit parent-child relationships
+        var result = new ArrayList<NodeEntry>(allNodes.size());
+        var processed = new HashSet<TetreeKey<?>>();
+
+        result.add(root);
+        processed.add(root.key);
+
+        int currentIdx = 0;
+        while (currentIdx < result.size()) {
+            var parent = result.get(currentIdx);
+            var children = parentToChildren.get(parent.key);
+
+            if (children != null) {
+                for (var child : children) {
+                    if (!processed.contains(child.key)) {
+                        result.add(child);
+                        processed.add(child.key);
+                    }
+                }
+            }
+
+            currentIdx++;
+        }
+
+        // Verify all nodes were placed
+        if (result.size() != allNodes.size()) {
+            log.warn("BFS placed {} of {} nodes - {} orphaned nodes not connected to root",
+                result.size(), allNodes.size(), allNodes.size() - result.size());
+            for (var entry : allNodes.values()) {
+                if (!processed.contains(entry.key)) {
+                    result.add(entry);
+                }
+            }
+        }
+
+        return result;
     }
 
     /**
-     * Build a map from TetreeKey to node index
+     * Compute the Morton child index of a Tet within its parent.
+     * Uses cubeId and parent type only - NOT child type (which would create circular dependency).
+     *
+     * <p>The mapping is:
+     * <ol>
+     *   <li>cubeId + parentType → beyId (via TYPE_CID_TO_BEYID)</li>
+     *   <li>beyId + parentType → Morton index (via BEY_NUMBER_TO_INDEX)</li>
+     * </ol>
+     */
+    private byte computeMortonChildIndex(Tet tet) {
+        if (tet.l() == 0) {
+            return 0; // Root has no parent, return 0
+        }
+        byte childCubeId = tet.cubeId(tet.l());
+        byte parentType = tet.computeType((byte) (tet.l() - 1));
+        // Get Bey child ID from cubeId and parent type
+        byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[parentType][childCubeId];
+        // Convert Bey to Morton
+        return TetreeConnectivity.BEY_NUMBER_TO_INDEX[parentType][beyId];
+    }
+
+    /**
+     * Build a map from TetreeKey to node index.
      */
     private Map<TetreeKey<? extends TetreeKey<?>>, Integer> buildIndexMap(List<NodeEntry> nodeList) {
         var map = new HashMap<TetreeKey<? extends TetreeKey<?>>, Integer>();
@@ -352,50 +450,134 @@ public class ESVTBuilder {
     }
 
     /**
-     * Create ESVT nodes from collected entries.
+     * Propagate types top-down from root.
      *
-     * <p>Uses TetreeKey (tmIndex) for finding children. The child's tmIndex should
-     * match what was stored during buildTreeFromLeaves because both use the same
-     * consistent path for key computation.</p>
+     * <p>Uses explicit parent-child relationships. Children's types are derived from
+     * parent type + Morton child index via TYPE_TO_TYPE_OF_CHILD_MORTON.</p>
+     *
+     * @return Array of corrected types indexed by node position in nodeList
      */
-    @SuppressWarnings("unchecked")
-    private ESVTNodeUnified[] createNodes(
+    private byte[] propagateTypesTopDown(
             List<NodeEntry> nodeList,
             Map<TetreeKey<? extends TetreeKey<?>>, Integer> indexMap,
             Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodeMap) {
+
+        byte[] types = new byte[nodeList.size()];
+
+        // Build parent -> children map from explicit parentKey references
+        var parentToChildren = new HashMap<TetreeKey<? extends TetreeKey<?>>, List<NodeEntry>>();
+        for (var entry : nodeList) {
+            if (entry.parentKey != null) {
+                parentToChildren.computeIfAbsent(entry.parentKey, k -> new ArrayList<>()).add(entry);
+            }
+        }
+
+        // Root is always type 0
+        if (!nodeList.isEmpty()) {
+            types[0] = 0;
+        }
+
+        // Debug: show first 15 nodes with their levels
+        for (int i = 0; i < Math.min(15, nodeList.size()); i++) {
+            var e = nodeList.get(i);
+            log.debug("Sorted nodeList[{}]: level={}, type={}, key.level={}",
+                i, e.tet.l(), e.tet.type(), e.key.getLevel());
+        }
+
+        // Process nodes in BFS order (already sorted this way)
+        for (int i = 0; i < nodeList.size(); i++) {
+            var entry = nodeList.get(i);
+            byte parentType = types[i];
+
+            if (i == 0) {
+                log.debug("Root entry.tet: x={}, y={}, z={}, level={}, type={}, parentType from types[0]={}",
+                    entry.tet.x, entry.tet.y, entry.tet.z, entry.tet.l(), entry.tet.type(), parentType);
+            }
+
+            // Get children for this node from explicit relationships
+            var children = parentToChildren.get(entry.key);
+            if (children != null) {
+                for (var child : children) {
+                    var childIdxInArray = indexMap.get(child.key);
+                    if (childIdxInArray != null) {
+                        // Compute Morton index for this child
+                        int mortonIdx = computeMortonChildIndex(child.tet);
+                        byte derivedType = Constants.TYPE_TO_TYPE_OF_CHILD_MORTON[parentType][mortonIdx];
+                        types[childIdxInArray] = derivedType;
+                        if (i == 0) {
+                            log.debug("Root child Morton {}: parentType={}, derived type={}, storing at index {}",
+                                mortonIdx, parentType, derivedType, childIdxInArray);
+                        }
+                    }
+                }
+            }
+        }
+
+        return types;
+    }
+
+    /**
+     * Create ESVT nodes from collected entries.
+     *
+     * <p>Uses explicit parent-child relationships for finding children.
+     * Children are stored contiguously in Morton order.</p>
+     *
+     * @param nodeList List of node entries in breadth-first order
+     * @param correctedTypes Array of types corrected via top-down propagation
+     * @param indexMap Map from TetreeKey to node index
+     * @param nodeMap Map from TetreeKey to NodeEntry
+     * @return Array of ESVTNodeUnified ready for GPU transfer
+     */
+    private ESVTNodeUnified[] createNodes(
+            List<NodeEntry> nodeList,
+            byte[] correctedTypes,
+            Map<TetreeKey<? extends TetreeKey<?>>, Integer> indexMap,
+            Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodeMap) {
+
+        // Build parent -> children map from explicit parentKey references
+        var parentToChildren = new HashMap<TetreeKey<? extends TetreeKey<?>>, List<NodeEntry>>();
+        for (var entry : nodeList) {
+            if (entry.parentKey != null) {
+                parentToChildren.computeIfAbsent(entry.parentKey, k -> new ArrayList<>()).add(entry);
+            }
+        }
+
+        // Sort each parent's children by Morton index
+        for (var children : parentToChildren.values()) {
+            children.sort(Comparator.comparingInt(e -> computeMortonChildIndex(e.tet)));
+        }
 
         var nodes = new ESVTNodeUnified[nodeList.size()];
 
         for (int i = 0; i < nodeList.size(); i++) {
             var entry = nodeList.get(i);
-            var node = new ESVTNodeUnified(entry.tetType);
+            var node = new ESVTNodeUnified(correctedTypes[i]);
             node.setValid(true);
 
             if (!entry.isLeaf) {
-                // Find children and build child mask
                 int childMask = 0;
                 int leafMask = 0;
                 int minChildIdx = Integer.MAX_VALUE;
 
-                // Check all 8 possible children using TetreeKey lookup
-                for (int childIdx = 0; childIdx < 8; childIdx++) {
-                    try {
-                        var childTet = entry.tet.child(childIdx);
-                        var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
-
-                        var childIdxInArray = indexMap.get(childKey);
+                // Get children from explicit relationships
+                var children = parentToChildren.get(entry.key);
+                if (children != null) {
+                    for (var child : children) {
+                        var childIdxInArray = indexMap.get(child.key);
                         if (childIdxInArray != null) {
-                            childMask |= (1 << childIdx);
+                            int mortonIdx = computeMortonChildIndex(child.tet);
+                            childMask |= (1 << mortonIdx);
                             minChildIdx = Math.min(minChildIdx, childIdxInArray);
 
-                            // Check if child is a leaf
-                            var childEntry = nodeMap.get(childKey);
-                            if (childEntry != null && childEntry.isLeaf) {
-                                leafMask |= (1 << childIdx);
+                            if (i == 0) {
+                                log.debug("createNodes root child Morton {}: found at index {}",
+                                    mortonIdx, childIdxInArray);
+                            }
+
+                            if (child.isLeaf) {
+                                leafMask |= (1 << mortonIdx);
                             }
                         }
-                    } catch (Exception e) {
-                        // Child doesn't exist
                     }
                 }
 
@@ -406,9 +588,8 @@ public class ESVTBuilder {
                     node.setChildPtr(minChildIdx);
                 }
             } else {
-                // Leaf node - set leaf-specific data
-                node.setLeafMask(0xFF);  // All positions are "leaf" (no children)
-                node.setChildMask(0);    // No children
+                node.setLeafMask(0xFF);
+                node.setChildMask(0);
             }
 
             nodes[i] = node;

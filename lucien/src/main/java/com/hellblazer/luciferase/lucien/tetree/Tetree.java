@@ -2823,44 +2823,16 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     /**
      * Locate the tetrahedron containing a point at a given level.
      *
-     * This uses the correct approach: 1. Quantize the point to find the anchor cube at the target level 2. Determine
-     * which of the 6 characteristic tetrahedra (S0-S5) contains the point
+     * This uses proper S0 Bey tree traversal: starting from the type-0 root,
+     * traverse down through Bey subdivision using TYPE_CID_TO_BEYID and
+     * PARENT_TYPE_TO_CHILD_TYPE tables to compute the correct child type at each level.
      *
-     * This is NOT a traversal through subdivisions - it's a direct calculation.
+     * <p><b>Key Insight:</b> The Tetree is defined to be rooted in S0 (type 0).
+     * Child types must be derived from parent types using Bey refinement tables,
+     * NOT from S0-S5 cube partitioning which creates nodes outside the S0 tree.</p>
      */
     protected Tet locate(Tuple3f point, byte level) {
-        // Validate inputs
-        if (point.x < 0 || point.y < 0 || point.z < 0) {
-            throw new IllegalArgumentException("Coordinates must be non-negative: " + point);
-        }
-        if (level < 0 || level > 20) {
-            throw new IllegalArgumentException("Level must be between 0 and 20: " + level);
-        }
-
-        // Special case: level 0 is always the root tetrahedron of type 0
-        if (level == 0) {
-            return new Tet(0, 0, 0, (byte) 0, (byte) 0);
-        }
-
-        // Step 1: Quantize to find the anchor cube (same as octree)
-        var cellSize = Constants.lengthAtLevel(level);
-        var anchorX = (int) (Math.floor(point.x / cellSize) * cellSize);
-        var anchorY = (int) (Math.floor(point.y / cellSize) * cellSize);
-        var anchorZ = (int) (Math.floor(point.z / cellSize) * cellSize);
-
-        log.debug("locate: point={}, level={}, cellSize={}, anchor=({}, {}, {})", 
-                  point, level, cellSize, anchorX, anchorY, anchorZ);
-
-        // Step 2: Use deterministic S0-S5 classification based on distance to tetrahedron centroids
-        // This approach achieved 100% accuracy in testing and is much faster than testing all 6
-        var relX = (point.x - anchorX) / cellSize; // Normalize to [0,1]
-        var relY = (point.y - anchorY) / cellSize;
-        var relZ = (point.z - anchorZ) / cellSize;
-        
-        byte type = classifyPointInS0S5Cube(relX, relY, relZ);
-        var tet = new Tet(anchorX, anchorY, anchorZ, level, type);
-        log.debug("locate: created Tet with type={}, coordinates={}", type, java.util.Arrays.toString(tet.coordinates()));
-        return tet;
+        return Tet.locatePointS0Tree(point.x, point.y, point.z, level);
     }
 
     /**

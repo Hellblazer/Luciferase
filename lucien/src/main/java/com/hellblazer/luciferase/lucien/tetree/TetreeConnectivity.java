@@ -269,6 +269,26 @@ public final class TetreeConnectivity {
     public static final byte[] BEY_ID_TO_VERTEX = { 0, 1, 2, 3, 1, 1, 2, 2 };
 
     /**
+     * Type and cube-ID to Bey child ID mapping - from t8code t8_dtet_type_cid_to_beyid.
+     * Maps from (child type, cube ID) to Bey child ID.
+     *
+     * [child_type][cube_id] -> bey_child_id
+     */
+    public static final byte[][] TYPE_CID_TO_BEYID = {
+    // Type 0
+    { 0, 1, 4, 7, 5, 2, 6, 3 },
+    // Type 1
+    { 0, 1, 5, 2, 4, 7, 6, 3 },
+    // Type 2
+    { 0, 5, 1, 2, 4, 6, 7, 3 },
+    // Type 3
+    { 0, 4, 1, 7, 5, 6, 2, 3 },
+    // Type 4
+    { 0, 4, 5, 6, 1, 7, 2, 3 },
+    // Type 5
+    { 0, 5, 4, 6, 1, 2, 7, 3 } };
+
+    /**
      * Bey number to Morton index mapping - inverse of INDEX_TO_BEY_NUMBER.
      * Maps from Bey child ID (0-7) to Morton child index used for tree storage.
      *
@@ -339,6 +359,29 @@ public final class TetreeConnectivity {
      */
     public static byte getMortonChildId(byte parentType, int beyChildId) {
         return BEY_NUMBER_TO_INDEX[parentType][beyChildId];
+    }
+
+    /**
+     * Get the Morton child index of a child tetrahedron within its parent.
+     * This is used for sorting siblings in Morton order for ESVT tree construction.
+     *
+     * <p>The computation uses:
+     * <ol>
+     *   <li>Child's cube ID at its own level</li>
+     *   <li>TYPE_CID_TO_BEYID to get Bey child ID from (childType, cubeId)</li>
+     *   <li>BEY_NUMBER_TO_INDEX to convert Bey to Morton using parent type</li>
+     * </ol>
+     *
+     * @param childType The child tetrahedron's type (0-5)
+     * @param childCubeId The child's cube ID at its level
+     * @param parentType The parent tetrahedron's type (0-5)
+     * @return Morton child index (0-7)
+     */
+    public static byte getMortonChildIndex(byte childType, byte childCubeId, byte parentType) {
+        // Get Bey child ID from child's type and cube position
+        byte beyId = TYPE_CID_TO_BEYID[childType][childCubeId];
+        // Convert Bey to Morton using parent's type
+        return BEY_NUMBER_TO_INDEX[parentType][beyId];
     }
 
     /**

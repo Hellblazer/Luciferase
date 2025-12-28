@@ -67,15 +67,21 @@ public class ESVTNodeUnifiedTest {
     @Test
     void testChildTypeDerivation() {
         // Test that child types are correctly derived from TetreeConnectivity
+        // The mapping is: Morton index -> Bey index -> child type
+        // ESVTNodeUnified.getChildType uses Morton index, so we compare against
+        // the Morton-indexed table TYPE_TO_TYPE_OF_CHILD_MORTON
         for (byte parentType = 0; parentType < 6; parentType++) {
             var node = new ESVTNodeUnified(parentType);
 
-            for (int childIdx = 0; childIdx < 8; childIdx++) {
-                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
-                byte actualType = node.getChildType(childIdx);
+            for (int mortonIdx = 0; mortonIdx < 8; mortonIdx++) {
+                // Convert Morton to Bey, then look up child type
+                byte beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[parentType][mortonIdx];
+                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
+                byte actualType = node.getChildType(mortonIdx);
 
                 assertEquals(expectedType, actualType,
-                    String.format("Child type mismatch for parent=%d, child=%d", parentType, childIdx));
+                    String.format("Child type mismatch for parent=%d, morton=%d (bey=%d)",
+                        parentType, mortonIdx, beyIdx));
             }
         }
     }

@@ -16,6 +16,7 @@
  */
 package com.hellblazer.luciferase.esvt.core;
 
+import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
 
 import java.nio.ByteBuffer;
@@ -122,17 +123,22 @@ public final class ESVTNodeUnified {
     }
 
     /**
-     * Get the type of a child tetrahedron using TetreeConnectivity lookup.
+     * Get the type of a child tetrahedron using Morton-indexed lookup table.
      * This is the key H0 optimization - derive child types instead of storing them.
      *
-     * @param childIdx The child index (0-7, Bey subdivision)
+     * <p><b>CRITICAL:</b> The childIdx parameter is a Morton index (0-7), NOT a Bey index.
+     * This matches how children are stored in the tree (Morton order) and how
+     * ESVTTraversal accesses them via BEY_NUMBER_TO_INDEX conversion.</p>
+     *
+     * @param childIdx The child index (0-7, Morton order)
      * @return The child's tetrahedron type (0-5)
      */
     public byte getChildType(int childIdx) {
         if (childIdx < 0 || childIdx > 7) {
             throw new IllegalArgumentException("Child index must be 0-7, got: " + childIdx);
         }
-        return TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[getTetType()][childIdx];
+        // Use Morton-indexed table (from t8code t8_dtet_type_of_child_morton)
+        return Constants.TYPE_TO_TYPE_OF_CHILD_MORTON[getTetType()][childIdx];
     }
 
     // === Child Mask Operations (bits 8-15) ===

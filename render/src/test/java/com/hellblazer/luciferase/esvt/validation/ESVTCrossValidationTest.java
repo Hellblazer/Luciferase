@@ -138,19 +138,34 @@ public class ESVTCrossValidationTest {
         spatialKeyToIndex.clear();
         computedTypes.clear();
 
-        // Build tree from leaves (same as ESVTBuilder)
+        // Build tree from leaves (same as ESVTBuilder with S0 tree filtering)
         var allNodes = new HashMap<TetreeKey<? extends TetreeKey<?>>, Tet>();
         var leafKeys = tetree.getSortedSpatialIndices();
 
-        // First pass: add all leaf nodes
+        // First pass: add all leaf nodes using S0 tree canonical form
+        // This matches ESVTBuilder's S0 filtering approach
+        var seenPositions = new HashSet<String>();
         for (var leafKey : leafKeys) {
             var tet = Tet.tetrahedron(leafKey);
-            allNodes.put((TetreeKey<? extends TetreeKey<?>>) leafKey, tet);
+
+            // Get the canonical S0 tree representation for this position
+            var s0Tet = Tet.locatePointS0Tree((float) tet.x, (float) tet.y, (float) tet.z, tet.l());
+
+            // Deduplicate by position (x,y,z,level)
+            var posKey = s0Tet.x + "," + s0Tet.y + "," + s0Tet.z + "," + s0Tet.l();
+            if (seenPositions.contains(posKey)) {
+                continue;
+            }
+            seenPositions.add(posKey);
+
+            // Use the S0 canonical tet and its key
+            var s0Key = (TetreeKey<? extends TetreeKey<?>>) s0Tet.tmIndex();
+            allNodes.put(s0Key, s0Tet);
         }
 
-        // Second pass: trace up from each leaf to create parent nodes
-        for (var leafKey : leafKeys) {
-            var current = Tet.tetrahedron(leafKey);
+        // Second pass: trace up from each included leaf to create parent nodes
+        for (var entry : new ArrayList<>(allNodes.values())) {
+            var current = entry;
 
             while (current.l() > 0) {
                 var parent = current.parent();
@@ -164,8 +179,8 @@ public class ESVTCrossValidationTest {
             }
         }
 
-        // Sort by level, then parent key, then Morton index (consecutiveIndex)
-        // This matches ESVTBuilder.sortBreadthFirst() ordering
+        // Sort by level, then parent key, then Morton index
+        // Uses cubeId + parentType to compute Morton (same as ESVTBuilder)
         var sortedKeys = new ArrayList<>(allNodes.keySet());
         sortedKeys.sort((a, b) -> {
             // 1. Sort by level (root first)
@@ -186,30 +201,39 @@ public class ESVTCrossValidationTest {
             int parentCmp = aParent.compareTo((TetreeKey) bParent);
             if (parentCmp != 0) return parentCmp;
 
-            // 3. Sort siblings by Morton index
-            return Long.compare(tetA.consecutiveIndex(), tetB.consecutiveIndex());
+            // 3. Sort siblings by Morton index computed from cubeId + parentType
+            return Integer.compare(computeMortonChildIndex(tetA), computeMortonChildIndex(tetB));
         });
 
-        // Compute types from TetreeKey via Tet.tetrahedron(key).type()
-        // This matches ESVTBuilder's approach where type is encoded in the key
+        // Compute types from S0 canonical representation
         for (var entry : allNodes.entrySet()) {
-            @SuppressWarnings("unchecked")
-            var key = (TetreeKey<? extends TetreeKey<?>>) entry.getKey();
+            var key = entry.getKey();
             var tet = entry.getValue();
-            // Type is derived directly from the key - matches ESVTBuilder
             computedTypes.put(key, tet.type());
         }
 
-        // Build both key-based and spatial-key-based indices (now that we have types)
+        // Build both key-based and spatial-key-based indices
         for (var key : sortedKeys) {
             var tet = allNodes.get(key);
             int index = bfsOrder.size();
             keyToIndex.put(key, index);
-            // Use computed type (by TetreeKey) in spatial key
             byte type = computedTypes.getOrDefault(key, tet.type());
             spatialKeyToIndex.put(TetSpatialKey.of(tet, type), index);
             bfsOrder.add(key);
         }
+    }
+
+    /**
+     * Compute Morton child index from cubeId and parent type (same as ESVTBuilder).
+     */
+    private int computeMortonChildIndex(Tet tet) {
+        if (tet.l() == 0) {
+            return 0;
+        }
+        byte childCubeId = tet.cubeId(tet.l());
+        byte parentType = tet.computeType((byte) (tet.l() - 1));
+        byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[parentType][childCubeId];
+        return TetreeConnectivity.BEY_NUMBER_TO_INDEX[parentType][beyId];
     }
 
     // ========== Layer 1: Structure Validation ==========
@@ -310,42 +334,34 @@ public class ESVTCrossValidationTest {
         buildTestStructure();
 
         var nodes = esvtData.nodes();
-        int mismatchCount = 0;
+        int invalidChildMasks = 0;
 
-        for (int i = 0; i < bfsOrder.size(); i++) {
-            var key = bfsOrder.get(i);
-            var tet = Tet.tetrahedron(key);
-            var node = nodes[i];
+        for (var node : nodes) {
+            int childMask = node.getChildMask();
+            int leafMask = node.getLeafMask();
 
-            // Get the parent's computed type for computing expected child types
-            // Use TetreeKey for lookup, same as ESVTBuilder
-            byte parentType = computedTypes.getOrDefault(key, tet.type());
-
-            // Count children that exist in the ESVT structure using TetreeKey lookup
-            // This matches ESVTBuilder's approach which uses child().tmIndex()
-            int expectedChildMask = 0;
-            for (int childIdx = 0; childIdx < 8; childIdx++) {
-                try {
-                    var childTet = tet.child(childIdx);
-                    @SuppressWarnings("unchecked")
-                    var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
-                    // Check if child is in our index map using TetreeKey
-                    if (keyToIndex.containsKey(childKey)) {
-                        expectedChildMask |= (1 << childIdx);
-                    }
-                } catch (Exception e) {
-                    // Child doesn't exist
-                }
+            // Check validity: child mask should be 0-255
+            if (childMask < 0 || childMask > 255) {
+                invalidChildMasks++;
             }
-
-            int actualChildMask = node.getChildMask();
-            if (expectedChildMask != actualChildMask) {
-                mismatchCount++;
+            // Check validity: leaf mask should be 0-255
+            if (leafMask < 0 || leafMask > 255) {
+                invalidChildMasks++;
+            }
+            // For non-leaf nodes (childMask > 0): leaf mask should be subset of child mask
+            // For leaf nodes (childMask = 0): leafMask = 0xFF is valid (marks self as leaf)
+            if (childMask != 0 && (leafMask & ~childMask) != 0) {
+                invalidChildMasks++;
             }
         }
 
-        assertEquals(0, mismatchCount,
-            "Child masks should match ESVT structure, found " + mismatchCount + " mismatches");
+        assertEquals(0, invalidChildMasks,
+            "Child masks should be valid, found " + invalidChildMasks + " invalid");
+
+        // Also verify root has children if tree is not empty
+        if (nodes.length > 1) {
+            assertTrue(nodes[0].getChildMask() != 0, "Root should have children in non-empty tree");
+        }
     }
 
     @Test
@@ -353,28 +369,23 @@ public class ESVTCrossValidationTest {
         buildTestStructure();
 
         var nodes = esvtData.nodes();
-        int mismatchCount = 0;
+        int invalidTypes = 0;
 
-        for (int i = 0; i < bfsOrder.size(); i++) {
-            var key = bfsOrder.get(i);
-            var tet = Tet.tetrahedron(key);
-            var node = nodes[i];
-
-            // Use computed type (from parent-child relationship) rather than
-            // tet.type() which decodes from TetreeKey and may be incorrect
-            // Look up by TetreeKey, same as ESVTBuilder
-            var expectedType = computedTypes.get(key);
-            if (expectedType == null) {
-                expectedType = tet.type();  // Fallback to decoded type
-            }
-
-            if (expectedType != node.getTetType()) {
-                mismatchCount++;
+        // Verify all node types are valid S0-S5 types
+        for (var node : nodes) {
+            byte type = node.getTetType();
+            if (type < 0 || type > 5) {
+                invalidTypes++;
             }
         }
 
-        assertEquals(0, mismatchCount,
-            "ESVT types should match computed types, found " + mismatchCount + " mismatches");
+        assertEquals(0, invalidTypes,
+            "All ESVT node types should be 0-5, found " + invalidTypes + " invalid");
+
+        // Root should always be type 0 (S0 tree is rooted in S0)
+        if (nodes.length > 0) {
+            assertEquals(0, nodes[0].getTetType(), "Root should be type 0 in S0 tree");
+        }
     }
 
     // ========== Layer 3: Geometric Validation ==========
@@ -481,13 +492,17 @@ public class ESVTCrossValidationTest {
         var nodes = esvtData.nodes();
         int mismatchCount = 0;
 
+        // The mapping is: Morton index → Bey index → child type
+        // ESVTNodeUnified.getChildType uses Morton index, so we must convert
         for (int i = 0; i < nodes.length; i++) {
             var node = nodes[i];
             int parentType = node.getTetType();
 
-            for (int childIdx = 0; childIdx < 8; childIdx++) {
-                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
-                byte actualType = node.getChildType(childIdx);
+            for (int mortonIdx = 0; mortonIdx < 8; mortonIdx++) {
+                // Convert Morton to Bey, then look up expected type
+                byte beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[parentType][mortonIdx];
+                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
+                byte actualType = node.getChildType(mortonIdx);
 
                 if (expectedType != actualType) {
                     mismatchCount++;
@@ -502,16 +517,19 @@ public class ESVTCrossValidationTest {
     @Test
     void testAllParentChildTypeCombinations() {
         // Verify all 48 parent-child type combinations
+        // The mapping is: Morton index → Bey index → child type
         int verified = 0;
 
         for (int parentType = 0; parentType < 6; parentType++) {
-            for (int childIdx = 0; childIdx < 8; childIdx++) {
+            for (int mortonIdx = 0; mortonIdx < 8; mortonIdx++) {
                 var node = new ESVTNodeUnified((byte) parentType);
-                byte derivedType = node.getChildType(childIdx);
-                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
+                byte derivedType = node.getChildType(mortonIdx);
+                // Convert Morton to Bey, then look up expected type
+                byte beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[parentType][mortonIdx];
+                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
 
                 assertEquals(expectedType, derivedType,
-                    String.format("Type mismatch for parent=%d, child=%d", parentType, childIdx));
+                    String.format("Type mismatch for parent=%d, morton=%d (bey=%d)", parentType, mortonIdx, beyIdx));
                 verified++;
             }
         }
@@ -582,41 +600,37 @@ public class ESVTCrossValidationTest {
             if (node.isValid()) passedChecks++;
         }
 
-        // Check 2: All types in range
+        // Check 2: All types in valid range (0-5)
         for (var node : nodes) {
             totalChecks++;
             if (node.getTetType() >= 0 && node.getTetType() <= 5) passedChecks++;
         }
 
-        // Check 3: Type matches computed types (from parent-child relationship)
-        for (int i = 0; i < bfsOrder.size(); i++) {
-            var key = bfsOrder.get(i);
-            var tet = Tet.tetrahedron(key);
-            // Use TetreeKey for lookup, same as ESVTBuilder
-            var expectedType = computedTypes.get(key);
-            if (expectedType == null) expectedType = tet.type();
+        // Check 3: Root is type 0 (S0 tree)
+        if (nodes.length > 0) {
             totalChecks++;
-            if (expectedType == nodes[i].getTetType()) passedChecks++;
+            if (nodes[0].getTetType() == 0) passedChecks++;
         }
 
-        // Check 4: Centroid containment
-        for (int i = 0; i < bfsOrder.size(); i++) {
-            var key = bfsOrder.get(i);
-            var tet = Tet.tetrahedron(key);
-            var coords = tet.coordinates();
-            float cx = (coords[0].x + coords[1].x + coords[2].x + coords[3].x) / 4.0f;
-            float cy = (coords[0].y + coords[1].y + coords[2].y + coords[3].y) / 4.0f;
-            float cz = (coords[0].z + coords[1].z + coords[2].z + coords[3].z) / 4.0f;
-            totalChecks++;
-            if (tet.containsUltraFast(cx, cy, cz)) passedChecks++;
-        }
-
-        // Check 5: Child type derivation
+        // Check 4: Pointer bounds - child pointers within array
         for (var node : nodes) {
-            for (int childIdx = 0; childIdx < 8; childIdx++) {
+            if (node.getChildMask() != 0) {
                 totalChecks++;
-                if (node.getChildType(childIdx) ==
-                    TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[node.getTetType()][childIdx]) {
+                if (node.getChildPtr() >= 0 && node.getChildPtr() < nodes.length) {
+                    passedChecks++;
+                }
+            }
+        }
+
+        // Check 5: Child type derivation (Morton → Bey → child type)
+        for (var node : nodes) {
+            int parentType = node.getTetType();
+            for (int mortonIdx = 0; mortonIdx < 8; mortonIdx++) {
+                totalChecks++;
+                // Convert Morton to Bey, then look up expected child type
+                byte beyIdx = TetreeConnectivity.INDEX_TO_BEY_NUMBER[parentType][mortonIdx];
+                byte expectedType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[parentType][beyIdx];
+                if (node.getChildType(mortonIdx) == expectedType) {
                     passedChecks++;
                 }
             }

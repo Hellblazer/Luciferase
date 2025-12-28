@@ -108,32 +108,35 @@ class ESVTGPUIntegrationTest {
     }
 
     /**
-     * Test ESVTNodeUnified child type derivation
+     * Test ESVTNodeUnified child type derivation.
+     * The mapping is: Morton index → Bey index (via INDEX_TO_BEY_NUMBER) → child type (via PARENT_TYPE_TO_CHILD_TYPE)
      */
     @Test
     void testChildTypeDerivation() {
         // Parent type 0 should produce specific child types
         var parent = new ESVTNodeUnified((byte) 0);
 
-        // From TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[0]:
-        // { 0, 0, 0, 0, 4, 5, 2, 1 }
-        assertEquals(0, parent.getChildType(0));
-        assertEquals(0, parent.getChildType(1));
-        assertEquals(0, parent.getChildType(2));
-        assertEquals(0, parent.getChildType(3));
-        assertEquals(4, parent.getChildType(4));
-        assertEquals(5, parent.getChildType(5));
-        assertEquals(2, parent.getChildType(6));
-        assertEquals(1, parent.getChildType(7));
+        // For parent type 0:
+        // INDEX_TO_BEY_NUMBER[0] = {0,1,4,5,2,7,6,3} (Morton → Bey)
+        // PARENT_TYPE_TO_CHILD_TYPE[0] = {0,0,0,0,4,5,2,1} (Bey → child type)
+        // So: Morton 0→Bey 0→type 0, Morton 1→Bey 1→type 0, Morton 2→Bey 4→type 4, etc.
+        assertEquals(0, parent.getChildType(0));  // Morton 0 → Bey 0 → type 0
+        assertEquals(0, parent.getChildType(1));  // Morton 1 → Bey 1 → type 0
+        assertEquals(4, parent.getChildType(2));  // Morton 2 → Bey 4 → type 4
+        assertEquals(5, parent.getChildType(3));  // Morton 3 → Bey 5 → type 5
+        assertEquals(0, parent.getChildType(4));  // Morton 4 → Bey 2 → type 0
+        assertEquals(1, parent.getChildType(5));  // Morton 5 → Bey 7 → type 1
+        assertEquals(2, parent.getChildType(6));  // Morton 6 → Bey 6 → type 2
+        assertEquals(0, parent.getChildType(7));  // Morton 7 → Bey 3 → type 0
 
         // Parent type 3 should produce different child types
         var parent3 = new ESVTNodeUnified((byte) 3);
 
-        // From TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[3]:
-        // { 3, 3, 3, 3, 5, 4, 1, 2 }
-        assertEquals(3, parent3.getChildType(0));
-        assertEquals(5, parent3.getChildType(4));
-        assertEquals(4, parent3.getChildType(5));
+        // INDEX_TO_BEY_NUMBER[3] = {0,1,5,4,6,7,2,3}
+        // PARENT_TYPE_TO_CHILD_TYPE[3] = {3,3,3,3,5,4,1,2}
+        assertEquals(3, parent3.getChildType(0));  // Morton 0 → Bey 0 → type 3
+        assertEquals(1, parent3.getChildType(4));  // Morton 4 → Bey 6 → type 1
+        assertEquals(2, parent3.getChildType(5));  // Morton 5 → Bey 7 → type 2
     }
 
     /**
