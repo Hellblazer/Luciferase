@@ -572,6 +572,12 @@ public class ESVTBuilder {
 
                 // Get children from explicit relationships
                 var children = parentToChildren.get(entry.key);
+
+                if (i == 0) {
+                    log.debug("createNodes root: entry.key={}, entry.isLeaf={}, children found={}",
+                        entry.key, entry.isLeaf, children != null ? children.size() : "null");
+                }
+
                 if (children != null) {
                     for (var child : children) {
                         var childIdxInArray = indexMap.get(child.key);
@@ -594,6 +600,11 @@ public class ESVTBuilder {
 
                 node.setChildMask(childMask);
                 node.setLeafMask(leafMask);
+
+                if (i == 0) {
+                    log.debug("createNodes root: final childMask=0x{}, leafMask=0x{}, minChildIdx={}",
+                        Integer.toHexString(childMask), Integer.toHexString(leafMask), minChildIdx);
+                }
 
                 if (minChildIdx != Integer.MAX_VALUE) {
                     // Use relative offset from current node index (not absolute index)

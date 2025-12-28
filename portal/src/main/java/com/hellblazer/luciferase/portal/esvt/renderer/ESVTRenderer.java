@@ -158,9 +158,27 @@ public class ESVTRenderer {
         }
 
         currentRendering = group;
-        log.debug("Rendered {} children", group.getChildren().size());
+
+        // Count actual meshes (not just top-level Groups)
+        int meshCount = countMeshesRecursively(group);
+        log.debug("Rendered {} meshes in {} top-level groups", meshCount, group.getChildren().size());
 
         return group;
+    }
+
+    /**
+     * Count meshes recursively through nested Groups.
+     */
+    private int countMeshesRecursively(javafx.scene.Node node) {
+        if (node instanceof Group group) {
+            return group.getChildren().stream()
+                       .mapToInt(this::countMeshesRecursively)
+                       .sum();
+        } else if (node instanceof javafx.scene.shape.MeshView ||
+                   node instanceof javafx.scene.shape.Shape3D) {
+            return 1;
+        }
+        return 0;
     }
 
     /**

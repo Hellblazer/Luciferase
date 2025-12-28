@@ -22,7 +22,6 @@ import com.hellblazer.luciferase.portal.CameraView;
 import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTNodeMeshRenderer;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTRenderer;
-import com.hellblazer.luciferase.portal.esvo.ProceduralVoxelGenerator;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -80,12 +79,12 @@ public class ESVTInspectorApp extends Application {
     // ESVT Components
     private ESVTBridge esvtBridge;
     private ESVTRenderer esvtRenderer;
-    private ProceduralVoxelGenerator voxelGenerator;
+    private ESVTVoxelGenerator voxelGenerator;
     private ESVTData currentData;
 
     // UI Controls
     private Spinner<Integer> depthSpinner;
-    private ComboBox<ProceduralVoxelGenerator.Shape> shapeComboBox;
+    private ComboBox<ESVTVoxelGenerator.Shape> shapeComboBox;
     private ComboBox<ESVTNodeMeshRenderer.ColorScheme> colorSchemeComboBox;
     private ComboBox<ESVTRenderer.RenderMode> renderModeComboBox;
     private CheckBox showAxesCheck;
@@ -109,7 +108,7 @@ public class ESVTInspectorApp extends Application {
 
         // Initialize ESVT components
         esvtBridge = new ESVTBridge();
-        voxelGenerator = new ProceduralVoxelGenerator();
+        voxelGenerator = new ESVTVoxelGenerator();
         esvtRenderer = ESVTRenderer.builder()
             .maxDepth(currentLevel)
             .colorScheme(ESVTNodeMeshRenderer.ColorScheme.TET_TYPE)
@@ -146,16 +145,10 @@ public class ESVTInspectorApp extends Application {
         var subScene = new SubScene(worldGroup, 800, 600, true, SceneAntialiasing.BALANCED);
         subScene.setFill(Color.DARKSLATEGRAY);
 
-        // Create and configure CameraView
+        // Create and configure CameraView with first-person navigation
         cameraView = new CameraView(subScene);
-        cameraView.getT().setX(-500);
-        cameraView.getT().setY(-300);
-        cameraView.getT().setZ(-500);
-
-        // Create Pane to hold SubScene (allows resizing)
-        var viewPane = new Pane(subScene);
-        subScene.widthProperty().bind(viewPane.widthProperty());
-        subScene.heightProperty().bind(viewPane.heightProperty());
+        cameraView.setFirstPersonNavigationEabled(true);
+        cameraView.startViewing();
 
         // Create control panel
         var controlPanel = createControlPanel();
@@ -166,16 +159,21 @@ public class ESVTInspectorApp extends Application {
         // Create status bar
         var statusBar = createStatusBar();
 
-        // Assemble the layout
-        root.setCenter(viewPane);
+        // Assemble the layout - CameraView directly in center (like OctreeInspectorApp)
+        root.setCenter(cameraView);
         root.setRight(controlScroll);
         root.setBottom(statusBar);
 
         // Create the scene
         var scene = new Scene(root, 1200, 800);
 
-        // Start camera viewing
-        cameraView.startViewing();
+        // Bind CameraView size to fill available space in BorderPane center
+        cameraView.fitWidthProperty().bind(scene.widthProperty().subtract(controlScroll.widthProperty()));
+        cameraView.fitHeightProperty().bind(scene.heightProperty().subtract(statusBar.heightProperty()));
+        cameraView.setPreserveRatio(false);  // Fill the entire center area
+
+        // Reset camera to default position (looking at origin where ESVT is centered)
+        cameraView.resetCamera();
 
         primaryStage.setTitle("ESVT Inspector - Efficient Sparse Voxel Tetrahedra");
         primaryStage.setScene(scene);
@@ -218,10 +216,10 @@ public class ESVTInspectorApp extends Application {
         var box = new VBox(8);
         box.setPadding(new Insets(5));
 
-        // Shape selection
+        // Shape selection - ESVT shapes inscribed within S0 tetrahedron
         shapeComboBox = new ComboBox<>();
-        shapeComboBox.getItems().addAll(ProceduralVoxelGenerator.Shape.values());
-        shapeComboBox.setValue(ProceduralVoxelGenerator.Shape.SPHERE);
+        shapeComboBox.getItems().addAll(ESVTVoxelGenerator.Shape.values());
+        shapeComboBox.setValue(ESVTVoxelGenerator.Shape.SPHERE);
         shapeComboBox.setMaxWidth(Double.MAX_VALUE);
 
         // Depth selection
@@ -385,6 +383,9 @@ public class ESVTInspectorApp extends Application {
             var meshRenderer = new ESVTNodeMeshRenderer(currentData);
             esvtGroup.getChildren().add(meshRenderer.renderLeafWireframes());
         }
+
+        // Note: Scaling and centering is now handled in ESVTNodeMeshRenderer
+        // with default worldSize=400, so meshes span [-200, +200] in each axis
     }
 
     /**

@@ -29,6 +29,8 @@ import javafx.scene.shape.Cylinder;
 import javafx.scene.shape.MeshView;
 import javafx.scene.shape.TriangleMesh;
 import javafx.scene.transform.Rotate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Point3i;
@@ -43,6 +45,8 @@ import java.util.List;
  * @author hal.hildebrand
  */
 public class ESVTNodeMeshRenderer {
+
+    private static final Logger log = LoggerFactory.getLogger(ESVTNodeMeshRenderer.class);
 
     // Standard edges of a tetrahedron (vertex pairs)
     private static final int[][] TET_EDGES = {
@@ -71,22 +75,49 @@ public class ESVTNodeMeshRenderer {
     private final TriangleMesh[] referenceMeshes = new TriangleMesh[6];
     private final double edgeThickness;
     private final Material edgeMaterial;
+    private final double worldScale;  // Scale factor to convert voxel coords to world coords
+    private final double worldOffset; // Offset to center in world
 
     /**
-     * Create a renderer for the given ESVT data.
+     * Create a renderer for the given ESVT data with default world size of 400 units.
      */
     public ESVTNodeMeshRenderer(ESVTData data) {
-        this(data, 0.01, new PhongMaterial(Color.BLACK));
+        this(data, 400.0); // Default to 400 unit world size
+    }
+
+    /**
+     * Create a renderer with specified world size for visualization.
+     *
+     * @param data ESVT data to render
+     * @param worldSize Target size in world units (e.g., 400 for -200 to +200)
+     */
+    public ESVTNodeMeshRenderer(ESVTData data, double worldSize) {
+        this(data, worldSize, 0.5, new PhongMaterial(Color.BLACK));
     }
 
     /**
      * Create a renderer with custom wireframe settings.
+     *
+     * @param data ESVT data to render
+     * @param worldSize Target size in world units
+     * @param edgeThickness Wireframe edge thickness in world units
+     * @param edgeMaterial Material for wireframe edges
      */
-    public ESVTNodeMeshRenderer(ESVTData data, double edgeThickness, Material edgeMaterial) {
+    public ESVTNodeMeshRenderer(ESVTData data, double worldSize, double edgeThickness, Material edgeMaterial) {
         this.data = data;
         this.farPointers = data != null ? data.farPointers() : null;
         this.edgeThickness = edgeThickness;
         this.edgeMaterial = edgeMaterial;
+
+        // Calculate scaling: tree spans [0, 2^maxDepth] in voxel space
+        // Scale to worldSize and center at origin
+        double treeSize = data != null ? (1 << data.maxDepth()) : 1;
+        this.worldScale = worldSize / treeSize;
+        this.worldOffset = -worldSize / 2.0;
+
+        log.debug("ESVTNodeMeshRenderer: treeSize={}, worldSize={}, scale={}, offset={}",
+            treeSize, worldSize, worldScale, worldOffset);
+
         initializeReferenceMeshes();
     }
 
@@ -181,10 +212,19 @@ public class ESVTNodeMeshRenderer {
     private List<NodeRenderInfo> collectLeaves() {
         var leaves = new ArrayList<NodeRenderInfo>();
         if (data.nodes() == null || data.nodes().length == 0) {
+            log.debug("collectLeaves: No nodes to render");
             return leaves;
         }
+
+        // Debug: Log root node state
+        var root = data.nodes()[0];
+        log.debug("collectLeaves: {} nodes, rootType={}, maxDepth={}, root.childMask=0x{}, root.leafMask=0x{}, root.isValid={}",
+            data.nodes().length, data.rootType(), data.maxDepth(),
+            Integer.toHexString(root.getChildMask()), Integer.toHexString(root.getLeafMask()), root.isValid());
+
         collectLeavesRecursive(0, (byte) data.rootType(), new Point3f(0, 0, 0),
                                1 << data.maxDepth(), 0, leaves);
+        log.debug("collectLeaves: Found {} leaves", leaves.size());
         return leaves;
     }
 
@@ -206,13 +246,25 @@ public class ESVTNodeMeshRenderer {
      */
     private void collectLeavesRecursive(int nodeIdx, byte tetType, Point3f origin,
                                          int size, int level, List<NodeRenderInfo> leaves) {
-        if (nodeIdx >= data.nodes().length) return;
+        if (nodeIdx >= data.nodes().length) {
+            if (level == 0) log.debug("collectLeavesRecursive: nodeIdx {} >= nodes.length {}", nodeIdx, data.nodes().length);
+            return;
+        }
 
         var node = data.nodes()[nodeIdx];
-        if (!node.isValid()) return;
+        if (!node.isValid()) {
+            if (level == 0) log.debug("collectLeavesRecursive: node {} not valid - childMask=0x{}, leafMask=0x{}",
+                nodeIdx, Integer.toHexString(node.getChildMask()), Integer.toHexString(node.getLeafMask()));
+            return;
+        }
 
         var childMask = node.getChildMask();
         var leafMask = node.getLeafMask();
+
+        if (level == 0) {
+            log.debug("collectLeavesRecursive: Processing root - childMask=0x{}, leafMask=0x{}, childPtr={}, isFar={}",
+                Integer.toHexString(childMask), Integer.toHexString(leafMask), node.getChildPtr(), node.isFar());
+        }
 
         // Check each child position
         for (int childPos = 0; childPos < 8; childPos++) {
@@ -370,13 +422,20 @@ public class ESVTNodeMeshRenderer {
         var mesh = referenceMeshes[info.tetType];
         var meshView = new MeshView(mesh);
 
-        // Apply scale and translation
-        meshView.setScaleX(info.size);
-        meshView.setScaleY(info.size);
-        meshView.setScaleZ(info.size);
-        meshView.setTranslateX(info.origin.x);
-        meshView.setTranslateY(info.origin.y);
-        meshView.setTranslateZ(info.origin.z);
+        // Apply scale and translation, transformed to world coordinates
+        // info.size is in voxel units, multiply by worldScale
+        // info.origin is in voxel units, multiply by worldScale and add offset
+        double scaledSize = info.size * worldScale;
+        double worldX = info.origin.x * worldScale + worldOffset;
+        double worldY = info.origin.y * worldScale + worldOffset;
+        double worldZ = info.origin.z * worldScale + worldOffset;
+
+        meshView.setScaleX(scaledSize);
+        meshView.setScaleY(scaledSize);
+        meshView.setScaleZ(scaledSize);
+        meshView.setTranslateX(worldX);
+        meshView.setTranslateY(worldY);
+        meshView.setTranslateZ(worldZ);
 
         // Apply material based on color scheme
         var color = switch (colorScheme) {
@@ -399,13 +458,18 @@ public class ESVTNodeMeshRenderer {
         var wireframe = new Group();
         Point3i[] refVerts = Constants.SIMPLEX_STANDARD[info.tetType];
 
-        // Scale and translate vertices
+        // Scale and translate vertices to world coordinates
         var verts = new Point3f[4];
         for (int i = 0; i < 4; i++) {
+            // First apply voxel-space transform, then world transform
+            float voxelX = info.origin.x + refVerts[i].x * info.size;
+            float voxelY = info.origin.y + refVerts[i].y * info.size;
+            float voxelZ = info.origin.z + refVerts[i].z * info.size;
+
             verts[i] = new Point3f(
-                info.origin.x + refVerts[i].x * info.size,
-                info.origin.y + refVerts[i].y * info.size,
-                info.origin.z + refVerts[i].z * info.size
+                (float)(voxelX * worldScale + worldOffset),
+                (float)(voxelY * worldScale + worldOffset),
+                (float)(voxelZ * worldScale + worldOffset)
             );
         }
 
@@ -421,7 +485,8 @@ public class ESVTNodeMeshRenderer {
 
             if (length < 0.001) continue;
 
-            var cylinder = new Cylinder(edgeThickness / 2, length);
+            // Scale edge thickness to world space
+            var cylinder = new Cylinder(edgeThickness * worldScale / 2, length);
             cylinder.setMaterial(edgeMaterial);
 
             // Position at midpoint
