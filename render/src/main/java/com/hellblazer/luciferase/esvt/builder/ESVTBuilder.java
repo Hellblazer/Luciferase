@@ -18,13 +18,17 @@ package com.hellblazer.luciferase.esvt.builder;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Point3f;
 import java.util.*;
 
 /**
@@ -101,6 +105,52 @@ public class ESVTBuilder {
                 nodes.length, maxDepth, leafCount, internalCount);
 
         return new ESVTData(nodes, rootType, maxDepth, leafCount, internalCount);
+    }
+
+    /**
+     * Convenience method to build ESVT data directly from voxel coordinates.
+     * Creates a Tetree internally, populates it with voxels, then builds the ESVT.
+     *
+     * @param voxels   List of voxel coordinates (Point3i with x, y, z)
+     * @param maxDepth Maximum tree depth (determines resolution)
+     * @return ESVTData ready for GPU transfer
+     */
+    public ESVTData buildFromVoxels(List<Point3i> voxels, int maxDepth) {
+        if (voxels == null || voxels.isEmpty()) {
+            log.warn("Empty voxel list, returning empty ESVT");
+            return new ESVTData(new ESVTNodeUnified[0], 0, 0, 0, 0);
+        }
+
+        log.debug("Building ESVT from {} voxels at maxDepth {}", voxels.size(), maxDepth);
+
+        // Create Tetree with appropriate configuration
+        var idGenerator = new SequentialLongIDGenerator();
+        var tetree = new Tetree<LongEntityID, String>(idGenerator, 100, (byte) maxDepth);
+
+        // Enable bulk loading for better performance with large voxel sets
+        tetree.enableBulkLoading();
+
+        // Insert all voxels as point entities at the specified depth
+        byte level = (byte) maxDepth;
+        int inserted = 0;
+        for (var voxel : voxels) {
+            // Convert Point3i to Point3f - voxels are integer grid coordinates
+            var position = new Point3f(voxel.x, voxel.y, voxel.z);
+            try {
+                tetree.insert(position, level, "voxel_" + inserted);
+                inserted++;
+            } catch (Exception e) {
+                log.trace("Skipping voxel at ({},{},{}): {}", voxel.x, voxel.y, voxel.z, e.getMessage());
+            }
+        }
+
+        // Finalize bulk loading
+        tetree.finalizeBulkLoading();
+
+        log.debug("Inserted {} of {} voxels into Tetree", inserted, voxels.size());
+
+        // Build ESVT from the populated Tetree
+        return build(tetree);
     }
 
     /**
