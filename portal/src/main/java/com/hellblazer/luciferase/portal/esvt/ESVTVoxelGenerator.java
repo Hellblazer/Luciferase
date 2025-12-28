@@ -27,12 +27,12 @@ import java.util.List;
  * Voxel generator for ESVT that generates shapes contained within the S0 tetrahedron.
  * Unlike the cubic grid generator, this ensures all voxels fit within the tetrahedral volume.
  *
- * <p>S0 tetrahedron vertices (in unit cube):
+ * <p>S0 tetrahedron uses cube vertices 0, 1, 3, 7 (from Tet.java):
  * <ul>
- *   <li>v0 = (0, 0, 0) - origin</li>
- *   <li>v1 = (1, 0, 0) - +X</li>
- *   <li>v2 = (1, 0, 1) - +X+Z</li>
- *   <li>v3 = (1, 1, 1) - diagonal corner</li>
+ *   <li>v0 = (0, 0, 0) - cube origin</li>
+ *   <li>v1 = (1, 0, 0) - +X face</li>
+ *   <li>v2 = (1, 1, 0) - +X+Y face (cube vertex 3)</li>
+ *   <li>v3 = (1, 1, 1) - far diagonal corner (cube vertex 7)</li>
  * </ul>
  *
  * @author hal.hildebrand
@@ -40,10 +40,11 @@ import java.util.List;
 public class ESVTVoxelGenerator {
 
     // S0 tetrahedron vertices (unit cube scale)
-    private static final Point3f V0 = new Point3f(0, 0, 0);
-    private static final Point3f V1 = new Point3f(1, 0, 0);
-    private static final Point3f V2 = new Point3f(1, 0, 1);
-    private static final Point3f V3 = new Point3f(1, 1, 1);
+    // S0 uses cube vertices 0, 1, 3, 7 (from Tet.java coordinates())
+    private static final Point3f V0 = new Point3f(0, 0, 0);  // Cube vertex 0
+    private static final Point3f V1 = new Point3f(1, 0, 0);  // Cube vertex 1
+    private static final Point3f V2 = new Point3f(1, 1, 0);  // Cube vertex 3 (NOT 1,0,1!)
+    private static final Point3f V3 = new Point3f(1, 1, 1);  // Cube vertex 7
 
     /**
      * Shape types for ESVT generation.
