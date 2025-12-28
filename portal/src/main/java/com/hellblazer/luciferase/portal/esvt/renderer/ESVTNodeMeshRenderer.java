@@ -67,6 +67,7 @@ public class ESVTNodeMeshRenderer {
     };
 
     private final ESVTData data;
+    private final int[] farPointers;
     private final TriangleMesh[] referenceMeshes = new TriangleMesh[6];
     private final double edgeThickness;
     private final Material edgeMaterial;
@@ -83,6 +84,7 @@ public class ESVTNodeMeshRenderer {
      */
     public ESVTNodeMeshRenderer(ESVTData data, double edgeThickness, Material edgeMaterial) {
         this.data = data;
+        this.farPointers = data != null ? data.farPointers() : null;
         this.edgeThickness = edgeThickness;
         this.edgeMaterial = edgeMaterial;
         initializeReferenceMeshes();
@@ -222,7 +224,7 @@ public class ESVTNodeMeshRenderer {
                 if ((leafMask & (1 << childPos)) != 0) {
                     // This child is a leaf
                     leaves.add(new NodeRenderInfo(
-                        node.getChildIndex(childPos),
+                        node.getChildIndex(childPos, farPointers),
                         childType,
                         childOrigin,
                         childSize,
@@ -231,7 +233,7 @@ public class ESVTNodeMeshRenderer {
                 } else {
                     // Recurse into non-leaf child
                     collectLeavesRecursive(
-                        node.getChildIndex(childPos),
+                        node.getChildIndex(childPos, farPointers),
                         childType,
                         childOrigin,
                         childSize,
@@ -276,7 +278,7 @@ public class ESVTNodeMeshRenderer {
                 // Don't recurse into leaf children (they have no further structure)
                 if ((leafMask & (1 << childPos)) == 0) {
                     collectNodesInRangeRecursive(
-                        node.getChildIndex(childPos),
+                        node.getChildIndex(childPos, farPointers),
                         childType,
                         childOrigin,
                         childSize,
@@ -288,7 +290,7 @@ public class ESVTNodeMeshRenderer {
                 } else if (level + 1 >= minLevel && level + 1 <= maxLevel) {
                     // Add leaf child if in range
                     nodes.add(new NodeRenderInfo(
-                        node.getChildIndex(childPos),
+                        node.getChildIndex(childPos, farPointers),
                         childType,
                         childOrigin,
                         childSize,
