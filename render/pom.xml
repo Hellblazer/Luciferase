@@ -16,6 +16,11 @@
     <name>Luciferase - Render Module</name>
     <description>GPU-accelerated rendering module including ESVO (Efficient Sparse Voxel Octrees) implementation</description>
 
+    <properties>
+        <!-- Default: no extra JVM args. Overridden by gpu-macos profile. -->
+        <render.surefire.argLine></render.surefire.argLine>
+    </properties>
+
     <dependencies>
         <!-- Internal Dependencies -->
         <dependency>
@@ -145,8 +150,8 @@
                         <org.lwjgl.util.Debug>false</org.lwjgl.util.Debug>
                         <org.lwjgl.util.DebugAllocator>false</org.lwjgl.util.DebugAllocator>
                     </systemPropertyVariables>
-                    <!-- Add JVM args for ESVO requirements -->
-                    <argLine>-Xmx2G -Xms512m --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
+                    <!-- Add JVM args for ESVO requirements. Use property for profile override. -->
+                    <argLine>${render.surefire.argLine} -Xmx2G -Xms512m --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
             
@@ -163,8 +168,20 @@
         </plugins>
     </build>
 
-    <!-- Performance Testing Profile -->
+    <!-- GPU and Performance Testing Profiles -->
     <profiles>
+        <!-- macOS GPU Testing Profile - requires -XstartOnFirstThread for GLFW -->
+        <profile>
+            <id>gpu-macos</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <properties>
+                <render.surefire.argLine>-XstartOnFirstThread</render.surefire.argLine>
+            </properties>
+        </profile>
         <profile>
             <id>performance</id>
             <build>

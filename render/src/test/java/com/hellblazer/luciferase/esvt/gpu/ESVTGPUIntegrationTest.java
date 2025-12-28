@@ -18,13 +18,20 @@ package com.hellblazer.luciferase.esvt.gpu;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.system.Platform;
 
 import javax.vecmath.Vector3f;
 import java.nio.ByteBuffer;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL43.*;
+import static org.lwjgl.system.MemoryUtil.NULL;
 
 /**
  * Integration tests for ESVT GPU rendering pipeline.
@@ -154,31 +161,125 @@ class ESVTGPUIntegrationTest {
 
     /**
      * GPU integration test - requires OpenGL context
-     * Run with: RUN_GPU_TESTS=true mvn test
+     * Run with: RUN_GPU_TESTS=true mvn test -Pgpu-macos
+     * The gpu-macos profile automatically adds -XstartOnFirstThread on macOS.
      */
     @Test
     @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
     void testGPURenderingPipeline() {
-        // This test requires OpenGL context setup
-        // For now, we skip the actual GPU operations and test the structure
+        System.out.println("\n=== ESVT GPU Rendering Test ===");
+        System.out.println("Platform: " + Platform.get().getName());
 
-        // Create test data
-        var nodes = createTestTetrahedralTree();
-        var esvtData = new ESVTData(nodes, 0, 3, 4, 3);
+        // Note: -XstartOnFirstThread is passed by Maven profile but may not appear
+        // in ManagementFactory.getInputArguments() as it's processed early by the JVM.
+        // We'll detect macOS issues via GLFW initialization failure instead.
 
-        // Create renderer
-        var renderer = new ESVTComputeRenderer(256, 256);
+        // Setup GLFW error callback
+        GLFWErrorCallback errorCallback = GLFWErrorCallback.createPrint(System.err);
+        glfwSetErrorCallback(errorCallback);
 
-        // Note: Full GPU test would require:
-        // 1. GLFW window creation
-        // 2. OpenGL context initialization
-        // 3. renderer.initialize()
-        // 4. ESVTGPUMemory creation and upload
-        // 5. renderer.renderFrame(...)
-        // 6. Output texture verification
+        boolean glfwInitialized = false;
+        long window = NULL;
+        ESVTGPUMemory esvtMemory = null;
+        ESVTComputeRenderer renderer = null;
 
-        assertNotNull(renderer);
-        assertEquals(7, esvtData.nodeCount());
+        try {
+            // Initialize GLFW
+            if (!glfwInit()) {
+                System.out.println("GLFW initialization failed - skipping GPU test");
+                Assumptions.assumeTrue(false, "GLFW initialization failed");
+                return;
+            }
+            glfwInitialized = true;
+            System.out.println("GLFW initialized");
+
+            // Configure for headless OpenGL 4.3
+            glfwDefaultWindowHints();
+            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+            if (Platform.get() == Platform.MACOSX) {
+                glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+            }
+
+            // Create hidden window
+            window = glfwCreateWindow(256, 256, "ESVT Test", NULL, NULL);
+            if (window == NULL) {
+                // macOS only supports OpenGL 4.1, but compute shaders require 4.3
+                if (Platform.get() == Platform.MACOSX) {
+                    System.out.println("macOS only supports OpenGL 4.1 - compute shaders require 4.3");
+                    Assumptions.assumeTrue(false,
+                        "macOS does not support OpenGL 4.3 compute shaders (max is 4.1)");
+                } else {
+                    System.out.println("Failed to create GLFW window - skipping GPU test");
+                    Assumptions.assumeTrue(false, "Failed to create GLFW window");
+                }
+                return;
+            }
+            System.out.println("GLFW window created");
+
+            // Make OpenGL context current
+            glfwMakeContextCurrent(window);
+            GL.createCapabilities();
+            System.out.println("OpenGL context created");
+
+            // Print GPU info
+            System.out.println("Vendor: " + glGetString(GL_VENDOR));
+            System.out.println("Renderer: " + glGetString(GL_RENDERER));
+            System.out.println("OpenGL: " + glGetString(GL_VERSION));
+
+            // Create test ESVT data
+            var nodes = createTestTetrahedralTree();
+            var esvtData = new ESVTData(nodes, 0, 3, 4, 3);
+            System.out.println("Created ESVT data: " + esvtData);
+
+            // Upload to GPU
+            esvtMemory = new ESVTGPUMemory(esvtData);
+            esvtMemory.uploadToGPU();
+            System.out.println("Uploaded ESVT data to GPU");
+
+            // Create and initialize renderer
+            renderer = new ESVTComputeRenderer(256, 256);
+            renderer.initialize();
+            System.out.println("Initialized ESVT renderer");
+
+            // Render a frame
+            var cameraPos = new Vector3f(2.0f, 2.0f, 2.0f);
+            var lookAt = new Vector3f(0.5f, 0.5f, 0.5f);
+            renderer.renderFrame(esvtMemory, cameraPos, lookAt, 60.0f);
+            System.out.println("Rendered frame");
+
+            // Verify output texture was created
+            int outputTexture = renderer.getOutputTexture();
+            assertTrue(outputTexture > 0, "Output texture should be created");
+            System.out.println("Output texture ID: " + outputTexture);
+
+            // Check for OpenGL errors
+            int error = glGetError();
+            assertEquals(GL_NO_ERROR, error, "No OpenGL errors should occur");
+
+            System.out.println("\n=== ESVT GPU Rendering Test PASSED ===\n");
+
+        } finally {
+            // Cleanup
+            if (renderer != null) {
+                renderer.dispose();
+            }
+            if (esvtMemory != null) {
+                esvtMemory.dispose();
+            }
+            if (window != NULL) {
+                glfwDestroyWindow(window);
+            }
+            if (glfwInitialized) {
+                glfwTerminate();
+            }
+            if (errorCallback != null) {
+                errorCallback.free();
+            }
+        }
     }
 
     /**
