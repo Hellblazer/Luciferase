@@ -2823,16 +2823,40 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     /**
      * Locate the tetrahedron containing a point at a given level.
      *
-     * This uses proper S0 Bey tree traversal: starting from the type-0 root,
-     * traverse down through Bey subdivision using TYPE_CID_TO_BEYID and
-     * PARENT_TYPE_TO_CHILD_TYPE tables to compute the correct child type at each level.
+     * <p><b>CRITICAL:</b> This method uses S0-S5 cube partitioning geometry to find the
+     * tetrahedron type. This is required because the {@link Tet#contains(Tuple3f)} method
+     * uses S0-S5 cube partitioning for containment testing.</p>
      *
-     * <p><b>Key Insight:</b> The Tetree is defined to be rooted in S0 (type 0).
-     * Child types must be derived from parent types using Bey refinement tables,
-     * NOT from S0-S5 cube partitioning which creates nodes outside the S0 tree.</p>
+     * <p>The algorithm tests all 6 tetrahedron types (S0-S5) at the computed grid cell
+     * and returns the first one that contains the point. This ensures consistency with
+     * the containment geometry used by Tet.contains().</p>
+     *
+     * <p><b>Note:</b> The Bey tree traversal approach (Tet.locatePointS0Tree) produces
+     * types based on parent-child relationships which do NOT match S0-S5 cube partitioning
+     * geometry and should not be used for locate operations.</p>
      */
     protected Tet locate(Tuple3f point, byte level) {
-        return Tet.locatePointS0Tree(point.x, point.y, point.z, level);
+        // Special case: level 0 is always the root tetrahedron of type 0
+        if (level == 0) {
+            return new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        }
+
+        var length = Constants.lengthAtLevel(level);
+        var anchorX = (int) (Math.floor(point.x / length) * length);
+        var anchorY = (int) (Math.floor(point.y / length) * length);
+        var anchorZ = (int) (Math.floor(point.z / length) * length);
+
+        // Test all 6 tetrahedron types at this grid location to find which one contains the point
+        for (byte type = 0; type < 6; type++) {
+            var testTet = new Tet(anchorX, anchorY, anchorZ, level, type);
+            if (testTet.contains(point)) {
+                return testTet;
+            }
+        }
+
+        // Fallback: if no tetrahedron contains the point (rare floating-point edge case),
+        // return type 0 at this anchor
+        return new Tet(anchorX, anchorY, anchorZ, level, (byte) 0);
     }
 
     /**
