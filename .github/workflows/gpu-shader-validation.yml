@@ -94,7 +94,8 @@ jobs:
             mesa-utils \
             libgl1-mesa-dri \
             libglx-mesa0 \
-            libegl1-mesa \
+            libegl-mesa0 \
+            libegl1 \
             xvfb \
             libxrandr2 \
             libxcursor1 \
