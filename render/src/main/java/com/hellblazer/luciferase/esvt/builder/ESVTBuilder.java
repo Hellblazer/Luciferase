@@ -18,7 +18,6 @@ package com.hellblazer.luciferase.esvt.builder;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
-import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.tetree.Tet;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
@@ -31,15 +30,17 @@ import java.util.*;
 /**
  * Builds ESVT GPU-ready data structure from a Tetree spatial index.
  *
- * The builder performs breadth-first traversal of the Tetree to allocate nodes
- * in memory order suitable for GPU cache efficiency. Each Tetree node is converted
- * to an 8-byte ESVTNodeUnified with:
+ * The builder collects all nodes with entities from the Tetree and constructs
+ * the full tree hierarchy by creating virtual parent nodes. Nodes are allocated
+ * in breadth-first order for GPU cache efficiency. Each node is converted to an
+ * 8-byte ESVTNodeUnified with:
  * - Child mask (8 bits for Bey 8-way subdivision)
  * - Leaf mask (8 bits)
  * - Child pointer (14 bits, relative offset)
  * - Tetrahedron type (3 bits, 0-5 for S0-S5)
  *
  * The builder handles:
+ * - Bottom-up tree construction from sparse leaf nodes
  * - Node allocation in breadth-first order
  * - Child pointer computation
  * - Type propagation from parent to children
@@ -60,22 +61,25 @@ public class ESVTBuilder {
      * @return ESVTData ready for GPU transfer
      */
     public <ID extends EntityID, Content> ESVTData build(Tetree<ID, Content> tetree) {
-        log.debug("Building ESVT from Tetree with {} nodes", tetree.size());
+        log.debug("Building ESVT from Tetree with {} entities", tetree.entityCount());
 
-        // Phase 1: Collect all nodes in breadth-first order
-        var nodeList = collectNodesBreadthFirst(tetree);
-        if (nodeList.isEmpty()) {
+        // Phase 1: Collect all leaf nodes and build complete tree structure
+        var allNodes = buildTreeFromLeaves(tetree);
+        if (allNodes.isEmpty()) {
             log.warn("Empty Tetree, returning empty ESVT");
             return new ESVTData(new ESVTNodeUnified[0], 0, 0, 0, 0);
         }
 
-        // Phase 2: Build index map for pointer computation
+        // Phase 2: Sort nodes in breadth-first order (by level, then by key)
+        var nodeList = sortBreadthFirst(allNodes);
+
+        // Phase 3: Build index map for pointer computation
         var indexMap = buildIndexMap(nodeList);
 
-        // Phase 3: Create ESVT nodes with correct pointers
-        var nodes = createNodes(nodeList, indexMap, tetree);
+        // Phase 4: Create ESVT nodes with correct pointers
+        var nodes = createNodes(nodeList, indexMap, allNodes);
 
-        // Phase 4: Compute statistics
+        // Phase 5: Compute statistics
         int leafCount = 0;
         int internalCount = 0;
         int maxDepth = 0;
@@ -110,51 +114,112 @@ public class ESVTBuilder {
     ) {}
 
     /**
-     * Collect all nodes in breadth-first order
+     * Build complete tree structure from leaf nodes.
+     * This creates virtual parent nodes for all ancestors of leaf nodes.
      */
-    private <ID extends EntityID, Content> List<NodeEntry> collectNodesBreadthFirst(
+    @SuppressWarnings("unchecked")
+    private <ID extends EntityID, Content> Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> buildTreeFromLeaves(
             Tetree<ID, Content> tetree) {
 
-        var result = new ArrayList<NodeEntry>();
-        var queue = new ArrayDeque<TetreeKey<? extends TetreeKey<?>>>();
-        var visited = new HashSet<TetreeKey<? extends TetreeKey<?>>>();
+        var allNodes = new HashMap<TetreeKey<? extends TetreeKey<?>>, NodeEntry>();
+        var leafKeys = tetree.getSortedSpatialIndices();
 
-        // Start from root
-        @SuppressWarnings("unchecked")
-        var root = (TetreeKey<? extends TetreeKey<?>>) TetreeKey.getRoot();
-        queue.add(root);
+        log.debug("Building tree from {} leaf nodes", leafKeys.size());
 
-        while (!queue.isEmpty()) {
-            var key = queue.poll();
-            if (visited.contains(key)) {
-                continue;
-            }
-            visited.add(key);
-
-            // Check if this node exists in the Tetree
-            if (!tetree.hasNode(key)) {
-                continue;
-            }
-
-            // Convert key to Tet for geometry operations
-            var tet = Tet.tetrahedron(key);
-            byte tetType = tet.type();
-
-            // Find children that exist
-            var childKeys = findExistingChildren(tetree, tet);
-            boolean isLeaf = childKeys.isEmpty();
-
-            // Add children to queue for BFS
-            for (var childKey : childKeys) {
-                if (!visited.contains(childKey)) {
-                    queue.add(childKey);
-                }
-            }
-
-            result.add(new NodeEntry(key, tet, tetType, isLeaf));
+        // First pass: add all leaf nodes
+        for (var leafKey : leafKeys) {
+            var tet = Tet.tetrahedron(leafKey);
+            allNodes.put(leafKey, new NodeEntry(
+                (TetreeKey<? extends TetreeKey<?>>) leafKey,
+                tet,
+                tet.type(),
+                true  // Initially mark as leaf
+            ));
         }
 
-        return result;
+        // Second pass: trace up from each leaf to create parent nodes
+        for (var leafKey : leafKeys) {
+            var current = Tet.tetrahedron(leafKey);
+
+            while (current.l() > 0) {
+                var parent = current.parent();
+                var parentKey = (TetreeKey<? extends TetreeKey<?>>) parent.tmIndex();
+
+                if (!allNodes.containsKey(parentKey)) {
+                    // Create parent node (not a leaf since it has children)
+                    allNodes.put(parentKey, new NodeEntry(
+                        parentKey,
+                        parent,
+                        parent.type(),
+                        false
+                    ));
+                } else {
+                    // Parent already exists - mark it as internal if needed
+                    var existing = allNodes.get(parentKey);
+                    if (existing.isLeaf) {
+                        allNodes.put(parentKey, new NodeEntry(
+                            parentKey,
+                            parent,
+                            parent.type(),
+                            false
+                        ));
+                    }
+                }
+
+                current = parent;
+            }
+        }
+
+        // Third pass: update leaf status based on whether node has children
+        var finalNodes = new HashMap<TetreeKey<? extends TetreeKey<?>>, NodeEntry>();
+        for (var entry : allNodes.entrySet()) {
+            var key = entry.getKey();
+            var nodeEntry = entry.getValue();
+            boolean hasChildren = hasChildrenInSet(nodeEntry.tet, allNodes);
+            finalNodes.put(key, new NodeEntry(
+                nodeEntry.key,
+                nodeEntry.tet,
+                nodeEntry.tetType,
+                !hasChildren
+            ));
+        }
+
+        return finalNodes;
+    }
+
+    /**
+     * Check if a tet has any children in the node set
+     */
+    @SuppressWarnings("unchecked")
+    private boolean hasChildrenInSet(Tet tet, Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> nodes) {
+        for (int childIdx = 0; childIdx < 8; childIdx++) {
+            try {
+                var childTet = tet.child(childIdx);
+                var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
+                if (nodes.containsKey(childKey)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // Child doesn't exist
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sort nodes in breadth-first order (by level ascending, then by key)
+     */
+    private List<NodeEntry> sortBreadthFirst(Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
+        var nodeList = new ArrayList<>(allNodes.values());
+
+        // Sort by level (ascending - root first), then by key for deterministic ordering
+        nodeList.sort((a, b) -> {
+            int levelCmp = Byte.compare(a.key.getLevel(), b.key.getLevel());
+            if (levelCmp != 0) return levelCmp;
+            return a.key.compareTo(b.key);
+        });
+
+        return nodeList;
     }
 
     /**
@@ -171,10 +236,11 @@ public class ESVTBuilder {
     /**
      * Create ESVT nodes from collected entries
      */
-    private <ID extends EntityID, Content> ESVTNodeUnified[] createNodes(
+    @SuppressWarnings("unchecked")
+    private ESVTNodeUnified[] createNodes(
             List<NodeEntry> nodeList,
             Map<TetreeKey<? extends TetreeKey<?>>, Integer> indexMap,
-            Tetree<ID, Content> tetree) {
+            Map<TetreeKey<? extends TetreeKey<?>>, NodeEntry> allNodes) {
 
         var nodes = new ESVTNodeUnified[nodeList.size()];
 
@@ -191,23 +257,26 @@ public class ESVTBuilder {
 
                 // Check all 8 possible Bey children
                 for (int childIdx = 0; childIdx < 8; childIdx++) {
-                    var childTet = entry.tet.child(childIdx);
-                    @SuppressWarnings("unchecked")
-                    var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
+                    try {
+                        var childTet = entry.tet.child(childIdx);
+                        var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
 
-                    if (indexMap.containsKey(childKey)) {
-                        childMask |= (1 << childIdx);
-                        int childNodeIdx = indexMap.get(childKey);
+                        if (indexMap.containsKey(childKey)) {
+                            childMask |= (1 << childIdx);
+                            int childNodeIdx = indexMap.get(childKey);
 
-                        if (firstChildIdx < 0) {
-                            firstChildIdx = childNodeIdx;
+                            if (firstChildIdx < 0) {
+                                firstChildIdx = childNodeIdx;
+                            }
+
+                            // Check if child is a leaf
+                            var childEntry = allNodes.get(childKey);
+                            if (childEntry != null && childEntry.isLeaf) {
+                                leafMask |= (1 << childIdx);
+                            }
                         }
-
-                        // Check if child is a leaf
-                        var childEntry = nodeList.get(childNodeIdx);
-                        if (childEntry.isLeaf) {
-                            leafMask |= (1 << childIdx);
-                        }
+                    } catch (Exception e) {
+                        // Child doesn't exist
                     }
                 }
 
@@ -228,37 +297,5 @@ public class ESVTBuilder {
         }
 
         return nodes;
-    }
-
-    /**
-     * Find existing children of a node in the Tetree
-     */
-    @SuppressWarnings("unchecked")
-    private <ID extends EntityID, Content> List<TetreeKey<? extends TetreeKey<?>>> findExistingChildren(
-            Tetree<ID, Content> tetree,
-            Tet parentTet) {
-
-        var children = new ArrayList<TetreeKey<? extends TetreeKey<?>>>();
-
-        // Check if we can create children (not at max refinement)
-        if (parentTet.l() >= Constants.getMaxRefinementLevel()) {
-            return children;
-        }
-
-        // Check all 8 possible Bey children
-        for (int childIdx = 0; childIdx < 8; childIdx++) {
-            try {
-                var childTet = parentTet.child(childIdx);
-                var childKey = (TetreeKey<? extends TetreeKey<?>>) childTet.tmIndex();
-                if (tetree.hasNode(childKey)) {
-                    children.add(childKey);
-                }
-            } catch (Exception e) {
-                // Child doesn't exist or is invalid
-                log.trace("Could not get child {} of tet at level {}", childIdx, parentTet.l());
-            }
-        }
-
-        return children;
     }
 }
