@@ -321,12 +321,12 @@ public class ESVOLayoutOptimizer {
         var parentNode = octreeData.getNode(parentIndex);
         
         if (parentNode != null && parentNode.getChildMask() != 0) {
-            // Calculate child indices using CUDA reference sparse indexing
+            // Calculate child indices using relative pointer + sparse indexing
             for (int i = 0; i < 8; i++) {
                 if ((parentNode.getChildMask() & (1 << i)) != 0) {
-                    // CUDA reference: parent_ptr + popcount(child_masks & ((1 << i) - 1))
+                    // Child index = parent index + relative offset + sparse offset
                     int popCount = Integer.bitCount(parentNode.getChildMask() & ((1 << i) - 1));
-                    var childIndex = parentNode.getChildPtr() + popCount;
+                    var childIndex = parentIndex + parentNode.getChildPtr() + popCount;
                     if (octreeData.hasNode(childIndex)) {
                         children.add(childIndex);
                     }
