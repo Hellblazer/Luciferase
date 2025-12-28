@@ -67,6 +67,9 @@ public final class ESVTTraversal {
     // Scratch space for vertex calculations
     private final Point3f[] scratchVerts = new Point3f[4];
 
+    // Current tetrahedron vertices (tracked during traversal)
+    private final float[] currentVerts = new float[12]; // 4 vertices * 3 coords
+
     /**
      * Create a new traversal instance.
      * Each instance has its own scratch space for thread safety.
@@ -109,6 +112,12 @@ public final class ESVTTraversal {
 
         // Get root tetrahedron vertices (unit [0,1] space)
         getRootVertices(rootType, scratchVerts);
+
+        // Initialize current vertices from root
+        currentVerts[0] = scratchVerts[0].x; currentVerts[1] = scratchVerts[0].y; currentVerts[2] = scratchVerts[0].z;
+        currentVerts[3] = scratchVerts[1].x; currentVerts[4] = scratchVerts[1].y; currentVerts[5] = scratchVerts[1].z;
+        currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
+        currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
         // Test ray-root intersection
         if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
@@ -160,8 +169,8 @@ public final class ESVTTraversal {
                     continue;
                 }
 
-                // Get child vertices
-                getChildVertices(parentType, childIdx, scale, scratchVerts);
+                // Get child vertices using actual parent position
+                getChildVerticesFromParent(currentVerts, childIdx, scratchVerts);
 
                 // Test ray-child intersection
                 if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
@@ -189,8 +198,19 @@ public final class ESVTTraversal {
                     return result;
                 }
 
-                // Non-leaf - push and descend
+                // Non-leaf - push current state including vertices
                 stack.write(scale, parentIdx, tMax, parentType, (byte) entryFace);
+                stack.writeVerts(scale,
+                    currentVerts[0], currentVerts[1], currentVerts[2],
+                    currentVerts[3], currentVerts[4], currentVerts[5],
+                    currentVerts[6], currentVerts[7], currentVerts[8],
+                    currentVerts[9], currentVerts[10], currentVerts[11]);
+
+                // Update current vertices to child vertices
+                currentVerts[0] = scratchVerts[0].x; currentVerts[1] = scratchVerts[0].y; currentVerts[2] = scratchVerts[0].z;
+                currentVerts[3] = scratchVerts[1].x; currentVerts[4] = scratchVerts[1].y; currentVerts[5] = scratchVerts[1].z;
+                currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
+                currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
                 // Move to child
                 parentIdx = node.getChildIndex(childIdx);
@@ -220,6 +240,12 @@ public final class ESVTTraversal {
                 parentType = stack.readType(scale);
                 entryFace = stack.readEntryFace(scale);
                 tMax = stack.readTmax(scale);
+
+                // Restore parent vertices from stack
+                float[] restoredVerts = stack.readVerts(scale);
+                if (restoredVerts != null) {
+                    System.arraycopy(restoredVerts, 0, currentVerts, 0, 12);
+                }
 
                 // Continue with next sibling at parent level
                 // We need to track which sibling we were at...
@@ -254,6 +280,86 @@ public final class ESVTTraversal {
         Point3i[] standard = Constants.SIMPLEX_STANDARD[tetType];
         for (int i = 0; i < 4; i++) {
             verts[i].set(standard[i].x, standard[i].y, standard[i].z);
+        }
+    }
+
+    /**
+     * Get child tetrahedron vertices using actual parent vertex positions.
+     *
+     * <p>Uses Bey subdivision to compute child vertices from parent's actual vertices.
+     * The 8 children are formed from:
+     * - 4 corner children (at each parent vertex)
+     * - 4 octahedral children (in the center region)
+     *
+     * @param parentVerts Parent vertices as float[12] (v0.xyz, v1.xyz, v2.xyz, v3.xyz)
+     * @param childIdx Child index (0-7)
+     * @param childVerts Output array for child vertex positions
+     */
+    private void getChildVerticesFromParent(float[] parentVerts, int childIdx, Point3f[] childVerts) {
+        // Extract parent vertices
+        float p0x = parentVerts[0], p0y = parentVerts[1], p0z = parentVerts[2];
+        float p1x = parentVerts[3], p1y = parentVerts[4], p1z = parentVerts[5];
+        float p2x = parentVerts[6], p2y = parentVerts[7], p2z = parentVerts[8];
+        float p3x = parentVerts[9], p3y = parentVerts[10], p3z = parentVerts[11];
+
+        // Compute edge midpoints
+        float m01x = (p0x + p1x) * 0.5f, m01y = (p0y + p1y) * 0.5f, m01z = (p0z + p1z) * 0.5f;
+        float m02x = (p0x + p2x) * 0.5f, m02y = (p0y + p2y) * 0.5f, m02z = (p0z + p2z) * 0.5f;
+        float m03x = (p0x + p3x) * 0.5f, m03y = (p0y + p3y) * 0.5f, m03z = (p0z + p3z) * 0.5f;
+        float m12x = (p1x + p2x) * 0.5f, m12y = (p1y + p2y) * 0.5f, m12z = (p1z + p2z) * 0.5f;
+        float m13x = (p1x + p3x) * 0.5f, m13y = (p1y + p3y) * 0.5f, m13z = (p1z + p3z) * 0.5f;
+        float m23x = (p2x + p3x) * 0.5f, m23y = (p2y + p3y) * 0.5f, m23z = (p2z + p3z) * 0.5f;
+
+        // Bey subdivision children
+        switch (childIdx) {
+            case 0 -> { // Corner child at v0
+                childVerts[0].set(p0x, p0y, p0z);
+                childVerts[1].set(m01x, m01y, m01z);
+                childVerts[2].set(m02x, m02y, m02z);
+                childVerts[3].set(m03x, m03y, m03z);
+            }
+            case 1 -> { // Corner child at v1
+                childVerts[0].set(p1x, p1y, p1z);
+                childVerts[1].set(m01x, m01y, m01z);
+                childVerts[2].set(m12x, m12y, m12z);
+                childVerts[3].set(m13x, m13y, m13z);
+            }
+            case 2 -> { // Corner child at v2
+                childVerts[0].set(p2x, p2y, p2z);
+                childVerts[1].set(m02x, m02y, m02z);
+                childVerts[2].set(m12x, m12y, m12z);
+                childVerts[3].set(m23x, m23y, m23z);
+            }
+            case 3 -> { // Corner child at v3
+                childVerts[0].set(p3x, p3y, p3z);
+                childVerts[1].set(m03x, m03y, m03z);
+                childVerts[2].set(m13x, m13y, m13z);
+                childVerts[3].set(m23x, m23y, m23z);
+            }
+            case 4 -> { // Octahedral child 0
+                childVerts[0].set(m01x, m01y, m01z);
+                childVerts[1].set(m02x, m02y, m02z);
+                childVerts[2].set(m03x, m03y, m03z);
+                childVerts[3].set(m12x, m12y, m12z);
+            }
+            case 5 -> { // Octahedral child 1
+                childVerts[0].set(m01x, m01y, m01z);
+                childVerts[1].set(m02x, m02y, m02z);
+                childVerts[2].set(m12x, m12y, m12z);
+                childVerts[3].set(m13x, m13y, m13z);
+            }
+            case 6 -> { // Octahedral child 2
+                childVerts[0].set(m02x, m02y, m02z);
+                childVerts[1].set(m03x, m03y, m03z);
+                childVerts[2].set(m12x, m12y, m12z);
+                childVerts[3].set(m23x, m23y, m23z);
+            }
+            case 7 -> { // Octahedral child 3
+                childVerts[0].set(m03x, m03y, m03z);
+                childVerts[1].set(m12x, m12y, m12z);
+                childVerts[2].set(m13x, m13y, m13z);
+                childVerts[3].set(m23x, m23y, m23z);
+            }
         }
     }
 

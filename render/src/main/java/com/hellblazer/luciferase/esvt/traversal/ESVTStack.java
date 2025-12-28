@@ -43,6 +43,8 @@ public final class ESVTStack {
     private final float[] tMaxStack;    // tMax values for each level
     private final byte[] typeStack;     // Tet types (0-5) at each level
     private final byte[] entryFaceStack; // Entry face (0-3) at each level
+    // Parent vertices at each level (4 vertices * 3 coords = 12 floats per level)
+    private final float[][] vertsStack; // [level][12] for v0.xyz, v1.xyz, v2.xyz, v3.xyz
 
     /**
      * Create a new traversal stack.
@@ -52,6 +54,7 @@ public final class ESVTStack {
         this.tMaxStack = new float[STACK_SIZE];
         this.typeStack = new byte[STACK_SIZE];
         this.entryFaceStack = new byte[STACK_SIZE];
+        this.vertsStack = new float[STACK_SIZE][12];
         reset();
     }
 
@@ -64,6 +67,7 @@ public final class ESVTStack {
             tMaxStack[i] = 0.0f;
             typeStack[i] = -1;
             entryFaceStack[i] = -1;
+            java.util.Arrays.fill(vertsStack[i], 0.0f);
         }
     }
 
@@ -95,6 +99,42 @@ public final class ESVTStack {
      */
     public void write(int scale, int nodeIndex, float tMax, byte tetType) {
         write(scale, nodeIndex, tMax, tetType, (byte) -1);
+    }
+
+    /**
+     * Write parent vertices to stack at given scale level.
+     *
+     * @param scale Scale level
+     * @param v0x, v0y, v0z Vertex 0 coordinates
+     * @param v1x, v1y, v1z Vertex 1 coordinates
+     * @param v2x, v2y, v2z Vertex 2 coordinates
+     * @param v3x, v3y, v3z Vertex 3 coordinates
+     */
+    public void writeVerts(int scale,
+                          float v0x, float v0y, float v0z,
+                          float v1x, float v1y, float v1z,
+                          float v2x, float v2y, float v2z,
+                          float v3x, float v3y, float v3z) {
+        if (scale >= 0 && scale < STACK_SIZE) {
+            var verts = vertsStack[scale];
+            verts[0] = v0x; verts[1] = v0y; verts[2] = v0z;
+            verts[3] = v1x; verts[4] = v1y; verts[5] = v1z;
+            verts[6] = v2x; verts[7] = v2y; verts[8] = v2z;
+            verts[9] = v3x; verts[10] = v3y; verts[11] = v3z;
+        }
+    }
+
+    /**
+     * Read parent vertices from stack at given scale level.
+     *
+     * @param scale Scale level
+     * @return Float array with 12 values (4 vertices * 3 coords), or null if invalid
+     */
+    public float[] readVerts(int scale) {
+        if (scale >= 0 && scale < STACK_SIZE) {
+            return vertsStack[scale];
+        }
+        return null;
     }
 
     /**
