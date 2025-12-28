@@ -20,8 +20,8 @@ import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.CameraView;
 import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
-import com.hellblazer.luciferase.portal.esvt.renderer.ESVTGPURenderBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTNodeMeshRenderer;
+import com.hellblazer.luciferase.portal.esvt.renderer.ESVTOpenCLRenderBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTRenderer;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
@@ -87,8 +87,8 @@ public class ESVTInspectorApp extends Application {
     private ESVTVoxelGenerator voxelGenerator;
     private ESVTData currentData;
 
-    // GPU Rendering Components
-    private ESVTGPURenderBridge gpuBridge;
+    // GPU Rendering Components (OpenCL-based for macOS compatibility)
+    private ESVTOpenCLRenderBridge gpuBridge;
     private ImageView gpuImageView;
     private AnimationTimer gpuRenderTimer;
     private final AtomicBoolean gpuRenderPending = new AtomicBoolean(false);
@@ -417,12 +417,19 @@ public class ESVTInspectorApp extends Application {
     }
 
     /**
-     * Enable GPU rendering mode.
+     * Enable GPU rendering mode (uses OpenCL for macOS compatibility).
      */
     private void enableGpuMode() {
         if (gpuModeActive) return;
 
-        statusLabel.setText("Initializing GPU renderer...");
+        // Check if OpenCL is available
+        if (!ESVTOpenCLRenderBridge.isAvailable()) {
+            statusLabel.setText("GPU not available (OpenCL required)");
+            renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
+            return;
+        }
+
+        statusLabel.setText("Initializing OpenCL GPU renderer...");
 
         // Hide JavaFX 3D content
         esvtGroup.getChildren().clear();
@@ -437,9 +444,9 @@ public class ESVTInspectorApp extends Application {
         int width = (int) Math.max(800, cameraView.getFitWidth());
         int height = (int) Math.max(600, cameraView.getFitHeight());
 
-        // Initialize GPU bridge
+        // Initialize GPU bridge (OpenCL-based)
         if (gpuBridge == null) {
-            gpuBridge = new ESVTGPURenderBridge(width, height);
+            gpuBridge = new ESVTOpenCLRenderBridge(width, height);
         }
 
         gpuBridge.initialize().thenCompose(v -> {
@@ -461,11 +468,11 @@ public class ESVTInspectorApp extends Application {
             startGpuRenderTimer();
 
             gpuModeActive = true;
-            statusLabel.setText("GPU rendering active");
+            statusLabel.setText("OpenCL GPU rendering active");
         }, Platform::runLater).exceptionally(ex -> {
-            log.error("Failed to initialize GPU renderer", ex);
+            log.error("Failed to initialize OpenCL GPU renderer", ex);
             Platform.runLater(() -> {
-                statusLabel.setText("GPU init failed: " + ex.getMessage());
+                statusLabel.setText("OpenCL GPU init failed: " + ex.getMessage());
                 // Fall back to CPU rendering
                 renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
             });

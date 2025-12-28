@@ -251,6 +251,16 @@ public class ESVTRenderer {
     }
 
     /**
+     * Check if GPU rendering is available on this system.
+     * Uses OpenCL which is supported on macOS, Linux, and Windows.
+     *
+     * @return true if GPU raycast rendering is available
+     */
+    public static boolean isGPUAvailable() {
+        return ESVTOpenCLRenderBridge.isAvailable();
+    }
+
+    /**
      * Get the current opacity.
      */
     public double getOpacity() {
