@@ -182,13 +182,30 @@ public class ESVTNodeMeshRenderer {
 
     /**
      * Render nodes in a specific level range.
+     * Note: When voxel coordinates are available, internal nodes cannot be accurately
+     * positioned (they have no corresponding voxel), so we only render leaves in that case.
      */
     public Group renderLevelRange(int minLevel, int maxLevel, ColorScheme colorScheme, double opacity) {
         var group = new Group();
-        var renderedNodes = collectNodesInRange(minLevel, maxLevel);
-        for (var nodeInfo : renderedNodes) {
-            var meshView = createMeshView(nodeInfo, colorScheme, opacity);
-            group.getChildren().add(meshView);
+
+        // When voxel coords are available, internal nodes can't be positioned accurately
+        // Fall back to rendering only leaves (which have stored voxel positions)
+        if (data.hasVoxelCoords()) {
+            log.debug("renderLevelRange: Using voxel coords, rendering leaves only (internal nodes have no voxel positions)");
+            var leaves = collectLeaves();
+            for (var leaf : leaves) {
+                if (leaf.level >= minLevel && leaf.level <= maxLevel) {
+                    var meshView = createMeshView(leaf, colorScheme, opacity);
+                    group.getChildren().add(meshView);
+                }
+            }
+        } else {
+            // Legacy mode: use computed tree positions
+            var renderedNodes = collectNodesInRange(minLevel, maxLevel);
+            for (var nodeInfo : renderedNodes) {
+                var meshView = createMeshView(nodeInfo, colorScheme, opacity);
+                group.getChildren().add(meshView);
+            }
         }
         return group;
     }
@@ -491,17 +508,35 @@ public class ESVTNodeMeshRenderer {
 
         // Scale and translate vertices to world coordinates
         var verts = new Point3f[4];
-        for (int i = 0; i < 4; i++) {
-            // First apply voxel-space transform, then world transform
-            float voxelX = info.origin.x + refVerts[i].x * info.size;
-            float voxelY = info.origin.y + refVerts[i].y * info.size;
-            float voxelZ = info.origin.z + refVerts[i].z * info.size;
 
-            verts[i] = new Point3f(
-                (float)(voxelX * worldScale + worldOffset),
-                (float)(voxelY * worldScale + worldOffset),
-                (float)(voxelZ * worldScale + worldOffset)
-            );
+        // Check if we have voxel coordinates (preferred for accuracy)
+        if (data.hasVoxelCoords() && info.leafIndex >= 0) {
+            // Use stored voxel coordinates for accurate world positioning
+            double voxelScale = 400.0 / data.gridResolution();  // worldSize = 400
+            double baseX = info.voxelX * voxelScale - 200.0;
+            double baseY = info.voxelY * voxelScale - 200.0;
+            double baseZ = info.voxelZ * voxelScale - 200.0;
+
+            for (int i = 0; i < 4; i++) {
+                verts[i] = new Point3f(
+                    (float)(baseX + refVerts[i].x * voxelScale),
+                    (float)(baseY + refVerts[i].y * voxelScale),
+                    (float)(baseZ + refVerts[i].z * voxelScale)
+                );
+            }
+        } else {
+            // Fallback: use computed tree positions (legacy, less accurate)
+            for (int i = 0; i < 4; i++) {
+                float voxelX = info.origin.x + refVerts[i].x * info.size;
+                float voxelY = info.origin.y + refVerts[i].y * info.size;
+                float voxelZ = info.origin.z + refVerts[i].z * info.size;
+
+                verts[i] = new Point3f(
+                    (float)(voxelX * worldScale + worldOffset),
+                    (float)(voxelY * worldScale + worldOffset),
+                    (float)(voxelZ * worldScale + worldOffset)
+                );
+            }
         }
 
         // Create edges
