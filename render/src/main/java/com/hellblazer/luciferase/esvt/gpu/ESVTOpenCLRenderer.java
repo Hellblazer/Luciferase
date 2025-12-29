@@ -17,10 +17,13 @@
 package com.hellblazer.luciferase.esvt.gpu;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.resource.compute.ComputeKernel;
+import com.hellblazer.luciferase.resource.compute.opencl.OpenCLBuffer;
+import com.hellblazer.luciferase.resource.compute.opencl.OpenCLBuffer.BufferAccess;
+import com.hellblazer.luciferase.resource.compute.opencl.OpenCLContext;
+import com.hellblazer.luciferase.resource.compute.opencl.OpenCLKernel;
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.opencl.CL;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +31,6 @@ import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3f;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
 
 import static org.lwjgl.opencl.CL10.*;
 import static org.lwjgl.system.MemoryUtil.*;
@@ -69,38 +71,36 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
 
     // Ray structure: origin(3) + direction(3) + tmin + tmax = 8 floats = 32 bytes
     private static final int RAY_SIZE_FLOATS = 8;
-    private static final int RAY_SIZE_BYTES = RAY_SIZE_FLOATS * Float.BYTES;
 
     // Result: position(3) + distance = 4 floats = 16 bytes
     private static final int RESULT_SIZE_FLOATS = 4;
-    private static final int RESULT_SIZE_BYTES = RESULT_SIZE_FLOATS * Float.BYTES;
 
     // Normal: xyz + hit_flag = 4 floats = 16 bytes
     private static final int NORMAL_SIZE_FLOATS = 4;
-    private static final int NORMAL_SIZE_BYTES = NORMAL_SIZE_FLOATS * Float.BYTES;
 
     private final int frameWidth;
     private final int frameHeight;
     private final int rayCount;
 
-    // OpenCL handles
-    private long clContext;
-    private long clQueue;
-    private long clDevice;
-    private long clProgram;
-    private long clKernel;
+    // OpenCL context (singleton)
+    private final OpenCLContext context;
+
+    // GPU kernel
+    private OpenCLKernel kernel;
 
     // GPU buffers
-    private long clRayBuffer;
-    private long clNodeBuffer;
-    private long clContourBuffer;
-    private long clResultBuffer;
-    private long clNormalBuffer;
+    private OpenCLBuffer rayBuffer;
+    private long clNodeBuffer;  // Raw cl_mem handle for ByteBuffer upload
+    private long clContourBuffer;  // Raw cl_mem handle for ByteBuffer upload
+    private OpenCLBuffer resultBuffer;
+    private OpenCLBuffer normalBuffer;
+    private OpenCLBuffer sceneMinBuffer;
+    private OpenCLBuffer sceneMaxBuffer;
 
     // CPU buffers for data transfer
-    private FloatBuffer rayBuffer;
-    private FloatBuffer resultBuffer;
-    private FloatBuffer normalBuffer;
+    private FloatBuffer cpuRayBuffer;
+    private FloatBuffer cpuResultBuffer;
+    private FloatBuffer cpuNormalBuffer;
 
     // Output image (RGBA bytes)
     private ByteBuffer outputImage;
@@ -123,6 +123,7 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
         this.frameWidth = frameWidth;
         this.frameHeight = frameHeight;
         this.rayCount = frameWidth * frameHeight;
+        this.context = OpenCLContext.getInstance();
     }
 
     /**
@@ -132,23 +133,14 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
      */
     public static boolean isOpenCLAvailable() {
         try {
-            CL.create();
-            try (var stack = MemoryStack.stackPush()) {
-                IntBuffer numPlatforms = stack.mallocInt(1);
-                int err = clGetPlatformIDs(null, numPlatforms);
-                if (err != CL_SUCCESS || numPlatforms.get(0) == 0) {
-                    return false;
-                }
-
-                var platforms = stack.mallocPointer(numPlatforms.get(0));
-                clGetPlatformIDs(platforms, (IntBuffer) null);
-
-                IntBuffer numDevices = stack.mallocInt(1);
-                err = clGetDeviceIDs(platforms.get(0), CL_DEVICE_TYPE_GPU, null, numDevices);
-                return err == CL_SUCCESS && numDevices.get(0) > 0;
-            } finally {
-                CL.destroy();
+            var ctx = OpenCLContext.getInstance();
+            if (!ctx.isInitialized()) {
+                ctx.acquire();
+                boolean available = ctx.isInitialized();
+                ctx.release();
+                return available;
             }
+            return true;
         } catch (Exception e) {
             log.debug("OpenCL not available: {}", e.getMessage());
             return false;
@@ -166,9 +158,13 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
         }
 
         try {
-            CL.create();
-            initializeContext();
+            // Acquire OpenCL context (increments ref count)
+            context.acquire();
+
+            // Compile kernel
             compileKernel();
+
+            // Allocate buffers
             allocateBuffers();
 
             initialized = true;
@@ -180,119 +176,45 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
         }
     }
 
-    private void initializeContext() {
-        try (var stack = MemoryStack.stackPush()) {
-            IntBuffer errcode = stack.mallocInt(1);
-
-            // Get platform
-            IntBuffer numPlatforms = stack.mallocInt(1);
-            checkError(clGetPlatformIDs(null, numPlatforms), "get platform count");
-
-            if (numPlatforms.get(0) == 0) {
-                throw new RuntimeException("No OpenCL platforms found");
-            }
-
-            var platforms = stack.mallocPointer(numPlatforms.get(0));
-            checkError(clGetPlatformIDs(platforms, (IntBuffer) null), "get platforms");
-            long platform = platforms.get(0);
-
-            // Log platform info
-            logPlatformInfo(platform);
-
-            // Get GPU device
-            IntBuffer numDevices = stack.mallocInt(1);
-            int err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, null, numDevices);
-            if (err != CL_SUCCESS || numDevices.get(0) == 0) {
-                throw new RuntimeException("No GPU devices found");
-            }
-
-            var devices = stack.mallocPointer(1);
-            checkError(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, devices, (IntBuffer) null), "get devices");
-            clDevice = devices.get(0);
-
-            // Log device info
-            logDeviceInfo(clDevice);
-
-            // Create context
-            var contextProps = stack.mallocPointer(3);
-            contextProps.put(CL_CONTEXT_PLATFORM).put(platform).put(0);
-            contextProps.flip();
-
-            clContext = clCreateContext(contextProps, clDevice, null, 0, errcode);
-            checkError(errcode.get(0), "create context");
-
-            // Create command queue
-            clQueue = clCreateCommandQueue(clContext, clDevice, 0, errcode);
-            checkError(errcode.get(0), "create command queue");
+    private void compileKernel() throws ComputeKernel.KernelCompilationException {
+        // Load kernel source
+        var kernelSource = ESVTKernels.getOpenCLKernel();
+        if (kernelSource == null || kernelSource.isEmpty()) {
+            throw new RuntimeException("Failed to load ESVT OpenCL kernel");
         }
-    }
 
-    private void compileKernel() {
-        try (var stack = MemoryStack.stackPush()) {
-            IntBuffer errcode = stack.mallocInt(1);
+        // Create and compile kernel
+        kernel = OpenCLKernel.create("ESVT_Traversal");
+        kernel.compile(kernelSource, "traverseESVT");
 
-            // Load kernel source
-            String kernelSource = ESVTKernels.getOpenCLKernel();
-            if (kernelSource == null || kernelSource.isEmpty()) {
-                throw new RuntimeException("Failed to load ESVT OpenCL kernel");
-            }
-
-            // Create program
-            clProgram = clCreateProgramWithSource(clContext, kernelSource, errcode);
-            checkError(errcode.get(0), "create program");
-
-            // Build program
-            int buildErr = clBuildProgram(clProgram, clDevice, "", null, 0);
-            if (buildErr != CL_SUCCESS) {
-                // Get build log
-                var logSize = stack.mallocPointer(1);
-                clGetProgramBuildInfo(clProgram, clDevice, CL_PROGRAM_BUILD_LOG, (ByteBuffer) null, logSize);
-
-                ByteBuffer logBuffer = stack.malloc((int) logSize.get(0));
-                clGetProgramBuildInfo(clProgram, clDevice, CL_PROGRAM_BUILD_LOG, logBuffer, null);
-
-                String buildLog = memUTF8(logBuffer);
-                throw new RuntimeException("Kernel build failed:\n" + buildLog);
-            }
-
-            // Create kernel
-            clKernel = clCreateKernel(clProgram, "traverseESVT", errcode);
-            checkError(errcode.get(0), "create kernel");
-
-            log.info("ESVT OpenCL kernel compiled successfully");
-        }
+        log.info("ESVT OpenCL kernel compiled successfully");
     }
 
     private void allocateBuffers() {
-        try (var stack = MemoryStack.stackPush()) {
-            IntBuffer errcode = stack.mallocInt(1);
+        // Allocate CPU buffers
+        cpuRayBuffer = memAllocFloat(rayCount * RAY_SIZE_FLOATS);
+        cpuResultBuffer = memAllocFloat(rayCount * RESULT_SIZE_FLOATS);
+        cpuNormalBuffer = memAllocFloat(rayCount * NORMAL_SIZE_FLOATS);
+        outputImage = memAlloc(frameWidth * frameHeight * 4); // RGBA
 
-            // Allocate CPU buffers
-            rayBuffer = memAllocFloat(rayCount * RAY_SIZE_FLOATS);
-            resultBuffer = memAllocFloat(rayCount * RESULT_SIZE_FLOATS);
-            normalBuffer = memAllocFloat(rayCount * NORMAL_SIZE_FLOATS);
-            outputImage = memAlloc(frameWidth * frameHeight * 4); // RGBA
+        // Allocate GPU buffers
+        rayBuffer = OpenCLBuffer.create(rayCount * RAY_SIZE_FLOATS, BufferAccess.READ_ONLY);
+        resultBuffer = OpenCLBuffer.create(rayCount * RESULT_SIZE_FLOATS, BufferAccess.WRITE_ONLY);
+        normalBuffer = OpenCLBuffer.create(rayCount * NORMAL_SIZE_FLOATS, BufferAccess.WRITE_ONLY);
 
-            // Allocate GPU ray buffer
-            clRayBuffer = clCreateBuffer(clContext, CL_MEM_READ_ONLY,
-                    (long) rayCount * RAY_SIZE_BYTES, errcode);
-            checkError(errcode.get(0), "create ray buffer");
+        // Scene bounds buffers (vec4: 4 floats each)
+        sceneMinBuffer = OpenCLBuffer.create(4, BufferAccess.READ_ONLY);
+        sceneMaxBuffer = OpenCLBuffer.create(4, BufferAccess.READ_ONLY);
 
-            // Allocate GPU result buffers
-            clResultBuffer = clCreateBuffer(clContext, CL_MEM_WRITE_ONLY,
-                    (long) rayCount * RESULT_SIZE_BYTES, errcode);
-            checkError(errcode.get(0), "create result buffer");
+        // Upload default scene bounds (0,0,0) to (1,1,1) for normalized tetree
+        sceneMinBuffer.upload(new float[]{0.0f, 0.0f, 0.0f, 0.0f});
+        sceneMaxBuffer.upload(new float[]{1.0f, 1.0f, 1.0f, 0.0f});
 
-            clNormalBuffer = clCreateBuffer(clContext, CL_MEM_WRITE_ONLY,
-                    (long) rayCount * NORMAL_SIZE_BYTES, errcode);
-            checkError(errcode.get(0), "create normal buffer");
+        // Initialize empty node/contour buffers (will be replaced when data is uploaded)
+        clNodeBuffer = 0;
+        clContourBuffer = 0;
 
-            // Contour buffer (empty initially)
-            clContourBuffer = clCreateBuffer(clContext, CL_MEM_READ_ONLY, 4, errcode);
-            checkError(errcode.get(0), "create contour buffer");
-
-            log.debug("Allocated OpenCL buffers for {} rays", rayCount);
-        }
+        log.debug("Allocated OpenCL buffers for {} rays", rayCount);
     }
 
     /**
@@ -305,43 +227,59 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
             throw new IllegalStateException("Renderer not initialized");
         }
 
-        try (var stack = MemoryStack.stackPush()) {
-            IntBuffer errcode = stack.mallocInt(1);
-
-            // Release old node buffer if exists
-            if (clNodeBuffer != 0) {
-                clReleaseMemObject(clNodeBuffer);
-            }
-
-            // Upload node data
-            var nodeData = data.nodesToByteBuffer();
-            this.nodeCount = data.nodeCount();
-            this.maxDepth = data.maxDepth();
-
-            clNodeBuffer = clCreateBuffer(clContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                    nodeData, errcode);
-            checkError(errcode.get(0), "create node buffer");
-
-            // Upload contour data if present
-            if (clContourBuffer != 0) {
-                clReleaseMemObject(clContourBuffer);
-            }
-
-            if (data.hasContours()) {
-                var contourData = data.contoursToByteBuffer();
-                this.contourCount = data.contourCount();
-
-                clContourBuffer = clCreateBuffer(clContext, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-                        contourData, errcode);
-                checkError(errcode.get(0), "create contour buffer");
-            } else {
-                this.contourCount = 0;
-                clContourBuffer = clCreateBuffer(clContext, CL_MEM_READ_ONLY, 4, errcode);
-                checkError(errcode.get(0), "create empty contour buffer");
-            }
-
-            log.debug("Uploaded ESVT data: {} nodes, {} contours", nodeCount, contourCount);
+        // Release old node buffer if exists
+        if (clNodeBuffer != 0) {
+            clReleaseMemObject(clNodeBuffer);
         }
+
+        // Upload node data using raw ByteBuffer (since gpu-support focuses on float[])
+        var nodeData = data.nodesToByteBuffer();
+        this.nodeCount = data.nodeCount();
+        this.maxDepth = data.maxDepth();
+
+        // Create buffer with raw OpenCL API for ByteBuffer compatibility
+        try (var stack = MemoryStack.stackPush()) {
+            var errcode = stack.mallocInt(1);
+            clNodeBuffer = clCreateBuffer(context.getContext(),
+                    CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                    nodeData, errcode);
+            if (errcode.get(0) != CL_SUCCESS) {
+                throw new RuntimeException("Failed to create node buffer: " + errcode.get(0));
+            }
+        }
+
+        // Upload contour data if present
+        if (clContourBuffer != 0) {
+            clReleaseMemObject(clContourBuffer);
+        }
+
+        if (data.hasContours()) {
+            var contourData = data.contoursToByteBuffer();
+            this.contourCount = data.contourCount();
+
+            try (var stack = MemoryStack.stackPush()) {
+                var errcode = stack.mallocInt(1);
+                clContourBuffer = clCreateBuffer(context.getContext(),
+                        CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                        contourData, errcode);
+                if (errcode.get(0) != CL_SUCCESS) {
+                    throw new RuntimeException("Failed to create contour buffer: " + errcode.get(0));
+                }
+            }
+        } else {
+            this.contourCount = 0;
+            // Create minimal empty buffer
+            try (var stack = MemoryStack.stackPush()) {
+                var errcode = stack.mallocInt(1);
+                clContourBuffer = clCreateBuffer(context.getContext(),
+                        CL_MEM_READ_ONLY, 4, errcode);
+                if (errcode.get(0) != CL_SUCCESS) {
+                    throw new RuntimeException("Failed to create empty contour buffer: " + errcode.get(0));
+                }
+            }
+        }
+
+        log.debug("Uploaded ESVT data: {} nodes, {} contours", nodeCount, contourCount);
     }
 
     /**
@@ -364,20 +302,25 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
             throw new IllegalStateException("No ESVT data uploaded");
         }
 
-        // Generate primary rays
-        generateRays(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
+        try {
+            // Generate primary rays
+            generateRays(viewMatrix, projMatrix, objectToWorld, tetreeToObject);
 
-        // Upload rays to GPU
-        uploadRays();
+            // Upload rays to GPU
+            uploadRays();
 
-        // Execute kernel
-        executeKernel();
+            // Execute kernel
+            executeKernel();
 
-        // Read results
-        readResults();
+            // Read results
+            readResults();
 
-        // Convert to RGBA image
-        convertToImage();
+            // Convert to RGBA image
+            convertToImage();
+
+        } catch (ComputeKernel.KernelExecutionException e) {
+            throw new RuntimeException("Kernel execution failed", e);
+        }
     }
 
     /**
@@ -410,7 +353,7 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
         // Camera position
         var cameraPos = new Vector3f(invView.m03, invView.m13, invView.m23);
 
-        rayBuffer.clear();
+        cpuRayBuffer.clear();
 
         for (int y = 0; y < frameHeight; y++) {
             for (int x = 0; x < frameWidth; x++) {
@@ -439,68 +382,78 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
                 rayDir.normalize();
 
                 // Write ray to buffer
-                rayBuffer.put(cameraPos.x);
-                rayBuffer.put(cameraPos.y);
-                rayBuffer.put(cameraPos.z);
-                rayBuffer.put(rayDir.x);
-                rayBuffer.put(rayDir.y);
-                rayBuffer.put(rayDir.z);
-                rayBuffer.put(0.001f);  // tmin
-                rayBuffer.put(1000.0f); // tmax
+                cpuRayBuffer.put(cameraPos.x);
+                cpuRayBuffer.put(cameraPos.y);
+                cpuRayBuffer.put(cameraPos.z);
+                cpuRayBuffer.put(rayDir.x);
+                cpuRayBuffer.put(rayDir.y);
+                cpuRayBuffer.put(rayDir.z);
+                cpuRayBuffer.put(0.001f);  // tmin
+                cpuRayBuffer.put(1000.0f); // tmax
             }
         }
 
-        rayBuffer.flip();
+        cpuRayBuffer.flip();
     }
 
     private void uploadRays() {
-        checkError(clEnqueueWriteBuffer(clQueue, clRayBuffer, true, 0, rayBuffer, null, null),
-                "upload rays");
+        rayBuffer.upload(cpuRayBuffer);
     }
 
-    private void executeKernel() {
-        try (var stack = MemoryStack.stackPush()) {
-            // Set kernel arguments
-            clSetKernelArg1p(clKernel, 0, clRayBuffer);
-            clSetKernelArg1p(clKernel, 1, clNodeBuffer);
-            clSetKernelArg1p(clKernel, 2, clContourBuffer);
-            clSetKernelArg1p(clKernel, 3, clResultBuffer);
-            clSetKernelArg1p(clKernel, 4, clNormalBuffer);
-            clSetKernelArg1i(clKernel, 5, maxDepth);
+    private void executeKernel() throws ComputeKernel.KernelExecutionException {
+        // Set kernel arguments using gpu-support framework where possible
+        kernel.setBufferArg(0, rayBuffer, ComputeKernel.BufferAccess.READ);
 
-            // Scene bounds (0,0,0) to (1,1,1) for normalized tetree
-            var sceneMin = stack.floats(0.0f, 0.0f, 0.0f, 0.0f);
-            var sceneMax = stack.floats(1.0f, 1.0f, 1.0f, 0.0f);
-            clSetKernelArg(clKernel, 6, sceneMin);
-            clSetKernelArg(clKernel, 7, sceneMax);
+        // For node and contour buffers, use raw LWJGL since they're ByteBuffer-based
+        // Note: kernel.kernel is package-private, so we access it via reflection workaround
+        setRawBufferArg(1, clNodeBuffer);
+        setRawBufferArg(2, clContourBuffer);
 
-            // Execute kernel
-            PointerBuffer globalWork = stack.pointers(rayCount);
-            PointerBuffer localWork = stack.pointers(LOCAL_WORK_SIZE);
+        kernel.setBufferArg(3, resultBuffer, ComputeKernel.BufferAccess.WRITE);
+        kernel.setBufferArg(4, normalBuffer, ComputeKernel.BufferAccess.WRITE);
+        kernel.setIntArg(5, maxDepth);
 
-            // Round up global work size to be divisible by local work size
-            long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
-            globalWork.put(0, adjustedGlobal);
+        // Scene bounds (vec4) - using small buffers instead of direct vec4 args
+        kernel.setBufferArg(6, sceneMinBuffer, ComputeKernel.BufferAccess.READ);
+        kernel.setBufferArg(7, sceneMaxBuffer, ComputeKernel.BufferAccess.READ);
 
-            checkError(clEnqueueNDRangeKernel(clQueue, clKernel, 1, null, globalWork, localWork, null, null),
-                    "execute kernel");
+        // Execute kernel with explicit local work size
+        long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;
 
-            // Wait for completion
-            checkError(clFinish(clQueue), "finish queue");
+        // Use OpenCLKernel's execute method with explicit local work size
+        kernel.execute((int) adjustedGlobal, 1, 1, LOCAL_WORK_SIZE, 1, 1);
+
+        // Wait for completion
+        kernel.finish();
+    }
+
+    /**
+     * Set a raw cl_mem buffer argument directly using reflection to access the kernel handle.
+     * This is a workaround for ByteBuffer-based buffers that can't use OpenCLBuffer's float[] API.
+     */
+    private void setRawBufferArg(int index, long clMem) {
+        try {
+            // Access the package-private kernel field via reflection
+            var kernelField = OpenCLKernel.class.getDeclaredField("kernel");
+            kernelField.setAccessible(true);
+            long kernelHandle = (long) kernelField.get(kernel);
+
+            // Set the argument directly
+            clSetKernelArg1p(kernelHandle, index, clMem);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to set raw buffer argument", e);
         }
     }
 
     private void readResults() {
-        resultBuffer.clear();
-        normalBuffer.clear();
+        cpuResultBuffer.clear();
+        cpuNormalBuffer.clear();
 
-        checkError(clEnqueueReadBuffer(clQueue, clResultBuffer, true, 0, resultBuffer, null, null),
-                "read results");
-        checkError(clEnqueueReadBuffer(clQueue, clNormalBuffer, true, 0, normalBuffer, null, null),
-                "read normals");
+        resultBuffer.download(cpuResultBuffer);
+        normalBuffer.download(cpuNormalBuffer);
 
-        resultBuffer.rewind();
-        normalBuffer.rewind();
+        cpuResultBuffer.rewind();
+        cpuNormalBuffer.rewind();
     }
 
     private void convertToImage() {
@@ -508,16 +461,16 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
 
         for (int i = 0; i < rayCount; i++) {
             // Read result
-            float x = resultBuffer.get();
-            float y = resultBuffer.get();
-            float z = resultBuffer.get();
-            float distance = resultBuffer.get();
+            float x = cpuResultBuffer.get();
+            float y = cpuResultBuffer.get();
+            float z = cpuResultBuffer.get();
+            float distance = cpuResultBuffer.get();
 
             // Read normal
-            float nx = normalBuffer.get();
-            float ny = normalBuffer.get();
-            float nz = normalBuffer.get();
-            float hitFlag = normalBuffer.get();
+            float nx = cpuNormalBuffer.get();
+            float ny = cpuNormalBuffer.get();
+            float nz = cpuNormalBuffer.get();
+            float hitFlag = cpuNormalBuffer.get();
 
             byte r, g, b, a;
 
@@ -600,24 +553,24 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
         }
 
         try {
-            // Release OpenCL resources
-            if (clKernel != 0) clReleaseKernel(clKernel);
-            if (clProgram != 0) clReleaseProgram(clProgram);
-            if (clRayBuffer != 0) clReleaseMemObject(clRayBuffer);
+            // Close GPU kernel and buffers
+            if (kernel != null) kernel.close();
+            if (rayBuffer != null) rayBuffer.close();
             if (clNodeBuffer != 0) clReleaseMemObject(clNodeBuffer);
             if (clContourBuffer != 0) clReleaseMemObject(clContourBuffer);
-            if (clResultBuffer != 0) clReleaseMemObject(clResultBuffer);
-            if (clNormalBuffer != 0) clReleaseMemObject(clNormalBuffer);
-            if (clQueue != 0) clReleaseCommandQueue(clQueue);
-            if (clContext != 0) clReleaseContext(clContext);
+            if (resultBuffer != null) resultBuffer.close();
+            if (normalBuffer != null) normalBuffer.close();
+            if (sceneMinBuffer != null) sceneMinBuffer.close();
+            if (sceneMaxBuffer != null) sceneMaxBuffer.close();
 
             // Free CPU buffers
-            if (rayBuffer != null) memFree(rayBuffer);
-            if (resultBuffer != null) memFree(resultBuffer);
-            if (normalBuffer != null) memFree(normalBuffer);
+            if (cpuRayBuffer != null) memFree(cpuRayBuffer);
+            if (cpuResultBuffer != null) memFree(cpuResultBuffer);
+            if (cpuNormalBuffer != null) memFree(cpuNormalBuffer);
             if (outputImage != null) memFree(outputImage);
 
-            CL.destroy();
+            // Release OpenCL context (decrements ref count)
+            context.release();
 
         } catch (Exception e) {
             log.error("Error disposing OpenCL resources", e);
@@ -629,47 +582,6 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
     }
 
     // === Helper Methods ===
-
-    private void logPlatformInfo(long platform) {
-        try (var stack = MemoryStack.stackPush()) {
-            var size = stack.mallocPointer(1);
-
-            clGetPlatformInfo(platform, CL_PLATFORM_NAME, (ByteBuffer) null, size);
-            ByteBuffer nameBuffer = stack.malloc((int) size.get(0));
-            clGetPlatformInfo(platform, CL_PLATFORM_NAME, nameBuffer, null);
-            log.info("OpenCL Platform: {}", memUTF8(nameBuffer));
-
-            clGetPlatformInfo(platform, CL_PLATFORM_VERSION, (ByteBuffer) null, size);
-            ByteBuffer versionBuffer = stack.malloc((int) size.get(0));
-            clGetPlatformInfo(platform, CL_PLATFORM_VERSION, versionBuffer, null);
-            log.info("OpenCL Version: {}", memUTF8(versionBuffer));
-        }
-    }
-
-    private void logDeviceInfo(long device) {
-        try (var stack = MemoryStack.stackPush()) {
-            var size = stack.mallocPointer(1);
-
-            clGetDeviceInfo(device, CL_DEVICE_NAME, (ByteBuffer) null, size);
-            ByteBuffer nameBuffer = stack.malloc((int) size.get(0));
-            clGetDeviceInfo(device, CL_DEVICE_NAME, nameBuffer, null);
-            log.info("GPU Device: {}", memUTF8(nameBuffer));
-
-            IntBuffer cuBuffer = stack.mallocInt(1);
-            clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, cuBuffer, null);
-            log.info("Compute Units: {}", cuBuffer.get(0));
-
-            var memBuffer = stack.mallocLong(1);
-            clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, memBuffer, null);
-            log.info("Global Memory: {} MB", memBuffer.get(0) / (1024 * 1024));
-        }
-    }
-
-    private void checkError(int error, String operation) {
-        if (error != CL_SUCCESS) {
-            throw new RuntimeException(String.format("OpenCL error during %s: %d", operation, error));
-        }
-    }
 
     private Matrix4f createLookAtMatrix(Vector3f eye, Vector3f target, Vector3f up) {
         var forward = new Vector3f();
