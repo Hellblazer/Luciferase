@@ -413,9 +413,7 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
         kernel.setBufferArg(4, normalBuffer, ComputeKernel.BufferAccess.WRITE);
         kernel.setIntArg(5, maxDepth);
 
-        // Scene bounds (vec4) - using small buffers instead of direct vec4 args
-        kernel.setBufferArg(6, sceneMinBuffer, ComputeKernel.BufferAccess.READ);
-        kernel.setBufferArg(7, sceneMaxBuffer, ComputeKernel.BufferAccess.READ);
+        // Note: sceneMin/sceneMax removed from kernel - not used, was causing type mismatch
 
         // Execute kernel with explicit local work size
         long adjustedGlobal = ((rayCount + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE) * LOCAL_WORK_SIZE;

@@ -450,6 +450,21 @@ public class ESVTInspectorApp extends Application {
         }
 
         gpuBridge.initialize().thenCompose(v -> {
+            // Validate and log ESVT data before upload
+            if (currentData == null) {
+                throw new IllegalStateException("No ESVT data available");
+            }
+            var root = currentData.root();
+            log.info("Uploading ESVT data: {}", currentData);
+            if (root != null) {
+                log.info("  Root node: valid={}, tetType={}, childMask=0x{}, leafMask=0x{}, childPtr={}",
+                        root.isValid(), root.getTetType(),
+                        Integer.toHexString(root.getChildMask()),
+                        Integer.toHexString(root.getLeafMask()),
+                        root.getChildPtr());
+            } else {
+                log.warn("  Root node is NULL!");
+            }
             // Upload current data
             return gpuBridge.uploadData(currentData);
         }).thenRunAsync(() -> {
@@ -464,11 +479,19 @@ public class ESVTInspectorApp extends Application {
             gpuImageView.setFitWidth(width);
             gpuImageView.setFitHeight(height);
 
+            // Reset debug frame counter for diagnostic camera
+            gpuDebugFrameCount = 0;
+
             // Start render timer
             startGpuRenderTimer();
 
             gpuModeActive = true;
-            statusLabel.setText("OpenCL GPU rendering active");
+            // Show ESVT data info
+            String dataInfo = currentData != null ?
+                String.format("ESVT: %d nodes, %d leaves, depth %d",
+                    currentData.nodeCount(), currentData.leafCount(), currentData.maxDepth()) :
+                "No ESVT data";
+            statusLabel.setText("OpenCL GPU active - " + dataInfo);
         }, Platform::runLater).exceptionally(ex -> {
             log.error("Failed to initialize OpenCL GPU renderer", ex);
             Platform.runLater(() -> {
@@ -509,6 +532,7 @@ public class ESVTInspectorApp extends Application {
 
         gpuRenderTimer = new AnimationTimer() {
             private long lastRender = 0;
+            private long frameCount = 0;
             private static final long RENDER_INTERVAL_NS = 33_333_333L; // ~30 FPS
 
             @Override
@@ -519,41 +543,92 @@ public class ESVTInspectorApp extends Application {
 
                 lastRender = now;
                 gpuRenderPending.set(true);
+                frameCount++;
 
                 // Update camera from CameraView
                 updateGpuCamera();
 
                 // Request GPU render
+                final long frame = frameCount;
                 gpuBridge.renderAsync(image -> {
                     gpuImageView.setImage(image);
                     gpuRenderPending.set(false);
+
+                    // Update status with frame count periodically
+                    if (frame % 30 == 0) {
+                        String dataInfo = currentData != null ?
+                            String.format("ESVT: %d nodes, depth %d, frame %d",
+                                currentData.nodeCount(), currentData.maxDepth(), frame) :
+                            "No ESVT data";
+                        statusLabel.setText("OpenCL GPU active - " + dataInfo);
+                    }
                 });
             }
         };
         gpuRenderTimer.start();
     }
 
+    // Debug: use fixed camera for first N frames to test GPU rendering
+    private int gpuDebugFrameCount = 0;
+    private static final int DEBUG_FIXED_CAMERA_FRAMES = 30;
+
     /**
      * Update GPU camera matrices from CameraView.
      *
      * <p>Coordinates must be transformed from JavaFX world space (where ESVT is
      * rendered at worldSize=400 centered at origin) to ESVT normalized [0,1] space.
+     *
+     * <p>The CameraView uses an Xform hierarchy with rotations, so we need to
+     * extract the final world position from the full transform matrix.
      */
     private void updateGpuCamera() {
         if (gpuBridge == null || cameraView == null) return;
+
+        gpuDebugFrameCount++;
+
+        // For first N frames, use a known-good camera position
+        // This helps diagnose whether the issue is camera extraction or something else
+        if (gpuDebugFrameCount <= DEBUG_FIXED_CAMERA_FRAMES) {
+            // CRITICAL: The S0 tetrahedron type 0 has vertices (0,0,0), (1,0,0), (1,0,1), (1,1,1)
+            // Its centroid is at (0.75, 0.25, 0.5), NOT (0.5, 0.5, 0.5)!
+            // The camera must orbit around the actual tetrahedron center.
+            float centerX = 0.75f;
+            float centerY = 0.25f;
+            float centerZ = 0.5f;
+
+            float angle = (float) (2 * Math.PI * gpuDebugFrameCount / 30.0);
+            float radius = 1.5f;  // Closer to the data
+            float camX = centerX + radius * (float) Math.cos(angle);
+            float camY = centerY + radius * 0.5f;  // Slightly above center
+            float camZ = centerZ + radius * (float) Math.sin(angle);
+
+            var cameraPos = new Vector3f(camX, camY, camZ);
+            var lookAt = new Vector3f(centerX, centerY, centerZ);
+
+            log.info("GPU Camera DEBUG (frame {}): orbit around S0 centroid ({}, {}, {}), camera at ({}, {}, {})",
+                    gpuDebugFrameCount, centerX, centerY, centerZ, camX, camY, camZ);
+
+            gpuBridge.setCamera(cameraPos, lookAt, new Vector3f(0, 1, 0), 60.0f, 0.01f, 100.0f);
+
+            var identity = new Matrix4f();
+            identity.setIdentity();
+            gpuBridge.setTransforms(identity, identity);
+            return;
+        }
 
         // Get camera from CameraView
         var camera = cameraView.getCamera();
         if (!(camera instanceof PerspectiveCamera perspCamera)) return;
 
-        // Extract camera position from transforms
-        float camX = 0, camY = 0, camZ = -500; // Default position in JavaFX space
-
-        // Try to get actual camera position from the camera's scene transform
+        // Extract camera position from the full scene transform
+        // This includes the camera's local translate AND the cameraTransform's rotations
         var localToScene = perspCamera.getLocalToSceneTransform();
-        camX = (float) localToScene.getTx();
-        camY = (float) localToScene.getTy();
-        camZ = (float) localToScene.getTz();
+
+        // Get the camera's world position from the transform matrix
+        // For a combined rotation+translation matrix, the translation components give world position
+        float camX = (float) localToScene.getTx();
+        float camY = (float) localToScene.getTy();
+        float camZ = (float) localToScene.getTz();
 
         // Transform from JavaFX world space to ESVT [0,1] space
         // JavaFX: worldSize=400 centered at origin, so range is [-200, +200]
@@ -567,12 +642,38 @@ public class ESVTInspectorApp extends Application {
         float esvtCamY = (camY + halfWorld) / worldSize;
         float esvtCamZ = (camZ + halfWorld) / worldSize;
 
-        // Look at center of ESVT space (0.5, 0.5, 0.5)
-        var lookAt = new Vector3f(0.5f, 0.5f, 0.5f);
+        // Also extract the look direction from the camera's transform
+        // The camera looks down its local -Z axis, so we need to transform that direction
+        var mxz = (float) localToScene.getMxz();
+        var myz = (float) localToScene.getMyz();
+        var mzz = (float) localToScene.getMzz();
 
-        // Clamp near/far to reasonable values for [0,1] space
+        // Camera looks down local -Z, transform to world space direction
+        // direction = transform * (0, 0, -1) = (-mxz, -myz, -mzz)
+        float lookDirX = -mxz;
+        float lookDirY = -myz;
+        float lookDirZ = -mzz;
+
+        // Compute a lookAt point some distance in front of the camera
+        float lookDistance = 2.0f; // Distance in ESVT space
+        var lookAt = new Vector3f(
+            esvtCamX + lookDirX * lookDistance,
+            esvtCamY + lookDirY * lookDistance,
+            esvtCamZ + lookDirZ * lookDistance
+        );
+
+        // Use reasonable near/far for the camera distance
+        // Camera could be quite far from [0,1] cube, so use larger far plane
         float near = 0.01f;
-        float far = 10.0f;
+        float far = 100.0f;
+
+        // Debug logging - log periodically to see if camera is reasonable
+        if (gpuDebugFrameCount % 60 == 0) {
+            log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVT({}, {}, {})",
+                    camX, camY, camZ, esvtCamX, esvtCamY, esvtCamZ);
+            log.info("  lookDir({}, {}, {}), lookAt({}, {}, {})",
+                    lookDirX, lookDirY, lookDirZ, lookAt.x, lookAt.y, lookAt.z);
+        }
 
         // Set camera parameters in ESVT normalized space
         gpuBridge.setCamera(
