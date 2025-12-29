@@ -535,6 +535,9 @@ public class ESVTInspectorApp extends Application {
 
     /**
      * Update GPU camera matrices from CameraView.
+     *
+     * <p>Coordinates must be transformed from JavaFX world space (where ESVT is
+     * rendered at worldSize=400 centered at origin) to ESVT normalized [0,1] space.
      */
     private void updateGpuCamera() {
         if (gpuBridge == null || cameraView == null) return;
@@ -544,28 +547,44 @@ public class ESVTInspectorApp extends Application {
         if (!(camera instanceof PerspectiveCamera perspCamera)) return;
 
         // Extract camera position from transforms
-        var transforms = perspCamera.getTransforms();
-        float camX = 0, camY = 0, camZ = -500; // Default position
+        float camX = 0, camY = 0, camZ = -500; // Default position in JavaFX space
 
-        // Try to get actual camera position
-        if (!transforms.isEmpty()) {
-            var localToScene = perspCamera.getLocalToSceneTransform();
-            camX = (float) localToScene.getTx();
-            camY = (float) localToScene.getTy();
-            camZ = (float) localToScene.getTz();
-        }
+        // Try to get actual camera position from the camera's scene transform
+        var localToScene = perspCamera.getLocalToSceneTransform();
+        camX = (float) localToScene.getTx();
+        camY = (float) localToScene.getTy();
+        camZ = (float) localToScene.getTz();
 
-        // Set camera parameters
+        // Transform from JavaFX world space to ESVT [0,1] space
+        // JavaFX: worldSize=400 centered at origin, so range is [-200, +200]
+        // ESVT: normalized [0,1] space
+        // Conversion: esvt_coord = (javafx_coord + 200) / 400
+        float worldSize = 400.0f;
+        float halfWorld = worldSize / 2.0f;
+
+        // Convert camera position to ESVT [0,1] space
+        float esvtCamX = (camX + halfWorld) / worldSize;
+        float esvtCamY = (camY + halfWorld) / worldSize;
+        float esvtCamZ = (camZ + halfWorld) / worldSize;
+
+        // Look at center of ESVT space (0.5, 0.5, 0.5)
+        var lookAt = new Vector3f(0.5f, 0.5f, 0.5f);
+
+        // Clamp near/far to reasonable values for [0,1] space
+        float near = 0.01f;
+        float far = 10.0f;
+
+        // Set camera parameters in ESVT normalized space
         gpuBridge.setCamera(
-            new Vector3f(camX, camY, camZ),
-            new Vector3f(0, 0, 0),  // Look at origin
+            new Vector3f(esvtCamX, esvtCamY, esvtCamZ),
+            lookAt,
             new Vector3f(0, 1, 0),  // Up vector
             (float) perspCamera.getFieldOfView(),
-            (float) perspCamera.getNearClip(),
-            (float) perspCamera.getFarClip()
+            near,
+            far
         );
 
-        // Set identity transforms (ESVT centered at origin)
+        // Set identity transforms (ESVT data is already in normalized space)
         var identity = new Matrix4f();
         identity.setIdentity();
         gpuBridge.setTransforms(identity, identity);
