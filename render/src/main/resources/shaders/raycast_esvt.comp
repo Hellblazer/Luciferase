@@ -1,0 +1,958 @@
+#version 450
+
+/**
+ * ESVT (Efficient Sparse Voxel Tetrahedra) Ray Casting Shader
+ *
+ * Tetrahedral adaptation of ESVO raycasting using:
+ * - Moller-Trumbore ray-tetrahedron intersection
+ * - Entry-face-based child ordering for front-to-back traversal
+ * - Bey 8-way tetrahedral subdivision
+ * - Type propagation for S0-S5 characteristic tetrahedra
+ *
+ * Based on CPU implementation in ESVTTraversal.java
+ */
+
+// Local workgroup size (8x8 = 64 threads)
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const int CAST_STACK_DEPTH = 22;          // 21 levels + root
+const int MAX_RAYCAST_ITERATIONS = 10000;
+const float EPSILON = 1e-7;
+
+// Number of tetrahedron types
+const int TET_TYPES = 6;
+
+// ============================================================================
+// LOOKUP TABLES (precomputed from Java constants)
+// ============================================================================
+
+// SIMPLEX_STANDARD[6][4] - 6 types x 4 vertices
+// Vertex coordinates in [0,1] space (normalized from Constants.SIMPLEX_STANDARD)
+const vec3 SIMPLEX_STANDARD[6][4] = {
+    // Type 0: corners c0, c1, c5, c7 -> (0,0,0), (1,0,0), (1,0,1), (1,1,1)
+    { vec3(0,0,0), vec3(1,0,0), vec3(1,0,1), vec3(1,1,1) },
+    // Type 1: corners c0, c7, c3, c1 -> (0,0,0), (1,1,1), (1,1,0), (1,0,0)
+    { vec3(0,0,0), vec3(1,1,1), vec3(1,1,0), vec3(1,0,0) },
+    // Type 2: corners c0, c2, c3, c7 -> (0,0,0), (0,1,0), (1,1,0), (1,1,1)
+    { vec3(0,0,0), vec3(0,1,0), vec3(1,1,0), vec3(1,1,1) },
+    // Type 3: corners c0, c7, c6, c2 -> (0,0,0), (1,1,1), (0,1,1), (0,1,0)
+    { vec3(0,0,0), vec3(1,1,1), vec3(0,1,1), vec3(0,1,0) },
+    // Type 4: corners c0, c4, c6, c7 -> (0,0,0), (0,0,1), (0,1,1), (1,1,1)
+    { vec3(0,0,0), vec3(0,0,1), vec3(0,1,1), vec3(1,1,1) },
+    // Type 5: corners c0, c7, c5, c4 -> (0,0,0), (1,1,1), (1,0,1), (0,0,1)
+    { vec3(0,0,0), vec3(1,1,1), vec3(1,0,1), vec3(0,0,1) }
+};
+
+// PARENT_TYPE_TO_CHILD_TYPE[6][8] - child type from parent type
+const int PARENT_TYPE_TO_CHILD_TYPE[6][8] = {
+    { 0, 0, 0, 0, 4, 5, 2, 1 },  // Parent type 0
+    { 1, 1, 1, 1, 3, 2, 5, 0 },  // Parent type 1
+    { 2, 2, 2, 2, 0, 1, 4, 3 },  // Parent type 2
+    { 3, 3, 3, 3, 5, 4, 1, 2 },  // Parent type 3
+    { 4, 4, 4, 4, 2, 3, 0, 5 },  // Parent type 4
+    { 5, 5, 5, 5, 1, 0, 3, 4 }   // Parent type 5
+};
+
+// CHILDREN_AT_FACE[4][4] - which children touch each face (same for all types)
+// Face 0 (opposite v0): children 4,5,6,7
+// Face 1 (opposite v1): children 2,3,6,7
+// Face 2 (opposite v2): children 1,3,5,7
+// Face 3 (opposite v3): children 1,2,4,5
+const int CHILDREN_AT_FACE[4][4] = {
+    { 4, 5, 6, 7 },  // Face 0
+    { 2, 3, 6, 7 },  // Face 1
+    { 1, 3, 5, 7 },  // Face 2
+    { 1, 2, 4, 5 }   // Face 3
+};
+
+// CHILD_ORDER[6][4][4] - children sorted by centroid distance from face center
+// This is precomputed from ESVTChildOrder.java for front-to-back traversal
+// [tetType][entryFace][position] -> childIndex
+const int CHILD_ORDER[6][4][4] = {
+    // Type 0
+    { { 7, 6, 5, 4 }, { 6, 7, 2, 3 }, { 5, 1, 7, 3 }, { 4, 5, 1, 2 } },
+    // Type 1
+    { { 7, 5, 6, 4 }, { 6, 3, 7, 2 }, { 7, 5, 3, 1 }, { 5, 4, 2, 1 } },
+    // Type 2
+    { { 7, 6, 5, 4 }, { 6, 7, 2, 3 }, { 5, 1, 7, 3 }, { 4, 5, 1, 2 } },
+    // Type 3
+    { { 7, 5, 6, 4 }, { 6, 3, 7, 2 }, { 7, 5, 3, 1 }, { 5, 4, 2, 1 } },
+    // Type 4
+    { { 7, 6, 5, 4 }, { 6, 7, 2, 3 }, { 5, 1, 7, 3 }, { 4, 5, 1, 2 } },
+    // Type 5
+    { { 7, 5, 6, 4 }, { 6, 3, 7, 2 }, { 7, 5, 3, 1 }, { 5, 4, 2, 1 } }
+};
+
+// ============================================================================
+// BUFFER BINDINGS
+// ============================================================================
+
+// Shared memory stack for workgroup (64 threads x stack depth)
+shared uint stack_nodes[64 * CAST_STACK_DEPTH];
+shared float stack_tmax[64 * CAST_STACK_DEPTH];
+shared int stack_type[64 * CAST_STACK_DEPTH];
+shared int stack_entryFace[64 * CAST_STACK_DEPTH];
+
+// SSBO for ESVT nodes (8 bytes per node = 2 x uint)
+// childDescriptor: [valid(1)|childptr(14)|far(1)|childmask(8)|leafmask(8)]
+// contourDescriptor: [contour_ptr(20)|normals(4)|contour(4)|type(3)|pad(1)]
+layout(std430, binding = 0) readonly buffer ESVTBuffer {
+    uvec2 nodes[];  // First uint = childDescriptor, Second uint = contourDescriptor
+} esvt;
+
+// SSBO for contour data (32-bit encoded contour values)
+// Each contour encodes: normal (18 bits) + position (7 bits) + thickness (7 bits)
+layout(std430, binding = 6) readonly buffer ContourBuffer {
+    int contours[];  // Encoded contour values
+} contourData;
+
+// Output image
+layout(rgba8, binding = 1) uniform image2D outputImage;
+
+// Camera uniform buffer
+layout(std140, binding = 2) uniform CameraData {
+    mat4 viewMatrix;
+    mat4 projMatrix;
+    mat4 objectToWorld;
+    mat4 tetreeToObject;   // Transform from tetree [0,1] to object space
+    vec3 cameraPos;
+    float nearPlane;
+    vec3 cameraDir;
+    float farPlane;
+} camera;
+
+// ============================================================================
+// BEAM OPTIMIZATION
+// ============================================================================
+
+// Render flags (set via uniform)
+layout(std140, binding = 3) uniform RenderFlags {
+    uint flags;          // Bit 0: coarse pass, Bit 1: use coarse data
+    int coarseSize;      // Resolution divisor (typically 4)
+    int frameWidth;      // Full resolution width
+    int frameHeight;     // Full resolution height
+} renderFlags;
+
+// Flag constants
+const uint FLAG_COARSE_PASS = 1u;
+const uint FLAG_USE_COARSE_DATA = 2u;
+
+// Coarse buffer for beam optimization (stores t-min values)
+// Binding 4: Write in coarse pass
+layout(r32f, binding = 4) uniform image2D coarseOutput;
+
+// Binding 5: Read in fine pass (as texture for bilinear sampling)
+layout(binding = 5) uniform sampler2D coarseInput;
+
+// ============================================================================
+// RAY STRUCTURE
+// ============================================================================
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+    float orig_sz;   // Screen-space size at ray origin
+    float dir_sz;    // Screen-space size change per unit distance
+    float tmin;
+    float tmax;
+};
+
+// ============================================================================
+// TRIANGLE RESULT
+// ============================================================================
+
+struct TriangleHit {
+    bool hit;
+    float t;
+    float u;
+    float v;
+};
+
+// ============================================================================
+// TETRAHEDRON RESULT
+// ============================================================================
+
+struct TetrahedronHit {
+    bool hit;
+    float tEntry;
+    float tExit;
+    int entryFace;
+    int exitFace;
+};
+
+// ============================================================================
+// NODE ACCESS FUNCTIONS
+// ============================================================================
+
+// Extract tetrahedron type from contour descriptor (bits 1-3)
+int getTetType(uvec2 node) {
+    return int((node.y >> 1) & 0x7u);
+}
+
+// Check if node is valid (bit 31 of child descriptor)
+bool isValid(uvec2 node) {
+    return (node.x & 0x80000000u) != 0u;
+}
+
+// Get child mask (bits 8-15 of child descriptor)
+uint getChildMask(uvec2 node) {
+    return (node.x >> 8) & 0xFFu;
+}
+
+// Get leaf mask (bits 0-7 of child descriptor)
+uint getLeafMask(uvec2 node) {
+    return node.x & 0xFFu;
+}
+
+// Check if child exists
+bool hasChild(uvec2 node, int childIdx) {
+    return (getChildMask(node) & (1u << childIdx)) != 0u;
+}
+
+// Check if child is a leaf
+bool isChildLeaf(uvec2 node, int childIdx) {
+    return (getLeafMask(node) & (1u << childIdx)) != 0u;
+}
+
+// Get child pointer (bits 17-30)
+uint getChildPtr(uvec2 node) {
+    return (node.x >> 17) & 0x3FFFu;
+}
+
+// Check if far pointer (bit 16)
+bool isFar(uvec2 node) {
+    return (node.x & 0x10000u) != 0u;
+}
+
+// Get sparse child index using popcount
+uint getChildIndex(uvec2 node, int childIdx, uint parentIdx) {
+    uint childPtr = getChildPtr(node);
+    uint mask = getChildMask(node);
+    uint offset = bitCount(mask & ((1u << childIdx) - 1u));
+
+    if (isFar(node)) {
+        childPtr = esvt.nodes[parentIdx + childPtr].x;
+    }
+
+    return parentIdx + childPtr + offset;
+}
+
+// ============================================================================
+// CONTOUR ACCESS FUNCTIONS
+// ============================================================================
+
+// Get contour mask (bits 4-7 of contour descriptor) - 4 bits for 4 tet faces
+uint getContourMask(uvec2 node) {
+    return (node.y >> 4) & 0xFu;
+}
+
+// Get contour pointer (bits 12-31 of contour descriptor)
+uint getContourPtr(uvec2 node) {
+    return node.y >> 12;
+}
+
+// Check if face has a contour
+bool hasContour(uvec2 node, int faceIdx) {
+    return (getContourMask(node) & (1u << faceIdx)) != 0u;
+}
+
+// ============================================================================
+// CONTOUR DECODING FUNCTIONS
+// Matches ESVTContour.java encoding exactly
+// ============================================================================
+
+// Constants for contour decoding
+const float EXP2_NEG25 = 1.0 / 33554432.0;  // 2^-25
+const float EXP2_NEG26 = 1.0 / 67108864.0;  // 2^-26
+
+// Decode normal from encoded contour value (matches ESVTContour.decodeNormal)
+vec3 decodeContourNormal(int value) {
+    // Sign-extending shifts and scale
+    float x = float(value << 14) * EXP2_NEG26;
+    float y = float(value << 20) * EXP2_NEG26;
+    float z = float(value << 26) * EXP2_NEG26;
+    return vec3(x, y, z);
+}
+
+// Decode position and thickness (matches ESVTContour.decodePosThick)
+vec2 decodeContourPosThick(int value) {
+    float pos = float(value << 7) * EXP2_NEG25 * 0.75;
+    float thick = float(uint(value)) * 0.75 * EXP2_NEG25;
+    return vec2(pos, thick);
+}
+
+// Ray-contour intersection
+// Returns vec2(tEntry, tExit) or vec2(-1, -1) if no intersection
+vec2 intersectContour(int contour, vec3 rayOrigin, vec3 rayDir, float tetScale) {
+    vec3 normal = decodeContourNormal(contour);
+    vec2 posThick = decodeContourPosThick(contour);
+
+    float pos = posThick.x * tetScale;
+    float halfThick = posThick.y * tetScale * 0.5;
+
+    // Compute dot products
+    float denom = dot(normal, rayDir);
+    float originDot = dot(normal, rayOrigin);
+
+    // Handle near-parallel case
+    if (abs(denom) < 1e-10) {
+        // Ray parallel to plane - check if inside slab
+        float dist = abs(originDot - pos);
+        if (dist <= halfThick) {
+            return vec2(-1e30, 1e30);  // Infinite range
+        }
+        return vec2(-1.0, -1.0);  // No intersection
+    }
+
+    // Compute intersection with both planes of the slab
+    float t1 = (pos - halfThick - originDot) / denom;
+    float t2 = (pos + halfThick - originDot) / denom;
+
+    // Ensure t1 <= t2
+    if (t1 > t2) {
+        float tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+    }
+
+    return vec2(t1, t2);
+}
+
+// Apply contour refinement to a hit
+// Refines the hit t-parameter using contour data if available
+// Returns: vec3(refinedT, normalX, normalY) where normal.z is computed from normalization
+// Returns (-1, 0, 0) if contours indicate no hit
+struct ContourRefinement {
+    float t;
+    vec3 normal;
+    bool valid;
+};
+
+ContourRefinement refineHitWithContours(uvec2 node, int entryFace, float tEntry, float tExit,
+                                        vec3 rayOrigin, vec3 rayDir, float tetScale) {
+    ContourRefinement result;
+    result.t = tEntry;
+    result.normal = vec3(0.0);
+    result.valid = true;
+
+    uint contourMask = getContourMask(node);
+    if (contourMask == 0u) {
+        // No contours - use basic hit
+        return result;
+    }
+
+    // Get contour pointer and compute offset for this face
+    uint contourPtr = getContourPtr(node);
+    uint contourOffset = bitCount(contourMask & ((1u << entryFace) - 1u));
+
+    // Check if entry face has a contour
+    if (hasContour(node, entryFace)) {
+        int contour = contourData.contours[contourPtr + contourOffset];
+
+        // Intersect ray with contour slab
+        vec2 contourHit = intersectContour(contour, rayOrigin, rayDir, tetScale);
+
+        if (contourHit.x > 0.0 && contourHit.y > 0.0) {
+            // Refine hit to contour surface
+            // The actual surface is at the center of the slab
+            vec3 contourNormal = decodeContourNormal(contour);
+            vec2 posThick = decodeContourPosThick(contour);
+            float pos = posThick.x * tetScale;
+
+            // Calculate refined t
+            float denom = dot(contourNormal, rayDir);
+            if (abs(denom) > 1e-10) {
+                float refinedT = (pos - dot(contourNormal, rayOrigin)) / denom;
+                if (refinedT >= tEntry && refinedT <= tExit) {
+                    result.t = refinedT;
+                    result.normal = normalize(contourNormal);
+
+                    // Ensure normal faces ray
+                    if (dot(result.normal, rayDir) > 0) {
+                        result.normal = -result.normal;
+                    }
+                }
+            }
+        } else if (contourHit.x == -1.0 && contourHit.y == -1.0) {
+            // Ray misses contour slab - no hit
+            result.valid = false;
+        }
+    }
+
+    return result;
+}
+
+// ============================================================================
+// MOLLER-TRUMBORE RAY-TRIANGLE INTERSECTION
+// ============================================================================
+
+TriangleHit intersectTriangle(vec3 rayOrigin, vec3 rayDir, vec3 v0, vec3 v1, vec3 v2) {
+    TriangleHit result;
+    result.hit = false;
+    result.t = 1e30;
+    result.u = 0.0;
+    result.v = 0.0;
+
+    vec3 edge1 = v1 - v0;
+    vec3 edge2 = v2 - v0;
+
+    vec3 h = cross(rayDir, edge2);
+    float a = dot(edge1, h);
+
+    // Ray parallel to triangle
+    if (abs(a) < EPSILON) {
+        return result;
+    }
+
+    float f = 1.0 / a;
+    vec3 s = rayOrigin - v0;
+    float u = f * dot(s, h);
+
+    if (u < 0.0 || u > 1.0) {
+        return result;
+    }
+
+    vec3 q = cross(s, edge1);
+    float v = f * dot(rayDir, q);
+
+    if (v < 0.0 || u + v > 1.0) {
+        return result;
+    }
+
+    float t = f * dot(edge2, q);
+
+    if (t > EPSILON) {
+        result.hit = true;
+        result.t = t;
+        result.u = u;
+        result.v = v;
+    }
+
+    return result;
+}
+
+// ============================================================================
+// RAY-TETRAHEDRON INTERSECTION (TEST ALL 4 FACES)
+// ============================================================================
+
+TetrahedronHit intersectTetrahedron(vec3 rayOrigin, vec3 rayDir, vec3 v0, vec3 v1, vec3 v2, vec3 v3) {
+    TetrahedronHit result;
+    result.hit = false;
+    result.tEntry = 1e30;
+    result.tExit = -1e30;
+    result.entryFace = -1;
+    result.exitFace = -1;
+
+    // Face 0: opposite v0, triangle (v1, v2, v3)
+    TriangleHit tri = intersectTriangle(rayOrigin, rayDir, v1, v2, v3);
+    if (tri.hit) {
+        if (tri.t < result.tEntry) {
+            result.tEntry = tri.t;
+            result.entryFace = 0;
+        }
+        if (tri.t > result.tExit) {
+            result.tExit = tri.t;
+            result.exitFace = 0;
+        }
+    }
+
+    // Face 1: opposite v1, triangle (v0, v2, v3)
+    tri = intersectTriangle(rayOrigin, rayDir, v0, v2, v3);
+    if (tri.hit) {
+        if (tri.t < result.tEntry) {
+            result.tEntry = tri.t;
+            result.entryFace = 1;
+        }
+        if (tri.t > result.tExit) {
+            result.tExit = tri.t;
+            result.exitFace = 1;
+        }
+    }
+
+    // Face 2: opposite v2, triangle (v0, v1, v3)
+    tri = intersectTriangle(rayOrigin, rayDir, v0, v1, v3);
+    if (tri.hit) {
+        if (tri.t < result.tEntry) {
+            result.tEntry = tri.t;
+            result.entryFace = 2;
+        }
+        if (tri.t > result.tExit) {
+            result.tExit = tri.t;
+            result.exitFace = 2;
+        }
+    }
+
+    // Face 3: opposite v3, triangle (v0, v1, v2)
+    tri = intersectTriangle(rayOrigin, rayDir, v0, v1, v2);
+    if (tri.hit) {
+        if (tri.t < result.tEntry) {
+            result.tEntry = tri.t;
+            result.entryFace = 3;
+        }
+        if (tri.t > result.tExit) {
+            result.tExit = tri.t;
+            result.exitFace = 3;
+        }
+    }
+
+    // Valid hit requires entry before exit
+    if (result.entryFace >= 0 && result.exitFace >= 0 && result.tEntry < result.tExit) {
+        result.hit = true;
+    }
+    // Special case: ray origin inside tetrahedron
+    else if (result.entryFace < 0 && result.exitFace >= 0 && result.tExit > 0) {
+        result.hit = true;
+        result.tEntry = 0.0;
+        result.entryFace = -1;
+    }
+
+    return result;
+}
+
+// ============================================================================
+// GET CHILD VERTICES (BEY SUBDIVISION)
+// ============================================================================
+
+void getChildVertices(int parentType, int childIdx, float scale, out vec3 cv0, out vec3 cv1, out vec3 cv2, out vec3 cv3) {
+    // Get parent vertices
+    vec3 pv0 = SIMPLEX_STANDARD[parentType][0];
+    vec3 pv1 = SIMPLEX_STANDARD[parentType][1];
+    vec3 pv2 = SIMPLEX_STANDARD[parentType][2];
+    vec3 pv3 = SIMPLEX_STANDARD[parentType][3];
+
+    // Edge midpoints
+    vec3 m01 = (pv0 + pv1) * 0.5;
+    vec3 m02 = (pv0 + pv2) * 0.5;
+    vec3 m03 = (pv0 + pv3) * 0.5;
+    vec3 m12 = (pv1 + pv2) * 0.5;
+    vec3 m13 = (pv1 + pv3) * 0.5;
+    vec3 m23 = (pv2 + pv3) * 0.5;
+
+    // Bey children vertices
+    switch (childIdx) {
+        case 0: // Corner at v0
+            cv0 = pv0 * scale; cv1 = m01 * scale; cv2 = m02 * scale; cv3 = m03 * scale;
+            break;
+        case 1: // Corner at v1
+            cv0 = pv1 * scale; cv1 = m01 * scale; cv2 = m12 * scale; cv3 = m13 * scale;
+            break;
+        case 2: // Corner at v2
+            cv0 = pv2 * scale; cv1 = m02 * scale; cv2 = m12 * scale; cv3 = m23 * scale;
+            break;
+        case 3: // Corner at v3
+            cv0 = pv3 * scale; cv1 = m03 * scale; cv2 = m13 * scale; cv3 = m23 * scale;
+            break;
+        case 4: // Octahedral region
+            cv0 = m01 * scale; cv1 = m02 * scale; cv2 = m03 * scale; cv3 = m12 * scale;
+            break;
+        case 5:
+            cv0 = m01 * scale; cv1 = m02 * scale; cv2 = m12 * scale; cv3 = m13 * scale;
+            break;
+        case 6:
+            cv0 = m02 * scale; cv1 = m03 * scale; cv2 = m12 * scale; cv3 = m23 * scale;
+            break;
+        case 7:
+            cv0 = m03 * scale; cv1 = m12 * scale; cv2 = m13 * scale; cv3 = m23 * scale;
+            break;
+    }
+}
+
+// ============================================================================
+// GET ROOT VERTICES
+// ============================================================================
+
+void getRootVertices(int tetType, out vec3 v0, out vec3 v1, out vec3 v2, out vec3 v3) {
+    v0 = SIMPLEX_STANDARD[tetType][0];
+    v1 = SIMPLEX_STANDARD[tetType][1];
+    v2 = SIMPLEX_STANDARD[tetType][2];
+    v3 = SIMPLEX_STANDARD[tetType][3];
+}
+
+// ============================================================================
+// BEAM OPTIMIZATION HELPERS
+// ============================================================================
+
+// Get conservative t-min from coarse buffer by sampling 2x2 neighbors
+float getConservativeTmin(ivec2 finePixel) {
+    int coarseSize = max(1, renderFlags.coarseSize);
+
+    // Calculate coarse pixel coordinates
+    int coarseX = finePixel.x / coarseSize;
+    int coarseY = finePixel.y / coarseSize;
+
+    // Sample 2x2 coarse pixels and take minimum
+    float minT = 1e30;
+
+    for (int dy = 0; dy < 2; dy++) {
+        for (int dx = 0; dx < 2; dx++) {
+            // Use texelFetch for exact pixel sampling
+            ivec2 samplePos = ivec2(coarseX + dx, coarseY + dy);
+
+            // Bounds check
+            ivec2 coarseSize2D = textureSize(coarseInput, 0);
+            if (samplePos.x >= 0 && samplePos.x < coarseSize2D.x &&
+                samplePos.y >= 0 && samplePos.y < coarseSize2D.y) {
+                float t = texelFetch(coarseInput, samplePos, 0).r;
+                if (t < minT && t > 0.0) {
+                    minT = t;
+                }
+            }
+        }
+    }
+
+    // Apply safety epsilon (0.99) to ensure we don't skip valid intersections
+    if (minT < 1e29) {
+        return minT * 0.99;
+    }
+    return 0.0;
+}
+
+// ============================================================================
+// RAY GENERATION
+// ============================================================================
+
+Ray generateRay(ivec2 pixel) {
+    // Convert pixel to normalized device coordinates
+    vec2 ndc = (vec2(pixel) + 0.5) / vec2(imageSize(outputImage)) * 2.0 - 1.0;
+
+    // Generate ray in world space
+    vec4 nearPoint = inverse(camera.projMatrix * camera.viewMatrix) * vec4(ndc, -1.0, 1.0);
+    vec4 farPoint = inverse(camera.projMatrix * camera.viewMatrix) * vec4(ndc, 1.0, 1.0);
+
+    nearPoint /= nearPoint.w;
+    farPoint /= farPoint.w;
+
+    vec3 worldOrigin = nearPoint.xyz;
+    vec3 worldDirection = normalize(farPoint.xyz - nearPoint.xyz);
+
+    // Transform to tetree coordinate space [0, 1]
+    mat4 worldToTetree = inverse(camera.tetreeToObject) * inverse(camera.objectToWorld);
+
+    vec4 tetreeOrigin = worldToTetree * vec4(worldOrigin, 1.0);
+    vec4 tetreeDirection = worldToTetree * vec4(worldDirection, 0.0);
+
+    Ray ray;
+    ray.origin = tetreeOrigin.xyz;
+    ray.direction = normalize(tetreeDirection.xyz);
+
+    // Initialize screen-space size for LOD calculation
+    float pixelSize = 2.0 / float(imageSize(outputImage).x);
+    vec3 pixelDelta = (worldToTetree * vec4(pixelSize, 0.0, 0.0, 0.0)).xyz;
+    ray.orig_sz = length(pixelDelta);
+    ray.dir_sz = ray.orig_sz;
+
+    ray.tmin = 0.0;
+    ray.tmax = 1e30;
+    return ray;
+}
+
+// ============================================================================
+// MAIN TRAVERSAL
+// ============================================================================
+
+void castRayESVT(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal, out bool didHit) {
+    didHit = false;
+    hitPoint = vec3(0.0);
+    hitNormal = vec3(0.0, 1.0, 0.0);
+
+    // Avoid division by zero
+    if (abs(ray.direction.x) < EPSILON) ray.direction.x = EPSILON;
+    if (abs(ray.direction.y) < EPSILON) ray.direction.y = EPSILON;
+    if (abs(ray.direction.z) < EPSILON) ray.direction.z = EPSILON;
+
+    // Stack initialization
+    int threadIdx = int(gl_LocalInvocationIndex);
+    int stackBase = threadIdx * CAST_STACK_DEPTH;
+
+    // Clear stack
+    for (int i = 0; i < CAST_STACK_DEPTH; i++) {
+        stack_nodes[stackBase + i] = 0xFFFFFFFFu;
+    }
+
+    // Get root node
+    uvec2 rootNode = esvt.nodes[0];
+    if (!isValid(rootNode)) {
+        return;
+    }
+
+    int rootType = getTetType(rootNode);
+
+    // Get root tetrahedron vertices
+    vec3 v0, v1, v2, v3;
+    getRootVertices(rootType, v0, v1, v2, v3);
+
+    // Test ray-root intersection
+    TetrahedronHit rootHit = intersectTetrahedron(ray.origin, ray.direction, v0, v1, v2, v3);
+    if (!rootHit.hit) {
+        return;
+    }
+
+    // Beam optimization: skip if root hit is before our conservative tmin
+    if (rootHit.tExit < ray.tmin) {
+        return;  // Entire root is before where we expect to find geometry
+    }
+
+    // Initialize traversal state
+    uint parentIdx = 0u;
+    int parentType = rootType;
+    int entryFace = rootHit.entryFace;
+    float tMin = rootHit.tEntry;
+    float tMax = rootHit.tExit;
+    int scale = CAST_STACK_DEPTH - 1;
+    float scaleExp2 = 1.0;
+    int siblingPos = 0;
+    int iter = 0;
+
+    // Main traversal loop
+    while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
+        iter++;
+
+        uvec2 node = esvt.nodes[parentIdx];
+        if (!isValid(node)) {
+            // Pop to parent
+            scale++;
+            if (scale >= CAST_STACK_DEPTH || stack_nodes[stackBase + scale] == 0xFFFFFFFFu) {
+                break;
+            }
+            parentIdx = stack_nodes[stackBase + scale];
+            tMax = stack_tmax[stackBase + scale];
+            parentType = stack_type[stackBase + scale];
+            entryFace = stack_entryFace[stackBase + scale];
+            siblingPos = 0;
+            scaleExp2 *= 2.0;
+            continue;
+        }
+
+        // Get child order for entry face
+        int childOrder[4] = CHILD_ORDER[parentType][max(0, entryFace)];
+
+        // Try each child starting from siblingPos
+        bool descended = false;
+        for (int pos = siblingPos; pos < 4; pos++) {
+            int childIdx = childOrder[pos];
+
+            // Check if child exists
+            if (!hasChild(node, childIdx)) {
+                continue;
+            }
+
+            // Get child vertices
+            vec3 cv0, cv1, cv2, cv3;
+            getChildVertices(parentType, childIdx, scaleExp2 * 0.5, cv0, cv1, cv2, cv3);
+
+            // Test ray-child intersection
+            TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
+            if (!childHit.hit) {
+                continue;
+            }
+
+            // Beam optimization: skip children entirely behind our tmin
+            if (childHit.tExit < ray.tmin) {
+                continue;
+            }
+
+            // Check LOD termination
+            float raySize = childHit.tEntry * ray.dir_sz + ray.orig_sz;
+            if (raySize >= scaleExp2 * 0.5) {
+                // LOD termination - voxel small enough
+                // Get child node for contour data
+                uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                uvec2 childNode = esvt.nodes[childNodeIdx];
+                float childScale = scaleExp2 * 0.5;
+
+                // Apply contour refinement if available
+                ContourRefinement contourRef = refineHitWithContours(
+                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                    ray.origin, ray.direction, childScale);
+
+                if (!contourRef.valid) {
+                    // Contour indicates no hit - continue searching
+                    continue;
+                }
+
+                didHit = true;
+                hitPoint = ray.origin + ray.direction * contourRef.t;
+
+                // Use contour normal if available, otherwise calculate from face
+                if (length(contourRef.normal) > 0.5) {
+                    hitNormal = contourRef.normal;
+                } else {
+                    // Calculate normal from entry face
+                    vec3 fv0, fv1, fv2;
+                    int entryF = childHit.entryFace;
+
+                    if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                    if (dot(hitNormal, ray.direction) > 0) {
+                        hitNormal = -hitNormal;
+                    }
+                }
+
+                return;
+            }
+
+            // Check if this is a leaf
+            if (isChildLeaf(node, childIdx)) {
+                // Leaf hit - get child node for contour data
+                uint childNodeIdx = getChildIndex(node, childIdx, parentIdx);
+                uvec2 childNode = esvt.nodes[childNodeIdx];
+                float childScale = scaleExp2 * 0.5;
+
+                // Apply contour refinement if available
+                ContourRefinement contourRef = refineHitWithContours(
+                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
+                    ray.origin, ray.direction, childScale);
+
+                if (!contourRef.valid) {
+                    // Contour indicates no hit - continue searching
+                    continue;
+                }
+
+                didHit = true;
+                hitPoint = ray.origin + ray.direction * contourRef.t;
+
+                // Use contour normal if available, otherwise calculate from face
+                if (length(contourRef.normal) > 0.5) {
+                    hitNormal = contourRef.normal;
+                } else {
+                    // Calculate normal from entry face
+                    vec3 fv0, fv1, fv2;
+                    int entryF = childHit.entryFace;
+
+                    if (entryF == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                    else if (entryF == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                    if (dot(hitNormal, ray.direction) > 0) {
+                        hitNormal = -hitNormal;
+                    }
+                }
+
+                return;
+            }
+
+            // Non-leaf - push and descend
+            stack_nodes[stackBase + scale] = parentIdx;
+            stack_tmax[stackBase + scale] = tMax;
+            stack_type[stackBase + scale] = parentType;
+            stack_entryFace[stackBase + scale] = entryFace;
+
+            // Move to child
+            parentIdx = getChildIndex(node, childIdx, parentIdx);
+            parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType][childIdx];
+            entryFace = childHit.entryFace >= 0 ? childHit.entryFace : 0;
+            tMin = childHit.tEntry;
+            tMax = childHit.tExit;
+            scale--;
+            scaleExp2 *= 0.5;
+            siblingPos = 0;
+            descended = true;
+            break;
+        }
+
+        if (!descended) {
+            // No valid child found - pop to parent
+            if (scale >= CAST_STACK_DEPTH - 1) {
+                break;
+            }
+
+            scale++;
+            scaleExp2 *= 2.0;
+
+            if (stack_nodes[stackBase + scale] == 0xFFFFFFFFu) {
+                break;
+            }
+
+            parentIdx = stack_nodes[stackBase + scale];
+            tMax = stack_tmax[stackBase + scale];
+            parentType = stack_type[stackBase + scale];
+            entryFace = stack_entryFace[stackBase + scale];
+            siblingPos = 0;
+        }
+    }
+}
+
+// ============================================================================
+// MAIN
+// ============================================================================
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    // Check if this is a coarse pass
+    bool isCoarsePass = (renderFlags.flags & FLAG_COARSE_PASS) != 0u;
+    bool useCoarseData = (renderFlags.flags & FLAG_USE_COARSE_DATA) != 0u;
+
+    // ========================================================================
+    // COARSE PASS: Render at reduced resolution, store t-min
+    // ========================================================================
+    if (isCoarsePass) {
+        // Bounds check for coarse output
+        ivec2 coarseSize = imageSize(coarseOutput);
+        if (pixel.x >= coarseSize.x || pixel.y >= coarseSize.y)
+            return;
+
+        // Map coarse pixel to center of corresponding fine pixel block
+        int blockSize = max(1, renderFlags.coarseSize);
+        ivec2 finePixel = pixel * blockSize + ivec2(blockSize / 2);
+
+        // Generate ray for this coarse pixel
+        Ray ray = generateRay(finePixel);
+
+        // Cast ray through ESVT
+        vec3 hitPoint, hitNormal;
+        bool didHit;
+        castRayESVT(ray, hitPoint, hitNormal, didHit);
+
+        // Store t-min (distance to first hit)
+        float tMin = didHit ? length(hitPoint - ray.origin) : 1e30;
+        imageStore(coarseOutput, pixel, vec4(tMin, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    // ========================================================================
+    // FINE PASS: Full resolution render with optional beam optimization
+    // ========================================================================
+
+    // Bounds check for output image
+    if (pixel.x >= imageSize(outputImage).x || pixel.y >= imageSize(outputImage).y)
+        return;
+
+    // Generate ray
+    Ray ray = generateRay(pixel);
+
+    // Apply beam optimization if coarse data is available
+    if (useCoarseData) {
+        float conservativeTmin = getConservativeTmin(pixel);
+        if (conservativeTmin > ray.tmin) {
+            ray.tmin = conservativeTmin;
+        }
+    }
+
+    // Cast ray through ESVT
+    vec3 hitPoint, hitNormal;
+    bool didHit;
+    castRayESVT(ray, hitPoint, hitNormal, didHit);
+
+    // Output color
+    vec3 color;
+    if (didHit) {
+        // Normal as color (for debugging/visualization)
+        color = hitNormal * 0.5 + 0.5;
+    } else {
+        // Background color
+        color = vec3(0.1, 0.1, 0.15);
+    }
+
+    imageStore(outputImage, pixel, vec4(color, 1.0));
+}

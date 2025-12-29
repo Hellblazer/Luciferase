@@ -170,13 +170,15 @@ public class OctreeBuilder implements AutoCloseable {
                 leafMask = 0xFF; // All children would be leaves (leaf node convention)
             }
             
-            // Create ESVO node
-            int childPtr = firstChildIndex != -1 ? firstChildIndex : 0;
+            // Create ESVO node with relative child pointer
+            // Use relative offset from current node (not absolute index)
+            // This keeps pointers small in BFS-ordered trees
+            int relativeOffset = firstChildIndex != -1 ? (firstChildIndex - currentIndex) : 0;
             ESVONodeUnified esvoNode = new ESVONodeUnified(
                 (byte) leafMask,
                 (byte) childMask,
                 false,  // far flag
-                childPtr,
+                relativeOffset,
                 (byte) 0,  // contour mask (not used in basic construction)
                 0          // contour ptr (not used in basic construction)
             );

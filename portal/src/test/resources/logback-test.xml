@@ -15,14 +15,6 @@
         </encoder>
     </appender>
 
-    <!-- Performance test appender for benchmarks -->
-    <appender name="PERFORMANCE" class="ch.qos.logback.core.FileAppender">
-        <file>target/performance.log</file>
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} PERF - %msg%n</pattern>
-        </encoder>
-    </appender>
-
     <!-- Root logger configuration -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
@@ -32,12 +24,12 @@
     <!-- Enable debug for ESVT builder -->
     <logger name="com.hellblazer.luciferase.esvt.builder" level="DEBUG"/>
 
-    <!-- Turn off verbose logging for JMH benchmarks -->
-    <logger name="org.openjdk.jmh" level="WARN"/>
+    <!-- Enable debug for portal ESVT components -->
+    <logger name="com.hellblazer.luciferase.portal.esvt" level="DEBUG"/>
+
+    <!-- Enable debug for Tetree operations -->
+    <logger name="com.hellblazer.luciferase.lucien.tetree" level="DEBUG"/>
 
     <!-- Turn off verbose logging for test framework -->
     <logger name="org.junit" level="WARN"/>
-    
-    <!-- Reduce noise from resource management logging -->
-    <logger name="com.hellblazer.luciferase.render.UnifiedResourceManager" level="WARN"/>
 </configuration>

@@ -2823,44 +2823,40 @@ extends AbstractSpatialIndex<TetreeKey<? extends TetreeKey>, ID, Content> {
     /**
      * Locate the tetrahedron containing a point at a given level.
      *
-     * This uses the correct approach: 1. Quantize the point to find the anchor cube at the target level 2. Determine
-     * which of the 6 characteristic tetrahedra (S0-S5) contains the point
+     * <p><b>CRITICAL:</b> This method uses S0-S5 cube partitioning geometry to find the
+     * tetrahedron type. This is required because the {@link Tet#contains(Tuple3f)} method
+     * uses S0-S5 cube partitioning for containment testing.</p>
      *
-     * This is NOT a traversal through subdivisions - it's a direct calculation.
+     * <p>The algorithm tests all 6 tetrahedron types (S0-S5) at the computed grid cell
+     * and returns the first one that contains the point. This ensures consistency with
+     * the containment geometry used by Tet.contains().</p>
+     *
+     * <p><b>Note:</b> The Bey tree traversal approach (Tet.locatePointS0Tree) produces
+     * types based on parent-child relationships which do NOT match S0-S5 cube partitioning
+     * geometry and should not be used for locate operations.</p>
      */
     protected Tet locate(Tuple3f point, byte level) {
-        // Validate inputs
-        if (point.x < 0 || point.y < 0 || point.z < 0) {
-            throw new IllegalArgumentException("Coordinates must be non-negative: " + point);
-        }
-        if (level < 0 || level > 20) {
-            throw new IllegalArgumentException("Level must be between 0 and 20: " + level);
-        }
-
         // Special case: level 0 is always the root tetrahedron of type 0
         if (level == 0) {
             return new Tet(0, 0, 0, (byte) 0, (byte) 0);
         }
 
-        // Step 1: Quantize to find the anchor cube (same as octree)
-        var cellSize = Constants.lengthAtLevel(level);
-        var anchorX = (int) (Math.floor(point.x / cellSize) * cellSize);
-        var anchorY = (int) (Math.floor(point.y / cellSize) * cellSize);
-        var anchorZ = (int) (Math.floor(point.z / cellSize) * cellSize);
+        var length = Constants.lengthAtLevel(level);
+        var anchorX = (int) (Math.floor(point.x / length) * length);
+        var anchorY = (int) (Math.floor(point.y / length) * length);
+        var anchorZ = (int) (Math.floor(point.z / length) * length);
 
-        log.debug("locate: point={}, level={}, cellSize={}, anchor=({}, {}, {})", 
-                  point, level, cellSize, anchorX, anchorY, anchorZ);
+        // Test all 6 tetrahedron types at this grid location to find which one contains the point
+        for (byte type = 0; type < 6; type++) {
+            var testTet = new Tet(anchorX, anchorY, anchorZ, level, type);
+            if (testTet.contains(point)) {
+                return testTet;
+            }
+        }
 
-        // Step 2: Use deterministic S0-S5 classification based on distance to tetrahedron centroids
-        // This approach achieved 100% accuracy in testing and is much faster than testing all 6
-        var relX = (point.x - anchorX) / cellSize; // Normalize to [0,1]
-        var relY = (point.y - anchorY) / cellSize;
-        var relZ = (point.z - anchorZ) / cellSize;
-        
-        byte type = classifyPointInS0S5Cube(relX, relY, relZ);
-        var tet = new Tet(anchorX, anchorY, anchorZ, level, type);
-        log.debug("locate: created Tet with type={}, coordinates={}", type, java.util.Arrays.toString(tet.coordinates()));
-        return tet;
+        // Fallback: if no tetrahedron contains the point (rare floating-point edge case),
+        // return type 0 at this anchor
+        return new Tet(anchorX, anchorY, anchorZ, level, (byte) 0);
     }
 
     /**

@@ -225,14 +225,15 @@ public final class ESVONodeUnified {
     
     /**
      * Calculate the actual index of a child in the sparse array.
-     * CUDA reference: parent_ptr + popc8(child_masks & ((1 << child_idx) - 1))
-     * 
+     * Uses relative child pointer: currentNodeIdx + relativeOffset + sparseOffset
+     *
      * @param childIdx The child index (0-7)
+     * @param currentNodeIdx The index of the current node in the array
      * @return The actual index in the node array
      */
-    public int getChildIndex(int childIdx) {
-        // Child is at: parent's child pointer + relative offset
-        return getChildPtr() + getChildOffset(childIdx);
+    public int getChildIndex(int childIdx, int currentNodeIdx) {
+        // Child is at: current node + relative offset + sparse offset
+        return currentNodeIdx + getChildPtr() + getChildOffset(childIdx);
     }
     
     /**

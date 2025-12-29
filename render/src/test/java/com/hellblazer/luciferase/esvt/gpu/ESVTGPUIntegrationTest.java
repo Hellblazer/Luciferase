@@ -1,0 +1,331 @@
+/**
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This file is part of the Luciferase.
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.esvt.gpu;
+
+import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.opengl.GL;
+import org.lwjgl.system.Platform;
+
+import javax.vecmath.Vector3f;
+import java.nio.ByteBuffer;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL43.*;
+import static org.lwjgl.system.MemoryUtil.NULL;
+
+/**
+ * Integration tests for ESVT GPU rendering pipeline.
+ *
+ * GPU tests are disabled by default (require OpenGL context and sandbox bypass).
+ * Run with: RUN_GPU_TESTS=true mvn test -Dtest=ESVTGPUIntegrationTest
+ *
+ * @author hal.hildebrand
+ */
+class ESVTGPUIntegrationTest {
+
+    /**
+     * Test ESVTGPUMemory creation and node operations (no GPU required)
+     */
+    @Test
+    void testESVTGPUMemoryNodeOperations() {
+        // Create a small test tree
+        var nodes = new ESVTNodeUnified[4];
+
+        // Root node (type 0)
+        nodes[0] = new ESVTNodeUnified((byte) 0);
+        nodes[0].setValid(true);
+        nodes[0].setChildMask(0b00001111); // 4 children
+        nodes[0].setLeafMask(0b00001111);  // All are leaves
+        nodes[0].setChildPtr(1);           // Children start at index 1
+
+        // Child nodes (types derived from parent type 0)
+        for (int i = 1; i < 4; i++) {
+            nodes[i] = new ESVTNodeUnified(nodes[0].getChildType(i - 1));
+            nodes[i].setValid(true);
+        }
+
+        // Create ESVTData
+        var esvtData = new ESVTData(nodes, 0, 2, 3, 1);
+
+        // Verify data
+        assertEquals(4, esvtData.nodeCount());
+        assertEquals(0, esvtData.rootType());
+        assertEquals(32, esvtData.sizeInBytes()); // 4 * 8 bytes
+        assertNotNull(esvtData.root());
+    }
+
+    /**
+     * Test ESVTData ByteBuffer serialization (no GPU required)
+     */
+    @Test
+    void testESVTDataByteBufferSerialization() {
+        // Create nodes
+        var nodes = new ESVTNodeUnified[2];
+        nodes[0] = new ESVTNodeUnified((byte) 0);
+        nodes[0].setValid(true);
+        nodes[0].setChildMask(0b00000001);
+        nodes[0].setLeafMask(0b00000001);
+        nodes[0].setChildPtr(1);
+
+        nodes[1] = new ESVTNodeUnified((byte) 0);
+        nodes[1].setValid(true);
+
+        var esvtData = new ESVTData(nodes, 0, 1, 1, 1);
+
+        // Serialize to ByteBuffer
+        ByteBuffer buffer = esvtData.toByteBuffer();
+        assertNotNull(buffer);
+        assertEquals(16, buffer.remaining()); // 2 * 8 bytes
+
+        // Deserialize and verify
+        var restored = ESVTData.fromByteBuffer(buffer, 2, 0, 1, 1, 1);
+        assertEquals(esvtData.nodeCount(), restored.nodeCount());
+        assertEquals(esvtData.rootType(), restored.rootType());
+
+        // Verify node content
+        assertTrue(restored.root().isValid());
+        assertEquals(0b00000001, restored.root().getChildMask());
+    }
+
+    /**
+     * Test ESVTNodeUnified child type derivation.
+     * The mapping is: Morton index → Bey index (via INDEX_TO_BEY_NUMBER) → child type (via PARENT_TYPE_TO_CHILD_TYPE)
+     */
+    @Test
+    void testChildTypeDerivation() {
+        // Parent type 0 should produce specific child types
+        var parent = new ESVTNodeUnified((byte) 0);
+
+        // For parent type 0:
+        // INDEX_TO_BEY_NUMBER[0] = {0,1,4,5,2,7,6,3} (Morton → Bey)
+        // PARENT_TYPE_TO_CHILD_TYPE[0] = {0,0,0,0,4,5,2,1} (Bey → child type)
+        // So: Morton 0→Bey 0→type 0, Morton 1→Bey 1→type 0, Morton 2→Bey 4→type 4, etc.
+        assertEquals(0, parent.getChildType(0));  // Morton 0 → Bey 0 → type 0
+        assertEquals(0, parent.getChildType(1));  // Morton 1 → Bey 1 → type 0
+        assertEquals(4, parent.getChildType(2));  // Morton 2 → Bey 4 → type 4
+        assertEquals(5, parent.getChildType(3));  // Morton 3 → Bey 5 → type 5
+        assertEquals(0, parent.getChildType(4));  // Morton 4 → Bey 2 → type 0
+        assertEquals(1, parent.getChildType(5));  // Morton 5 → Bey 7 → type 1
+        assertEquals(2, parent.getChildType(6));  // Morton 6 → Bey 6 → type 2
+        assertEquals(0, parent.getChildType(7));  // Morton 7 → Bey 3 → type 0
+
+        // Parent type 3 should produce different child types
+        var parent3 = new ESVTNodeUnified((byte) 3);
+
+        // INDEX_TO_BEY_NUMBER[3] = {0,1,5,4,6,7,2,3}
+        // PARENT_TYPE_TO_CHILD_TYPE[3] = {3,3,3,3,5,4,1,2}
+        assertEquals(3, parent3.getChildType(0));  // Morton 0 → Bey 0 → type 3
+        assertEquals(1, parent3.getChildType(4));  // Morton 4 → Bey 6 → type 1
+        assertEquals(2, parent3.getChildType(5));  // Morton 5 → Bey 7 → type 2
+    }
+
+    /**
+     * Test ESVTComputeRenderer creation (no GPU required for construction)
+     */
+    @Test
+    void testESVTComputeRendererCreation() {
+        var renderer = new ESVTComputeRenderer(800, 600);
+
+        assertNotNull(renderer);
+        assertEquals(800, renderer.getFrameWidth());
+        assertEquals(600, renderer.getFrameHeight());
+        assertFalse(renderer.isInitialized());
+        assertFalse(renderer.isDisposed());
+    }
+
+    /**
+     * Test ESVT shader file exists and can be loaded
+     */
+    @Test
+    void testESVTShaderFileExists() {
+        var shaderStream = getClass().getResourceAsStream("/shaders/raycast_esvt.comp");
+        assertNotNull(shaderStream, "ESVT shader file should exist in resources");
+    }
+
+    /**
+     * GPU integration test - requires OpenGL context
+     * Run with: RUN_GPU_TESTS=true mvn test -Pgpu-macos
+     * The gpu-macos profile automatically adds -XstartOnFirstThread on macOS.
+     */
+    @Test
+    @EnabledIfEnvironmentVariable(named = "RUN_GPU_TESTS", matches = "true")
+    void testGPURenderingPipeline() {
+        System.out.println("\n=== ESVT GPU Rendering Test ===");
+        System.out.println("Platform: " + Platform.get().getName());
+
+        // Note: -XstartOnFirstThread is passed by Maven profile but may not appear
+        // in ManagementFactory.getInputArguments() as it's processed early by the JVM.
+        // We'll detect macOS issues via GLFW initialization failure instead.
+
+        // Setup GLFW error callback
+        GLFWErrorCallback errorCallback = GLFWErrorCallback.createPrint(System.err);
+        glfwSetErrorCallback(errorCallback);
+
+        boolean glfwInitialized = false;
+        long window = NULL;
+        ESVTGPUMemory esvtMemory = null;
+        ESVTComputeRenderer renderer = null;
+
+        try {
+            // Initialize GLFW
+            if (!glfwInit()) {
+                System.out.println("GLFW initialization failed - skipping GPU test");
+                Assumptions.assumeTrue(false, "GLFW initialization failed");
+                return;
+            }
+            glfwInitialized = true;
+            System.out.println("GLFW initialized");
+
+            // Configure for headless OpenGL 4.3
+            glfwDefaultWindowHints();
+            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+            if (Platform.get() == Platform.MACOSX) {
+                glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+            }
+
+            // Create hidden window
+            window = glfwCreateWindow(256, 256, "ESVT Test", NULL, NULL);
+            if (window == NULL) {
+                // macOS only supports OpenGL 4.1, but compute shaders require 4.3
+                if (Platform.get() == Platform.MACOSX) {
+                    System.out.println("macOS only supports OpenGL 4.1 - compute shaders require 4.3");
+                    Assumptions.assumeTrue(false,
+                        "macOS does not support OpenGL 4.3 compute shaders (max is 4.1)");
+                } else {
+                    System.out.println("Failed to create GLFW window - skipping GPU test");
+                    Assumptions.assumeTrue(false, "Failed to create GLFW window");
+                }
+                return;
+            }
+            System.out.println("GLFW window created");
+
+            // Make OpenGL context current
+            glfwMakeContextCurrent(window);
+            GL.createCapabilities();
+            System.out.println("OpenGL context created");
+
+            // Print GPU info
+            System.out.println("Vendor: " + glGetString(GL_VENDOR));
+            System.out.println("Renderer: " + glGetString(GL_RENDERER));
+            System.out.println("OpenGL: " + glGetString(GL_VERSION));
+
+            // Create test ESVT data
+            var nodes = createTestTetrahedralTree();
+            var esvtData = new ESVTData(nodes, 0, 3, 4, 3);
+            System.out.println("Created ESVT data: " + esvtData);
+
+            // Upload to GPU
+            esvtMemory = new ESVTGPUMemory(esvtData);
+            esvtMemory.uploadToGPU();
+            System.out.println("Uploaded ESVT data to GPU");
+
+            // Create and initialize renderer
+            renderer = new ESVTComputeRenderer(256, 256);
+            renderer.initialize();
+            System.out.println("Initialized ESVT renderer");
+
+            // Render a frame
+            var cameraPos = new Vector3f(2.0f, 2.0f, 2.0f);
+            var lookAt = new Vector3f(0.5f, 0.5f, 0.5f);
+            renderer.renderFrame(esvtMemory, cameraPos, lookAt, 60.0f);
+            System.out.println("Rendered frame");
+
+            // Verify output texture was created
+            int outputTexture = renderer.getOutputTexture();
+            assertTrue(outputTexture > 0, "Output texture should be created");
+            System.out.println("Output texture ID: " + outputTexture);
+
+            // Check for OpenGL errors
+            int error = glGetError();
+            assertEquals(GL_NO_ERROR, error, "No OpenGL errors should occur");
+
+            System.out.println("\n=== ESVT GPU Rendering Test PASSED ===\n");
+
+        } finally {
+            // Cleanup
+            if (renderer != null) {
+                renderer.dispose();
+            }
+            if (esvtMemory != null) {
+                esvtMemory.dispose();
+            }
+            if (window != NULL) {
+                glfwDestroyWindow(window);
+            }
+            if (glfwInitialized) {
+                glfwTerminate();
+            }
+            if (errorCallback != null) {
+                errorCallback.free();
+            }
+        }
+    }
+
+    /**
+     * Create a simple test tetrahedral tree with root and some children
+     */
+    private ESVTNodeUnified[] createTestTetrahedralTree() {
+        var nodes = new ESVTNodeUnified[7];
+
+        // Root (type 0)
+        nodes[0] = new ESVTNodeUnified((byte) 0);
+        nodes[0].setValid(true);
+        nodes[0].setChildMask(0b00000111); // 3 children (0, 1, 2)
+        nodes[0].setLeafMask(0b00000100);  // Only child 2 is leaf
+        nodes[0].setChildPtr(1);
+
+        // Child 0 at index 1 (internal node, has children)
+        nodes[1] = new ESVTNodeUnified((byte) 0);
+        nodes[1].setValid(true);
+        nodes[1].setChildMask(0b00000011); // 2 children
+        nodes[1].setLeafMask(0b00000011);  // Both are leaves
+        nodes[1].setChildPtr(4);
+
+        // Child 1 at index 2 (internal node, has children)
+        nodes[2] = new ESVTNodeUnified((byte) 0);
+        nodes[2].setValid(true);
+        nodes[2].setChildMask(0b00000001); // 1 child
+        nodes[2].setLeafMask(0b00000001);  // Leaf
+        nodes[2].setChildPtr(6);
+
+        // Child 2 at index 3 (leaf - no children)
+        nodes[3] = new ESVTNodeUnified((byte) 0);
+        nodes[3].setValid(true);
+
+        // Grandchildren (all leaves)
+        nodes[4] = new ESVTNodeUnified((byte) 0);
+        nodes[4].setValid(true);
+
+        nodes[5] = new ESVTNodeUnified((byte) 0);
+        nodes[5].setValid(true);
+
+        nodes[6] = new ESVTNodeUnified((byte) 0);
+        nodes[6].setValid(true);
+
+        return nodes;
+    }
+}

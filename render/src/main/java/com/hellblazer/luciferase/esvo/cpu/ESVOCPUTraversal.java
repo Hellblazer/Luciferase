@@ -185,9 +185,10 @@ public class ESVOCPUTraversal {
                     float childTExit = childTimes[1];
                     
                     if (childTEntry < closestHit) {
-                        int childPtr = (node.childDescriptor >> 8) & 0xFFFFFF; // Upper 24 bits
-                        int childIdx = childPtr + Integer.bitCount(childMask & ((1 << i) - 1));
-                        stack.push(new StackEntry(childIdx, childTEntry, childTExit, 
+                        // childPtr is a relative offset from current node
+                        int childPtr = (node.childDescriptor >> 8) & 0xFFFFFF;
+                        int childIdx = current.nodeIdx + childPtr + Integer.bitCount(childMask & ((1 << i) - 1));
+                        stack.push(new StackEntry(childIdx, childTEntry, childTExit,
                                                  current.scale + 1, childMin));
                     }
                 }

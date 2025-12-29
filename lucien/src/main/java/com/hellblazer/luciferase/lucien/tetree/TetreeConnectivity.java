@@ -268,6 +268,49 @@ public final class TetreeConnectivity {
      */
     public static final byte[] BEY_ID_TO_VERTEX = { 0, 1, 2, 3, 1, 1, 2, 2 };
 
+    /**
+     * Type and cube-ID to Bey child ID mapping - from t8code t8_dtet_type_cid_to_beyid.
+     * Maps from (child type, cube ID) to Bey child ID.
+     *
+     * [child_type][cube_id] -> bey_child_id
+     */
+    public static final byte[][] TYPE_CID_TO_BEYID = {
+    // Type 0
+    { 0, 1, 4, 7, 5, 2, 6, 3 },
+    // Type 1
+    { 0, 1, 5, 2, 4, 7, 6, 3 },
+    // Type 2
+    { 0, 5, 1, 2, 4, 6, 7, 3 },
+    // Type 3
+    { 0, 4, 1, 7, 5, 6, 2, 3 },
+    // Type 4
+    { 0, 4, 5, 6, 1, 7, 2, 3 },
+    // Type 5
+    { 0, 5, 4, 6, 1, 2, 7, 3 } };
+
+    /**
+     * Bey number to Morton index mapping - inverse of INDEX_TO_BEY_NUMBER.
+     * Maps from Bey child ID (0-7) to Morton child index used for tree storage.
+     *
+     * This is essential for ray traversal where CHILDREN_AT_FACE provides Bey indices,
+     * but ESVTNodeUnified stores children indexed by Morton order.
+     *
+     * [parent_type][bey_number] -> morton_index
+     */
+    public static final byte[][] BEY_NUMBER_TO_INDEX = {
+    // Parent type 0: Bey {0,1,2,3,4,5,6,7} -> Morton {0,1,4,7,2,3,6,5}
+    { 0, 1, 4, 7, 2, 3, 6, 5 },
+    // Parent type 1
+    { 0, 1, 5, 7, 3, 2, 6, 4 },
+    // Parent type 2
+    { 0, 3, 4, 7, 1, 2, 6, 5 },
+    // Parent type 3
+    { 0, 1, 6, 7, 3, 2, 4, 5 },
+    // Parent type 4
+    { 0, 3, 5, 7, 1, 2, 4, 6 },
+    // Parent type 5
+    { 0, 3, 6, 7, 2, 1, 4, 5 } };
+
     // Static initializer for computed tables
     static {
         // Initialize sibling relationships (all children of same parent are siblings)
@@ -299,11 +342,46 @@ public final class TetreeConnectivity {
      * its parent according to Bey's tetrahedral refinement scheme.
      *
      * @param parentType Type of parent tetrahedron (0-5)
-     * @param childIndex Index of child (0-7)
+     * @param childIndex Index of child (0-7) in Morton order
      * @return Bey child ID
      */
     public static byte getBeyChildId(byte parentType, int childIndex) {
         return INDEX_TO_BEY_NUMBER[parentType][childIndex];
+    }
+
+    /**
+     * Get Morton child index for parent type and Bey child ID. This is the inverse of getBeyChildId().
+     * Essential for ray traversal where CHILDREN_AT_FACE provides Bey indices but tree storage uses Morton order.
+     *
+     * @param parentType Type of parent tetrahedron (0-5)
+     * @param beyChildId Bey child ID (0-7)
+     * @return Morton child index for tree storage
+     */
+    public static byte getMortonChildId(byte parentType, int beyChildId) {
+        return BEY_NUMBER_TO_INDEX[parentType][beyChildId];
+    }
+
+    /**
+     * Get the Morton child index of a child tetrahedron within its parent.
+     * This is used for sorting siblings in Morton order for ESVT tree construction.
+     *
+     * <p>The computation uses:
+     * <ol>
+     *   <li>Child's cube ID at its own level</li>
+     *   <li>TYPE_CID_TO_BEYID to get Bey child ID from (childType, cubeId)</li>
+     *   <li>BEY_NUMBER_TO_INDEX to convert Bey to Morton using parent type</li>
+     * </ol>
+     *
+     * @param childType The child tetrahedron's type (0-5)
+     * @param childCubeId The child's cube ID at its level
+     * @param parentType The parent tetrahedron's type (0-5)
+     * @return Morton child index (0-7)
+     */
+    public static byte getMortonChildIndex(byte childType, byte childCubeId, byte parentType) {
+        // Get Bey child ID from child's type and cube position
+        byte beyId = TYPE_CID_TO_BEYID[childType][childCubeId];
+        // Convert Bey to Morton using parent's type
+        return BEY_NUMBER_TO_INDEX[parentType][beyId];
     }
 
     /**

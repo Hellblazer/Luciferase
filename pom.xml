@@ -25,7 +25,7 @@
         <lwjgl.version>3.3.6</lwjgl.version>
         <!-- Default LWJGL natives - will be overridden by profiles -->
         <lwjgl.natives>natives-linux</lwjgl.natives>
-        <gpu-support.version>1.0.3</gpu-support.version>
+        <gpu-support.version>1.0.4</gpu-support.version>
     </properties>
 
     <licenses>
@@ -105,6 +105,11 @@
             <dependency>
                 <groupId>com.hellblazer.gpu-support</groupId>
                 <artifactId>gpu-test-framework</artifactId>
+                <version>${gpu-support.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.hellblazer.gpu-support</groupId>
+                <artifactId>resource-lifecycle-testing</artifactId>
                 <version>${gpu-support.version}</version>
             </dependency>
 
@@ -302,6 +307,7 @@
                 <artifactId>lwjgl-opencl</artifactId>
                 <version>${lwjgl.version}</version>
             </dependency>
+
 
             <!-- JMH Benchmarking -->
             <dependency>

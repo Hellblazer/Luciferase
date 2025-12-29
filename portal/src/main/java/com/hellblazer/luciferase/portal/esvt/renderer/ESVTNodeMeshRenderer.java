@@ -1,0 +1,616 @@
+/**
+ * Copyright (C) 2025 Hal Hildebrand. All rights reserved.
+ *
+ * This file is part of the Luciferase.
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <http://www.gnu.org/licenses/>.
+ */
+package com.hellblazer.luciferase.portal.esvt.renderer;
+
+import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.lucien.Constants;
+import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
+import javafx.geometry.Point3D;
+import javafx.scene.Group;
+import javafx.scene.paint.Color;
+import javafx.scene.paint.Material;
+import javafx.scene.paint.PhongMaterial;
+import javafx.scene.shape.Cylinder;
+import javafx.scene.shape.MeshView;
+import javafx.scene.shape.TriangleMesh;
+import javafx.scene.transform.Rotate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.vecmath.Point3f;
+import javax.vecmath.Point3i;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Renders ESVT (Efficient Sparse Voxel Tetrahedra) nodes as JavaFX 3D meshes.
+ * Unlike CellViews which requires Tet objects, this renderer works directly with
+ * the packed ESVTNodeUnified array by computing tetrahedron geometry from the tree structure.
+ *
+ * @author hal.hildebrand
+ */
+public class ESVTNodeMeshRenderer {
+
+    private static final Logger log = LoggerFactory.getLogger(ESVTNodeMeshRenderer.class);
+
+    // Standard edges of a tetrahedron (vertex pairs)
+    private static final int[][] TET_EDGES = {
+        {0, 1}, {0, 2}, {0, 3},
+        {1, 2}, {1, 3}, {2, 3}
+    };
+
+    // Color palette for depth levels
+    private static final Color[] DEPTH_COLORS = {
+        Color.RED, Color.ORANGE, Color.YELLOW, Color.GREEN,
+        Color.CYAN, Color.BLUE, Color.MAGENTA, Color.PURPLE
+    };
+
+    // Color palette for tet types (S0-S5)
+    private static final Color[] TYPE_COLORS = {
+        Color.web("#e74c3c"),  // S0 - Red
+        Color.web("#3498db"),  // S1 - Blue
+        Color.web("#2ecc71"),  // S2 - Green
+        Color.web("#f39c12"),  // S3 - Orange
+        Color.web("#9b59b6"),  // S4 - Purple
+        Color.web("#1abc9c")   // S5 - Teal
+    };
+
+    private final ESVTData data;
+    private final int[] farPointers;
+    private final TriangleMesh[] referenceMeshes = new TriangleMesh[6];
+    private final double edgeThickness;
+    private final Material edgeMaterial;
+    private final double worldScale;  // Scale factor to convert voxel coords to world coords
+    private final double worldOffset; // Offset to center in world
+
+    /**
+     * Create a renderer for the given ESVT data with default world size of 400 units.
+     */
+    public ESVTNodeMeshRenderer(ESVTData data) {
+        this(data, 400.0); // Default to 400 unit world size
+    }
+
+    /**
+     * Create a renderer with specified world size for visualization.
+     *
+     * @param data ESVT data to render
+     * @param worldSize Target size in world units (e.g., 400 for -200 to +200)
+     */
+    public ESVTNodeMeshRenderer(ESVTData data, double worldSize) {
+        this(data, worldSize, 0.5, new PhongMaterial(Color.BLACK));
+    }
+
+    /**
+     * Create a renderer with custom wireframe settings.
+     *
+     * @param data ESVT data to render
+     * @param worldSize Target size in world units
+     * @param edgeThickness Wireframe edge thickness in world units
+     * @param edgeMaterial Material for wireframe edges
+     */
+    public ESVTNodeMeshRenderer(ESVTData data, double worldSize, double edgeThickness, Material edgeMaterial) {
+        this.data = data;
+        this.farPointers = data != null ? data.farPointers() : null;
+        this.edgeThickness = edgeThickness;
+        this.edgeMaterial = edgeMaterial;
+
+        // Calculate scaling: tree spans [0, 2^maxDepth] in voxel space
+        // Scale to worldSize and center at origin
+        double treeSize = data != null ? (1 << data.maxDepth()) : 1;
+        this.worldScale = worldSize / treeSize;
+        this.worldOffset = -worldSize / 2.0;
+
+        log.debug("ESVTNodeMeshRenderer: treeSize={}, worldSize={}, scale={}, offset={}",
+            treeSize, worldSize, worldScale, worldOffset);
+
+        initializeReferenceMeshes();
+    }
+
+    /**
+     * Initialize the 6 reference meshes for tetrahedron types S0-S5.
+     */
+    private void initializeReferenceMeshes() {
+        for (int type = 0; type < 6; type++) {
+            Point3i[] vertices = Constants.SIMPLEX_STANDARD[type];
+            referenceMeshes[type] = createTetrahedronMesh(vertices);
+        }
+    }
+
+    /**
+     * Create a TriangleMesh for a tetrahedron with given vertices.
+     */
+    private TriangleMesh createTetrahedronMesh(Point3i[] vertices) {
+        var mesh = new TriangleMesh();
+
+        // Add vertices
+        for (var v : vertices) {
+            mesh.getPoints().addAll(v.x, v.y, v.z);
+        }
+
+        // Texture coordinates
+        mesh.getTexCoords().addAll(0, 0, 1, 0, 0.5f, 1, 0.5f, 0.5f);
+
+        // Faces with outward normals
+        mesh.getFaces().addAll(
+            0, 0, 1, 1, 2, 2,  // Face 0
+            0, 0, 3, 3, 1, 1,  // Face 1
+            0, 0, 2, 2, 3, 3,  // Face 2
+            1, 1, 3, 3, 2, 2   // Face 3
+        );
+
+        return mesh;
+    }
+
+    /**
+     * Render all nodes in the tree.
+     *
+     * @param colorScheme How to color the tetrahedra
+     * @param opacity Opacity (0.0-1.0)
+     * @return Group containing all rendered meshes
+     */
+    public Group renderAll(ColorScheme colorScheme, double opacity) {
+        return renderLevelRange(0, data.maxDepth(), colorScheme, opacity);
+    }
+
+    /**
+     * Render only leaf nodes.
+     */
+    public Group renderLeaves(ColorScheme colorScheme, double opacity) {
+        var group = new Group();
+        var leaves = collectLeaves();
+        for (var leaf : leaves) {
+            var meshView = createMeshView(leaf, colorScheme, opacity);
+            group.getChildren().add(meshView);
+        }
+        return group;
+    }
+
+    /**
+     * Render nodes in a specific level range.
+     * Note: When voxel coordinates are available, internal nodes cannot be accurately
+     * positioned (they have no corresponding voxel), so we only render leaves in that case.
+     */
+    public Group renderLevelRange(int minLevel, int maxLevel, ColorScheme colorScheme, double opacity) {
+        var group = new Group();
+
+        // When voxel coords are available, internal nodes can't be positioned accurately
+        // Fall back to rendering only leaves (which have stored voxel positions)
+        if (data.hasVoxelCoords()) {
+            log.debug("renderLevelRange: Using voxel coords, rendering leaves only (internal nodes have no voxel positions)");
+            var leaves = collectLeaves();
+            for (var leaf : leaves) {
+                if (leaf.level >= minLevel && leaf.level <= maxLevel) {
+                    var meshView = createMeshView(leaf, colorScheme, opacity);
+                    group.getChildren().add(meshView);
+                }
+            }
+        } else {
+            // Legacy mode: use computed tree positions
+            var renderedNodes = collectNodesInRange(minLevel, maxLevel);
+            for (var nodeInfo : renderedNodes) {
+                var meshView = createMeshView(nodeInfo, colorScheme, opacity);
+                group.getChildren().add(meshView);
+            }
+        }
+        return group;
+    }
+
+    /**
+     * Render wireframes for all leaf nodes.
+     */
+    public Group renderLeafWireframes() {
+        var group = new Group();
+        var leaves = collectLeaves();
+        for (var leaf : leaves) {
+            var wireframe = createWireframe(leaf);
+            group.getChildren().add(wireframe);
+        }
+        return group;
+    }
+
+    /**
+     * Collect all leaf nodes with their computed geometry.
+     */
+    private List<NodeRenderInfo> collectLeaves() {
+        var leaves = new ArrayList<NodeRenderInfo>();
+        if (data.nodes() == null || data.nodes().length == 0) {
+            log.debug("collectLeaves: No nodes to render");
+            return leaves;
+        }
+
+        // Debug: Log root node state
+        var root = data.nodes()[0];
+        log.debug("collectLeaves: {} nodes, rootType={}, maxDepth={}, root.childMask=0x{}, root.leafMask=0x{}, root.isValid={}, hasVoxelCoords={}",
+            data.nodes().length, data.rootType(), data.maxDepth(),
+            Integer.toHexString(root.getChildMask()), Integer.toHexString(root.getLeafMask()), root.isValid(),
+            data.hasVoxelCoords());
+
+        // Track leaf index during traversal
+        int[] leafCounter = {0};  // Use array to allow mutation in lambda/inner class
+        collectLeavesRecursive(0, (byte) data.rootType(), new Point3f(0, 0, 0),
+                               1 << data.maxDepth(), 0, leaves, leafCounter);
+        log.debug("collectLeaves: Found {} leaves", leaves.size());
+        return leaves;
+    }
+
+    /**
+     * Collect nodes in a specific level range.
+     */
+    private List<NodeRenderInfo> collectNodesInRange(int minLevel, int maxLevel) {
+        var nodes = new ArrayList<NodeRenderInfo>();
+        if (data.nodes() == null || data.nodes().length == 0) {
+            return nodes;
+        }
+        collectNodesInRangeRecursive(0, (byte) data.rootType(), new Point3f(0, 0, 0),
+                                      1 << data.maxDepth(), 0, minLevel, maxLevel, nodes);
+        return nodes;
+    }
+
+    /**
+     * Recursive traversal to collect leaf nodes.
+     */
+    private void collectLeavesRecursive(int nodeIdx, byte tetType, Point3f origin,
+                                         int size, int level, List<NodeRenderInfo> leaves, int[] leafCounter) {
+        if (nodeIdx >= data.nodes().length) {
+            if (level == 0) log.debug("collectLeavesRecursive: nodeIdx {} >= nodes.length {}", nodeIdx, data.nodes().length);
+            return;
+        }
+
+        var node = data.nodes()[nodeIdx];
+        if (!node.isValid()) {
+            if (level == 0) log.debug("collectLeavesRecursive: node {} not valid - childMask=0x{}, leafMask=0x{}",
+                nodeIdx, Integer.toHexString(node.getChildMask()), Integer.toHexString(node.getLeafMask()));
+            return;
+        }
+
+        var childMask = node.getChildMask();
+        var leafMask = node.getLeafMask();
+
+        if (level == 0) {
+            log.debug("collectLeavesRecursive: Processing root - childMask=0x{}, leafMask=0x{}, childPtr={}, isFar={}",
+                Integer.toHexString(childMask), Integer.toHexString(leafMask), node.getChildPtr(), node.isFar());
+        }
+
+        // Check each child position
+        for (int childPos = 0; childPos < 8; childPos++) {
+            if ((childMask & (1 << childPos)) != 0) {
+                int childSize = size / 2;
+                var childOrigin = computeChildOrigin(origin, childPos, childSize, tetType);
+                byte childType = TetreeConnectivity.getChildType(tetType, childPos);
+
+                if ((leafMask & (1 << childPos)) != 0) {
+                    // This child is a leaf
+                    int leafIdx = leafCounter[0]++;
+
+                    // Get voxel coordinates if available
+                    int voxelX = 0, voxelY = 0, voxelZ = 0;
+                    if (data.hasVoxelCoords() && leafIdx < data.leafCount()) {
+                        voxelX = data.getLeafVoxelX(leafIdx);
+                        voxelY = data.getLeafVoxelY(leafIdx);
+                        voxelZ = data.getLeafVoxelZ(leafIdx);
+                    }
+
+                    leaves.add(new NodeRenderInfo(
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
+                        childType,
+                        childOrigin,
+                        childSize,
+                        level + 1,
+                        leafIdx,
+                        voxelX, voxelY, voxelZ
+                    ));
+                } else {
+                    // Recurse into non-leaf child
+                    collectLeavesRecursive(
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
+                        childType,
+                        childOrigin,
+                        childSize,
+                        level + 1,
+                        leaves,
+                        leafCounter
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Recursive traversal to collect nodes in level range.
+     */
+    private void collectNodesInRangeRecursive(int nodeIdx, byte tetType, Point3f origin,
+                                               int size, int level, int minLevel, int maxLevel,
+                                               List<NodeRenderInfo> nodes) {
+        if (nodeIdx >= data.nodes().length) return;
+        if (level > maxLevel) return;
+
+        var node = data.nodes()[nodeIdx];
+        if (!node.isValid()) return;
+
+        // Add this node if in range
+        if (level >= minLevel && level <= maxLevel) {
+            nodes.add(new NodeRenderInfo(nodeIdx, tetType, origin, size, level));
+        }
+
+        // If at max level, don't recurse further
+        if (level >= maxLevel) return;
+
+        var childMask = node.getChildMask();
+        var leafMask = node.getLeafMask();
+
+        // Recurse into children
+        for (int childPos = 0; childPos < 8; childPos++) {
+            if ((childMask & (1 << childPos)) != 0) {
+                int childSize = size / 2;
+                var childOrigin = computeChildOrigin(origin, childPos, childSize, tetType);
+                byte childType = TetreeConnectivity.getChildType(tetType, childPos);
+
+                // Don't recurse into leaf children (they have no further structure)
+                if ((leafMask & (1 << childPos)) == 0) {
+                    collectNodesInRangeRecursive(
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
+                        childType,
+                        childOrigin,
+                        childSize,
+                        level + 1,
+                        minLevel,
+                        maxLevel,
+                        nodes
+                    );
+                } else if (level + 1 >= minLevel && level + 1 <= maxLevel) {
+                    // Add leaf child if in range (relative pointer + current node index)
+                    nodes.add(new NodeRenderInfo(
+                        node.getChildIndex(childPos, nodeIdx, farPointers),
+                        childType,
+                        childOrigin,
+                        childSize,
+                        level + 1
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * Compute child tetrahedron origin based on Bey refinement.
+     * Uses the child index to determine position within parent.
+     */
+    private Point3f computeChildOrigin(Point3f parentOrigin, int childIdx, int childSize, byte parentType) {
+        // Get Bey ID for this child
+        byte beyId = TetreeConnectivity.getBeyChildId(parentType, childIdx);
+
+        // Bey children 1-3 are at parent vertices 0-2
+        // Bey child 0 is interior (offset to center)
+        // Bey children 4-7 are at edge midpoints
+
+        // Get vertex position from Bey ID
+        byte vertexRef = TetreeConnectivity.BEY_ID_TO_VERTEX[beyId];
+
+        // Get offset based on vertex reference and child position
+        // This maps the Bey refinement structure to actual coordinates
+        Point3i[] parentVerts = Constants.SIMPLEX_STANDARD[parentType];
+
+        // Calculate offset based on Bey position
+        float ox = parentOrigin.x;
+        float oy = parentOrigin.y;
+        float oz = parentOrigin.z;
+
+        // For Bey refinement, each child is positioned based on the subdivision
+        // Children 1-3 are at vertices, child 0 is central octahedron,
+        // children 4-7 are at edge midpoints
+        switch (beyId) {
+            case 0 -> { // Interior octahedron - at edge midpoint
+                ox += childSize * 0.5f;
+                oy += childSize * 0.5f;
+                oz += childSize * 0.5f;
+            }
+            case 1 -> { // At vertex 0
+                // Origin stays at parent origin
+            }
+            case 2 -> { // At vertex 1
+                ox += childSize;
+            }
+            case 3 -> { // At vertex 2
+                oy += childSize;
+            }
+            case 4 -> { // Edge midpoint
+                oz += childSize;
+            }
+            case 5 -> { // Edge midpoint
+                ox += childSize;
+                oy += childSize;
+            }
+            case 6 -> { // Edge midpoint
+                ox += childSize;
+                oz += childSize;
+            }
+            case 7 -> { // At vertex 3
+                oy += childSize;
+                oz += childSize;
+            }
+        }
+
+        return new Point3f(ox, oy, oz);
+    }
+
+    /**
+     * Create a mesh view for a node.
+     */
+    private MeshView createMeshView(NodeRenderInfo info, ColorScheme colorScheme, double opacity) {
+        var mesh = referenceMeshes[info.tetType];
+        var meshView = new MeshView(mesh);
+
+        double worldX, worldY, worldZ;
+        double scaledSize;
+
+        // Check if we have voxel coordinates to use (preferred for accuracy)
+        if (data.hasVoxelCoords() && info.leafIndex >= 0) {
+            // Use stored voxel coordinates for accurate world positioning
+            // Map voxel [0, gridResolution-1] to world [-worldSize/2, +worldSize/2]
+            double voxelScale = 400.0 / data.gridResolution();  // worldSize = 400
+            worldX = info.voxelX * voxelScale - 200.0;
+            worldY = info.voxelY * voxelScale - 200.0;
+            worldZ = info.voxelZ * voxelScale - 200.0;
+            // Voxel size in world coordinates
+            scaledSize = voxelScale;
+        } else {
+            // Fallback: use computed tree positions (legacy, less accurate)
+            // info.size is in tree units, multiply by worldScale
+            // info.origin is in tree units, multiply by worldScale and add offset
+            scaledSize = info.size * worldScale;
+            worldX = info.origin.x * worldScale + worldOffset;
+            worldY = info.origin.y * worldScale + worldOffset;
+            worldZ = info.origin.z * worldScale + worldOffset;
+        }
+
+        meshView.setScaleX(scaledSize);
+        meshView.setScaleY(scaledSize);
+        meshView.setScaleZ(scaledSize);
+        meshView.setTranslateX(worldX);
+        meshView.setTranslateY(worldY);
+        meshView.setTranslateZ(worldZ);
+
+        // Apply material based on color scheme
+        var color = switch (colorScheme) {
+            case DEPTH_GRADIENT -> DEPTH_COLORS[info.level % DEPTH_COLORS.length];
+            case TET_TYPE -> TYPE_COLORS[info.tetType];
+            case SINGLE_COLOR -> Color.LIGHTBLUE;
+        };
+
+        var material = new PhongMaterial(color.deriveColor(0, 1, 1, opacity));
+        material.setSpecularColor(color.brighter());
+        meshView.setMaterial(material);
+
+        return meshView;
+    }
+
+    /**
+     * Create a wireframe for a node.
+     */
+    private Group createWireframe(NodeRenderInfo info) {
+        var wireframe = new Group();
+        Point3i[] refVerts = Constants.SIMPLEX_STANDARD[info.tetType];
+
+        // Scale and translate vertices to world coordinates
+        var verts = new Point3f[4];
+
+        // Check if we have voxel coordinates (preferred for accuracy)
+        if (data.hasVoxelCoords() && info.leafIndex >= 0) {
+            // Use stored voxel coordinates for accurate world positioning
+            double voxelScale = 400.0 / data.gridResolution();  // worldSize = 400
+            double baseX = info.voxelX * voxelScale - 200.0;
+            double baseY = info.voxelY * voxelScale - 200.0;
+            double baseZ = info.voxelZ * voxelScale - 200.0;
+
+            for (int i = 0; i < 4; i++) {
+                verts[i] = new Point3f(
+                    (float)(baseX + refVerts[i].x * voxelScale),
+                    (float)(baseY + refVerts[i].y * voxelScale),
+                    (float)(baseZ + refVerts[i].z * voxelScale)
+                );
+            }
+        } else {
+            // Fallback: use computed tree positions (legacy, less accurate)
+            for (int i = 0; i < 4; i++) {
+                float voxelX = info.origin.x + refVerts[i].x * info.size;
+                float voxelY = info.origin.y + refVerts[i].y * info.size;
+                float voxelZ = info.origin.z + refVerts[i].z * info.size;
+
+                verts[i] = new Point3f(
+                    (float)(voxelX * worldScale + worldOffset),
+                    (float)(voxelY * worldScale + worldOffset),
+                    (float)(voxelZ * worldScale + worldOffset)
+                );
+            }
+        }
+
+        // Create edges
+        for (var edge : TET_EDGES) {
+            var v1 = verts[edge[0]];
+            var v2 = verts[edge[1]];
+
+            double dx = v2.x - v1.x;
+            double dy = v2.y - v1.y;
+            double dz = v2.z - v1.z;
+            double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (length < 0.001) continue;
+
+            // Scale edge thickness to world space
+            var cylinder = new Cylinder(edgeThickness * worldScale / 2, length);
+            cylinder.setMaterial(edgeMaterial);
+
+            // Position at midpoint
+            cylinder.setTranslateX((v1.x + v2.x) / 2);
+            cylinder.setTranslateY((v1.y + v2.y) / 2);
+            cylinder.setTranslateZ((v1.z + v2.z) / 2);
+
+            // Rotate to align with edge
+            var yAxis = new Point3D(0, 1, 0);
+            var edgeDir = new Point3D(dx, dy, dz).normalize();
+            var rotAxis = yAxis.crossProduct(edgeDir);
+
+            if (rotAxis.magnitude() > 0.001) {
+                double angle = Math.toDegrees(Math.acos(yAxis.dotProduct(edgeDir)));
+                var rotation = new Rotate(angle, rotAxis);
+                cylinder.getTransforms().add(rotation);
+            }
+
+            wireframe.getChildren().add(cylinder);
+        }
+
+        return wireframe;
+    }
+
+    /**
+     * Get statistics about the ESVT data.
+     */
+    public String getStatistics() {
+        return String.format("ESVT: %d nodes, depth %d, %d leaves, %d internal",
+            data.nodeCount(), data.maxDepth(), data.leafCount(), data.internalCount());
+    }
+
+    /**
+     * Color schemes for rendering.
+     */
+    public enum ColorScheme {
+        DEPTH_GRADIENT,
+        TET_TYPE,
+        SINGLE_COLOR
+    }
+
+    /**
+     * Information about a node for rendering.
+     */
+    private record NodeRenderInfo(
+        int nodeIdx,
+        byte tetType,
+        Point3f origin,        // Computed from tree structure (legacy)
+        int size,
+        int level,
+        int leafIndex,         // Index in leaf array, or -1 if not a leaf
+        int voxelX,            // Original voxel X coordinate (if available)
+        int voxelY,            // Original voxel Y coordinate (if available)
+        int voxelZ             // Original voxel Z coordinate (if available)
+    ) {
+        // Constructor for backward compatibility (no voxel info)
+        NodeRenderInfo(int nodeIdx, byte tetType, Point3f origin, int size, int level) {
+            this(nodeIdx, tetType, origin, size, level, -1, 0, 0, 0);
+        }
+    }
+}

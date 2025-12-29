@@ -186,18 +186,18 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
         if ((childMasks & 0x8000u) != 0u && t_min <= t_max) {
             // INTERSECT
             float tv_max = min(t_max, tc_max);
-            float half = scale_exp2 * 0.5;
-            
+            float halfScale = scale_exp2 * 0.5;
+
             // Check if we should terminate (voxel small enough for screen space)
             float ray_size = tc_max * ray.dir_sz + ray.orig_sz;
             if (ray_size >= scale_exp2) {
                 break; // Hit voxel - it's small enough to be visible
             }
-            
+
             // Calculate center t-values for child selection
-            float tx_center = half * tx_coef + tx_corner;
-            float ty_center = half * ty_coef + ty_corner;
-            float tz_center = half * tz_coef + tz_corner;
+            float tx_center = halfScale * tx_coef + tx_corner;
+            float ty_center = halfScale * ty_coef + ty_corner;
+            float tz_center = halfScale * tz_coef + tz_corner;
             
             // CONTOUR INTERSECTION for sub-voxel surface refinement
             uint contourMask = (contourDesc & 0xFFu) << childShift;
@@ -251,7 +251,7 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
                 
                 // Update position for child octant
                 scale--;
-                scale_exp2 = half;
+                scale_exp2 = halfScale;
                 idx = 0;
                 
                 // Select child voxel that ray enters first

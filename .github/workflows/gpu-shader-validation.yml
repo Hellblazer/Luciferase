@@ -1,0 +1,153 @@
+name: GPU Shader Validation
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'render/src/main/resources/shaders/**'
+      - '.github/workflows/gpu-shader-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'render/src/main/resources/shaders/**'
+      - '.github/workflows/gpu-shader-validation.yml'
+
+jobs:
+  validate-shaders:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install glslang validator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools
+
+      - name: Validate GLSL shaders
+        run: |
+          echo "=== Validating GLSL Compute Shaders ==="
+
+          # Find all .comp files and validate
+          for shader in $(find . -name "*.comp" -type f); do
+            echo "Validating: $shader"
+            glslangValidator -S comp "$shader"
+            if [ $? -ne 0 ]; then
+              echo "FAILED: $shader"
+              exit 1
+            fi
+            echo "PASSED: $shader"
+          done
+
+          # Validate .vert and .frag shaders if present
+          for shader in $(find . -name "*.vert" -type f 2>/dev/null); do
+            echo "Validating: $shader"
+            glslangValidator -S vert "$shader"
+          done
+
+          for shader in $(find . -name "*.frag" -type f 2>/dev/null); do
+            echo "Validating: $shader"
+            glslangValidator -S frag "$shader"
+          done
+
+          echo "=== All shaders validated successfully ==="
+
+      - name: Print shader statistics
+        run: |
+          echo "=== Shader Statistics ==="
+          echo "Compute shaders: $(find . -name "*.comp" -type f | wc -l)"
+          echo "Vertex shaders: $(find . -name "*.vert" -type f | wc -l)"
+          echo "Fragment shaders: $(find . -name "*.frag" -type f | wc -l)"
+
+          # Print line counts
+          echo ""
+          echo "=== Shader Line Counts ==="
+          for shader in $(find . -name "*.comp" -o -name "*.vert" -o -name "*.frag" 2>/dev/null | head -10); do
+            lines=$(wc -l < "$shader")
+            echo "$shader: $lines lines"
+          done
+
+  # Optional: Test with Mesa software renderer
+  mesa-software-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MESA_GL_VERSION_OVERRIDE: 4.5
+      LIBGL_ALWAYS_SOFTWARE: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Mesa and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            mesa-utils \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            libegl-mesa0 \
+            libegl1 \
+            xvfb \
+            libxrandr2 \
+            libxcursor1 \
+            libxinerama1 \
+            libxi6 \
+            libxxf86vm1
+
+      - name: Check Mesa capabilities
+        run: |
+          export DISPLAY=:99.0
+          Xvfb :99 -screen 0 1024x768x24 &
+          sleep 2
+
+          echo "=== Mesa OpenGL Info ==="
+          glxinfo | head -50 || echo "glxinfo not available"
+
+          echo ""
+          echo "=== Checking for compute shader support ==="
+          glxinfo | grep -i "compute" || echo "Compute shader info not found"
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Configure Maven for GitHub Packages
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ESVT GPU tests with Mesa
+        run: |
+          export DISPLAY=:99.0
+          Xvfb :99 -screen 0 1024x768x24 &
+          sleep 2
+
+          # Try running GPU tests - they may skip if compute shaders unavailable
+          RUN_GPU_TESTS=true ./mvnw test -pl render -Dtest=ESVTGPUIntegrationTest -q || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

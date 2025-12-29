@@ -344,6 +344,92 @@ public class Tet {
         return current.locatePointBeyRefinement(px, py, pz, targetLevel);
     }
 
+    /**
+     * Locate a point in the S0 Bey subdivision tree using O(1) per-level traversal.
+     *
+     * <p>This method implements proper top-down traversal through the S0-rooted Bey
+     * subdivision tree. Unlike the S0-S5 cube partition approach, this ensures that
+     * child types are derived correctly from parent types using the Bey refinement
+     * tables.</p>
+     *
+     * <p><b>Algorithm:</b></p>
+     * <ol>
+     *   <li>Start at root (level 0, type 0)</li>
+     *   <li>For each level down to target:
+     *     <ul>
+     *       <li>Compute cube ID (which octant) from point position</li>
+     *       <li>Get Bey child ID: TYPE_CID_TO_BEYID[parentType][cubeId]</li>
+     *       <li>Get child type: PARENT_TYPE_TO_CHILD_TYPE[parentType][beyId]</li>
+     *     </ul>
+     *   </li>
+     *   <li>Return tetrahedron at target level with computed type</li>
+     * </ol>
+     *
+     * <p>This is O(targetLevel) with O(1) per level, compared to O(8) per level
+     * for the brute-force containment-checking approach.</p>
+     *
+     * @param px          x-coordinate (must be non-negative)
+     * @param py          y-coordinate (must be non-negative)
+     * @param pz          z-coordinate (must be non-negative)
+     * @param targetLevel the target level (0-21)
+     * @return the tetrahedron at targetLevel in the S0 tree containing the point
+     */
+    public static Tet locatePointS0Tree(float px, float py, float pz, byte targetLevel) {
+        // Validate inputs
+        if (px < 0 || py < 0 || pz < 0) {
+            throw new IllegalArgumentException("Coordinates must be non-negative");
+        }
+        if (targetLevel < 0 || targetLevel > Constants.getMaxRefinementLevel()) {
+            throw new IllegalArgumentException(
+                "Target level must be between 0 and " + Constants.getMaxRefinementLevel());
+        }
+
+        // Check bounds
+        int maxCoord = Constants.lengthAtLevel((byte) 0);
+        if (px >= maxCoord || py >= maxCoord || pz >= maxCoord) {
+            throw new IllegalArgumentException("Coordinates must be less than " + maxCoord);
+        }
+
+        // Special case: level 0 is always the root tetrahedron of type 0
+        if (targetLevel == 0) {
+            return new Tet(0, 0, 0, (byte) 0, (byte) 0);
+        }
+
+        // Top-down traversal through S0 Bey tree
+        byte currentType = 0;  // Root is always type 0
+
+        for (byte level = 1; level <= targetLevel; level++) {
+            // Cell size at parent level
+            int parentH = Constants.lengthAtLevel((byte) (level - 1));
+            int halfH = parentH / 2;
+
+            // Compute parent anchor at this level
+            int parentAnchorX = ((int) (px / parentH)) * parentH;
+            int parentAnchorY = ((int) (py / parentH)) * parentH;
+            int parentAnchorZ = ((int) (pz / parentH)) * parentH;
+
+            // Compute cube ID: which octant of the parent contains the point
+            int cubeId = 0;
+            if (px >= parentAnchorX + halfH) cubeId |= 1;
+            if (py >= parentAnchorY + halfH) cubeId |= 2;
+            if (pz >= parentAnchorZ + halfH) cubeId |= 4;
+
+            // Get Bey child ID from parent type and cube ID
+            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[currentType][cubeId];
+
+            // Get child type from parent type and Bey child ID
+            currentType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[currentType][beyId];
+        }
+
+        // Compute final anchor at target level
+        int targetH = Constants.lengthAtLevel(targetLevel);
+        int anchorX = ((int) (px / targetH)) * targetH;
+        int anchorY = ((int) (py / targetH)) * targetH;
+        int anchorZ = ((int) (pz / targetH)) * targetH;
+
+        return new Tet(anchorX, anchorY, anchorZ, targetLevel, currentType);
+    }
+
     public static double orientation(Tuple3f query, Tuple3i a, Tuple3i b, Tuple3i c) {
         var result = Geometry.leftOfPlane(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, query.x, query.y, query.z);
         return Math.signum(result);
@@ -793,11 +879,15 @@ public class Tet {
         return result;
     }
 
-    /* A routine to compute the type of t's ancestor of level "level",
-     * if its type at an intermediate level is already known.
-     * If "level" equals t's level then t's type is returned.
-     * It is not allowed to call this function with "level" greater than t->level.
-     * This method runs in O(t->level - level).
+    /**
+     * Compute the type of this tetrahedron's ancestor at a given level.
+     *
+     * <p>This method traces from root (type 0) down to the target level using
+     * S0 Bey tree traversal. This ensures consistency with locatePointS0Tree
+     * and parent() methods.</p>
+     *
+     * @param level the target level (0 to this.l)
+     * @return the type at that level
      */
     public byte computeType(byte level) {
         assert (0 <= level && level <= l);
@@ -806,36 +896,42 @@ public class Tet {
             return type;
         }
         if (level == 0) {
-            // Root tetrahedron type - configurable via ROOT_TET_TYPE or defaults to 0
-            return getRootTetrahedronType();
+            return 0; // Root is always type 0 in S0 Bey tree
         }
 
-        // Try cached lookup first for O(1) operation
-        byte cachedType = TetreeLevelCache.getTypeAtLevel(type, l, level);
-        if (cachedType != -1) {
-            return cachedType;
+        // Trace from root (type 0) down to target level
+        byte currentType = 0;
+
+        for (byte lvl = 1; lvl <= level; lvl++) {
+            // Cell size at parent level (lvl - 1)
+            int parentH = Constants.lengthAtLevel((byte) (lvl - 1));
+            int halfH = parentH / 2;
+
+            // Compute ancestor anchor at parent level
+            int ancestorAnchorX = (x / parentH) * parentH;
+            int ancestorAnchorY = (y / parentH) * parentH;
+            int ancestorAnchorZ = (z / parentH) * parentH;
+
+            // Compute cube ID: which octant
+            int cubeId = 0;
+            if (x >= ancestorAnchorX + halfH) cubeId |= 1;
+            if (y >= ancestorAnchorY + halfH) cubeId |= 2;
+            if (z >= ancestorAnchorZ + halfH) cubeId |= 4;
+
+            // Get Bey child ID and child type
+            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[currentType][cubeId];
+            currentType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[currentType][beyId];
         }
 
-        // Fallback to computation if not cached
-        byte type = this.type;
-        for (byte i = l; i > level; i--) {
-            /* compute type as the type of T^{i+1}, that is T's ancestor of level i+1 */
-            type = CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId(i)][type];
-        }
-        return type;
+        return currentType;
     }
 
     /**
      * Compute the consecutive index of this tetrahedron at this level.
      *
      * <p><b>Algorithm Overview:</b></p>
-     * Encodes the path from root to this tetrahedron by:
-     * <ol>
-     *   <li>Starting at this tetrahedron's level</li>
-     *   <li>Working backwards to root, extracting cube ID at each level</li>
-     *   <li>Converting cube ID to local index using connectivity table</li>
-     *   <li>Packing 3-bit local indices to form complete SFC index</li>
-     * </ol>
+     * Encodes the path from root to this tetrahedron by computing types at each
+     * level using S0 Bey tree traversal, then converting cubeId to local index.
      *
      * <p><b>CRITICAL:</b> The consecutive index encodes the complete path with NO level offset.</p>
      * Each level contributes exactly 3 bits to the final index.
@@ -853,35 +949,50 @@ public class Tet {
             return cachedIndex;
         }
 
-        // Cache miss - compute index
-        long id = 0;
-        byte typeTemp = 0;
-        byte cid;
-        int i;
-        int exponent;
-
         assert (0 <= l && l <= getMaxRefinementLevel());
 
-        exponent = 0;
-        typeTemp = computeType(l);
+        // Special case: root
+        if (l == 0) {
+            return 0;
+        }
 
-        // Traverse from this level back to root
-        for (i = l; i > 0; i--) {
-            // Get cube position at this level
-            cid = cubeId((byte) i);
+        // Pre-compute types at each level using S0 Bey tree traversal
+        byte[] typesAtLevel = new byte[l + 1];
+        typesAtLevel[0] = 0; // Root is always type 0
+
+        for (byte lvl = 1; lvl <= l; lvl++) {
+            int parentH = Constants.lengthAtLevel((byte) (lvl - 1));
+            int halfH = parentH / 2;
+
+            int ancestorAnchorX = (x / parentH) * parentH;
+            int ancestorAnchorY = (y / parentH) * parentH;
+            int ancestorAnchorZ = (z / parentH) * parentH;
+
+            int cubeId = 0;
+            if (x >= ancestorAnchorX + halfH) cubeId |= 1;
+            if (y >= ancestorAnchorY + halfH) cubeId |= 2;
+            if (z >= ancestorAnchorZ + halfH) cubeId |= 4;
+
+            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[typesAtLevel[lvl - 1]][cubeId];
+            typesAtLevel[lvl] = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[typesAtLevel[lvl - 1]][beyId];
+        }
+
+        // Now compute index by traversing from this level back to root
+        long id = 0;
+        int exponent = 0;
+
+        for (int i = l; i > 0; i--) {
+            byte cid = cubeId((byte) i);
+            byte typeAtLevel = typesAtLevel[i];
 
             // Convert to local index using connectivity table
-            id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeTemp][cid]) << exponent;
-
-            // Each level adds 3 bits
+            id |= ((long) TYPE_CUBE_ID_TO_LOCAL_INDEX[typeAtLevel][cid]) << exponent;
             exponent += 3;
-            typeTemp = CUBE_ID_TYPE_TO_PARENT_TYPE[cid][typeTemp];
         }
 
         // Cache the result for future lookups
         TetreeLevelCache.cacheIndex(x, y, z, l, type, id);
 
-        // Return the raw SFC index without level offset (matching t8code)
         return id;
     }
 
@@ -1817,8 +1928,14 @@ public class Tet {
     }
 
     /**
-     * Compute parent type using reverse lookup from connectivity tables. Based on t8code's parent type computation
-     * algorithm.
+     * Compute parent type by tracing from root through S0 Bey tree.
+     *
+     * <p><b>Key Insight:</b> The CUBE_ID_TYPE_TO_PARENT_TYPE reverse lookup table
+     * is NOT a unique inverse - multiple parent types can produce the same child type
+     * at the same cubeId. For consistency with the S0-rooted Bey tree, we must trace
+     * from root to determine the correct parent type.</p>
+     *
+     * <p>This is O(parentLevel) but ensures consistency with locatePointS0Tree.</p>
      */
     private byte computeParentType(int parentX, int parentY, int parentZ, byte parentLevel) {
         // Special case: root tetrahedron must always have type 0
@@ -1826,24 +1943,31 @@ public class Tet {
             return 0;
         }
 
-        // Calculate the cube ID of this child within its parent
-        // This is which octant of the parent cube contains this child
-        int h = length(); // Cell size at current level
-        byte cubeId = 0;
+        // Trace from root (type 0) down to parentLevel
+        byte currentType = 0;
 
-        // Each bit indicates if the child is in the upper half of that dimension
-        if ((x & h) != 0) {
-            cubeId |= 1;  // X bit
-        }
-        if ((y & h) != 0) {
-            cubeId |= 2;  // Y bit
-        }
-        if ((z & h) != 0) {
-            cubeId |= 4;  // Z bit
+        for (byte level = 1; level <= parentLevel; level++) {
+            // Cell size at parent level (level - 1)
+            int parentH = Constants.lengthAtLevel((byte) (level - 1));
+            int halfH = parentH / 2;
+
+            // Compute ancestor anchor at this parent level
+            int ancestorAnchorX = (parentX / parentH) * parentH;
+            int ancestorAnchorY = (parentY / parentH) * parentH;
+            int ancestorAnchorZ = (parentZ / parentH) * parentH;
+
+            // Compute cube ID: which octant of the ancestor
+            int cubeId = 0;
+            if (parentX >= ancestorAnchorX + halfH) cubeId |= 1;
+            if (parentY >= ancestorAnchorY + halfH) cubeId |= 2;
+            if (parentZ >= ancestorAnchorZ + halfH) cubeId |= 4;
+
+            // Get Bey child ID and child type
+            byte beyId = TetreeConnectivity.TYPE_CID_TO_BEYID[currentType][cubeId];
+            currentType = TetreeConnectivity.PARENT_TYPE_TO_CHILD_TYPE[currentType][beyId];
         }
 
-        // Use reverse lookup table to find parent type
-        return CUBE_ID_TYPE_TO_PARENT_TYPE[cubeId][type];
+        return currentType;
     }
 
     // Optimized planar SFC range computation (2 dimensions vary)
