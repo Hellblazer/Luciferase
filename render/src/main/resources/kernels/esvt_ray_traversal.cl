@@ -213,6 +213,7 @@ float2 decodeContourPosThick(int value) {
     return (float2)(pos, thick);
 }
 
+// ARITHMETIC VERSION: Avoids fabs() which crashes on macOS OpenCL
 float2 intersectContour(int contour, float3 rayOrigin, float3 rayDir, float tetScale) {
     float3 normal = decodeContourNormal(contour);
     float2 posThick = decodeContourPosThick(contour);
@@ -223,8 +224,13 @@ float2 intersectContour(int contour, float3 rayOrigin, float3 rayDir, float tetS
     float denom = dot(normal, rayDir);
     float originDot = dot(normal, rayOrigin);
 
-    if (fabs(denom) < 1e-10f) {
-        float dist = fabs(originDot - pos);
+    // MANUAL absolute value (fabs() crashes on macOS OpenCL)
+    float absDenom = (denom >= 0.0f) ? denom : -denom;
+
+    if (absDenom < 1e-10f) {
+        // MANUAL absolute value for distance check
+        float diff = originDot - pos;
+        float dist = (diff >= 0.0f) ? diff : -diff;
         if (dist <= halfThick) {
             return (float2)(-1e30f, 1e30f);
         }
@@ -234,28 +240,27 @@ float2 intersectContour(int contour, float3 rayOrigin, float3 rayDir, float tetS
     float t1 = (pos - halfThick - originDot) / denom;
     float t2 = (pos + halfThick - originDot) / denom;
 
-    if (t1 > t2) {
-        float tmp = t1;
-        t1 = t2;
-        t2 = tmp;
-    }
+    // Use arithmetic swap instead of conditional
+    float minT = (t1 < t2) ? t1 : t2;
+    float maxT = (t1 < t2) ? t2 : t1;
 
-    return (float2)(t1, t2);
+    return (float2)(minT, maxT);
 }
 
-ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
-                                        float tEntry, float tExit,
-                                        float3 rayOrigin, float3 rayDir,
-                                        float tetScale,
-                                        __global const int* contours) {
-    ContourRefinement result;
-    result.t = tEntry;
-    result.normal = (float3)(0.0f);
-    result.valid = true;
+// INPLACE VERSION: Avoids struct return AND fabs() crashes on macOS OpenCL
+void refineHitWithContoursInplace(ESVTNode node, int entryFace,
+                                   float tEntry, float tExit,
+                                   float3 rayOrigin, float3 rayDir,
+                                   float tetScale,
+                                   __global const int* contours,
+                                   float* tOut, float3* normalOut, bool* validOut) {
+    *tOut = tEntry;
+    *normalOut = (float3)(0.0f);
+    *validOut = true;
 
     uint contourMask = getContourMask(node);
     if (contourMask == 0u) {
-        return result;
+        return;
     }
 
     uint contourPtr = getContourPtr(node);
@@ -271,21 +276,33 @@ ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
             float pos = posThick.x * tetScale;
 
             float denom = dot(contourNormal, rayDir);
-            if (fabs(denom) > 1e-10f) {
+            // MANUAL absolute value (fabs() crashes on macOS OpenCL)
+            float absDenom = (denom >= 0.0f) ? denom : -denom;
+            if (absDenom > 1e-10f) {
                 float refinedT = (pos - dot(contourNormal, rayOrigin)) / denom;
                 if (refinedT >= tEntry && refinedT <= tExit) {
-                    result.t = refinedT;
-                    result.normal = normalize(contourNormal);
-                    if (dot(result.normal, rayDir) > 0) {
-                        result.normal = -result.normal;
+                    *tOut = refinedT;
+                    *normalOut = normalize(contourNormal);
+                    if (dot(*normalOut, rayDir) > 0) {
+                        *normalOut = -(*normalOut);
                     }
                 }
             }
         } else if (contourHit.x == -1.0f && contourHit.y == -1.0f) {
-            result.valid = false;
+            *validOut = false;
         }
     }
+}
 
+// Legacy wrapper (may crash on some OpenCL implementations)
+ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
+                                        float tEntry, float tExit,
+                                        float3 rayOrigin, float3 rayDir,
+                                        float tetScale,
+                                        __global const int* contours) {
+    ContourRefinement result;
+    refineHitWithContoursInplace(node, entryFace, tEntry, tExit, rayOrigin, rayDir,
+                                  tetScale, contours, &result.t, &result.normal, &result.valid);
     return result;
 }
 
@@ -293,6 +310,7 @@ ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
 // MOLLER-TRUMBORE RAY-TRIANGLE INTERSECTION
 // ============================================================================
 
+// ARITHMETIC VERSION: Avoids fabs() which can crash on macOS OpenCL
 TriangleHit intersectTriangle(float3 rayOrigin, float3 rayDir,
                               float3 v0, float3 v1, float3 v2) {
     TriangleHit result;
@@ -307,7 +325,9 @@ TriangleHit intersectTriangle(float3 rayOrigin, float3 rayDir,
     float3 h = cross(rayDir, edge2);
     float a = dot(edge1, h);
 
-    if (fabs(a) < EPSILON) {
+    // MANUAL absolute value (fabs() can crash on macOS OpenCL)
+    float absA = (a >= 0.0f) ? a : -a;
+    if (absA < EPSILON) {
         return result;
     }
 
@@ -618,22 +638,24 @@ __kernel void traverseESVT(
     #endif
 
     // Test ray-root intersection - PURE ARITHMETIC (no conditionals - macOS crash workaround)
+    // Declare all variables at outer scope for use in traversal
     float rootHit_tEntry = 1e30f;
+    float rootHit_tExit = -1e30f;
     int rootHit_entryFace = -1;
     int rootHit_exitFace = -1;
+    int rootHitCount = 0;
 
     // Inline intersectTetrahedron with ARITHMETIC hit detection
     {
         float tMin = 1e30f;
-        float tMax_local = -1e30f;  // renamed to avoid outputting with conditionals
+        float tMax_local = -1e30f;
         int minFace = -1;
         int maxFace = -1;
-        int hitCount = 0;
 
         // Face 0: opposite v0, triangle (v1, v2, v3)
         TriangleHit tri0 = intersectTriangle(rayOrigin, rayDir, pv1, pv2, pv3);
         if (tri0.hit) {
-            hitCount++;
+            rootHitCount++;
             if (tri0.t < tMin) { tMin = tri0.t; minFace = 0; }
             if (tri0.t > tMax_local) { tMax_local = tri0.t; maxFace = 0; }
         }
@@ -641,7 +663,7 @@ __kernel void traverseESVT(
         // Face 1: opposite v1, triangle (v0, v2, v3)
         TriangleHit tri1 = intersectTriangle(rayOrigin, rayDir, pv0, pv2, pv3);
         if (tri1.hit) {
-            hitCount++;
+            rootHitCount++;
             if (tri1.t < tMin) { tMin = tri1.t; minFace = 1; }
             if (tri1.t > tMax_local) { tMax_local = tri1.t; maxFace = 1; }
         }
@@ -649,7 +671,7 @@ __kernel void traverseESVT(
         // Face 2: opposite v2, triangle (v0, v1, v3)
         TriangleHit tri2 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv3);
         if (tri2.hit) {
-            hitCount++;
+            rootHitCount++;
             if (tri2.t < tMin) { tMin = tri2.t; minFace = 2; }
             if (tri2.t > tMax_local) { tMax_local = tri2.t; maxFace = 2; }
         }
@@ -657,200 +679,224 @@ __kernel void traverseESVT(
         // Face 3: opposite v3, triangle (v0, v1, v2)
         TriangleHit tri3 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv2);
         if (tri3.hit) {
-            hitCount++;
+            rootHitCount++;
             if (tri3.t < tMin) { tMin = tri3.t; minFace = 3; }
             if (tri3.t > tMax_local) { tMax_local = tri3.t; maxFace = 3; }
         }
 
-        // PURE ARITHMETIC hit detection (no conditionals with tMin)
-        // hitCount > 0 means we hit at least one face
-        float fHitCount = (float)hitCount;
-        float hitFlag = clamp(fHitCount, 0.0f, 1.0f);  // 1.0 if hit, 0.0 if miss
-
-        rootHit_tEntry = tMin * hitFlag;  // 0 if no hit
+        // Store root hit info at outer scope
+        rootHit_tEntry = tMin;
+        rootHit_tExit = tMax_local;
         rootHit_entryFace = minFace;
         rootHit_exitFace = maxFace;
-
-        // Output using arithmetic (no if/else with tMin)
-        // hitFlag determines whether this is a hit (shaded) or miss (background)
-        hitResults[gid] = (float4)(0.0f, hitFlag, 0.0f, rootHit_tEntry);
-        hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, hitFlag);
-        return;  // For now, just test root intersection
     }
 
-    // DISABLED: Full traversal code needs rewrite to use arithmetic pattern
-    #if 0
-    if (!rootHit_hit) {
-        // DIAGNOSTIC: Red = ray missed root tetrahedron
-        // Encode ray direction in color to verify rays are generated correctly
-        hitResults[gid] = (float4)(
-            fabs(rayDir.x),
-            fabs(rayDir.y),
-            fabs(rayDir.z),
-            0.1f);
-        hitNormals[gid] = (float4)(1.0f, 0.0f, 0.0f, 1.0f);  // Red tint
-        return;
-    }
+    // If root was hit, proceed with traversal
+    if (rootHitCount > 0) {
+        // Initialize traversal state
+        // CRITICAL: Track actual parent vertices for correct multi-level traversal
+        uint parentIdx = 0u;
+        int parentType = rootType;
+        int entryFace = rootHit_entryFace;
+        float tMinLocal = rootHit_tEntry;
+        float tMaxLocal = rootHit_tExit;
+        int scale = CAST_STACK_DEPTH - 1;
+        float scaleExp2 = 1.0f;
+        int siblingPos = 0;
+        int iter = 0;
 
-    // DIAGNOSTIC: If we get here, ray hit root - show green-ish
-    // This will be overwritten if we find a leaf
-    hitResults[gid] = (float4)(0.0f, 0.5f, 0.0f, rootHit_tEntry);
-    hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, 1.0f);
+        // Track best hit
+        float bestT = 1e30f;
+        float3 bestHitPoint = (float3)(0.0f);
+        float3 bestHitNormal = (float3)(0.0f, 1.0f, 0.0f);
+        bool foundLeaf = false;
 
-    // Initialize traversal state
-    // CRITICAL: Track actual parent vertices for correct multi-level traversal
-    uint parentIdx = 0u;
-    int parentType = rootType;
-    int entryFace = rootHit_entryFace;
-    float tMin = rootHit_tEntry;
-    float tMax = rootHit_tExit;
-    int scale = CAST_STACK_DEPTH - 1;
-    float scaleExp2 = 1.0f;
-    int siblingPos = 0;
-    int iter = 0;
+        // Main traversal loop
+        while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
+            iter++;
 
-    // Main traversal loop
-    while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
-        iter++;
-
-        ESVTNode node = nodes[parentIdx];
-        if (!isValid(node)) {
-            scale++;
-            if (scale >= CAST_STACK_DEPTH || stack[scale].nodeIdx == 0xFFFFFFFFu) {
-                break;
-            }
-            // Restore state including parent vertices
-            parentIdx = stack[scale].nodeIdx;
-            tMax = stack[scale].tMax;
-            parentType = stack[scale].parentType;
-            entryFace = stack[scale].entryFace;
-            pv0 = stack[scale].v0;
-            pv1 = stack[scale].v1;
-            pv2 = stack[scale].v2;
-            pv3 = stack[scale].v3;
-            siblingPos = 0;
-            scaleExp2 *= 2.0f;
-            continue;
-        }
-
-        // Get child order for entry face
-        int orderBase = parentType * 16 + max(0, entryFace) * 4;
-
-        // Try each child
-        bool descended = false;
-        for (int pos = siblingPos; pos < 4; pos++) {
-            int childIdx = CHILD_ORDER[orderBase + pos];
-
-            if (!hasChild(node, childIdx)) {
+            ESVTNode node = nodes[parentIdx];
+            if (!isValid(node)) {
+                scale++;
+                if (scale >= CAST_STACK_DEPTH || stack[scale].nodeIdx == 0xFFFFFFFFu) {
+                    break;
+                }
+                // Restore state including parent vertices
+                parentIdx = stack[scale].nodeIdx;
+                tMaxLocal = stack[scale].tMax;
+                parentType = stack[scale].parentType;
+                entryFace = stack[scale].entryFace;
+                pv0 = stack[scale].v0;
+                pv1 = stack[scale].v1;
+                pv2 = stack[scale].v2;
+                pv3 = stack[scale].v3;
+                siblingPos = 0;
+                scaleExp2 *= 2.0f;
                 continue;
             }
 
-            // Get child vertices from ACTUAL parent vertices (not SIMPLEX_STANDARD)
-            float3 cv0, cv1, cv2, cv3;
-            getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, &cv0, &cv1, &cv2, &cv3);
+            // Get child order for entry face (use 0 if entryFace is invalid)
+            int safeEntryFace = (entryFace >= 0 && entryFace < 4) ? entryFace : 0;
+            int orderBase = parentType * 16 + safeEntryFace * 4;
 
-            // Test intersection using inplace version (avoids struct return issues)
-            bool childHit_hit;
-            float childHit_tEntry, childHit_tExit;
-            int childHit_entryFace, childHit_exitFace;
-            intersectTetrahedronInplace(rayOrigin, rayDir, cv0, cv1, cv2, cv3,
-                                        &childHit_hit, &childHit_tEntry, &childHit_tExit,
-                                        &childHit_entryFace, &childHit_exitFace);
-            if (!childHit_hit) {
-                continue;
-            }
+            // Try each child
+            bool descended = false;
+            for (int pos = siblingPos; pos < 4; pos++) {
+                int childIdx = CHILD_ORDER[orderBase + pos];
 
-            // Check if leaf
-            if (isChildLeaf(node, childIdx)) {
-                uint childNodeIdx = getChildIndex(nodes, node, childIdx, parentIdx);
-                ESVTNode childNode = nodes[childNodeIdx];
-                float childScale = scaleExp2 * 0.5f;
-
-                ContourRefinement contourRef = refineHitWithContours(
-                    childNode, childHit_entryFace, childHit_tEntry, childHit_tExit,
-                    rayOrigin, rayDir, childScale, contours);
-
-                if (!contourRef.valid) {
+                if (!hasChild(node, childIdx)) {
                     continue;
                 }
 
-                float3 hitPoint = rayOrigin + rayDir * contourRef.t;
-                float3 hitNormal;
+                // Get child vertices from ACTUAL parent vertices (not SIMPLEX_STANDARD)
+                float3 cv0, cv1, cv2, cv3;
+                getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, &cv0, &cv1, &cv2, &cv3);
 
-                if (length(contourRef.normal) > 0.5f) {
-                    hitNormal = contourRef.normal;
-                } else {
-                    float3 fv0, fv1, fv2;
-                    int ef = childHit_entryFace;
-                    if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                    else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                    else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
-
-                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                    if (dot(hitNormal, rayDir) > 0) {
-                        hitNormal = -hitNormal;
-                    }
+                // Test intersection using inplace version (avoids struct return issues)
+                bool childHit_hit;
+                float childHit_tEntry, childHit_tExit;
+                int childHit_entryFace, childHit_exitFace;
+                intersectTetrahedronInplace(rayOrigin, rayDir, cv0, cv1, cv2, cv3,
+                                            &childHit_hit, &childHit_tEntry, &childHit_tExit,
+                                            &childHit_entryFace, &childHit_exitFace);
+                if (!childHit_hit) {
+                    continue;
                 }
 
-                hitResults[gid] = (float4)(hitPoint.x, hitPoint.y, hitPoint.z, contourRef.t);
-                hitNormals[gid] = (float4)(hitNormal.x, hitNormal.y, hitNormal.z, 1.0f);
-                return;
-            }
+                // Check if leaf
+                if (isChildLeaf(node, childIdx)) {
+                    uint childNodeIdx = getChildIndex(nodes, node, childIdx, parentIdx);
+                    ESVTNode childNode = nodes[childNodeIdx];
+                    float childScale = scaleExp2 * 0.5f;
 
-            // Non-leaf - push and descend
-            // Save current state including parent vertices
-            stack[scale].nodeIdx = parentIdx;
-            stack[scale].tMax = tMax;
-            stack[scale].parentType = parentType;
-            stack[scale].entryFace = entryFace;
-            stack[scale].v0 = pv0;
-            stack[scale].v1 = pv1;
-            stack[scale].v2 = pv2;
-            stack[scale].v3 = pv3;
+                    // Use inplace version to avoid struct return
+                    float contourT;
+                    float3 contourNormal;
+                    bool contourValid;
+                    refineHitWithContoursInplace(
+                        childNode, childHit_entryFace, childHit_tEntry, childHit_tExit,
+                        rayOrigin, rayDir, childScale, contours,
+                        &contourT, &contourNormal, &contourValid);
 
-            // Update state for child - child vertices become new parent vertices
-            parentIdx = getChildIndex(nodes, node, childIdx, parentIdx);
-            parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + childIdx];
-            entryFace = childHit_entryFace >= 0 ? childHit_entryFace : 0;
-            tMin = childHit_tEntry;
-            tMax = childHit_tExit;
-            pv0 = cv0;
-            pv1 = cv1;
-            pv2 = cv2;
-            pv3 = cv3;
-            scale--;
-            scaleExp2 *= 0.5f;
-            siblingPos = 0;
-            descended = true;
-            break;
-        }
+                    if (!contourValid) {
+                        continue;
+                    }
 
-        if (!descended) {
-            if (scale >= CAST_STACK_DEPTH - 1) {
+                    // Found valid leaf hit - check if it's closer
+                    if (contourT < bestT) {
+                        bestT = contourT;
+                        bestHitPoint = rayOrigin + rayDir * contourT;
+
+                        // Calculate normal
+                        float normalLen = length(contourNormal);
+                        if (normalLen > 0.5f) {
+                            bestHitNormal = contourNormal;
+                        } else {
+                            // Compute face normal based on entry face
+                            float3 fv0, fv1, fv2;
+                            int ef = childHit_entryFace;
+                            // Use safe indexing to select face vertices
+                            if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                            else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                            else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                            if (dot(bestHitNormal, rayDir) > 0) {
+                                bestHitNormal = -bestHitNormal;
+                            }
+                        }
+                        foundLeaf = true;
+                    }
+                    // Continue to check other children at same level (may find closer hit)
+                    continue;
+                }
+
+                // Non-leaf - push and descend
+                // Save current state including parent vertices
+                stack[scale].nodeIdx = parentIdx;
+                stack[scale].tMax = tMaxLocal;
+                stack[scale].parentType = parentType;
+                stack[scale].entryFace = entryFace;
+                stack[scale].v0 = pv0;
+                stack[scale].v1 = pv1;
+                stack[scale].v2 = pv2;
+                stack[scale].v3 = pv3;
+
+                // Update state for child - child vertices become new parent vertices
+                parentIdx = getChildIndex(nodes, node, childIdx, parentIdx);
+                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + childIdx];
+                entryFace = (childHit_entryFace >= 0) ? childHit_entryFace : 0;
+                tMinLocal = childHit_tEntry;
+                tMaxLocal = childHit_tExit;
+                pv0 = cv0;
+                pv1 = cv1;
+                pv2 = cv2;
+                pv3 = cv3;
+                scale--;
+                scaleExp2 *= 0.5f;
+                siblingPos = 0;
+                descended = true;
                 break;
             }
 
-            scale++;
-            scaleExp2 *= 2.0f;
+            if (!descended) {
+                if (scale >= CAST_STACK_DEPTH - 1) {
+                    break;
+                }
 
-            if (stack[scale].nodeIdx == 0xFFFFFFFFu) {
-                break;
+                scale++;
+                scaleExp2 *= 2.0f;
+
+                if (stack[scale].nodeIdx == 0xFFFFFFFFu) {
+                    break;
+                }
+
+                // Restore state including parent vertices
+                parentIdx = stack[scale].nodeIdx;
+                tMaxLocal = stack[scale].tMax;
+                parentType = stack[scale].parentType;
+                entryFace = stack[scale].entryFace;
+                pv0 = stack[scale].v0;
+                pv1 = stack[scale].v1;
+                pv2 = stack[scale].v2;
+                pv3 = stack[scale].v3;
+                siblingPos = 0;
             }
-
-            // Restore state including parent vertices
-            parentIdx = stack[scale].nodeIdx;
-            tMax = stack[scale].tMax;
-            parentType = stack[scale].parentType;
-            entryFace = stack[scale].entryFace;
-            pv0 = stack[scale].v0;
-            pv1 = stack[scale].v1;
-            pv2 = stack[scale].v2;
-            pv3 = stack[scale].v3;
-            siblingPos = 0;
         }
+
+        // ARITHMETIC OUTPUT: Blend based on foundLeaf
+        // Uses clamp-based flag to avoid conditionals with output values
+        float leafHitFlag = foundLeaf ? 1.0f : 0.0f;
+        float noLeafFlag = 1.0f - leafHitFlag;
+
+        // If leaf found: output hit data
+        // If no leaf but root hit: output root hit (green tint)
+        // The missFlag was computed above for root miss case
+        float rootOnlyFlag = noLeafFlag;
+
+        // Output using arithmetic blending
+        // Leaf hit: bestHitPoint, bestT
+        // Root hit only: show green tint at root intersection
+        // Root miss: show ray direction as background
+
+        float4 leafResult = (float4)(bestHitPoint.x, bestHitPoint.y, bestHitPoint.z, bestT);
+        float4 leafNormal = (float4)(bestHitNormal.x, bestHitNormal.y, bestHitNormal.z, 1.0f);
+
+        float4 rootOnlyResult = (float4)(0.0f, 0.5f, 0.0f, tMinLocal);
+        float4 rootOnlyNormal = (float4)(0.0f, 1.0f, 0.0f, 1.0f);
+
+        // Blend: prefer leaf hit, then root hit
+        hitResults[gid] = leafHitFlag * leafResult + rootOnlyFlag * rootOnlyResult;
+        hitNormals[gid] = leafHitFlag * leafNormal + rootOnlyFlag * rootOnlyNormal;
+    } else {
+        // Root miss case - output background using arithmetic
+        float absRayDirX = (rayDir.x >= 0.0f) ? rayDir.x : -rayDir.x;
+        float absRayDirY = (rayDir.y >= 0.0f) ? rayDir.y : -rayDir.y;
+        float absRayDirZ = (rayDir.z >= 0.0f) ? rayDir.z : -rayDir.z;
+        hitResults[gid] = (float4)(absRayDirX, absRayDirY, absRayDirZ, 0.1f);
+        hitNormals[gid] = (float4)(1.0f, 0.0f, 0.0f, 0.0f);  // Red tint, no hit
     }
-    #endif  // End of disabled traversal code
 }
 
 // ============================================================================
