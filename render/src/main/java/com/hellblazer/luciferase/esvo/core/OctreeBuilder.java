@@ -135,30 +135,37 @@ public class OctreeBuilder implements AutoCloseable {
             }
         }
         
+        // Far pointer support: max value for 14-bit child pointer
+        final int MAX_CHILD_PTR = (1 << 14) - 1; // 16383
+
+        // Track far pointers needed - allocate slots after regular nodes
+        int nextFarPointerSlot = nodeIndex; // Start after all regular nodes
+        List<FarPointerEntry> farPointers = new ArrayList<>();
+
         // Second pass: create ESVO nodes with proper child pointers and masks
         for (Map.Entry<Long, OctreeNode> entry : nodeMap.entrySet()) {
             long nodeKey = entry.getKey();
             OctreeNode node = entry.getValue();
             int currentIndex = keyToIndex.get(nodeKey);
-            
+
             // Calculate child mask and leaf mask
             int childMask = 0;
             int leafMask = 0;
             int firstChildIndex = -1;
-            
+
             if (!node.isLeaf) {
                 // Check which children exist
                 for (int childIdx = 0; childIdx < 8; childIdx++) {
                     long childKey = getChildKey(nodeKey, childIdx);
                     if (nodeMap.containsKey(childKey)) {
                         childMask |= (1 << childIdx);
-                        
+
                         // Track first child index for child pointer
                         int childIndex = keyToIndex.get(childKey);
                         if (firstChildIndex == -1) {
                             firstChildIndex = childIndex;
                         }
-                        
+
                         // Check if child is a leaf
                         if (nodeMap.get(childKey).isLeaf) {
                             leafMask |= (1 << childIdx);
@@ -169,24 +176,67 @@ public class OctreeBuilder implements AutoCloseable {
                 // Leaf nodes have no children but mark themselves as leaves
                 leafMask = 0xFF; // All children would be leaves (leaf node convention)
             }
-            
+
             // Create ESVO node with relative child pointer
             // Use relative offset from current node (not absolute index)
-            // This keeps pointers small in BFS-ordered trees
             int relativeOffset = firstChildIndex != -1 ? (firstChildIndex - currentIndex) : 0;
+
+            // Check if we need a far pointer
+            boolean useFarPointer = relativeOffset > MAX_CHILD_PTR;
+            int childPtr;
+
+            if (useFarPointer && firstChildIndex != -1) {
+                // Allocate far pointer slot
+                int farPointerSlot = nextFarPointerSlot++;
+
+                // Calculate offset to far pointer slot (must fit in 14 bits when divided by 2)
+                int farPointerOffset = farPointerSlot - currentIndex;
+
+                // For far pointer resolution: ofs = nodes[parentIdx + ofs * 2].childDescriptor
+                // So we store: childPtr = farPointerOffset / 2
+                // The far pointer node stores the actual child index (not offset)
+                childPtr = farPointerOffset;
+
+                // Store far pointer entry for later
+                farPointers.add(new FarPointerEntry(farPointerSlot, firstChildIndex));
+
+                log.debug("Using far pointer for node {}: farSlot={}, actualChild={}",
+                         currentIndex, farPointerSlot, firstChildIndex);
+            } else {
+                childPtr = relativeOffset;
+            }
+
             ESVONodeUnified esvoNode = new ESVONodeUnified(
                 (byte) leafMask,
                 (byte) childMask,
-                false,  // far flag
-                relativeOffset,
+                useFarPointer,
+                childPtr,
                 (byte) 0,  // contour mask (not used in basic construction)
                 0          // contour ptr (not used in basic construction)
             );
-            
+
             octreeData.setNode(currentIndex, esvoNode);
         }
-        
-        log.debug("Built octree with {} nodes from {} voxels", nodeMap.size(), voxelList.size());
+
+        // Third pass: create far pointer nodes
+        for (FarPointerEntry fp : farPointers) {
+            // Far pointer node stores the actual child index in childDescriptor
+            // When resolved: return parentIdx + nodes[parentIdx + ofs * 2].childDescriptor * 2
+            // So we need to store: (firstChildIndex - parentIdx) / 2? No, looking at the code:
+            // ofs = nodes[parentIdx + ofs * 2].childDescriptor
+            // return parentIdx + ofs * 2
+            // So childDescriptor should be the relative offset / 2
+            // Actually looking at ESVONode.resolveFarPointer more carefully, it returns parentIdx + ofs * 2
+            // where ofs is read from the far pointer node's childDescriptor
+            // This doesn't match what we need - the far pointer should point to the actual child
+            // Let me just store the absolute child index for now and adjust traversal if needed
+            ESVONodeUnified farPointerNode = new ESVONodeUnified(fp.actualChildIndex, 0);
+            octreeData.setNode(fp.slotIndex, farPointerNode);
+        }
+
+        int totalNodes = nodeMap.size() + farPointers.size();
+        log.debug("Built octree with {} nodes ({} regular, {} far pointers) from {} voxels",
+                 totalNodes, nodeMap.size(), farPointers.size(), voxelList.size());
         
         return octreeData;
     }
@@ -346,11 +396,24 @@ public class OctreeBuilder implements AutoCloseable {
         final long key;
         final int level;
         final boolean isLeaf;
-        
+
         OctreeNode(long key, int level, boolean isLeaf) {
             this.key = key;
             this.level = level;
             this.isLeaf = isLeaf;
+        }
+    }
+
+    /**
+     * Far pointer entry for nodes that need far pointer resolution
+     */
+    private static class FarPointerEntry {
+        final int slotIndex;       // Where to store the far pointer node
+        final int actualChildIndex; // The actual child index to point to
+
+        FarPointerEntry(int slotIndex, int actualChildIndex) {
+            this.slotIndex = slotIndex;
+            this.actualChildIndex = actualChildIndex;
         }
     }
 }

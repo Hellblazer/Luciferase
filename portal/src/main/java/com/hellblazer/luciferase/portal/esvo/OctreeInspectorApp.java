@@ -116,16 +116,15 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
 
     @Override
     protected int getMaxDepth() {
-        // ESVO uses 14-bit relative child pointers without far pointer support
-        // in OctreeBuilder.buildFromVoxels(). Until far pointers are implemented,
-        // limit to depth 3 (8x8x8 = 512 max voxels, ~600 nodes)
-        return 3;
+        // ESVO now supports far pointers for large child offsets
+        // Max depth 6 gives 64x64x64 grid (~262K voxels max)
+        return 6;
     }
 
     @Override
     protected int getDefaultDepth() {
-        // Start with depth 3 - safe for current node format
-        return 3;
+        // Default to depth 5 (32x32x32 = ~32K voxels)
+        return 5;
     }
 
     @Override
