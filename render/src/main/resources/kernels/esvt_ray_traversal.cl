@@ -52,6 +52,7 @@ typedef struct {
     float tMax;
     int parentType;
     int entryFace;
+    int siblingPos;  // Next child index to try when we pop back to this level
     // Store actual parent vertices for correct multi-level traversal
     float3 v0, v1, v2, v3;
 } StackEntry;
@@ -106,6 +107,18 @@ constant int PARENT_TYPE_TO_CHILD_TYPE[48] = {
     3, 3, 3, 3, 5, 4, 1, 2,  // Parent type 3
     4, 4, 4, 4, 2, 3, 0, 5,  // Parent type 4
     5, 5, 5, 5, 1, 0, 3, 4   // Parent type 5
+};
+
+// INDEX_TO_BEY_NUMBER[6][8] - converts Morton index to Bey child ID
+// ESVT tree stores children in Morton order, but Bey subdivision uses Bey order
+// [parentType * 8 + mortonIdx] -> beyIdx
+constant int INDEX_TO_BEY_NUMBER[48] = {
+    0, 1, 4, 5, 2, 7, 6, 3,  // Parent type 0
+    0, 1, 5, 4, 7, 2, 6, 3,  // Parent type 1
+    0, 4, 5, 1, 2, 7, 6, 3,  // Parent type 2
+    0, 1, 5, 4, 6, 7, 2, 3,  // Parent type 3
+    0, 4, 5, 1, 6, 2, 7, 3,  // Parent type 4
+    0, 5, 4, 1, 6, 7, 2, 3   // Parent type 5
 };
 
 // CHILD_ORDER[6][4][4] - flattened to [96]
@@ -449,9 +462,16 @@ TetrahedronHit intersectTetrahedron(float3 rayOrigin, float3 rayDir,
 // CRITICAL: Takes ACTUAL parent vertices, not canonical SIMPLEX_STANDARD positions.
 // This enables correct multi-level traversal where parent positions vary.
 // In Bey subdivision, children fill the parent completely using edge midpoints.
+//
+// IMPORTANT: mortonIdx is the child index in MORTON order (as stored in ESVT tree).
+// We must convert it to BEY order using INDEX_TO_BEY_NUMBER[parentType] to get
+// the correct geometric position.
 void getChildVerticesFromParent(float3 pv0, float3 pv1, float3 pv2, float3 pv3,
-                                int childIdx,
+                                int mortonIdx, int parentType,
                                 float3* cv0, float3* cv1, float3* cv2, float3* cv3) {
+    // Convert Morton index to Bey index
+    int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + mortonIdx];
+
     // Edge midpoints of the ACTUAL parent tetrahedron
     float3 m01 = (pv0 + pv1) * 0.5f;
     float3 m02 = (pv0 + pv2) * 0.5f;
@@ -460,9 +480,9 @@ void getChildVerticesFromParent(float3 pv0, float3 pv1, float3 pv2, float3 pv3,
     float3 m13 = (pv1 + pv3) * 0.5f;
     float3 m23 = (pv2 + pv3) * 0.5f;
 
-    // Corner children (0-3): one parent vertex + three edge midpoints from that vertex
-    // Interior children (4-7): four edge midpoints (octahedral region subdivided)
-    switch (childIdx) {
+    // Corner children (Bey 0-3): one parent vertex + three edge midpoints from that vertex
+    // Interior children (Bey 4-7): four edge midpoints (octahedral region subdivided)
+    switch (beyIdx) {
         case 0: *cv0 = pv0; *cv1 = m01; *cv2 = m02; *cv3 = m03; break;
         case 1: *cv0 = pv1; *cv1 = m01; *cv2 = m12; *cv3 = m13; break;
         case 2: *cv0 = pv2; *cv1 = m02; *cv2 = m12; *cv3 = m23; break;
@@ -481,7 +501,7 @@ void getChildVertices(int parentType, int childIdx, float scale,
     float3 pv1 = SIMPLEX_STANDARD[parentType * 4 + 1];
     float3 pv2 = SIMPLEX_STANDARD[parentType * 4 + 2];
     float3 pv3 = SIMPLEX_STANDARD[parentType * 4 + 3];
-    getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, cv0, cv1, cv2, cv3);
+    getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, cv0, cv1, cv2, cv3);
 }
 
 // ============================================================================
@@ -536,6 +556,7 @@ __kernel void traverseESVT(
     StackEntry stack[CAST_STACK_DEPTH];
     for (int i = 0; i < CAST_STACK_DEPTH; i++) {
         stack[i].nodeIdx = 0xFFFFFFFFu;
+        stack[i].siblingPos = 0;
     }
 
     // Get root node
@@ -710,6 +731,12 @@ __kernel void traverseESVT(
         float3 bestHitPoint = (float3)(0.0f);
         float3 bestHitNormal = (float3)(0.0f, 1.0f, 0.0f);
         float foundLeafFlag = 0.0f;  // 0.0 = no leaf, 1.0 = found leaf
+        float bestHitScale = (float)CAST_STACK_DEPTH;  // Track depth of best hit
+
+        // DEBUG: track which children are hit at root (bitmask)
+        int debugChildrenChecked = 0;
+        int debugChildrenHit = 0;
+        int debugFirstHitChildIdx = -1;
 
         // Main traversal loop
         while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
@@ -726,31 +753,31 @@ __kernel void traverseESVT(
                 tMaxLocal = stack[scale].tMax;
                 parentType = stack[scale].parentType;
                 entryFace = stack[scale].entryFace;
+                siblingPos = stack[scale].siblingPos;  // Resume from saved position
                 pv0 = stack[scale].v0;
                 pv1 = stack[scale].v1;
                 pv2 = stack[scale].v2;
                 pv3 = stack[scale].v3;
-                siblingPos = 0;
                 scaleExp2 *= 2.0f;
                 continue;
             }
 
-            // Get child order for entry face (use 0 if entryFace is invalid)
-            int safeEntryFace = (entryFace >= 0 && entryFace < 4) ? entryFace : 0;
-            int orderBase = parentType * 16 + safeEntryFace * 4;
-
-            // Try each child
+            // Try each child starting from siblingPos (for resumption after pop)
+            // Bey subdivision has 8 children that completely fill the parent
             bool descended = false;
-            for (int pos = siblingPos; pos < 4; pos++) {
-                int childIdx = CHILD_ORDER[orderBase + pos];
+            for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
                 if (!hasChild(node, childIdx)) {
                     continue;
                 }
 
+                // DEBUG: count at first iteration only (root level)
+                if (iter == 1) debugChildrenChecked++;
+
                 // Get child vertices from ACTUAL parent vertices (not SIMPLEX_STANDARD)
+                // childIdx is in Morton order; getChildVerticesFromParent converts to Bey order
                 float3 cv0, cv1, cv2, cv3;
-                getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, &cv0, &cv1, &cv2, &cv3);
+                getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, &cv0, &cv1, &cv2, &cv3);
 
                 // Test intersection using inplace version (avoids struct return issues)
                 bool childHit_hit;
@@ -761,6 +788,12 @@ __kernel void traverseESVT(
                                             &childHit_entryFace, &childHit_exitFace);
                 if (!childHit_hit) {
                     continue;
+                }
+
+                // DEBUG: count hits at root level and record first hit child
+                if (iter == 1) {
+                    debugChildrenHit++;
+                    if (debugFirstHitChildIdx < 0) debugFirstHitChildIdx = childIdx;
                 }
 
                 // Check if leaf
@@ -807,6 +840,7 @@ __kernel void traverseESVT(
                             }
                         }
                         foundLeafFlag = 1.0f;
+                        bestHitScale = (float)scale;  // Record depth
                     }
                     // Continue to check other children at same level (may find closer hit)
                     continue;
@@ -818,6 +852,7 @@ __kernel void traverseESVT(
                 stack[scale].tMax = tMaxLocal;
                 stack[scale].parentType = parentType;
                 stack[scale].entryFace = entryFace;
+                stack[scale].siblingPos = childIdx + 1;  // Resume from next sibling when we pop back
                 stack[scale].v0 = pv0;
                 stack[scale].v1 = pv1;
                 stack[scale].v2 = pv2;
@@ -825,7 +860,9 @@ __kernel void traverseESVT(
 
                 // Update state for child - child vertices become new parent vertices
                 parentIdx = getChildIndex(nodes, node, childIdx, parentIdx);
-                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + childIdx];
+                // childIdx is Morton index; convert to Bey index for type lookup
+                int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + childIdx];
+                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + beyIdx];
                 entryFace = (childHit_entryFace >= 0) ? childHit_entryFace : 0;
                 tMinLocal = childHit_tEntry;
                 tMaxLocal = childHit_tExit;
@@ -857,11 +894,11 @@ __kernel void traverseESVT(
                 tMaxLocal = stack[scale].tMax;
                 parentType = stack[scale].parentType;
                 entryFace = stack[scale].entryFace;
+                siblingPos = stack[scale].siblingPos;  // Resume from saved position
                 pv0 = stack[scale].v0;
                 pv1 = stack[scale].v1;
                 pv2 = stack[scale].v2;
                 pv3 = stack[scale].v3;
-                siblingPos = 0;
             }
         }
 
@@ -881,10 +918,28 @@ __kernel void traverseESVT(
         // Root miss: show ray direction as background
 
         float4 leafResult = (float4)(bestHitPoint.x, bestHitPoint.y, bestHitPoint.z, bestT);
-        float4 leafNormal = (float4)(bestHitNormal.x, bestHitNormal.y, bestHitNormal.z, 1.0f);
+        // DEBUG: Output depth as color gradient
+        // depth 0 = red, depth 3 = yellow, depth 6 = green, depth 9 = cyan
+        float hitDepth = (float)(CAST_STACK_DEPTH - 1) - bestHitScale;
+        float normalizedDepth = hitDepth / 10.0f;  // 0-1 for depths 0-10
+        float4 leafNormal = (float4)(
+            1.0f - normalizedDepth,     // R decreases with depth
+            normalizedDepth,             // G increases with depth
+            0.3f,                        // B constant to identify leaf hits
+            1.0f
+        );
 
         float4 rootOnlyResult = (float4)(0.0f, 0.5f, 0.0f, tMinLocal);
-        float4 rootOnlyNormal = (float4)(0.0f, 1.0f, 0.0f, 1.0f);
+        // DEBUG: show which child was hit
+        // R = first hit child index / 8 (0-7 maps to 0-0.875)
+        // G = number of hits / 8
+        // B = 0.5 to identify root-only
+        float4 rootOnlyNormal = (float4)(
+            (debugFirstHitChildIdx >= 0) ? ((float)debugFirstHitChildIdx + 1.0f) / 8.0f : 0.0f,
+            (float)debugChildrenHit / 8.0f,
+            0.5f,
+            1.0f
+        );
 
         // Blend: prefer leaf hit, then root hit
         hitResults[gid] = leafHitFlag * leafResult + rootOnlyFlag * rootOnlyResult;

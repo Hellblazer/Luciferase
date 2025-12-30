@@ -343,15 +343,31 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
 
     private void generateRays(Matrix4f viewMatrix, Matrix4f projMatrix,
                               Matrix4f objectToWorld, Matrix4f tetreeToObject) {
-        // Compute inverse view-projection matrix
+        // Compute inverse matrices for unprojection
         var invView = new Matrix4f();
         invView.invert(viewMatrix);
 
         var invProj = new Matrix4f();
         invProj.invert(projMatrix);
 
-        // Camera position
-        var cameraPos = new Vector3f(invView.m03, invView.m13, invView.m23);
+        // Compute world-to-tetree transform: inverse(tetreeToObject) * inverse(objectToWorld)
+        var invObjectToWorld = new Matrix4f();
+        invObjectToWorld.invert(objectToWorld);
+
+        var invTetreeToObject = new Matrix4f();
+        invTetreeToObject.invert(tetreeToObject);
+
+        var worldToTetree = new Matrix4f();
+        worldToTetree.mul(invTetreeToObject, invObjectToWorld);
+
+        // Camera position in world space
+        var cameraPosWorld = new Vector3f(invView.m03, invView.m13, invView.m23);
+
+        // Transform camera position to tetree space
+        var cameraPosT = new javax.vecmath.Vector4f(cameraPosWorld.x, cameraPosWorld.y, cameraPosWorld.z, 1.0f);
+        var cameraPosTetree4 = new javax.vecmath.Vector4f();
+        worldToTetree.transform(cameraPosT, cameraPosTetree4);
+        var cameraPosTetree = new Vector3f(cameraPosTetree4.x, cameraPosTetree4.y, cameraPosTetree4.z);
 
         cpuRayBuffer.clear();
 
@@ -369,22 +385,26 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
                 invProj.transform(clipPos, viewPos);
                 viewPos.scale(1.0f / viewPos.w);
 
-                // Apply inverse view
+                // Apply inverse view to get world position
                 var worldPos = new javax.vecmath.Vector4f();
                 invView.transform(viewPos, worldPos);
 
-                // Ray direction
+                // Transform world position to tetree space
+                var tetreePos = new javax.vecmath.Vector4f();
+                worldToTetree.transform(worldPos, tetreePos);
+
+                // Ray direction in tetree space
                 var rayDir = new Vector3f(
-                        worldPos.x - cameraPos.x,
-                        worldPos.y - cameraPos.y,
-                        worldPos.z - cameraPos.z
+                        tetreePos.x - cameraPosTetree.x,
+                        tetreePos.y - cameraPosTetree.y,
+                        tetreePos.z - cameraPosTetree.z
                 );
                 rayDir.normalize();
 
-                // Write ray to buffer
-                cpuRayBuffer.put(cameraPos.x);
-                cpuRayBuffer.put(cameraPos.y);
-                cpuRayBuffer.put(cameraPos.z);
+                // Write ray to buffer (in tetree space)
+                cpuRayBuffer.put(cameraPosTetree.x);
+                cpuRayBuffer.put(cameraPosTetree.y);
+                cpuRayBuffer.put(cameraPosTetree.z);
                 cpuRayBuffer.put(rayDir.x);
                 cpuRayBuffer.put(rayDir.y);
                 cpuRayBuffer.put(rayDir.z);
@@ -473,15 +493,11 @@ public final class ESVTOpenCLRenderer implements AutoCloseable {
             byte r, g, b, a;
 
             if (hitFlag > 0.5f && distance > 0) {
-                // Hit - shade based on normal
-                // Simple directional lighting
-                float light = Math.max(0.2f, 0.5f * (nx + ny + nz) + 0.5f);
-
-                // Depth-based color
-                float depthNorm = Math.min(1.0f, distance / 2.0f);
-                r = (byte) (255 * light * (1.0f - depthNorm * 0.3f));
-                g = (byte) (255 * light * (0.8f - depthNorm * 0.2f));
-                b = (byte) (255 * light * (0.6f + depthNorm * 0.2f));
+                // DEBUG MODE: Output normal directly as RGB color (no shading)
+                // This allows kernel to output depth colors directly
+                r = (byte) (255 * Math.min(1.0f, Math.max(0.0f, nx)));
+                g = (byte) (255 * Math.min(1.0f, Math.max(0.0f, ny)));
+                b = (byte) (255 * Math.min(1.0f, Math.max(0.0f, nz)));
                 a = (byte) 255;
             } else {
                 // Miss - background color
