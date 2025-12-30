@@ -569,8 +569,9 @@ public class ESVTInspectorApp extends Application {
     }
 
     // Debug: use fixed camera for first N frames to test GPU rendering
+    // Set to large value to test kernel without JavaFX camera extraction issues
     private int gpuDebugFrameCount = 0;
-    private static final int DEBUG_FIXED_CAMERA_FRAMES = 30;
+    private static final int DEBUG_FIXED_CAMERA_FRAMES = 100000;
 
     /**
      * Update GPU camera matrices from CameraView.
