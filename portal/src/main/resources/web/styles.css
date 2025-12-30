@@ -99,6 +99,14 @@ header h1 {
     border-color: transparent;
 }
 
+.demo-card.available {
+    border-color: var(--success-color);
+}
+
+.demo-card.available .status {
+    background: var(--success-color);
+}
+
 .demo-card h3 {
     color: var(--secondary-color);
     margin-bottom: 0.5rem;
