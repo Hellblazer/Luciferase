@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.portal.web;
 
 import com.hellblazer.luciferase.portal.web.dto.*;
+import com.hellblazer.luciferase.portal.web.service.GpuService;
 import com.hellblazer.luciferase.portal.web.service.RenderService;
 import com.hellblazer.luciferase.portal.web.service.SpatialIndexService;
 import io.javalin.Javalin;
@@ -35,6 +36,7 @@ public class SpatialInspectorServer {
     private final Map<String, SpatialSession> sessions = new ConcurrentHashMap<>();
     private final SpatialIndexService spatialService = new SpatialIndexService();
     private final RenderService renderService = new RenderService();
+    private final GpuService gpuService = new GpuService();
     private final Javalin app;
     private final int port;
 
@@ -75,6 +77,7 @@ public class SpatialInspectorServer {
         registerSessionEndpoints(javalin);
         registerSpatialEndpoints(javalin);
         registerRenderEndpoints(javalin);
+        registerGpuEndpoints(javalin);
 
         // Exception handlers for specific types
         javalin.exception(NoSuchElementException.class, (e, ctx) -> {
@@ -425,6 +428,82 @@ public class SpatialInspectorServer {
         validateSession(sessionId);
 
         var stats = renderService.getStats(sessionId);
+        ctx.json(stats);
+    }
+
+    // ========== GPU Endpoints ==========
+
+    private void registerGpuEndpoints(Javalin app) {
+        app.get("/api/gpu/info", this::getGpuInfo);
+        app.post("/api/gpu/enable", this::enableGpu);
+        app.post("/api/gpu/disable", this::disableGpu);
+        app.post("/api/gpu/render", this::gpuRender);
+        app.post("/api/gpu/benchmark", this::gpuBenchmark);
+        app.get("/api/gpu/stats", this::getGpuStats);
+    }
+
+    private void getGpuInfo(Context ctx) {
+        var info = gpuService.getGpuInfo();
+        ctx.json(info);
+    }
+
+    private void enableGpu(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        // Check that ESVT render structure exists
+        if (!renderService.hasRender(sessionId)) {
+            throw new IllegalStateException("No ESVT render structure exists. Create one first with POST /api/render/create");
+        }
+
+        var request = ctx.bodyAsClass(GpuEnableRequest.class);
+
+        // Get ESVT data from render service - need to expose this
+        var esvtData = renderService.getESVTData(sessionId);
+        if (esvtData == null) {
+            throw new IllegalStateException("Session does not have ESVT data. GPU requires ESVT render type.");
+        }
+
+        var stats = gpuService.enableGpu(sessionId, esvtData, request);
+        ctx.status(201).json(stats);
+    }
+
+    private void disableGpu(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        gpuService.disableGpu(sessionId);
+        ctx.json(Map.of(
+            "message", "GPU disabled",
+            "sessionId", sessionId
+        ));
+    }
+
+    private void gpuRender(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var request = ctx.bodyAsClass(GpuRenderRequest.class);
+        var result = gpuService.render(sessionId, request);
+
+        ctx.json(result);
+    }
+
+    private void gpuBenchmark(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var iterations = ctx.queryParamAsClass("iterations", Integer.class).getOrDefault(10);
+        var result = gpuService.benchmark(sessionId, iterations);
+
+        ctx.json(result);
+    }
+
+    private void getGpuStats(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var stats = gpuService.getStats(sessionId);
         ctx.json(stats);
     }
 

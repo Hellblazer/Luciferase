@@ -154,6 +154,18 @@ public class RenderService {
         return renders.containsKey(sessionId);
     }
 
+    /**
+     * Get ESVT data for a session (for GPU rendering).
+     * Returns null if session doesn't have ESVT render.
+     */
+    public ESVTData getESVTData(String sessionId) {
+        var holder = renders.get(sessionId);
+        if (holder == null) {
+            return null;
+        }
+        return holder.esvtData();
+    }
+
     // ===== Private Helpers =====
 
     private RenderHolder getHolder(String sessionId) {
