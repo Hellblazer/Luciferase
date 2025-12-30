@@ -45,8 +45,8 @@ import static org.lwjgl.system.MemoryUtil.*;
  *
  * <p><b>Platform Compatibility:</b>
  * <ul>
- *   <li><b>Intel Macs (macOS 10.13-10.15)</b>: OpenCL available but deprecated</li>
- *   <li><b>Apple Silicon Macs</b>: OpenCL NOT available (Apple removed support)</li>
+ *   <li><b>Apple Silicon Macs (M1/M2/M3/M4)</b>: OpenCL 1.2 IS supported via LWJGL</li>
+ *   <li><b>Intel Macs</b>: OpenCL available (deprecated but functional)</li>
  *   <li><b>Linux</b>: OpenCL available with appropriate GPU drivers (Mesa, NVIDIA, AMD)</li>
  *   <li><b>Windows</b>: OpenCL available with GPU vendor drivers</li>
  * </ul>
