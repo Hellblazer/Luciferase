@@ -229,6 +229,8 @@ public final class ESVONodeUnified {
     /**
      * Calculate the actual index of a child in the sparse array.
      * Uses relative child pointer: currentNodeIdx + relativeOffset + sparseOffset
+     * NOTE: This method ignores far pointers. Use the overload with farPointers array
+     * for octrees that may have far pointers.
      *
      * @param childIdx The child index (0-7)
      * @param currentNodeIdx The index of the current node in the array
@@ -237,6 +239,28 @@ public final class ESVONodeUnified {
     public int getChildIndex(int childIdx, int currentNodeIdx) {
         // Child is at: current node + relative offset + sparse offset
         return currentNodeIdx + getChildPtr() + getChildOffset(childIdx);
+    }
+
+    /**
+     * Calculate the actual index of a child in the sparse array with far pointer support.
+     * When isFar() is true, childPtr is an index into the farPointers array,
+     * and farPointers[childPtr] contains the actual relative offset.
+     *
+     * @param childIdx The child index (0-7)
+     * @param currentNodeIdx The index of the current node in the array
+     * @param farPointers Array of far pointer offsets (can be null if no far pointers)
+     * @return The actual index in the node array
+     */
+    public int getChildIndex(int childIdx, int currentNodeIdx, int[] farPointers) {
+        int relativeOffset = getChildPtr();
+
+        // If this is a far pointer, dereference to get the actual offset
+        if (isFar() && farPointers != null && relativeOffset < farPointers.length) {
+            relativeOffset = farPointers[relativeOffset];
+        }
+
+        // Child is at: current node + relative offset + sparse offset
+        return currentNodeIdx + relativeOffset + getChildOffset(childIdx);
     }
     
     /**

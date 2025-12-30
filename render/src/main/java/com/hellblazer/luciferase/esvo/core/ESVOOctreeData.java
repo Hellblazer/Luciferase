@@ -15,7 +15,14 @@ public class ESVOOctreeData implements SpatialData {
     private int maxDepth = 0;
     private int leafCount = 0;
     private int internalCount = 0;
-    
+
+    /**
+     * Far pointers array for nodes that need offsets larger than 14 bits.
+     * When a node has isFar()=true, its childPtr is an INDEX into this array,
+     * and farPointers[childPtr] contains the actual relative offset.
+     */
+    private int[] farPointers = new int[0];
+
     /**
      * Create octree data with specified max size in bytes
      */
@@ -154,5 +161,25 @@ public class ESVOOctreeData implements SpatialData {
         if (!nodes.isEmpty()) {
             maxDepth = Math.max(1, (int) Math.ceil(Math.log(nodes.size()) / Math.log(8)));
         }
+    }
+
+    /**
+     * Get the far pointers array.
+     * When a node has isFar()=true, its childPtr is an index into this array,
+     * and farPointers[childPtr] contains the actual relative offset.
+     *
+     * @return the far pointers array, or empty array if no far pointers
+     */
+    public int[] getFarPointers() {
+        return farPointers;
+    }
+
+    /**
+     * Set the far pointers array.
+     *
+     * @param farPointers array of relative offsets for far pointer resolution
+     */
+    public void setFarPointers(int[] farPointers) {
+        this.farPointers = farPointers != null ? farPointers : new int[0];
     }
 }
