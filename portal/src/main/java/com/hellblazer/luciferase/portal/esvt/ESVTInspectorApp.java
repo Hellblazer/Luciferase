@@ -569,9 +569,8 @@ public class ESVTInspectorApp extends Application {
     }
 
     // Debug: use fixed camera for first N frames to test GPU rendering
-    // Set to large value to test kernel without JavaFX camera extraction issues
     private int gpuDebugFrameCount = 0;
-    private static final int DEBUG_FIXED_CAMERA_FRAMES = 100000;
+    private static final int DEBUG_FIXED_CAMERA_FRAMES = 0;  // Disabled - camera extraction fixed
 
     /**
      * Update GPU camera matrices from CameraView.
@@ -626,54 +625,40 @@ public class ESVTInspectorApp extends Application {
         var localToScene = perspCamera.getLocalToSceneTransform();
 
         // Get the camera's world position from the transform matrix
-        // For a combined rotation+translation matrix, the translation components give world position
         float camX = (float) localToScene.getTx();
         float camY = (float) localToScene.getTy();
         float camZ = (float) localToScene.getTz();
 
-        // Transform from JavaFX world space to ESVT [0,1] space
-        // JavaFX: worldSize=400 centered at origin, so range is [-200, +200]
-        // ESVT: normalized [0,1] space
-        // Conversion: esvt_coord = (javafx_coord + 200) / 400
+        // The ESVT mesh is rendered at worldSize=400 centered at origin in JavaFX
+        // ESVT data is in [0,1] normalized space
+        // The mesh vertices are scaled: meshPos = (esvtPos - 0.5) * worldSize
+        // So ESVT [0,1] maps to JavaFX [-200, +200]
+        // Inverse: esvtPos = meshPos / worldSize + 0.5
         float worldSize = 400.0f;
-        float halfWorld = worldSize / 2.0f;
 
         // Convert camera position to ESVT [0,1] space
-        float esvtCamX = (camX + halfWorld) / worldSize;
-        float esvtCamY = (camY + halfWorld) / worldSize;
-        float esvtCamZ = (camZ + halfWorld) / worldSize;
+        float esvtCamX = camX / worldSize + 0.5f;
+        float esvtCamY = camY / worldSize + 0.5f;
+        float esvtCamZ = camZ / worldSize + 0.5f;
 
-        // Also extract the look direction from the camera's transform
-        // The camera looks down its local -Z axis, so we need to transform that direction
-        var mxz = (float) localToScene.getMxz();
-        var myz = (float) localToScene.getMyz();
-        var mzz = (float) localToScene.getMzz();
+        // The S0 tetrahedron centroid is at (0.75, 0.25, 0.5) in ESVT space
+        // Always look at the data center for reliable framing
+        // TODO: Extract actual look direction from camera for free look
+        float centerX = 0.5f;  // Center of [0,1] cube
+        float centerY = 0.5f;
+        float centerZ = 0.5f;
 
-        // Camera looks down local -Z, transform to world space direction
-        // direction = transform * (0, 0, -1) = (-mxz, -myz, -mzz)
-        float lookDirX = -mxz;
-        float lookDirY = -myz;
-        float lookDirZ = -mzz;
-
-        // Compute a lookAt point some distance in front of the camera
-        float lookDistance = 2.0f; // Distance in ESVT space
-        var lookAt = new Vector3f(
-            esvtCamX + lookDirX * lookDistance,
-            esvtCamY + lookDirY * lookDistance,
-            esvtCamZ + lookDirZ * lookDistance
-        );
+        var lookAt = new Vector3f(centerX, centerY, centerZ);
 
         // Use reasonable near/far for the camera distance
-        // Camera could be quite far from [0,1] cube, so use larger far plane
         float near = 0.01f;
         float far = 100.0f;
 
         // Debug logging - log periodically to see if camera is reasonable
         if (gpuDebugFrameCount % 60 == 0) {
-            log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVT({}, {}, {})",
-                    camX, camY, camZ, esvtCamX, esvtCamY, esvtCamZ);
-            log.info("  lookDir({}, {}, {}), lookAt({}, {}, {})",
-                    lookDirX, lookDirY, lookDirZ, lookAt.x, lookAt.y, lookAt.z);
+            log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVT({}, {}, {}), lookAt({}, {}, {})",
+                    camX, camY, camZ, esvtCamX, esvtCamY, esvtCamZ,
+                    lookAt.x, lookAt.y, lookAt.z);
         }
 
         // Set camera parameters in ESVT normalized space
