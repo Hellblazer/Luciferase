@@ -386,7 +386,13 @@ public class ESVTInspectorApp extends Application {
         }
 
         if (isGpuMode) {
-            // GPU mode - rendering handled by animation timer
+            // GPU mode - upload new data if bridge is ready
+            if (gpuBridge != null && gpuBridge.isInitialized() && currentData != null) {
+                gpuBridge.uploadData(currentData).thenRun(() -> {
+                    log.info("Re-uploaded ESVT data to GPU: {} nodes", currentData.nodeCount());
+                });
+            }
+            // Rendering handled by animation timer
             return;
         }
 
