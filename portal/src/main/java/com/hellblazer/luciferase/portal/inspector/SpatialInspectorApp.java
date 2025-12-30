@@ -286,6 +286,9 @@ public abstract class SpatialInspectorApp<D extends SpatialData, B extends Spati
         // Initialize depth from subclass override
         currentDepth = getDefaultDepth();
 
+        // Initialize render config with proper depth limits
+        renderConfig = RenderConfiguration.DEFAULT.withMaxDepth(currentDepth);
+
         bridge = createBridge();
         sceneManager = new SceneGroupManager();
         mediaCapture = new MediaCaptureManager(getDataTypeName().toLowerCase());
@@ -557,6 +560,8 @@ public abstract class SpatialInspectorApp<D extends SpatialData, B extends Spati
     protected void generateAndBuild() {
         var savedCameraState = cameraView.saveCameraState();
         currentDepth = depthSpinner.getValue();
+        // Update render config to match new depth
+        renderConfig = renderConfig.withMaxDepth(currentDepth);
         var shapeName = shapeComboBox.getValue();
 
         updateStatus("Building " + shapeName + " at depth " + currentDepth + "...");
