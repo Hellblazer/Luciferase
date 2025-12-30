@@ -438,6 +438,9 @@ public class ESVTInspectorApp extends Application {
         if (gpuImageView == null) {
             gpuImageView = new ImageView();
             gpuImageView.setPreserveRatio(true);
+            // Make mouse-transparent so events pass through to CameraView underneath
+            gpuImageView.setMouseTransparent(true);
+            gpuImageView.setPickOnBounds(false);
         }
 
         // Get dimensions from CameraView
