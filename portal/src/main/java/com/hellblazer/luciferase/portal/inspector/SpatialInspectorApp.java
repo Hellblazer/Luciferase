@@ -178,6 +178,32 @@ public abstract class SpatialInspectorApp<D extends SpatialData, B extends Spati
      */
     protected abstract String getDefaultShape();
 
+    // ==================== Optional Override Methods ====================
+
+    /**
+     * Get the minimum allowed depth. Override to customize.
+     * Default: 1
+     */
+    protected int getMinDepth() {
+        return 1;
+    }
+
+    /**
+     * Get the maximum allowed depth. Override to customize.
+     * Default: 15 (ESVT can handle up to 21, ESVO limited to ~5)
+     */
+    protected int getMaxDepth() {
+        return 15;
+    }
+
+    /**
+     * Get the default depth. Override to customize.
+     * Default: 6
+     */
+    protected int getDefaultDepth() {
+        return 6;
+    }
+
     // ==================== Template Method Pattern ====================
 
     @Override
@@ -257,6 +283,9 @@ public abstract class SpatialInspectorApp<D extends SpatialData, B extends Spati
      * Initialize all components. Called before UI creation.
      */
     protected void initializeComponents() {
+        // Initialize depth from subclass override
+        currentDepth = getDefaultDepth();
+
         bridge = createBridge();
         sceneManager = new SceneGroupManager();
         mediaCapture = new MediaCaptureManager(getDataTypeName().toLowerCase());
@@ -264,7 +293,7 @@ public abstract class SpatialInspectorApp<D extends SpatialData, B extends Spati
 
         mediaCapture.setStatusCallback(this::updateStatus);
 
-        log.info("{} components initialized", getDataTypeName());
+        log.info("{} components initialized with depth {}", getDataTypeName(), currentDepth);
     }
 
     /**
@@ -371,7 +400,7 @@ public abstract class SpatialInspectorApp<D extends SpatialData, B extends Spati
         // Depth spinner
         var depthLabel = new Label("Depth:");
         depthLabel.setStyle("-fx-text-fill: white;");
-        depthSpinner = new Spinner<>(1, 20, currentDepth);
+        depthSpinner = new Spinner<>(getMinDepth(), getMaxDepth(), currentDepth);
         depthSpinner.setEditable(true);
         depthSpinner.setMaxWidth(Double.MAX_VALUE);
 

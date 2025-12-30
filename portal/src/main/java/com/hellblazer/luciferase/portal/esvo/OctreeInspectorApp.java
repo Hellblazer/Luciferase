@@ -115,6 +115,19 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
     }
 
     @Override
+    protected int getMaxDepth() {
+        // ESVO uses 14-bit child pointers, limiting tree size to ~16K nodes
+        // Depth 5 with a full cube can exceed this, so limit to 4
+        return 5;
+    }
+
+    @Override
+    protected int getDefaultDepth() {
+        // Start with depth 4 for safe default
+        return 4;
+    }
+
+    @Override
     protected List<Point3i> generateVoxels(String shapeName, int resolution) {
         var shape = ProceduralVoxelGenerator.Shape.valueOf(shapeName.toUpperCase());
         currentResolution = resolution;
