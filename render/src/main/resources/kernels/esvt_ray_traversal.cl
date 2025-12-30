@@ -705,11 +705,11 @@ __kernel void traverseESVT(
         int siblingPos = 0;
         int iter = 0;
 
-        // Track best hit
+        // Track best hit (using float flag to avoid conditional crash)
         float bestT = 1e30f;
         float3 bestHitPoint = (float3)(0.0f);
         float3 bestHitNormal = (float3)(0.0f, 1.0f, 0.0f);
-        bool foundLeaf = false;
+        float foundLeafFlag = 0.0f;  // 0.0 = no leaf, 1.0 = found leaf
 
         // Main traversal loop
         while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
@@ -806,7 +806,7 @@ __kernel void traverseESVT(
                                 bestHitNormal = -bestHitNormal;
                             }
                         }
-                        foundLeaf = true;
+                        foundLeafFlag = 1.0f;
                     }
                     // Continue to check other children at same level (may find closer hit)
                     continue;
@@ -865,9 +865,9 @@ __kernel void traverseESVT(
             }
         }
 
-        // ARITHMETIC OUTPUT: Blend based on foundLeaf
-        // Uses clamp-based flag to avoid conditionals with output values
-        float leafHitFlag = foundLeaf ? 1.0f : 0.0f;
+        // ARITHMETIC OUTPUT: Blend based on foundLeafFlag
+        // foundLeafFlag is already 0.0f or 1.0f - no conditional needed
+        float leafHitFlag = foundLeafFlag;
         float noLeafFlag = 1.0f - leafHitFlag;
 
         // If leaf found: output hit data
