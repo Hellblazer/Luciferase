@@ -2,6 +2,7 @@
  * ESVO/ESVT Renderer - Three.js Visualization
  *
  * Phase 5c: Voxel rendering with GPU toggle and color schemes
+ * Phase 5d: Ray casting interactivity with hit visualization
  */
 
 import * as THREE from 'three';
@@ -361,6 +362,182 @@ async function runGpuBenchmark() {
 }
 
 // ============================================================================
+// Ray Casting
+// ============================================================================
+
+let raycastMode = false;
+let rayLine = null;
+let hitMarker = null;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// Create ray line material and geometry
+const rayLineMaterial = new THREE.LineBasicMaterial({
+    color: 0x22c55e,
+    linewidth: 2,
+    transparent: true,
+    opacity: 0.8
+});
+
+// Create hit marker
+const hitMarkerGeometry = new THREE.SphereGeometry(0.015, 16, 16);
+const hitMarkerMaterial = new THREE.MeshBasicMaterial({
+    color: 0x22c55e,
+    transparent: true,
+    opacity: 0.9
+});
+
+function toggleRaycastMode() {
+    raycastMode = !raycastMode;
+    const btn = document.getElementById('btn-raycast-toggle');
+    const container = document.getElementById('canvas-container');
+
+    if (raycastMode) {
+        btn.textContent = 'Disable Ray Cast Mode';
+        btn.classList.add('active');
+        container.classList.add('raycast-mode-active');
+        container.style.cursor = 'crosshair';
+        document.getElementById('btn-clear-ray').disabled = false;
+    } else {
+        btn.textContent = 'Enable Ray Cast Mode';
+        btn.classList.remove('active');
+        container.classList.remove('raycast-mode-active');
+        container.style.cursor = 'default';
+        clearRayVisualization();
+    }
+}
+
+function clearRayVisualization() {
+    if (rayLine) {
+        scene.remove(rayLine);
+        rayLine.geometry.dispose();
+        rayLine = null;
+    }
+    if (hitMarker) {
+        scene.remove(hitMarker);
+        hitMarker = null;
+    }
+    document.getElementById('raycast-panel').style.display = 'none';
+}
+
+function visualizeRay(origin, direction, distance, hit) {
+    clearRayVisualization();
+
+    // Create ray line
+    const rayLength = hit ? distance : 2.0; // Extend to hit point or 2 units
+    const endPoint = new THREE.Vector3()
+        .copy(direction)
+        .multiplyScalar(rayLength)
+        .add(origin);
+
+    const points = [origin, endPoint];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+    rayLine = new THREE.Line(geometry, rayLineMaterial.clone());
+    rayLine.material.color = hit ? new THREE.Color(0x22c55e) : new THREE.Color(0xf87171);
+    scene.add(rayLine);
+
+    // Create hit marker if hit
+    if (hit) {
+        hitMarker = new THREE.Mesh(hitMarkerGeometry, hitMarkerMaterial.clone());
+        hitMarker.position.copy(endPoint);
+        scene.add(hitMarker);
+    }
+}
+
+async function performRaycast(event) {
+    if (!sessionId || !raycastMode) return;
+
+    // Get click position
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Get ray from camera
+    raycaster.setFromCamera(mouse, camera);
+    const origin = raycaster.ray.origin;
+    const direction = raycaster.ray.direction;
+
+    try {
+        const startTime = performance.now();
+
+        const response = await fetch(`/api/render/raycast?sessionId=${sessionId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                originX: origin.x,
+                originY: origin.y,
+                originZ: origin.z,
+                directionX: direction.x,
+                directionY: direction.y,
+                directionZ: direction.z
+            })
+        });
+
+        const elapsed = performance.now() - startTime;
+
+        if (response.ok) {
+            const result = await response.json();
+            displayRaycastResult(result, elapsed, origin, direction);
+        } else {
+            console.error('Raycast failed:', response.status);
+            // Still visualize the ray even on API error
+            visualizeRay(origin, direction, 2.0, false);
+        }
+    } catch (e) {
+        console.error('Raycast error:', e);
+        visualizeRay(origin, direction, 2.0, false);
+    }
+}
+
+function displayRaycastResult(result, elapsed, origin, direction) {
+    const panel = document.getElementById('raycast-panel');
+    panel.style.display = 'block';
+
+    const statusEl = document.getElementById('raycast-status');
+    const distanceEl = document.getElementById('raycast-distance');
+    const hitPointEl = document.getElementById('raycast-hit-point');
+    const iterationsEl = document.getElementById('raycast-iterations');
+    const depthEl = document.getElementById('raycast-depth');
+    const timeEl = document.getElementById('raycast-time');
+
+    const hit = result.hit;
+    statusEl.textContent = hit ? 'HIT' : 'MISS';
+    statusEl.className = hit ? 'hit' : 'miss';
+
+    distanceEl.textContent = hit ? result.distance.toFixed(4) : '-';
+    hitPointEl.textContent = hit
+        ? `(${result.hitX.toFixed(3)}, ${result.hitY.toFixed(3)}, ${result.hitZ.toFixed(3)})`
+        : '-';
+    iterationsEl.textContent = result.iterations || '-';
+    depthEl.textContent = result.depth || '-';
+    timeEl.textContent = `${elapsed.toFixed(2)} ms`;
+
+    // Visualize the ray
+    visualizeRay(origin, direction, result.distance || 2.0, hit);
+}
+
+// Click handler for raycast
+function onRaycastClick(event) {
+    // Ignore if click is on UI elements
+    if (event.target.closest('#controls-panel') ||
+        event.target.closest('#info-panel') ||
+        event.target.closest('#raycast-panel') ||
+        event.target.closest('.help-text') ||
+        event.target.closest('#back-link')) {
+        return;
+    }
+
+    // Ignore right click and middle click
+    if (event.button !== 0) return;
+
+    // Only process if in raycast mode
+    if (raycastMode) {
+        performRaycast(event);
+    }
+}
+
+// ============================================================================
 // API Integration
 // ============================================================================
 
@@ -477,6 +654,12 @@ async function generateVoxels() {
                     await disableGpuRendering();
                 }
             }
+
+            // Enable raycast button
+            document.getElementById('btn-raycast-toggle').disabled = false;
+
+            // Clear any existing ray visualization
+            clearRayVisualization();
 
             // Visualize voxels
             await visualizeVoxels(entities, maxDepth);
@@ -598,6 +781,21 @@ document.querySelectorAll('.color-scheme-btn').forEach(btn => {
     });
 });
 
+// Raycast buttons
+document.getElementById('btn-raycast-toggle').addEventListener('click', toggleRaycastMode);
+
+document.getElementById('btn-clear-ray').addEventListener('click', () => {
+    clearRayVisualization();
+    document.getElementById('raycast-panel').style.display = 'none';
+});
+
+document.getElementById('btn-close-raycast-panel').addEventListener('click', () => {
+    document.getElementById('raycast-panel').style.display = 'none';
+});
+
+// Raycast click handler
+renderer.domElement.addEventListener('click', onRaycastClick);
+
 // ============================================================================
 // Animation Loop
 // ============================================================================
@@ -656,7 +854,7 @@ async function init() {
 
     animate();
 
-    console.log('ESVO/ESVT Renderer initialized (Phase 5c)');
+    console.log('ESVO/ESVT Renderer initialized (Phase 5d - Ray Casting)');
     console.log('Three.js r' + THREE.REVISION);
 }
 

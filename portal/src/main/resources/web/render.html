@@ -309,6 +309,94 @@
         .gpu-status.unavailable {
             color: #f87171;
         }
+
+        /* Raycast Info Panel */
+        #raycast-panel {
+            position: absolute;
+            bottom: 60px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 250px;
+            max-width: 350px;
+            z-index: 100;
+            display: none;
+            border: 1px solid #22c55e;
+        }
+
+        #raycast-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #22c55e;
+        }
+
+        #raycast-panel .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+            gap: 10px;
+        }
+
+        #raycast-panel .info-row span:first-child {
+            color: #9ca3af;
+            flex-shrink: 0;
+        }
+
+        #raycast-panel .info-row span:last-child {
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        #raycast-panel .hit {
+            color: #22c55e !important;
+        }
+
+        #raycast-panel .miss {
+            color: #f87171 !important;
+        }
+
+        #raycast-panel button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            background: #4b5563;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #raycast-panel button:hover {
+            background: #6b7280;
+        }
+
+        /* Raycast mode indicator */
+        .raycast-mode-active {
+            border: 2px solid #22c55e !important;
+        }
+
+        .raycast-toggle-container {
+            margin-top: 10px;
+        }
+
+        .raycast-toggle-btn {
+            width: 100%;
+            padding: 10px !important;
+            background: #059669 !important;
+            font-size: 13px !important;
+        }
+
+        .raycast-toggle-btn.active {
+            background: #dc2626 !important;
+        }
+
+        .raycast-toggle-btn:hover {
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body>
@@ -396,13 +484,52 @@
 
         <hr class="section-divider">
 
+        <div class="section-title">Ray Casting</div>
+        <div class="raycast-toggle-container">
+            <button id="btn-raycast-toggle" class="raycast-toggle-btn" disabled>Enable Ray Cast Mode</button>
+        </div>
+        <button id="btn-clear-ray" disabled>Clear Ray</button>
+
+        <hr class="section-divider">
+
         <button id="btn-reset-camera">Reset Camera</button>
+    </div>
+
+    <!-- Raycast Info Panel -->
+    <div id="raycast-panel">
+        <h3>Ray Cast Result</h3>
+        <div class="info-row">
+            <span>Status</span>
+            <span id="raycast-status">-</span>
+        </div>
+        <div class="info-row">
+            <span>Distance</span>
+            <span id="raycast-distance">-</span>
+        </div>
+        <div class="info-row">
+            <span>Hit Point</span>
+            <span id="raycast-hit-point">-</span>
+        </div>
+        <div class="info-row">
+            <span>Iterations</span>
+            <span id="raycast-iterations">-</span>
+        </div>
+        <div class="info-row">
+            <span>Depth</span>
+            <span id="raycast-depth">-</span>
+        </div>
+        <div class="info-row">
+            <span>Time</span>
+            <span id="raycast-time">-</span>
+        </div>
+        <button id="btn-close-raycast-panel">Close</button>
     </div>
 
     <div class="help-text">
         <kbd>Left Drag</kbd> Rotate |
         <kbd>Right Drag</kbd> Pan |
-        <kbd>Scroll</kbd> Zoom
+        <kbd>Scroll</kbd> Zoom |
+        <kbd>Click</kbd> Cast Ray (when enabled)
     </div>
 
     <a id="back-link" href="index.html">Back to Home</a>
