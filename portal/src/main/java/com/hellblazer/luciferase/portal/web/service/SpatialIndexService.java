@@ -332,6 +332,15 @@ public class SpatialIndexService {
         return indices.containsKey(sessionId);
     }
 
+    /**
+     * Get the raw spatial index for a session.
+     * Used by RenderService to build ESVO/ESVT structures.
+     */
+    public Object getIndex(String sessionId) {
+        var holder = getHolder(sessionId);
+        return holder.index();
+    }
+
     // ===== Private Helpers =====
 
     private SpatialIndexHolder getHolder(String sessionId) {

@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.portal.web;
 
 import com.hellblazer.luciferase.portal.web.dto.*;
+import com.hellblazer.luciferase.portal.web.service.RenderService;
 import com.hellblazer.luciferase.portal.web.service.SpatialIndexService;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -33,6 +34,7 @@ public class SpatialInspectorServer {
 
     private final Map<String, SpatialSession> sessions = new ConcurrentHashMap<>();
     private final SpatialIndexService spatialService = new SpatialIndexService();
+    private final RenderService renderService = new RenderService();
     private final Javalin app;
     private final int port;
 
@@ -72,6 +74,7 @@ public class SpatialInspectorServer {
         registerHealthEndpoints(javalin);
         registerSessionEndpoints(javalin);
         registerSpatialEndpoints(javalin);
+        registerRenderEndpoints(javalin);
 
         // Exception handlers for specific types
         javalin.exception(NoSuchElementException.class, (e, ctx) -> {
@@ -346,6 +349,83 @@ public class SpatialInspectorServer {
             "count", results.size(),
             "hits", results
         ));
+    }
+
+    // ========== Render Endpoints ==========
+
+    private void registerRenderEndpoints(Javalin app) {
+        app.post("/api/render/create", this::createRender);
+        app.get("/api/render/info", this::getRenderInfo);
+        app.delete("/api/render", this::deleteRender);
+        app.post("/api/render/camera", this::setCamera);
+        app.post("/api/render/raycast", this::raycast);
+        app.get("/api/render/stats", this::getRenderStats);
+    }
+
+    private void createRender(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        // Check that spatial index exists
+        if (!spatialService.hasIndex(sessionId)) {
+            throw new IllegalStateException("No spatial index exists for session. Create one first.");
+        }
+
+        var request = ctx.bodyAsClass(CreateRenderRequest.class);
+        var spatialIndex = spatialService.getIndex(sessionId);
+        var info = renderService.createRender(sessionId, spatialIndex, request);
+
+        ctx.status(201).json(info);
+    }
+
+    private void getRenderInfo(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var info = renderService.getRenderInfo(sessionId);
+        ctx.json(info);
+    }
+
+    private void deleteRender(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        renderService.deleteRender(sessionId);
+        ctx.json(Map.of(
+            "message", "Render structure deleted",
+            "sessionId", sessionId
+        ));
+    }
+
+    private void setCamera(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var request = ctx.bodyAsClass(CameraRequest.class);
+        renderService.setCamera(sessionId, request);
+
+        ctx.json(Map.of(
+            "message", "Camera updated",
+            "sessionId", sessionId
+        ));
+    }
+
+    private void raycast(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var request = ctx.bodyAsClass(RaycastRequest.class);
+        var result = renderService.raycast(sessionId, request);
+
+        ctx.json(result);
+    }
+
+    private void getRenderStats(Context ctx) {
+        var sessionId = requireSessionId(ctx);
+        validateSession(sessionId);
+
+        var stats = renderService.getStats(sessionId);
+        ctx.json(stats);
     }
 
     // ========== Helper Methods ==========
