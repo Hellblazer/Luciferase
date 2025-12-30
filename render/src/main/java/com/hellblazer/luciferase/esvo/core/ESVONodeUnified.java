@@ -25,7 +25,10 @@ import java.nio.ByteBuffer;
  * IMPORTANT: All other node classes must be DELETED and replaced with this one.
  */
 public final class ESVONodeUnified {
-    
+
+    /** Node size in bytes (int2 in CUDA = 8 bytes) */
+    public static final int SIZE_BYTES = 8;
+
     // Node is exactly 8 bytes (int2 in CUDA)
     private int childDescriptor;    // First 32 bits
     private int contourDescriptor;  // Second 32 bits

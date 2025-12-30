@@ -22,6 +22,7 @@ import com.hellblazer.luciferase.esvt.traversal.ESVTRay;
 import com.hellblazer.luciferase.esvt.traversal.ESVTResult;
 import com.hellblazer.luciferase.esvt.traversal.ESVTTraversal;
 import com.hellblazer.luciferase.geometry.Point3i;
+import com.hellblazer.luciferase.portal.inspector.SpatialBridge;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Vector3f;
@@ -43,7 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @author hal.hildebrand
  */
-public class ESVTBridge {
+public class ESVTBridge implements SpatialBridge<ESVTData> {
 
     private final ESVTBuilder builder;
     private final ThreadLocal<ESVTTraversal> traversalTL;
@@ -66,18 +67,18 @@ public class ESVTBridge {
     }
 
     /**
-     * Build an ESVT tree from voxel coordinates.
+     * Build an ESVT tree from voxel coordinates (method chaining).
      *
      * @param voxels List of voxel positions (Point3i x,y,z)
      * @param maxDepth Maximum tree depth (determines resolution)
      * @return This bridge instance for method chaining
      */
-    public ESVTBridge buildFromVoxels(List<Point3i> voxels, int maxDepth) {
-        return buildFromVoxels(voxels, maxDepth, -1);
+    public ESVTBridge buildAndChain(List<Point3i> voxels, int maxDepth) {
+        return buildAndChain(voxels, maxDepth, -1);
     }
 
     /**
-     * Build an ESVT tree from voxel coordinates with explicit grid resolution.
+     * Build an ESVT tree from voxel coordinates with explicit grid resolution (method chaining).
      *
      * <p>When gridResolution is positive, the voxels are scaled relative to
      * [0, gridResolution-1] bounds, preserving spatial relationships. This is
@@ -89,7 +90,7 @@ public class ESVTBridge {
      * @param gridResolution Full grid size (e.g., 64 for 64x64x64), or -1 for auto
      * @return This bridge instance for method chaining
      */
-    public ESVTBridge buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
+    public ESVTBridge buildAndChain(List<Point3i> voxels, int maxDepth, int gridResolution) {
         long startNs = System.nanoTime();
         this.data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
         this.lastBuildTimeNs = System.nanoTime() - startNs;
@@ -317,5 +318,28 @@ public class ESVTBridge {
         }
         return String.format("ESVTBridge: %s, build time: %.2fms",
             data.toString(), getLastBuildTimeMs());
+    }
+
+    // ==================== SpatialBridge Interface ====================
+
+    @Override
+    public BuildResult<ESVTData> buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
+        long startMs = System.currentTimeMillis();
+        try {
+            long startNs = System.nanoTime();
+            this.data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
+            this.lastBuildTimeNs = System.nanoTime() - startNs;
+            long buildTimeMs = System.currentTimeMillis() - startMs;
+            return new BuildResult<>(data, buildTimeMs, voxels.size(),
+                String.format("Built ESVT with %d nodes in %d ms", data.nodeCount(), buildTimeMs));
+        } catch (Exception e) {
+            long buildTimeMs = System.currentTimeMillis() - startMs;
+            return new BuildResult<>(null, buildTimeMs, voxels.size(), "Build failed: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String getStructureTypeName() {
+        return "ESVT";
     }
 }

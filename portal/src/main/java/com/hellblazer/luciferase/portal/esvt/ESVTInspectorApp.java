@@ -18,295 +18,310 @@ package com.hellblazer.luciferase.portal.esvt;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.geometry.Point3i;
-import com.hellblazer.luciferase.portal.CameraView;
 import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTNodeMeshRenderer;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTOpenCLRenderBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTRenderer;
+import com.hellblazer.luciferase.portal.inspector.RenderConfiguration;
+import com.hellblazer.luciferase.portal.inspector.SpatialInspectorApp;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
-import javafx.geometry.Pos;
-import javafx.scene.*;
+import javafx.scene.Group;
+import javafx.scene.PerspectiveCamera;
 import javafx.scene.control.*;
 import javafx.scene.image.ImageView;
-import javafx.scene.layout.*;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3f;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ESVT (Efficient Sparse Voxel Tetrahedra) Inspector Application.
  *
- * <p>Interactive JavaFX application for exploring and visualizing ESVT
- * tetrahedral tree structures with procedural geometry generation and
- * real-time rendering.
- *
- * <p>Features:
+ * <p>Extends SpatialInspectorApp with ESVT-specific features:
  * <ul>
- *   <li>Interactive 3D camera controls via CameraView</li>
- *   <li>Procedural voxel geometry generation (sphere, cube, torus)</li>
- *   <li>ESVT tree building and visualization</li>
- *   <li>Ray casting visualization</li>
- *   <li>Performance metrics and statistics</li>
+ *   <li>GPU rendering via OpenCL</li>
+ *   <li>Tetrahedral color schemes</li>
+ *   <li>Opacity and wireframe controls</li>
  * </ul>
  *
  * @author hal.hildebrand
  */
-public class ESVTInspectorApp extends Application {
+public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> {
 
     private static final Logger log = LoggerFactory.getLogger(ESVTInspectorApp.class);
 
-    // UI Components
-    private BorderPane root;
-    private CameraView cameraView;
-    private Label statusLabel;
-    private Label statsLabel;
-    private TextArea metricsArea;
-
-    // 3D Scene Groups
-    private Group worldGroup;
-    private Group axisGroup;
-    private Group gridGroup;
-    private Group esvtGroup;
-    private Group rayGroup;
-
-    // ESVT Components
-    private ESVTBridge esvtBridge;
+    // ESVT-specific components
     private ESVTRenderer esvtRenderer;
     private ESVTVoxelGenerator voxelGenerator;
-    private ESVTData currentData;
 
-    // GPU Rendering Components (OpenCL-based for macOS compatibility)
+    // GPU Rendering
     private ESVTOpenCLRenderBridge gpuBridge;
     private ImageView gpuImageView;
     private AnimationTimer gpuRenderTimer;
     private final AtomicBoolean gpuRenderPending = new AtomicBoolean(false);
     private boolean gpuModeActive = false;
+    private int gpuDebugFrameCount = 0;
 
-    // UI Controls
-    private Spinner<Integer> depthSpinner;
-    private ComboBox<ESVTVoxelGenerator.Shape> shapeComboBox;
+    // ESVT-specific UI controls
     private ComboBox<ESVTNodeMeshRenderer.ColorScheme> colorSchemeComboBox;
     private ComboBox<ESVTRenderer.RenderMode> renderModeComboBox;
-    private CheckBox showAxesCheck;
-    private CheckBox showGridCheck;
-    private CheckBox showWireframeCheck;
     private Slider opacitySlider;
+    private CheckBox showWireframeCheck;
+    private TextArea metricsArea;
 
-    // Background executor for ESVT building
-    private final ExecutorService buildExecutor = Executors.newSingleThreadExecutor(r -> {
-        var t = new Thread(r, "ESVTBuilder");
-        t.setDaemon(true);
-        return t;
-    });
-
-    // Current state
-    private int currentLevel = 6;
+    // ==================== Abstract Method Implementations ====================
 
     @Override
-    public void start(Stage primaryStage) {
-        log.info("Starting ESVT Inspector Application");
+    protected String getApplicationTitle() {
+        return "ESVT Inspector - Efficient Sparse Voxel Tetrahedra";
+    }
 
-        // Initialize ESVT components
-        esvtBridge = new ESVTBridge();
+    @Override
+    protected String getDataTypeName() {
+        return "ESVT";
+    }
+
+    @Override
+    protected ESVTBridge createBridge() {
+        return new ESVTBridge();
+    }
+
+    @Override
+    protected String[] getAvailableShapes() {
+        var shapes = ESVTVoxelGenerator.Shape.values();
+        var names = new String[shapes.length];
+        for (int i = 0; i < shapes.length; i++) {
+            names[i] = shapes[i].name();
+        }
+        return names;
+    }
+
+    @Override
+    protected String getDefaultShape() {
+        return ESVTVoxelGenerator.Shape.SPHERE.name();
+    }
+
+    @Override
+    protected List<Point3i> generateVoxels(String shapeName, int resolution) {
+        var shape = ESVTVoxelGenerator.Shape.valueOf(shapeName);
+        return voxelGenerator.generate(shape, resolution);
+    }
+
+    @Override
+    protected Group renderData(ESVTData data, RenderConfiguration config) {
+        // Create new renderer with current settings
+        var colorScheme = colorSchemeComboBox != null ?
+            colorSchemeComboBox.getValue() : ESVTNodeMeshRenderer.ColorScheme.TET_TYPE;
+        var renderMode = renderModeComboBox != null ?
+            renderModeComboBox.getValue() : ESVTRenderer.RenderMode.LEAVES_ONLY;
+        var opacity = opacitySlider != null ? opacitySlider.getValue() : 0.7;
+
+        esvtRenderer = ESVTRenderer.builder()
+            .maxDepth(currentDepth)
+            .colorScheme(colorScheme)
+            .renderMode(renderMode)
+            .opacity(opacity)
+            .build();
+        esvtRenderer.setData(data);
+
+        var rendered = esvtRenderer.render();
+
+        // Add wireframe if requested
+        if (showWireframeCheck != null && showWireframeCheck.isSelected()) {
+            var meshRenderer = new ESVTNodeMeshRenderer(data);
+            var wireframeGroup = new Group(rendered, meshRenderer.renderLeafWireframes());
+            return wireframeGroup;
+        }
+
+        return rendered;
+    }
+
+    @Override
+    protected boolean supportsGPURendering() {
+        return ESVTOpenCLRenderBridge.isAvailable();
+    }
+
+    @Override
+    protected void enableGPUMode() {
+        if (gpuModeActive) return;
+
+        if (!ESVTOpenCLRenderBridge.isAvailable()) {
+            updateStatus("GPU not available (OpenCL required)");
+            if (renderModeComboBox != null) {
+                renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
+            }
+            return;
+        }
+
+        updateStatus("Initializing OpenCL GPU renderer...");
+
+        // Hide JavaFX 3D content
+        sceneManager.clearContent();
+
+        // Create GPU image view
+        if (gpuImageView == null) {
+            gpuImageView = new ImageView();
+            gpuImageView.setPreserveRatio(true);
+            gpuImageView.setMouseTransparent(true);
+            gpuImageView.setPickOnBounds(false);
+        }
+
+        // Get dimensions
+        int width = (int) Math.max(800, cameraView.getFitWidth());
+        int height = (int) Math.max(600, cameraView.getFitHeight());
+
+        // Initialize GPU bridge
+        if (gpuBridge == null) {
+            gpuBridge = new ESVTOpenCLRenderBridge(width, height);
+        }
+
+        gpuBridge.initialize().thenCompose(v -> {
+            if (currentData == null) {
+                throw new IllegalStateException("No ESVT data available");
+            }
+            log.info("Uploading ESVT data: {}", currentData);
+            return gpuBridge.uploadData(currentData);
+        }).thenRunAsync(() -> {
+            // Stack GPU image over the CameraView
+            if (!root.getChildren().contains(gpuImageView)) {
+                var stack = new StackPane(cameraView, gpuImageView);
+                root.setCenter(stack);
+            }
+
+            gpuImageView.setImage(gpuBridge.getOutputImage());
+            gpuImageView.setFitWidth(width);
+            gpuImageView.setFitHeight(height);
+
+            gpuDebugFrameCount = 0;
+            startGpuRenderTimer();
+
+            gpuModeActive = true;
+            String dataInfo = currentData != null ?
+                String.format("ESVT: %d nodes, %d leaves, depth %d",
+                    currentData.nodeCount(), currentData.leafCount(), currentData.maxDepth()) :
+                "No ESVT data";
+            updateStatus("OpenCL GPU active - " + dataInfo);
+        }, Platform::runLater).exceptionally(ex -> {
+            log.error("Failed to initialize OpenCL GPU renderer", ex);
+            Platform.runLater(() -> {
+                updateStatus("OpenCL GPU init failed: " + ex.getMessage());
+                if (renderModeComboBox != null) {
+                    renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
+                }
+            });
+            return null;
+        });
+    }
+
+    @Override
+    protected void disableGPUMode() {
+        if (!gpuModeActive) return;
+
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+            gpuRenderTimer = null;
+        }
+
+        // Restore standard layout
+        root.setCenter(cameraView);
+
+        gpuModeActive = false;
+        updateStatus("CPU rendering active");
+    }
+
+    @Override
+    protected VBox createDataSpecificControls() {
+        var box = new VBox(10);
+
+        // Rendering section
+        var renderPane = new TitledPane("Rendering", createRenderingControls());
+        renderPane.setExpanded(true);
+
+        // Metrics section
+        var metricsPane = new TitledPane("Metrics", createMetricsPanel());
+        metricsPane.setExpanded(false);
+
+        box.getChildren().addAll(renderPane, metricsPane);
+        return box;
+    }
+
+    @Override
+    protected TabPane createAnalysisTabs() {
+        return null; // No additional tabs for ESVT
+    }
+
+    // ==================== Initialization ====================
+
+    @Override
+    protected void initializeComponents() {
+        super.initializeComponents();
+
         voxelGenerator = new ESVTVoxelGenerator();
         esvtRenderer = ESVTRenderer.builder()
-            .maxDepth(currentLevel)
+            .maxDepth(currentDepth)
             .colorScheme(ESVTNodeMeshRenderer.ColorScheme.TET_TYPE)
             .renderMode(ESVTRenderer.RenderMode.LEAVES_ONLY)
             .opacity(0.7)
             .build();
-
-        // Create the main layout
-        root = new BorderPane();
-
-        // Create 3D scene groups
-        worldGroup = new Group();
-        axisGroup = new Group();
-        gridGroup = new Group();
-        esvtGroup = new Group();
-        rayGroup = new Group();
-
-        // Build initial scene content
-        buildAxes();
-        buildGrid();
-
-        // Add all groups to world
-        worldGroup.getChildren().addAll(gridGroup, axisGroup, esvtGroup, rayGroup);
-
-        // Add lighting
-        var ambientLight = new AmbientLight(Color.WHITE);
-        var pointLight = new PointLight(Color.WHITE);
-        pointLight.setTranslateX(500);
-        pointLight.setTranslateY(-500);
-        pointLight.setTranslateZ(-500);
-        worldGroup.getChildren().addAll(ambientLight, pointLight);
-
-        // Create SubScene for 3D content
-        var subScene = new SubScene(worldGroup, 800, 600, true, SceneAntialiasing.BALANCED);
-        subScene.setFill(Color.DARKSLATEGRAY);
-
-        // Create and configure CameraView with first-person navigation
-        cameraView = new CameraView(subScene);
-        cameraView.setFirstPersonNavigationEabled(true);
-        cameraView.startViewing();
-
-        // Create control panel
-        var controlPanel = createControlPanel();
-        var controlScroll = new ScrollPane(controlPanel);
-        controlScroll.setFitToWidth(true);
-        controlScroll.setPrefWidth(300);
-
-        // Create status bar
-        var statusBar = createStatusBar();
-
-        // Assemble the layout - CameraView directly in center (like OctreeInspectorApp)
-        root.setCenter(cameraView);
-        root.setRight(controlScroll);
-        root.setBottom(statusBar);
-
-        // Create the scene
-        var scene = new Scene(root, 1200, 800);
-
-        // Bind CameraView size to fill available space in BorderPane center
-        cameraView.fitWidthProperty().bind(scene.widthProperty().subtract(controlScroll.widthProperty()));
-        cameraView.fitHeightProperty().bind(scene.heightProperty().subtract(statusBar.heightProperty()));
-        cameraView.setPreserveRatio(false);  // Fill the entire center area
-
-        // Reset camera to default position (looking at origin where ESVT is centered)
-        cameraView.resetCamera();
-
-        primaryStage.setTitle("ESVT Inspector - Efficient Sparse Voxel Tetrahedra");
-        primaryStage.setScene(scene);
-        primaryStage.setOnCloseRequest(e -> shutdown());
-        primaryStage.show();
-
-        // Build initial geometry
-        Platform.runLater(this::generateAndBuild);
     }
 
-    /**
-     * Create the control panel with all UI controls.
-     */
-    private VBox createControlPanel() {
-        var panel = new VBox(10);
-        panel.setPadding(new Insets(10));
-        panel.setAlignment(Pos.TOP_LEFT);
-
-        // Generation section
-        var genSection = new TitledPane("Generation", createGenerationControls());
-        genSection.setExpanded(true);
-
-        // Rendering section
-        var renderSection = new TitledPane("Rendering", createRenderingControls());
-        renderSection.setExpanded(true);
-
-        // Visibility section
-        var visSection = new TitledPane("Visibility", createVisibilityControls());
-        visSection.setExpanded(true);
-
-        // Metrics section
-        var metricsSection = new TitledPane("Metrics", createMetricsPanel());
-        metricsSection.setExpanded(false);
-
-        panel.getChildren().addAll(genSection, renderSection, visSection, metricsSection);
-        return panel;
+    @Override
+    protected Color getBackgroundColor() {
+        return Color.DARKSLATEGRAY;
     }
 
-    private VBox createGenerationControls() {
-        var box = new VBox(8);
-        box.setPadding(new Insets(5));
-
-        // Shape selection - ESVT shapes inscribed within S0 tetrahedron
-        shapeComboBox = new ComboBox<>();
-        shapeComboBox.getItems().addAll(ESVTVoxelGenerator.Shape.values());
-        shapeComboBox.setValue(ESVTVoxelGenerator.Shape.SPHERE);
-        shapeComboBox.setMaxWidth(Double.MAX_VALUE);
-
-        // Depth selection
-        depthSpinner = new Spinner<>(3, 10, currentLevel);
-        depthSpinner.setEditable(true);
-        depthSpinner.setMaxWidth(Double.MAX_VALUE);
-
-        // Generate button
-        var generateBtn = new Button("Generate ESVT");
-        generateBtn.setMaxWidth(Double.MAX_VALUE);
-        generateBtn.setOnAction(e -> generateAndBuild());
-
-        box.getChildren().addAll(
-            new Label("Shape:"), shapeComboBox,
-            new Label("Depth:"), depthSpinner,
-            generateBtn
-        );
-        return box;
-    }
+    // ==================== Rendering Controls ====================
 
     private VBox createRenderingControls() {
         var box = new VBox(8);
         box.setPadding(new Insets(5));
 
         // Color scheme
+        var colorLabel = new Label("Color Scheme:");
+        colorLabel.setStyle("-fx-text-fill: white;");
         colorSchemeComboBox = new ComboBox<>();
         colorSchemeComboBox.getItems().addAll(ESVTNodeMeshRenderer.ColorScheme.values());
         colorSchemeComboBox.setValue(ESVTNodeMeshRenderer.ColorScheme.TET_TYPE);
         colorSchemeComboBox.setMaxWidth(Double.MAX_VALUE);
-        colorSchemeComboBox.setOnAction(e -> updateRendering());
+        colorSchemeComboBox.setOnAction(e -> handleRenderingChanged());
 
         // Render mode
+        var modeLabel = new Label("Render Mode:");
+        modeLabel.setStyle("-fx-text-fill: white;");
         renderModeComboBox = new ComboBox<>();
         renderModeComboBox.getItems().addAll(ESVTRenderer.RenderMode.values());
         renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
         renderModeComboBox.setMaxWidth(Double.MAX_VALUE);
-        renderModeComboBox.setOnAction(e -> updateRendering());
+        renderModeComboBox.setOnAction(e -> handleRenderModeChanged());
 
         // Opacity slider
+        var opacityLabel = new Label("Opacity:");
+        opacityLabel.setStyle("-fx-text-fill: white;");
         opacitySlider = new Slider(0.1, 1.0, 0.7);
         opacitySlider.setShowTickLabels(true);
         opacitySlider.setShowTickMarks(true);
-        opacitySlider.setOnMouseReleased(e -> updateRendering());
+        opacitySlider.setOnMouseReleased(e -> handleRenderingChanged());
 
-        // Wireframe check
+        // Wireframe checkbox
         showWireframeCheck = new CheckBox("Show Wireframe");
-        showWireframeCheck.setSelected(false);
-        showWireframeCheck.setOnAction(e -> updateRendering());
+        showWireframeCheck.setStyle("-fx-text-fill: white;");
+        showWireframeCheck.setOnAction(e -> handleRenderingChanged());
 
         box.getChildren().addAll(
-            new Label("Color Scheme:"), colorSchemeComboBox,
-            new Label("Render Mode:"), renderModeComboBox,
-            new Label("Opacity:"), opacitySlider,
+            colorLabel, colorSchemeComboBox,
+            modeLabel, renderModeComboBox,
+            opacityLabel, opacitySlider,
             showWireframeCheck
         );
-        return box;
-    }
-
-    private VBox createVisibilityControls() {
-        var box = new VBox(8);
-        box.setPadding(new Insets(5));
-
-        showAxesCheck = new CheckBox("Show Axes");
-        showAxesCheck.setSelected(true);
-        showAxesCheck.setOnAction(e -> axisGroup.setVisible(showAxesCheck.isSelected()));
-
-        showGridCheck = new CheckBox("Show Grid");
-        showGridCheck.setSelected(true);
-        showGridCheck.setOnAction(e -> gridGroup.setVisible(showGridCheck.isSelected()));
-
-        var resetViewBtn = new Button("Reset View");
-        resetViewBtn.setMaxWidth(Double.MAX_VALUE);
-        resetViewBtn.setOnAction(e -> cameraView.resetCamera());
-
-        box.getChildren().addAll(showAxesCheck, showGridCheck, resetViewBtn);
         return box;
     }
 
@@ -323,66 +338,14 @@ public class ESVTInspectorApp extends Application {
         return box;
     }
 
-    private HBox createStatusBar() {
-        var statusBar = new HBox(20);
-        statusBar.setPadding(new Insets(5, 10, 5, 10));
-        statusBar.setAlignment(Pos.CENTER_LEFT);
-        statusBar.setStyle("-fx-background-color: #e0e0e0;");
-
-        statusLabel = new Label("Ready");
-        statsLabel = new Label("");
-
-        statusBar.getChildren().addAll(statusLabel, statsLabel);
-        return statusBar;
-    }
-
-    /**
-     * Generate voxels and build ESVT tree.
-     */
-    private void generateAndBuild() {
-        currentLevel = depthSpinner.getValue();
-        var shape = shapeComboBox.getValue();
-
-        statusLabel.setText("Generating " + shape + " at depth " + currentLevel + "...");
-
-        CompletableFuture.supplyAsync(() -> {
-            // Generate voxels using resolution
-            int resolution = 1 << currentLevel;
-            List<Point3i> voxels = voxelGenerator.generate(shape, resolution);
-
-            log.info("Generated {} voxels for {} at resolution {}", voxels.size(), shape, resolution);
-
-            // Build ESVT with explicit grid resolution to preserve spatial relationships
-            return esvtBridge.buildFromVoxels(voxels, currentLevel, resolution).getData();
-        }, buildExecutor).thenAcceptAsync(data -> {
-            currentData = data;
-            esvtRenderer.setData(data);
-            updateRendering();
-            updateMetrics();
-            statusLabel.setText("Built ESVT: " + data.nodeCount() + " nodes, " + data.leafCount() + " leaves");
-            statsLabel.setText(String.format("Depth: %d | Build time: %.1fms",
-                data.maxDepth(), esvtBridge.getLastBuildTimeMs()));
-        }, Platform::runLater).exceptionally(ex -> {
-            log.error("Error building ESVT", ex);
-            Platform.runLater(() -> statusLabel.setText("Error: " + ex.getMessage()));
-            return null;
-        });
-    }
-
-    /**
-     * Update the rendered visualization.
-     */
-    private void updateRendering() {
-        if (currentData == null) return;
-
+    private void handleRenderModeChanged() {
         var renderMode = renderModeComboBox.getValue();
         boolean isGpuMode = ESVTRenderer.isGPUMode(renderMode);
 
-        // Handle GPU mode transitions
         if (isGpuMode && !gpuModeActive) {
-            enableGpuMode();
+            enableGPUMode();
         } else if (!isGpuMode && gpuModeActive) {
-            disableGpuMode();
+            disableGPUMode();
         }
 
         if (isGpuMode) {
@@ -392,148 +355,19 @@ public class ESVTInspectorApp extends Application {
                     log.info("Re-uploaded ESVT data to GPU: {} nodes", currentData.nodeCount());
                 });
             }
-            // Rendering handled by animation timer
-            return;
+        } else {
+            handleRenderingChanged();
         }
-
-        // Standard JavaFX rendering
-        esvtGroup.getChildren().clear();
-
-        // Create new renderer with current settings
-        var newRenderer = ESVTRenderer.builder()
-            .maxDepth(currentLevel)
-            .colorScheme(colorSchemeComboBox.getValue())
-            .renderMode(renderMode)
-            .opacity(opacitySlider.getValue())
-            .build();
-        newRenderer.setData(currentData);
-
-        // Render
-        var rendering = newRenderer.render();
-        esvtGroup.getChildren().add(rendering);
-
-        // Add wireframe if requested
-        if (showWireframeCheck.isSelected()) {
-            var meshRenderer = new ESVTNodeMeshRenderer(currentData);
-            esvtGroup.getChildren().add(meshRenderer.renderLeafWireframes());
-        }
-
-        // Note: Scaling and centering is now handled in ESVTNodeMeshRenderer
-        // with default worldSize=400, so meshes span [-200, +200] in each axis
     }
 
-    /**
-     * Enable GPU rendering mode (uses OpenCL for macOS compatibility).
-     */
-    private void enableGpuMode() {
-        if (gpuModeActive) return;
-
-        // Check if OpenCL is available
-        if (!ESVTOpenCLRenderBridge.isAvailable()) {
-            statusLabel.setText("GPU not available (OpenCL required)");
-            renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
-            return;
+    private void handleRenderingChanged() {
+        if (!gpuModeActive) {
+            updateVisualization();
         }
-
-        statusLabel.setText("Initializing OpenCL GPU renderer...");
-
-        // Hide JavaFX 3D content
-        esvtGroup.getChildren().clear();
-
-        // Create GPU image view if needed
-        if (gpuImageView == null) {
-            gpuImageView = new ImageView();
-            gpuImageView.setPreserveRatio(true);
-            // Make mouse-transparent so events pass through to CameraView underneath
-            gpuImageView.setMouseTransparent(true);
-            gpuImageView.setPickOnBounds(false);
-        }
-
-        // Get dimensions from CameraView
-        int width = (int) Math.max(800, cameraView.getFitWidth());
-        int height = (int) Math.max(600, cameraView.getFitHeight());
-
-        // Initialize GPU bridge (OpenCL-based)
-        if (gpuBridge == null) {
-            gpuBridge = new ESVTOpenCLRenderBridge(width, height);
-        }
-
-        gpuBridge.initialize().thenCompose(v -> {
-            // Validate and log ESVT data before upload
-            if (currentData == null) {
-                throw new IllegalStateException("No ESVT data available");
-            }
-            var root = currentData.root();
-            log.info("Uploading ESVT data: {}", currentData);
-            if (root != null) {
-                log.info("  Root node: valid={}, tetType={}, childMask=0x{}, leafMask=0x{}, childPtr={}",
-                        root.isValid(), root.getTetType(),
-                        Integer.toHexString(root.getChildMask()),
-                        Integer.toHexString(root.getLeafMask()),
-                        root.getChildPtr());
-            } else {
-                log.warn("  Root node is NULL!");
-            }
-            // Upload current data
-            return gpuBridge.uploadData(currentData);
-        }).thenRunAsync(() -> {
-            // Add GPU image view to scene
-            if (!root.getChildren().contains(gpuImageView)) {
-                // Stack GPU image over the CameraView
-                var stack = new StackPane(cameraView, gpuImageView);
-                root.setCenter(stack);
-            }
-
-            gpuImageView.setImage(gpuBridge.getOutputImage());
-            gpuImageView.setFitWidth(width);
-            gpuImageView.setFitHeight(height);
-
-            // Reset debug frame counter for diagnostic camera
-            gpuDebugFrameCount = 0;
-
-            // Start render timer
-            startGpuRenderTimer();
-
-            gpuModeActive = true;
-            // Show ESVT data info
-            String dataInfo = currentData != null ?
-                String.format("ESVT: %d nodes, %d leaves, depth %d",
-                    currentData.nodeCount(), currentData.leafCount(), currentData.maxDepth()) :
-                "No ESVT data";
-            statusLabel.setText("OpenCL GPU active - " + dataInfo);
-        }, Platform::runLater).exceptionally(ex -> {
-            log.error("Failed to initialize OpenCL GPU renderer", ex);
-            Platform.runLater(() -> {
-                statusLabel.setText("OpenCL GPU init failed: " + ex.getMessage());
-                // Fall back to CPU rendering
-                renderModeComboBox.setValue(ESVTRenderer.RenderMode.LEAVES_ONLY);
-            });
-            return null;
-        });
     }
 
-    /**
-     * Disable GPU rendering mode.
-     */
-    private void disableGpuMode() {
-        if (!gpuModeActive) return;
+    // ==================== GPU Rendering ====================
 
-        // Stop render timer
-        if (gpuRenderTimer != null) {
-            gpuRenderTimer.stop();
-            gpuRenderTimer = null;
-        }
-
-        // Restore standard layout
-        root.setCenter(cameraView);
-
-        gpuModeActive = false;
-        statusLabel.setText("CPU rendering active");
-    }
-
-    /**
-     * Start the GPU render animation timer.
-     */
     private void startGpuRenderTimer() {
         if (gpuRenderTimer != null) {
             gpuRenderTimer.stop();
@@ -548,28 +382,25 @@ public class ESVTInspectorApp extends Application {
             public void handle(long now) {
                 if (now - lastRender < RENDER_INTERVAL_NS) return;
                 if (!gpuModeActive || gpuBridge == null || !gpuBridge.isInitialized()) return;
-                if (gpuRenderPending.get()) return; // Still processing previous frame
+                if (gpuRenderPending.get()) return;
 
                 lastRender = now;
                 gpuRenderPending.set(true);
                 frameCount++;
 
-                // Update camera from CameraView
                 updateGpuCamera();
 
-                // Request GPU render
                 final long frame = frameCount;
                 gpuBridge.renderAsync(image -> {
                     gpuImageView.setImage(image);
                     gpuRenderPending.set(false);
 
-                    // Update status with frame count periodically
                     if (frame % 30 == 0) {
                         String dataInfo = currentData != null ?
                             String.format("ESVT: %d nodes, depth %d, frame %d",
                                 currentData.nodeCount(), currentData.maxDepth(), frame) :
                             "No ESVT data";
-                        statusLabel.setText("OpenCL GPU active - " + dataInfo);
+                        updateStatus("OpenCL GPU active - " + dataInfo);
                     }
                 });
             }
@@ -577,122 +408,59 @@ public class ESVTInspectorApp extends Application {
         gpuRenderTimer.start();
     }
 
-    // Debug: use fixed camera for first N frames to test GPU rendering
-    private int gpuDebugFrameCount = 0;
-    private static final int DEBUG_FIXED_CAMERA_FRAMES = 0;  // Disabled - camera extraction fixed
-
-    /**
-     * Update GPU camera matrices from CameraView.
-     *
-     * <p>Coordinates must be transformed from JavaFX world space (where ESVT is
-     * rendered at worldSize=400 centered at origin) to ESVT normalized [0,1] space.
-     *
-     * <p>The CameraView uses an Xform hierarchy with rotations, so we need to
-     * extract the final world position from the full transform matrix.
-     */
     private void updateGpuCamera() {
         if (gpuBridge == null || cameraView == null) return;
 
         gpuDebugFrameCount++;
 
-        // For first N frames, use a known-good camera position
-        // This helps diagnose whether the issue is camera extraction or something else
-        if (gpuDebugFrameCount <= DEBUG_FIXED_CAMERA_FRAMES) {
-            // CRITICAL: The S0 tetrahedron type 0 has vertices (0,0,0), (1,0,0), (1,0,1), (1,1,1)
-            // Its centroid is at (0.75, 0.25, 0.5), NOT (0.5, 0.5, 0.5)!
-            // The camera must orbit around the actual tetrahedron center.
-            float centerX = 0.75f;
-            float centerY = 0.25f;
-            float centerZ = 0.5f;
-
-            float angle = (float) (2 * Math.PI * gpuDebugFrameCount / 30.0);
-            float radius = 1.5f;  // Closer to the data
-            float camX = centerX + radius * (float) Math.cos(angle);
-            float camY = centerY + radius * 0.5f;  // Slightly above center
-            float camZ = centerZ + radius * (float) Math.sin(angle);
-
-            var cameraPos = new Vector3f(camX, camY, camZ);
-            var lookAt = new Vector3f(centerX, centerY, centerZ);
-
-            log.info("GPU Camera DEBUG (frame {}): orbit around S0 centroid ({}, {}, {}), camera at ({}, {}, {})",
-                    gpuDebugFrameCount, centerX, centerY, centerZ, camX, camY, camZ);
-
-            gpuBridge.setCamera(cameraPos, lookAt, new Vector3f(0, 1, 0), 60.0f, 0.01f, 100.0f);
-
-            var identity = new Matrix4f();
-            identity.setIdentity();
-            gpuBridge.setTransforms(identity, identity);
-            return;
-        }
-
-        // Get camera from CameraView
         var camera = cameraView.getCamera();
         if (!(camera instanceof PerspectiveCamera perspCamera)) return;
 
-        // Extract camera position from the full scene transform
-        // This includes the camera's local translate AND the cameraTransform's rotations
         var localToScene = perspCamera.getLocalToSceneTransform();
 
-        // Get the camera's world position from the transform matrix
         float camX = (float) localToScene.getTx();
         float camY = (float) localToScene.getTy();
         float camZ = (float) localToScene.getTz();
 
-        // The ESVT mesh is rendered at worldSize=400 centered at origin in JavaFX
-        // ESVT data is in [0,1] normalized space
-        // The mesh vertices are scaled: meshPos = (esvtPos - 0.5) * worldSize
-        // So ESVT [0,1] maps to JavaFX [-200, +200]
-        // Inverse: esvtPos = meshPos / worldSize + 0.5
         float worldSize = 400.0f;
 
-        // Convert camera position to ESVT [0,1] space
         float esvtCamX = camX / worldSize + 0.5f;
         float esvtCamY = camY / worldSize + 0.5f;
         float esvtCamZ = camZ / worldSize + 0.5f;
 
-        // The S0 tetrahedron centroid is at (0.75, 0.25, 0.5) in ESVT space
-        // Always look at the data center for reliable framing
-        // TODO: Extract actual look direction from camera for free look
-        float centerX = 0.5f;  // Center of [0,1] cube
-        float centerY = 0.5f;
-        float centerZ = 0.5f;
+        var lookAt = new Vector3f(0.5f, 0.5f, 0.5f);
 
-        var lookAt = new Vector3f(centerX, centerY, centerZ);
-
-        // Use reasonable near/far for the camera distance
-        float near = 0.01f;
-        float far = 100.0f;
-
-        // Debug logging - log periodically to see if camera is reasonable
         if (gpuDebugFrameCount % 60 == 0) {
-            log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVT({}, {}, {}), lookAt({}, {}, {})",
-                    camX, camY, camZ, esvtCamX, esvtCamY, esvtCamZ,
-                    lookAt.x, lookAt.y, lookAt.z);
+            log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVT({}, {}, {})",
+                camX, camY, camZ, esvtCamX, esvtCamY, esvtCamZ);
         }
 
-        // Set camera parameters in ESVT normalized space
         gpuBridge.setCamera(
             new Vector3f(esvtCamX, esvtCamY, esvtCamZ),
             lookAt,
-            new Vector3f(0, 1, 0),  // Up vector
+            new Vector3f(0, 1, 0),
             (float) perspCamera.getFieldOfView(),
-            near,
-            far
+            0.01f,
+            100.0f
         );
 
-        // Set identity transforms (ESVT data is already in normalized space)
         var identity = new Matrix4f();
         identity.setIdentity();
         gpuBridge.setTransforms(identity, identity);
     }
 
-    /**
-     * Update the metrics display.
-     */
-    private void updateMetrics() {
-        if (esvtBridge == null) return;
+    // ==================== Metrics ====================
 
-        var metrics = esvtBridge.getPerformanceMetrics();
+    @Override
+    protected void updateVisualization() {
+        super.updateVisualization();
+        updateMetrics();
+    }
+
+    private void updateMetrics() {
+        if (bridge == null || metricsArea == null) return;
+
+        var metrics = bridge.getPerformanceMetrics();
         var sb = new StringBuilder();
         sb.append("=== ESVT Metrics ===\n");
         sb.append(String.format("Nodes: %d\n", metrics.nodeCount()));
@@ -707,77 +475,15 @@ public class ESVTInspectorApp extends Application {
         metricsArea.setText(sb.toString());
     }
 
-    /**
-     * Build the axis visualization.
-     */
-    private void buildAxes() {
-        axisGroup.getChildren().clear();
-        double length = 200;
-        double radius = 2;
+    // ==================== Shutdown ====================
 
-        // X axis (red)
-        var xAxis = new javafx.scene.shape.Cylinder(radius, length);
-        xAxis.setMaterial(new javafx.scene.paint.PhongMaterial(Color.RED));
-        xAxis.setRotationAxis(javafx.scene.transform.Rotate.Z_AXIS);
-        xAxis.setRotate(90);
-        xAxis.setTranslateX(length / 2);
-
-        // Y axis (green)
-        var yAxis = new javafx.scene.shape.Cylinder(radius, length);
-        yAxis.setMaterial(new javafx.scene.paint.PhongMaterial(Color.GREEN));
-        yAxis.setTranslateY(-length / 2);
-
-        // Z axis (blue)
-        var zAxis = new javafx.scene.shape.Cylinder(radius, length);
-        zAxis.setMaterial(new javafx.scene.paint.PhongMaterial(Color.BLUE));
-        zAxis.setRotationAxis(javafx.scene.transform.Rotate.X_AXIS);
-        zAxis.setRotate(90);
-        zAxis.setTranslateZ(length / 2);
-
-        axisGroup.getChildren().addAll(xAxis, yAxis, zAxis);
-    }
-
-    /**
-     * Build the grid visualization.
-     */
-    private void buildGrid() {
-        gridGroup.getChildren().clear();
-        int gridSize = 500;
-        int spacing = 50;
-        var material = new javafx.scene.paint.PhongMaterial(Color.LIGHTGRAY);
-
-        for (int i = -gridSize; i <= gridSize; i += spacing) {
-            // Lines parallel to X axis
-            var lineX = new javafx.scene.shape.Cylinder(0.5, gridSize * 2);
-            lineX.setMaterial(material);
-            lineX.setRotationAxis(javafx.scene.transform.Rotate.Z_AXIS);
-            lineX.setRotate(90);
-            lineX.setTranslateZ(i);
-            gridGroup.getChildren().add(lineX);
-
-            // Lines parallel to Z axis
-            var lineZ = new javafx.scene.shape.Cylinder(0.5, gridSize * 2);
-            lineZ.setMaterial(material);
-            lineZ.setRotationAxis(javafx.scene.transform.Rotate.X_AXIS);
-            lineZ.setRotate(90);
-            lineZ.setTranslateX(i);
-            gridGroup.getChildren().add(lineZ);
-        }
-    }
-
-    /**
-     * Shutdown the application.
-     */
-    private void shutdown() {
-        log.info("Shutting down ESVT Inspector");
-
-        // Stop GPU rendering
+    @Override
+    protected void shutdown() {
         if (gpuRenderTimer != null) {
             gpuRenderTimer.stop();
             gpuRenderTimer = null;
         }
 
-        // Close GPU bridge
         if (gpuBridge != null) {
             try {
                 gpuBridge.close();
@@ -787,12 +493,11 @@ public class ESVTInspectorApp extends Application {
             gpuBridge = null;
         }
 
-        buildExecutor.shutdownNow();
+        super.shutdown();
     }
 
-    /**
-     * Launcher inner class for JavaFX.
-     */
+    // ==================== Launcher ====================
+
     public static class Launcher {
         public static void main(String[] args) {
             Application.launch(ESVTInspectorApp.class, args);

@@ -130,7 +130,7 @@ class ESVTInscribedSphereValidationTest {
         System.out.printf("Input: %d voxels at resolution %d%n", voxels.size(), resolution);
 
         // Build ESVT WITH explicit grid resolution
-        bridge.buildFromVoxels(voxels, depth, resolution);
+        bridge.buildAndChain(voxels, depth, resolution);
         var data = bridge.getData();
 
         System.out.printf("ESVT: %d nodes, %d leaves, depth %d%n",
@@ -144,7 +144,7 @@ class ESVTInscribedSphereValidationTest {
 
         // Compare with building WITHOUT grid resolution (legacy behavior)
         var bridgeLegacy = new ESVTBridge();
-        bridgeLegacy.buildFromVoxels(voxels, depth, -1); // -1 = use voxel bbox
+        bridgeLegacy.buildAndChain(voxels, depth, -1); // -1 = use voxel bbox
         var dataLegacy = bridgeLegacy.getData();
 
         System.out.printf("Legacy (no grid): %d nodes, %d leaves%n",
