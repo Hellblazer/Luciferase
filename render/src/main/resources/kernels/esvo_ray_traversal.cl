@@ -68,17 +68,15 @@ __kernel void traverseOctree(
     __global const Ray* rays,
     __global const OctreeNode* octree,
     __global float4* hitResults,  // xyz = hit point, w = distance
-    __global uint* hitVoxels,      // Voxel data at hit point
     const uint maxDepth,
     const float3 sceneMin,
     const float3 sceneMax)
 {
     int gid = get_global_id(0);
     Ray ray = rays[gid];
-    
-    // Initialize result
+
+    // Initialize result (distance < 0 means no hit)
     hitResults[gid] = (float4)(0.0f, 0.0f, 0.0f, -1.0f);
-    hitVoxels[gid] = 0;
     
     // Check scene bounds
     float tEntry, tExit;
@@ -176,10 +174,9 @@ __kernel void traverseOctree(
         }
     }
     
-    // Write results
-    if (hitVoxel != 0) {
+    // Write results (if we hit something, closestHit < ray.tMax)
+    if (hitVoxel != 0 && closestHit < ray.tMax) {
         hitResults[gid] = (float4)(hitPoint.x, hitPoint.y, hitPoint.z, closestHit);
-        hitVoxels[gid] = hitVoxel;
     }
 }
 

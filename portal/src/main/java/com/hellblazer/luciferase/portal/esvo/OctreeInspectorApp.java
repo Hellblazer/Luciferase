@@ -20,26 +20,34 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
 import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.esvo.bridge.ESVOBridge;
+import com.hellblazer.luciferase.portal.esvo.renderer.ESVOOpenCLRenderBridge;
 import com.hellblazer.luciferase.portal.esvo.renderer.OctreeRenderer;
 import com.hellblazer.luciferase.portal.esvo.renderer.VoxelRenderer;
 import com.hellblazer.luciferase.portal.esvo.visualization.RayCastVisualizer;
 import com.hellblazer.luciferase.portal.inspector.RenderConfiguration;
 import com.hellblazer.luciferase.portal.inspector.SpatialInspectorApp;
 import com.hellblazer.luciferase.portal.mesh.octree.OctreeNodeMeshRenderer;
+import javafx.animation.AnimationTimer;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Group;
+import javafx.scene.PerspectiveCamera;
 import javafx.scene.control.*;
+import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.vecmath.Matrix4f;
 import javax.vecmath.Vector3f;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ESVO Octree Inspector - JavaFX application for exploring and visualizing
@@ -65,6 +73,14 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
     private ProceduralVoxelGenerator voxelGenerator;
     private RayCastVisualizer rayCastVisualizer;
 
+    // GPU Rendering
+    private ESVOOpenCLRenderBridge gpuBridge;
+    private ImageView gpuImageView;
+    private AnimationTimer gpuRenderTimer;
+    private final AtomicBoolean gpuRenderPending = new AtomicBoolean(false);
+    private boolean gpuModeActive = false;
+    private int gpuDebugFrameCount = 0;
+
     // Octree-specific UI controls
     private Slider minLevelSlider;
     private Slider maxLevelSlider;
@@ -72,6 +88,7 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
     private CheckBox isolateLevelCheck;
     private CheckBox ghostModeCheck;
     private CheckBox rayInteractiveCheck;
+    private CheckBox gpuRenderCheck;
     private ComboBox<VoxelRenderer.MaterialScheme> materialComboBox;
     private ToggleGroup renderModeGroup;
     private TextArea rayStatsTextArea;
@@ -163,18 +180,89 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
 
     @Override
     protected boolean supportsGPURendering() {
-        return false; // ESVO GPU rendering not yet implemented
+        return ESVOOpenCLRenderBridge.isAvailable();
     }
 
     @Override
     protected void enableGPUMode() {
-        // Not supported yet
-        log.info("GPU rendering not yet supported for ESVO");
+        if (gpuModeActive) return;
+
+        if (!ESVOOpenCLRenderBridge.isAvailable()) {
+            updateStatus("GPU not available (OpenCL required)");
+            return;
+        }
+
+        updateStatus("Initializing OpenCL GPU renderer...");
+
+        // Hide JavaFX 3D content
+        sceneManager.clearContent();
+
+        // Create GPU image view
+        if (gpuImageView == null) {
+            gpuImageView = new ImageView();
+            gpuImageView.setPreserveRatio(true);
+            gpuImageView.setMouseTransparent(true);
+            gpuImageView.setPickOnBounds(false);
+        }
+
+        // Get dimensions
+        int width = (int) Math.max(800, cameraView.getFitWidth());
+        int height = (int) Math.max(600, cameraView.getFitHeight());
+
+        // Initialize GPU bridge
+        if (gpuBridge == null) {
+            gpuBridge = new ESVOOpenCLRenderBridge(width, height);
+        }
+
+        gpuBridge.initialize().thenCompose(v -> {
+            if (currentData == null) {
+                throw new IllegalStateException("No ESVO data available");
+            }
+            log.info("Uploading ESVO data: {} nodes", currentData.getNodeCount());
+            return gpuBridge.uploadData(currentData);
+        }).thenRunAsync(() -> {
+            // Stack GPU image over the CameraView
+            if (!root.getChildren().contains(gpuImageView)) {
+                var stack = new StackPane(cameraView, gpuImageView);
+                root.setCenter(stack);
+            }
+
+            gpuImageView.setImage(gpuBridge.getOutputImage());
+            gpuImageView.setFitWidth(width);
+            gpuImageView.setFitHeight(height);
+
+            gpuDebugFrameCount = 0;
+            startGpuRenderTimer();
+
+            gpuModeActive = true;
+            String dataInfo = currentData != null ?
+                String.format("ESVO: %d nodes, depth %d",
+                    currentData.getNodeCount(), currentDepth) :
+                "No ESVO data";
+            updateStatus("OpenCL GPU active - " + dataInfo);
+        }, Platform::runLater).exceptionally(ex -> {
+            log.error("Failed to initialize OpenCL GPU renderer", ex);
+            Platform.runLater(() -> {
+                updateStatus("OpenCL GPU init failed: " + ex.getMessage());
+            });
+            return null;
+        });
     }
 
     @Override
     protected void disableGPUMode() {
-        // Nothing to do
+        if (!gpuModeActive) return;
+
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+            gpuRenderTimer = null;
+        }
+
+        // Restore standard layout
+        root.setCenter(cameraView);
+
+        gpuModeActive = false;
+        updateStatus("CPU rendering active");
     }
 
     @Override
@@ -294,6 +382,15 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
         ghostModeCheck.setStyle("-fx-text-fill: white;");
         ghostModeCheck.setOnAction(e -> handleLodChanged());
 
+        // GPU Rendering checkbox
+        gpuRenderCheck = new CheckBox("GPU Rendering (OpenCL)");
+        gpuRenderCheck.setStyle("-fx-text-fill: white;");
+        gpuRenderCheck.setDisable(!supportsGPURendering());
+        if (!supportsGPURendering()) {
+            gpuRenderCheck.setText("GPU Rendering (unavailable)");
+        }
+        gpuRenderCheck.setOnAction(e -> handleGpuRenderChanged());
+
         grid.add(minLevelLabel, 0, 0);
         grid.add(minLevelSlider, 1, 0);
         grid.add(maxLevelLabel, 0, 1);
@@ -302,9 +399,19 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
         grid.add(isolatedLabel, 0, 3);
         grid.add(isolatedLevelSlider, 1, 3);
         grid.add(ghostModeCheck, 0, 4, 2, 1);
+        grid.add(gpuRenderCheck, 0, 5, 2, 1);
 
         box.getChildren().add(grid);
         return box;
+    }
+
+    private void handleGpuRenderChanged() {
+        if (gpuRenderCheck.isSelected()) {
+            enableGPUMode();
+        } else {
+            disableGPUMode();
+            updateVisualization();
+        }
     }
 
     private void handleLodChanged() {
@@ -548,6 +655,112 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
 
         // Also update voxel visualization
         updateVoxelVisualization();
+    }
+
+    // ==================== GPU Rendering ====================
+
+    private void startGpuRenderTimer() {
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+        }
+
+        gpuRenderTimer = new AnimationTimer() {
+            private long lastRender = 0;
+            private long frameCount = 0;
+            private static final long RENDER_INTERVAL_NS = 33_333_333L; // ~30 FPS
+
+            @Override
+            public void handle(long now) {
+                if (now - lastRender < RENDER_INTERVAL_NS) return;
+                if (!gpuModeActive || gpuBridge == null || !gpuBridge.isInitialized()) return;
+                if (gpuRenderPending.get()) return;
+
+                lastRender = now;
+                gpuRenderPending.set(true);
+                frameCount++;
+
+                updateGpuCamera();
+
+                final long frame = frameCount;
+                gpuBridge.renderAsync(image -> {
+                    gpuImageView.setImage(image);
+                    gpuRenderPending.set(false);
+
+                    if (frame % 30 == 0) {
+                        String dataInfo = currentData != null ?
+                            String.format("ESVO: %d nodes, depth %d, frame %d",
+                                currentData.getNodeCount(), currentDepth, frame) :
+                            "No ESVO data";
+                        updateStatus("OpenCL GPU active - " + dataInfo);
+                    }
+                });
+            }
+        };
+        gpuRenderTimer.start();
+    }
+
+    private void updateGpuCamera() {
+        if (gpuBridge == null || cameraView == null) return;
+
+        gpuDebugFrameCount++;
+
+        var camera = cameraView.getCamera();
+        if (!(camera instanceof PerspectiveCamera perspCamera)) return;
+
+        var localToScene = perspCamera.getLocalToSceneTransform();
+
+        float camX = (float) localToScene.getTx();
+        float camY = (float) localToScene.getTy();
+        float camZ = (float) localToScene.getTz();
+
+        // ESVO uses [1,2] coordinate space, scale to match
+        float worldSize = 100.0f; // Scene size
+
+        // Convert camera position to [1,2] space
+        float esvoCamX = 1.0f + (camX + 50.0f) / worldSize;
+        float esvoCamY = 1.0f + (camY + 50.0f) / worldSize;
+        float esvoCamZ = 1.0f + (camZ + 50.0f) / worldSize;
+
+        var lookAt = new Vector3f(1.5f, 1.5f, 1.5f); // Center of [1,2] space
+
+        if (gpuDebugFrameCount % 60 == 0) {
+            log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVO({}, {}, {})",
+                camX, camY, camZ, esvoCamX, esvoCamY, esvoCamZ);
+        }
+
+        gpuBridge.setCamera(
+            new Vector3f(esvoCamX, esvoCamY, esvoCamZ),
+            lookAt,
+            new Vector3f(0, 1, 0),
+            (float) perspCamera.getFieldOfView(),
+            0.01f,
+            100.0f
+        );
+
+        var identity = new Matrix4f();
+        identity.setIdentity();
+        gpuBridge.setTransforms(identity, identity);
+    }
+
+    // ==================== Shutdown ====================
+
+    @Override
+    protected void shutdown() {
+        if (gpuRenderTimer != null) {
+            gpuRenderTimer.stop();
+            gpuRenderTimer = null;
+        }
+
+        if (gpuBridge != null) {
+            try {
+                gpuBridge.close();
+            } catch (Exception e) {
+                log.error("Error closing GPU bridge", e);
+            }
+            gpuBridge = null;
+        }
+
+        super.shutdown();
     }
 
     // ==================== Launcher ====================
