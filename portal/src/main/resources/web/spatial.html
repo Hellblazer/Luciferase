@@ -165,6 +165,94 @@
         #back-link:hover {
             background: rgba(0, 0, 0, 0.8);
         }
+
+        /* Entity Info Panel (Phase 5b) */
+        #entity-info {
+            position: absolute;
+            bottom: 60px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 250px;
+            max-width: 350px;
+            z-index: 100;
+            display: none;
+            border: 1px solid #f472b6;
+        }
+
+        #entity-info h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #f472b6;
+        }
+
+        #entity-info .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+            gap: 10px;
+        }
+
+        #entity-info .info-row span:first-child {
+            color: #9ca3af;
+            flex-shrink: 0;
+        }
+
+        #entity-info .info-row span:last-child {
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+
+        #entity-info button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            background: #4b5563;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #entity-info button:hover {
+            background: #6b7280;
+        }
+
+        /* Query section styling */
+        #controls-panel .query-section {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #4b5563;
+        }
+
+        #controls-panel .query-section h4 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            color: #a78bfa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #controls-panel button.query-btn {
+            background: #7c3aed;
+        }
+
+        #controls-panel button.query-btn:hover {
+            background: #6d28d9;
+        }
+
+        #controls-panel button.clear-btn {
+            background: #6b7280;
+        }
+
+        #controls-panel button.clear-btn:hover {
+            background: #4b5563;
+        }
     </style>
 </head>
 <body>
@@ -204,14 +292,26 @@
         <button id="btn-create-index">Create Index</button>
         <button id="btn-add-random" disabled>Add Random Entities</button>
         <button id="btn-clear" disabled>Clear All</button>
+
+        <div class="query-section">
+            <h4>Queries</h4>
+            <button id="btn-range-query" class="query-btn" disabled>Range Query (Center)</button>
+            <button id="btn-knn-query" class="query-btn" disabled>KNN Query (k=10)</button>
+            <button id="btn-clear-query" class="clear-btn">Clear Highlights</button>
+        </div>
+
         <hr style="border-color: #4b5563; margin: 10px 0;">
         <button id="btn-reset-camera">Reset Camera</button>
     </div>
 
+    <!-- Entity Info Panel (populated by JS on click) -->
+    <div id="entity-info"></div>
+
     <div class="help-text">
-        <kbd>Left Mouse</kbd> Rotate |
-        <kbd>Right Mouse</kbd> Pan |
-        <kbd>Scroll</kbd> Zoom
+        <kbd>Left Drag</kbd> Rotate |
+        <kbd>Right Drag</kbd> Pan |
+        <kbd>Scroll</kbd> Zoom |
+        <kbd>Click</kbd> Select Entity
     </div>
 
     <a id="back-link" href="index.html">Back to Home</a>
