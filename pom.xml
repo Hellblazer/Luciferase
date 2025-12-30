@@ -26,6 +26,7 @@
         <!-- Default LWJGL natives - will be overridden by profiles -->
         <lwjgl.natives>natives-linux</lwjgl.natives>
         <gpu-support.version>1.0.5</gpu-support.version>
+        <javalin.version>6.3.0</javalin.version>
     </properties>
 
     <licenses>
@@ -362,6 +363,26 @@
                 <groupId>org.assertj</groupId>
                 <artifactId>assertj-core</artifactId>
                 <version>3.27.4</version>
+            </dependency>
+
+            <!-- Javalin Web Framework -->
+            <dependency>
+                <groupId>io.javalin</groupId>
+                <artifactId>javalin</artifactId>
+                <version>${javalin.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.javalin</groupId>
+                <artifactId>javalin-testtools</artifactId>
+                <version>${javalin.version}</version>
+                <scope>test</scope>
+            </dependency>
+
+            <!-- Jackson for Javalin JSON serialization -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>2.17.2</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

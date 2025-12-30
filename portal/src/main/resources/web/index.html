@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Luciferase Spatial Inspector</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Luciferase Spatial Inspector</h1>
+            <p class="subtitle">Web-based 3D Spatial Visualization</p>
+        </header>
+
+        <div class="section">
+            <h2>Available Demos</h2>
+            <div class="demo-grid">
+                <a href="spatial.html" class="demo-card pending">
+                    <h3>Spatial Index Explorer</h3>
+                    <p>Visualize and interact with Octree, Tetree, and SFCArrayIndex structures</p>
+                    <span class="status">Coming Soon</span>
+                </a>
+                <a href="render.html" class="demo-card pending">
+                    <h3>ESVO/ESVT Renderer</h3>
+                    <p>Efficient Sparse Voxel Octree/Tetrahedra rendering with GPU acceleration</p>
+                    <span class="status">Coming Soon</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Server Status</h2>
+            <div id="server-status" class="status-panel">
+                <p>Checking connection...</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>API Endpoints</h2>
+            <table class="api-table">
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Endpoint</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="method get">GET</span></td>
+                        <td>/api/health</td>
+                        <td>Health check</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method get">GET</span></td>
+                        <td>/api/info</td>
+                        <td>Server capabilities</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method post">POST</span></td>
+                        <td>/api/session/create</td>
+                        <td>Create new session</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method get">GET</span></td>
+                        <td>/api/session/{id}</td>
+                        <td>Get session info</td>
+                    </tr>
+                    <tr>
+                        <td><span class="method delete">DELETE</span></td>
+                        <td>/api/session/{id}</td>
+                        <td>Delete session</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <footer>
+            <p>Luciferase - A Bright Spark | AGPL v3.0</p>
+        </footer>
+    </div>
+
+    <script>
+        // Check server health on load
+        async function checkServerStatus() {
+            const statusPanel = document.getElementById('server-status');
+            try {
+                const response = await fetch('/api/info');
+                if (response.ok) {
+                    const info = await response.json();
+                    statusPanel.innerHTML = `
+                        <p class="status-ok">Connected</p>
+                        <ul>
+                            <li><strong>Name:</strong> ${info.name}</li>
+                            <li><strong>Version:</strong> ${info.version}</li>
+                            <li><strong>Active Sessions:</strong> ${info.activeSessions}</li>
+                            <li><strong>Spatial Indices:</strong> ${info.capabilities.spatialIndices.join(', ')}</li>
+                            <li><strong>Rendering:</strong> ${info.capabilities.rendering.join(', ')}</li>
+                        </ul>
+                    `;
+                } else {
+                    statusPanel.innerHTML = '<p class="status-error">Server returned error</p>';
+                }
+            } catch (error) {
+                statusPanel.innerHTML = '<p class="status-error">Cannot connect to server</p>';
+            }
+        }
+
+        checkServerStatus();
+    </script>
+</body>
+</html>
