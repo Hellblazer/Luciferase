@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * - child_descriptor.x: [valid(1)|far(1)|dummy(1)|childptr(14)|childmask(8)|leafmask(8)]
  * - child_descriptor.y: [contour_ptr(24)|contour_mask(8)]
  * - Child index = parent_ptr + popc8(child_masks & 0x7F)
- * - Octree space: [1, 2] not [0, 1] 
+ * - Octree space: [0, 1] normalized (unified with ESVT) 
  * - Stack depth: 23 levels
  * 
  * REQUIRED BEFORE TESTS PASS:
@@ -142,7 +142,7 @@ public class ESVOReferenceValidationTest {
     void testCoordinateSystem() {
         log.info("Validating coordinate system against reference");
         
-        // Reference assumes octree at [1, 2], we use [0, 1]
+        // Both ESVO and ESVT use [0, 1] normalized coordinate space
         // Reference uses mirroring optimization
         
         float[] rayDir = {0.5f, 0.3f, -0.8f};
@@ -155,7 +155,7 @@ public class ESVOReferenceValidationTest {
         
         assertEquals(4, octantMask, "Octant mask for ray direction");
         
-        // Reference bias calculation for [1, 2] space
+        // Bias calculation for [0, 1] space
         float txCoef = 1.0f / -Math.abs(rayDir[0]);
         float tyCoef = 1.0f / -Math.abs(rayDir[1]);
         float tzCoef = 1.0f / -Math.abs(rayDir[2]);

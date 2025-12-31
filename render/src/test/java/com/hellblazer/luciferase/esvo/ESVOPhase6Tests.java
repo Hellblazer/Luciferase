@@ -202,13 +202,13 @@ public class ESVOPhase6Tests {
         assertNotNull(minBounds);
         assertNotNull(maxBounds);
         
-        // Bounds should encompass [1,2] coordinate space
-        assertTrue(minBounds.x <= 1.0f);
-        assertTrue(minBounds.y <= 1.0f);
-        assertTrue(minBounds.z <= 1.0f);
-        assertTrue(maxBounds.x >= 2.0f);
-        assertTrue(maxBounds.y >= 2.0f);
-        assertTrue(maxBounds.z >= 2.0f);
+        // Bounds should encompass [0,1] coordinate space
+        assertTrue(minBounds.x <= 0.0f);
+        assertTrue(minBounds.y <= 0.0f);
+        assertTrue(minBounds.z <= 0.0f);
+        assertTrue(maxBounds.x >= 1.0f);
+        assertTrue(maxBounds.y >= 1.0f);
+        assertTrue(maxBounds.z >= 1.0f);
     }
     
     @Test

@@ -45,7 +45,7 @@ import static org.lwjgl.system.MemoryUtil.*;
  *   <li>Depth-based coloring</li>
  * </ul>
  *
- * <p><b>Coordinate Space:</b> [1, 2] normalized octree space
+ * <p><b>Coordinate Space:</b> [0, 1] normalized voxel space
  *
  * @author hal.hildebrand
  */

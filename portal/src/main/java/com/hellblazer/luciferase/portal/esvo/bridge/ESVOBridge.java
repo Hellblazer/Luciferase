@@ -117,7 +117,7 @@ public class ESVOBridge implements SpatialBridge<ESVOOctreeData> {
             throw new IllegalArgumentException("Camera direction vector is too small (near-zero)");
         }
         
-        // Create ray using RayTraversalUtils (handles [0,1] → [1,2] transformation)
+        // Create ray using RayTraversalUtils (operates in [0,1] coordinate space)
         var ray = RayTraversalUtils.createRayFromCamera(cameraOrigin, cameraDirection);
         
         // Create octree for traversal

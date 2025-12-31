@@ -30,9 +30,9 @@ public class ESVOScene {
     private Runnable updateCallback;
     
     public ESVOScene() {
-        // Initialize with default ESVO coordinate space bounds [1,2]
-        minBounds.set(1.0f, 1.0f, 1.0f);
-        maxBounds.set(2.0f, 2.0f, 2.0f);
+        // Initialize with default ESVO coordinate space bounds [0,1]
+        minBounds.set(0.0f, 0.0f, 0.0f);
+        maxBounds.set(1.0f, 1.0f, 1.0f);
     }
     
     /**
@@ -280,23 +280,23 @@ public class ESVOScene {
     
     private void calculateBounds() {
         if (octrees.isEmpty()) {
-            // Default to ESVO coordinate space
-            minBounds.set(1.0f, 1.0f, 1.0f);
-            maxBounds.set(2.0f, 2.0f, 2.0f);
+            // Default to ESVO coordinate space [0,1]
+            minBounds.set(0.0f, 0.0f, 0.0f);
+            maxBounds.set(1.0f, 1.0f, 1.0f);
         } else {
             // Calculate bounds from all octrees
             minBounds.set(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE);
             maxBounds.set(Float.MIN_VALUE, Float.MIN_VALUE, Float.MIN_VALUE);
-            
-            // For ESVO, octrees use [1,2] coordinate space by default
+
+            // For ESVO, octrees use [0,1] coordinate space
             // We extend bounds to encompass all octree data
             for (ESVOOctreeData octree : octrees.values()) {
-                // Each octree covers the [1,2] space
+                // Each octree covers the [0,1] space
                 // In a more sophisticated implementation, we would calculate
                 // actual spatial extent based on non-empty nodes
-                
+
+                updateBounds(0.0f, 0.0f, 0.0f);
                 updateBounds(1.0f, 1.0f, 1.0f);
-                updateBounds(2.0f, 2.0f, 2.0f);
             }
         }
         

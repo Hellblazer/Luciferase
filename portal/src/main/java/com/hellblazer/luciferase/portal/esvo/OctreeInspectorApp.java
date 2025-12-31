@@ -713,15 +713,15 @@ public class OctreeInspectorApp extends SpatialInspectorApp<ESVOOctreeData, ESVO
         float camY = (float) localToScene.getTy();
         float camZ = (float) localToScene.getTz();
 
-        // ESVO uses [1,2] coordinate space, scale to match
+        // ESVO uses [0,1] coordinate space, scale to match
         float worldSize = 100.0f; // Scene size
 
-        // Convert camera position to [1,2] space
-        float esvoCamX = 1.0f + (camX + 50.0f) / worldSize;
-        float esvoCamY = 1.0f + (camY + 50.0f) / worldSize;
-        float esvoCamZ = 1.0f + (camZ + 50.0f) / worldSize;
+        // Convert camera position to [0,1] space
+        float esvoCamX = (camX + 50.0f) / worldSize;
+        float esvoCamY = (camY + 50.0f) / worldSize;
+        float esvoCamZ = (camZ + 50.0f) / worldSize;
 
-        var lookAt = new Vector3f(1.5f, 1.5f, 1.5f); // Center of [1,2] space
+        var lookAt = new Vector3f(0.5f, 0.5f, 0.5f); // Center of [0,1] space
 
         if (gpuDebugFrameCount % 60 == 0) {
             log.info("GPU Camera: JavaFX({}, {}, {}) -> ESVO({}, {}, {})",

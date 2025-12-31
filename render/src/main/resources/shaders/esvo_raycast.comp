@@ -3,7 +3,7 @@
 // ESVO GPU Compute Shader for Ray-Octree Traversal
 // Implements the 3 critical GLSL shader bug fixes:
 // 1. Single stack read only (no double reads)
-// 2. Proper coordinate space transformation to [1,2]
+// 2. Proper coordinate space transformation to [0,1]
 // 3. Conditional iteration limit
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -29,8 +29,8 @@ layout(std140, binding = 2) uniform CameraUBO {
 // Constants matching Java implementation
 const int CAST_STACK_DEPTH = 23;
 const int MAX_RAYCAST_ITERATIONS = 0; // 0 = unlimited
-const float OCTREE_MIN = 1.0;
-const float OCTREE_MAX = 2.0;
+const float OCTREE_MIN = 0.0;
+const float OCTREE_MAX = 1.0;
 const float OCTREE_SIZE = 1.0;
 
 // Stack entry structure
@@ -77,11 +77,11 @@ int getChildOffset(int validMask, int childIndex) {
     return popc8(mask);
 }
 
-// Critical Bug Fix #2: Transform world coordinates to octree space [1,2]
+// Critical Bug Fix #2: Transform world coordinates to octree space [0,1]
 vec3 worldToOctree(vec3 worldPos) {
     vec4 objPos = camera.octreeToObject * vec4(worldPos, 1.0);
     vec3 normalized = (objPos.xyz + 1.0) * 0.5; // [-1,1] to [0,1]
-    return normalized + vec3(OCTREE_MIN); // [0,1] to [1,2]
+    return normalized + vec3(OCTREE_MIN); // With OCTREE_MIN=0.0, stays in [0,1]
 }
 
 // Calculate octant mask for ray direction
@@ -124,7 +124,7 @@ vec4 traverseOctree(Ray ray) {
     
     // Initialize traversal
     int currentNode = 0; // Root node
-    vec3 currentPos = vec3(1.5); // Center of [1,2] space
+    vec3 currentPos = vec3(0.5); // Center of [0,1] space
     int currentScale = 0;
     float tMax = 1e30;
     
@@ -252,7 +252,7 @@ void main() {
     rayEye = vec4(rayEye.xy, -1.0, 0.0);
     vec3 rayWorld = normalize((inverse(camera.viewMatrix) * rayEye).xyz);
     
-    // Critical Bug Fix #2: Transform to octree coordinate space [1,2]
+    // Critical Bug Fix #2: Transform to octree coordinate space [0,1]
     Ray ray;
     ray.origin = worldToOctree(camera.cameraPos.xyz);
     ray.direction = normalize(rayWorld);

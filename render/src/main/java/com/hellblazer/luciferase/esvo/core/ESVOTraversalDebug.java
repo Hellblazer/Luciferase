@@ -25,7 +25,7 @@ public class ESVOTraversalDebug {
         ray.prepareForTraversal();
         
         // Precompute the coefficients of tx(x), ty(y), and tz(z)
-        // The octree is assumed to reside at coordinates [1, 2]
+        // The octree is assumed to reside at coordinates [0, 1]
         float txCoef = 1.0f / -Math.abs(ray.directionX);
         float tyCoef = 1.0f / -Math.abs(ray.directionY);
         float tzCoef = 1.0f / -Math.abs(ray.directionZ);

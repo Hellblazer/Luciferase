@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * 
  * Tests the 3 critical GLSL shader bug fixes and deep octree traversal:
  * 1. Single stack read only (no double reads)
- * 2. Proper coordinate space transformation to [1,2]
+ * 2. Proper coordinate space transformation to [0,1]
  * 3. Conditional iteration limit
  * 
  * Performance targets:
