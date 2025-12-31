@@ -73,7 +73,7 @@ class ESVTRenderPipelineTest {
             incenter.x * resolution, incenter.y * resolution, incenter.z * resolution);
 
         // Step 2: Build ESVT with grid resolution
-        bridge.buildFromVoxels(voxels, depth, resolution);
+        bridge.buildAndChain(voxels, depth, resolution);
         var data = bridge.getData();
         System.out.printf("%nStep 2: Built ESVT: %d nodes, %d leaves%n",
             data.nodeCount(), data.leafCount());
@@ -180,7 +180,7 @@ class ESVTRenderPipelineTest {
         System.out.printf("Created %d voxels in 4x4x4 cube at (14-17, 14-17, 14-17)%n", voxels.size());
 
         var bridge = new ESVTBridge();
-        bridge.buildFromVoxels(voxels, 5, 32);
+        bridge.buildAndChain(voxels, 5, 32);
         var data = bridge.getData();
 
         System.out.printf("ESVT: %d nodes, %d leaves%n", data.nodeCount(), data.leafCount());
@@ -234,7 +234,7 @@ class ESVTRenderPipelineTest {
         // Single voxel at origin (0,0,0)
         var originVoxels = List.of(new Point3i(0, 0, 0));
         var bridge1 = new ESVTBridge();
-        bridge1.buildFromVoxels(originVoxels, 5, 32);
+        bridge1.buildAndChain(originVoxels, 5, 32);
 
         var renderer1 = new ESVTNodeMeshRenderer(bridge1.getData());
         var group1 = renderer1.renderLeaves(ESVTNodeMeshRenderer.ColorScheme.TET_TYPE, 1.0);
@@ -255,7 +255,7 @@ class ESVTRenderPipelineTest {
         // Single voxel at center (16,16,16)
         var centerVoxels = List.of(new Point3i(16, 16, 16));
         var bridge2 = new ESVTBridge();
-        bridge2.buildFromVoxels(centerVoxels, 5, 32);
+        bridge2.buildAndChain(centerVoxels, 5, 32);
 
         var renderer2 = new ESVTNodeMeshRenderer(bridge2.getData());
         var group2 = renderer2.renderLeaves(ESVTNodeMeshRenderer.ColorScheme.TET_TYPE, 1.0);
@@ -276,7 +276,7 @@ class ESVTRenderPipelineTest {
         // Single voxel at far corner (31,31,31)
         var cornerVoxels = List.of(new Point3i(31, 31, 31));
         var bridge3 = new ESVTBridge();
-        bridge3.buildFromVoxels(cornerVoxels, 5, 32);
+        bridge3.buildAndChain(cornerVoxels, 5, 32);
 
         var renderer3 = new ESVTNodeMeshRenderer(bridge3.getData());
         var group3 = renderer3.renderLeaves(ESVTNodeMeshRenderer.ColorScheme.TET_TYPE, 1.0);

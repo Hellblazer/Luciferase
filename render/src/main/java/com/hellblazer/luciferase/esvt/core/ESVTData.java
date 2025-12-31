@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.esvt.core;
 
+import com.hellblazer.luciferase.render.inspector.SpatialData;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -43,7 +45,7 @@ public record ESVTData(
     int internalCount,
     int gridResolution,           // Original voxel grid size (0 if not from voxels)
     int[] leafVoxelCoords         // Packed voxel coords: leafIdx*3+{0,1,2} = {x,y,z}
-) {
+) implements SpatialData {
 
     /**
      * Compact constructor that creates ESVTData without contours or far pointers.

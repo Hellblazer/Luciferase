@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESVO/ESVT Renderer - Luciferase</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* GPU frame overlay */
+        #gpu-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            z-index: 50;
+            image-rendering: pixelated;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 220px;
+            z-index: 100;
+        }
+
+        #info-panel h2 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #f472b6;
+        }
+
+        #info-panel .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        #info-panel .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #fbbf24;
+        }
+
+        #info-panel .status-dot.connected {
+            background: #34d399;
+        }
+
+        #info-panel .status-dot.error {
+            background: #f87171;
+        }
+
+        #info-panel .stats {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #info-panel .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+
+        #info-panel .stat-label {
+            color: #9ca3af;
+        }
+
+        #info-panel .stat-value {
+            color: #fff;
+            font-family: monospace;
+        }
+
+        #controls-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 200px;
+            z-index: 100;
+        }
+
+        #controls-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #f472b6;
+        }
+
+        #controls-panel label {
+            display: block;
+            margin-top: 10px;
+            margin-bottom: 4px;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        #controls-panel select,
+        #controls-panel input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            background: #374151;
+            color: #fff;
+            border: 1px solid #4b5563;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        #controls-panel button {
+            display: block;
+            width: 100%;
+            padding: 10px 12px;
+            margin: 8px 0;
+            background: #8b5cf6;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        #controls-panel button:hover {
+            background: #7c3aed;
+        }
+
+        #controls-panel button:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+
+        /* GPU Toggle Switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(139, 92, 246, 0.2);
+            border-radius: 6px;
+            border: 1px solid #8b5cf6;
+        }
+
+        .toggle-label {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #4b5563;
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: #22c55e;
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .toggle-switch input:disabled + .toggle-slider {
+            background-color: #374151;
+            cursor: not-allowed;
+        }
+
+        /* Section dividers */
+        .section-divider {
+            border: none;
+            border-top: 1px solid #4b5563;
+            margin: 15px 0;
+        }
+
+        .section-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #9ca3af;
+            margin-bottom: 10px;
+        }
+
+        /* Color scheme buttons */
+        .color-scheme-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .color-scheme-btn {
+            padding: 6px 8px !important;
+            margin: 0 !important;
+            font-size: 11px !important;
+            background: #374151 !important;
+        }
+
+        .color-scheme-btn.active {
+            background: #8b5cf6 !important;
+        }
+
+        .help-text {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #9ca3af;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 100;
+        }
+
+        .help-text kbd {
+            background: #374151;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+
+        #back-link {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #60a5fa;
+            padding: 10px 15px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
+            z-index: 100;
+        }
+
+        #back-link:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+
+        /* GPU Status indicator */
+        .gpu-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+            font-size: 11px;
+        }
+
+        .gpu-status .gpu-icon {
+            font-size: 14px;
+        }
+
+        .gpu-status.available {
+            color: #34d399;
+        }
+
+        .gpu-status.unavailable {
+            color: #f87171;
+        }
+
+        /* Raycast Info Panel */
+        #raycast-panel {
+            position: absolute;
+            bottom: 60px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 250px;
+            max-width: 350px;
+            z-index: 100;
+            display: none;
+            border: 1px solid #22c55e;
+        }
+
+        #raycast-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #22c55e;
+        }
+
+        #raycast-panel .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+            gap: 10px;
+        }
+
+        #raycast-panel .info-row span:first-child {
+            color: #9ca3af;
+            flex-shrink: 0;
+        }
+
+        #raycast-panel .info-row span:last-child {
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        #raycast-panel .hit {
+            color: #22c55e !important;
+        }
+
+        #raycast-panel .miss {
+            color: #f87171 !important;
+        }
+
+        #raycast-panel button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            background: #4b5563;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #raycast-panel button:hover {
+            background: #6b7280;
+        }
+
+        /* Raycast mode indicator */
+        .raycast-mode-active {
+            border: 2px solid #22c55e !important;
+        }
+
+        .raycast-toggle-container {
+            margin-top: 10px;
+        }
+
+        .raycast-toggle-btn {
+            width: 100%;
+            padding: 10px !important;
+            background: #059669 !important;
+            font-size: 13px !important;
+        }
+
+        .raycast-toggle-btn.active {
+            background: #dc2626 !important;
+        }
+
+        .raycast-toggle-btn:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <canvas id="gpu-frame"></canvas>
+
+    <div id="info-panel">
+        <h2>ESVO/ESVT Renderer</h2>
+        <div class="status">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+        <div id="session-info"></div>
+        <div id="gpu-status" class="gpu-status">
+            <span class="gpu-icon">GPU</span>
+            <span id="gpu-status-text">Checking...</span>
+        </div>
+        <div class="stats">
+            <div class="stat-row">
+                <span class="stat-label">Render Type</span>
+                <span id="stat-render-type" class="stat-value">-</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Nodes</span>
+                <span id="stat-nodes" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Leaves</span>
+                <span id="stat-leaves" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Build Time</span>
+                <span id="stat-build-time" class="stat-value">-</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">FPS</span>
+                <span id="stat-fps" class="stat-value">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="controls-panel">
+        <h3>Voxel Generation</h3>
+
+        <label>Shape</label>
+        <select id="shape-select">
+            <option value="sphere">Sphere</option>
+            <option value="cube">Cube</option>
+            <option value="torus">Torus</option>
+            <option value="bunny">Stanford Bunny</option>
+            <option value="random">Random Points</option>
+        </select>
+
+        <label>Render Type</label>
+        <select id="render-type">
+            <option value="ESVT">ESVT (Tetrahedra)</option>
+            <option value="ESVO">ESVO (Octree)</option>
+        </select>
+
+        <label>Max Depth</label>
+        <input type="number" id="max-depth" value="8" min="1" max="15">
+
+        <button id="btn-generate">Generate Voxels</button>
+
+        <hr class="section-divider">
+
+        <div class="section-title">Color Scheme</div>
+        <div class="color-scheme-grid">
+            <button class="color-scheme-btn active" data-scheme="DEPTH">Depth</button>
+            <button class="color-scheme-btn" data-scheme="NORMAL">Normal</button>
+            <button class="color-scheme-btn" data-scheme="SOLID">Solid</button>
+            <button class="color-scheme-btn" data-scheme="RAINBOW">Rainbow</button>
+        </div>
+
+        <hr class="section-divider">
+
+        <div class="toggle-container">
+            <span class="toggle-label">GPU Rendering</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="gpu-toggle" disabled>
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+
+        <button id="btn-benchmark" disabled>Run GPU Benchmark</button>
+
+        <hr class="section-divider">
+
+        <div class="section-title">Ray Casting</div>
+        <div class="raycast-toggle-container">
+            <button id="btn-raycast-toggle" class="raycast-toggle-btn" disabled>Enable Ray Cast Mode</button>
+        </div>
+        <button id="btn-clear-ray" disabled>Clear Ray</button>
+
+        <hr class="section-divider">
+
+        <button id="btn-reset-camera">Reset Camera</button>
+    </div>
+
+    <!-- Raycast Info Panel -->
+    <div id="raycast-panel">
+        <h3>Ray Cast Result</h3>
+        <div class="info-row">
+            <span>Status</span>
+            <span id="raycast-status">-</span>
+        </div>
+        <div class="info-row">
+            <span>Distance</span>
+            <span id="raycast-distance">-</span>
+        </div>
+        <div class="info-row">
+            <span>Hit Point</span>
+            <span id="raycast-hit-point">-</span>
+        </div>
+        <div class="info-row">
+            <span>Iterations</span>
+            <span id="raycast-iterations">-</span>
+        </div>
+        <div class="info-row">
+            <span>Depth</span>
+            <span id="raycast-depth">-</span>
+        </div>
+        <div class="info-row">
+            <span>Time</span>
+            <span id="raycast-time">-</span>
+        </div>
+        <button id="btn-close-raycast-panel">Close</button>
+    </div>
+
+    <div class="help-text">
+        <kbd>Left Drag</kbd> Rotate |
+        <kbd>Right Drag</kbd> Pan |
+        <kbd>Scroll</kbd> Zoom |
+        <kbd>Click</kbd> Cast Ray (when enabled)
+    </div>
+
+    <a id="back-link" href="index.html">Back to Home</a>
+
+    <!-- Three.js r169 via CDN -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="render.js"></script>
+</body>
+</html>

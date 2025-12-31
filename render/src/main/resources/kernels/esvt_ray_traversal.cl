@@ -15,12 +15,31 @@
 // DATA STRUCTURES
 // ============================================================================
 
-typedef struct {
-    float3 origin;
-    float3 direction;
-    float tmin;
-    float tmax;
-} Ray;
+// Ray data is passed as raw floats to avoid ALL struct alignment issues
+// Layout per ray (8 floats = 32 bytes):
+//   [0] origin.x, [1] origin.y, [2] origin.z
+//   [3] direction.x, [4] direction.y, [5] direction.z
+//   [6] tmin, [7] tmax
+#define RAY_STRIDE 8
+
+// Helper to extract ray data from raw float buffer
+inline float3 getRayOriginFromBuffer(__global const float* rays, int rayIdx) {
+    int base = rayIdx * RAY_STRIDE;
+    return (float3)(rays[base + 0], rays[base + 1], rays[base + 2]);
+}
+
+inline float3 getRayDirectionFromBuffer(__global const float* rays, int rayIdx) {
+    int base = rayIdx * RAY_STRIDE;
+    return (float3)(rays[base + 3], rays[base + 4], rays[base + 5]);
+}
+
+inline float getRayTminFromBuffer(__global const float* rays, int rayIdx) {
+    return rays[rayIdx * RAY_STRIDE + 6];
+}
+
+inline float getRayTmaxFromBuffer(__global const float* rays, int rayIdx) {
+    return rays[rayIdx * RAY_STRIDE + 7];
+}
 
 // ESVT Node Structure - 8 bytes (matches ESVTNodeUnified.java)
 typedef struct {
@@ -33,6 +52,9 @@ typedef struct {
     float tMax;
     int parentType;
     int entryFace;
+    int siblingPos;  // Next child index to try when we pop back to this level
+    // Store actual parent vertices for correct multi-level traversal
+    float3 v0, v1, v2, v3;
 } StackEntry;
 
 typedef struct {
@@ -87,6 +109,18 @@ constant int PARENT_TYPE_TO_CHILD_TYPE[48] = {
     5, 5, 5, 5, 1, 0, 3, 4   // Parent type 5
 };
 
+// INDEX_TO_BEY_NUMBER[6][8] - converts Morton index to Bey child ID
+// ESVT tree stores children in Morton order, but Bey subdivision uses Bey order
+// [parentType * 8 + mortonIdx] -> beyIdx
+constant int INDEX_TO_BEY_NUMBER[48] = {
+    0, 1, 4, 5, 2, 7, 6, 3,  // Parent type 0
+    0, 1, 5, 4, 7, 2, 6, 3,  // Parent type 1
+    0, 4, 5, 1, 2, 7, 6, 3,  // Parent type 2
+    0, 1, 5, 4, 6, 7, 2, 3,  // Parent type 3
+    0, 4, 5, 1, 6, 2, 7, 3,  // Parent type 4
+    0, 5, 4, 1, 6, 7, 2, 3   // Parent type 5
+};
+
 // CHILD_ORDER[6][4][4] - flattened to [96]
 // [tetType * 16 + entryFace * 4 + position]
 constant int CHILD_ORDER[96] = {
@@ -112,8 +146,12 @@ int getTetType(ESVTNode node) {
     return (node.contourDescriptor >> 1) & 0x7;
 }
 
+// Note: Validity is derived from masks, matching Java ESVTNodeUnified.isValid()
+// A node is valid if it has children or is a leaf.
 bool isValid(ESVTNode node) {
-    return (node.childDescriptor & 0x80000000u) != 0;
+    uint childMask = (node.childDescriptor >> 8) & 0xFFu;
+    uint leafMask = node.childDescriptor & 0xFFu;
+    return childMask != 0 || leafMask != 0;
 }
 
 uint getChildMask(ESVTNode node) {
@@ -188,6 +226,7 @@ float2 decodeContourPosThick(int value) {
     return (float2)(pos, thick);
 }
 
+// ARITHMETIC VERSION: Avoids fabs() which crashes on macOS OpenCL
 float2 intersectContour(int contour, float3 rayOrigin, float3 rayDir, float tetScale) {
     float3 normal = decodeContourNormal(contour);
     float2 posThick = decodeContourPosThick(contour);
@@ -198,8 +237,13 @@ float2 intersectContour(int contour, float3 rayOrigin, float3 rayDir, float tetS
     float denom = dot(normal, rayDir);
     float originDot = dot(normal, rayOrigin);
 
-    if (fabs(denom) < 1e-10f) {
-        float dist = fabs(originDot - pos);
+    // MANUAL absolute value (fabs() crashes on macOS OpenCL)
+    float absDenom = (denom >= 0.0f) ? denom : -denom;
+
+    if (absDenom < 1e-10f) {
+        // MANUAL absolute value for distance check
+        float diff = originDot - pos;
+        float dist = (diff >= 0.0f) ? diff : -diff;
         if (dist <= halfThick) {
             return (float2)(-1e30f, 1e30f);
         }
@@ -209,28 +253,27 @@ float2 intersectContour(int contour, float3 rayOrigin, float3 rayDir, float tetS
     float t1 = (pos - halfThick - originDot) / denom;
     float t2 = (pos + halfThick - originDot) / denom;
 
-    if (t1 > t2) {
-        float tmp = t1;
-        t1 = t2;
-        t2 = tmp;
-    }
+    // Use arithmetic swap instead of conditional
+    float minT = (t1 < t2) ? t1 : t2;
+    float maxT = (t1 < t2) ? t2 : t1;
 
-    return (float2)(t1, t2);
+    return (float2)(minT, maxT);
 }
 
-ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
-                                        float tEntry, float tExit,
-                                        float3 rayOrigin, float3 rayDir,
-                                        float tetScale,
-                                        __global const int* contours) {
-    ContourRefinement result;
-    result.t = tEntry;
-    result.normal = (float3)(0.0f);
-    result.valid = true;
+// INPLACE VERSION: Avoids struct return AND fabs() crashes on macOS OpenCL
+void refineHitWithContoursInplace(ESVTNode node, int entryFace,
+                                   float tEntry, float tExit,
+                                   float3 rayOrigin, float3 rayDir,
+                                   float tetScale,
+                                   __global const int* contours,
+                                   float* tOut, float3* normalOut, bool* validOut) {
+    *tOut = tEntry;
+    *normalOut = (float3)(0.0f);
+    *validOut = true;
 
     uint contourMask = getContourMask(node);
     if (contourMask == 0u) {
-        return result;
+        return;
     }
 
     uint contourPtr = getContourPtr(node);
@@ -246,21 +289,33 @@ ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
             float pos = posThick.x * tetScale;
 
             float denom = dot(contourNormal, rayDir);
-            if (fabs(denom) > 1e-10f) {
+            // MANUAL absolute value (fabs() crashes on macOS OpenCL)
+            float absDenom = (denom >= 0.0f) ? denom : -denom;
+            if (absDenom > 1e-10f) {
                 float refinedT = (pos - dot(contourNormal, rayOrigin)) / denom;
                 if (refinedT >= tEntry && refinedT <= tExit) {
-                    result.t = refinedT;
-                    result.normal = normalize(contourNormal);
-                    if (dot(result.normal, rayDir) > 0) {
-                        result.normal = -result.normal;
+                    *tOut = refinedT;
+                    *normalOut = normalize(contourNormal);
+                    if (dot(*normalOut, rayDir) > 0) {
+                        *normalOut = -(*normalOut);
                     }
                 }
             }
         } else if (contourHit.x == -1.0f && contourHit.y == -1.0f) {
-            result.valid = false;
+            *validOut = false;
         }
     }
+}
 
+// Legacy wrapper (may crash on some OpenCL implementations)
+ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
+                                        float tEntry, float tExit,
+                                        float3 rayOrigin, float3 rayDir,
+                                        float tetScale,
+                                        __global const int* contours) {
+    ContourRefinement result;
+    refineHitWithContoursInplace(node, entryFace, tEntry, tExit, rayOrigin, rayDir,
+                                  tetScale, contours, &result.t, &result.normal, &result.valid);
     return result;
 }
 
@@ -268,6 +323,7 @@ ContourRefinement refineHitWithContours(ESVTNode node, int entryFace,
 // MOLLER-TRUMBORE RAY-TRIANGLE INTERSECTION
 // ============================================================================
 
+// ARITHMETIC VERSION: Avoids fabs() which can crash on macOS OpenCL
 TriangleHit intersectTriangle(float3 rayOrigin, float3 rayDir,
                               float3 v0, float3 v1, float3 v2) {
     TriangleHit result;
@@ -282,7 +338,9 @@ TriangleHit intersectTriangle(float3 rayOrigin, float3 rayDir,
     float3 h = cross(rayDir, edge2);
     float a = dot(edge1, h);
 
-    if (fabs(a) < EPSILON) {
+    // MANUAL absolute value (fabs() can crash on macOS OpenCL)
+    float absA = (a >= 0.0f) ? a : -a;
+    if (absA < EPSILON) {
         return result;
     }
 
@@ -317,51 +375,82 @@ TriangleHit intersectTriangle(float3 rayOrigin, float3 rayDir,
 // RAY-TETRAHEDRON INTERSECTION
 // ============================================================================
 
-TetrahedronHit intersectTetrahedron(float3 rayOrigin, float3 rayDir,
-                                    float3 v0, float3 v1, float3 v2, float3 v3) {
-    TetrahedronHit result;
-    result.hit = false;
-    result.tEntry = 1e30f;
-    result.tExit = -1e30f;
-    result.entryFace = -1;
-    result.exitFace = -1;
+// INTEGER-BASED tetrahedron intersection (avoids macOS OpenCL crash patterns)
+// Uses face index comparison instead of float equality to detect edge/inside cases
+void intersectTetrahedronInplace(float3 rayOrigin, float3 rayDir,
+                                 float3 v0, float3 v1, float3 v2, float3 v3,
+                                 bool* hitOut, float* tEntryOut, float* tExitOut,
+                                 int* entryFaceOut, int* exitFaceOut) {
+    float tMin = 1e30f;
+    float tMax = -1e30f;
+    int minFace = -1;
+    int maxFace = -1;
+    int hitCount = 0;
 
     // Face 0: opposite v0, triangle (v1, v2, v3)
-    TriangleHit tri = intersectTriangle(rayOrigin, rayDir, v1, v2, v3);
-    if (tri.hit) {
-        if (tri.t < result.tEntry) { result.tEntry = tri.t; result.entryFace = 0; }
-        if (tri.t > result.tExit) { result.tExit = tri.t; result.exitFace = 0; }
+    TriangleHit tri0 = intersectTriangle(rayOrigin, rayDir, v1, v2, v3);
+    if (tri0.hit) {
+        hitCount++;
+        if (tri0.t < tMin) { tMin = tri0.t; minFace = 0; }
+        if (tri0.t > tMax) { tMax = tri0.t; maxFace = 0; }
     }
 
     // Face 1: opposite v1, triangle (v0, v2, v3)
-    tri = intersectTriangle(rayOrigin, rayDir, v0, v2, v3);
-    if (tri.hit) {
-        if (tri.t < result.tEntry) { result.tEntry = tri.t; result.entryFace = 1; }
-        if (tri.t > result.tExit) { result.tExit = tri.t; result.exitFace = 1; }
+    TriangleHit tri1 = intersectTriangle(rayOrigin, rayDir, v0, v2, v3);
+    if (tri1.hit) {
+        hitCount++;
+        if (tri1.t < tMin) { tMin = tri1.t; minFace = 1; }
+        if (tri1.t > tMax) { tMax = tri1.t; maxFace = 1; }
     }
 
     // Face 2: opposite v2, triangle (v0, v1, v3)
-    tri = intersectTriangle(rayOrigin, rayDir, v0, v1, v3);
-    if (tri.hit) {
-        if (tri.t < result.tEntry) { result.tEntry = tri.t; result.entryFace = 2; }
-        if (tri.t > result.tExit) { result.tExit = tri.t; result.exitFace = 2; }
+    TriangleHit tri2 = intersectTriangle(rayOrigin, rayDir, v0, v1, v3);
+    if (tri2.hit) {
+        hitCount++;
+        if (tri2.t < tMin) { tMin = tri2.t; minFace = 2; }
+        if (tri2.t > tMax) { tMax = tri2.t; maxFace = 2; }
     }
 
     // Face 3: opposite v3, triangle (v0, v1, v2)
-    tri = intersectTriangle(rayOrigin, rayDir, v0, v1, v2);
-    if (tri.hit) {
-        if (tri.t < result.tEntry) { result.tEntry = tri.t; result.entryFace = 3; }
-        if (tri.t > result.tExit) { result.tExit = tri.t; result.exitFace = 3; }
+    TriangleHit tri3 = intersectTriangle(rayOrigin, rayDir, v0, v1, v2);
+    if (tri3.hit) {
+        hitCount++;
+        if (tri3.t < tMin) { tMin = tri3.t; minFace = 3; }
+        if (tri3.t > tMax) { tMax = tri3.t; maxFace = 3; }
     }
 
-    if (result.entryFace >= 0 && result.exitFace >= 0 && result.tEntry < result.tExit) {
-        result.hit = true;
-    } else if (result.entryFace < 0 && result.exitFace >= 0 && result.tExit > 0) {
-        result.hit = true;
-        result.tEntry = 0.0f;
-        result.entryFace = -1;
+    // Integer-based hit determination (avoids float == comparison crash on macOS)
+    // Cases:
+    //   hitCount >= 2 with minFace != maxFace: Valid intersection (normal or edge hit)
+    //   hitCount == 1 with positive t: Ray starts inside tetrahedron
+    //   Otherwise: Miss
+    bool hit = false;
+    if (hitCount >= 2) {
+        if (minFace != maxFace) {
+            hit = true;
+            if (tMin <= 0.0f) {
+                tMin = 0.0f;  // Ray starts inside
+            }
+        }
+    } else if (hitCount == 1 && maxFace >= 0 && tMax > 0.0f) {
+        hit = true;
+        tMin = 0.0f;  // Ray starts inside
     }
 
+    *hitOut = hit;
+    *tEntryOut = tMin;
+    *tExitOut = tMax;
+    *entryFaceOut = minFace;
+    *exitFaceOut = maxFace;
+}
+
+// Wrapper that returns struct (for compatibility) - may crash on some OpenCL implementations
+TetrahedronHit intersectTetrahedron(float3 rayOrigin, float3 rayDir,
+                                    float3 v0, float3 v1, float3 v2, float3 v3) {
+    TetrahedronHit result;
+    intersectTetrahedronInplace(rayOrigin, rayDir, v0, v1, v2, v3,
+                                &result.hit, &result.tEntry, &result.tExit,
+                                &result.entryFace, &result.exitFace);
     return result;
 }
 
@@ -369,15 +458,21 @@ TetrahedronHit intersectTetrahedron(float3 rayOrigin, float3 rayDir,
 // CHILD VERTICES (BEY SUBDIVISION)
 // ============================================================================
 
-void getChildVertices(int parentType, int childIdx, float scale,
-                      float3* cv0, float3* cv1, float3* cv2, float3* cv3) {
-    // Get parent vertices
-    float3 pv0 = SIMPLEX_STANDARD[parentType * 4 + 0];
-    float3 pv1 = SIMPLEX_STANDARD[parentType * 4 + 1];
-    float3 pv2 = SIMPLEX_STANDARD[parentType * 4 + 2];
-    float3 pv3 = SIMPLEX_STANDARD[parentType * 4 + 3];
+// Computes child tetrahedron vertices using Bey 8-way subdivision.
+// CRITICAL: Takes ACTUAL parent vertices, not canonical SIMPLEX_STANDARD positions.
+// This enables correct multi-level traversal where parent positions vary.
+// In Bey subdivision, children fill the parent completely using edge midpoints.
+//
+// IMPORTANT: mortonIdx is the child index in MORTON order (as stored in ESVT tree).
+// We must convert it to BEY order using INDEX_TO_BEY_NUMBER[parentType] to get
+// the correct geometric position.
+void getChildVerticesFromParent(float3 pv0, float3 pv1, float3 pv2, float3 pv3,
+                                int mortonIdx, int parentType,
+                                float3* cv0, float3* cv1, float3* cv2, float3* cv3) {
+    // Convert Morton index to Bey index
+    int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + mortonIdx];
 
-    // Edge midpoints
+    // Edge midpoints of the ACTUAL parent tetrahedron
     float3 m01 = (pv0 + pv1) * 0.5f;
     float3 m02 = (pv0 + pv2) * 0.5f;
     float3 m03 = (pv0 + pv3) * 0.5f;
@@ -385,16 +480,28 @@ void getChildVertices(int parentType, int childIdx, float scale,
     float3 m13 = (pv1 + pv3) * 0.5f;
     float3 m23 = (pv2 + pv3) * 0.5f;
 
-    switch (childIdx) {
-        case 0: *cv0 = pv0 * scale; *cv1 = m01 * scale; *cv2 = m02 * scale; *cv3 = m03 * scale; break;
-        case 1: *cv0 = pv1 * scale; *cv1 = m01 * scale; *cv2 = m12 * scale; *cv3 = m13 * scale; break;
-        case 2: *cv0 = pv2 * scale; *cv1 = m02 * scale; *cv2 = m12 * scale; *cv3 = m23 * scale; break;
-        case 3: *cv0 = pv3 * scale; *cv1 = m03 * scale; *cv2 = m13 * scale; *cv3 = m23 * scale; break;
-        case 4: *cv0 = m01 * scale; *cv1 = m02 * scale; *cv2 = m03 * scale; *cv3 = m12 * scale; break;
-        case 5: *cv0 = m01 * scale; *cv1 = m02 * scale; *cv2 = m12 * scale; *cv3 = m13 * scale; break;
-        case 6: *cv0 = m02 * scale; *cv1 = m03 * scale; *cv2 = m12 * scale; *cv3 = m23 * scale; break;
-        case 7: *cv0 = m03 * scale; *cv1 = m12 * scale; *cv2 = m13 * scale; *cv3 = m23 * scale; break;
+    // Corner children (Bey 0-3): one parent vertex + three edge midpoints from that vertex
+    // Interior children (Bey 4-7): four edge midpoints (octahedral region subdivided)
+    switch (beyIdx) {
+        case 0: *cv0 = pv0; *cv1 = m01; *cv2 = m02; *cv3 = m03; break;
+        case 1: *cv0 = pv1; *cv1 = m01; *cv2 = m12; *cv3 = m13; break;
+        case 2: *cv0 = pv2; *cv1 = m02; *cv2 = m12; *cv3 = m23; break;
+        case 3: *cv0 = pv3; *cv1 = m03; *cv2 = m13; *cv3 = m23; break;
+        case 4: *cv0 = m01; *cv1 = m02; *cv2 = m03; *cv3 = m12; break;
+        case 5: *cv0 = m01; *cv1 = m02; *cv2 = m12; *cv3 = m13; break;
+        case 6: *cv0 = m02; *cv1 = m03; *cv2 = m12; *cv3 = m23; break;
+        case 7: *cv0 = m03; *cv1 = m12; *cv2 = m13; *cv3 = m23; break;
     }
+}
+
+// Legacy wrapper for root level (uses SIMPLEX_STANDARD)
+void getChildVertices(int parentType, int childIdx, float scale,
+                      float3* cv0, float3* cv1, float3* cv2, float3* cv3) {
+    float3 pv0 = SIMPLEX_STANDARD[parentType * 4 + 0];
+    float3 pv1 = SIMPLEX_STANDARD[parentType * 4 + 1];
+    float3 pv2 = SIMPLEX_STANDARD[parentType * 4 + 2];
+    float3 pv3 = SIMPLEX_STANDARD[parentType * 4 + 3];
+    getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, cv0, cv1, cv2, cv3);
 }
 
 // ============================================================================
@@ -402,179 +509,448 @@ void getChildVertices(int parentType, int childIdx, float scale,
 // ============================================================================
 
 __kernel void traverseESVT(
-    __global const Ray* rays,
+    __global const float* rays,     // Raw float buffer, 8 floats per ray
     __global const ESVTNode* nodes,
     __global const int* contours,
     __global float4* hitResults,    // xyz = hit point, w = distance
     __global float4* hitNormals,    // xyz = normal, w = 1 if hit
-    const uint maxDepth,
-    const float3 sceneMin,
-    const float3 sceneMax)
+    const uint maxDepth)
+    // Note: sceneMin/sceneMax removed - root tetrahedron uses SIMPLEX_STANDARD
 {
     int gid = get_global_id(0);
-    Ray ray = rays[gid];
 
-    // Initialize results
+    // Extract ray data from raw float buffer (avoids ALL struct alignment issues)
+    float3 rayOrigin = getRayOriginFromBuffer(rays, gid);
+    float3 rayDir = getRayDirectionFromBuffer(rays, gid);
+
+    // EARLY DIAGNOSTIC: Show ray origin as color to verify data transfer
+    // This outputs BEFORE any intersection logic
+    // Set to 1 to enable early ray data diagnostic
+    #if 0
+    hitResults[gid] = (float4)(rayOrigin.x, rayOrigin.y, rayOrigin.z, 1.0f);
+    hitNormals[gid] = (float4)(fabs(rayDir.x), fabs(rayDir.y), fabs(rayDir.z), 1.0f);
+    return;
+    #endif
+
+    // Initialize results - DIAGNOSTIC: Start with dark blue background
     hitResults[gid] = (float4)(0.0f, 0.0f, 0.0f, -1.0f);
-    hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, 0.0f);
+    hitNormals[gid] = (float4)(0.0f, 0.0f, 0.0f, 0.0f);  // No hit initially
 
-    // Avoid division by zero
-    if (fabs(ray.direction.x) < EPSILON) ray.direction.x = EPSILON;
-    if (fabs(ray.direction.y) < EPSILON) ray.direction.y = EPSILON;
-    if (fabs(ray.direction.z) < EPSILON) ray.direction.z = EPSILON;
+    // DEBUG: Output cyan to verify kernel reaches this point
+    // Set to 1 to enable
+    #if 0
+    hitResults[gid] = (float4)(0.0f, 1.0f, 1.0f, 1.0f);  // Cyan
+    hitNormals[gid] = (float4)(0.0f, 0.0f, 1.0f, 1.0f);
+    return;
+    #endif
+
+    // Avoid division by zero - USE MANUAL ABS (fabs() crashes on macOS OpenCL!)
+    float absX = (rayDir.x >= 0.0f) ? rayDir.x : -rayDir.x;
+    float absY = (rayDir.y >= 0.0f) ? rayDir.y : -rayDir.y;
+    float absZ = (rayDir.z >= 0.0f) ? rayDir.z : -rayDir.z;
+    if (absX < EPSILON) rayDir.x = EPSILON;
+    if (absY < EPSILON) rayDir.y = EPSILON;
+    if (absZ < EPSILON) rayDir.z = EPSILON;
 
     // Local stack
     StackEntry stack[CAST_STACK_DEPTH];
     for (int i = 0; i < CAST_STACK_DEPTH; i++) {
         stack[i].nodeIdx = 0xFFFFFFFFu;
+        stack[i].siblingPos = 0;
     }
 
     // Get root node
     ESVTNode rootNode = nodes[0];
     if (!isValid(rootNode)) {
+        // DIAGNOSTIC: Magenta = invalid root node
+        hitResults[gid] = (float4)(1.0f, 0.0f, 1.0f, 0.1f);
+        hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, 1.0f);
         return;
     }
 
     int rootType = getTetType(rootNode);
 
-    // Get root tetrahedron vertices
-    float3 v0 = SIMPLEX_STANDARD[rootType * 4 + 0];
-    float3 v1 = SIMPLEX_STANDARD[rootType * 4 + 1];
-    float3 v2 = SIMPLEX_STANDARD[rootType * 4 + 2];
-    float3 v3 = SIMPLEX_STANDARD[rootType * 4 + 3];
+    // DEBUG: Yellow = passed root validity check
+    // Set to 1 to enable
+    #if 0
+    hitResults[gid] = (float4)(1.0f, 1.0f, 0.0f, 1.0f);  // Yellow
+    hitNormals[gid] = (float4)(0.5f, 0.5f, 0.0f, 1.0f);
+    return;
+    #endif
 
-    // Test ray-root intersection
-    TetrahedronHit rootHit = intersectTetrahedron(ray.origin, ray.direction, v0, v1, v2, v3);
-    if (!rootHit.hit) {
-        return;
-    }
+    // Get root tetrahedron vertices from canonical positions
+    float3 pv0 = SIMPLEX_STANDARD[rootType * 4 + 0];
+    float3 pv1 = SIMPLEX_STANDARD[rootType * 4 + 1];
+    float3 pv2 = SIMPLEX_STANDARD[rootType * 4 + 2];
+    float3 pv3 = SIMPLEX_STANDARD[rootType * 4 + 3];
 
-    // Initialize traversal state
-    uint parentIdx = 0u;
-    int parentType = rootType;
-    int entryFace = rootHit.entryFace;
-    float tMin = rootHit.tEntry;
-    float tMax = rootHit.tExit;
-    int scale = CAST_STACK_DEPTH - 1;
-    float scaleExp2 = 1.0f;
-    int siblingPos = 0;
-    int iter = 0;
+    // DEBUG: Output tetrahedron centroid as color to verify vertex lookup
+    // Type 0 should have centroid at (0.75, 0.25, 0.5)
+    // Set to 1 to enable
+    #if 0
+    float3 centroid = (pv0 + pv1 + pv2 + pv3) * 0.25f;
+    hitResults[gid] = (float4)(centroid.x, centroid.y, centroid.z, 1.0f);
+    hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, 1.0f);  // Hit flag = 1
+    return;
+    #endif
 
-    // Main traversal loop
-    while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
-        iter++;
+    // DEBUG: Verify we reach just before intersection call
+    // Set to 1 to enable
+    #if 0
+    hitResults[gid] = (float4)(pv0.x, pv1.x, pv2.x, pv3.x);  // x coordinates
+    hitNormals[gid] = (float4)((float)rootType / 6.0f, 1.0f, 0.0f, 1.0f);
+    return;
+    #endif
 
-        ESVTNode node = nodes[parentIdx];
-        if (!isValid(node)) {
-            scale++;
-            if (scale >= CAST_STACK_DEPTH || stack[scale].nodeIdx == 0xFFFFFFFFu) {
-                break;
-            }
-            parentIdx = stack[scale].nodeIdx;
-            tMax = stack[scale].tMax;
-            parentType = stack[scale].parentType;
-            entryFace = stack[scale].entryFace;
-            siblingPos = 0;
-            scaleExp2 *= 2.0f;
-            continue;
+    // DEBUG: Test intersection function in isolation - INCREMENTAL VERSION
+    // Step 3: Add hit detection with integer comparisons
+    #if 0
+    {
+        // Triangle intersections for each face
+        TriangleHit tri0 = intersectTriangle(rayOrigin, rayDir, pv1, pv2, pv3);
+        TriangleHit tri1 = intersectTriangle(rayOrigin, rayDir, pv0, pv2, pv3);
+        TriangleHit tri2 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv3);
+        TriangleHit tri3 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv2);
+
+        // Track min/max t values and faces
+        float tMin = 1e30f;
+        float tMax = -1e30f;
+        int minFace = -1;
+        int maxFace = -1;
+        int hitCount = 0;
+
+        if (tri0.hit) {
+            hitCount++;
+            if (tri0.t < tMin) { tMin = tri0.t; minFace = 0; }
+            if (tri0.t > tMax) { tMax = tri0.t; maxFace = 0; }
+        }
+        if (tri1.hit) {
+            hitCount++;
+            if (tri1.t < tMin) { tMin = tri1.t; minFace = 1; }
+            if (tri1.t > tMax) { tMax = tri1.t; maxFace = 1; }
+        }
+        if (tri2.hit) {
+            hitCount++;
+            if (tri2.t < tMin) { tMin = tri2.t; minFace = 2; }
+            if (tri2.t > tMax) { tMax = tri2.t; maxFace = 2; }
+        }
+        if (tri3.hit) {
+            hitCount++;
+            if (tri3.t < tMin) { tMin = tri3.t; minFace = 3; }
+            if (tri3.t > tMax) { tMax = tri3.t; maxFace = 3; }
         }
 
-        // Get child order for entry face
-        int orderBase = parentType * 16 + max(0, entryFace) * 4;
+        // PURE ARITHMETIC HIT DETECTION (no conditionals - macOS OpenCL bug workaround)
+        float fHitCount = (float)hitCount;
 
-        // Try each child
-        bool descended = false;
-        for (int pos = siblingPos; pos < 4; pos++) {
-            int childIdx = CHILD_ORDER[orderBase + pos];
+        // Hit if hitCount > 0 (any face was intersected)
+        // Using arithmetic: clamp((float)hitCount, 0.0f, 1.0f) gives 0 for miss, 1 for hit
+        float hitFlag = clamp(fHitCount, 0.0f, 1.0f);
 
-            if (!hasChild(node, childIdx)) {
+        // Entry distance: use tMin, clamped to 0 for "inside" case
+        // If tMin < 0, ray starts inside the tetrahedron
+        float tEntry = tMin * hitFlag;  // 0 if no hit
+
+        // Output with hitFlag as both distance modifier and hit indicator
+        hitResults[gid] = (float4)(0.0f, hitFlag, 0.0f, tEntry);
+        hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, hitFlag);
+        return;
+    }
+    #endif
+
+    // Test ray-root intersection - PURE ARITHMETIC (no conditionals - macOS crash workaround)
+    // Declare all variables at outer scope for use in traversal
+    float rootHit_tEntry = 1e30f;
+    float rootHit_tExit = -1e30f;
+    int rootHit_entryFace = -1;
+    int rootHit_exitFace = -1;
+    int rootHitCount = 0;
+
+    // Inline intersectTetrahedron with ARITHMETIC hit detection
+    {
+        float tMin = 1e30f;
+        float tMax_local = -1e30f;
+        int minFace = -1;
+        int maxFace = -1;
+
+        // Face 0: opposite v0, triangle (v1, v2, v3)
+        TriangleHit tri0 = intersectTriangle(rayOrigin, rayDir, pv1, pv2, pv3);
+        if (tri0.hit) {
+            rootHitCount++;
+            if (tri0.t < tMin) { tMin = tri0.t; minFace = 0; }
+            if (tri0.t > tMax_local) { tMax_local = tri0.t; maxFace = 0; }
+        }
+
+        // Face 1: opposite v1, triangle (v0, v2, v3)
+        TriangleHit tri1 = intersectTriangle(rayOrigin, rayDir, pv0, pv2, pv3);
+        if (tri1.hit) {
+            rootHitCount++;
+            if (tri1.t < tMin) { tMin = tri1.t; minFace = 1; }
+            if (tri1.t > tMax_local) { tMax_local = tri1.t; maxFace = 1; }
+        }
+
+        // Face 2: opposite v2, triangle (v0, v1, v3)
+        TriangleHit tri2 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv3);
+        if (tri2.hit) {
+            rootHitCount++;
+            if (tri2.t < tMin) { tMin = tri2.t; minFace = 2; }
+            if (tri2.t > tMax_local) { tMax_local = tri2.t; maxFace = 2; }
+        }
+
+        // Face 3: opposite v3, triangle (v0, v1, v2)
+        TriangleHit tri3 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv2);
+        if (tri3.hit) {
+            rootHitCount++;
+            if (tri3.t < tMin) { tMin = tri3.t; minFace = 3; }
+            if (tri3.t > tMax_local) { tMax_local = tri3.t; maxFace = 3; }
+        }
+
+        // Store root hit info at outer scope
+        rootHit_tEntry = tMin;
+        rootHit_tExit = tMax_local;
+        rootHit_entryFace = minFace;
+        rootHit_exitFace = maxFace;
+    }
+
+    // If root was hit, proceed with traversal
+    if (rootHitCount > 0) {
+        // Initialize traversal state
+        // CRITICAL: Track actual parent vertices for correct multi-level traversal
+        uint parentIdx = 0u;
+        int parentType = rootType;
+        int entryFace = rootHit_entryFace;
+        float tMinLocal = rootHit_tEntry;
+        float tMaxLocal = rootHit_tExit;
+        int scale = CAST_STACK_DEPTH - 1;
+        float scaleExp2 = 1.0f;
+        int siblingPos = 0;
+        int iter = 0;
+
+        // Track best hit (using float flag to avoid conditional crash)
+        float bestT = 1e30f;
+        float3 bestHitPoint = (float3)(0.0f);
+        float3 bestHitNormal = (float3)(0.0f, 1.0f, 0.0f);
+        float foundLeafFlag = 0.0f;  // 0.0 = no leaf, 1.0 = found leaf
+        float bestHitScale = (float)CAST_STACK_DEPTH;  // Track depth of best hit
+
+        // DEBUG: track which children are hit at root (bitmask)
+        int debugChildrenChecked = 0;
+        int debugChildrenHit = 0;
+        int debugFirstHitChildIdx = -1;
+
+        // Main traversal loop
+        while (scale < CAST_STACK_DEPTH && iter < MAX_RAYCAST_ITERATIONS) {
+            iter++;
+
+            ESVTNode node = nodes[parentIdx];
+            if (!isValid(node)) {
+                scale++;
+                if (scale >= CAST_STACK_DEPTH || stack[scale].nodeIdx == 0xFFFFFFFFu) {
+                    break;
+                }
+                // Restore state including parent vertices
+                parentIdx = stack[scale].nodeIdx;
+                tMaxLocal = stack[scale].tMax;
+                parentType = stack[scale].parentType;
+                entryFace = stack[scale].entryFace;
+                siblingPos = stack[scale].siblingPos;  // Resume from saved position
+                pv0 = stack[scale].v0;
+                pv1 = stack[scale].v1;
+                pv2 = stack[scale].v2;
+                pv3 = stack[scale].v3;
+                scaleExp2 *= 2.0f;
                 continue;
             }
 
-            // Get child vertices
-            float3 cv0, cv1, cv2, cv3;
-            getChildVertices(parentType, childIdx, scaleExp2 * 0.5f, &cv0, &cv1, &cv2, &cv3);
+            // Try each child starting from siblingPos (for resumption after pop)
+            // Bey subdivision has 8 children that completely fill the parent
+            bool descended = false;
+            for (int childIdx = siblingPos; childIdx < 8; childIdx++) {
 
-            // Test intersection
-            TetrahedronHit childHit = intersectTetrahedron(ray.origin, ray.direction, cv0, cv1, cv2, cv3);
-            if (!childHit.hit) {
-                continue;
-            }
-
-            // Check if leaf
-            if (isChildLeaf(node, childIdx)) {
-                uint childNodeIdx = getChildIndex(nodes, node, childIdx, parentIdx);
-                ESVTNode childNode = nodes[childNodeIdx];
-                float childScale = scaleExp2 * 0.5f;
-
-                ContourRefinement contourRef = refineHitWithContours(
-                    childNode, childHit.entryFace, childHit.tEntry, childHit.tExit,
-                    ray.origin, ray.direction, childScale, contours);
-
-                if (!contourRef.valid) {
+                if (!hasChild(node, childIdx)) {
                     continue;
                 }
 
-                float3 hitPoint = ray.origin + ray.direction * contourRef.t;
-                float3 hitNormal;
+                // DEBUG: count at first iteration only (root level)
+                if (iter == 1) debugChildrenChecked++;
 
-                if (length(contourRef.normal) > 0.5f) {
-                    hitNormal = contourRef.normal;
-                } else {
-                    float3 fv0, fv1, fv2;
-                    int ef = childHit.entryFace;
-                    if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
-                    else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
-                    else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
-                    else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+                // Get child vertices from ACTUAL parent vertices (not SIMPLEX_STANDARD)
+                // childIdx is in Morton order; getChildVerticesFromParent converts to Bey order
+                float3 cv0, cv1, cv2, cv3;
+                getChildVerticesFromParent(pv0, pv1, pv2, pv3, childIdx, parentType, &cv0, &cv1, &cv2, &cv3);
 
-                    hitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
-                    if (dot(hitNormal, ray.direction) > 0) {
-                        hitNormal = -hitNormal;
-                    }
+                // Test intersection using inplace version (avoids struct return issues)
+                bool childHit_hit;
+                float childHit_tEntry, childHit_tExit;
+                int childHit_entryFace, childHit_exitFace;
+                intersectTetrahedronInplace(rayOrigin, rayDir, cv0, cv1, cv2, cv3,
+                                            &childHit_hit, &childHit_tEntry, &childHit_tExit,
+                                            &childHit_entryFace, &childHit_exitFace);
+                if (!childHit_hit) {
+                    continue;
                 }
 
-                hitResults[gid] = (float4)(hitPoint.x, hitPoint.y, hitPoint.z, contourRef.t);
-                hitNormals[gid] = (float4)(hitNormal.x, hitNormal.y, hitNormal.z, 1.0f);
-                return;
-            }
+                // DEBUG: count hits at root level and record first hit child
+                if (iter == 1) {
+                    debugChildrenHit++;
+                    if (debugFirstHitChildIdx < 0) debugFirstHitChildIdx = childIdx;
+                }
 
-            // Non-leaf - push and descend
-            stack[scale].nodeIdx = parentIdx;
-            stack[scale].tMax = tMax;
-            stack[scale].parentType = parentType;
-            stack[scale].entryFace = entryFace;
+                // Check if leaf
+                if (isChildLeaf(node, childIdx)) {
+                    uint childNodeIdx = getChildIndex(nodes, node, childIdx, parentIdx);
+                    ESVTNode childNode = nodes[childNodeIdx];
+                    float childScale = scaleExp2 * 0.5f;
 
-            parentIdx = getChildIndex(nodes, node, childIdx, parentIdx);
-            parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + childIdx];
-            entryFace = childHit.entryFace >= 0 ? childHit.entryFace : 0;
-            tMin = childHit.tEntry;
-            tMax = childHit.tExit;
-            scale--;
-            scaleExp2 *= 0.5f;
-            siblingPos = 0;
-            descended = true;
-            break;
-        }
+                    // Use inplace version to avoid struct return
+                    float contourT;
+                    float3 contourNormal;
+                    bool contourValid;
+                    refineHitWithContoursInplace(
+                        childNode, childHit_entryFace, childHit_tEntry, childHit_tExit,
+                        rayOrigin, rayDir, childScale, contours,
+                        &contourT, &contourNormal, &contourValid);
 
-        if (!descended) {
-            if (scale >= CAST_STACK_DEPTH - 1) {
+                    if (!contourValid) {
+                        continue;
+                    }
+
+                    // Found valid leaf hit - check if it's closer
+                    if (contourT < bestT) {
+                        bestT = contourT;
+                        bestHitPoint = rayOrigin + rayDir * contourT;
+
+                        // Calculate normal
+                        float normalLen = length(contourNormal);
+                        if (normalLen > 0.5f) {
+                            bestHitNormal = contourNormal;
+                        } else {
+                            // Compute face normal based on entry face
+                            float3 fv0, fv1, fv2;
+                            int ef = childHit_entryFace;
+                            // Use safe indexing to select face vertices
+                            if (ef == 0) { fv0 = cv1; fv1 = cv2; fv2 = cv3; }
+                            else if (ef == 1) { fv0 = cv0; fv1 = cv2; fv2 = cv3; }
+                            else if (ef == 2) { fv0 = cv0; fv1 = cv1; fv2 = cv3; }
+                            else { fv0 = cv0; fv1 = cv1; fv2 = cv2; }
+
+                            bestHitNormal = normalize(cross(fv1 - fv0, fv2 - fv0));
+                            if (dot(bestHitNormal, rayDir) > 0) {
+                                bestHitNormal = -bestHitNormal;
+                            }
+                        }
+                        foundLeafFlag = 1.0f;
+                        bestHitScale = (float)scale;  // Record depth
+                    }
+                    // Continue to check other children at same level (may find closer hit)
+                    continue;
+                }
+
+                // Non-leaf - push and descend
+                // Save current state including parent vertices
+                stack[scale].nodeIdx = parentIdx;
+                stack[scale].tMax = tMaxLocal;
+                stack[scale].parentType = parentType;
+                stack[scale].entryFace = entryFace;
+                stack[scale].siblingPos = childIdx + 1;  // Resume from next sibling when we pop back
+                stack[scale].v0 = pv0;
+                stack[scale].v1 = pv1;
+                stack[scale].v2 = pv2;
+                stack[scale].v3 = pv3;
+
+                // Update state for child - child vertices become new parent vertices
+                parentIdx = getChildIndex(nodes, node, childIdx, parentIdx);
+                // childIdx is Morton index; convert to Bey index for type lookup
+                int beyIdx = INDEX_TO_BEY_NUMBER[parentType * 8 + childIdx];
+                parentType = PARENT_TYPE_TO_CHILD_TYPE[parentType * 8 + beyIdx];
+                entryFace = (childHit_entryFace >= 0) ? childHit_entryFace : 0;
+                tMinLocal = childHit_tEntry;
+                tMaxLocal = childHit_tExit;
+                pv0 = cv0;
+                pv1 = cv1;
+                pv2 = cv2;
+                pv3 = cv3;
+                scale--;
+                scaleExp2 *= 0.5f;
+                siblingPos = 0;
+                descended = true;
                 break;
             }
 
-            scale++;
-            scaleExp2 *= 2.0f;
+            if (!descended) {
+                if (scale >= CAST_STACK_DEPTH - 1) {
+                    break;
+                }
 
-            if (stack[scale].nodeIdx == 0xFFFFFFFFu) {
-                break;
+                scale++;
+                scaleExp2 *= 2.0f;
+
+                if (stack[scale].nodeIdx == 0xFFFFFFFFu) {
+                    break;
+                }
+
+                // Restore state including parent vertices
+                parentIdx = stack[scale].nodeIdx;
+                tMaxLocal = stack[scale].tMax;
+                parentType = stack[scale].parentType;
+                entryFace = stack[scale].entryFace;
+                siblingPos = stack[scale].siblingPos;  // Resume from saved position
+                pv0 = stack[scale].v0;
+                pv1 = stack[scale].v1;
+                pv2 = stack[scale].v2;
+                pv3 = stack[scale].v3;
             }
-
-            parentIdx = stack[scale].nodeIdx;
-            tMax = stack[scale].tMax;
-            parentType = stack[scale].parentType;
-            entryFace = stack[scale].entryFace;
-            siblingPos = 0;
         }
+
+        // ARITHMETIC OUTPUT: Blend based on foundLeafFlag
+        // foundLeafFlag is already 0.0f or 1.0f - no conditional needed
+        float leafHitFlag = foundLeafFlag;
+        float noLeafFlag = 1.0f - leafHitFlag;
+
+        // If leaf found: output hit data
+        // If no leaf but root hit: output root hit (green tint)
+        // The missFlag was computed above for root miss case
+        float rootOnlyFlag = noLeafFlag;
+
+        // Output using arithmetic blending
+        // Leaf hit: bestHitPoint, bestT
+        // Root hit only: show green tint at root intersection
+        // Root miss: show ray direction as background
+
+        float4 leafResult = (float4)(bestHitPoint.x, bestHitPoint.y, bestHitPoint.z, bestT);
+        // DEBUG: Output depth as color gradient
+        // depth 0 = red, depth 3 = yellow, depth 6 = green, depth 9 = cyan
+        float hitDepth = (float)(CAST_STACK_DEPTH - 1) - bestHitScale;
+        float normalizedDepth = hitDepth / 10.0f;  // 0-1 for depths 0-10
+        float4 leafNormal = (float4)(
+            1.0f - normalizedDepth,     // R decreases with depth
+            normalizedDepth,             // G increases with depth
+            0.3f,                        // B constant to identify leaf hits
+            1.0f
+        );
+
+        float4 rootOnlyResult = (float4)(0.0f, 0.5f, 0.0f, tMinLocal);
+        // DEBUG: show which child was hit
+        // R = first hit child index / 8 (0-7 maps to 0-0.875)
+        // G = number of hits / 8
+        // B = 0.5 to identify root-only
+        float4 rootOnlyNormal = (float4)(
+            (debugFirstHitChildIdx >= 0) ? ((float)debugFirstHitChildIdx + 1.0f) / 8.0f : 0.0f,
+            (float)debugChildrenHit / 8.0f,
+            0.5f,
+            1.0f
+        );
+
+        // Blend: prefer leaf hit, then root hit
+        hitResults[gid] = leafHitFlag * leafResult + rootOnlyFlag * rootOnlyResult;
+        hitNormals[gid] = leafHitFlag * leafNormal + rootOnlyFlag * rootOnlyNormal;
+    } else {
+        // Root miss case - output background using arithmetic
+        float absRayDirX = (rayDir.x >= 0.0f) ? rayDir.x : -rayDir.x;
+        float absRayDirY = (rayDir.y >= 0.0f) ? rayDir.y : -rayDir.y;
+        float absRayDirZ = (rayDir.z >= 0.0f) ? rayDir.z : -rayDir.z;
+        hitResults[gid] = (float4)(absRayDirX, absRayDirY, absRayDirZ, 0.1f);
+        hitNormals[gid] = (float4)(1.0f, 0.0f, 0.0f, 0.0f);  // Red tint, no hit
     }
 }
 
@@ -583,15 +959,14 @@ __kernel void traverseESVT(
 // ============================================================================
 
 __kernel void traverseESVTBeam(
-    __global const Ray* rays,
+    __global const float* rays,     // Raw float buffer, 8 floats per ray
     __global const ESVTNode* nodes,
     __global const int* contours,
     __global float4* hitResults,
     __global float4* hitNormals,
     const uint raysPerBeam,
-    const uint maxDepth,
-    const float3 sceneMin,
-    const float3 sceneMax)
+    const uint maxDepth)
+    // Note: sceneMin/sceneMax removed - root tetrahedron uses SIMPLEX_STANDARD
 {
     int beamId = get_global_id(0);
     int firstRay = beamId * raysPerBeam;
@@ -601,9 +976,13 @@ __kernel void traverseESVTBeam(
     float3 frustumMax = (float3)(-INFINITY);
 
     for (uint i = 0; i < raysPerBeam; i++) {
-        Ray ray = rays[firstRay + i];
-        float3 nearPoint = ray.origin + ray.direction * ray.tmin;
-        float3 farPoint = ray.origin + ray.direction * ray.tmax;
+        int rayIdx = firstRay + i;
+        float3 rayO = getRayOriginFromBuffer(rays, rayIdx);
+        float3 rayD = getRayDirectionFromBuffer(rays, rayIdx);
+        float rayTmin = getRayTminFromBuffer(rays, rayIdx);
+        float rayTmax = getRayTmaxFromBuffer(rays, rayIdx);
+        float3 nearPoint = rayO + rayD * rayTmin;
+        float3 farPoint = rayO + rayD * rayTmax;
 
         frustumMin = min(frustumMin, min(nearPoint, farPoint));
         frustumMax = max(frustumMax, max(nearPoint, farPoint));
@@ -612,7 +991,6 @@ __kernel void traverseESVTBeam(
     // Process each ray in the beam
     for (uint i = 0; i < raysPerBeam; i++) {
         int rayIdx = firstRay + i;
-        Ray ray = rays[rayIdx];
 
         // Initialize results
         hitResults[rayIdx] = (float4)(0.0f, 0.0f, 0.0f, -1.0f);

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spatial Index Explorer - Luciferase</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 220px;
+            z-index: 100;
+        }
+
+        #info-panel h2 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #6ee7b7;
+        }
+
+        #info-panel .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        #info-panel .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #fbbf24;
+        }
+
+        #info-panel .status-dot.connected {
+            background: #34d399;
+        }
+
+        #info-panel .status-dot.error {
+            background: #f87171;
+        }
+
+        #info-panel .stats {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #info-panel .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+
+        #info-panel .stat-label {
+            color: #9ca3af;
+        }
+
+        #info-panel .stat-value {
+            color: #fff;
+            font-family: monospace;
+        }
+
+        #controls-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            z-index: 100;
+        }
+
+        #controls-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #a78bfa;
+        }
+
+        #controls-panel button {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        #controls-panel button:hover {
+            background: #2563eb;
+        }
+
+        #controls-panel button:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+
+        #controls-panel select {
+            width: 100%;
+            padding: 6px;
+            margin: 5px 0;
+            background: #374151;
+            color: #fff;
+            border: 1px solid #4b5563;
+            border-radius: 4px;
+        }
+
+        .help-text {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #9ca3af;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 100;
+        }
+
+        .help-text kbd {
+            background: #374151;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+
+        #back-link {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #60a5fa;
+            padding: 10px 15px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
+            z-index: 100;
+        }
+
+        #back-link:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+
+        /* Entity Info Panel (Phase 5b) */
+        #entity-info {
+            position: absolute;
+            bottom: 60px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 250px;
+            max-width: 350px;
+            z-index: 100;
+            display: none;
+            border: 1px solid #f472b6;
+        }
+
+        #entity-info h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #f472b6;
+        }
+
+        #entity-info .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+            gap: 10px;
+        }
+
+        #entity-info .info-row span:first-child {
+            color: #9ca3af;
+            flex-shrink: 0;
+        }
+
+        #entity-info .info-row span:last-child {
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+
+        #entity-info button {
+            margin-top: 10px;
+            padding: 6px 12px;
+            background: #4b5563;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        #entity-info button:hover {
+            background: #6b7280;
+        }
+
+        /* Query section styling */
+        #controls-panel .query-section {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #4b5563;
+        }
+
+        #controls-panel .query-section h4 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            color: #a78bfa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #controls-panel button.query-btn {
+            background: #7c3aed;
+        }
+
+        #controls-panel button.query-btn:hover {
+            background: #6d28d9;
+        }
+
+        #controls-panel button.clear-btn {
+            background: #6b7280;
+        }
+
+        #controls-panel button.clear-btn:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="info-panel">
+        <h2>Spatial Inspector</h2>
+        <div class="status">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+        <div id="session-info"></div>
+        <div class="stats">
+            <div class="stat-row">
+                <span class="stat-label">Index Type</span>
+                <span id="stat-index-type" class="stat-value">-</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Entities</span>
+                <span id="stat-entities" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">FPS</span>
+                <span id="stat-fps" class="stat-value">0</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="controls-panel">
+        <h3>Controls</h3>
+        <label>Index Type</label>
+        <select id="index-type">
+            <option value="TETREE">Tetree</option>
+            <option value="OCTREE">Octree</option>
+            <option value="SFC">SFC Array</option>
+        </select>
+        <button id="btn-create-index">Create Index</button>
+        <button id="btn-add-random" disabled>Add Random Entities</button>
+        <button id="btn-clear" disabled>Clear All</button>
+
+        <div class="query-section">
+            <h4>Queries</h4>
+            <button id="btn-range-query" class="query-btn" disabled>Range Query (Center)</button>
+            <button id="btn-knn-query" class="query-btn" disabled>KNN Query (k=10)</button>
+            <button id="btn-clear-query" class="clear-btn">Clear Highlights</button>
+        </div>
+
+        <hr style="border-color: #4b5563; margin: 10px 0;">
+        <button id="btn-reset-camera">Reset Camera</button>
+    </div>
+
+    <!-- Entity Info Panel (populated by JS on click) -->
+    <div id="entity-info"></div>
+
+    <div class="help-text">
+        <kbd>Left Drag</kbd> Rotate |
+        <kbd>Right Drag</kbd> Pan |
+        <kbd>Scroll</kbd> Zoom |
+        <kbd>Click</kbd> Select Entity
+    </div>
+
+    <a id="back-link" href="index.html">Back to Home</a>
+
+    <!-- Three.js r169 via CDN -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="spatial.js"></script>
+</body>
+</html>

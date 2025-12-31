@@ -201,7 +201,7 @@ public class ESVTOpenCLRenderBridge implements AutoCloseable {
     /**
      * Render a frame and call the callback with the result on the JavaFX thread.
      *
-     * @param callback Called with the rendered image on JavaFX thread
+     * @param callback Called with the rendered image on JavaFX thread (always called, even on error)
      */
     public void renderAsync(Consumer<WritableImage> callback) {
         if (!initialized.get()) {
@@ -209,6 +209,7 @@ public class ESVTOpenCLRenderBridge implements AutoCloseable {
         }
 
         renderThread.execute(() -> {
+            boolean success = false;
             try {
                 // Capture current camera state
                 var view = new Matrix4f(viewMatrix);
@@ -226,14 +227,28 @@ public class ESVTOpenCLRenderBridge implements AutoCloseable {
                 pixels.rewind();
                 pixels.get(pixelArray);
 
-                // Transfer to JavaFX on FX thread
-                Platform.runLater(() -> {
-                    transferPixelsToImage();
-                    callback.accept(outputImage);
-                });
+                success = true;
             } catch (Exception e) {
                 log.error("OpenCL render failed", e);
+                // Fill with error indicator (red tint)
+                for (int i = 0; i < pixelArray.length; i += 4) {
+                    pixelArray[i] = 50;     // R
+                    pixelArray[i + 1] = 0;  // G
+                    pixelArray[i + 2] = 0;  // B
+                    pixelArray[i + 3] = (byte) 255; // A
+                }
             }
+
+            // Always transfer to JavaFX and call callback (even on error)
+            // This ensures the callback is always invoked to reset pending flags
+            final boolean renderSuccess = success;
+            Platform.runLater(() -> {
+                transferPixelsToImage();
+                if (!renderSuccess) {
+                    log.debug("Displaying error frame");
+                }
+                callback.accept(outputImage);
+            });
         });
     }
 

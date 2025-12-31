@@ -24,6 +24,7 @@ import com.hellblazer.luciferase.esvo.traversal.RayTraversalUtils;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal;
 import com.hellblazer.luciferase.esvo.traversal.StackBasedRayTraversal.DeepTraversalResult;
 import com.hellblazer.luciferase.geometry.Point3i;
+import com.hellblazer.luciferase.portal.inspector.SpatialBridge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,10 +35,10 @@ import java.util.List;
  * Bridge between portal visualization layer and render module ESVO components.
  * Provides simplified interface for octree construction and ray casting operations.
  * Handles coordinate transformations and data structure conversions.
- * 
+ *
  * @author hal.hildebrand
  */
-public class ESVOBridge {
+public class ESVOBridge implements SpatialBridge<ESVOOctreeData> {
     private static final Logger log = LoggerFactory.getLogger(ESVOBridge.class);
     
     private final ESVOPerformanceMonitor performanceMonitor;
@@ -189,25 +190,56 @@ public class ESVOBridge {
     
     /**
      * Check if an octree is currently loaded.
-     * 
+     *
      * @return True if octree is available
      */
     public boolean hasOctree() {
         return currentOctree != null;
     }
-    
+
     /**
      * Get statistics about the current octree.
-     * 
+     *
      * @return Octree statistics as formatted string
      */
     public String getOctreeStats() {
         if (currentOctree == null) {
             return "No octree loaded";
         }
-        
-        return String.format("Octree: depth=%d, nodes=%d", 
-                           currentMaxDepth, 
+
+        return String.format("Octree: depth=%d, nodes=%d",
+                           currentMaxDepth,
                            currentOctree.getNodeCount());
+    }
+
+    // ==================== SpatialBridge Interface ====================
+
+    private long lastBuildTimeMs = 0;
+
+    @Override
+    public BuildResult<ESVOOctreeData> buildFromVoxels(List<Point3i> voxels, int maxDepth, int gridResolution) {
+        var startTime = System.currentTimeMillis();
+        try {
+            var octree = buildOctree(voxels, maxDepth);
+            lastBuildTimeMs = System.currentTimeMillis() - startTime;
+            return new BuildResult<>(octree, lastBuildTimeMs, voxels.size(),
+                String.format("Built octree with %d nodes in %d ms", octree.getNodeCount(), lastBuildTimeMs));
+        } catch (Exception e) {
+            lastBuildTimeMs = System.currentTimeMillis() - startTime;
+            log.error("Failed to build octree", e);
+            return new BuildResult<>(null, lastBuildTimeMs, voxels.size(), "Build failed: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String getStructureTypeName() {
+        return "Octree";
+    }
+
+    /**
+     * Get the build time of the last operation in milliseconds.
+     */
+    public long getLastBuildTimeMs() {
+        return lastBuildTimeMs;
     }
 }

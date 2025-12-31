@@ -135,30 +135,37 @@ public class OctreeBuilder implements AutoCloseable {
             }
         }
         
+        // Far pointer support: max value for 14-bit child pointer
+        final int MAX_CHILD_PTR = (1 << 14) - 1; // 16383
+
+        // Track far pointers - stores actual relative offsets for nodes that need them
+        // Unlike inline far pointer nodes, this array is separate and indexed by childPtr when far=true
+        var farPointersList = new ArrayList<Integer>();
+
         // Second pass: create ESVO nodes with proper child pointers and masks
         for (Map.Entry<Long, OctreeNode> entry : nodeMap.entrySet()) {
             long nodeKey = entry.getKey();
             OctreeNode node = entry.getValue();
             int currentIndex = keyToIndex.get(nodeKey);
-            
+
             // Calculate child mask and leaf mask
             int childMask = 0;
             int leafMask = 0;
             int firstChildIndex = -1;
-            
+
             if (!node.isLeaf) {
                 // Check which children exist
                 for (int childIdx = 0; childIdx < 8; childIdx++) {
                     long childKey = getChildKey(nodeKey, childIdx);
                     if (nodeMap.containsKey(childKey)) {
                         childMask |= (1 << childIdx);
-                        
+
                         // Track first child index for child pointer
                         int childIndex = keyToIndex.get(childKey);
                         if (firstChildIndex == -1) {
                             firstChildIndex = childIndex;
                         }
-                        
+
                         // Check if child is a leaf
                         if (nodeMap.get(childKey).isLeaf) {
                             leafMask |= (1 << childIdx);
@@ -169,24 +176,52 @@ public class OctreeBuilder implements AutoCloseable {
                 // Leaf nodes have no children but mark themselves as leaves
                 leafMask = 0xFF; // All children would be leaves (leaf node convention)
             }
-            
+
             // Create ESVO node with relative child pointer
             // Use relative offset from current node (not absolute index)
-            // This keeps pointers small in BFS-ordered trees
             int relativeOffset = firstChildIndex != -1 ? (firstChildIndex - currentIndex) : 0;
+
+            // Check if we need a far pointer
+            boolean useFarPointer = relativeOffset > MAX_CHILD_PTR || relativeOffset < 0;
+            int childPtr;
+
+            if (useFarPointer && firstChildIndex != -1) {
+                // Store INDEX into farPointers array (not the offset itself)
+                int farIndex = farPointersList.size();
+
+                // Add the actual relative offset to the far pointers array
+                farPointersList.add(relativeOffset);
+
+                // childPtr stores the index into farPointers
+                childPtr = farIndex;
+
+                log.debug("Using far pointer for node {}: farIndex={}, relativeOffset={}",
+                         currentIndex, farIndex, relativeOffset);
+            } else {
+                childPtr = relativeOffset;
+            }
+
             ESVONodeUnified esvoNode = new ESVONodeUnified(
                 (byte) leafMask,
                 (byte) childMask,
-                false,  // far flag
-                relativeOffset,
+                useFarPointer,
+                childPtr,
                 (byte) 0,  // contour mask (not used in basic construction)
                 0          // contour ptr (not used in basic construction)
             );
-            
+
             octreeData.setNode(currentIndex, esvoNode);
         }
-        
-        log.debug("Built octree with {} nodes from {} voxels", nodeMap.size(), voxelList.size());
+
+        // Set far pointers array on octree data
+        if (!farPointersList.isEmpty()) {
+            int[] farPointersArray = farPointersList.stream().mapToInt(Integer::intValue).toArray();
+            octreeData.setFarPointers(farPointersArray);
+            log.debug("Created {} far pointers", farPointersArray.length);
+        }
+
+        log.debug("Built octree with {} nodes from {} voxels",
+                 nodeMap.size(), voxelList.size());
         
         return octreeData;
     }
@@ -346,7 +381,7 @@ public class OctreeBuilder implements AutoCloseable {
         final long key;
         final int level;
         final boolean isLeaf;
-        
+
         OctreeNode(long key, int level, boolean isLeaf) {
             this.key = key;
             this.level = level;

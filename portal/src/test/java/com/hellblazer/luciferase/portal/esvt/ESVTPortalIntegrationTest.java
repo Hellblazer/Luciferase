@@ -30,7 +30,7 @@ class ESVTPortalIntegrationTest {
 
         // Build ESVT via bridge
         var bridge = new ESVTBridge();
-        bridge.buildFromVoxels(voxels, 5);
+        bridge.buildAndChain(voxels, 5);
 
         assertTrue(bridge.hasData(), "Should have built ESVT data");
 
@@ -59,7 +59,7 @@ class ESVTPortalIntegrationTest {
         System.out.printf("Generated %d solid cube voxels%n", voxels.size());
 
         var bridge = new ESVTBridge();
-        bridge.buildFromVoxels(voxels, 4);
+        bridge.buildAndChain(voxels, 4);
 
         assertTrue(bridge.hasData(), "Should have data");
 
@@ -124,7 +124,7 @@ class ESVTPortalIntegrationTest {
         List<Point3i> voxels = generator.generate(ProceduralVoxelGenerator.Shape.SPHERE, 16);
 
         var bridge = new ESVTBridge();
-        bridge.buildFromVoxels(voxels, 4);
+        bridge.buildAndChain(voxels, 4);
 
         var data = bridge.getData();
         assertNotNull(data);
@@ -164,7 +164,7 @@ class ESVTPortalIntegrationTest {
         List<Point3i> voxels = generator.generate(ProceduralVoxelGenerator.Shape.TORUS, 32);
 
         var bridge = new ESVTBridge();
-        bridge.buildFromVoxels(voxels, 5);
+        bridge.buildAndChain(voxels, 5);
 
         // Cast multiple rays
         var origins = new Vector3f[10];
