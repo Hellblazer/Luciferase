@@ -120,7 +120,7 @@ public class ESVTCompressedDeserializer implements AutoCloseable {
             nodeBuffer.clear();
             nodeBuffer.put(nodeBytes);
             nodeBuffer.flip();
-            nodes[i] = ESVTNodeUnified.readFrom(nodeBuffer);
+            nodes[i] = ESVTNodeUnified.fromByteBuffer(nodeBuffer);
         }
 
         // Read contours

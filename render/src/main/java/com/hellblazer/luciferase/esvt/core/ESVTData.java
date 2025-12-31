@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.esvt.core;
 
 import com.hellblazer.luciferase.render.inspector.SpatialData;
+import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -45,7 +46,7 @@ public record ESVTData(
     int internalCount,
     int gridResolution,           // Original voxel grid size (0 if not from voxels)
     int[] leafVoxelCoords         // Packed voxel coords: leafIdx*3+{0,1,2} = {x,y,z}
-) implements SpatialData {
+) implements SpatialData, SparseVoxelData<ESVTNodeUnified> {
 
     /**
      * Compact constructor that creates ESVTData without contours or far pointers.
@@ -104,6 +105,22 @@ public record ESVTData(
      */
     public boolean hasFarPointers() {
         return farPointers != null && farPointers.length > 0;
+    }
+
+    /**
+     * Get far pointers array (implements {@link SparseVoxelData#getFarPointers()}).
+     */
+    @Override
+    public int[] getFarPointers() {
+        return farPointers != null ? farPointers : new int[0];
+    }
+
+    /**
+     * Get contours array (implements {@link SparseVoxelData#getContours()}).
+     */
+    @Override
+    public int[] getContours() {
+        return contours != null ? contours : new int[0];
     }
 
     /**
@@ -250,7 +267,7 @@ public record ESVTData(
                                            int leafCount, int internalCount) {
         var nodes = new ESVTNodeUnified[nodeCount];
         for (int i = 0; i < nodeCount; i++) {
-            nodes[i] = ESVTNodeUnified.readFrom(nodeBuffer);
+            nodes[i] = ESVTNodeUnified.fromByteBuffer(nodeBuffer);
         }
 
         int[] contours = new int[contourCount];

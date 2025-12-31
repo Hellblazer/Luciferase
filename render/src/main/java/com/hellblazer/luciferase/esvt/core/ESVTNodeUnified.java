@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.esvt.core;
 
 import com.hellblazer.luciferase.lucien.Constants;
 import com.hellblazer.luciferase.lucien.tetree.TetreeConnectivity;
+import com.hellblazer.luciferase.sparse.core.SparseVoxelNode;
 
 import java.nio.ByteBuffer;
 
@@ -47,7 +48,7 @@ import java.nio.ByteBuffer;
  *
  * @author hal.hildebrand
  */
-public final class ESVTNodeUnified {
+public final class ESVTNodeUnified implements SparseVoxelNode {
 
     // Node size in bytes
     public static final int SIZE_BYTES = 8;
@@ -362,19 +363,30 @@ public final class ESVTNodeUnified {
      * Write this node to a ByteBuffer (for GPU transfer).
      * Writes exactly 8 bytes.
      */
+    @Override
     public void writeTo(ByteBuffer buffer) {
         buffer.putInt(childDescriptor);
         buffer.putInt(contourDescriptor);
     }
 
     /**
-     * Read a node from a ByteBuffer.
+     * Create a node from a ByteBuffer (static factory).
      * Reads exactly 8 bytes.
      */
-    public static ESVTNodeUnified readFrom(ByteBuffer buffer) {
+    public static ESVTNodeUnified fromByteBuffer(ByteBuffer buffer) {
         int child = buffer.getInt();
         int contour = buffer.getInt();
         return new ESVTNodeUnified(child, contour);
+    }
+
+    /**
+     * Read node data from a ByteBuffer into this instance.
+     * Reads exactly 8 bytes. Implements {@link SparseVoxelNode#readFrom}.
+     */
+    @Override
+    public void readFrom(ByteBuffer buffer) {
+        this.childDescriptor = buffer.getInt();
+        this.contourDescriptor = buffer.getInt();
     }
 
     @Override

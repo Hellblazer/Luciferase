@@ -95,7 +95,7 @@ public class ESVTMemoryMappedReader implements AutoCloseable {
             // Read nodes
             var nodes = new ESVTNodeUnified[nodeCount];
             for (int i = 0; i < nodeCount; i++) {
-                nodes[i] = ESVTNodeUnified.readFrom(buffer);
+                nodes[i] = ESVTNodeUnified.fromByteBuffer(buffer);
             }
 
             // Read contours
@@ -172,7 +172,7 @@ public class ESVTMemoryMappedReader implements AutoCloseable {
                 FileChannel.MapMode.READ_ONLY, nodeOffset, ESVTNodeUnified.SIZE_BYTES);
             nodeBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
-            return ESVTNodeUnified.readFrom(nodeBuffer);
+            return ESVTNodeUnified.fromByteBuffer(nodeBuffer);
         }
     }
 
@@ -216,7 +216,7 @@ public class ESVTMemoryMappedReader implements AutoCloseable {
 
             var nodes = new ESVTNodeUnified[count];
             for (int i = 0; i < count; i++) {
-                nodes[i] = ESVTNodeUnified.readFrom(buffer);
+                nodes[i] = ESVTNodeUnified.fromByteBuffer(buffer);
             }
 
             return nodes;

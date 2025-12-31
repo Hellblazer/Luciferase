@@ -187,7 +187,7 @@ public final class ESVTGPUMemory {
 
         int offset = nodeIndex * NODE_SIZE_BYTES;
         nodeBuffer.position(offset);
-        return ESVTNodeUnified.readFrom(nodeBuffer);
+        return ESVTNodeUnified.fromByteBuffer(nodeBuffer);
     }
 
     /**

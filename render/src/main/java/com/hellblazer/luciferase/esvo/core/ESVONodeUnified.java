@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.esvo.core;
 
+import com.hellblazer.luciferase.sparse.core.SparseVoxelNode;
+
 import java.nio.ByteBuffer;
 
 /**
@@ -24,7 +26,7 @@ import java.nio.ByteBuffer;
  * 
  * IMPORTANT: All other node classes must be DELETED and replaced with this one.
  */
-public final class ESVONodeUnified {
+public final class ESVONodeUnified implements SparseVoxelNode {
 
     /** Node size in bytes (int2 in CUDA = 8 bytes) */
     public static final int SIZE_BYTES = 8;
@@ -284,19 +286,30 @@ public final class ESVONodeUnified {
      * Write this node to a ByteBuffer (for GPU transfer).
      * Writes exactly 8 bytes.
      */
+    @Override
     public void writeTo(ByteBuffer buffer) {
         buffer.putInt(childDescriptor);
         buffer.putInt(contourDescriptor);
     }
     
     /**
-     * Read a node from a ByteBuffer.
+     * Create a node from a ByteBuffer (static factory).
      * Reads exactly 8 bytes.
      */
-    public static ESVONodeUnified readFrom(ByteBuffer buffer) {
+    public static ESVONodeUnified fromByteBuffer(ByteBuffer buffer) {
         int child = buffer.getInt();
         int contour = buffer.getInt();
         return new ESVONodeUnified(child, contour);
+    }
+
+    /**
+     * Read node data from a ByteBuffer into this instance.
+     * Reads exactly 8 bytes. Implements {@link SparseVoxelNode#readFrom}.
+     */
+    @Override
+    public void readFrom(ByteBuffer buffer) {
+        this.childDescriptor = buffer.getInt();
+        this.contourDescriptor = buffer.getInt();
     }
     
     @Override

@@ -20,8 +20,7 @@ package com.hellblazer.luciferase.sparse.core;
  * Common constants for sparse voxel traversal.
  *
  * <p>These constants are shared between ESVO and ESVT ray traversal algorithms.
- * While the coordinate spaces differ ([1,2] for ESVO, [0,1] for ESVT), the
- * traversal mechanics share common parameters.
+ * Both implementations use unified [0,1] coordinate space for consistency.
  *
  * <p><b>Usage:</b> Implementations may use these defaults or override with
  * their own values for specific optimizations.

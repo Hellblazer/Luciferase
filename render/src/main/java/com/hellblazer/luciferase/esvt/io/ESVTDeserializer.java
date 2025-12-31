@@ -200,7 +200,7 @@ public class ESVTDeserializer implements AutoCloseable {
 
         var nodes = new ESVTNodeUnified[header.nodeCount];
         for (int i = 0; i < header.nodeCount; i++) {
-            nodes[i] = ESVTNodeUnified.readFrom(buffer);
+            nodes[i] = ESVTNodeUnified.fromByteBuffer(buffer);
         }
 
         return nodes;

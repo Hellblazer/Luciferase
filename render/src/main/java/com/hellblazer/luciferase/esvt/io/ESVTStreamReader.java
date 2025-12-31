@@ -118,7 +118,7 @@ public class ESVTStreamReader implements AutoCloseable, Iterable<ESVTNodeUnified
         nodeBuffer.flip();
 
         currentNode++;
-        return ESVTNodeUnified.readFrom(nodeBuffer);
+        return ESVTNodeUnified.fromByteBuffer(nodeBuffer);
     }
 
     /**
@@ -145,7 +145,7 @@ public class ESVTStreamReader implements AutoCloseable, Iterable<ESVTNodeUnified
 
         var nodes = new ESVTNodeUnified[toRead];
         for (int i = 0; i < toRead; i++) {
-            nodes[i] = ESVTNodeUnified.readFrom(buffer);
+            nodes[i] = ESVTNodeUnified.fromByteBuffer(buffer);
         }
 
         currentNode += toRead;
