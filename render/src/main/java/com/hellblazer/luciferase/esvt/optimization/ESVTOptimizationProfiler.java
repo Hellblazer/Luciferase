@@ -161,28 +161,28 @@ public class ESVTOptimizationProfiler {
 
         // Run optimization
         var result = pipeline.optimize(inputData);
-        var optimizedData = result.getOptimizedData();
+        var optimizedData = result.optimizedData();
 
         // Record output metrics
         metrics.put("outputNodeCount", (float) optimizedData.nodeCount());
         metrics.put("outputLeafCount", (float) optimizedData.leafCount());
 
         // Extract phase durations from report
-        for (var step : result.getOptimizationReport().getOptimizationSteps()) {
-            phaseDurations.put(step.getOptimizerName(), (long) step.getExecutionTime());
+        for (var step : result.report().steps()) {
+            phaseDurations.put(step.optimizerName(), (long) step.executionTimeMs());
 
             // Record to phase profiles
             var profile = phaseProfiles.computeIfAbsent(
-                step.getOptimizerName(), k -> new PhaseProfile());
+                step.optimizerName(), k -> new PhaseProfile());
             profile.recordExecution(
-                (long) (step.getExecutionTime() * 1_000_000),
-                (step.getImprovementFactor() - 1.0f) * 100
+                (long) (step.executionTimeMs() * 1_000_000),
+                (step.improvementFactor() - 1.0f) * 100
             );
         }
 
         // Calculate improvement metrics
-        metrics.put("overallImprovement", result.getOptimizationReport().getOverallImprovement());
-        metrics.putAll(result.getPerformanceMetrics());
+        metrics.put("overallImprovement", result.report().overallImprovement());
+        metrics.putAll(result.performanceMetrics());
 
         var totalDuration = (System.nanoTime() - startTime) / 1_000_000;
         totalProfilingTime.addAndGet(totalDuration);

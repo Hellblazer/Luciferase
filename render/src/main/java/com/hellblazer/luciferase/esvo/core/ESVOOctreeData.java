@@ -1,15 +1,26 @@
 package com.hellblazer.luciferase.esvo.core;
 
 import com.hellblazer.luciferase.render.inspector.SpatialData;
+import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * ESVO Octree Data container for file I/O
- * Manages octree nodes for serialization/deserialization
+ * ESVO Octree Data container for file I/O.
+ *
+ * <p>Manages octree nodes for serialization/deserialization. Implements both
+ * {@link SpatialData} for inspector compatibility and {@link SparseVoxelData}
+ * for the generic optimization pipeline.
+ *
+ * <p>Note: This implementation uses a Map-based storage internally but provides
+ * array-based access through the {@link SparseVoxelData} interface.
+ *
+ * @author hal.hildebrand
  */
-public class ESVOOctreeData implements SpatialData {
+public class ESVOOctreeData implements SpatialData, SparseVoxelData<ESVONodeUnified> {
     private final Map<Integer, ESVONodeUnified> nodes;
     private final int maxSizeBytes;
     private int maxDepth = 0;
@@ -181,5 +192,54 @@ public class ESVOOctreeData implements SpatialData {
      */
     public void setFarPointers(int[] farPointers) {
         this.farPointers = farPointers != null ? farPointers : new int[0];
+    }
+
+    // === SparseVoxelData interface implementation ===
+
+    /**
+     * Get all nodes as an array.
+     *
+     * <p>Nodes are returned in index order. This method creates a new array
+     * on each call; for frequent access, consider caching the result.
+     *
+     * @return array of nodes in index order
+     */
+    @Override
+    public ESVONodeUnified[] nodes() {
+        var indices = getNodeIndices();
+        var result = new ESVONodeUnified[indices.length];
+        for (int i = 0; i < indices.length; i++) {
+            result[i] = nodes.get(indices[i]);
+        }
+        return result;
+    }
+
+    /**
+     * Pack all nodes into a ByteBuffer for GPU transfer.
+     *
+     * <p>Uses native byte order for performance.
+     *
+     * @return ByteBuffer containing packed node data
+     */
+    @Override
+    public ByteBuffer nodesToByteBuffer() {
+        var nodeArray = nodes();
+        var buffer = ByteBuffer.allocateDirect(nodeArray.length * ESVONodeUnified.SIZE_BYTES)
+                               .order(ByteOrder.nativeOrder());
+        for (var node : nodeArray) {
+            node.writeTo(buffer);
+        }
+        buffer.flip();
+        return buffer;
+    }
+
+    /**
+     * Get the contours array (empty for basic ESVO data).
+     *
+     * @return empty array (contours stored separately in ESVO)
+     */
+    @Override
+    public int[] getContours() {
+        return new int[0]; // ESVO contours are stored separately
     }
 }

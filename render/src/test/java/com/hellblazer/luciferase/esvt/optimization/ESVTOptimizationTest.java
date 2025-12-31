@@ -341,15 +341,15 @@ class ESVTOptimizationTest {
         var result = pipeline.optimize(data);
 
         assertNotNull(result);
-        assertNotNull(result.getOptimizedData());
-        assertNotNull(result.getOptimizationReport());
-        assertEquals(data.nodeCount(), result.getOptimizedData().nodeCount());
+        assertNotNull(result.optimizedData());
+        assertNotNull(result.report());
+        assertEquals(data.nodeCount(), result.optimizedData().nodeCount());
 
         // Report should have steps
-        var report = result.getOptimizationReport();
-        assertFalse(report.getOptimizationSteps().isEmpty());
-        assertTrue(report.getTotalOptimizationTime() >= 0);
-        assertTrue(report.getOverallImprovement() >= 0);
+        var report = result.report();
+        assertFalse(report.steps().isEmpty());
+        assertTrue(report.totalTimeMs() >= 0);
+        assertTrue(report.overallImprovement() >= 0);
     }
 
     @Test
@@ -361,7 +361,7 @@ class ESVTOptimizationTest {
 
         assertNotNull(stats);
         assertEquals(4, stats.get("totalOptimizers"));
-        assertTrue((Long) stats.get("totalOptimizationTime") >= 0);
+        assertTrue((Float) stats.get("totalOptimizationTimeMs") >= 0);
     }
 
     @Test
@@ -371,7 +371,7 @@ class ESVTOptimizationTest {
         pipeline.clearStats();
 
         var stats = pipeline.getPipelineStats();
-        assertEquals(0L, stats.get("totalOptimizationTime"));
+        assertEquals(0.0f, (Float) stats.get("totalOptimizationTimeMs"), 0.001f);
     }
 
     // ========== Optimization Profiler Tests ==========
@@ -463,7 +463,7 @@ class ESVTOptimizationTest {
         var result = pipeline.optimize(emptyData);
 
         assertNotNull(result);
-        assertEquals(0, result.getOptimizedData().nodeCount());
+        assertEquals(0, result.optimizedData().nodeCount());
     }
 
     @Test
@@ -473,7 +473,7 @@ class ESVTOptimizationTest {
         var result = pipeline.optimize(singleNodeData);
 
         assertNotNull(result);
-        assertEquals(1, result.getOptimizedData().nodeCount());
+        assertEquals(1, result.optimizedData().nodeCount());
     }
 
     @Test
@@ -483,7 +483,7 @@ class ESVTOptimizationTest {
         var result = pipeline.optimize(largeData);
 
         assertNotNull(result);
-        assertEquals(1000, result.getOptimizedData().nodeCount());
+        assertEquals(1000, result.optimizedData().nodeCount());
     }
 
     // ========== Helper Methods ==========

@@ -101,7 +101,7 @@ public class ESVTOptimizeMode {
             var optimizationResult = pipeline.optimize(loadResult.data);
             var optimizationTimeMs = (System.nanoTime() - startTime) / 1_000_000.0;
 
-            var optimizedData = optimizationResult.getOptimizedData();
+            var optimizedData = optimizationResult.optimizedData();
             reportOptimizationResult(optimizationResult, optimizationTimeMs);
 
             // Analyze after optimization
@@ -188,21 +188,23 @@ public class ESVTOptimizeMode {
         progress("Max passes:              " + config.optimizationPasses);
     }
 
-    private void reportOptimizationResult(ESVTOptimizationPipeline.OptimizationResult result, double timeMs) {
-        var report = result.getOptimizationReport();
+    private void reportOptimizationResult(
+            com.hellblazer.luciferase.sparse.optimization.OptimizationResult<ESVTData> result,
+            double timeMs) {
+        var report = result.report();
 
         progress("Optimization time:   " + String.format("%.2f", timeMs) + " ms");
-        progress("Passes completed:    " + report.getOptimizationSteps().size());
-        progress("Overall improvement: " + String.format("%.1f%%", (report.getOverallImprovement() - 1) * 100));
+        progress("Passes completed:    " + report.steps().size());
+        progress("Overall improvement: " + String.format("%.1f%%", (report.overallImprovement() - 1) * 100));
         out.println();
 
         if (config.verbose) {
             progress("Optimization Steps:");
-            for (var step : report.getOptimizationSteps()) {
+            for (var step : report.steps()) {
                 out.printf("  %-30s %.2f ms  (%.1fx improvement)%n",
-                        step.getOptimizerName(),
-                        step.getExecutionTime(),
-                        step.getImprovementFactor());
+                        step.optimizerName(),
+                        step.executionTimeMs(),
+                        step.improvementFactor());
             }
         }
     }
