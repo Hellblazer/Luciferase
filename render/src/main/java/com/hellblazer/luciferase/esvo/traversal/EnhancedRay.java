@@ -17,7 +17,7 @@ import javax.vecmath.Vector3f;
 public class EnhancedRay {
     
     /**
-     * Ray origin in octree coordinate space [1,2]
+     * Ray origin in octree coordinate space [0,1]
      */
     public final Vector3f origin;
     

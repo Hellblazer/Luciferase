@@ -230,8 +230,14 @@ public final class ESVTNodeUnified implements SparseVoxelNode {
     }
 
     /**
-     * Set valid flag. For compatibility - sets childMask to 0xFF if valid with no children.
-     * @deprecated Use setChildMask/setLeafMask directly instead
+     * Set valid flag.
+     *
+     * <p>This method is a no-op for backward compatibility. Validity is now
+     * derived from the child and leaf masks rather than stored explicitly.
+     *
+     * @param valid ignored
+     * @deprecated Use {@link #setChildMask(int)} or {@link #setLeafMask(int)} directly instead.
+     *             Validity is now derived from masks: a node is valid if childMask or leafMask is non-zero.
      */
     @Deprecated
     public void setValid(boolean valid) {

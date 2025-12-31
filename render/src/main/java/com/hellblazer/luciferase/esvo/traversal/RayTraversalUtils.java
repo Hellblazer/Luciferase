@@ -33,9 +33,8 @@ public class RayTraversalUtils {
     
     /**
      * Create an EnhancedRay from camera position and direction in world space.
-     * Automatically transforms to octree coordinate space [1,2] and sets up
-     * size parameters for proper termination conditions.
-     * 
+     * Uses unified [0,1] octree coordinate space.
+     *
      * @param cameraOrigin Camera position in world space [0,1]
      * @param cameraDirection Camera look direction (will be normalized)
      * @return EnhancedRay ready for traversal
@@ -43,10 +42,11 @@ public class RayTraversalUtils {
     public static EnhancedRay createRayFromCamera(Vector3f cameraOrigin, Vector3f cameraDirection) {
         return createRayFromCamera(cameraOrigin, cameraDirection, 0.0f, 0.0f);
     }
-    
+
     /**
      * Create an EnhancedRay from camera position and direction with custom size parameters.
-     * 
+     * Uses unified [0,1] octree coordinate space.
+     *
      * @param cameraOrigin Camera position in world space [0,1]
      * @param cameraDirection Camera look direction (will be normalized)
      * @param originSize Origin size parameter for termination (typically 0.0)
@@ -55,16 +55,12 @@ public class RayTraversalUtils {
      */
     public static EnhancedRay createRayFromCamera(Vector3f cameraOrigin, Vector3f cameraDirection,
                                                    float originSize, float directionSize) {
-        // Transform camera origin from [0,1] world space to [1,2] octree space
-        var octreeOrigin = new Vector3f(
-            cameraOrigin.x + 1.0f,
-            cameraOrigin.y + 1.0f,
-            cameraOrigin.z + 1.0f
-        );
-        
+        // Camera origin is already in [0,1] world space, which matches octree space
+        var octreeOrigin = new Vector3f(cameraOrigin);
+
         // Direction doesn't need transformation, just normalization (handled by EnhancedRay)
         var direction = new Vector3f(cameraDirection);
-        
+
         return new EnhancedRay(octreeOrigin, originSize, direction, directionSize);
     }
     
@@ -134,7 +130,7 @@ public class RayTraversalUtils {
     /**
      * Validate that a ray is properly configured for traversal.
      * Checks that origin is in valid octree space and direction is normalized.
-     * 
+     *
      * @param ray Ray to validate
      * @return true if ray is valid for traversal
      */
@@ -142,14 +138,14 @@ public class RayTraversalUtils {
         if (ray == null) {
             return false;
         }
-        
-        // Check origin is in octree space [1,2]
-        if (ray.origin.x < 1.0f || ray.origin.x > 2.0f ||
-            ray.origin.y < 1.0f || ray.origin.y > 2.0f ||
-            ray.origin.z < 1.0f || ray.origin.z > 2.0f) {
+
+        // Check origin is in octree space [0,1]
+        if (ray.origin.x < 0.0f || ray.origin.x > 1.0f ||
+            ray.origin.y < 0.0f || ray.origin.y > 1.0f ||
+            ray.origin.z < 0.0f || ray.origin.z > 1.0f) {
             return false;
         }
-        
+
         // Check direction is normalized (within tolerance)
         float length = ray.direction.length();
         return Math.abs(length - 1.0f) < 0.001f;

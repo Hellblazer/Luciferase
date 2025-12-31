@@ -24,13 +24,13 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 
 /**
  * Phase 2: Stack-Based Deep Traversal Implementation
- * 
+ *
  * Implements the ESVO algorithm for deep octree traversal with 23-level support.
  * This includes the 3 critical GLSL shader bug fixes identified from C++ analysis:
  * 1. Single stack read only (no double reads)
- * 2. Proper coordinate space transformation to [1,2]
+ * 2. Proper coordinate space using unified [0,1] space
  * 3. Conditional iteration limit
- * 
+ *
  * Performance target: >60 FPS for 5-level octrees
  */
 public class StackBasedRayTraversal {
@@ -244,7 +244,7 @@ public class StackBasedRayTraversal {
      * Implements the 3 critical GLSL shader bug fixes
      */
     public static DeepTraversalResult traverse(EnhancedRay ray, MultiLevelOctree octree) {
-        // Calculate intersection with octree bounds [1,2]
+        // Calculate intersection with octree bounds [0,1]
         var intersection = CoordinateSpace.calculateOctreeIntersection(ray.origin, ray.direction);
         if (intersection == null) {
             return new DeepTraversalResult(false, 0, null, null, -1, 0, 0);
@@ -443,26 +443,25 @@ public class StackBasedRayTraversal {
     }
     
     /**
-     * Generate ray for pixel coordinates (with coordinate space transformation)
-     * Critical Bug Fix #2: Transform rays to octree space [1,2]
+     * Generate ray for pixel coordinates (using unified [0,1] coordinate space)
      */
-    public static EnhancedRay generateRay(int x, int y, int width, int height, 
+    public static EnhancedRay generateRay(int x, int y, int width, int height,
                                         Vector3f cameraPos, Vector3f cameraDir, float fov) {
-        
+
         // Generate ray in world space
         var aspectRatio = (float) width / height;
         var scale = (float) Math.tan(Math.toRadians(fov * 0.5));
-        
+
         var u = (2.0f * (x + 0.5f) / width - 1.0f) * scale * aspectRatio;
         var v = (1.0f - 2.0f * (y + 0.5f) / height) * scale;
-        
+
         var worldDir = new Vector3f(u, v, -1.0f);
         worldDir.normalize();
-        
-        // Critical Bug Fix #2: Transform to octree coordinate space [1,2]
+
+        // Transform to unified [0,1] octree coordinate space
         var octreeOrigin = CoordinateSpace.worldToOctree(cameraPos);
         var octreeDirection = CoordinateSpace.worldToOctreeDirection(worldDir);
-        
+
         // Use default size parameters for legacy compatibility
         return new EnhancedRay(octreeOrigin, 0.001f, octreeDirection, 0.001f);
     }

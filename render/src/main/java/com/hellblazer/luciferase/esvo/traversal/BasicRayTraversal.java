@@ -9,14 +9,14 @@ import javax.vecmath.Vector3f;
 
 /**
  * Phase 1: Basic Ray Traversal Algorithm for ESVO
- * 
+ *
  * This implements the fundamental ray-octree traversal for single-level testing.
  * Key requirements from roadmap:
- * - Test against simple 1-level octree  
+ * - Test against simple 1-level octree
  * - Performance target: >100 FPS for single level
- * - Ray generation in octree space [1,2]
+ * - Ray generation in unified [0,1] octree space
  * - Child index calculation with octant mirroring
- * 
+ *
  * Implementation follows ESVO paper and C++ reference exactly.
  */
 public final class BasicRayTraversal {
@@ -101,13 +101,13 @@ public final class BasicRayTraversal {
     
     /**
      * Phase 1 ray traversal - single level octree intersection
-     * 
-     * @param ray Ray in octree coordinate space [1,2]
+     *
+     * @param ray Ray in octree coordinate space [0,1]
      * @param octree Simple single-level octree
      * @return Traversal result with hit information
      */
     public static TraversalResult traverse(EnhancedRay ray, SimpleOctree octree) {
-        // Calculate intersection with octree bounds [1,2]
+        // Calculate intersection with octree bounds [0,1]
         float[] intersection = CoordinateSpace.calculateOctreeIntersection(ray.origin, ray.direction);
         if (intersection == null) {
             return new TraversalResult();

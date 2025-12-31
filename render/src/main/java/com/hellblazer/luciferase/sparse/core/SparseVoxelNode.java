@@ -37,8 +37,10 @@ import java.nio.ByteBuffer;
  *   <li>ESVT: 4-bit contour mask (4 tetrahedron faces), 3-bit tet type</li>
  * </ul>
  *
- * <p><b>Thread Safety:</b> Implementations should be mutable but thread-safe for
- * concurrent read access. Write operations require external synchronization.
+ * <p><b>Thread Safety:</b> Node instances are <em>not</em> thread-safe. Concurrent
+ * reads are safe only if no writes occur. For mutable access, callers must provide
+ * external synchronization. For traversal operations, use thread-local node instances
+ * or copy nodes before modification.
  *
  * @author hal.hildebrand
  * @see com.hellblazer.luciferase.esvo.core.ESVONodeUnified
@@ -206,8 +208,12 @@ public interface SparseVoxelNode {
      * @param childIdx   child index (0-7)
      * @param childMask  child mask to use (typically from {@link #getChildMask()})
      * @return sparse index, or -1 if child does not exist
+     * @throws IllegalArgumentException if childIdx is not in range 0-7
      */
     default int getChildIndex(int childIdx, int childMask) {
+        if (childIdx < 0 || childIdx > 7) {
+            throw new IllegalArgumentException("Child index must be 0-7, got: " + childIdx);
+        }
         if ((childMask & (1 << childIdx)) == 0) {
             return -1; // Child doesn't exist
         }
