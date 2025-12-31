@@ -8,6 +8,8 @@
 **/.pm
 
 **/.claude
+**/.quint
+**/.mcp.json
 /t8code/
 /Octree/
 /lucien/fast-ray.pdf
