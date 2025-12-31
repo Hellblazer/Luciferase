@@ -392,41 +392,33 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
     }
 
     /**
-     * Set a raw cl_mem buffer argument directly using reflection.
+     * Set a raw cl_mem buffer argument directly.
      *
-     * <p><b>Why Reflection:</b> The external gpu-support library's {@code OpenCLKernel}
-     * class only exposes a float[]-based API via {@code setBufferArg()}. However,
-     * sparse voxel data is stored as packed bytes (node descriptors), requiring
-     * direct ByteBuffer upload via {@code clCreateBuffer()}. This creates raw
-     * {@code cl_mem} handles that cannot be passed through the normal API.
-     *
-     * <p><b>Alternative Approaches Considered:</b>
-     * <ul>
-     *   <li>Modify gpu-support library - Not possible (external dependency)</li>
-     *   <li>Convert to float[] - Would require unpacking/repacking and double memory</li>
-     *   <li>Extend OpenCLBuffer - Would require library modification</li>
-     * </ul>
-     *
-     * <p><b>Maintenance Note:</b> If the gpu-support library adds a public API for
-     * raw buffer arguments, this method should be updated to use it instead.
+     * <p>This delegates to the gpu-support library's public API for setting
+     * raw OpenCL memory handles as kernel arguments. Used for sparse voxel
+     * data stored as packed bytes (node descriptors) that are uploaded via
+     * {@code clCreateBuffer()} rather than through the float[]-based GPUBuffer API.
      *
      * @param index kernel argument index
      * @param clMem raw OpenCL memory handle from {@link #createRawBuffer}
-     * @throws RuntimeException if reflection fails (indicates library change)
      */
     protected void setRawBufferArg(int index, long clMem) {
-        try {
-            var kernelField = OpenCLKernel.class.getDeclaredField("kernel");
-            kernelField.setAccessible(true);
-            long kernelHandle = (long) kernelField.get(kernel);
-            clSetKernelArg1p(kernelHandle, index, clMem);
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException(
-                "OpenCLKernel internal structure changed - reflection workaround broken. " +
-                "Check if gpu-support library has a new public API for raw buffer arguments.", e);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to set raw buffer argument", e);
-        }
+        kernel.setRawBufferArg(index, clMem);
+    }
+
+    /**
+     * Set a float3 vector kernel argument.
+     *
+     * <p>Convenience method for setting 3-component vector arguments such as
+     * scene bounds, positions, or directions.
+     *
+     * @param index kernel argument index
+     * @param x X component
+     * @param y Y component
+     * @param z Z component
+     */
+    protected void setFloat3Arg(int index, float x, float y, float z) {
+        kernel.setFloat3Arg(index, x, y, z);
     }
 
     /**

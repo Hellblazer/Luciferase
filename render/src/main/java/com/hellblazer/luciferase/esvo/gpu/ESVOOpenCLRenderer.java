@@ -19,10 +19,8 @@ package com.hellblazer.luciferase.esvo.gpu;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.resource.compute.ComputeKernel;
-import com.hellblazer.luciferase.resource.compute.opencl.OpenCLKernel;
 import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.gpu.AbstractOpenCLRenderer;
-import org.lwjgl.system.MemoryStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -150,20 +148,8 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
         kernel.setIntArg(3, maxDepth);
 
         // Set scene bounds (args 4, 5)
-        try {
-            var kernelField = OpenCLKernel.class.getDeclaredField("kernel");
-            kernelField.setAccessible(true);
-            long kernelHandle = (long) kernelField.get(kernel);
-
-            try (var stack = MemoryStack.stackPush()) {
-                var minBuf = stack.floats(sceneMin[0], sceneMin[1], sceneMin[2]);
-                var maxBuf = stack.floats(sceneMax[0], sceneMax[1], sceneMax[2]);
-                clSetKernelArg(kernelHandle, 4, minBuf);
-                clSetKernelArg(kernelHandle, 5, maxBuf);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to set scene bounds arguments", e);
-        }
+        setFloat3Arg(4, sceneMin[0], sceneMin[1], sceneMin[2]);
+        setFloat3Arg(5, sceneMax[0], sceneMax[1], sceneMax[2]);
     }
 
     @Override
