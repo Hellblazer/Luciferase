@@ -570,8 +570,19 @@ public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extend
         forward.sub(target, eye);
         forward.normalize();
 
+        // Handle case where forward is parallel to up
+        var actualUp = new Vector3f(up);
         var right = new Vector3f();
-        right.cross(forward, up);
+        right.cross(forward, actualUp);
+        if (right.lengthSquared() < 1e-6f) {
+            // Forward and up are parallel, use alternative up vector
+            actualUp.set(0, 0, 1);
+            right.cross(forward, actualUp);
+            if (right.lengthSquared() < 1e-6f) {
+                actualUp.set(1, 0, 0);
+                right.cross(forward, actualUp);
+            }
+        }
         right.normalize();
 
         var newUp = new Vector3f();

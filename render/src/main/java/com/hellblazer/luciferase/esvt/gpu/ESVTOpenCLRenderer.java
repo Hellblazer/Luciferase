@@ -82,6 +82,33 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
         super(frameWidth, frameHeight);
     }
 
+    // ========== Test Accessors ==========
+    // These methods expose internal buffers for GPU/CPU cross-validation tests.
+
+    /**
+     * Get the result buffer containing hit positions and distances.
+     * <p>Buffer format: 4 floats per ray [x, y, z, distance]
+     * <p><b>For testing only.</b>
+     *
+     * @return result buffer, rewound to position 0
+     */
+    public FloatBuffer getResultBufferForTesting() {
+        cpuResultBuffer.rewind();
+        return cpuResultBuffer;
+    }
+
+    /**
+     * Get the normal buffer containing normals and hit flags.
+     * <p>Buffer format: 4 floats per ray [nx, ny, nz, hitFlag]
+     * <p><b>For testing only.</b>
+     *
+     * @return normal buffer, rewound to position 0
+     */
+    public FloatBuffer getNormalBufferForTesting() {
+        cpuNormalBuffer.rewind();
+        return cpuNormalBuffer;
+    }
+
     @Override
     protected String getRendererName() {
         return "ESVTOpenCLRenderer";
