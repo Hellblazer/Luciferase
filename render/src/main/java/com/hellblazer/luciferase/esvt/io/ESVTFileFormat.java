@@ -16,8 +16,9 @@
  */
 package com.hellblazer.luciferase.esvt.io;
 
+import com.hellblazer.luciferase.sparse.io.SparseVoxelIOUtils;
+
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.file.Path;
 
 /**
@@ -79,26 +80,7 @@ public class ESVTFileFormat {
      * @throws IOException if file cannot be read or has invalid magic
      */
     public static int detectVersion(Path file) throws IOException {
-        try (var raf = new RandomAccessFile(file.toFile(), "r")) {
-            byte[] magicBytes = new byte[4];
-            raf.read(magicBytes);
-            int magic = (magicBytes[0] & 0xFF) |
-                       ((magicBytes[1] & 0xFF) << 8) |
-                       ((magicBytes[2] & 0xFF) << 16) |
-                       ((magicBytes[3] & 0xFF) << 24);
-
-            if (magic != MAGIC_NUMBER) {
-                throw new IOException("Invalid ESVT file: bad magic number 0x" +
-                    Integer.toHexString(magic) + ", expected 0x" + Integer.toHexString(MAGIC_NUMBER));
-            }
-
-            byte[] versionBytes = new byte[4];
-            raf.read(versionBytes);
-            return (versionBytes[0] & 0xFF) |
-                  ((versionBytes[1] & 0xFF) << 8) |
-                  ((versionBytes[2] & 0xFF) << 16) |
-                  ((versionBytes[3] & 0xFF) << 24);
-        }
+        return SparseVoxelIOUtils.detectVersion(file, MAGIC_NUMBER);
     }
 
     /**

@@ -18,14 +18,12 @@ package com.hellblazer.luciferase.esvt.io;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.sparse.io.SparseVoxelIOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -88,8 +86,7 @@ public class ESVTSerializer implements AutoCloseable {
             var header = buildHeader(data);
 
             // Write header (placeholder - will update metadata offset later)
-            var headerBuffer = ByteBuffer.allocate(header.getHeaderSize())
-                                         .order(ByteOrder.LITTLE_ENDIAN);
+            var headerBuffer = SparseVoxelIOUtils.allocateBuffer(header.getHeaderSize());
             writeHeader(headerBuffer, header);
             headerBuffer.flip();
             totalBytesWritten.addAndGet(channel.write(headerBuffer));
@@ -172,8 +169,7 @@ public class ESVTSerializer implements AutoCloseable {
         var nodes = data.nodes();
         if (nodes.length == 0) return;
 
-        var buffer = ByteBuffer.allocate(nodes.length * ESVTNodeUnified.SIZE_BYTES)
-                               .order(ByteOrder.LITTLE_ENDIAN);
+        var buffer = SparseVoxelIOUtils.allocateBuffer(nodes.length * ESVTNodeUnified.SIZE_BYTES);
 
         for (var node : nodes) {
             node.writeTo(buffer);
@@ -186,54 +182,23 @@ public class ESVTSerializer implements AutoCloseable {
     private void writeContours(FileChannel channel, ESVTData data) throws IOException {
         var contours = data.contours();
         if (contours == null || contours.length == 0) return;
-
-        var buffer = ByteBuffer.allocate(contours.length * 4)
-                               .order(ByteOrder.LITTLE_ENDIAN);
-
-        for (int c : contours) {
-            buffer.putInt(c);
-        }
-
-        buffer.flip();
-        totalBytesWritten.addAndGet(channel.write(buffer));
+        totalBytesWritten.addAndGet(SparseVoxelIOUtils.writeIntArray(channel, contours));
     }
 
     private void writeFarPointers(FileChannel channel, ESVTData data) throws IOException {
         var farPtrs = data.farPointers();
         if (farPtrs == null || farPtrs.length == 0) return;
-
-        var buffer = ByteBuffer.allocate(farPtrs.length * 4)
-                               .order(ByteOrder.LITTLE_ENDIAN);
-
-        for (int ptr : farPtrs) {
-            buffer.putInt(ptr);
-        }
-
-        buffer.flip();
-        totalBytesWritten.addAndGet(channel.write(buffer));
+        totalBytesWritten.addAndGet(SparseVoxelIOUtils.writeIntArray(channel, farPtrs));
     }
 
     private void writeVoxelCoords(FileChannel channel, ESVTData data) throws IOException {
         var coords = data.leafVoxelCoords();
         if (coords == null || coords.length == 0) return;
-
-        var buffer = ByteBuffer.allocate(coords.length * 4)
-                               .order(ByteOrder.LITTLE_ENDIAN);
-
-        for (int coord : coords) {
-            buffer.putInt(coord);
-        }
-
-        buffer.flip();
-        totalBytesWritten.addAndGet(channel.write(buffer));
+        totalBytesWritten.addAndGet(SparseVoxelIOUtils.writeIntArray(channel, coords));
     }
 
     private byte[] serializeMetadata(ESVTMetadata metadata) throws IOException {
-        var baos = new ByteArrayOutputStream();
-        try (var oos = new ObjectOutputStream(baos)) {
-            oos.writeObject(metadata);
-        }
-        return baos.toByteArray();
+        return SparseVoxelIOUtils.serializeMetadata(metadata);
     }
 
     /**
