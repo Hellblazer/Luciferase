@@ -106,40 +106,57 @@ scene.add(unitCubeWireframe);
 // Voxel InstancedMesh
 // ============================================================================
 
-const voxelGeometry = new THREE.BoxGeometry(1, 1, 1);
+// Cube geometry for ESVO
+const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+// Tetrahedron geometry for ESVT
+const tetraGeometry = new THREE.TetrahedronGeometry(1, 0);
+
 let instancedMesh = null;
 let voxelData = [];
 let currentColorScheme = 'DEPTH';
+let currentGeometryType = 'ESVO'; // Track current geometry type
 
 const dummy = new THREE.Object3D();
 
-function createInstancedMesh(count) {
+function createInstancedMesh(count, renderType = 'ESVO') {
     if (instancedMesh) {
         scene.remove(instancedMesh);
         instancedMesh.geometry.dispose();
         instancedMesh.material.dispose();
     }
 
+    // Select geometry based on render type
+    const geometry = renderType === 'ESVT' ? tetraGeometry : cubeGeometry;
+    currentGeometryType = renderType;
+
     const material = new THREE.MeshStandardMaterial({
         metalness: 0.1,
         roughness: 0.8
     });
 
-    instancedMesh = new THREE.InstancedMesh(voxelGeometry, material, Math.max(count, 1));
+    instancedMesh = new THREE.InstancedMesh(geometry, material, Math.max(count, 1));
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     instancedMesh.instanceColor = new THREE.InstancedBufferAttribute(
         new Float32Array(Math.max(count, 1) * 3), 3
     );
     instancedMesh.count = 0;
     scene.add(instancedMesh);
+
+    console.log(`Created InstancedMesh with ${renderType} geometry (${renderType === 'ESVT' ? 'tetrahedra' : 'cubes'})`);
 }
 
-function updateVoxels(voxels, maxDepth) {
+function updateVoxels(voxels, maxDepth, renderType = 'ESVO') {
     voxelData = voxels;
     const count = voxels.length;
 
-    if (!instancedMesh || instancedMesh.instanceMatrix.array.length / 16 < count) {
-        createInstancedMesh(Math.max(count * 2, 1000));
+    // Recreate mesh if geometry type changed or capacity insufficient
+    const needsRebuild = !instancedMesh ||
+        instancedMesh.instanceMatrix.array.length / 16 < count ||
+        currentGeometryType !== renderType;
+
+    if (needsRebuild) {
+        createInstancedMesh(Math.max(count * 2, 1000), renderType);
     }
 
     const colorFn = COLOR_SCHEMES[currentColorScheme];
@@ -677,8 +694,8 @@ async function generateVoxels() {
             // Clear any existing ray visualization
             clearRayVisualization();
 
-            // Visualize voxels
-            await visualizeVoxels(entities, maxDepth);
+            // Visualize voxels with appropriate geometry for render type
+            await visualizeVoxels(entities, maxDepth, renderType);
         }
     } catch (e) {
         console.error('Failed to generate voxels:', e);
@@ -744,7 +761,7 @@ function generateShapeEntities(shape, count) {
     return entities;
 }
 
-async function visualizeVoxels(entities, maxDepth) {
+async function visualizeVoxels(entities, maxDepth, renderType = 'ESVO') {
     // Convert entities to voxel format for visualization
     const voxels = entities.map((e, i) => ({
         x: e.x,
@@ -759,7 +776,7 @@ async function visualizeVoxels(entities, maxDepth) {
         }
     }));
 
-    updateVoxels(voxels, maxDepth);
+    updateVoxels(voxels, maxDepth, renderType);
 }
 
 // ============================================================================
