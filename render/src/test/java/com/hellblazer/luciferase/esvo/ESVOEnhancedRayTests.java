@@ -74,21 +74,22 @@ public class ESVOEnhancedRayTests {
     @Test
     @DisplayName("Test octant mirroring implementation")
     void testOctantMirroring() {
+        // Use coordinates in [0,1] space
         var ray = new EnhancedRay(
-            new Vector3f(1.2f, 1.8f, 1.3f), 0.0f,
+            new Vector3f(0.2f, 0.8f, 0.3f), 0.0f,
             new Vector3f(1, -1, 1), 0.0f
         );
-        
+
         int octantMask = 3; // Flip X and Y
         var mirrored = ray.applyOctantMirroring(octantMask);
-        
-        // X should be mirrored: 3.0 - 1.2 = 1.8
-        assertEquals(1.8f, mirrored.origin.x, 0.001f);
-        // Y should be mirrored: 3.0 - 1.8 = 1.2  
-        assertEquals(1.2f, mirrored.origin.y, 0.001f);
+
+        // For [0,1] space: X should be mirrored: 1.0 - 0.2 = 0.8
+        assertEquals(0.8f, mirrored.origin.x, 0.001f);
+        // Y should be mirrored: 1.0 - 0.8 = 0.2
+        assertEquals(0.2f, mirrored.origin.y, 0.001f);
         // Z should not be mirrored
-        assertEquals(1.3f, mirrored.origin.z, 0.001f);
-        
+        assertEquals(0.3f, mirrored.origin.z, 0.001f);
+
         // Direction should also be mirrored (and normalized)
         // Original direction (1, -1, 1) has length sqrt(3)
         // After mirroring X and Y: (-1, 1, 1), still length sqrt(3)
@@ -102,24 +103,24 @@ public class ESVOEnhancedRayTests {
     @Test
     @DisplayName("Test coordinate space transformation")
     void testCoordinateSpaceTransformation() {
-        // Ray in [0,1] space
+        // Ray already in [0,1] space - transformation is now identity
         var worldRay = new EnhancedRay(
             new Vector3f(0.5f, 0.5f, 0.5f), 0.1f,
             new Vector3f(1, 0, 0), 0.05f
         );
-        
+
         var octreeRay = EnhancedRay.transformToOctreeSpace(worldRay);
-        
-        // Should be transformed to [1,2] space
-        assertEquals(1.5f, octreeRay.origin.x, 0.001f);
-        assertEquals(1.5f, octreeRay.origin.y, 0.001f);
-        assertEquals(1.5f, octreeRay.origin.z, 0.001f);
-        
+
+        // Transform is now identity - unified [0,1] space throughout
+        assertEquals(0.5f, octreeRay.origin.x, 0.001f);
+        assertEquals(0.5f, octreeRay.origin.y, 0.001f);
+        assertEquals(0.5f, octreeRay.origin.z, 0.001f);
+
         // Size parameters should be preserved
         assertEquals(0.1f, octreeRay.originSize, 0.001f);
         assertEquals(0.05f, octreeRay.directionSize, 0.001f);
-        
-        // Direction should be unchanged (only origin transforms)
+
+        // Direction should be unchanged
         assertEquals(1.0f, octreeRay.direction.x, 0.001f);
         assertEquals(0.0f, octreeRay.direction.y, 0.001f);
         assertEquals(0.0f, octreeRay.direction.z, 0.001f);

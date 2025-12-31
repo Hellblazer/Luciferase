@@ -28,26 +28,26 @@ public class ESVOGPUIntegrationTest {
     
     /**
      * Test Phase 0 foundation - coordinate space transformation
-     * This validates the critical [1,2] coordinate space requirement
+     * This validates the unified [0,1] coordinate space requirement
      */
     @Test
-    @DisplayName("Test coordinate space [1,2] integration")
+    @DisplayName("Test coordinate space [0,1] integration")
     void testCoordinateSpaceIntegration() {
         // Test coordinate space utilities
-        Vector3f testPoint = new Vector3f(1.5f, 1.5f, 1.5f); // Center of octree space
-        assertTrue(CoordinateSpace.isInOctreeSpace(testPoint), 
+        Vector3f testPoint = new Vector3f(0.5f, 0.5f, 0.5f); // Center of octree space
+        assertTrue(CoordinateSpace.isInOctreeSpace(testPoint),
                   "Point at octree center should be in valid space");
-        
+
         // Test coordinate bounds
-        assertEquals(1.0f, CoordinateSpace.OCTREE_MIN, "Octree minimum must be 1.0");
-        assertEquals(2.0f, CoordinateSpace.OCTREE_MAX, "Octree maximum must be 2.0");
+        assertEquals(0.0f, CoordinateSpace.OCTREE_MIN, "Octree minimum must be 0.0");
+        assertEquals(1.0f, CoordinateSpace.OCTREE_MAX, "Octree maximum must be 1.0");
         assertEquals(1.0f, CoordinateSpace.OCTREE_SIZE, "Octree size must be 1.0");
-        
+
         // Test ray-octree intersection
-        Vector3f rayOrigin = new Vector3f(0.5f, 1.5f, 1.5f);
+        Vector3f rayOrigin = new Vector3f(-0.5f, 0.5f, 0.5f); // Outside octree in -X
         Vector3f rayDirection = new Vector3f(1.0f, 0.0f, 0.0f);
         rayDirection.normalize();
-        
+
         float[] intersection = CoordinateSpace.calculateOctreeIntersection(rayOrigin, rayDirection);
         assertNotNull(intersection, "Ray should intersect octree");
         assertEquals(0.5f, intersection[0], 0.001f, "Ray should enter at t=0.5");

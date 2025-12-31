@@ -94,18 +94,13 @@ public class EnhancedRay {
     }
     
     /**
-     * Transform ray to octree coordinate space [1,2]
+     * Transform ray to octree coordinate space [0,1].
+     * Now that ESVO uses unified [0,1] space, this is an identity operation.
+     * Kept for API compatibility.
      */
     public static EnhancedRay transformToOctreeSpace(EnhancedRay ray) {
-        // Transform from [0,1] to [1,2] space
-        var transformedOrigin = new Vector3f(
-            ray.origin.x + 1.0f,
-            ray.origin.y + 1.0f,
-            ray.origin.z + 1.0f
-        );
-        
-        return new EnhancedRay(transformedOrigin, ray.originSize, 
-                              ray.direction, ray.directionSize);
+        // No transformation needed - unified [0,1] space
+        return ray;
     }
     
     /**
@@ -117,16 +112,17 @@ public class EnhancedRay {
         var mirroredDirection = new Vector3f(direction);
         
         // Apply mirroring based on octant mask
+        // For [0,1] space, mirroring is around center 0.5: x' = 1.0 - x
         if ((octantMask & 1) != 0) {
-            mirroredOrigin.x = 3.0f - mirroredOrigin.x;
+            mirroredOrigin.x = 1.0f - mirroredOrigin.x;
             mirroredDirection.x = -mirroredDirection.x;
         }
         if ((octantMask & 2) != 0) {
-            mirroredOrigin.y = 3.0f - mirroredOrigin.y;
+            mirroredOrigin.y = 1.0f - mirroredOrigin.y;
             mirroredDirection.y = -mirroredDirection.y;
         }
         if ((octantMask & 4) != 0) {
-            mirroredOrigin.z = 3.0f - mirroredOrigin.z;
+            mirroredOrigin.z = 1.0f - mirroredOrigin.z;
             mirroredDirection.z = -mirroredDirection.z;
         }
         
