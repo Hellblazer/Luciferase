@@ -471,7 +471,7 @@ async function createIndex(type) {
     hideEntityInfo();
 
     const request = {
-        type: type,
+        indexType: type,
         maxDepth: 8,
         maxEntitiesPerNode: 5
     };
