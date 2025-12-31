@@ -633,8 +633,24 @@ async function generateVoxels() {
             return;
         }
 
-        // Generate entities based on shape
-        const entities = generateShapeEntities(shape, 500);
+        // Generate or fetch entities based on shape
+        let entities;
+        if (shape === 'bunny') {
+            // Fetch Stanford Bunny from API
+            const bunnyResponse = await fetch('/api/mesh/bunny');
+            if (!bunnyResponse.ok) {
+                const error = await bunnyResponse.json();
+                console.error('Failed to load bunny mesh:', error);
+                alert(`Failed to load bunny mesh: ${error.error || 'Unknown error'}`);
+                return;
+            }
+            const bunnyData = await bunnyResponse.json();
+            entities = bunnyData.entities;
+            console.log(`Loaded Stanford Bunny: ${entities.length} voxels`);
+        } else {
+            entities = generateShapeEntities(shape, 500);
+        }
+
         const insertResponse = await fetch(`/api/spatial/entities/bulk-insert?sessionId=${sessionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,6 @@
 package com.hellblazer.luciferase.portal.web;
 
+import com.hellblazer.luciferase.esvo.io.VOLLoader;
 import com.hellblazer.luciferase.portal.web.dto.*;
 import com.hellblazer.luciferase.portal.web.service.GpuService;
 import com.hellblazer.luciferase.portal.web.service.RenderService;
@@ -9,6 +10,7 @@ import io.javalin.http.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -78,6 +80,7 @@ public class SpatialInspectorServer {
         registerSpatialEndpoints(javalin);
         registerRenderEndpoints(javalin);
         registerGpuEndpoints(javalin);
+        registerMeshEndpoints(javalin);
 
         // Exception handlers for specific types
         javalin.exception(NoSuchElementException.class, (e, ctx) -> {
@@ -505,6 +508,62 @@ public class SpatialInspectorServer {
 
         var stats = gpuService.getStats(sessionId);
         ctx.json(stats);
+    }
+
+    // ========== Mesh Endpoints ==========
+
+    private final VOLLoader volLoader = new VOLLoader();
+    private volatile List<Map<String, Object>> cachedBunnyVoxels = null;
+
+    private void registerMeshEndpoints(Javalin app) {
+        app.get("/api/mesh/bunny", this::getBunnyMesh);
+        app.get("/api/mesh/list", this::listMeshes);
+    }
+
+    private void getBunnyMesh(Context ctx) {
+        // Lazy load and cache the bunny voxels
+        if (cachedBunnyVoxels == null) {
+            synchronized (this) {
+                if (cachedBunnyVoxels == null) {
+                    try {
+                        var volData = volLoader.loadResource("/voxels/bunny-64.vol");
+                        var header = volData.header();
+                        float maxDim = Math.max(header.dimX(), Math.max(header.dimY(), header.dimZ()));
+
+                        // Convert to normalized [0,1] coordinates
+                        cachedBunnyVoxels = volData.voxels().stream()
+                            .map(v -> {
+                                var map = new java.util.HashMap<String, Object>();
+                                map.put("x", (v.x + 0.5f) / maxDim);
+                                map.put("y", (v.y + 0.5f) / maxDim);
+                                map.put("z", (v.z + 0.5f) / maxDim);
+                                map.put("content", null);
+                                return (Map<String, Object>) map;
+                            })
+                            .toList();
+
+                        log.info("Loaded Stanford Bunny: {} voxels from {}³ grid",
+                                cachedBunnyVoxels.size(), (int) maxDim);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Failed to load bunny mesh: " + e.getMessage(), e);
+                    }
+                }
+            }
+        }
+
+        ctx.json(Map.of(
+            "name", "Stanford Bunny",
+            "voxelCount", cachedBunnyVoxels.size(),
+            "entities", cachedBunnyVoxels
+        ));
+    }
+
+    private void listMeshes(Context ctx) {
+        ctx.json(Map.of(
+            "meshes", List.of(
+                Map.of("id", "bunny", "name", "Stanford Bunny", "description", "Classic 3D test model")
+            )
+        ));
     }
 
     // ========== Helper Methods ==========
