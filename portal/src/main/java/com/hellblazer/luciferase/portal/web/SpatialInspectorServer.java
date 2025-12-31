@@ -447,8 +447,17 @@ public class SpatialInspectorServer {
     }
 
     private void getGpuInfo(Context ctx) {
-        var info = gpuService.getGpuInfo();
-        ctx.json(info);
+        try {
+            var info = gpuService.getGpuInfo();
+            ctx.json(info);
+        } catch (Exception | Error e) {
+            // Handle case where OpenCL libraries aren't available at all
+            log.debug("GPU info unavailable: {}", e.getMessage());
+            ctx.json(Map.of(
+                "available", false,
+                "reason", "OpenCL not available: " + e.getMessage()
+            ));
+        }
     }
 
     private void enableGpu(Context ctx) {
