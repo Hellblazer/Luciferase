@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.esvt.core;
 
 import com.hellblazer.luciferase.render.inspector.SpatialData;
+import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
 
 import java.nio.ByteBuffer;
@@ -105,6 +106,16 @@ public record ESVTData(
      */
     public boolean hasFarPointers() {
         return farPointers != null && farPointers.length > 0;
+    }
+
+    /**
+     * Get the coordinate space used by ESVT.
+     *
+     * @return {@link CoordinateSpace#UNIT_CUBE} ([0, 1] normalized space)
+     */
+    @Override
+    public CoordinateSpace getCoordinateSpace() {
+        return CoordinateSpace.UNIT_CUBE;
     }
 
     /**

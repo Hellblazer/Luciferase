@@ -45,7 +45,7 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
 
     private static final Logger log = LoggerFactory.getLogger(AbstractOptimizationPipeline.class);
 
-    protected final List<Object> optimizers = new ArrayList<>();
+    protected final List<Optimizer<D>> optimizers = new ArrayList<>();
     protected final AtomicLong totalOptimizationTimeNs = new AtomicLong(0);
     protected final Map<String, OptimizerStats> optimizerStats = new HashMap<>();
     protected volatile boolean parallelExecution = false;
@@ -56,13 +56,13 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
      * @param optimizer the optimizer to add
      * @throws IllegalArgumentException if optimizer is null
      */
-    public void addOptimizer(Object optimizer) {
+    public void addOptimizer(Optimizer<D> optimizer) {
         if (optimizer == null) {
             throw new IllegalArgumentException("Optimizer cannot be null");
         }
         optimizers.add(optimizer);
-        optimizerStats.put(optimizer.getClass().getSimpleName(), new OptimizerStats());
-        log.debug("Added optimizer: {}", optimizer.getClass().getSimpleName());
+        optimizerStats.put(optimizer.getName(), new OptimizerStats());
+        log.debug("Added optimizer: {}", optimizer.getName());
     }
 
     /**
@@ -71,10 +71,10 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
      * @param optimizer the optimizer to remove
      * @return true if the optimizer was removed
      */
-    public boolean removeOptimizer(Object optimizer) {
+    public boolean removeOptimizer(Optimizer<D> optimizer) {
         var removed = optimizers.remove(optimizer);
         if (removed) {
-            optimizerStats.remove(optimizer.getClass().getSimpleName());
+            optimizerStats.remove(optimizer.getName());
         }
         return removed;
     }
@@ -120,7 +120,7 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
                 });
 
                 // Update optimizer stats
-                var stats = optimizerStats.get(optimizer.getClass().getSimpleName());
+                var stats = optimizerStats.get(optimizer.getName());
                 if (stats != null) {
                     stats.recordExecution(
                         (long) (stepResult.step().executionTimeMs() * 1_000_000),
@@ -185,11 +185,11 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
     /**
      * Get list of registered optimizer names.
      *
-     * @return list of optimizer class names
+     * @return list of optimizer names
      */
     public List<String> getRegisteredOptimizers() {
         return optimizers.stream()
-            .map(optimizer -> optimizer.getClass().getSimpleName())
+            .map(Optimizer::getName)
             .toList();
     }
 
@@ -209,7 +209,7 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
      * @param inputData the input data
      * @return step result containing optimized data and metrics
      */
-    protected abstract StepResult<D> executeOptimizerStep(Object optimizer, D inputData);
+    protected abstract StepResult<D> executeOptimizerStep(Optimizer<D> optimizer, D inputData);
 
     /**
      * Result of executing a single optimizer step.
@@ -273,14 +273,14 @@ public abstract class AbstractOptimizationPipeline<D extends SparseVoxelData<? e
      * @param executionTimeMs execution time in milliseconds
      * @return step result with error information
      */
-    protected StepResult<D> createErrorResult(Object optimizer, D inputData,
+    protected StepResult<D> createErrorResult(Optimizer<D> optimizer, D inputData,
                                                String error, float executionTimeMs) {
         var stepDetails = Map.<String, Object>of(
             "error", error,
-            "optimizerType", optimizer.getClass().getSimpleName()
+            "optimizerType", optimizer.getName()
         );
         var step = new OptimizationStep(
-            optimizer.getClass().getSimpleName(),
+            optimizer.getName(),
             executionTimeMs,
             1.0f,
             stepDetails

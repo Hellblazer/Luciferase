@@ -16,6 +16,8 @@
  */
 package com.hellblazer.luciferase.esvt.optimization;
 
+import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,14 +38,25 @@ import java.util.*;
  *   <li>Tetrahedral child ordering affects traversal front-to-back sorting</li>
  * </ul>
  *
+ * <p><b>Note:</b> This optimizer works on ray coherence, not data layout.
+ * The {@link #optimize} method returns input unchanged.
+ *
  * @author hal.hildebrand
  */
-public class ESVTTraversalOptimizer {
+public class ESVTTraversalOptimizer implements Optimizer<ESVTData> {
     private static final Logger log = LoggerFactory.getLogger(ESVTTraversalOptimizer.class);
 
     private static final float COHERENCE_THRESHOLD = 0.1f;
     private static final int MAX_RAYS_PER_GROUP = 32;
     private static final int TET_TYPE_COUNT = 6; // S0-S5
+
+    /**
+     * Returns input unchanged - this optimizer works on ray coherence, not data layout.
+     */
+    @Override
+    public ESVTData optimize(ESVTData input) {
+        return input;
+    }
 
     /**
      * Ray coherence analysis result.

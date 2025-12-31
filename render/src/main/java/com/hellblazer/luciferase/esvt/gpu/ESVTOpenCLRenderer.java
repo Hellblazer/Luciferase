@@ -17,6 +17,7 @@
 package com.hellblazer.luciferase.esvt.gpu;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
 import com.hellblazer.luciferase.resource.compute.ComputeKernel;
 import com.hellblazer.luciferase.resource.compute.opencl.OpenCLBuffer;
 import com.hellblazer.luciferase.resource.compute.opencl.OpenCLBuffer.BufferAccess;
@@ -47,7 +48,7 @@ import static org.lwjgl.system.MemoryUtil.*;
  * @author hal.hildebrand
  * @see ESVTTraversal CPU-based ray traversal
  */
-public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTData> {
+public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUnified, ESVTData> {
     private static final Logger log = LoggerFactory.getLogger(ESVTOpenCLRenderer.class);
 
     // Normal: xyz + hit_flag = 4 floats = 16 bytes
@@ -175,47 +176,40 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTData> {
         cpuNormalBuffer.rewind();
     }
 
+    /**
+     * Read normal data for current pixel from the normal buffer.
+     * Returns [nx, ny, nz, hitFlag] for use in computePixelColor.
+     */
     @Override
-    protected void convertToImage() {
-        outputImage.clear();
+    protected float[] readPixelExtraData() {
+        return new float[] {
+            cpuNormalBuffer.get(),  // nx
+            cpuNormalBuffer.get(),  // ny
+            cpuNormalBuffer.get(),  // nz
+            cpuNormalBuffer.get()   // hitFlag
+        };
+    }
 
-        for (int i = 0; i < rayCount; i++) {
-            // Read result
-            float x = cpuResultBuffer.get();
-            float y = cpuResultBuffer.get();
-            float z = cpuResultBuffer.get();
-            float distance = cpuResultBuffer.get();
+    @Override
+    protected int computePixelColor(float hitX, float hitY, float hitZ,
+                                     float distance, float[] extraData) {
+        // extraData: [nx, ny, nz, hitFlag]
+        float nx = extraData[0];
+        float ny = extraData[1];
+        float nz = extraData[2];
+        float hitFlag = extraData[3];
 
-            // Read normal
-            float nx = cpuNormalBuffer.get();
-            float ny = cpuNormalBuffer.get();
-            float nz = cpuNormalBuffer.get();
-            float hitFlag = cpuNormalBuffer.get();
-
-            byte r, g, b, a;
-
-            if (hitFlag > 0.5f && distance > 0) {
-                // DEBUG MODE: Output normal directly as RGB color (no shading)
-                // This allows kernel to output depth colors directly
-                r = (byte) (255 * Math.min(1.0f, Math.max(0.0f, nx)));
-                g = (byte) (255 * Math.min(1.0f, Math.max(0.0f, ny)));
-                b = (byte) (255 * Math.min(1.0f, Math.max(0.0f, nz)));
-                a = (byte) 255;
-            } else {
-                // Miss - background color
-                r = (byte) 20;
-                g = (byte) 20;
-                b = (byte) 30;
-                a = (byte) 255;
-            }
-
-            outputImage.put(r);
-            outputImage.put(g);
-            outputImage.put(b);
-            outputImage.put(a);
+        if (hitFlag > 0.5f && distance > 0) {
+            // DEBUG MODE: Output normal directly as RGB color (no shading)
+            // This allows kernel to output depth colors directly
+            int r = (int) (255 * Math.min(1.0f, Math.max(0.0f, nx)));
+            int g = (int) (255 * Math.min(1.0f, Math.max(0.0f, ny)));
+            int b = (int) (255 * Math.min(1.0f, Math.max(0.0f, nz)));
+            return (r << 24) | (g << 16) | (b << 8) | 255;
+        } else {
+            // Miss - background color
+            return (20 << 24) | (20 << 16) | (30 << 8) | 255;
         }
-
-        outputImage.flip();
     }
 
     @Override

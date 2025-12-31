@@ -49,7 +49,7 @@ import static org.lwjgl.system.MemoryUtil.*;
  *   <li>Kernel entry point via {@link #getKernelEntryPoint()}</li>
  *   <li>Data upload via {@link #uploadDataBuffers(SparseVoxelData)}</li>
  *   <li>Kernel argument setup via {@link #setKernelArguments()}</li>
- *   <li>Image conversion via {@link #convertToImage()}</li>
+ *   <li>Pixel shading via {@link #computePixelColor(float, float, float, float, float, float, float, float)}</li>
  *   <li>Buffer allocation via {@link #allocateTypeSpecificBuffers()}</li>
  *   <li>Buffer cleanup via {@link #disposeTypeSpecificBuffers()}</li>
  * </ul>
@@ -62,10 +62,16 @@ import static org.lwjgl.system.MemoryUtil.*;
  *   <li><b>Windows</b>: OpenCL available with GPU vendor drivers</li>
  * </ul>
  *
+ * <p><b>Thread Safety:</b> This class is <em>NOT</em> thread-safe. Each thread
+ * requiring GPU rendering must use its own renderer instance. The underlying
+ * OpenCL context is thread-safe via reference counting, but kernel execution
+ * and buffer operations are not synchronized.
+ *
+ * @param <N> the concrete node type used by the data structure
  * @param <D> the type of sparse voxel data this renderer handles
  * @author hal.hildebrand
  */
-public abstract class AbstractOpenCLRenderer<D extends SparseVoxelData<? extends SparseVoxelNode>>
+public abstract class AbstractOpenCLRenderer<N extends SparseVoxelNode, D extends SparseVoxelData<N>>
         implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractOpenCLRenderer.class);
@@ -386,8 +392,27 @@ public abstract class AbstractOpenCLRenderer<D extends SparseVoxelData<? extends
     }
 
     /**
-     * Set a raw cl_mem buffer argument directly using reflection to access the kernel handle.
-     * This is a workaround for ByteBuffer-based buffers that can't use OpenCLBuffer's float[] API.
+     * Set a raw cl_mem buffer argument directly using reflection.
+     *
+     * <p><b>Why Reflection:</b> The external gpu-support library's {@code OpenCLKernel}
+     * class only exposes a float[]-based API via {@code setBufferArg()}. However,
+     * sparse voxel data is stored as packed bytes (node descriptors), requiring
+     * direct ByteBuffer upload via {@code clCreateBuffer()}. This creates raw
+     * {@code cl_mem} handles that cannot be passed through the normal API.
+     *
+     * <p><b>Alternative Approaches Considered:</b>
+     * <ul>
+     *   <li>Modify gpu-support library - Not possible (external dependency)</li>
+     *   <li>Convert to float[] - Would require unpacking/repacking and double memory</li>
+     *   <li>Extend OpenCLBuffer - Would require library modification</li>
+     * </ul>
+     *
+     * <p><b>Maintenance Note:</b> If the gpu-support library adds a public API for
+     * raw buffer arguments, this method should be updated to use it instead.
+     *
+     * @param index kernel argument index
+     * @param clMem raw OpenCL memory handle from {@link #createRawBuffer}
+     * @throws RuntimeException if reflection fails (indicates library change)
      */
     protected void setRawBufferArg(int index, long clMem) {
         try {
@@ -395,6 +420,10 @@ public abstract class AbstractOpenCLRenderer<D extends SparseVoxelData<? extends
             kernelField.setAccessible(true);
             long kernelHandle = (long) kernelField.get(kernel);
             clSetKernelArg1p(kernelHandle, index, clMem);
+        } catch (NoSuchFieldException e) {
+            throw new RuntimeException(
+                "OpenCLKernel internal structure changed - reflection workaround broken. " +
+                "Check if gpu-support library has a new public API for raw buffer arguments.", e);
         } catch (Exception e) {
             throw new RuntimeException("Failed to set raw buffer argument", e);
         }
@@ -472,31 +501,66 @@ public abstract class AbstractOpenCLRenderer<D extends SparseVoxelData<? extends
 
     /**
      * Dispose all resources.
+     *
+     * <p>This method ensures all resources are released even if errors occur
+     * during disposal of individual components. Errors are logged but do not
+     * prevent cleanup of remaining resources.
      */
     public void dispose() {
         if (disposed) {
             return;
         }
 
+        // Dispose type-specific buffers first (must not throw)
         try {
-            // Dispose type-specific buffers first
             disposeTypeSpecificBuffers();
-
-            // Close common GPU kernel and buffers
-            if (kernel != null) kernel.close();
-            if (rayBuffer != null) rayBuffer.close();
-            if (resultBuffer != null) resultBuffer.close();
-
-            // Free common CPU buffers
-            if (cpuRayBuffer != null) memFree(cpuRayBuffer);
-            if (cpuResultBuffer != null) memFree(cpuResultBuffer);
-            if (outputImage != null) memFree(outputImage);
-
-            // Release OpenCL context (decrements ref count)
-            context.release();
-
         } catch (Exception e) {
-            log.error("Error disposing OpenCL resources", e);
+            log.error("Error disposing type-specific buffers in {}", getRendererName(), e);
+        }
+
+        // Close common GPU kernel and buffers - continue even if errors occur
+        try {
+            if (kernel != null) kernel.close();
+        } catch (Exception e) {
+            log.error("Error closing kernel", e);
+        }
+
+        try {
+            if (rayBuffer != null) rayBuffer.close();
+        } catch (Exception e) {
+            log.error("Error closing ray buffer", e);
+        }
+
+        try {
+            if (resultBuffer != null) resultBuffer.close();
+        } catch (Exception e) {
+            log.error("Error closing result buffer", e);
+        }
+
+        // Free common CPU buffers
+        try {
+            if (cpuRayBuffer != null) memFree(cpuRayBuffer);
+        } catch (Exception e) {
+            log.error("Error freeing CPU ray buffer", e);
+        }
+
+        try {
+            if (cpuResultBuffer != null) memFree(cpuResultBuffer);
+        } catch (Exception e) {
+            log.error("Error freeing CPU result buffer", e);
+        }
+
+        try {
+            if (outputImage != null) memFree(outputImage);
+        } catch (Exception e) {
+            log.error("Error freeing output image", e);
+        }
+
+        // Release OpenCL context (decrements ref count) - always attempt this
+        try {
+            context.release();
+        } catch (Exception e) {
+            log.error("Error releasing OpenCL context", e);
         }
 
         disposed = true;
@@ -611,12 +675,73 @@ public abstract class AbstractOpenCLRenderer<D extends SparseVoxelData<? extends
 
     /**
      * Convert ray results to RGBA output image.
+     *
+     * <p>The default implementation iterates through all ray results and calls
+     * {@link #computePixelColor} for each pixel. Subclasses can override this
+     * method entirely for custom behavior, or just override {@link #computePixelColor}
+     * to customize shading while keeping the common pixel loop.
      */
-    protected abstract void convertToImage();
+    protected void convertToImage() {
+        outputImage.clear();
+
+        for (int i = 0; i < rayCount; i++) {
+            // Read common result: hit position + distance
+            float hitX = cpuResultBuffer.get();
+            float hitY = cpuResultBuffer.get();
+            float hitZ = cpuResultBuffer.get();
+            float distance = cpuResultBuffer.get();
+
+            // Read type-specific data (e.g., normals)
+            float[] extraData = readPixelExtraData();
+
+            // Compute pixel color using subclass-provided shading
+            int rgba = computePixelColor(hitX, hitY, hitZ, distance, extraData);
+
+            // Write RGBA to output image
+            outputImage.put((byte) ((rgba >> 24) & 0xFF)); // R
+            outputImage.put((byte) ((rgba >> 16) & 0xFF)); // G
+            outputImage.put((byte) ((rgba >> 8) & 0xFF));  // B
+            outputImage.put((byte) (rgba & 0xFF));         // A
+        }
+
+        outputImage.flip();
+    }
+
+    /**
+     * Read any type-specific data for the current pixel.
+     *
+     * <p>Override to read additional per-pixel data (e.g., normals from a normal buffer).
+     * The returned array is passed to {@link #computePixelColor}.
+     *
+     * @return extra data for the current pixel, or empty array if none
+     */
+    protected float[] readPixelExtraData() {
+        return EMPTY_EXTRA_DATA;
+    }
+
+    private static final float[] EMPTY_EXTRA_DATA = new float[0];
+
+    /**
+     * Compute the RGBA color for a single pixel.
+     *
+     * <p>This is the shading hook that subclasses implement to provide
+     * type-specific coloring (e.g., depth-based for ESVO, normal-based for ESVT).
+     *
+     * @param hitX hit position X, or 0 if miss
+     * @param hitY hit position Y, or 0 if miss
+     * @param hitZ hit position Z, or 0 if miss
+     * @param distance ray hit distance, or negative/large value if miss
+     * @param extraData additional per-pixel data from {@link #readPixelExtraData}
+     * @return packed RGBA color (R in high byte, A in low byte)
+     */
+    protected abstract int computePixelColor(float hitX, float hitY, float hitZ,
+                                              float distance, float[] extraData);
 
     /**
      * Dispose type-specific GPU resources.
-     * Called during {@link #dispose()}.
+     *
+     * <p>Called during {@link #dispose()}. Implementations should not throw
+     * exceptions; errors should be logged internally.
      */
     protected abstract void disposeTypeSpecificBuffers();
 }

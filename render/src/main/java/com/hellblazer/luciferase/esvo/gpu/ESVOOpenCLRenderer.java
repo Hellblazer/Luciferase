@@ -48,7 +48,7 @@ import static org.lwjgl.system.MemoryUtil.*;
  *
  * @author hal.hildebrand
  */
-public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVOOctreeData> {
+public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUnified, ESVOOctreeData> {
     private static final Logger log = LoggerFactory.getLogger(ESVOOpenCLRenderer.class);
 
     // Raw cl_mem handle for ByteBuffer upload
@@ -170,41 +170,20 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVOOctreeD
     }
 
     @Override
-    protected void convertToImage() {
-        outputImage.clear();
-
-        for (int i = 0; i < rayCount; i++) {
-            // Read result
-            float hitX = cpuResultBuffer.get();
-            float hitY = cpuResultBuffer.get();
-            float hitZ = cpuResultBuffer.get();
-            float distance = cpuResultBuffer.get();
-
-            byte r, g, b, a;
-
-            if (distance > 0 && distance < 100.0f) {
-                // Hit - compute color based on depth/distance
-                // Use depth coloring: close = red, far = blue
-                float normalizedDist = Math.min(1.0f, distance / 2.0f);
-                r = (byte) (255 * (1.0f - normalizedDist));
-                g = (byte) (100 * (1.0f - normalizedDist * 0.5f));
-                b = (byte) (255 * normalizedDist);
-                a = (byte) 255;
-            } else {
-                // Miss - background color
-                r = (byte) 20;
-                g = (byte) 20;
-                b = (byte) 30;
-                a = (byte) 255;
-            }
-
-            outputImage.put(r);
-            outputImage.put(g);
-            outputImage.put(b);
-            outputImage.put(a);
+    protected int computePixelColor(float hitX, float hitY, float hitZ,
+                                     float distance, float[] extraData) {
+        if (distance > 0 && distance < 100.0f) {
+            // Hit - compute color based on depth/distance
+            // Use depth coloring: close = red, far = blue
+            float normalizedDist = Math.min(1.0f, distance / 2.0f);
+            int r = (int) (255 * (1.0f - normalizedDist));
+            int g = (int) (100 * (1.0f - normalizedDist * 0.5f));
+            int b = (int) (255 * normalizedDist);
+            return (r << 24) | (g << 16) | (b << 8) | 255;
+        } else {
+            // Miss - background color
+            return (20 << 24) | (20 << 16) | (30 << 8) | 255;
         }
-
-        outputImage.flip();
     }
 
     @Override

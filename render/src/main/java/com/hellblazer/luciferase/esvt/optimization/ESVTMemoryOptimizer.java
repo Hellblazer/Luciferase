@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.esvt.optimization;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,12 +40,18 @@ import java.util.*;
  *
  * @author hal.hildebrand
  */
-public class ESVTMemoryOptimizer {
+public class ESVTMemoryOptimizer implements Optimizer<ESVTData> {
     private static final Logger log = LoggerFactory.getLogger(ESVTMemoryOptimizer.class);
 
     private static final int CACHE_LINE_SIZE = 64; // bytes
     private static final int NODE_SIZE = ESVTNodeUnified.SIZE_BYTES; // 8 bytes
     private static final int NODES_PER_CACHE_LINE = CACHE_LINE_SIZE / NODE_SIZE; // 8 nodes
+
+    /** Implements {@link Optimizer#optimize} by delegating to {@link #optimizeMemoryLayout}. */
+    @Override
+    public ESVTData optimize(ESVTData input) {
+        return optimizeMemoryLayout(input);
+    }
 
     /**
      * Memory layout analysis result.

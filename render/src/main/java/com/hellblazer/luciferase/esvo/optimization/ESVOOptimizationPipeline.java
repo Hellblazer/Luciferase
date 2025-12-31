@@ -19,6 +19,7 @@ package com.hellblazer.luciferase.esvo.optimization;
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.sparse.optimization.AbstractOptimizationPipeline;
 import com.hellblazer.luciferase.sparse.optimization.OptimizationStep;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -55,9 +56,9 @@ public class ESVOOptimizationPipeline extends AbstractOptimizationPipeline<ESVOO
     }
 
     @Override
-    protected StepResult<ESVOOctreeData> executeOptimizerStep(Object optimizer, ESVOOctreeData inputData) {
+    protected StepResult<ESVOOctreeData> executeOptimizerStep(Optimizer<ESVOOctreeData> optimizer, ESVOOctreeData inputData) {
         var stepStartTime = System.nanoTime();
-        var optimizerName = optimizer.getClass().getSimpleName();
+        var optimizerName = optimizer.getName();
 
         try {
             ESVOOctreeData optimizedData = null;

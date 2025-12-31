@@ -31,6 +31,10 @@ import java.nio.ByteBuffer;
  * <p><b>Node Types:</b> The interface uses {@link SparseVoxelNode} as the generic
  * node type. Implementations may return more specific node types.
  *
+ * <p><b>Coordinate Spaces:</b> Different implementations use different coordinate
+ * conventions. Use {@link #getCoordinateSpace()} to determine the correct space
+ * for ray generation and intersection testing.
+ *
  * <p><b>Thread Safety:</b> Implementations should be safe for concurrent read access.
  * Write operations require external synchronization.
  *
@@ -38,8 +42,21 @@ import java.nio.ByteBuffer;
  * @author hal.hildebrand
  * @see com.hellblazer.luciferase.esvo.core.ESVOOctreeData
  * @see com.hellblazer.luciferase.esvt.core.ESVTData
+ * @see CoordinateSpace
  */
 public interface SparseVoxelData<N extends SparseVoxelNode> extends SpatialData {
+
+    // === Coordinate Space ===
+
+    /**
+     * Get the coordinate space used by this data structure.
+     *
+     * <p>Renderers must generate rays in this coordinate space for correct
+     * intersection results.
+     *
+     * @return the coordinate space (never null)
+     */
+    CoordinateSpace getCoordinateSpace();
 
     // === Node Access ===
 

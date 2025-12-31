@@ -1,16 +1,28 @@
 package com.hellblazer.luciferase.esvo.optimization;
 
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
+
 import javax.vecmath.Vector3f;
 import java.util.*;
 
 /**
  * Ray traversal optimization for ESVO implementations.
  * Analyzes and optimizes ray coherence patterns for improved GPU utilization.
+ *
+ * <p><b>Note:</b> This optimizer works on ray coherence, not data layout.
+ * The {@link #optimize} method returns input unchanged.
  */
-public class ESVOTraversalOptimizer {
-    
+public class ESVOTraversalOptimizer implements Optimizer<ESVOOctreeData> {
+
     private static final float COHERENCE_THRESHOLD = 0.1f;
     private static final int MAX_RAYS_PER_GROUP = 32;
+
+    /** Returns input unchanged - this optimizer works on ray coherence, not data. */
+    @Override
+    public ESVOOctreeData optimize(ESVOOctreeData input) {
+        return input;
+    }
     
     public static class RayCoherence {
         private final float spatialCoherence;

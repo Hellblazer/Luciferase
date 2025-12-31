@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.esvt.optimization;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,11 +36,18 @@ import java.util.zip.Inflater;
  *
  * @author hal.hildebrand
  */
-public class ESVTBandwidthOptimizer {
+public class ESVTBandwidthOptimizer implements Optimizer<ESVTData> {
     private static final Logger log = LoggerFactory.getLogger(ESVTBandwidthOptimizer.class);
 
     private static final int COMPRESSION_LEVEL = Deflater.BEST_COMPRESSION;
     private static final int NODE_SIZE = ESVTNodeUnified.SIZE_BYTES;
+    private static final int DEFAULT_STREAMING_BUFFER_SIZE = 1024;
+
+    /** Implements {@link Optimizer#optimize} by delegating to {@link #optimizeForStreaming}. */
+    @Override
+    public ESVTData optimize(ESVTData input) {
+        return optimizeForStreaming(input, DEFAULT_STREAMING_BUFFER_SIZE);
+    }
 
     /**
      * Compressed node data container.

@@ -1,15 +1,27 @@
 package com.hellblazer.luciferase.esvo.optimization;
 
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
+
 import java.util.*;
 
 /**
  * GPU memory coalescing optimization for ESVO data structures.
  * Analyzes and optimizes memory access patterns for maximum GPU memory throughput.
+ *
+ * <p><b>Note:</b> This optimizer analyzes access patterns but does not modify data layout.
+ * The {@link #optimize} method returns input unchanged.
  */
-public class ESVOCoalescingOptimizer {
-    
+public class ESVOCoalescingOptimizer implements Optimizer<ESVOOctreeData> {
+
     private static final int WARP_SIZE = 32; // GPU warp size
     private static final int CACHE_LINE_SIZE = 128; // bytes
+
+    /** Returns input unchanged - this optimizer analyzes patterns, not data. */
+    @Override
+    public ESVOOctreeData optimize(ESVOOctreeData input) {
+        return input;
+    }
     
     public static class CoalescingAnalysis {
         private final float coalescingEfficiency;

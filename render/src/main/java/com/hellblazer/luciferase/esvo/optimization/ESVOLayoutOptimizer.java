@@ -2,6 +2,8 @@ package com.hellblazer.luciferase.esvo.optimization;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
+
 import javax.vecmath.Vector3f;
 import java.util.*;
 
@@ -9,7 +11,13 @@ import java.util.*;
  * Layout optimization for ESVO octree data structures.
  * Optimizes spatial locality and cache-friendly data organization.
  */
-public class ESVOLayoutOptimizer {
+public class ESVOLayoutOptimizer implements Optimizer<ESVOOctreeData> {
+
+    /** Implements {@link Optimizer#optimize} by delegating to {@link #optimizeBreadthFirst}. */
+    @Override
+    public ESVOOctreeData optimize(ESVOOctreeData input) {
+        return optimizeBreadthFirst(input);
+    }
     
     public static class SpatialLocality {
         private final float averageDistance;

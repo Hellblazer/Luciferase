@@ -1,6 +1,7 @@
 package com.hellblazer.luciferase.esvo.core;
 
 import com.hellblazer.luciferase.render.inspector.SpatialData;
+import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.core.SparseVoxelData;
 
 import java.nio.ByteBuffer;
@@ -195,6 +196,16 @@ public class ESVOOctreeData implements SpatialData, SparseVoxelData<ESVONodeUnif
     }
 
     // === SparseVoxelData interface implementation ===
+
+    /**
+     * Get the coordinate space used by ESVO.
+     *
+     * @return {@link CoordinateSpace#OCTREE_SPACE} ([1, 2] normalized space)
+     */
+    @Override
+    public CoordinateSpace getCoordinateSpace() {
+        return CoordinateSpace.OCTREE_SPACE;
+    }
 
     /**
      * Get all nodes as an array.

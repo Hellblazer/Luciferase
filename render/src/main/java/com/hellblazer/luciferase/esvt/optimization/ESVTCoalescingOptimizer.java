@@ -18,6 +18,7 @@ package com.hellblazer.luciferase.esvt.optimization;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
 import com.hellblazer.luciferase.esvt.core.ESVTNodeUnified;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,13 +40,19 @@ import java.util.*;
  *
  * @author hal.hildebrand
  */
-public class ESVTCoalescingOptimizer {
+public class ESVTCoalescingOptimizer implements Optimizer<ESVTData> {
     private static final Logger log = LoggerFactory.getLogger(ESVTCoalescingOptimizer.class);
 
     private static final int WARP_SIZE = 32; // GPU warp size
     private static final int CACHE_LINE_SIZE = 128; // bytes (GPU L2 cache line)
     private static final int NODE_SIZE = ESVTNodeUnified.SIZE_BYTES; // 8 bytes
     private static final int NODES_PER_TRANSACTION = 4; // 32-byte transaction / 8-byte node
+
+    /** Implements {@link Optimizer#optimize} by delegating to {@link #optimizeForCoalescing}. */
+    @Override
+    public ESVTData optimize(ESVTData input) {
+        return optimizeForCoalescing(input);
+    }
 
     /**
      * Coalescing efficiency analysis result.
