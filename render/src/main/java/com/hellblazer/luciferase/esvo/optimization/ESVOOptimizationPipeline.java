@@ -40,6 +40,20 @@ public class ESVOOptimizationPipeline extends AbstractOptimizationPipeline<ESVOO
 
     /**
      * Create a default pipeline with recommended optimizers.
+     *
+     * <p><b>Optimizer ordering rationale:</b>
+     * <ol>
+     *   <li><b>MemoryOptimizer</b> - Analyzes and improves memory layout patterns.
+     *       Runs first to establish baseline memory characteristics.</li>
+     *   <li><b>BandwidthOptimizer</b> - Optimizes for GPU memory bandwidth.
+     *       Depends on memory layout analysis from step 1.</li>
+     *   <li><b>CoalescingOptimizer</b> - Ensures GPU memory accesses are coalesced.
+     *       Builds on bandwidth optimization to group related accesses.</li>
+     *   <li><b>LayoutOptimizer</b> - Final breadth-first reordering for cache locality.
+     *       Runs last as it performs the actual node reordering.</li>
+     * </ol>
+     *
+     * @return configured pipeline with all default optimizers
      */
     public static ESVOOptimizationPipeline createDefaultPipeline() {
         var pipeline = new ESVOOptimizationPipeline();

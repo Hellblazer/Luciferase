@@ -305,4 +305,119 @@ public record ESVTData(
         return String.format("ESVTData[nodes=%d, contours=%d, farPtrs=%d, rootType=%d, depth=%d, leaves=%d, internal=%d, grid=%d, hasVoxelCoords=%b, size=%dKB]",
             nodeCount(), contourCount(), farPointerCount(), rootType, maxDepth, leafCount, internalCount, gridResolution, hasVoxelCoords(), sizeInBytes() / 1024);
     }
+
+    /**
+     * Create a new builder for ESVTData.
+     *
+     * @return new builder instance
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Create a builder initialized with values from an existing ESVTData.
+     *
+     * @param source the ESVTData to copy values from
+     * @return new builder pre-populated with source values
+     */
+    public static Builder builder(ESVTData source) {
+        return new Builder()
+            .nodes(source.nodes())
+            .contours(source.contours())
+            .farPointers(source.farPointers())
+            .rootType(source.rootType())
+            .maxDepth(source.maxDepth())
+            .leafCount(source.leafCount())
+            .internalCount(source.internalCount())
+            .gridResolution(source.gridResolution())
+            .leafVoxelCoords(source.leafVoxelCoords());
+    }
+
+    /**
+     * Builder for ESVTData.
+     *
+     * <p>Provides a fluent API for constructing ESVTData instances,
+     * avoiding the 9-parameter constructor which is error-prone.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * ESVTData data = ESVTData.builder()
+     *     .nodes(nodeArray)
+     *     .contours(contourArray)
+     *     .rootType(0)
+     *     .maxDepth(12)
+     *     .leafCount(1000)
+     *     .internalCount(500)
+     *     .build();
+     * }</pre>
+     */
+    public static final class Builder {
+        private ESVTNodeUnified[] nodes = new ESVTNodeUnified[0];
+        private int[] contours = new int[0];
+        private int[] farPointers = new int[0];
+        private int rootType = 0;
+        private int maxDepth = 0;
+        private int leafCount = 0;
+        private int internalCount = 0;
+        private int gridResolution = 0;
+        private int[] leafVoxelCoords = new int[0];
+
+        private Builder() {}
+
+        public Builder nodes(ESVTNodeUnified[] nodes) {
+            this.nodes = nodes != null ? nodes : new ESVTNodeUnified[0];
+            return this;
+        }
+
+        public Builder contours(int[] contours) {
+            this.contours = contours != null ? contours : new int[0];
+            return this;
+        }
+
+        public Builder farPointers(int[] farPointers) {
+            this.farPointers = farPointers != null ? farPointers : new int[0];
+            return this;
+        }
+
+        public Builder rootType(int rootType) {
+            this.rootType = rootType;
+            return this;
+        }
+
+        public Builder maxDepth(int maxDepth) {
+            this.maxDepth = maxDepth;
+            return this;
+        }
+
+        public Builder leafCount(int leafCount) {
+            this.leafCount = leafCount;
+            return this;
+        }
+
+        public Builder internalCount(int internalCount) {
+            this.internalCount = internalCount;
+            return this;
+        }
+
+        public Builder gridResolution(int gridResolution) {
+            this.gridResolution = gridResolution;
+            return this;
+        }
+
+        public Builder leafVoxelCoords(int[] leafVoxelCoords) {
+            this.leafVoxelCoords = leafVoxelCoords != null ? leafVoxelCoords : new int[0];
+            return this;
+        }
+
+        /**
+         * Build the ESVTData instance.
+         *
+         * @return new ESVTData with the configured values
+         */
+        public ESVTData build() {
+            return new ESVTData(nodes, contours, farPointers, rootType, maxDepth,
+                               leafCount, internalCount, gridResolution, leafVoxelCoords);
+        }
+    }
 }

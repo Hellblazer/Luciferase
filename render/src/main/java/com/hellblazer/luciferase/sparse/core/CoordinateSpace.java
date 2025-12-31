@@ -19,33 +19,40 @@ package com.hellblazer.luciferase.sparse.core;
 /**
  * Defines the normalized coordinate space used by sparse voxel data structures.
  *
- * <p>Different sparse voxel implementations use different coordinate conventions:
+ * <p>Both ESVO (Octree) and ESVT (Tetree) implementations use the unified
+ * [0, 1] normalized coordinate space ({@link #UNIT_CUBE}).
+ *
+ * <p><b>Architecture Note:</b> This enum serves as the return type for
+ * {@link SparseVoxelData#getCoordinateSpace()}, providing type-safe documentation
+ * of the coordinate convention. For transformation operations, use the utility classes:
  * <ul>
- *   <li><b>ESVO (Octree)</b>: Uses [1, 2] normalized space (origin at 1,1,1)</li>
- *   <li><b>ESVT (Tetree)</b>: Uses [0, 1] normalized space (origin at 0,0,0)</li>
+ *   <li>{@link SparseCoordinateSpace} - Generic voxel operations (shared code)</li>
+ *   <li>{@link com.hellblazer.luciferase.esvo.core.CoordinateSpace} - Octree-specific operations</li>
  * </ul>
  *
- * <p>Renderers must generate rays in the correct coordinate space for the data
- * structure being traversed. Mismatched coordinate spaces will result in incorrect
- * ray-voxel intersection results.
+ * <p><b>Historical Note:</b> The original ESVO paper used [1,2] coordinate space
+ * for IEEE 754 bit manipulation optimizations. This implementation uses [0,1]
+ * for consistency and standard graphics pipeline compatibility.
  *
  * @author hal.hildebrand
+ * @see SparseVoxelData#getCoordinateSpace()
+ * @see SparseCoordinateSpace
  */
 public enum CoordinateSpace {
 
     /**
      * Normalized [0, 1] coordinate space.
-     * Used by ESVT (tetrahedral) structures.
+     *
+     * <p>Used by all sparse voxel structures (ESVO octree, ESVT tetrahedral).
+     * This is the only coordinate space in use; the enum exists for type safety
+     * and documentation in the {@link SparseVoxelData} interface.
      */
-    UNIT_CUBE(0.0f, 1.0f),
+    UNIT_CUBE(0.0f, 1.0f);
 
-    /**
-     * Normalized [1, 2] coordinate space.
-     * Used by ESVO (octree) structures for efficient bit manipulation.
-     */
-    OCTREE_SPACE(1.0f, 2.0f);
-
+    /** Minimum coordinate value (0.0) */
     private final float min;
+
+    /** Maximum coordinate value (1.0) */
     private final float max;
 
     CoordinateSpace(float min, float max) {
@@ -56,7 +63,7 @@ public enum CoordinateSpace {
     /**
      * Get the minimum coordinate value.
      *
-     * @return minimum value for all axes
+     * @return minimum value for all axes (0.0 for UNIT_CUBE)
      */
     public float getMin() {
         return min;
@@ -65,7 +72,7 @@ public enum CoordinateSpace {
     /**
      * Get the maximum coordinate value.
      *
-     * @return maximum value for all axes
+     * @return maximum value for all axes (1.0 for UNIT_CUBE)
      */
     public float getMax() {
         return max;
@@ -74,7 +81,7 @@ public enum CoordinateSpace {
     /**
      * Get the size of the coordinate space.
      *
-     * @return max - min
+     * @return max - min (1.0 for UNIT_CUBE)
      */
     public float getSize() {
         return max - min;
@@ -83,7 +90,7 @@ public enum CoordinateSpace {
     /**
      * Get the center of the coordinate space.
      *
-     * @return (min + max) / 2
+     * @return (min + max) / 2 (0.5 for UNIT_CUBE)
      */
     public float getCenter() {
         return (min + max) / 2.0f;
@@ -101,25 +108,5 @@ public enum CoordinateSpace {
         return x >= min && x <= max &&
                y >= min && y <= max &&
                z >= min && z <= max;
-    }
-
-    /**
-     * Transform a point from [0, 1] normalized space to this coordinate space.
-     *
-     * @param normalizedValue value in [0, 1]
-     * @return value in this coordinate space
-     */
-    public float fromNormalized(float normalizedValue) {
-        return min + normalizedValue * (max - min);
-    }
-
-    /**
-     * Transform a point from this coordinate space to [0, 1] normalized space.
-     *
-     * @param value value in this coordinate space
-     * @return value in [0, 1]
-     */
-    public float toNormalized(float value) {
-        return (value - min) / (max - min);
     }
 }

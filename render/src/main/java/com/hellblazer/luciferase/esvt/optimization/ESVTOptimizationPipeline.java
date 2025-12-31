@@ -47,6 +47,20 @@ public class ESVTOptimizationPipeline extends AbstractOptimizationPipeline<ESVTD
 
     /**
      * Create a default pipeline with recommended optimizers.
+     *
+     * <p><b>Optimizer ordering rationale:</b>
+     * <ol>
+     *   <li><b>MemoryOptimizer</b> - Analyzes and improves memory layout patterns.
+     *       Runs first to establish baseline memory characteristics for 8-byte nodes.</li>
+     *   <li><b>BandwidthOptimizer</b> - Optimizes for GPU memory bandwidth.
+     *       Depends on memory layout analysis; accounts for tetrahedral access patterns.</li>
+     *   <li><b>CoalescingOptimizer</b> - Ensures GPU memory accesses are coalesced.
+     *       Groups S0-S5 tetrahedron types for efficient wavefront execution.</li>
+     *   <li><b>TraversalOptimizer</b> - Optimizes ray coherence and traversal order.
+     *       Runs last to optimize the final node layout for Moller-Trumbore intersection.</li>
+     * </ol>
+     *
+     * @return configured pipeline with all default optimizers
      */
     public static ESVTOptimizationPipeline createDefaultPipeline() {
         var pipeline = new ESVTOptimizationPipeline();

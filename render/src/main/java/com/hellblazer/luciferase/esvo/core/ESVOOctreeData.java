@@ -200,20 +200,25 @@ public class ESVOOctreeData implements SpatialData, SparseVoxelData<ESVONodeUnif
     /**
      * Get the coordinate space used by ESVO.
      *
-     * @return {@link CoordinateSpace#OCTREE_SPACE} ([1, 2] normalized space)
+     * @return {@link CoordinateSpace#UNIT_CUBE} ([0, 1] normalized space)
      */
     @Override
     public CoordinateSpace getCoordinateSpace() {
-        return CoordinateSpace.OCTREE_SPACE;
+        return CoordinateSpace.UNIT_CUBE;
     }
 
     /**
      * Get all nodes as an array.
      *
-     * <p>Nodes are returned in index order. This method creates a new array
-     * on each call; for frequent access, consider caching the result.
+     * <p>Nodes are returned in sorted index order. This method creates a new array
+     * on each call (O(n) time and space); for frequent access, consider caching.
      *
-     * @return array of nodes in index order
+     * <p><b>Null handling:</b> The returned array may contain null entries if
+     * sparse indices have gaps (i.e., if a node was removed or never set at an
+     * index that appears in the sorted key set). Callers should handle nulls
+     * appropriately or use {@link #getNode(int)} for individual lookups.
+     *
+     * @return array of nodes in index order; may contain null entries for sparse data
      */
     @Override
     public ESVONodeUnified[] nodes() {

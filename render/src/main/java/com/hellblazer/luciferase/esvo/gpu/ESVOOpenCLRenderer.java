@@ -20,6 +20,7 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
 import com.hellblazer.luciferase.resource.compute.ComputeKernel;
 import com.hellblazer.luciferase.resource.compute.opencl.OpenCLKernel;
+import com.hellblazer.luciferase.sparse.core.CoordinateSpace;
 import com.hellblazer.luciferase.sparse.gpu.AbstractOpenCLRenderer;
 import org.lwjgl.system.MemoryStack;
 import org.slf4j.Logger;
@@ -54,9 +55,10 @@ public final class ESVOOpenCLRenderer extends AbstractOpenCLRenderer<ESVONodeUni
     // Raw cl_mem handle for ByteBuffer upload
     private long clNodeBuffer;
 
-    // Scene bounds (in [1,2] normalized coordinates for ESVO)
-    private float[] sceneMin = {1.0f, 1.0f, 1.0f};
-    private float[] sceneMax = {2.0f, 2.0f, 2.0f};
+    // Scene bounds derived from coordinate space (ESVO now uses [0,1] normalized coordinates)
+    private static final CoordinateSpace COORD_SPACE = CoordinateSpace.UNIT_CUBE;
+    private final float[] sceneMin = {COORD_SPACE.getMin(), COORD_SPACE.getMin(), COORD_SPACE.getMin()};
+    private final float[] sceneMax = {COORD_SPACE.getMax(), COORD_SPACE.getMax(), COORD_SPACE.getMax()};
 
     /**
      * Create OpenCL renderer with specified output resolution.

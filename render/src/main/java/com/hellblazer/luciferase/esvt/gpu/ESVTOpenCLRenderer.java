@@ -66,6 +66,9 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
     // Additional CPU buffer for normals
     private FloatBuffer cpuNormalBuffer;
 
+    // Reusable array for readPixelExtraData() to avoid per-pixel allocation
+    private final float[] normalData = new float[NORMAL_SIZE_FLOATS];
+
     // Contour tracking
     private int contourCount = 0;
 
@@ -179,15 +182,17 @@ public final class ESVTOpenCLRenderer extends AbstractOpenCLRenderer<ESVTNodeUni
     /**
      * Read normal data for current pixel from the normal buffer.
      * Returns [nx, ny, nz, hitFlag] for use in computePixelColor.
+     *
+     * <p>Reuses a single array instance to avoid per-pixel allocation overhead.
+     * For a 1920x1080 frame, this eliminates ~2M allocations per frame.
      */
     @Override
     protected float[] readPixelExtraData() {
-        return new float[] {
-            cpuNormalBuffer.get(),  // nx
-            cpuNormalBuffer.get(),  // ny
-            cpuNormalBuffer.get(),  // nz
-            cpuNormalBuffer.get()   // hitFlag
-        };
+        normalData[0] = cpuNormalBuffer.get();  // nx
+        normalData[1] = cpuNormalBuffer.get();  // ny
+        normalData[2] = cpuNormalBuffer.get();  // nz
+        normalData[3] = cpuNormalBuffer.get();  // hitFlag
+        return normalData;
     }
 
     @Override
