@@ -32,6 +32,10 @@ let currentColorScheme = 'DEPTH';
 const HIGHLIGHT_COLOR = new THREE.Color(0xf472b6);  // Pink for selected
 const QUERY_RESULT_COLOR = new THREE.Color(0xa78bfa); // Purple for query results
 
+// Clipping state
+let clipMinX = 0, clipMinY = 0, clipMinZ = 0;
+let allEntities = []; // Store all entities before clipping
+
 // ============================================================================
 // Scene Setup
 // ============================================================================
@@ -205,6 +209,36 @@ function updateInstancedMesh(entities) {
 function recolorEntities() {
     if (!instancedMesh || entityData.length === 0) return;
     updateInstancedMesh(entityData);
+}
+
+function applyClipping() {
+    if (allEntities.length === 0) return;
+
+    // Filter entities based on clipping planes
+    const clipped = allEntities.filter(e =>
+        e.x >= clipMinX &&
+        e.y >= clipMinY &&
+        e.z >= clipMinZ
+    );
+
+    updateInstancedMesh(clipped);
+    document.getElementById('stat-entities').textContent = `${clipped.length}/${allEntities.length}`;
+}
+
+function resetClipping() {
+    clipMinX = 0;
+    clipMinY = 0;
+    clipMinZ = 0;
+
+    // Update UI sliders
+    document.getElementById('clip-x-min').value = 0;
+    document.getElementById('clip-y-min').value = 0;
+    document.getElementById('clip-z-min').value = 0;
+    document.getElementById('clip-x-min-value').textContent = '0.0';
+    document.getElementById('clip-y-min-value').textContent = '0.0';
+    document.getElementById('clip-z-min-value').textContent = '0.0';
+
+    applyClipping();
 }
 
 // ============================================================================
@@ -578,12 +612,13 @@ async function refreshEntities() {
     if (!sessionId) return;
 
     try {
-        const response = await fetch(`/api/spatial/entities?sessionId=${sessionId}&size=10000`);
+        const response = await fetch(`/api/spatial/entities?sessionId=${sessionId}&size=50000`);
         if (response.ok) {
             const data = await response.json();
-            const entities = data.entities || [];
-            updateInstancedMesh(entities);
-            document.getElementById('stat-entities').textContent = data.totalCount || entities.length;
+            allEntities = data.entities || [];
+
+            // Apply clipping before display
+            applyClipping();
         }
     } catch (e) {
         console.error('Failed to refresh entities:', e);
@@ -601,10 +636,12 @@ async function clearAll() {
             instancedMesh.count = 0;
         }
         entityData = [];
+        allEntities = [];
         clearQueryHighlights();
         selectedIndex = -1;
         hoveredIndex = -1;
         hideEntityInfo();
+        resetClipping();
 
         document.getElementById('stat-entities').textContent = '0';
         document.getElementById('stat-index-type').textContent = '-';
@@ -699,7 +736,8 @@ document.getElementById('btn-create-index').addEventListener('click', async () =
 document.getElementById('btn-add-random').addEventListener('click', async () => {
     const shapeSelect = document.getElementById('shape-select');
     const shape = shapeSelect ? shapeSelect.value : 'random';
-    const count = shape === 'bunny' ? 0 : 500; // Bunny has fixed count
+    const entityCountSlider = document.getElementById('entity-count');
+    const count = shape === 'bunny' ? 0 : (entityCountSlider ? parseInt(entityCountSlider.value) : 500);
     await addShapeEntities(shape, count);
 });
 
@@ -712,6 +750,37 @@ document.querySelectorAll('.color-scheme-btn').forEach(btn => {
         recolorEntities();
     });
 });
+
+// Entity count slider
+const entityCountSlider = document.getElementById('entity-count');
+const entityCountValue = document.getElementById('entity-count-value');
+if (entityCountSlider && entityCountValue) {
+    entityCountSlider.addEventListener('input', () => {
+        entityCountValue.textContent = entityCountSlider.value;
+    });
+}
+
+// Clipping sliders
+['x', 'y', 'z'].forEach(axis => {
+    const slider = document.getElementById(`clip-${axis}-min`);
+    const valueSpan = document.getElementById(`clip-${axis}-min-value`);
+    if (slider && valueSpan) {
+        slider.addEventListener('input', () => {
+            const value = slider.value / 100;
+            valueSpan.textContent = value.toFixed(2);
+            if (axis === 'x') clipMinX = value;
+            else if (axis === 'y') clipMinY = value;
+            else clipMinZ = value;
+            applyClipping();
+        });
+    }
+});
+
+// Reset clipping button
+const resetClipBtn = document.getElementById('btn-reset-clipping');
+if (resetClipBtn) {
+    resetClipBtn.addEventListener('click', resetClipping);
+}
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
     await clearAll();

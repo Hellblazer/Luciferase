@@ -323,6 +323,11 @@
             <option value="torus">Torus</option>
             <option value="bunny">Stanford Bunny</option>
         </select>
+
+        <label style="margin-top: 8px;">Entity Count</label>
+        <input type="range" id="entity-count" min="50" max="2000" value="500" style="width: 100%;">
+        <span id="entity-count-value" style="font-size: 11px; color: #9ca3af;">500</span>
+
         <button id="btn-add-random" disabled>Add Entities</button>
         <button id="btn-clear" disabled>Clear All</button>
 
@@ -333,6 +338,17 @@
             <button class="color-scheme-btn" data-scheme="SOLID">Solid</button>
             <button class="color-scheme-btn" data-scheme="RAINBOW">Rainbow</button>
             <button class="color-scheme-btn" data-scheme="INDEX_TYPE">Index</button>
+        </div>
+
+        <div class="query-section">
+            <h4>Clipping</h4>
+            <label style="font-size: 11px;">X Min: <span id="clip-x-min-value">0.0</span></label>
+            <input type="range" id="clip-x-min" min="0" max="100" value="0" style="width: 100%;">
+            <label style="font-size: 11px;">Y Min: <span id="clip-y-min-value">0.0</span></label>
+            <input type="range" id="clip-y-min" min="0" max="100" value="0" style="width: 100%;">
+            <label style="font-size: 11px;">Z Min: <span id="clip-z-min-value">0.0</span></label>
+            <input type="range" id="clip-z-min" min="0" max="100" value="0" style="width: 100%;">
+            <button id="btn-reset-clipping" class="clear-btn">Reset Clipping</button>
         </div>
 
         <div class="query-section">
