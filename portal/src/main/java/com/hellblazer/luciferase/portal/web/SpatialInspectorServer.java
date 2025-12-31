@@ -62,6 +62,7 @@ public class SpatialInspectorServer {
         var javalin = Javalin.create(config -> {
             config.staticFiles.add("/web");
             config.http.defaultContentType = "application/json";
+            config.http.maxRequestSize = 10_000_000L; // 10MB for large meshes like bunny
         });
 
         // Global exception handler
