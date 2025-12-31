@@ -178,13 +178,24 @@ public class RenderService {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private RenderHolder createESVT(Object spatialIndex, int maxDepth, int gridResolution) {
-        if (!(spatialIndex instanceof Tetree)) {
-            throw new IllegalArgumentException("ESVT requires a Tetree spatial index");
+        // Extract positions and build ESVT from voxels (like ESVO)
+        // This limits tree depth and prevents far pointer overflow
+        var positions = getPositions(spatialIndex);
+        var voxels = new ArrayList<Point3i>();
+
+        // Convert positions to voxel coordinates
+        for (var pos : positions) {
+            int x = (int) (pos.x * gridResolution);
+            int y = (int) (pos.y * gridResolution);
+            int z = (int) (pos.z * gridResolution);
+            x = Math.max(0, Math.min(gridResolution - 1, x));
+            y = Math.max(0, Math.min(gridResolution - 1, y));
+            z = Math.max(0, Math.min(gridResolution - 1, z));
+            voxels.add(new Point3i(x, y, z));
         }
 
-        var tetree = (Tetree<UUIDEntityID, Object>) spatialIndex;
         var builder = new ESVTBuilder();
-        var data = builder.build(tetree);
+        var data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
 
         return new RenderHolder(
                 RenderType.ESVT,
