@@ -67,8 +67,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.target.set(0.5, 0.5, 0.5);
-controls.minDistance = 0.5;
-controls.maxDistance = 20;
+controls.minDistance = 0.3;
+controls.maxDistance = 10;
 controls.update();
 
 // ============================================================================
@@ -546,6 +546,9 @@ async function createIndex(type) {
             const info = await response.json();
             indexType = type;
             document.getElementById('stat-index-type').textContent = type;
+            document.getElementById('stat-nodes').textContent = info.nodeCount || '0';
+            document.getElementById('stat-build-time').textContent =
+                info.buildTimeMs ? `${info.buildTimeMs}ms` : '-';
             document.getElementById('btn-add-random').disabled = false;
             document.getElementById('btn-clear').disabled = false;
             document.getElementById('btn-range-query').disabled = false;
@@ -644,6 +647,8 @@ async function clearAll() {
         resetClipping();
 
         document.getElementById('stat-entities').textContent = '0';
+        document.getElementById('stat-nodes').textContent = '0';
+        document.getElementById('stat-build-time').textContent = '-';
         document.getElementById('stat-index-type').textContent = '-';
         document.getElementById('btn-add-random').disabled = true;
         document.getElementById('btn-clear').disabled = true;
