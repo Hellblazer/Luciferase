@@ -532,12 +532,14 @@ public class SpatialInspectorServer {
                         float maxDim = Math.max(header.dimX(), Math.max(header.dimY(), header.dimZ()));
 
                         // Convert to normalized [0,1] coordinates
+                        // VOL has: X=up/down, Y=front/back, Z=left/right
+                        // Three.js needs: Y=up, so map X->Y, Z->X, Y->Z
                         cachedBunnyVoxels = volData.voxels().stream()
                             .map(v -> {
                                 var map = new java.util.HashMap<String, Object>();
-                                map.put("x", (v.x + 0.5f) / maxDim);
-                                map.put("y", (v.y + 0.5f) / maxDim);
-                                map.put("z", (v.z + 0.5f) / maxDim);
+                                map.put("x", (v.z + 0.5f) / maxDim);  // Z -> X
+                                map.put("y", (v.x + 0.5f) / maxDim);  // X -> Y (head up)
+                                map.put("z", (v.y + 0.5f) / maxDim);  // Y -> Z
                                 map.put("content", null);
                                 return (Map<String, Object>) map;
                             })
