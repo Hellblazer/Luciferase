@@ -253,6 +253,30 @@
         #controls-panel button.clear-btn:hover {
             background: #4b5563;
         }
+
+        /* Color scheme buttons */
+        .color-schemes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 8px 0;
+        }
+
+        .color-scheme-btn {
+            padding: 4px 8px !important;
+            font-size: 11px !important;
+            width: auto !important;
+            display: inline-block !important;
+            background: #4b5563 !important;
+        }
+
+        .color-scheme-btn:hover {
+            background: #6b7280 !important;
+        }
+
+        .color-scheme-btn.active {
+            background: #8b5cf6 !important;
+        }
     </style>
 </head>
 <body>
@@ -290,8 +314,26 @@
             <option value="SFC">SFC Array</option>
         </select>
         <button id="btn-create-index">Create Index</button>
-        <button id="btn-add-random" disabled>Add Random Entities</button>
+
+        <label style="margin-top: 8px;">Shape</label>
+        <select id="shape-select">
+            <option value="random">Random</option>
+            <option value="sphere">Sphere</option>
+            <option value="cube">Cube</option>
+            <option value="torus">Torus</option>
+            <option value="bunny">Stanford Bunny</option>
+        </select>
+        <button id="btn-add-random" disabled>Add Entities</button>
         <button id="btn-clear" disabled>Clear All</button>
+
+        <label style="margin-top: 8px;">Color Scheme</label>
+        <div class="color-schemes">
+            <button class="color-scheme-btn active" data-scheme="DEPTH">Depth</button>
+            <button class="color-scheme-btn" data-scheme="NORMAL">Normal</button>
+            <button class="color-scheme-btn" data-scheme="SOLID">Solid</button>
+            <button class="color-scheme-btn" data-scheme="RAINBOW">Rainbow</button>
+            <button class="color-scheme-btn" data-scheme="INDEX_TYPE">Index</button>
+        </div>
 
         <div class="query-section">
             <h4>Queries</h4>

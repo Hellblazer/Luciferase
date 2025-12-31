@@ -3,10 +3,13 @@
  *
  * Phase 5a: Basic scene setup with camera controls, lighting, and API integration
  * Phase 5b: InstancedMesh entity rendering with interaction and query visualization
+ * Phase 6: Shared modules integration with shape generation and color schemes
  */
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { generateShapeEntities, SHAPE_TYPES } from './shared/shape-generators.js';
+import { createColorSchemes, COLOR_SCHEME_NAMES } from './shared/color-schemes.js';
 
 // ============================================================================
 // Constants
@@ -15,12 +18,16 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const MAX_ENTITIES = 100000;  // Maximum entities for InstancedMesh
 const ENTITY_SIZE = 0.015;    // Base entity size
 
-// Color schemes by index type
+// Color schemes by index type (legacy)
 const INDEX_COLORS = {
     TETREE: new THREE.Color(0x34d399),  // Green
     OCTREE: new THREE.Color(0x60a5fa),  // Blue
     SFC: new THREE.Color(0xfbbf24)       // Orange/Yellow
 };
+
+// Initialize color schemes from shared module
+const COLOR_SCHEMES = createColorSchemes(THREE);
+let currentColorScheme = 'DEPTH';
 
 const HIGHLIGHT_COLOR = new THREE.Color(0xf472b6);  // Pink for selected
 const QUERY_RESULT_COLOR = new THREE.Color(0xa78bfa); // Purple for query results
@@ -154,8 +161,8 @@ function updateInstancedMesh(entities) {
         createInstancedMesh(Math.max(count * 2, 1000));
     }
 
-    // Get base color for current index type
-    const baseColor = INDEX_COLORS[indexType] || INDEX_COLORS.TETREE;
+    // Compute max depth for color schemes
+    const maxDepth = 10; // Default max depth
 
     // Update each instance
     for (let i = 0; i < count; i++) {
@@ -167,10 +174,23 @@ function updateInstancedMesh(entities) {
         dummy.updateMatrix();
         instancedMesh.setMatrixAt(i, dummy.matrix);
 
-        // Color with slight variation based on position (depth simulation)
-        const depthFactor = 0.7 + (entity.y * 0.3);  // Y-based brightness
-        instanceColor.copy(baseColor).multiplyScalar(depthFactor);
-        instancedMesh.setColorAt(i, instanceColor);
+        // Use shared color scheme or fall back to index-based coloring
+        if (currentColorScheme === 'INDEX_TYPE') {
+            const color = COLOR_SCHEMES.INDEX_TYPE(0, maxDepth, indexType);
+            instancedMesh.setColorAt(i, color);
+        } else if (COLOR_SCHEMES[currentColorScheme]) {
+            // Use shared color scheme - simulate depth based on Y position
+            const depth = Math.floor(entity.y * maxDepth);
+            const normal = { x: entity.x - 0.5, y: entity.y - 0.5, z: entity.z - 0.5 };
+            const color = COLOR_SCHEMES[currentColorScheme](depth, maxDepth, normal);
+            instancedMesh.setColorAt(i, color);
+        } else {
+            // Fallback to index-based coloring
+            const baseColor = INDEX_COLORS[indexType] || INDEX_COLORS.TETREE;
+            const depthFactor = 0.7 + (entity.y * 0.3);
+            instanceColor.copy(baseColor).multiplyScalar(depthFactor);
+            instancedMesh.setColorAt(i, instanceColor);
+        }
     }
 
     instancedMesh.count = count;
@@ -180,6 +200,11 @@ function updateInstancedMesh(entities) {
     }
 
     console.log(`Updated InstancedMesh with ${count} entities`);
+}
+
+function recolorEntities() {
+    if (!instancedMesh || entityData.length === 0) return;
+    updateInstancedMesh(entityData);
 }
 
 // ============================================================================
@@ -502,17 +527,31 @@ async function createIndex(type) {
     return null;
 }
 
-async function addRandomEntities(count = 100) {
+async function addShapeEntities(shape = 'random', count = 500) {
     if (!sessionId) return;
 
-    const entities = [];
-    for (let i = 0; i < count; i++) {
-        entities.push({
-            x: Math.random(),
-            y: Math.random(),
-            z: Math.random(),
-            content: null
-        });
+    let entities;
+
+    if (shape === 'bunny') {
+        // Fetch Stanford Bunny from API
+        try {
+            const bunnyResponse = await fetch('/api/mesh/bunny');
+            if (!bunnyResponse.ok) {
+                const error = await bunnyResponse.json();
+                console.error('Failed to load bunny mesh:', error);
+                alert(`Failed to load bunny mesh: ${error.error || 'Unknown error'}`);
+                return;
+            }
+            const bunnyData = await bunnyResponse.json();
+            entities = bunnyData.entities;
+            console.log(`Loaded Stanford Bunny: ${entities.length} voxels`);
+        } catch (e) {
+            console.error('Failed to load bunny:', e);
+            return;
+        }
+    } else {
+        // Use shared shape generator
+        entities = generateShapeEntities(shape, count);
     }
 
     try {
@@ -528,6 +567,11 @@ async function addRandomEntities(count = 100) {
     } catch (e) {
         console.error('Failed to add entities:', e);
     }
+}
+
+// Legacy function for backwards compatibility
+async function addRandomEntities(count = 100) {
+    return addShapeEntities('random', count);
 }
 
 async function refreshEntities() {
@@ -653,7 +697,20 @@ document.getElementById('btn-create-index').addEventListener('click', async () =
 });
 
 document.getElementById('btn-add-random').addEventListener('click', async () => {
-    await addRandomEntities(100);
+    const shapeSelect = document.getElementById('shape-select');
+    const shape = shapeSelect ? shapeSelect.value : 'random';
+    const count = shape === 'bunny' ? 0 : 500; // Bunny has fixed count
+    await addShapeEntities(shape, count);
+});
+
+// Color scheme buttons (if they exist)
+document.querySelectorAll('.color-scheme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.color-scheme-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentColorScheme = btn.dataset.scheme;
+        recolorEntities();
+    });
 });
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
