@@ -599,23 +599,39 @@ async function generateVoxels() {
         await fetch(`/api/spatial?sessionId=${sessionId}`, { method: 'DELETE' }).catch(() => {});
 
         // Create spatial index
-        await fetch(`/api/spatial/create?sessionId=${sessionId}`, {
+        const spatialResponse = await fetch(`/api/spatial/create?sessionId=${sessionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                type: indexType,
+                indexType: indexType,
                 maxDepth: maxDepth,
                 maxEntitiesPerNode: 5
             })
         });
 
+        if (!spatialResponse.ok) {
+            const error = await spatialResponse.json();
+            console.error('Failed to create spatial index:', error);
+            alert(`Failed to create spatial index: ${error.error || 'Unknown error'}`);
+            return;
+        }
+
         // Generate entities based on shape
         const entities = generateShapeEntities(shape, 500);
-        await fetch(`/api/spatial/entities/bulk-insert?sessionId=${sessionId}`, {
+        const insertResponse = await fetch(`/api/spatial/entities/bulk-insert?sessionId=${sessionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(entities)
         });
+
+        if (!insertResponse.ok) {
+            const error = await insertResponse.json();
+            console.error('Failed to insert entities:', error);
+            alert(`Failed to insert entities: ${error.error || 'Unknown error'}`);
+            return;
+        }
+
+        console.log(`Inserted ${entities.length} entities`);
 
         // Delete existing render if any
         await fetch(`/api/render?sessionId=${sessionId}`, { method: 'DELETE' }).catch(() => {});
