@@ -7,7 +7,7 @@ class BunnyOrientationTest {
     @Test
     void analyzeBunnyOrientation() throws IOException {
         var loader = new VOLLoader();
-        var data = loader.loadFile("/Users/hal.hildebrand/git/Luciferase/portal/src/main/resources/voxels/bunny-64.vol");
+        var data = loader.loadResource("/voxels/bunny-64.vol");
         var voxels = data.voxels();
         
         int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
