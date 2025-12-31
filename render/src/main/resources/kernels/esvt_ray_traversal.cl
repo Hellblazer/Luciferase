@@ -455,6 +455,109 @@ TetrahedronHit intersectTetrahedron(float3 rayOrigin, float3 rayDir,
 }
 
 // ============================================================================
+// RAY-AABB (UNIT CUBE) INTERSECTION
+// ============================================================================
+//
+// This is used for root-level intersection because the Tetree uses CUBIC octant
+// subdivision internally, not geometric Bey tetrahedron subdivision. The root
+// "tetrahedron type" in the tree describes orientation for surface normals,
+// but the spatial subdivision covers the FULL [0,1]^3 cube, not just 1/6 of it.
+
+typedef struct {
+    bool hit;
+    float tEntry;
+    float tExit;
+    int entryFace;  // 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z
+} AABBHit;
+
+// Ray-AABB intersection for unit cube [0,1]^3
+// Uses slab method with proper handling of direction signs
+void intersectUnitCubeInplace(float3 rayOrigin, float3 rayDir,
+                               bool* hitOut, float* tEntryOut, float* tExitOut,
+                               int* entryFaceOut) {
+    // Compute inverse direction (rayDir already has EPSILON minimum from caller)
+    float3 invDir = (float3)(1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z);
+
+    // Compute t values for each slab
+    float tx1 = (0.0f - rayOrigin.x) * invDir.x;
+    float tx2 = (1.0f - rayOrigin.x) * invDir.x;
+    float ty1 = (0.0f - rayOrigin.y) * invDir.y;
+    float ty2 = (1.0f - rayOrigin.y) * invDir.y;
+    float tz1 = (0.0f - rayOrigin.z) * invDir.z;
+    float tz2 = (1.0f - rayOrigin.z) * invDir.z;
+
+    // Find entry/exit for each axis (avoid conditional swap - use min/max)
+    float txMin = (tx1 < tx2) ? tx1 : tx2;
+    float txMax = (tx1 < tx2) ? tx2 : tx1;
+    float tyMin = (ty1 < ty2) ? ty1 : ty2;
+    float tyMax = (ty1 < ty2) ? ty2 : ty1;
+    float tzMin = (tz1 < tz2) ? tz1 : tz2;
+    float tzMax = (tz1 < tz2) ? tz2 : tz1;
+
+    // Find overall entry/exit and track entry face
+    float tEntry = txMin;
+    int entryFace = (rayDir.x >= 0.0f) ? 1 : 0;  // -X or +X face
+
+    if (tyMin > tEntry) {
+        tEntry = tyMin;
+        entryFace = (rayDir.y >= 0.0f) ? 3 : 2;  // -Y or +Y face
+    }
+    if (tzMin > tEntry) {
+        tEntry = tzMin;
+        entryFace = (rayDir.z >= 0.0f) ? 5 : 4;  // -Z or +Z face
+    }
+
+    float tExit = txMax;
+    if (tyMax < tExit) tExit = tyMax;
+    if (tzMax < tExit) tExit = tzMax;
+
+    // Check for valid intersection
+    bool hit = (tEntry <= tExit) && (tExit > 0.0f);
+
+    // If ray starts inside cube, entry is at origin
+    if (hit && tEntry < 0.0f) {
+        tEntry = 0.0f;
+        // Determine which face is closest for entry direction
+        // (simplified - octant-based would be more precise)
+        if (rayOrigin.x < 0.5f) entryFace = (rayDir.x >= 0.0f) ? 1 : 0;
+        else entryFace = (rayDir.x >= 0.0f) ? 0 : 1;
+    }
+
+    *hitOut = hit;
+    *tEntryOut = tEntry;
+    *tExitOut = tExit;
+    *entryFaceOut = entryFace;
+}
+
+// Compute which of the 6 S0-S5 tetrahedra contains a point in [0,1]^3
+// This determines the root type for traversal when entering the cube
+int computeTetTypeAtPoint(float3 p) {
+    // The 6 tetrahedra partition the cube. Each point is in exactly one.
+    // We use the same logic as Tetree's locatePointS0Tree but simplified for unit cube.
+    //
+    // Key: All 6 types share vertices c0=(0,0,0) and c7=(1,1,1).
+    // The type is determined by which octant region the point is in relative to
+    // the body diagonal from c0 to c7.
+    //
+    // For simplicity, we map the point to an octant and use a lookup:
+    int octant = 0;
+    if (p.x >= 0.5f) octant |= 1;
+    if (p.y >= 0.5f) octant |= 2;
+    if (p.z >= 0.5f) octant |= 4;
+
+    // Map octant to dominant tetrahedron type (simplified - each octant touches multiple types)
+    // This is an approximation; the exact type depends on fine position within octant.
+    // For traversal, starting with any type that covers the entry point is sufficient.
+    // Types 0-5 cover: 0=(c0,c1,c5,c7), 1=(c0,c7,c3,c1), 2=(c0,c2,c3,c7),
+    //                  3=(c0,c7,c6,c2), 4=(c0,c4,c6,c7), 5=(c0,c7,c5,c4)
+    //
+    // Actually, for CORRECT traversal we need to start from type 0 (S0) always,
+    // as that's how the tree is rooted. The tree uses CUBIC subdivision internally
+    // with type propagation - we don't need to find which geometric tet contains the point.
+    return 0;  // Always start from S0 root - the tree handles type propagation
+}
+
+// ============================================================================
 // CHILD VERTICES (BEY SUBDIVISION)
 // ============================================================================
 
@@ -578,147 +681,44 @@ __kernel void traverseESVT(
     return;
     #endif
 
-    // Get root tetrahedron vertices from canonical positions
+    // Get root tetrahedron vertices from canonical positions (for Bey child subdivision)
+    // NOTE: These are used for CHILD vertex computation, NOT for root bounds testing.
+    // The Tetree uses CUBIC subdivision internally, so root bounds are the full [0,1]^3 cube.
     float3 pv0 = SIMPLEX_STANDARD[rootType * 4 + 0];
     float3 pv1 = SIMPLEX_STANDARD[rootType * 4 + 1];
     float3 pv2 = SIMPLEX_STANDARD[rootType * 4 + 2];
     float3 pv3 = SIMPLEX_STANDARD[rootType * 4 + 3];
 
-    // DEBUG: Output tetrahedron centroid as color to verify vertex lookup
-    // Type 0 should have centroid at (0.75, 0.25, 0.5)
-    // Set to 1 to enable
-    #if 0
-    float3 centroid = (pv0 + pv1 + pv2 + pv3) * 0.25f;
-    hitResults[gid] = (float4)(centroid.x, centroid.y, centroid.z, 1.0f);
-    hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, 1.0f);  // Hit flag = 1
-    return;
-    #endif
+    // =========================================================================
+    // ROOT INTERSECTION: Use UNIT CUBE, not tetrahedron!
+    // =========================================================================
+    // The Tetree uses CUBIC octant subdivision internally. The root node
+    // represents the FULL [0,1]^3 coordinate space, not just 1/6th of it.
+    // The "tetrahedron type" describes orientation for Bey subdivision,
+    // but spatial coverage is cubic.
 
-    // DEBUG: Verify we reach just before intersection call
-    // Set to 1 to enable
-    #if 0
-    hitResults[gid] = (float4)(pv0.x, pv1.x, pv2.x, pv3.x);  // x coordinates
-    hitNormals[gid] = (float4)((float)rootType / 6.0f, 1.0f, 0.0f, 1.0f);
-    return;
-    #endif
-
-    // DEBUG: Test intersection function in isolation - INCREMENTAL VERSION
-    // Step 3: Add hit detection with integer comparisons
-    #if 0
-    {
-        // Triangle intersections for each face
-        TriangleHit tri0 = intersectTriangle(rayOrigin, rayDir, pv1, pv2, pv3);
-        TriangleHit tri1 = intersectTriangle(rayOrigin, rayDir, pv0, pv2, pv3);
-        TriangleHit tri2 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv3);
-        TriangleHit tri3 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv2);
-
-        // Track min/max t values and faces
-        float tMin = 1e30f;
-        float tMax = -1e30f;
-        int minFace = -1;
-        int maxFace = -1;
-        int hitCount = 0;
-
-        if (tri0.hit) {
-            hitCount++;
-            if (tri0.t < tMin) { tMin = tri0.t; minFace = 0; }
-            if (tri0.t > tMax) { tMax = tri0.t; maxFace = 0; }
-        }
-        if (tri1.hit) {
-            hitCount++;
-            if (tri1.t < tMin) { tMin = tri1.t; minFace = 1; }
-            if (tri1.t > tMax) { tMax = tri1.t; maxFace = 1; }
-        }
-        if (tri2.hit) {
-            hitCount++;
-            if (tri2.t < tMin) { tMin = tri2.t; minFace = 2; }
-            if (tri2.t > tMax) { tMax = tri2.t; maxFace = 2; }
-        }
-        if (tri3.hit) {
-            hitCount++;
-            if (tri3.t < tMin) { tMin = tri3.t; minFace = 3; }
-            if (tri3.t > tMax) { tMax = tri3.t; maxFace = 3; }
-        }
-
-        // PURE ARITHMETIC HIT DETECTION (no conditionals - macOS OpenCL bug workaround)
-        float fHitCount = (float)hitCount;
-
-        // Hit if hitCount > 0 (any face was intersected)
-        // Using arithmetic: clamp((float)hitCount, 0.0f, 1.0f) gives 0 for miss, 1 for hit
-        float hitFlag = clamp(fHitCount, 0.0f, 1.0f);
-
-        // Entry distance: use tMin, clamped to 0 for "inside" case
-        // If tMin < 0, ray starts inside the tetrahedron
-        float tEntry = tMin * hitFlag;  // 0 if no hit
-
-        // Output with hitFlag as both distance modifier and hit indicator
-        hitResults[gid] = (float4)(0.0f, hitFlag, 0.0f, tEntry);
-        hitNormals[gid] = (float4)(0.0f, 1.0f, 0.0f, hitFlag);
-        return;
-    }
-    #endif
-
-    // Test ray-root intersection - PURE ARITHMETIC (no conditionals - macOS crash workaround)
-    // Declare all variables at outer scope for use in traversal
+    // Test ray-root intersection using CUBE bounds [0,1]^3
     float rootHit_tEntry = 1e30f;
     float rootHit_tExit = -1e30f;
     int rootHit_entryFace = -1;
-    int rootHit_exitFace = -1;
-    int rootHitCount = 0;
+    bool rootCubeHit = false;
 
-    // Inline intersectTetrahedron with ARITHMETIC hit detection
-    {
-        float tMin = 1e30f;
-        float tMax_local = -1e30f;
-        int minFace = -1;
-        int maxFace = -1;
+    intersectUnitCubeInplace(rayOrigin, rayDir,
+                              &rootCubeHit, &rootHit_tEntry, &rootHit_tExit,
+                              &rootHit_entryFace);
 
-        // Face 0: opposite v0, triangle (v1, v2, v3)
-        TriangleHit tri0 = intersectTriangle(rayOrigin, rayDir, pv1, pv2, pv3);
-        if (tri0.hit) {
-            rootHitCount++;
-            if (tri0.t < tMin) { tMin = tri0.t; minFace = 0; }
-            if (tri0.t > tMax_local) { tMax_local = tri0.t; maxFace = 0; }
-        }
+    // Map cube entry face (0-5: +X,-X,+Y,-Y,+Z,-Z) to tetrahedral entry face (0-3)
+    // For the S0 tree, we use entry face 0 (opposite v0) as default for cube entries
+    // The actual child ordering will be determined by ray direction, not entry face
+    int tetEntryFace = 0;  // Start with face 0, traversal will check all children
 
-        // Face 1: opposite v1, triangle (v0, v2, v3)
-        TriangleHit tri1 = intersectTriangle(rayOrigin, rayDir, pv0, pv2, pv3);
-        if (tri1.hit) {
-            rootHitCount++;
-            if (tri1.t < tMin) { tMin = tri1.t; minFace = 1; }
-            if (tri1.t > tMax_local) { tMax_local = tri1.t; maxFace = 1; }
-        }
-
-        // Face 2: opposite v2, triangle (v0, v1, v3)
-        TriangleHit tri2 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv3);
-        if (tri2.hit) {
-            rootHitCount++;
-            if (tri2.t < tMin) { tMin = tri2.t; minFace = 2; }
-            if (tri2.t > tMax_local) { tMax_local = tri2.t; maxFace = 2; }
-        }
-
-        // Face 3: opposite v3, triangle (v0, v1, v2)
-        TriangleHit tri3 = intersectTriangle(rayOrigin, rayDir, pv0, pv1, pv2);
-        if (tri3.hit) {
-            rootHitCount++;
-            if (tri3.t < tMin) { tMin = tri3.t; minFace = 3; }
-            if (tri3.t > tMax_local) { tMax_local = tri3.t; maxFace = 3; }
-        }
-
-        // Store root hit info at outer scope
-        rootHit_tEntry = tMin;
-        rootHit_tExit = tMax_local;
-        rootHit_entryFace = minFace;
-        rootHit_exitFace = maxFace;
-    }
-
-    // If root was hit, proceed with traversal
-    if (rootHitCount > 0) {
+    // If cube was hit, proceed with traversal
+    if (rootCubeHit) {
         // Initialize traversal state
         // CRITICAL: Track actual parent vertices for correct multi-level traversal
         uint parentIdx = 0u;
         int parentType = rootType;
-        int entryFace = rootHit_entryFace;
+        int entryFace = tetEntryFace;  // Use tet entry face, not cube face
         float tMinLocal = rootHit_tEntry;
         float tMaxLocal = rootHit_tExit;
         int scale = CAST_STACK_DEPTH - 1;

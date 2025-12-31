@@ -180,8 +180,12 @@ public class RenderService {
     private RenderHolder createESVT(Object spatialIndex, int maxDepth, int gridResolution) {
         // Extract positions and build ESVT from voxels (like ESVO)
         // This limits tree depth and prevents far pointer overflow
+        log.info("createESVT: spatialIndex type={}", spatialIndex.getClass().getSimpleName());
         var positions = getPositions(spatialIndex);
+        log.info("createESVT: extracted {} positions from spatial index", positions.size());
+
         var voxels = new ArrayList<Point3i>();
+        var uniqueVoxels = new java.util.HashSet<String>();
 
         // Convert positions to voxel coordinates
         for (var pos : positions) {
@@ -192,10 +196,25 @@ public class RenderService {
             y = Math.max(0, Math.min(gridResolution - 1, y));
             z = Math.max(0, Math.min(gridResolution - 1, z));
             voxels.add(new Point3i(x, y, z));
+            uniqueVoxels.add(x + "," + y + "," + z);
+        }
+
+        log.info("createESVT: created {} voxels ({} unique) from positions, maxDepth={}, gridRes={}",
+                voxels.size(), uniqueVoxels.size(), maxDepth, gridResolution);
+
+        // Log a sample of positions if we have very few
+        if (positions.size() < 20) {
+            for (int i = 0; i < Math.min(5, positions.size()); i++) {
+                var pos = positions.get(i);
+                log.info("  sample position[{}]: ({}, {}, {})", i, pos.x, pos.y, pos.z);
+            }
         }
 
         var builder = new ESVTBuilder();
         var data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
+
+        log.info("createESVT: built ESVT with {} nodes, {} leaves, {} internal",
+                data.nodes().length, data.leafCount(), data.internalCount());
 
         return new RenderHolder(
                 RenderType.ESVT,

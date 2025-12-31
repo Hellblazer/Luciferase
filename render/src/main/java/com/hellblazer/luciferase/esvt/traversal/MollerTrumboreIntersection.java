@@ -317,4 +317,116 @@ public final class MollerTrumboreIntersection {
                                           TetrahedronResult result) {
         return create().intersectTetrahedron(rayOrigin, rayDir, v0, v1, v2, v3, result);
     }
+
+    // ============================================================================
+    // RAY-AABB (UNIT CUBE) INTERSECTION
+    // ============================================================================
+    //
+    // Used for root-level intersection because the Tetree uses CUBIC octant
+    // subdivision internally, not geometric Bey tetrahedron subdivision. The root
+    // "tetrahedron type" describes orientation for surface normals, but the spatial
+    // subdivision covers the FULL [0,1]^3 cube, not just 1/6 of it.
+
+    /**
+     * Result of ray-AABB intersection test.
+     */
+    public static final class AABBResult {
+        public boolean hit;
+        public float tEntry;      // Entry t-parameter
+        public float tExit;       // Exit t-parameter
+        public int entryFace;     // Face ray enters through (0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z)
+
+        public AABBResult() {
+            reset();
+        }
+
+        public void reset() {
+            hit = false;
+            tEntry = Float.MAX_VALUE;
+            tExit = -Float.MAX_VALUE;
+            entryFace = -1;
+        }
+    }
+
+    /**
+     * Test ray-AABB intersection for unit cube [0,1]³.
+     *
+     * <p>Uses the slab method with proper handling of direction signs.
+     * This is used for root intersection in ESVT traversal because the
+     * Tetree uses cubic octant subdivision, covering the full [0,1]³ cube.
+     *
+     * @param rayOrigin Ray origin point
+     * @param rayDir Ray direction (should be normalized, non-zero)
+     * @param result Result object to fill
+     * @return true if ray intersects the unit cube
+     */
+    public boolean intersectUnitCube(Point3f rayOrigin, Vector3f rayDir, AABBResult result) {
+        result.reset();
+
+        // Add epsilon to avoid division by zero
+        float dirX = (Math.abs(rayDir.x) < EPSILON) ? (rayDir.x >= 0 ? EPSILON : -EPSILON) : rayDir.x;
+        float dirY = (Math.abs(rayDir.y) < EPSILON) ? (rayDir.y >= 0 ? EPSILON : -EPSILON) : rayDir.y;
+        float dirZ = (Math.abs(rayDir.z) < EPSILON) ? (rayDir.z >= 0 ? EPSILON : -EPSILON) : rayDir.z;
+
+        // Compute inverse direction
+        float invDirX = 1.0f / dirX;
+        float invDirY = 1.0f / dirY;
+        float invDirZ = 1.0f / dirZ;
+
+        // Compute t values for each slab (unit cube bounds: min=0, max=1)
+        float tx1 = (0.0f - rayOrigin.x) * invDirX;
+        float tx2 = (1.0f - rayOrigin.x) * invDirX;
+        float ty1 = (0.0f - rayOrigin.y) * invDirY;
+        float ty2 = (1.0f - rayOrigin.y) * invDirY;
+        float tz1 = (0.0f - rayOrigin.z) * invDirZ;
+        float tz2 = (1.0f - rayOrigin.z) * invDirZ;
+
+        // Find entry/exit for each axis
+        float txMin = Math.min(tx1, tx2);
+        float txMax = Math.max(tx1, tx2);
+        float tyMin = Math.min(ty1, ty2);
+        float tyMax = Math.max(ty1, ty2);
+        float tzMin = Math.min(tz1, tz2);
+        float tzMax = Math.max(tz1, tz2);
+
+        // Find overall entry/exit and track entry face
+        float tEntry = txMin;
+        int entryFace = (rayDir.x >= 0) ? 1 : 0;  // 0=+X face, 1=-X face
+
+        if (tyMin > tEntry) {
+            tEntry = tyMin;
+            entryFace = (rayDir.y >= 0) ? 3 : 2;  // 2=+Y face, 3=-Y face
+        }
+        if (tzMin > tEntry) {
+            tEntry = tzMin;
+            entryFace = (rayDir.z >= 0) ? 5 : 4;  // 4=+Z face, 5=-Z face
+        }
+
+        float tExit = Math.min(txMax, Math.min(tyMax, tzMax));
+
+        // Check for valid intersection
+        boolean hit = (tEntry <= tExit) && (tExit > 0.0f);
+
+        // Handle ray origin inside cube
+        if (hit && tEntry < 0.0f) {
+            tEntry = 0.0f;
+        }
+
+        if (hit) {
+            result.hit = true;
+            result.tEntry = tEntry;
+            result.tExit = tExit;
+            result.entryFace = entryFace;
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Static convenience method for unit cube intersection test.
+     */
+    public static boolean testUnitCube(Point3f rayOrigin, Vector3f rayDir, AABBResult result) {
+        return create().intersectUnitCube(rayOrigin, rayDir, result);
+    }
 }

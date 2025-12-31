@@ -25,7 +25,7 @@
         <lwjgl.version>3.3.6</lwjgl.version>
         <!-- Default LWJGL natives - will be overridden by profiles -->
         <lwjgl.natives>natives-linux</lwjgl.natives>
-        <gpu-support.version>1.0.6-SNAPSHOT</gpu-support.version>
+        <gpu-support.version>1.0.6</gpu-support.version>
         <javalin.version>6.3.0</javalin.version>
     </properties>
 

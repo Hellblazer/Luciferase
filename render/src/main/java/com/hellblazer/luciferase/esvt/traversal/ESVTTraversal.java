@@ -63,6 +63,7 @@ public final class ESVTTraversal {
     // Reusable intersection tester (thread-local pattern)
     private final MollerTrumboreIntersection intersector;
     private final MollerTrumboreIntersection.TetrahedronResult tetResult;
+    private final MollerTrumboreIntersection.AABBResult aabbResult;
     private final ESVTStack stack;
 
     // Scratch space for vertex calculations
@@ -83,6 +84,7 @@ public final class ESVTTraversal {
     public ESVTTraversal() {
         this.intersector = MollerTrumboreIntersection.create();
         this.tetResult = new MollerTrumboreIntersection.TetrahedronResult();
+        this.aabbResult = new MollerTrumboreIntersection.AABBResult();
         this.stack = new ESVTStack();
         for (int i = 0; i < 4; i++) {
             scratchVerts[i] = new Point3f();
@@ -144,6 +146,8 @@ public final class ESVTTraversal {
         byte rootType = rootNode.getTetType();
 
         // Get root tetrahedron vertices (unit [0,1] space)
+        // NOTE: These are used for CHILD vertex computation (Bey subdivision),
+        // NOT for root bounds testing. The root covers the full [0,1]³ cube.
         getRootVertices(rootType, scratchVerts);
 
         // Initialize current vertices from root
@@ -152,19 +156,22 @@ public final class ESVTTraversal {
         currentVerts[6] = scratchVerts[2].x; currentVerts[7] = scratchVerts[2].y; currentVerts[8] = scratchVerts[2].z;
         currentVerts[9] = scratchVerts[3].x; currentVerts[10] = scratchVerts[3].y; currentVerts[11] = scratchVerts[3].z;
 
-        // Test ray-root intersection
-        if (!intersector.intersectTetrahedron(rayOrigin, rayDir,
-                scratchVerts[0], scratchVerts[1], scratchVerts[2], scratchVerts[3],
-                tetResult)) {
+        // =========================================================================
+        // ROOT INTERSECTION: Use UNIT CUBE [0,1]³, not tetrahedron!
+        // =========================================================================
+        // The Tetree uses CUBIC octant subdivision internally (not Bey tetrahedron
+        // subdivision at root). The root "type" describes orientation for child
+        // subdivision, but spatial coverage is the FULL cube, not just 1/6 of it.
+        if (!intersector.intersectUnitCube(rayOrigin, rayDir, aabbResult)) {
             return result;
         }
 
-        // Ray hits root - start traversal
+        // Ray hits cube - start traversal
         int parentIdx = rootIdx;
         byte parentType = rootType;
-        int entryFace = tetResult.entryFace;
-        float tMin = tetResult.tEntry;
-        float tMax = tetResult.tExit;
+        int entryFace = 0;  // Start with face 0; traversal will check all children
+        float tMin = aabbResult.tEntry;
+        float tMax = aabbResult.tExit;
         int scale = MAX_DEPTH - 1;
         int iterations = 0;
 
