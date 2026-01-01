@@ -1,5 +1,6 @@
 # Simulation Module
 
+**Last Updated**: 2025-12-31
 **Status**: Work in Progress
 
 Event-driven simulation framework for 3D spatial systems, built on PrimeMover discrete event simulation.

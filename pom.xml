@@ -19,7 +19,7 @@
         <protobuf.version>3.22.2</protobuf.version>
         <h2.version>2.1.212</h2.version>
         <javafx.version>${java.target.version}</javafx.version>
-        <prime-mover.version>1.0.3</prime-mover.version>
+        <prime-mover.version>1.0.4</prime-mover.version>
         <jmh.version>1.37</jmh.version>
         <jqwik.version>1.8.4</jqwik.version>
         <lwjgl.version>3.3.6</lwjgl.version>
@@ -597,15 +597,6 @@
     </repositories>
 
     <pluginRepositories>
-        <pluginRepository>
-            <id>plugin-hell-repo</id>
-            <url>
-                https://raw.githubusercontent.com/Hellblazer/repo-hell/main/mvn-artifact
-            </url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </pluginRepository>
         <pluginRepository>
             <id>github-prime-mover</id>
             <name>Prime Mover GitHub Packages</name>
