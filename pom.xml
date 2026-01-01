@@ -598,15 +598,6 @@
 
     <pluginRepositories>
         <pluginRepository>
-            <id>plugin-hell-repo</id>
-            <url>
-                https://raw.githubusercontent.com/Hellblazer/repo-hell/main/mvn-artifact
-            </url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </pluginRepository>
-        <pluginRepository>
             <id>github-prime-mover</id>
             <name>Prime Mover GitHub Packages</name>
             <url>https://maven.pkg.github.com/Hellblazer/Prime-Mover</url>
