@@ -46,6 +46,16 @@ public class RenderService {
         var maxDepth = request.maxDepth() != null ? request.maxDepth() : DEFAULT_MAX_DEPTH;
         var gridResolution = request.gridResolution() != null ? request.gridResolution() : DEFAULT_GRID_RESOLUTION;
 
+        // Validate spatial index type matches requested render type
+        if (type == RenderType.ESVT && !(spatialIndex instanceof Tetree)) {
+            throw new IllegalArgumentException("ESVT render requires a Tetree spatial index, got: " +
+                    spatialIndex.getClass().getSimpleName());
+        }
+        if (type == RenderType.ESVO && !(spatialIndex instanceof Octree)) {
+            throw new IllegalArgumentException("ESVO render requires an Octree spatial index, got: " +
+                    spatialIndex.getClass().getSimpleName());
+        }
+
         RenderHolder holder;
         if (type == RenderType.ESVT) {
             holder = createESVT(spatialIndex, maxDepth, gridResolution);
