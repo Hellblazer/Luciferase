@@ -112,8 +112,38 @@ scene.add(unitCubeWireframe);
 // InstancedMesh Entity Rendering (Phase 5b)
 // ============================================================================
 
-// Geometry for entities (small icosahedrons for visual appeal)
-const entityGeometry = new THREE.IcosahedronGeometry(ENTITY_SIZE, 1);
+// Primitive geometries
+// Sphere geometry (default)
+const sphereGeometry = new THREE.IcosahedronGeometry(ENTITY_SIZE, 1);
+
+// Cube geometry for Octree
+const cubeGeometry = new THREE.BoxGeometry(ENTITY_SIZE * 1.6, ENTITY_SIZE * 1.6, ENTITY_SIZE * 1.6);
+
+// Tetrahedron geometry for Tetree
+const tetGeometry = new THREE.TetrahedronGeometry(ENTITY_SIZE * 1.8, 0);
+
+// Current primitive mode: 'sphere' or 'index'
+let currentPrimitive = 'sphere';
+
+// Get geometry based on primitive mode and index type
+function getEntityGeometry() {
+    if (currentPrimitive === 'sphere') {
+        return sphereGeometry;
+    }
+    // Index native primitives
+    switch (indexType) {
+        case 'OCTREE':
+        case 'SFC':
+            return cubeGeometry;
+        case 'TETREE':
+            return tetGeometry;
+        default:
+            return sphereGeometry;
+    }
+}
+
+// Legacy reference for backwards compatibility
+const entityGeometry = sphereGeometry;
 
 // Material with vertex colors for per-instance coloring
 const entityMaterial = new THREE.MeshStandardMaterial({
@@ -144,7 +174,9 @@ function createInstancedMesh(count) {
         roughness: 0.6
     });
 
-    instancedMesh = new THREE.InstancedMesh(entityGeometry, material, Math.max(count, 1));
+    // Use dynamic geometry based on primitive mode and index type
+    const geometry = getEntityGeometry();
+    instancedMesh = new THREE.InstancedMesh(geometry, material, Math.max(count, 1));
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     // Enable instance colors
@@ -209,6 +241,16 @@ function updateInstancedMesh(entities) {
 function recolorEntities() {
     if (!instancedMesh || entityData.length === 0) return;
     updateInstancedMesh(entityData);
+}
+
+function rebuildMeshWithNewPrimitive() {
+    if (!instancedMesh || entityData.length === 0) return;
+
+    // Force recreation of the mesh with new geometry
+    const count = entityData.length;
+    createInstancedMesh(Math.max(count * 2, 1000));
+    updateInstancedMesh(entityData);
+    console.log(`Rebuilt mesh with ${currentPrimitive} primitive for ${indexType}`);
 }
 
 function applyClipping() {
@@ -755,6 +797,15 @@ document.querySelectorAll('.color-scheme-btn').forEach(btn => {
         recolorEntities();
     });
 });
+
+// Primitive selector
+const primitiveSelect = document.getElementById('primitive-select');
+if (primitiveSelect) {
+    primitiveSelect.addEventListener('change', () => {
+        currentPrimitive = primitiveSelect.value;
+        rebuildMeshWithNewPrimitive();
+    });
+}
 
 // Entity count slider
 const entityCountSlider = document.getElementById('entity-count');
