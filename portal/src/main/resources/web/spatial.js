@@ -154,11 +154,17 @@ const entityMaterial = new THREE.MeshStandardMaterial({
 
 // InstancedMesh for efficient rendering
 let instancedMesh = null;
+let instancedMeshGeometryType = null;  // Track which geometry the mesh was built with
 let entityData = [];  // Store entity metadata for raycasting
 
 // Dummy object for matrix calculations
 const dummy = new THREE.Object3D();
 const instanceColor = new THREE.Color();
+
+// Get a key representing current geometry configuration
+function getGeometryKey() {
+    return `${currentPrimitive}-${indexType}`;
+}
 
 function createInstancedMesh(count) {
     // Remove existing mesh
@@ -176,6 +182,8 @@ function createInstancedMesh(count) {
 
     // Use dynamic geometry based on primitive mode and index type
     const geometry = getEntityGeometry();
+    instancedMeshGeometryType = getGeometryKey();
+    console.log(`Creating mesh with geometry: ${instancedMeshGeometryType}`);
     instancedMesh = new THREE.InstancedMesh(geometry, material, Math.max(count, 1));
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
@@ -192,8 +200,14 @@ function updateInstancedMesh(entities) {
     entityData = entities;
     const count = entities.length;
 
-    // Recreate if needed (size changed significantly)
-    if (!instancedMesh || instancedMesh.instanceMatrix.array.length / 16 < count) {
+    // Recreate if needed (size changed or geometry type changed)
+    const currentGeomKey = getGeometryKey();
+    const needsRecreate = !instancedMesh ||
+        instancedMesh.instanceMatrix.array.length / 16 < count ||
+        instancedMeshGeometryType !== currentGeomKey;
+
+    if (needsRecreate) {
+        console.log(`Recreating mesh: was ${instancedMeshGeometryType}, need ${currentGeomKey}`);
         createInstancedMesh(Math.max(count * 2, 1000));
     }
 
@@ -244,12 +258,25 @@ function recolorEntities() {
 }
 
 function rebuildMeshWithNewPrimitive() {
-    if (!instancedMesh || entityData.length === 0) return;
+    // Use allEntities if available, fall back to entityData
+    const entities = allEntities.length > 0 ? allEntities : entityData;
+    if (entities.length === 0) {
+        console.log('No entities to rebuild');
+        return;
+    }
+
+    console.log(`Rebuilding mesh: primitive=${currentPrimitive}, indexType=${indexType}, entities=${entities.length}`);
 
     // Force recreation of the mesh with new geometry
-    const count = entityData.length;
-    createInstancedMesh(Math.max(count * 2, 1000));
-    updateInstancedMesh(entityData);
+    createInstancedMesh(Math.max(entities.length * 2, 1000));
+
+    // Reapply clipping if we have allEntities
+    if (allEntities.length > 0) {
+        applyClipping();
+    } else {
+        updateInstancedMesh(entities);
+    }
+
     console.log(`Rebuilt mesh with ${currentPrimitive} primitive for ${indexType}`);
 }
 
@@ -586,6 +613,7 @@ async function createIndex(type) {
 
         if (response.ok) {
             const info = await response.json();
+            const previousIndexType = indexType;
             indexType = type;
             document.getElementById('stat-index-type').textContent = type;
             document.getElementById('stat-nodes').textContent = info.nodeCount || '0';
@@ -595,6 +623,13 @@ async function createIndex(type) {
             document.getElementById('btn-clear').disabled = false;
             document.getElementById('btn-range-query').disabled = false;
             document.getElementById('btn-knn-query').disabled = false;
+
+            // Rebuild mesh if primitive is 'index' and index type changed
+            if (currentPrimitive === 'index' && previousIndexType !== type) {
+                console.log(`Index type changed from ${previousIndexType} to ${type}, rebuilding mesh`);
+                rebuildMeshWithNewPrimitive();
+            }
+
             return info;
         } else {
             const error = await response.json();
