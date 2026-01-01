@@ -269,7 +269,7 @@ public class ESVTNodeUnifiedTest {
         buffer.flip();
 
         // Read back
-        var restored = ESVTNodeUnified.readFrom(buffer);
+        var restored = ESVTNodeUnified.fromByteBuffer(buffer);
 
         assertEquals(original.getTetType(), restored.getTetType());
         assertEquals(original.getChildMask(), restored.getChildMask());

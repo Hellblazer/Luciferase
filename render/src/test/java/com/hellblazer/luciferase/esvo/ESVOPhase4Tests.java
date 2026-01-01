@@ -54,10 +54,10 @@ public class ESVOPhase4Tests {
     void testTriangleVoxelization() {
         ESVOCPUBuilder builder = new ESVOCPUBuilder();
         
-        // Create a simple triangle in octree space [1,2]
-        Vector3f v0 = new Vector3f(1.2f, 1.2f, 1.2f);
-        Vector3f v1 = new Vector3f(1.8f, 1.2f, 1.2f);
-        Vector3f v2 = new Vector3f(1.5f, 1.8f, 1.2f);
+        // Create a simple triangle in octree space [0,1]
+        Vector3f v0 = new Vector3f(0.2f, 0.2f, 0.2f);
+        Vector3f v1 = new Vector3f(0.8f, 0.2f, 0.2f);
+        Vector3f v2 = new Vector3f(0.5f, 0.8f, 0.2f);
         
         // Voxelize at level 3 (8x8x8 grid)
         int level = 3;

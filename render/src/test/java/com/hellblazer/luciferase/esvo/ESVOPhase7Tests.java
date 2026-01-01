@@ -275,15 +275,15 @@ public class ESVOPhase7Tests {
         
         var optimizedResult = pipeline.optimize(octreeData);
         assertNotNull(optimizedResult);
-        assertNotNull(optimizedResult.getOptimizedData());
-        assertNotNull(optimizedResult.getOptimizationReport());
-        
+        assertNotNull(optimizedResult.optimizedData());
+        assertNotNull(optimizedResult.report());
+
         // Verify data integrity after full pipeline
-        assertTrue(optimizedResult.getOptimizedData().getNodeIndices().length > 0);
-        
+        assertTrue(optimizedResult.optimizedData().getNodeIndices().length > 0);
+
         // Test optimization report
-        var report = optimizedResult.getOptimizationReport();
-        assertTrue(report.getTotalOptimizationTime() >= 0.0f);
-        assertTrue(report.getOptimizationSteps().size() > 0);
+        var report = optimizedResult.report();
+        assertTrue(report.totalTimeMs() >= 0.0f);
+        assertTrue(report.steps().size() > 0);
     }
 }

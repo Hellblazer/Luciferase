@@ -42,12 +42,12 @@ class RayTraversalUtilsTest {
         EnhancedRay ray = RayTraversalUtils.createRayFromCamera(cameraOrigin, cameraDirection);
 
         assertNotNull(ray, "Ray should not be null");
-        
-        // Verify origin is transformed from [0,1] world space to [1,2] octree space
-        assertEquals(1.5f, ray.origin.x, 0.0001f, "Origin X should be transformed to octree space");
-        assertEquals(1.5f, ray.origin.y, 0.0001f, "Origin Y should be transformed to octree space");
-        assertEquals(1.5f, ray.origin.z, 0.0001f, "Origin Z should be transformed to octree space");
-        
+
+        // Verify origin stays in unified [0,1] octree space (no transformation)
+        assertEquals(0.5f, ray.origin.x, 0.0001f, "Origin X should stay in [0,1] space");
+        assertEquals(0.5f, ray.origin.y, 0.0001f, "Origin Y should stay in [0,1] space");
+        assertEquals(0.5f, ray.origin.z, 0.0001f, "Origin Z should stay in [0,1] space");
+
         // Verify direction is normalized
         assertEquals(1.0f, ray.direction.length(), 0.0001f, "Direction should be normalized");
         assertEquals(1.0f, ray.direction.x, 0.0001f, "Direction X should be preserved");
@@ -126,15 +126,16 @@ class RayTraversalUtilsTest {
         EnhancedRay ray = RayTraversalUtils.createRayBetweenPoints(start, end);
 
         assertNotNull(ray, "Ray should not be null");
-        assertEquals(1.0f, ray.origin.x, 0.0001f, "Origin should be at start point transformed");
+        // Origin stays in unified [0,1] space (no transformation)
+        assertEquals(0.0f, ray.origin.x, 0.0001f, "Origin should be at start point (no transform in [0,1] space)");
         assertEquals(1.0f, ray.direction.x, 0.0001f, "Direction should point from start to end");
         assertEquals(1.0f, ray.direction.length(), 0.0001f, "Direction should be normalized");
     }
 
     @Test
     void testValidateRayWithValidRay() {
-        // Test validating a good ray in octree space
-        Vector3f origin = new Vector3f(1.5f, 1.5f, 1.5f);
+        // Test validating a good ray in unified [0,1] octree space
+        Vector3f origin = new Vector3f(0.5f, 0.5f, 0.5f);
         Vector3f direction = new Vector3f(1.0f, 0.0f, 0.0f);
         EnhancedRay ray = new EnhancedRay(origin, 0.0f, direction, 0.0f);
 
@@ -143,8 +144,8 @@ class RayTraversalUtilsTest {
 
     @Test
     void testValidateRayWithInvalidOrigin() {
-        // Test validating ray with origin outside octree space
-        Vector3f origin = new Vector3f(0.5f, 0.5f, 0.5f);  // Outside [1,2] range
+        // Test validating ray with origin outside unified [0,1] octree space
+        Vector3f origin = new Vector3f(1.5f, 1.5f, 1.5f);  // Outside [0,1] range
         Vector3f direction = new Vector3f(1.0f, 0.0f, 0.0f);
         EnhancedRay ray = new EnhancedRay(origin, 0.0f, direction, 0.0f);
 
@@ -180,22 +181,22 @@ class RayTraversalUtilsTest {
 
     @Test
     void testCoordinateSpaceTransformation() {
-        // Verify the [0,1] world space to [1,2] octree space transformation
+        // Verify unified [0,1] coordinate space (no transformation needed)
         Vector3f worldMin = new Vector3f(0.0f, 0.0f, 0.0f);
         Vector3f worldMax = new Vector3f(1.0f, 1.0f, 1.0f);
 
         EnhancedRay rayMin = RayTraversalUtils.createRayFromCamera(worldMin, new Vector3f(1.0f, 0.0f, 0.0f));
         EnhancedRay rayMax = RayTraversalUtils.createRayFromCamera(worldMax, new Vector3f(1.0f, 0.0f, 0.0f));
 
-        // World [0,0,0] should map to octree [1,1,1]
-        assertEquals(1.0f, rayMin.origin.x, 0.0001f);
-        assertEquals(1.0f, rayMin.origin.y, 0.0001f);
-        assertEquals(1.0f, rayMin.origin.z, 0.0001f);
+        // World [0,0,0] stays at octree [0,0,0] in unified space
+        assertEquals(0.0f, rayMin.origin.x, 0.0001f);
+        assertEquals(0.0f, rayMin.origin.y, 0.0001f);
+        assertEquals(0.0f, rayMin.origin.z, 0.0001f);
 
-        // World [1,1,1] should map to octree [2,2,2]
-        assertEquals(2.0f, rayMax.origin.x, 0.0001f);
-        assertEquals(2.0f, rayMax.origin.y, 0.0001f);
-        assertEquals(2.0f, rayMax.origin.z, 0.0001f);
+        // World [1,1,1] stays at octree [1,1,1] in unified space
+        assertEquals(1.0f, rayMax.origin.x, 0.0001f);
+        assertEquals(1.0f, rayMax.origin.y, 0.0001f);
+        assertEquals(1.0f, rayMax.origin.z, 0.0001f);
     }
 
     @Test

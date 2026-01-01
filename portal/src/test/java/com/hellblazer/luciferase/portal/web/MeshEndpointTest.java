@@ -149,8 +149,8 @@ class MeshEndpointTest {
             client.post("/api/spatial/entities/bulk-insert?sessionId=" + sessionId,
                     objectMapper.writeValueAsString(entities));
 
-            // Create ESVT render structure
-            var renderRequest = new CreateRenderRequest(RenderType.ESVT, 8, 64);
+            // Create ESVT render structure (maxDepth=6 to limit tree size)
+            var renderRequest = new CreateRenderRequest(RenderType.ESVT, 6, 64);
             var renderResponse = client.post("/api/render/create?sessionId=" + sessionId,
                     objectMapper.writeValueAsString(renderRequest));
 

@@ -9,14 +9,14 @@ import javax.vecmath.Vector3f;
 
 /**
  * Phase 1: Basic Ray Traversal Algorithm for ESVO
- * 
+ *
  * This implements the fundamental ray-octree traversal for single-level testing.
  * Key requirements from roadmap:
- * - Test against simple 1-level octree  
+ * - Test against simple 1-level octree
  * - Performance target: >100 FPS for single level
- * - Ray generation in octree space [1,2]
+ * - Ray generation in unified [0,1] octree space
  * - Child index calculation with octant mirroring
- * 
+ *
  * Implementation follows ESVO paper and C++ reference exactly.
  */
 public final class BasicRayTraversal {
@@ -101,13 +101,13 @@ public final class BasicRayTraversal {
     
     /**
      * Phase 1 ray traversal - single level octree intersection
-     * 
-     * @param ray Ray in octree coordinate space [1,2]
+     *
+     * @param ray Ray in octree coordinate space [0,1]
      * @param octree Simple single-level octree
      * @return Traversal result with hit information
      */
     public static TraversalResult traverse(EnhancedRay ray, SimpleOctree octree) {
-        // Calculate intersection with octree bounds [1,2]
+        // Calculate intersection with octree bounds [0,1]
         float[] intersection = CoordinateSpace.calculateOctreeIntersection(ray.origin, ray.direction);
         if (intersection == null) {
             return new TraversalResult();
@@ -197,48 +197,56 @@ public final class BasicRayTraversal {
     }
     
     /**
-     * Generate rays for screen pixels - transforms to octree space [1,2]
-     * 
+     * Generate rays for screen pixels - transforms to octree space [0,1]
+     *
      * @param screenX Screen X coordinate (0 to screenWidth-1)
-     * @param screenY Screen Y coordinate (0 to screenHeight-1)  
+     * @param screenY Screen Y coordinate (0 to screenHeight-1)
      * @param screenWidth Screen width in pixels
      * @param screenHeight Screen height in pixels
      * @param cameraPos Camera position in world space
      * @param cameraDir Camera direction in world space
      * @param fov Field of view in radians
-     * @return Ray in octree coordinate space [1,2]
+     * @return Ray in octree coordinate space [0,1]
      */
     public static EnhancedRay generateRay(int screenX, int screenY, int screenWidth, int screenHeight,
                                         Vector3f cameraPos, Vector3f cameraDir, float fov) {
-        
+
         // Convert screen coordinates to NDC [-1, 1]
         float ndcX = (2.0f * screenX + 1.0f) / screenWidth - 1.0f;
         float ndcY = 1.0f - (2.0f * screenY + 1.0f) / screenHeight; // Flip Y
-        
+
         // Calculate ray direction in camera space
         float aspectRatio = (float) screenWidth / screenHeight;
         float tanHalfFov = (float) Math.tan(fov * 0.5);
-        
+
         Vector3f rayDir = new Vector3f();
         rayDir.x = ndcX * aspectRatio * tanHalfFov;
         rayDir.y = ndcY * tanHalfFov;
         rayDir.z = -1.0f; // Forward in camera space
         rayDir.normalize();
-        
+
         // For Phase 1, assume camera is positioned to look at octree
-        // Transform ray from world space to octree space [1,2]
+        // Transform ray from world space to octree space [0,1]
         // This is simplified - real implementation would use camera matrices
         Vector3f octreeOrigin = new Vector3f(cameraPos);
         Vector3f octreeDirection = new Vector3f(rayDir);
-        
-        // Ensure ray starts outside octree and points toward it
-        if (!CoordinateSpace.isInOctreeSpace(octreeOrigin)) {
-            // Move camera to reasonable position outside octree
-            octreeOrigin.set(0.5f, 1.5f, 1.5f); // Left of octree center
+
+        // Only use fallback if position is invalid (NaN or infinite)
+        // Valid positions can be inside or outside the octree [0,1] bounds
+        if (!isValidPosition(octreeOrigin)) {
+            // Use fallback: position outside octree looking in
+            octreeOrigin.set(-0.5f, 0.5f, 0.5f); // Left of octree center in [0,1] space
             octreeDirection.set(1.0f, 0.0f, 0.0f); // Point right toward octree
         }
-        
+
         return new EnhancedRay(octreeOrigin, 0.001f, octreeDirection, 0.001f);
+    }
+
+    /**
+     * Check if a position is valid (not NaN or infinite)
+     */
+    private static boolean isValidPosition(Vector3f pos) {
+        return Float.isFinite(pos.x) && Float.isFinite(pos.y) && Float.isFinite(pos.z);
     }
     
     /**
@@ -269,9 +277,9 @@ public final class BasicRayTraversal {
      * @return Rays per second
      */
     public static double measureTraversalPerformance(SimpleOctree octree, int rayCount) {
-        // Generate test rays
+        // Generate test rays - camera outside [0,1] octree looking in
         EnhancedRay[] testRays = new EnhancedRay[rayCount];
-        Vector3f cameraPos = new Vector3f(0.5f, 1.5f, 1.5f);
+        Vector3f cameraPos = new Vector3f(-0.5f, 0.5f, 0.5f);
         Vector3f cameraDir = new Vector3f(1.0f, 0.0f, 0.0f);
         
         for (int i = 0; i < rayCount; i++) {
@@ -349,10 +357,10 @@ public final class BasicRayTraversal {
      * Check if coordinate transformation is needed
      */
     private static boolean needsCoordinateTransform(Vector3f origin) {
-        // If origin is outside [1,2] space, we need transformation
-        return origin.x < 1.0f || origin.x > 2.0f ||
-               origin.y < 1.0f || origin.y > 2.0f ||
-               origin.z < 1.0f || origin.z > 2.0f;
+        // If origin is outside [0,1] space, we need transformation
+        return origin.x < 0.0f || origin.x > 1.0f ||
+               origin.y < 0.0f || origin.y > 1.0f ||
+               origin.z < 0.0f || origin.z > 1.0f;
     }
     
     /**

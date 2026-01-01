@@ -2,6 +2,8 @@ package com.hellblazer.luciferase.esvo.optimization;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
+
 import java.util.*;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
@@ -12,9 +14,16 @@ import java.io.IOException;
  * Memory bandwidth optimization for ESVO data structures.
  * Implements compression and data packing strategies to reduce memory traffic.
  */
-public class ESVOBandwidthOptimizer {
-    
+public class ESVOBandwidthOptimizer implements Optimizer<ESVOOctreeData> {
+
     private static final int COMPRESSION_LEVEL = Deflater.BEST_COMPRESSION;
+    private static final int DEFAULT_STREAMING_BUFFER_SIZE = 1024;
+
+    /** Implements {@link Optimizer#optimize} by delegating to {@link #optimizeForStreaming}. */
+    @Override
+    public ESVOOctreeData optimize(ESVOOctreeData input) {
+        return optimizeForStreaming(input, DEFAULT_STREAMING_BUFFER_SIZE);
+    }
     
     public static class CompressedNodeData {
         private final byte[] compressedData;

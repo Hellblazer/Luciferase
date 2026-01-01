@@ -17,11 +17,13 @@
 package com.hellblazer.luciferase.portal.esvt;
 
 import com.hellblazer.luciferase.esvt.core.ESVTData;
+import com.hellblazer.luciferase.esvt.traversal.ESVTResult;
 import com.hellblazer.luciferase.geometry.Point3i;
 import com.hellblazer.luciferase.portal.esvt.bridge.ESVTBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTNodeMeshRenderer;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTOpenCLRenderBridge;
 import com.hellblazer.luciferase.portal.esvt.renderer.ESVTRenderer;
+import com.hellblazer.luciferase.portal.esvt.visualization.ESVTRayCastVisualizer;
 import com.hellblazer.luciferase.portal.inspector.RenderConfiguration;
 import com.hellblazer.luciferase.portal.inspector.SpatialInspectorApp;
 import javafx.animation.AnimationTimer;
@@ -32,6 +34,9 @@ import javafx.scene.Group;
 import javafx.scene.PerspectiveCamera;
 import javafx.scene.control.*;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -62,6 +67,7 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
     // ESVT-specific components
     private ESVTRenderer esvtRenderer;
     private ESVTVoxelGenerator voxelGenerator;
+    private ESVTRayCastVisualizer rayCastVisualizer;
 
     // GPU Rendering
     private ESVTOpenCLRenderBridge gpuBridge;
@@ -71,12 +77,30 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
     private boolean gpuModeActive = false;
     private int gpuDebugFrameCount = 0;
 
-    // ESVT-specific UI controls
+    // ESVT-specific UI controls - Rendering
     private ComboBox<ESVTNodeMeshRenderer.ColorScheme> colorSchemeComboBox;
     private ComboBox<ESVTRenderer.RenderMode> renderModeComboBox;
     private Slider opacitySlider;
     private CheckBox showWireframeCheck;
     private TextArea metricsArea;
+
+    // LOD controls
+    private Slider minLevelSlider;
+    private Slider maxLevelSlider;
+    private Slider isolatedLevelSlider;
+    private CheckBox isolateLevelCheck;
+    private CheckBox ghostModeCheck;
+    private CheckBox gpuRenderCheck;
+
+    // Voxel visualization
+    private Group voxelGroup;
+    private CheckBox showVoxelsCheck;
+    private List<Point3i> currentVoxels;
+    private int currentResolution;
+
+    // Ray casting
+    private CheckBox rayInteractiveCheck;
+    private TextArea rayStatsTextArea;
 
     // ==================== Abstract Method Implementations ====================
 
@@ -113,7 +137,9 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
     @Override
     protected List<Point3i> generateVoxels(String shapeName, int resolution) {
         var shape = ESVTVoxelGenerator.Shape.valueOf(shapeName);
-        return voxelGenerator.generate(shape, resolution);
+        currentResolution = resolution;
+        currentVoxels = voxelGenerator.generate(shape, resolution);
+        return currentVoxels;
     }
 
     @Override
@@ -133,16 +159,29 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
             .build();
         esvtRenderer.setData(data);
 
-        var rendered = esvtRenderer.render();
+        // Render with LOD settings from config
+        Group renderedGroup;
+        if (config.isLevelIsolated()) {
+            renderedGroup = esvtRenderer.render(config.isolateLevel(), config.isolateLevel());
+        } else {
+            renderedGroup = esvtRenderer.render(config.minLevel(), config.maxLevel());
+        }
+
+        // Apply ghost mode opacity
+        if (config.ghostMode()) {
+            renderedGroup.setOpacity(0.3);
+        } else {
+            renderedGroup.setOpacity(config.opacity());
+        }
 
         // Add wireframe if requested
         if (showWireframeCheck != null && showWireframeCheck.isSelected()) {
             var meshRenderer = new ESVTNodeMeshRenderer(data);
-            var wireframeGroup = new Group(rendered, meshRenderer.renderLeafWireframes());
+            var wireframeGroup = new Group(renderedGroup, meshRenderer.renderLeafWireframes());
             return wireframeGroup;
         }
 
-        return rendered;
+        return renderedGroup;
     }
 
     @Override
@@ -242,21 +281,37 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
     protected VBox createDataSpecificControls() {
         var box = new VBox(10);
 
+        // LOD Controls section
+        var lodPane = new TitledPane("LOD Controls", createLodControls());
+        lodPane.setExpanded(true);
+
         // Rendering section
         var renderPane = new TitledPane("Rendering", createRenderingControls());
         renderPane.setExpanded(true);
+
+        // Voxel Controls section
+        var voxelPane = new TitledPane("Voxel Rendering", createVoxelControls());
+        voxelPane.setExpanded(false);
 
         // Metrics section
         var metricsPane = new TitledPane("Metrics", createMetricsPanel());
         metricsPane.setExpanded(false);
 
-        box.getChildren().addAll(renderPane, metricsPane);
+        box.getChildren().addAll(lodPane, renderPane, voxelPane, metricsPane);
         return box;
     }
 
     @Override
     protected TabPane createAnalysisTabs() {
-        return null; // No additional tabs for ESVT
+        var tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Ray Casting tab
+        var rayTab = new Tab("Ray Casting");
+        rayTab.setContent(createRayCastingPanel());
+
+        tabPane.getTabs().add(rayTab);
+        return tabPane;
     }
 
     // ==================== Initialization ====================
@@ -272,6 +327,28 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
             .renderMode(ESVTRenderer.RenderMode.LEAVES_ONLY)
             .opacity(0.7)
             .build();
+        rayCastVisualizer = new ESVTRayCastVisualizer();
+
+        // Create voxel group
+        voxelGroup = new Group();
+    }
+
+    @Override
+    protected void setupSceneGraph() {
+        super.setupSceneGraph();
+
+        // Register voxel group
+        sceneManager.registerGroup("voxels", voxelGroup);
+
+        // Add voxel group to world (after content, before ray)
+        var world = sceneManager.getWorldGroup();
+        var children = world.getChildren();
+        int rayIndex = children.indexOf(sceneManager.getRayGroup());
+        if (rayIndex >= 0) {
+            children.add(rayIndex, voxelGroup);
+        } else {
+            children.add(voxelGroup);
+        }
     }
 
     @Override
@@ -336,6 +413,234 @@ public class ESVTInspectorApp extends SpatialInspectorApp<ESVTData, ESVTBridge> 
 
         box.getChildren().add(metricsArea);
         return box;
+    }
+
+    // ==================== LOD Controls ====================
+
+    private VBox createLodControls() {
+        var box = new VBox(8);
+        box.setPadding(new Insets(5));
+
+        var grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(5);
+
+        var minLevelLabel = new Label("Min Level:");
+        minLevelLabel.setStyle("-fx-text-fill: white;");
+        minLevelSlider = new Slider(0, 20, 0);
+        minLevelSlider.setShowTickLabels(true);
+        minLevelSlider.setShowTickMarks(true);
+        minLevelSlider.setMajorTickUnit(5);
+        minLevelSlider.setOnMouseReleased(e -> handleLodChanged());
+
+        var maxLevelLabel = new Label("Max Level:");
+        maxLevelLabel.setStyle("-fx-text-fill: white;");
+        maxLevelSlider = new Slider(0, 20, 20);
+        maxLevelSlider.setShowTickLabels(true);
+        maxLevelSlider.setShowTickMarks(true);
+        maxLevelSlider.setMajorTickUnit(5);
+        maxLevelSlider.setOnMouseReleased(e -> handleLodChanged());
+
+        isolateLevelCheck = new CheckBox("Isolate Level");
+        isolateLevelCheck.setStyle("-fx-text-fill: white;");
+        isolateLevelCheck.setOnAction(e -> handleLodChanged());
+
+        var isolatedLabel = new Label("Isolated Level:");
+        isolatedLabel.setStyle("-fx-text-fill: white;");
+        isolatedLevelSlider = new Slider(0, 20, 10);
+        isolatedLevelSlider.setShowTickLabels(true);
+        isolatedLevelSlider.setShowTickMarks(true);
+        isolatedLevelSlider.setMajorTickUnit(5);
+        isolatedLevelSlider.setOnMouseReleased(e -> handleLodChanged());
+
+        ghostModeCheck = new CheckBox("Ghost Mode");
+        ghostModeCheck.setStyle("-fx-text-fill: white;");
+        ghostModeCheck.setOnAction(e -> handleLodChanged());
+
+        // GPU Rendering checkbox
+        gpuRenderCheck = new CheckBox("GPU Rendering (OpenCL)");
+        gpuRenderCheck.setStyle("-fx-text-fill: white;");
+        gpuRenderCheck.setDisable(!supportsGPURendering());
+        if (!supportsGPURendering()) {
+            gpuRenderCheck.setText("GPU Rendering (unavailable)");
+        }
+        gpuRenderCheck.setOnAction(e -> handleGpuRenderChanged());
+
+        grid.add(minLevelLabel, 0, 0);
+        grid.add(minLevelSlider, 1, 0);
+        grid.add(maxLevelLabel, 0, 1);
+        grid.add(maxLevelSlider, 1, 1);
+        grid.add(isolateLevelCheck, 0, 2, 2, 1);
+        grid.add(isolatedLabel, 0, 3);
+        grid.add(isolatedLevelSlider, 1, 3);
+        grid.add(ghostModeCheck, 0, 4, 2, 1);
+        grid.add(gpuRenderCheck, 0, 5, 2, 1);
+
+        box.getChildren().add(grid);
+        return box;
+    }
+
+    private void handleGpuRenderChanged() {
+        if (gpuRenderCheck.isSelected()) {
+            enableGPUMode();
+        } else {
+            disableGPUMode();
+            updateVisualization();
+        }
+    }
+
+    private void handleLodChanged() {
+        if (currentData == null) return;
+
+        // Update render configuration
+        int minLevel = (int) minLevelSlider.getValue();
+        int maxLevel = (int) maxLevelSlider.getValue();
+        int isolatedLevel = (int) isolatedLevelSlider.getValue();
+        boolean isolate = isolateLevelCheck.isSelected();
+        boolean ghost = ghostModeCheck.isSelected();
+
+        renderConfig = renderConfig
+            .withLevelRange(minLevel, maxLevel)
+            .withIsolateLevel(isolate ? isolatedLevel : -1, ghost);
+
+        updateVisualization();
+    }
+
+    // ==================== Voxel Controls ====================
+
+    private VBox createVoxelControls() {
+        var box = new VBox(8);
+        box.setPadding(new Insets(5));
+
+        showVoxelsCheck = new CheckBox("Show Voxels (V)");
+        showVoxelsCheck.setSelected(false);
+        showVoxelsCheck.setStyle("-fx-text-fill: white;");
+        showVoxelsCheck.setOnAction(e -> voxelGroup.setVisible(showVoxelsCheck.isSelected()));
+
+        box.getChildren().add(showVoxelsCheck);
+        return box;
+    }
+
+    // ==================== Ray Casting ====================
+
+    private VBox createRayCastingPanel() {
+        var box = new VBox(8);
+        box.setPadding(new Insets(10));
+        box.setStyle("-fx-background-color: #1e1e1e;");
+
+        rayInteractiveCheck = new CheckBox("Interactive Mode (click to cast)");
+        rayInteractiveCheck.setStyle("-fx-text-fill: white;");
+
+        rayStatsTextArea = new TextArea();
+        rayStatsTextArea.setEditable(false);
+        rayStatsTextArea.setStyle("-fx-control-inner-background: #1e1e1e; -fx-text-fill: white; -fx-font-family: monospace;");
+        rayStatsTextArea.setText("No ray cast yet.\nCtrl+Click or enable Interactive Mode.");
+        rayStatsTextArea.setPrefRowCount(12);
+
+        box.getChildren().addAll(rayInteractiveCheck, rayStatsTextArea);
+        return box;
+    }
+
+    @Override
+    protected void setupKeyboardShortcuts(javafx.scene.Scene scene) {
+        super.setupKeyboardShortcuts(scene);
+
+        // Add mouse click handler for ray casting
+        subScene.setOnMouseClicked(this::handleMouseClick);
+    }
+
+    @Override
+    protected void handleCustomKeyPress(javafx.scene.input.KeyCode code) {
+        if (code == javafx.scene.input.KeyCode.V) {
+            showVoxelsCheck.setSelected(!showVoxelsCheck.isSelected());
+            voxelGroup.setVisible(showVoxelsCheck.isSelected());
+        }
+    }
+
+    private void handleMouseClick(MouseEvent event) {
+        boolean isInteractiveMode = rayInteractiveCheck != null && rayInteractiveCheck.isSelected();
+        boolean shouldCastRay = event.getButton() == MouseButton.PRIMARY &&
+            (isInteractiveMode || event.isControlDown());
+
+        if (!shouldCastRay) return;
+
+        if (currentData == null || !bridge.hasData()) {
+            rayStatsTextArea.setText("No ESVT available.\nGenerate an ESVT first.");
+            return;
+        }
+
+        // Get camera position and compute ray direction
+        var camera = cameraView.getCamera();
+
+        var cameraPos = new Vector3f(
+            (float) camera.getTranslateX(),
+            (float) camera.getTranslateY(),
+            (float) camera.getTranslateZ()
+        );
+
+        // Normalize to [0,1] space (scene is 100x100x100, centered at origin)
+        var normalizedOrigin = new Vector3f(
+            (cameraPos.x + 50.0f) / 100.0f,
+            (cameraPos.y + 50.0f) / 100.0f,
+            (cameraPos.z + 50.0f) / 100.0f
+        );
+
+        var direction = new Vector3f(0.0f, 0.0f, 1.0f); // Forward direction
+
+        try {
+            ESVTResult result = bridge.castRay(normalizedOrigin, direction);
+
+            if (result != null) {
+                visualizeRayCast(normalizedOrigin, direction, result);
+                rayStatsTextArea.setText(formatRayStatistics(result, normalizedOrigin, direction));
+
+                // Auto-enable ray visualization
+                if (!sceneManager.isVisible("ray")) {
+                    sceneManager.setVisibility("ray", true);
+                    showRaysCheck.setSelected(true);
+                }
+            } else {
+                rayStatsTextArea.setText("Ray cast failed.\nNo result returned.");
+            }
+        } catch (Exception e) {
+            log.error("Failed to cast ray", e);
+            rayStatsTextArea.setText("Ray cast error: " + e.getMessage());
+        }
+    }
+
+    private void visualizeRayCast(Vector3f origin, Vector3f direction, ESVTResult result) {
+        sceneManager.clearRays();
+        float maxDistance = 2.0f;
+        Group rayVis = rayCastVisualizer.visualize(origin, direction, result, maxDistance);
+        sceneManager.getRayGroup().getChildren().add(rayVis);
+    }
+
+    private String formatRayStatistics(ESVTResult result, Vector3f origin, Vector3f direction) {
+        var sb = new StringBuilder();
+
+        sb.append("ESVT RAY CAST RESULTS\n");
+        sb.append("=====================\n\n");
+        sb.append(String.format("Origin:    (%.3f, %.3f, %.3f)\n", origin.x, origin.y, origin.z));
+        sb.append(String.format("Direction: (%.3f, %.3f, %.3f)\n", direction.x, direction.y, direction.z));
+        sb.append("\n");
+
+        sb.append(String.format("Hit:       %s\n", result.hit ? "YES" : "NO"));
+
+        if (result.isHit()) {
+            sb.append(String.format("Distance:  %.3f\n", result.t));
+            sb.append(String.format("Hit Point: (%.3f, %.3f, %.3f)\n", result.x, result.y, result.z));
+            sb.append(String.format("Tet Type:  S%d\n", result.tetType));
+            sb.append(String.format("Entry Face: F%d\n", result.entryFace));
+            sb.append(String.format("Node Index: %d\n", result.nodeIndex));
+            sb.append(String.format("Scale:     %d\n", result.scale));
+        }
+
+        sb.append("\n");
+        sb.append("TRAVERSAL STATISTICS\n");
+        sb.append("====================\n");
+        sb.append(String.format("Iterations: %d\n", result.iterations));
+
+        return sb.toString();
     }
 
     private void handleRenderModeChanged() {

@@ -61,8 +61,8 @@ public class AdvancedRayTraversal implements AutoCloseable {
     
     /**
      * Traverse the octree with advanced features
-     * 
-     * @param origin Ray origin in octree space [1,2]
+     *
+     * @param origin Ray origin in octree space [0,1]
      * @param direction Ray direction (should be normalized)
      * @param octreeData ByteBuffer containing octree nodes
      * @return Hit information or null if no hit
@@ -352,9 +352,9 @@ public class AdvancedRayTraversal implements AutoCloseable {
     private float sampleDensity(Vector3f position, ByteBuffer octreeData) {
         // Simplified density sampling - returns 1.0 if voxel exists, 0.0 otherwise
         // In a full implementation, this would traverse to the position and check occupancy
-        if (position.x >= 1.0f && position.x <= 2.0f &&
-            position.y >= 1.0f && position.y <= 2.0f &&
-            position.z >= 1.0f && position.z <= 2.0f) {
+        if (position.x >= 0.0f && position.x <= 1.0f &&
+            position.y >= 0.0f && position.y <= 1.0f &&
+            position.z >= 0.0f && position.z <= 1.0f) {
             return 1.0f; // Inside octree bounds
         }
         return 0.0f; // Outside bounds

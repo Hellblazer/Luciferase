@@ -1,7 +1,8 @@
 package com.hellblazer.luciferase.esvo.io;
 
+import com.hellblazer.luciferase.sparse.io.SparseVoxelIOUtils;
+
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.file.Path;
 
 /**
@@ -24,29 +25,7 @@ public class ESVOFileFormat {
      * Detect the version of an ESVO file
      */
     public static int detectVersion(Path file) throws IOException {
-        try (RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r")) {
-            // Read as little-endian to match serialization
-            byte[] magicBytes = new byte[4];
-            raf.read(magicBytes);
-            int magic = (magicBytes[0] & 0xFF) | 
-                       ((magicBytes[1] & 0xFF) << 8) |
-                       ((magicBytes[2] & 0xFF) << 16) |
-                       ((magicBytes[3] & 0xFF) << 24);
-            
-            if (magic != MAGIC_NUMBER) {
-                throw new IOException("Invalid ESVO file: bad magic number");
-            }
-            
-            // Read version as little-endian
-            byte[] versionBytes = new byte[4];
-            raf.read(versionBytes);
-            int version = (versionBytes[0] & 0xFF) | 
-                         ((versionBytes[1] & 0xFF) << 8) |
-                         ((versionBytes[2] & 0xFF) << 16) |
-                         ((versionBytes[3] & 0xFF) << 24);
-            
-            return version;
-        }
+        return SparseVoxelIOUtils.detectVersion(file, MAGIC_NUMBER);
     }
     
     /**

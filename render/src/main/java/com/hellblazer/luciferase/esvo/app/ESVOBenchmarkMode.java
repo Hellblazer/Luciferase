@@ -661,12 +661,12 @@ public class ESVOBenchmarkMode {
             rayDirY /= length;
             rayDirZ /= length;
             
-            // Transform ray to ESVO coordinate space [1, 2]
-            // Camera position is already provided, so use it directly but ensure it's in [1,2] space
-            float originX = Math.max(1.0f, Math.min(2.0f, 1.5f + position.x * 0.1f));
-            float originY = Math.max(1.0f, Math.min(2.0f, 1.5f + position.y * 0.1f));
-            float originZ = Math.max(1.0f, Math.min(2.0f, 1.5f + position.z * 0.1f));
-            
+            // Transform ray to ESVO coordinate space [0, 1]
+            // Camera position is already provided, so use it directly but ensure it's in [0,1] space
+            float originX = Math.max(0.0f, Math.min(1.0f, 0.5f + position.x * 0.1f));
+            float originY = Math.max(0.0f, Math.min(1.0f, 0.5f + position.y * 0.1f));
+            float originZ = Math.max(0.0f, Math.min(1.0f, 0.5f + position.z * 0.1f));
+
             return new ESVORay(originX, originY, originZ, rayDirX, rayDirY, rayDirZ);
         }
     }

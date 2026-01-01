@@ -8,27 +8,27 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * COMPREHENSIVE VALIDATION TESTS for corrected ESVOTraversal implementation.
- * 
+ *
  * This test suite validates the REFERENCE-CORRECT implementation against:
  * 1. CUDA raycast.inl reference behavior
  * 2. Correct bit layouts and mask usage
- * 3. Proper [1,2] coordinate space transformations  
+ * 3. Proper [0,1] coordinate space (unified with ESVT)
  * 4. Reference-accurate sparse indexing algorithm
  * 5. Correct octant mirroring implementation
- * 
+ *
  * All critical architectural fixes are validated here.
  */
 public class ESVOTraversalValidationTest {
-    
+
     private static final float EPSILON = 1e-6f;
-    
+
     @BeforeEach
     void setUp() {
         // Test setup
     }
-    
+
     @Test
-    @DisplayName("CRITICAL: Validate [1,2] coordinate space transformation")
+    @DisplayName("CRITICAL: Validate [0,1] coordinate space transformation")
     void testCoordinateSpaceTransformation() {
         // Create minimal octree - single leaf node
         ESVONode[] nodes = new ESVONode[1];
@@ -36,51 +36,52 @@ public class ESVOTraversalValidationTest {
         nodes[0].setValidMask(0x00);      // Leaf node (no children)
         nodes[0].setNonLeafMask(0x00);    // All are leaves
         nodes[0].setChildPointer(0);      // Not used for leaf nodes
-        
-        // CRITICAL TEST: Ray starting outside [1,2] octree space, hitting it
-        ESVORay ray = new ESVORay(0.5f, 1.5f, 1.5f, 1.0f, 0.0f, 0.0f);
-        
+
+        // CRITICAL TEST: Ray starting outside [0,1] octree space, hitting it
+        ESVORay ray = new ESVORay(-0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f);
+
         ESVOResult result = ESVOTraversal.castRay(ray, nodes, 0);
-        
-        // The ray should hit because it's transformed into [1,2] octree space
-        assertTrue(result.hit, "Ray should hit in [1,2] coordinate space");
+
+        // The ray should hit the octree in [0,1] space
+        assertTrue(result.hit, "Ray should hit in [0,1] coordinate space");
         assertTrue(result.t > 0, "Hit distance should be positive");
-        
-        // CRITICAL: Verify hit position is in [1,2] space
-        assertTrue(result.x >= 1.0f && result.x <= 2.0f, 
-            "Hit X should be in [1,2] space, was: " + result.x);
-        assertTrue(result.y >= 1.0f && result.y <= 2.0f,
-            "Hit Y should be in [1,2] space, was: " + result.y);
-        assertTrue(result.z >= 1.0f && result.z <= 2.0f,
-            "Hit Z should be in [1,2] space, was: " + result.z);
+
+        // CRITICAL: Verify hit position is in [0,1] space (with epsilon for floating point)
+        assertTrue(result.x >= -EPSILON && result.x <= 1.0f + EPSILON,
+            "Hit X should be in [0,1] space, was: " + result.x);
+        assertTrue(result.y >= -EPSILON && result.y <= 1.0f + EPSILON,
+            "Hit Y should be in [0,1] space, was: " + result.y);
+        assertTrue(result.z >= -EPSILON && result.z <= 1.0f + EPSILON,
+            "Hit Z should be in [0,1] space, was: " + result.z);
     }
-    
+
     @Test
     @DisplayName("CRITICAL: Validate correct mask usage - Valid vs Non-Leaf")
     void testCorrectMaskUsage() {
         // Create node with specific bit patterns to test mask usage
         ESVONode[] nodes = new ESVONode[2];
-        
+
         // Parent node
         nodes[0] = new ESVONode();
         nodes[0].setValidMask(0b10000001);    // Only children 0 and 7 exist (bits 8-15)
         nodes[0].setNonLeafMask(0b00000001);  // Only child 7 is non-leaf (bit 0 for child 7!)
         nodes[0].setChildPointer(1);
-        
+
         // Child node (for child 0 - leaf)
         nodes[1] = new ESVONode();
         nodes[1].setValidMask(0x00);  // Leaf node
-        
-        // Ray hitting child 0 (should be leaf) - with ray size for LOD check
-        ESVORay ray = new ESVORay(1.25f, 1.25f, 1.25f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-        
+
+        // Ray starting outside octree, hitting child 0 (lower octant)
+        // In [0,1] space: shoot from outside toward (0.25, 0.25, 0.25)
+        ESVORay ray = new ESVORay(-0.5f, 0.25f, 0.25f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
         ESVOResult result = ESVOTraversal.castRay(ray, nodes, 0);
-        
+
         assertTrue(result.hit, "Should hit child 0");
         assertEquals(0, result.childIndex, "Should identify correct child");
-        
-        // Ray hitting child 7 area (should try to descend but hit leaf)
-        ray = new ESVORay(1.75f, 1.75f, 1.75f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+        // Ray hitting child 7 area (upper octant) - starting outside
+        ray = new ESVORay(-0.5f, 0.75f, 0.75f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         result = ESVOTraversal.castRay(ray, nodes, 0);
         
         assertTrue(result.hit, "Should hit child 7 area");
@@ -125,19 +126,21 @@ public class ESVOTraversalValidationTest {
         nodes[0] = new ESVONode();
         nodes[0].setValidMask(0xFF);      // All children exist
         nodes[0].setNonLeafMask(0x00);    // All leaves
-        
+
         // Test ray with positive X direction (should trigger octant mask ^= 1)
-        ESVORay ray1 = new ESVORay(0.5f, 1.5f, 1.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+        // For [0,1] space: start outside at x=-0.5, center at y=0.5, z=0.5
+        ESVORay ray1 = new ESVORay(-0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         ESVOResult result1 = ESVOTraversal.castRay(ray1, nodes, 0);
-        
+
         // Test ray with negative X direction (no X mirroring)
-        ESVORay ray2 = new ESVORay(2.5f, 1.5f, 1.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);  
+        // For [0,1] space: start outside at x=1.5
+        ESVORay ray2 = new ESVORay(1.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         ESVOResult result2 = ESVOTraversal.castRay(ray2, nodes, 0);
-        
+
         // Both should hit but potentially different children due to mirroring
         assertTrue(result1.hit, "Positive X ray should hit");
         assertTrue(result2.hit, "Negative X ray should hit");
-        
+
         // The key test is that both rays complete without errors (octant math correct)
         assertTrue(result1.t > 0, "Should have valid hit distance");
         assertTrue(result2.t > 0, "Should have valid hit distance");
@@ -265,28 +268,29 @@ public class ESVOTraversalValidationTest {
         
         // FIXED: Test rays starting OUTSIDE octree to ensure t > 0
         // Each ray targets well inside each octant to avoid boundary issues
+        // For [0,1] space: octants split at 0.5, so target 0.25 or 0.75
         float[][] targets = {
-            {1.25f, 1.25f, 1.25f}, // Child 0: -x,-y,-z octant
-            {1.75f, 1.25f, 1.25f}, // Child 1: +x,-y,-z octant
-            {1.2f, 1.8f, 1.2f},    // Child 2: -x,+y,-z octant (FIXED: well inside octant)
-            {1.75f, 1.75f, 1.25f}, // Child 3: +x,+y,-z octant
-            {1.2f, 1.2f, 1.8f},    // Child 4: -x,-y,+z octant (FIXED: well inside octant)
-            {1.75f, 1.25f, 1.75f}, // Child 5: +x,-y,+z octant
-            {1.25f, 1.75f, 1.75f}, // Child 6: -x,+y,+z octant
-            {1.75f, 1.75f, 1.75f}  // Child 7: +x,+y,+z octant
+            {0.25f, 0.25f, 0.25f}, // Child 0: -x,-y,-z octant
+            {0.75f, 0.25f, 0.25f}, // Child 1: +x,-y,-z octant
+            {0.2f, 0.8f, 0.2f},    // Child 2: -x,+y,-z octant
+            {0.75f, 0.75f, 0.25f}, // Child 3: +x,+y,-z octant
+            {0.2f, 0.2f, 0.8f},    // Child 4: -x,-y,+z octant
+            {0.75f, 0.25f, 0.75f}, // Child 5: +x,-y,+z octant
+            {0.25f, 0.75f, 0.75f}, // Child 6: -x,+y,+z octant
+            {0.75f, 0.75f, 0.75f}  // Child 7: +x,+y,+z octant
         };
-        
-        // Different starting positions outside octree for each octant test  
-        // FINAL FIX: Use pure axis-aligned rays to avoid boundary issues
+
+        // Different starting positions outside [0,1] octree for each octant test
+        // Use pure axis-aligned rays to avoid boundary issues
         float[][] origins = {
-            {0.5f, 1.25f, 1.25f}, // Ray to child 0 from -x side
-            {2.5f, 1.25f, 1.25f}, // Ray to child 1 from +x side  
-            {1.2f, 2.5f, 1.2f},   // Ray to child 2 from +y side (FIXED: axis-aligned)
-            {1.75f, 2.5f, 1.25f}, // Ray to child 3 from +y side
-            {1.2f, 1.2f, 2.5f},   // Ray to child 4 from +z side (FIXED: axis-aligned)
-            {1.75f, 1.25f, 2.5f}, // Ray to child 5 from +z side
-            {0.5f, 1.75f, 1.75f}, // Ray to child 6 from -x side
-            {2.5f, 1.75f, 1.75f}  // Ray to child 7 from +x side
+            {-0.5f, 0.25f, 0.25f}, // Ray to child 0 from -x side
+            {1.5f, 0.25f, 0.25f},  // Ray to child 1 from +x side
+            {0.2f, 1.5f, 0.2f},    // Ray to child 2 from +y side
+            {0.75f, 1.5f, 0.25f},  // Ray to child 3 from +y side
+            {0.2f, 0.2f, 1.5f},    // Ray to child 4 from +z side
+            {0.75f, 0.25f, 1.5f},  // Ray to child 5 from +z side
+            {-0.5f, 0.75f, 0.75f}, // Ray to child 6 from -x side
+            {1.5f, 0.75f, 0.75f}   // Ray to child 7 from +x side
         };
         
         for (int i = 0; i < 8; i++) {
@@ -319,23 +323,23 @@ public class ESVOTraversalValidationTest {
         nodes[0].setValidMask(0xFF);
         nodes[0].setNonLeafMask(0x00);
         
-        // Test ray exactly at cube boundary
-        ESVORay ray = new ESVORay(1.0f, 1.5f, 1.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+        // Test ray exactly at cube boundary (x=0, pointing +x into [0,1])
+        ESVORay ray = new ESVORay(0.0f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         ESVOResult result = ESVOTraversal.castRay(ray, nodes, 0);
-        
+
         assertTrue(result.hit, "Should handle boundary ray correctly");
-        
-        // Test ray exactly at opposite boundary  
-        ray = new ESVORay(2.0f, 1.5f, 1.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+        // Test ray exactly at opposite boundary (x=1, pointing -x into [0,1])
+        ray = new ESVORay(1.0f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         result = ESVOTraversal.castRay(ray, nodes, 0);
-        
+
         assertTrue(result.hit, "Should handle opposite boundary ray correctly");
-        
-        // Test ray outside cube bounds
-        ray = new ESVORay(0.5f, 1.5f, 1.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+        // Test ray outside cube bounds pointing away (x=-0.5, pointing -x away from [0,1])
+        ray = new ESVORay(-0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         result = ESVOTraversal.castRay(ray, nodes, 0);
-        
-        assertFalse(result.hit, "Should miss ray outside bounds");
+
+        assertFalse(result.hit, "Should miss ray outside bounds pointing away");
     }
     
     @Test
@@ -356,9 +360,10 @@ public class ESVOTraversalValidationTest {
         nodes[99] = new ESVONode();
         nodes[99].setValidMask(0x00);
         
-        ESVORay ray = new ESVORay(1.25f, 1.25f, 1.25f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+        // Ray starting outside [0,1] octree, pointing into child 0 (lower octant)
+        ESVORay ray = new ESVORay(-0.5f, 0.25f, 0.25f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
         ESVOResult result = ESVOTraversal.castRay(ray, nodes, 0);
-        
+
         assertTrue(result.hit, "Should traverse deep tree");
         assertTrue(result.iterations > 0, "Should record iterations");
         assertTrue(result.iterations < 10000, "Should respect iteration limit");
@@ -401,14 +406,14 @@ public class ESVOTraversalValidationTest {
         nodes[0].setValidMask(0x00);  // Leaf node
         nodes[0].setNonLeafMask(0x00);
         
-        // Ray starting outside octree, should hit after traveling positive distance
-        ESVORay ray = new ESVORay(0.5f, 1.5f, 1.5f, 1.0f, 0.0f, 0.0f);
+        // Ray starting outside [0,1] octree, should hit after traveling positive distance
+        ESVORay ray = new ESVORay(-0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f);
         ray.originSize = 0.0f;
-        ray.directionSize = 0.0f; 
-        
+        ray.directionSize = 0.0f;
+
         ESVOResult result = ESVOTraversal.castRay(ray, nodes, 0);
-        
-        // The implementation should handle coordinate transformation correctly
-        assertTrue(result.hit, "Coordinate transformation should work");
+
+        // The implementation should handle [0,1] coordinate space correctly
+        assertTrue(result.hit, "Coordinate space should work for [0,1]");
     }
 }

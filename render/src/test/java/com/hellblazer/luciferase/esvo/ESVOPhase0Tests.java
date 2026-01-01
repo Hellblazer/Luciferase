@@ -26,43 +26,43 @@ public class ESVOPhase0Tests {
     }
     
     /**
-     * CRITICAL TEST 1: Octree Coordinate Space [1,2] - NOT [0,1]!
-     * 
-     * The octree ALWAYS resides at coordinates [1, 2] regardless of actual object size.
+     * CRITICAL TEST 1: Octree Coordinate Space [0,1] - Normalized unit cube!
+     *
+     * The octree ALWAYS resides at coordinates [0, 1] regardless of actual object size.
      * This is fundamental to the ESVO algorithm and ray intersection calculations.
      */
     @Test
-    @DisplayName("Test octree coordinate space [1,2]")
+    @DisplayName("Test octree coordinate space [0,1]")
     void testOctreeCoordinateSpace() {
-        // CRITICAL: The octree resides at coordinates [1, 2]
-        float minBound = 1.0f;
-        float maxBound = 2.0f;
-        
+        // CRITICAL: The octree resides at coordinates [0, 1]
+        float minBound = 0.0f;
+        float maxBound = 1.0f;
+
         // Test ray-box intersection with correct bounds
-        Vector3f rayOrigin = new Vector3f(0.5f, 1.5f, 1.5f);
+        Vector3f rayOrigin = new Vector3f(-0.5f, 0.5f, 0.5f);
         Vector3f rayDirection = new Vector3f(1, 0, 0);
-        
+
         float tMin = (minBound - rayOrigin.x) / rayDirection.x;
         float tMax = (maxBound - rayOrigin.x) / rayDirection.x;
-        
+
         assertEquals(0.5f, tMin, 0.001f, "Ray should enter octree at t=0.5");
         assertEquals(1.5f, tMax, 0.001f, "Ray should exit octree at t=1.5");
-        
-        // Test that octree bounds are exactly [1,2] in all dimensions
-        assertEquals(1.0f, minBound, "Octree minimum bound must be 1.0");
-        assertEquals(2.0f, maxBound, "Octree maximum bound must be 2.0");
-        
+
+        // Test that octree bounds are exactly [0,1] in all dimensions
+        assertEquals(0.0f, minBound, "Octree minimum bound must be 0.0");
+        assertEquals(1.0f, maxBound, "Octree maximum bound must be 1.0");
+
         // Test coordinate transformation from world to octree space
         Vector3f worldPoint = new Vector3f(5.0f, 10.0f, 15.0f);
         Vector3f expectedOctreePoint = transformToOctreeSpace(worldPoint, new Vector3f(4.0f, 8.0f, 12.0f), 4.0f);
-        
-        // After transformation, point should be in [1,2] space
-        assertTrue(expectedOctreePoint.x >= 1.0f && expectedOctreePoint.x <= 2.0f, 
-                  "Transformed X coordinate must be in [1,2] range");
-        assertTrue(expectedOctreePoint.y >= 1.0f && expectedOctreePoint.y <= 2.0f, 
-                  "Transformed Y coordinate must be in [1,2] range");
-        assertTrue(expectedOctreePoint.z >= 1.0f && expectedOctreePoint.z <= 2.0f, 
-                  "Transformed Z coordinate must be in [1,2] range");
+
+        // After transformation, point should be in [0,1] space
+        assertTrue(expectedOctreePoint.x >= 0.0f && expectedOctreePoint.x <= 1.0f,
+                  "Transformed X coordinate must be in [0,1] range");
+        assertTrue(expectedOctreePoint.y >= 0.0f && expectedOctreePoint.y <= 1.0f,
+                  "Transformed Y coordinate must be in [0,1] range");
+        assertTrue(expectedOctreePoint.z >= 0.0f && expectedOctreePoint.z <= 1.0f,
+                  "Transformed Z coordinate must be in [0,1] range");
     }
     
     /**
@@ -186,7 +186,7 @@ public class ESVOPhase0Tests {
     // Helper methods for the tests
     
     private Vector3f transformToOctreeSpace(Vector3f worldPoint, Vector3f objectCenter, float objectSize) {
-        // Transform world coordinates to octree space [1,2]
+        // Transform world coordinates to octree space [0,1]
         Vector3f relative = new Vector3f();
         relative.sub(worldPoint, objectCenter);
         // Scale to [-0.5, 0.5]
@@ -195,8 +195,8 @@ public class ESVOPhase0Tests {
         relative.x = Math.max(-0.5f, Math.min(0.5f, relative.x));
         relative.y = Math.max(-0.5f, Math.min(0.5f, relative.y));
         relative.z = Math.max(-0.5f, Math.min(0.5f, relative.z));
-        // Shift to [1,2] space
-        relative.add(new Vector3f(1.5f, 1.5f, 1.5f));
+        // Shift to [0,1] space
+        relative.add(new Vector3f(0.5f, 0.5f, 0.5f));
         return relative;
     }
     

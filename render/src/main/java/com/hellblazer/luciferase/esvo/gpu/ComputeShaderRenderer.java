@@ -106,7 +106,7 @@ public final class ComputeShaderRenderer {
      * @param viewMatrix Camera view matrix
      * @param projMatrix Camera projection matrix  
      * @param objectToWorld Transform from object to world space
-     * @param octreeToObject Transform from octree [1,2] to object space
+     * @param octreeToObject Transform from octree [0,1] to object space
      */
     public void renderFrame(OctreeGPUMemory octreeMemory,
                           Matrix4f viewMatrix, Matrix4f projMatrix,

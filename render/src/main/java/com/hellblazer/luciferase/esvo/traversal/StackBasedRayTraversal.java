@@ -24,13 +24,13 @@ import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 
 /**
  * Phase 2: Stack-Based Deep Traversal Implementation
- * 
+ *
  * Implements the ESVO algorithm for deep octree traversal with 23-level support.
  * This includes the 3 critical GLSL shader bug fixes identified from C++ analysis:
  * 1. Single stack read only (no double reads)
- * 2. Proper coordinate space transformation to [1,2]
+ * 2. Proper coordinate space using unified [0,1] space
  * 3. Conditional iteration limit
- * 
+ *
  * Performance target: >60 FPS for 5-level octrees
  */
 public class StackBasedRayTraversal {
@@ -77,8 +77,8 @@ public class StackBasedRayTraversal {
         
         public MultiLevelOctree(int maxDepth) {
             this.maxDepth = maxDepth;
-            this.center = new Vector3f(1.5f, 1.5f, 1.5f); // Center of [1,2] space
-            this.size = 1.0f; // Size of [1,2] space
+            this.center = new Vector3f(0.5f, 0.5f, 0.5f); // Center of [0,1] space
+            this.size = 1.0f; // Size of [0,1] space
             
             // Calculate total nodes needed for complete octree
             var totalNodes = calculateNodeCount(maxDepth);
@@ -97,7 +97,7 @@ public class StackBasedRayTraversal {
          */
         public MultiLevelOctree(ESVOOctreeData octreeData, int maxDepth) {
             this.maxDepth = maxDepth;
-            this.center = new Vector3f(1.5f, 1.5f, 1.5f);
+            this.center = new Vector3f(0.5f, 0.5f, 0.5f); // Center of [0,1] space
             this.size = 1.0f;
             
             // Get node count from octree data
@@ -244,7 +244,7 @@ public class StackBasedRayTraversal {
      * Implements the 3 critical GLSL shader bug fixes
      */
     public static DeepTraversalResult traverse(EnhancedRay ray, MultiLevelOctree octree) {
-        // Calculate intersection with octree bounds [1,2]
+        // Calculate intersection with octree bounds [0,1]
         var intersection = CoordinateSpace.calculateOctreeIntersection(ray.origin, ray.direction);
         if (intersection == null) {
             return new DeepTraversalResult(false, 0, null, null, -1, 0, 0);
@@ -443,26 +443,25 @@ public class StackBasedRayTraversal {
     }
     
     /**
-     * Generate ray for pixel coordinates (with coordinate space transformation)
-     * Critical Bug Fix #2: Transform rays to octree space [1,2]
+     * Generate ray for pixel coordinates (using unified [0,1] coordinate space)
      */
-    public static EnhancedRay generateRay(int x, int y, int width, int height, 
+    public static EnhancedRay generateRay(int x, int y, int width, int height,
                                         Vector3f cameraPos, Vector3f cameraDir, float fov) {
-        
+
         // Generate ray in world space
         var aspectRatio = (float) width / height;
         var scale = (float) Math.tan(Math.toRadians(fov * 0.5));
-        
+
         var u = (2.0f * (x + 0.5f) / width - 1.0f) * scale * aspectRatio;
         var v = (1.0f - 2.0f * (y + 0.5f) / height) * scale;
-        
+
         var worldDir = new Vector3f(u, v, -1.0f);
         worldDir.normalize();
-        
-        // Critical Bug Fix #2: Transform to octree coordinate space [1,2]
+
+        // Transform to unified [0,1] octree coordinate space
         var octreeOrigin = CoordinateSpace.worldToOctree(cameraPos);
         var octreeDirection = CoordinateSpace.worldToOctreeDirection(worldDir);
-        
+
         // Use default size parameters for legacy compatibility
         return new EnhancedRay(octreeOrigin, 0.001f, octreeDirection, 0.001f);
     }
@@ -472,8 +471,9 @@ public class StackBasedRayTraversal {
      */
     public static double measureDeepTraversalPerformance(MultiLevelOctree octree, int rayCount) {
         var startTime = System.nanoTime();
-        
-        var camera = new Vector3f(0.5f, 1.5f, 3.0f);
+
+        // Camera outside [0,1] octree looking in along -Z
+        var camera = new Vector3f(0.5f, 0.5f, 2.0f);
         var direction = new Vector3f(0, 0, -1);
         
         for (var i = 0; i < rayCount; i++) {
@@ -533,26 +533,27 @@ public class StackBasedRayTraversal {
         float tyBias = tyCoef * mirroredRay.origin.y;
         float tzBias = tzCoef * mirroredRay.origin.z;
         
-        // Initialize the active span of t-values
-        // C++ lines 121-125
-        float tMin = Math.max(Math.max(2.0f * txCoef - txBias, 2.0f * tyCoef - tyBias), 2.0f * tzCoef - tzBias);
-        float tMax = Math.min(Math.min(txCoef - txBias, tyCoef - tyBias), tzCoef - tzBias);
+        // Initialize the active span of t-values - for [0,1] space
+        // Max bound is 1.0, so use 1.0 * coef instead of 2.0 * coef
+        float tMin = Math.max(Math.max(1.0f * txCoef - txBias, 1.0f * tyCoef - tyBias), 1.0f * tzCoef - tzBias);
+        float tMax = Math.min(Math.min(0.0f * txCoef - txBias, 0.0f * tyCoef - tyBias), 0.0f * tzCoef - tzBias);
         float h = tMax;
         tMin = Math.max(tMin, 0.0f);
         tMax = Math.min(tMax, 1.0f);
-        
+
         // Initialize the current voxel to the first child of the root
-        // C++ lines 129-138
+        // For [0,1] space: start at origin (0,0,0) instead of (1,1,1)
         int parentNode = 0;
         int childDescriptor = 0;
         int idx = 0;
-        var pos = new Vector3f(1.0f, 1.0f, 1.0f);
+        var pos = new Vector3f(0.0f, 0.0f, 0.0f);
         int scale = CAST_STACK_DEPTH - 1;
         float scaleExp2 = 0.5f; // exp2f(scale - s_max)
-        
-        if (1.5f * txCoef - txBias > tMin) { idx ^= 1; pos.x = 1.5f; }
-        if (1.5f * tyCoef - tyBias > tMin) { idx ^= 2; pos.y = 1.5f; }
-        if (1.5f * tzCoef - tzBias > tMin) { idx ^= 4; pos.z = 1.5f; }
+
+        // For [0,1] space: center is 0.5 instead of 1.5
+        if (0.5f * txCoef - txBias > tMin) { idx ^= 1; pos.x = 0.5f; }
+        if (0.5f * tyCoef - tyBias > tMin) { idx ^= 2; pos.y = 0.5f; }
+        if (0.5f * tzCoef - tzBias > tMin) { idx ^= 4; pos.z = 0.5f; }
         
         // Stack for traversal with h-value optimization
         var stack = new StackEntry[CAST_STACK_DEPTH];
@@ -593,10 +594,10 @@ public class StackBasedRayTraversal {
                     // Hit a voxel small enough to terminate
                     var hitPoint = mirroredRay.pointAt(tMin);
                     
-                    // Undo mirroring for final result
-                    if ((octantMask & 1) == 0) hitPoint.x = 3.0f - scaleExp2 - hitPoint.x;
-                    if ((octantMask & 2) == 0) hitPoint.y = 3.0f - scaleExp2 - hitPoint.y;
-                    if ((octantMask & 4) == 0) hitPoint.z = 3.0f - scaleExp2 - hitPoint.z;
+                    // Undo mirroring for final result (for [0,1] space: 1.0 - scaleExp2 - x)
+                    if ((octantMask & 1) == 0) hitPoint.x = 1.0f - scaleExp2 - hitPoint.x;
+                    if ((octantMask & 2) == 0) hitPoint.y = 1.0f - scaleExp2 - hitPoint.y;
+                    if ((octantMask & 4) == 0) hitPoint.z = 1.0f - scaleExp2 - hitPoint.z;
                     
                     var normal = calculateSurfaceNormal(hitPoint, octree.center);
                     return new DeepTraversalResult(true, tMin, hitPoint, normal, 
@@ -616,10 +617,10 @@ public class StackBasedRayTraversal {
                     if ((childMasks & 0x0080) == 0) {
                         var hitPoint = mirroredRay.pointAt(tMin);
                         
-                        // Undo mirroring
-                        if ((octantMask & 1) == 0) hitPoint.x = 3.0f - scaleExp2 - hitPoint.x;
-                        if ((octantMask & 2) == 0) hitPoint.y = 3.0f - scaleExp2 - hitPoint.y;
-                        if ((octantMask & 4) == 0) hitPoint.z = 3.0f - scaleExp2 - hitPoint.z;
+                        // Undo mirroring (for [0,1] space: 1.0 - scaleExp2 - x)
+                        if ((octantMask & 1) == 0) hitPoint.x = 1.0f - scaleExp2 - hitPoint.x;
+                        if ((octantMask & 2) == 0) hitPoint.y = 1.0f - scaleExp2 - hitPoint.y;
+                        if ((octantMask & 4) == 0) hitPoint.z = 1.0f - scaleExp2 - hitPoint.z;
                         
                         var normal = calculateSurfaceNormal(hitPoint, octree.center);
                         return new DeepTraversalResult(true, tMin, hitPoint, normal,

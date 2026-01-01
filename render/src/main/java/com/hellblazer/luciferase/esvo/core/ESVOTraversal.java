@@ -2,26 +2,26 @@ package com.hellblazer.luciferase.esvo.core;
 
 /**
  * ESVO ray traversal implementation validated against CUDA raycast.inl.
- * 
+ *
  * This is the final, validated implementation with all critical fixes applied:
  * 1. Uses consolidated ESVONode (validated correct node structure)
- * 2. Uses getValidMask() for sparse indexing (not getChildMask())  
+ * 2. Uses getValidMask() for sparse indexing (not getChildMask())
  * 3. Correct octant mirroring algorithm
- * 4. Proper [1,2] coordinate space transformations
+ * 4. Proper [0,1] coordinate space (unified with ESVT)
  * 5. Reference-accurate sparse child indexing
  * 6. Correct far pointer handling
  */
 public class ESVOTraversal {
-    
+
     // Constants from reference
     private static final int CAST_STACK_DEPTH = 23;
     private static final int MAX_RAYCAST_ITERATIONS = 10000;
     private static final float EPSILON = (float)Math.pow(2, -CAST_STACK_DEPTH);
-    
+
     /**
      * Cast a ray through the octree.
-     * This is an exact port of the reference castRay() function.
-     * 
+     * This is an exact port of the reference castRay() function, adapted for [0,1] space.
+     *
      * @param ray The ray to cast (will be modified for epsilon handling)
      * @param nodes The octree nodes array
      * @param rootNodeIdx Index of the root node (usually 0)
@@ -30,69 +30,73 @@ public class ESVOTraversal {
     public static ESVOResult castRay(ESVORay ray, ESVONode[] nodes, int rootNodeIdx) {
         ESVOResult result = new ESVOResult();
         ESVOStack stack = new ESVOStack();
-        
+
         float rayOrigSize = ray.originSize;
         int iter = 0;
-        
+
         // Get rid of small ray direction components to avoid division by zero
         ray.prepareForTraversal();
-        
-        
+
+
         // Precompute the coefficients of tx(x), ty(y), and tz(z)
-        // The octree is assumed to reside at coordinates [1, 2]
+        // The octree is assumed to reside at coordinates [0, 1]
         float txCoef = 1.0f / -Math.abs(ray.directionX);
         float tyCoef = 1.0f / -Math.abs(ray.directionY);
         float tzCoef = 1.0f / -Math.abs(ray.directionZ);
-        
+
         float txBias = txCoef * ray.originX;
         float tyBias = tyCoef * ray.originY;
         float tzBias = tzCoef * ray.originZ;
-        
+
         // Select octant mask to mirror the coordinate system so
         // that ray direction is negative along each axis
+        // For [0,1] space: mirror around center 0.5, so constant = 2*0.5 = 1.0
         int octantMask = 7;
         if (ray.directionX > 0.0f) {
             octantMask ^= 1;
-            txBias = 3.0f * txCoef - txBias;
+            txBias = 1.0f * txCoef - txBias;
         }
         if (ray.directionY > 0.0f) {
             octantMask ^= 2;
-            tyBias = 3.0f * tyCoef - tyBias;
+            tyBias = 1.0f * tyCoef - tyBias;
         }
         if (ray.directionZ > 0.0f) {
             octantMask ^= 4;
-            tzBias = 3.0f * tzCoef - tzBias;
+            tzBias = 1.0f * tzCoef - tzBias;
         }
-        
-        
+
+
         // Initialize the active span of t-values
-        float tMin = Math.max(Math.max(2.0f * txCoef - txBias, 2.0f * tyCoef - tyBias), 
-                             2.0f * tzCoef - tzBias);
-        float tMax = Math.min(Math.min(txCoef - txBias, tyCoef - tyBias), 
-                             tzCoef - tzBias);
+        // For [0,1] space: max bound is 1.0, so use 1.0 * coef instead of 2.0 * coef
+        float tMin = Math.max(Math.max(1.0f * txCoef - txBias, 1.0f * tyCoef - tyBias),
+                             1.0f * tzCoef - tzBias);
+        float tMax = Math.min(Math.min(0.0f * txCoef - txBias, 0.0f * tyCoef - tyBias),
+                             0.0f * tzCoef - tzBias);
         float h = tMax;
         tMin = Math.max(tMin, 0.0f);
         tMax = Math.min(tMax, 1.0f);
-        
+
         // Initialize the current voxel to the first child of the root
+        // For [0,1] space: start at origin (0,0,0) instead of (1,1,1)
         int parentIdx = rootNodeIdx;
         ESVONode childDescriptor = null;  // Invalid until fetched
         int idx = 0;
-        float posX = 1.0f, posY = 1.0f, posZ = 1.0f;
+        float posX = 0.0f, posY = 0.0f, posZ = 0.0f;
         int scale = CAST_STACK_DEPTH - 1;
         float scaleExp2 = 0.5f;  // exp2f(scale - s_max)
-        
-        if (1.5f * txCoef - txBias > tMin) {
+
+        // For [0,1] space: center is 0.5 instead of 1.5
+        if (0.5f * txCoef - txBias > tMin) {
             idx ^= 1;
-            posX = 1.5f;
+            posX = 0.5f;
         }
-        if (1.5f * tyCoef - tyBias > tMin) {
+        if (0.5f * tyCoef - tyBias > tMin) {
             idx ^= 2;
-            posY = 1.5f;
+            posY = 0.5f;
         }
-        if (1.5f * tzCoef - tzBias > tMin) {
+        if (0.5f * tzCoef - tzBias > tMin) {
             idx ^= 4;
-            posZ = 1.5f;
+            posZ = 0.5f;
         }
         
         
@@ -280,15 +284,15 @@ public class ESVOTraversal {
             result.hit = false;
         }
         
-        // Undo mirroring of the coordinate system
+        // Undo mirroring of the coordinate system (for [0,1] space: 1.0 - scaleExp2 - x)
         if ((octantMask & 1) == 0) {
-            posX = 3.0f - scaleExp2 - posX;
+            posX = 1.0f - scaleExp2 - posX;
         }
         if ((octantMask & 2) == 0) {
-            posY = 3.0f - scaleExp2 - posY;
+            posY = 1.0f - scaleExp2 - posY;
         }
         if ((octantMask & 4) == 0) {
-            posZ = 3.0f - scaleExp2 - posZ;
+            posZ = 1.0f - scaleExp2 - posZ;
         }
         
         // Clamp hit position to voxel bounds

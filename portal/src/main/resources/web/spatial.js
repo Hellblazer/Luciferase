@@ -3,10 +3,13 @@
  *
  * Phase 5a: Basic scene setup with camera controls, lighting, and API integration
  * Phase 5b: InstancedMesh entity rendering with interaction and query visualization
+ * Phase 6: Shared modules integration with shape generation and color schemes
  */
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { generateShapeEntities, SHAPE_TYPES } from './shared/shape-generators.js';
+import { createColorSchemes, COLOR_SCHEME_NAMES } from './shared/color-schemes.js';
 
 // ============================================================================
 // Constants
@@ -15,15 +18,23 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const MAX_ENTITIES = 100000;  // Maximum entities for InstancedMesh
 const ENTITY_SIZE = 0.015;    // Base entity size
 
-// Color schemes by index type
+// Color schemes by index type (legacy)
 const INDEX_COLORS = {
     TETREE: new THREE.Color(0x34d399),  // Green
     OCTREE: new THREE.Color(0x60a5fa),  // Blue
     SFC: new THREE.Color(0xfbbf24)       // Orange/Yellow
 };
 
+// Initialize color schemes from shared module
+const COLOR_SCHEMES = createColorSchemes(THREE);
+let currentColorScheme = 'DEPTH';
+
 const HIGHLIGHT_COLOR = new THREE.Color(0xf472b6);  // Pink for selected
 const QUERY_RESULT_COLOR = new THREE.Color(0xa78bfa); // Purple for query results
+
+// Clipping state
+let clipMinX = 0, clipMinY = 0, clipMinZ = 0;
+let allEntities = []; // Store all entities before clipping
 
 // ============================================================================
 // Scene Setup
@@ -56,8 +67,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.target.set(0.5, 0.5, 0.5);
-controls.minDistance = 0.5;
-controls.maxDistance = 20;
+controls.minDistance = 0.3;
+controls.maxDistance = 10;
 controls.update();
 
 // ============================================================================
@@ -101,8 +112,38 @@ scene.add(unitCubeWireframe);
 // InstancedMesh Entity Rendering (Phase 5b)
 // ============================================================================
 
-// Geometry for entities (small icosahedrons for visual appeal)
-const entityGeometry = new THREE.IcosahedronGeometry(ENTITY_SIZE, 1);
+// Primitive geometries
+// Sphere geometry (default)
+const sphereGeometry = new THREE.IcosahedronGeometry(ENTITY_SIZE, 1);
+
+// Cube geometry for Octree
+const cubeGeometry = new THREE.BoxGeometry(ENTITY_SIZE * 1.6, ENTITY_SIZE * 1.6, ENTITY_SIZE * 1.6);
+
+// Tetrahedron geometry for Tetree
+const tetGeometry = new THREE.TetrahedronGeometry(ENTITY_SIZE * 1.8, 0);
+
+// Current primitive mode: 'sphere' or 'index'
+let currentPrimitive = 'sphere';
+
+// Get geometry based on primitive mode and index type
+function getEntityGeometry() {
+    if (currentPrimitive === 'sphere') {
+        return sphereGeometry;
+    }
+    // Index native primitives
+    switch (indexType) {
+        case 'OCTREE':
+        case 'SFC':
+            return cubeGeometry;
+        case 'TETREE':
+            return tetGeometry;
+        default:
+            return sphereGeometry;
+    }
+}
+
+// Legacy reference for backwards compatibility
+const entityGeometry = sphereGeometry;
 
 // Material with vertex colors for per-instance coloring
 const entityMaterial = new THREE.MeshStandardMaterial({
@@ -113,11 +154,17 @@ const entityMaterial = new THREE.MeshStandardMaterial({
 
 // InstancedMesh for efficient rendering
 let instancedMesh = null;
+let instancedMeshGeometryType = null;  // Track which geometry the mesh was built with
 let entityData = [];  // Store entity metadata for raycasting
 
 // Dummy object for matrix calculations
 const dummy = new THREE.Object3D();
 const instanceColor = new THREE.Color();
+
+// Get a key representing current geometry configuration
+function getGeometryKey() {
+    return `${currentPrimitive}-${indexType}`;
+}
 
 function createInstancedMesh(count) {
     // Remove existing mesh
@@ -133,7 +180,11 @@ function createInstancedMesh(count) {
         roughness: 0.6
     });
 
-    instancedMesh = new THREE.InstancedMesh(entityGeometry, material, Math.max(count, 1));
+    // Use dynamic geometry based on primitive mode and index type
+    const geometry = getEntityGeometry();
+    instancedMeshGeometryType = getGeometryKey();
+    console.log(`Creating mesh with geometry: ${instancedMeshGeometryType}`);
+    instancedMesh = new THREE.InstancedMesh(geometry, material, Math.max(count, 1));
     instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     // Enable instance colors
@@ -149,13 +200,19 @@ function updateInstancedMesh(entities) {
     entityData = entities;
     const count = entities.length;
 
-    // Recreate if needed (size changed significantly)
-    if (!instancedMesh || instancedMesh.instanceMatrix.array.length / 16 < count) {
+    // Recreate if needed (size changed or geometry type changed)
+    const currentGeomKey = getGeometryKey();
+    const needsRecreate = !instancedMesh ||
+        instancedMesh.instanceMatrix.array.length / 16 < count ||
+        instancedMeshGeometryType !== currentGeomKey;
+
+    if (needsRecreate) {
+        console.log(`Recreating mesh: was ${instancedMeshGeometryType}, need ${currentGeomKey}`);
         createInstancedMesh(Math.max(count * 2, 1000));
     }
 
-    // Get base color for current index type
-    const baseColor = INDEX_COLORS[indexType] || INDEX_COLORS.TETREE;
+    // Compute max depth for color schemes
+    const maxDepth = 10; // Default max depth
 
     // Update each instance
     for (let i = 0; i < count; i++) {
@@ -167,10 +224,23 @@ function updateInstancedMesh(entities) {
         dummy.updateMatrix();
         instancedMesh.setMatrixAt(i, dummy.matrix);
 
-        // Color with slight variation based on position (depth simulation)
-        const depthFactor = 0.7 + (entity.y * 0.3);  // Y-based brightness
-        instanceColor.copy(baseColor).multiplyScalar(depthFactor);
-        instancedMesh.setColorAt(i, instanceColor);
+        // Use shared color scheme or fall back to index-based coloring
+        if (currentColorScheme === 'INDEX_TYPE') {
+            const color = COLOR_SCHEMES.INDEX_TYPE(0, maxDepth, indexType);
+            instancedMesh.setColorAt(i, color);
+        } else if (COLOR_SCHEMES[currentColorScheme]) {
+            // Use shared color scheme - simulate depth based on Y position
+            const depth = Math.floor(entity.y * maxDepth);
+            const normal = { x: entity.x - 0.5, y: entity.y - 0.5, z: entity.z - 0.5 };
+            const color = COLOR_SCHEMES[currentColorScheme](depth, maxDepth, normal);
+            instancedMesh.setColorAt(i, color);
+        } else {
+            // Fallback to index-based coloring
+            const baseColor = INDEX_COLORS[indexType] || INDEX_COLORS.TETREE;
+            const depthFactor = 0.7 + (entity.y * 0.3);
+            instanceColor.copy(baseColor).multiplyScalar(depthFactor);
+            instancedMesh.setColorAt(i, instanceColor);
+        }
     }
 
     instancedMesh.count = count;
@@ -180,6 +250,64 @@ function updateInstancedMesh(entities) {
     }
 
     console.log(`Updated InstancedMesh with ${count} entities`);
+}
+
+function recolorEntities() {
+    if (!instancedMesh || entityData.length === 0) return;
+    updateInstancedMesh(entityData);
+}
+
+function rebuildMeshWithNewPrimitive() {
+    // Use allEntities if available, fall back to entityData
+    const entities = allEntities.length > 0 ? allEntities : entityData;
+    if (entities.length === 0) {
+        console.log('No entities to rebuild');
+        return;
+    }
+
+    console.log(`Rebuilding mesh: primitive=${currentPrimitive}, indexType=${indexType}, entities=${entities.length}`);
+
+    // Force recreation of the mesh with new geometry
+    createInstancedMesh(Math.max(entities.length * 2, 1000));
+
+    // Reapply clipping if we have allEntities
+    if (allEntities.length > 0) {
+        applyClipping();
+    } else {
+        updateInstancedMesh(entities);
+    }
+
+    console.log(`Rebuilt mesh with ${currentPrimitive} primitive for ${indexType}`);
+}
+
+function applyClipping() {
+    if (allEntities.length === 0) return;
+
+    // Filter entities based on clipping planes
+    const clipped = allEntities.filter(e =>
+        e.x >= clipMinX &&
+        e.y >= clipMinY &&
+        e.z >= clipMinZ
+    );
+
+    updateInstancedMesh(clipped);
+    document.getElementById('stat-entities').textContent = `${clipped.length}/${allEntities.length}`;
+}
+
+function resetClipping() {
+    clipMinX = 0;
+    clipMinY = 0;
+    clipMinZ = 0;
+
+    // Update UI sliders
+    document.getElementById('clip-x-min').value = 0;
+    document.getElementById('clip-y-min').value = 0;
+    document.getElementById('clip-z-min').value = 0;
+    document.getElementById('clip-x-min-value').textContent = '0.0';
+    document.getElementById('clip-y-min-value').textContent = '0.0';
+    document.getElementById('clip-z-min-value').textContent = '0.0';
+
+    applyClipping();
 }
 
 // ============================================================================
@@ -471,7 +599,7 @@ async function createIndex(type) {
     hideEntityInfo();
 
     const request = {
-        type: type,
+        indexType: type,
         maxDepth: 8,
         maxEntitiesPerNode: 5
     };
@@ -485,12 +613,23 @@ async function createIndex(type) {
 
         if (response.ok) {
             const info = await response.json();
+            const previousIndexType = indexType;
             indexType = type;
             document.getElementById('stat-index-type').textContent = type;
+            document.getElementById('stat-nodes').textContent = info.nodeCount || '0';
+            document.getElementById('stat-build-time').textContent =
+                info.buildTimeMs ? `${info.buildTimeMs}ms` : '-';
             document.getElementById('btn-add-random').disabled = false;
             document.getElementById('btn-clear').disabled = false;
             document.getElementById('btn-range-query').disabled = false;
             document.getElementById('btn-knn-query').disabled = false;
+
+            // Rebuild mesh if primitive is 'index' and index type changed
+            if (currentPrimitive === 'index' && previousIndexType !== type) {
+                console.log(`Index type changed from ${previousIndexType} to ${type}, rebuilding mesh`);
+                rebuildMeshWithNewPrimitive();
+            }
+
             return info;
         } else {
             const error = await response.json();
@@ -502,17 +641,31 @@ async function createIndex(type) {
     return null;
 }
 
-async function addRandomEntities(count = 100) {
+async function addShapeEntities(shape = 'random', count = 500) {
     if (!sessionId) return;
 
-    const entities = [];
-    for (let i = 0; i < count; i++) {
-        entities.push({
-            x: Math.random(),
-            y: Math.random(),
-            z: Math.random(),
-            content: null
-        });
+    let entities;
+
+    if (shape === 'bunny') {
+        // Fetch Stanford Bunny from API
+        try {
+            const bunnyResponse = await fetch('/api/mesh/bunny');
+            if (!bunnyResponse.ok) {
+                const error = await bunnyResponse.json();
+                console.error('Failed to load bunny mesh:', error);
+                alert(`Failed to load bunny mesh: ${error.error || 'Unknown error'}`);
+                return;
+            }
+            const bunnyData = await bunnyResponse.json();
+            entities = bunnyData.entities;
+            console.log(`Loaded Stanford Bunny: ${entities.length} voxels`);
+        } catch (e) {
+            console.error('Failed to load bunny:', e);
+            return;
+        }
+    } else {
+        // Use shared shape generator
+        entities = generateShapeEntities(shape, count);
     }
 
     try {
@@ -530,16 +683,22 @@ async function addRandomEntities(count = 100) {
     }
 }
 
+// Legacy function for backwards compatibility
+async function addRandomEntities(count = 100) {
+    return addShapeEntities('random', count);
+}
+
 async function refreshEntities() {
     if (!sessionId) return;
 
     try {
-        const response = await fetch(`/api/spatial/entities?sessionId=${sessionId}&size=10000`);
+        const response = await fetch(`/api/spatial/entities?sessionId=${sessionId}&size=50000`);
         if (response.ok) {
             const data = await response.json();
-            const entities = data.entities || [];
-            updateInstancedMesh(entities);
-            document.getElementById('stat-entities').textContent = data.totalCount || entities.length;
+            allEntities = data.entities || [];
+
+            // Apply clipping before display
+            applyClipping();
         }
     } catch (e) {
         console.error('Failed to refresh entities:', e);
@@ -557,12 +716,16 @@ async function clearAll() {
             instancedMesh.count = 0;
         }
         entityData = [];
+        allEntities = [];
         clearQueryHighlights();
         selectedIndex = -1;
         hoveredIndex = -1;
         hideEntityInfo();
+        resetClipping();
 
         document.getElementById('stat-entities').textContent = '0';
+        document.getElementById('stat-nodes').textContent = '0';
+        document.getElementById('stat-build-time').textContent = '-';
         document.getElementById('stat-index-type').textContent = '-';
         document.getElementById('btn-add-random').disabled = true;
         document.getElementById('btn-clear').disabled = true;
@@ -653,8 +816,62 @@ document.getElementById('btn-create-index').addEventListener('click', async () =
 });
 
 document.getElementById('btn-add-random').addEventListener('click', async () => {
-    await addRandomEntities(100);
+    const shapeSelect = document.getElementById('shape-select');
+    const shape = shapeSelect ? shapeSelect.value : 'random';
+    const entityCountSlider = document.getElementById('entity-count');
+    const count = shape === 'bunny' ? 0 : (entityCountSlider ? parseInt(entityCountSlider.value) : 500);
+    await addShapeEntities(shape, count);
 });
+
+// Color scheme buttons (if they exist)
+document.querySelectorAll('.color-scheme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.color-scheme-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentColorScheme = btn.dataset.scheme;
+        recolorEntities();
+    });
+});
+
+// Primitive selector
+const primitiveSelect = document.getElementById('primitive-select');
+if (primitiveSelect) {
+    primitiveSelect.addEventListener('change', () => {
+        currentPrimitive = primitiveSelect.value;
+        rebuildMeshWithNewPrimitive();
+    });
+}
+
+// Entity count slider
+const entityCountSlider = document.getElementById('entity-count');
+const entityCountValue = document.getElementById('entity-count-value');
+if (entityCountSlider && entityCountValue) {
+    entityCountSlider.addEventListener('input', () => {
+        entityCountValue.textContent = entityCountSlider.value;
+    });
+}
+
+// Clipping sliders
+['x', 'y', 'z'].forEach(axis => {
+    const slider = document.getElementById(`clip-${axis}-min`);
+    const valueSpan = document.getElementById(`clip-${axis}-min-value`);
+    if (slider && valueSpan) {
+        slider.addEventListener('input', () => {
+            const value = slider.value / 100;
+            valueSpan.textContent = value.toFixed(2);
+            if (axis === 'x') clipMinX = value;
+            else if (axis === 'y') clipMinY = value;
+            else clipMinZ = value;
+            applyClipping();
+        });
+    }
+});
+
+// Reset clipping button
+const resetClipBtn = document.getElementById('btn-reset-clipping');
+if (resetClipBtn) {
+    resetClipBtn.addEventListener('click', resetClipping);
+}
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
     await clearAll();

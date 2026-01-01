@@ -2,6 +2,8 @@ package com.hellblazer.luciferase.esvo.optimization;
 
 import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.core.ESVONodeUnified;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
+
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
@@ -12,10 +14,16 @@ import java.util.Arrays;
  * Memory layout optimization for ESVO octree data.
  * Analyzes cache efficiency and reorders data for better memory access patterns.
  */
-public class ESVOMemoryOptimizer {
-    
+public class ESVOMemoryOptimizer implements Optimizer<ESVOOctreeData> {
+
     private static final int CACHE_LINE_SIZE = 64; // Typical cache line size in bytes
     private static final int NODE_SIZE = 16; // Estimated size of ESVONodeUnified in bytes
+
+    /** Implements {@link Optimizer#optimize} by delegating to {@link #optimizeMemoryLayout}. */
+    @Override
+    public ESVOOctreeData optimize(ESVOOctreeData input) {
+        return optimizeMemoryLayout(input);
+    }
     
     /**
      * Analyze memory layout for cache efficiency

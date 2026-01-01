@@ -1,18 +1,30 @@
 package com.hellblazer.luciferase.esvo.optimization;
 
+import com.hellblazer.luciferase.esvo.core.ESVOOctreeData;
 import com.hellblazer.luciferase.esvo.gpu.ESVOKernelConfig;
+import com.hellblazer.luciferase.sparse.optimization.Optimizer;
+
 import java.util.Map;
 import java.util.HashMap;
 
 /**
  * GPU kernel optimization for ESVO operations.
  * Analyzes and optimizes workgroup sizes, local memory usage, and kernel execution patterns.
+ *
+ * <p><b>Note:</b> This optimizer works on kernel configuration, not data layout.
+ * The {@link #optimize} method returns input unchanged.
  */
-public class ESVOKernelOptimizer {
-    
+public class ESVOKernelOptimizer implements Optimizer<ESVOOctreeData> {
+
     private static final int MAX_WORKGROUP_SIZE = 1024;
     private static final int MIN_WORKGROUP_SIZE = 32;
     private static final int DEFAULT_LOCAL_MEMORY_PER_CU = 65536; // 64KB typical
+
+    /** Returns input unchanged - this optimizer works on kernel config, not data. */
+    @Override
+    public ESVOOctreeData optimize(ESVOOctreeData input) {
+        return input;
+    }
     
     /**
      * Optimize workgroup size for given problem size

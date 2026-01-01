@@ -52,31 +52,29 @@ public class ESVOCppComplianceTests {
     }
 
     @Test
-    @DisplayName("Test coordinate space is [1,2] not [0,1]")
+    @DisplayName("Test coordinate space is [0,1] normalized unit cube")
     void testCoordinateSpaceCompliance() {
-        // C++ comment at line 101: "The octree is assumed to reside at coordinates [1, 2]"
-        
-        // Create transformation matrix that maps [0,1] to [1,2]
-        // This requires translation by 1 in all dimensions
+        // ESVO uses [0,1] normalized coordinate space (unified with ESVT)
+
+        // Create identity transformation matrix for [0,1] space
         var transformMatrix = new Matrix4f();
         transformMatrix.setIdentity();
-        transformMatrix.setTranslation(new Vector3f(1.0f, 1.0f, 1.0f));
-        
+
         // Test that our coordinate space matches
         var origin = new Vector3f(0.5f, 0.5f, 0.5f);
         var transformed = CoordinateSpace.transformToOctreeSpace(origin, transformMatrix);
-        
-        // Should transform from [0,1] to [1,2]
-        assertEquals(1.5f, transformed.x, 0.001f, "X should be in [1,2] space");
-        assertEquals(1.5f, transformed.y, 0.001f, "Y should be in [1,2] space");
-        assertEquals(1.5f, transformed.z, 0.001f, "Z should be in [1,2] space");
-        
+
+        // Should stay in [0,1] space
+        assertEquals(0.5f, transformed.x, 0.001f, "X should be in [0,1] space");
+        assertEquals(0.5f, transformed.y, 0.001f, "Y should be in [0,1] space");
+        assertEquals(0.5f, transformed.z, 0.001f, "Z should be in [0,1] space");
+
         // Test bounds
         var min = CoordinateSpace.transformToOctreeSpace(new Vector3f(0, 0, 0), transformMatrix);
         var max = CoordinateSpace.transformToOctreeSpace(new Vector3f(1, 1, 1), transformMatrix);
-        
-        assertEquals(1.0f, min.x, 0.001f, "Min X should be 1");
-        assertEquals(2.0f, max.x, 0.001f, "Max X should be 2");
+
+        assertEquals(0.0f, min.x, 0.001f, "Min X should be 0");
+        assertEquals(1.0f, max.x, 0.001f, "Max X should be 1");
     }
 
     @Test

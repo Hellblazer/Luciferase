@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 
 /**
  * Ray structure for ESVO ray traversal, validated against CUDA reference.
- * Coordinates are in [1, 2] space as per reference implementation.
+ * Coordinates are in [0, 1] normalized voxel space.
  */
 public class ESVORay {
     // Ray origin and direction

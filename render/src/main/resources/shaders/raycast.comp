@@ -25,7 +25,7 @@ layout(std140, binding = 2) uniform CameraData {
     mat4 viewMatrix;
     mat4 projMatrix;
     mat4 objectToWorld;      // Transform from object to world space
-    mat4 octreeToObject;     // Transform from octree [1,2] to object space
+    mat4 octreeToObject;     // Transform from octree [0,1] to object space
     vec3 cameraPos;
     float nearPlane;
     vec3 cameraDir;
@@ -43,10 +43,10 @@ struct Ray {
 };
 
 /**
- * Generate ray for pixel - CRITICAL: Must transform to octree space [1,2]!
- * 
+ * Generate ray for pixel - CRITICAL: Must transform to octree space [0,1]!
+ *
  * BUG FIX #2: Missing Coordinate Space Transformation
- * Original code generated rays in world space but octree requires [1,2] coordinate space.
+ * Original code generated rays in world space but octree requires [0,1] coordinate space.
  * This transformation is ESSENTIAL or ray intersections will be completely wrong.
  */
 Ray generateRay(ivec2 pixel) {
@@ -63,7 +63,7 @@ Ray generateRay(ivec2 pixel) {
     vec3 worldOrigin = nearPoint.xyz;
     vec3 worldDirection = normalize(farPoint.xyz - nearPoint.xyz);
     
-    // CRITICAL: Transform to octree coordinate space [1, 2]
+    // CRITICAL: Transform to octree coordinate space [0, 1]
     // This is the missing transformation that causes complete rendering failure!
     mat4 worldToOctree = inverse(camera.octreeToObject) * inverse(camera.objectToWorld);
     
@@ -110,23 +110,23 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
     if (abs(ray.direction.y) < epsilon) ray.direction.y = sign(ray.direction.y) * epsilon;
     if (abs(ray.direction.z) < epsilon) ray.direction.z = sign(ray.direction.z) * epsilon;
     
-    // Precompute ray coefficients for octree space [1, 2]
+    // Precompute ray coefficients for octree space [0, 1]
     float tx_coef = 1.0 / -abs(ray.direction.x);
     float ty_coef = 1.0 / -abs(ray.direction.y);
     float tz_coef = 1.0 / -abs(ray.direction.z);
-    
+
     float tx_bias = tx_coef * ray.origin.x;
     float ty_bias = ty_coef * ray.origin.y;
     float tz_bias = tz_coef * ray.origin.z;
-    
+
     // Octant mirroring to make ray direction negative (optimization)
     int octantMask = 7;
-    if (ray.direction.x > 0.0) { octantMask ^= 1; tx_bias = 3.0 * tx_coef - tx_bias; }
-    if (ray.direction.y > 0.0) { octantMask ^= 2; ty_bias = 3.0 * ty_coef - ty_bias; }
-    if (ray.direction.z > 0.0) { octantMask ^= 4; tz_bias = 3.0 * tz_coef - tz_bias; }
-    
-    // Initialize t-span for octree box [1, 2]
-    float t_min = max(max(2.0 * tx_coef - tx_bias, 2.0 * ty_coef - ty_bias), 2.0 * tz_coef - tz_bias);
+    if (ray.direction.x > 0.0) { octantMask ^= 1; tx_bias = 1.0 * tx_coef - tx_bias; }
+    if (ray.direction.y > 0.0) { octantMask ^= 2; ty_bias = 1.0 * ty_coef - ty_bias; }
+    if (ray.direction.z > 0.0) { octantMask ^= 4; tz_bias = 1.0 * tz_coef - tz_bias; }
+
+    // Initialize t-span for octree box [0, 1]
+    float t_min = max(max(1.0 * tx_coef - tx_bias, 1.0 * ty_coef - ty_bias), 1.0 * tz_coef - tz_bias);
     float t_max = min(min(tx_coef - tx_bias, ty_coef - ty_bias), tz_coef - tz_bias);
     float h = t_max;  // Push optimization tracker
     t_min = max(t_min, 0.0);
@@ -139,14 +139,14 @@ void castRay(inout Ray ray, out vec3 hitPoint, out vec3 hitNormal) {
     
     uint parentIdx = 0u; // Root node
     int idx = 0;
-    vec3 pos = vec3(1.0, 1.0, 1.0);
+    vec3 pos = vec3(0.0, 0.0, 0.0);
     int scale = CAST_STACK_DEPTH - 1;
     float scale_exp2 = 0.5; // exp2(scale - s_max)
-    
+
     // Determine initial voxel
-    if (1.5 * tx_coef - tx_bias > t_min) { idx ^= 1; pos.x = 1.5; }
-    if (1.5 * ty_coef - ty_bias > t_min) { idx ^= 2; pos.y = 1.5; }
-    if (1.5 * tz_coef - tz_bias > t_min) { idx ^= 4; pos.z = 1.5; }
+    if (0.5 * tx_coef - tx_bias > t_min) { idx ^= 1; pos.x = 0.5; }
+    if (0.5 * ty_coef - ty_bias > t_min) { idx ^= 2; pos.y = 0.5; }
+    if (0.5 * tz_coef - tz_bias > t_min) { idx ^= 4; pos.z = 0.5; }
     
     // Initialize cached child descriptor
     uvec2 child_descriptor = uvec2(0u, 0u);

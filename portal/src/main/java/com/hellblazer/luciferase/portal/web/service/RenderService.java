@@ -46,6 +46,16 @@ public class RenderService {
         var maxDepth = request.maxDepth() != null ? request.maxDepth() : DEFAULT_MAX_DEPTH;
         var gridResolution = request.gridResolution() != null ? request.gridResolution() : DEFAULT_GRID_RESOLUTION;
 
+        // Validate spatial index type matches requested render type
+        if (type == RenderType.ESVT && !(spatialIndex instanceof Tetree)) {
+            throw new IllegalArgumentException("ESVT render requires a Tetree spatial index, got: " +
+                    spatialIndex.getClass().getSimpleName());
+        }
+        if (type == RenderType.ESVO && !(spatialIndex instanceof Octree)) {
+            throw new IllegalArgumentException("ESVO render requires an Octree spatial index, got: " +
+                    spatialIndex.getClass().getSimpleName());
+        }
+
         RenderHolder holder;
         if (type == RenderType.ESVT) {
             holder = createESVT(spatialIndex, maxDepth, gridResolution);
@@ -178,13 +188,43 @@ public class RenderService {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private RenderHolder createESVT(Object spatialIndex, int maxDepth, int gridResolution) {
-        if (!(spatialIndex instanceof Tetree)) {
-            throw new IllegalArgumentException("ESVT requires a Tetree spatial index");
+        // Extract positions and build ESVT from voxels (like ESVO)
+        // This limits tree depth and prevents far pointer overflow
+        log.info("createESVT: spatialIndex type={}", spatialIndex.getClass().getSimpleName());
+        var positions = getPositions(spatialIndex);
+        log.info("createESVT: extracted {} positions from spatial index", positions.size());
+
+        var voxels = new ArrayList<Point3i>();
+        var uniqueVoxels = new java.util.HashSet<String>();
+
+        // Convert positions to voxel coordinates
+        for (var pos : positions) {
+            int x = (int) (pos.x * gridResolution);
+            int y = (int) (pos.y * gridResolution);
+            int z = (int) (pos.z * gridResolution);
+            x = Math.max(0, Math.min(gridResolution - 1, x));
+            y = Math.max(0, Math.min(gridResolution - 1, y));
+            z = Math.max(0, Math.min(gridResolution - 1, z));
+            voxels.add(new Point3i(x, y, z));
+            uniqueVoxels.add(x + "," + y + "," + z);
         }
 
-        var tetree = (Tetree<UUIDEntityID, Object>) spatialIndex;
+        log.info("createESVT: created {} voxels ({} unique) from positions, maxDepth={}, gridRes={}",
+                voxels.size(), uniqueVoxels.size(), maxDepth, gridResolution);
+
+        // Log a sample of positions if we have very few
+        if (positions.size() < 20) {
+            for (int i = 0; i < Math.min(5, positions.size()); i++) {
+                var pos = positions.get(i);
+                log.info("  sample position[{}]: ({}, {}, {})", i, pos.x, pos.y, pos.z);
+            }
+        }
+
         var builder = new ESVTBuilder();
-        var data = builder.build(tetree);
+        var data = builder.buildFromVoxels(voxels, maxDepth, gridResolution);
+
+        log.info("createESVT: built ESVT with {} nodes, {} leaves, {} internal",
+                data.nodes().length, data.leafCount(), data.internalCount());
 
         return new RenderHolder(
                 RenderType.ESVT,

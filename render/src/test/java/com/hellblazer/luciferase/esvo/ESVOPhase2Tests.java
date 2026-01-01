@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * 
  * Tests the 3 critical GLSL shader bug fixes and deep octree traversal:
  * 1. Single stack read only (no double reads)
- * 2. Proper coordinate space transformation to [1,2]
+ * 2. Proper coordinate space transformation to [0,1]
  * 3. Conditional iteration limit
  * 
  * Performance targets:
@@ -65,15 +65,16 @@ public class ESVOPhase2Tests {
     @Test
     @DisplayName("Test single stack read - no double reads during POP operations")
     void testSingleStackRead() {
-        // Create ray that will cause stack operations
-        var ray = new EnhancedRay(new Vector3f(1.1f, 1.1f, 1.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
-        
+        // Create ray that will cause stack operations - now in [0,1] space
+        // Ray starts outside octree at (-0.5, 0.1, 0.1) pointing into it
+        var ray = new EnhancedRay(new Vector3f(-0.5f, 0.1f, 0.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
+
         var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-        
+
         // Verify traversal completed (tests stack operations work correctly)
         assertTrue(result.iterations > 0, "Traversal should have performed iterations");
         assertTrue(result.traversalDepth >= 0, "Should have tracked traversal depth");
-        
+
         // For deep traversal, we expect to hit something
         if (result.hit) {
             assertNotNull(result.hitPoint, "Hit point should be provided");
@@ -84,66 +85,66 @@ public class ESVOPhase2Tests {
     @Test
     @DisplayName("Test stack operations with complex ray paths")
     void testComplexStackOperations() {
-        // Test rays that will exercise different stack depths
+        // Test rays that will exercise different stack depths - now in [0,1] space
         var testRays = new EnhancedRay[] {
-            new EnhancedRay(new Vector3f(1.0f, 1.5f, 1.5f), 0.001f, new Vector3f(1, 0, 0), 0.001f), // Horizontal
-            new EnhancedRay(new Vector3f(1.5f, 1.0f, 1.5f), 0.001f, new Vector3f(0, 1, 0), 0.001f), // Vertical
-            new EnhancedRay(new Vector3f(1.5f, 1.5f, 1.0f), 0.001f, new Vector3f(0, 0, 1), 0.001f), // Depth
-            new EnhancedRay(new Vector3f(1.1f, 1.1f, 1.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f), // Diagonal
+            new EnhancedRay(new Vector3f(-0.5f, 0.5f, 0.5f), 0.001f, new Vector3f(1, 0, 0), 0.001f), // Horizontal from -X
+            new EnhancedRay(new Vector3f(0.5f, -0.5f, 0.5f), 0.001f, new Vector3f(0, 1, 0), 0.001f), // Vertical from -Y
+            new EnhancedRay(new Vector3f(0.5f, 0.5f, -0.5f), 0.001f, new Vector3f(0, 0, 1), 0.001f), // Depth from -Z
+            new EnhancedRay(new Vector3f(-0.5f, -0.5f, -0.5f), 0.001f, new Vector3f(1, 1, 1), 0.001f), // Diagonal
         };
-        
+
         for (var ray : testRays) {
             var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-            
+
             // Verify each ray produces valid results
             assertTrue(result.iterations >= 0, "Should track iterations for ray");
             assertTrue(result.traversalDepth >= 0, "Should track depth for ray");
-            
+
             // Stack operations should not cause infinite loops
             assertTrue(result.iterations < 1000, "Should not exceed reasonable iteration count");
         }
     }
     
     // =====================================================================
-    // Critical Bug Fix #2: Proper Coordinate Space Transformation [1,2]
+    // Critical Bug Fix #2: Proper Coordinate Space Transformation [0,1]
     // =====================================================================
-    
+
     @Test
-    @DisplayName("Test coordinate space transformation to [1,2]")
+    @DisplayName("Test coordinate space transformation to [0,1]")
     void testCoordinateSpaceTransformation() {
         // Test ray generation with coordinate space transformation
         var camera = new Vector3f(0, 0, 5); // World space camera
         var direction = new Vector3f(0, 0, -1);
-        
+
         var ray = StackBasedRayTraversal.generateRay(320, 240, 640, 480, camera, direction, 60.0f);
-        
-        // Verify ray is in octree coordinate space [1,2]
-        assertTrue(ray.origin.x >= 0.5f && ray.origin.x <= 2.5f, 
+
+        // Verify ray is in octree coordinate space vicinity [0,1]
+        assertTrue(ray.origin.x >= -0.5f && ray.origin.x <= 1.5f,
                   "Ray origin X should be in octree vicinity: " + ray.origin.x);
-        assertTrue(ray.origin.y >= 0.5f && ray.origin.y <= 2.5f,
+        assertTrue(ray.origin.y >= -0.5f && ray.origin.y <= 1.5f,
                   "Ray origin Y should be in octree vicinity: " + ray.origin.y);
-        
+
         // Verify direction is normalized
         var length = ray.direction.length();
         assertEquals(1.0f, length, 0.001f, "Ray direction should be normalized");
     }
-    
+
     @Test
-    @DisplayName("Test octree bounds intersection in [1,2] space")
+    @DisplayName("Test octree bounds intersection in [0,1] space")
     void testOctreeBoundsIntersection() {
-        // Create ray that should intersect octree bounds [1,2]
-        var ray = new EnhancedRay(new Vector3f(0.5f, 1.5f, 1.5f), 0.001f, new Vector3f(1, 0, 0), 0.001f);
-        
+        // Create ray that should intersect octree bounds [0,1] - start outside
+        var ray = new EnhancedRay(new Vector3f(-0.5f, 0.5f, 0.5f), 0.001f, new Vector3f(1, 0, 0), 0.001f);
+
         var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-        
+
         // Verify intersection occurs within octree space
         if (result.hit) {
-            assertTrue(result.hitPoint.x >= 1.0f && result.hitPoint.x <= 2.0f,
-                      "Hit point X should be in [1,2]: " + result.hitPoint.x);
-            assertTrue(result.hitPoint.y >= 1.0f && result.hitPoint.y <= 2.0f,
-                      "Hit point Y should be in [1,2]: " + result.hitPoint.y);
-            assertTrue(result.hitPoint.z >= 1.0f && result.hitPoint.z <= 2.0f,
-                      "Hit point Z should be in [1,2]: " + result.hitPoint.z);
+            assertTrue(result.hitPoint.x >= 0.0f && result.hitPoint.x <= 1.0f,
+                      "Hit point X should be in [0,1]: " + result.hitPoint.x);
+            assertTrue(result.hitPoint.y >= 0.0f && result.hitPoint.y <= 1.0f,
+                      "Hit point Y should be in [0,1]: " + result.hitPoint.y);
+            assertTrue(result.hitPoint.z >= 0.0f && result.hitPoint.z <= 1.0f,
+                      "Hit point Z should be in [0,1]: " + result.hitPoint.z);
         }
     }
     
@@ -154,36 +155,36 @@ public class ESVOPhase2Tests {
     @Test
     @DisplayName("Test conditional iteration limit enforcement")
     void testConditionalIterationLimit() {
-        // Create ray that might cause many iterations
-        var ray = new EnhancedRay(new Vector3f(1.001f, 1.001f, 1.001f), 0.001f, new Vector3f(0.1f, 0.1f, 0.9f), 0.001f);
-        
+        // Create ray that might cause many iterations - in [0,1] space
+        var ray = new EnhancedRay(new Vector3f(-0.5f, 0.001f, 0.001f), 0.001f, new Vector3f(0.9f, 0.1f, 0.1f), 0.001f);
+
         var result = StackBasedRayTraversal.traverse(ray, octree23Level);
-        
+
         // Verify iteration limit is respected when active
         if (StackBasedRayTraversal.MAX_RAYCAST_ITERATIONS > 0) {
             assertTrue(result.iterations <= StackBasedRayTraversal.MAX_RAYCAST_ITERATIONS,
                       "Should respect MAX_RAYCAST_ITERATIONS limit");
         }
-        
+
         // Verify iterations are counted correctly
         assertTrue(result.iterations >= 0, "Should track iteration count");
     }
-    
+
     @Test
     @DisplayName("Test traversal completes without infinite loops")
     void testNoInfiniteLoops() {
-        // Test multiple rays that could potentially cause issues
+        // Test multiple rays that could potentially cause issues - in [0,1] space
         var testRays = new EnhancedRay[] {
-            new EnhancedRay(new Vector3f(1.5f, 1.5f, 1.5f), 0.001f, new Vector3f(0, 0, 0.001f), 0.001f), // Nearly zero direction
-            new EnhancedRay(new Vector3f(1.0f, 1.0f, 1.0f), 0.001f, new Vector3f(1, 1, 1), 0.001f),       // Corner to corner
-            new EnhancedRay(new Vector3f(2.0f, 2.0f, 2.0f), 0.001f, new Vector3f(-1, -1, -1), 0.001f),    // Reverse diagonal
+            new EnhancedRay(new Vector3f(0.5f, 0.5f, 0.5f), 0.001f, new Vector3f(0, 0, 0.001f), 0.001f), // Nearly zero direction
+            new EnhancedRay(new Vector3f(-0.5f, -0.5f, -0.5f), 0.001f, new Vector3f(1, 1, 1), 0.001f),   // Corner to corner
+            new EnhancedRay(new Vector3f(1.5f, 1.5f, 1.5f), 0.001f, new Vector3f(-1, -1, -1), 0.001f),   // Reverse diagonal
         };
-        
+
         for (var ray : testRays) {
             var startTime = System.currentTimeMillis();
             var result = StackBasedRayTraversal.traverse(ray, octree5Level);
             var endTime = System.currentTimeMillis();
-            
+
             // Each traversal should complete quickly (no infinite loops)
             assertTrue(endTime - startTime < 1000, "Traversal should complete within 1 second");
             assertTrue(result.iterations >= 0, "Should have valid iteration count");
@@ -199,27 +200,27 @@ public class ESVOPhase2Tests {
     void test5LevelOctreeStructure() {
         assertEquals(5, octree5Level.getMaxDepth(), "Should have 5 levels");
         assertNotNull(octree5Level.getNode(0), "Root node should exist");
-        
-        // Verify octree is in [1,2] coordinate space
+
+        // Verify octree is in [0,1] coordinate space
         var center = octree5Level.getCenter();
-        assertEquals(1.5f, center.x, 0.001f, "Center X should be 1.5");
-        assertEquals(1.5f, center.y, 0.001f, "Center Y should be 1.5");
-        assertEquals(1.5f, center.z, 0.001f, "Center Z should be 1.5");
-        
+        assertEquals(0.5f, center.x, 0.001f, "Center X should be 0.5");
+        assertEquals(0.5f, center.y, 0.001f, "Center Y should be 0.5");
+        assertEquals(0.5f, center.z, 0.001f, "Center Z should be 0.5");
+
         assertEquals(1.0f, octree5Level.getSize(), 0.001f, "Size should be 1.0");
     }
-    
+
     @Test
     @DisplayName("Test 5-level traversal depth tracking")
     void test5LevelTraversalDepth() {
-        // Test ray that should traverse to different depths
-        var ray = new EnhancedRay(new Vector3f(1.1f, 1.1f, 1.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
-        
+        // Test ray that should traverse to different depths - in [0,1] space
+        var ray = new EnhancedRay(new Vector3f(-0.5f, 0.1f, 0.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
+
         var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-        
+
         assertTrue(result.traversalDepth >= 0, "Should track traversal depth");
         assertTrue(result.traversalDepth <= 5, "Should not exceed octree depth");
-        
+
         if (result.hit) {
             assertTrue(result.leafNode >= 0, "Should identify leaf node");
         }
@@ -234,24 +235,25 @@ public class ESVOPhase2Tests {
     void test23LevelOctreeCreation() {
         assertEquals(23, octree23Level.getMaxDepth(), "Should have 23 levels");
         assertNotNull(octree23Level.getNode(0), "Root node should exist");
-        
-        // Verify structure is valid
+
+        // Verify structure is valid - in [0,1] space
         var center = octree23Level.getCenter();
-        assertEquals(1.5f, center.x, 0.001f, "Center should be correct");
+        assertEquals(0.5f, center.x, 0.001f, "Center should be correct");
         assertEquals(1.0f, octree23Level.getSize(), 0.001f, "Size should be correct");
     }
-    
+
     @Test
     @DisplayName("Test 23-level stack depth limit")
     void test23LevelStackDepth() {
-        var ray = new EnhancedRay(new Vector3f(1.1f, 1.1f, 1.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
-        
+        // Ray in [0,1] space
+        var ray = new EnhancedRay(new Vector3f(-0.5f, 0.1f, 0.1f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
+
         var result = StackBasedRayTraversal.traverse(ray, octree23Level);
-        
+
         // Should not exceed stack depth
         assertTrue(result.traversalDepth <= StackBasedRayTraversal.CAST_STACK_DEPTH,
                   "Should not exceed CAST_STACK_DEPTH");
-        
+
         // Should handle deep traversal
         assertTrue(result.iterations >= 0, "Should complete traversal");
     }
@@ -263,18 +265,18 @@ public class ESVOPhase2Tests {
     @Test
     @DisplayName("Test popc8 bit counting for child indexing")
     void testPopc8BitCounting() {
-        // Test through the traversal system to ensure popc8 is working
-        var ray = new EnhancedRay(new Vector3f(1.1f, 1.1f, 1.1f), 0.001f, new Vector3f(1, 0, 0), 0.001f);
-        
+        // Test through the traversal system to ensure popc8 is working - in [0,1] space
+        var ray = new EnhancedRay(new Vector3f(-0.5f, 0.1f, 0.1f), 0.001f, new Vector3f(1, 0, 0), 0.001f);
+
         var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-        
+
         // If traversal completes, popc8 is working correctly
         assertTrue(result.iterations >= 0, "Traversal should complete (popc8 working)");
-        
+
         // Test specific child index calculation patterns
-        var testRay = new EnhancedRay(new Vector3f(1.25f, 1.25f, 1.25f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
+        var testRay = new EnhancedRay(new Vector3f(-0.5f, 0.25f, 0.25f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
         var testResult = StackBasedRayTraversal.traverse(testRay, octree5Level);
-        
+
         assertTrue(testResult.iterations >= 0, "Child indexing should work correctly");
     }
     
@@ -345,43 +347,43 @@ public class ESVOPhase2Tests {
     @Test
     @DisplayName("Test edge cases and boundary conditions")
     void testEdgeCases() {
-        // Ray starting outside octree
-        var outsideRay = new EnhancedRay(new Vector3f(0.5f, 0.5f, 0.5f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
+        // Ray starting outside octree - in [0,1] space
+        var outsideRay = new EnhancedRay(new Vector3f(-0.5f, -0.5f, -0.5f), 0.001f, new Vector3f(1, 1, 1), 0.001f);
         var result1 = StackBasedRayTraversal.traverse(outsideRay, octree5Level);
-        
+
         // May or may not hit depending on intersection
         assertTrue(result1.iterations >= 0, "Should handle outside rays");
-        
+
         // Ray starting inside octree
-        var insideRay = new EnhancedRay(new Vector3f(1.5f, 1.5f, 1.5f), 0.001f, new Vector3f(1, 0, 0), 0.001f);
+        var insideRay = new EnhancedRay(new Vector3f(0.5f, 0.5f, 0.5f), 0.001f, new Vector3f(1, 0, 0), 0.001f);
         var result2 = StackBasedRayTraversal.traverse(insideRay, octree5Level);
-        
+
         assertTrue(result2.iterations >= 0, "Should handle inside rays");
-        
+
         // Ray parallel to octree face
-        var parallelRay = new EnhancedRay(new Vector3f(1.0f, 1.5f, 1.5f), 0.001f, new Vector3f(0, 1, 0), 0.001f);
+        var parallelRay = new EnhancedRay(new Vector3f(0.0f, 0.5f, 0.5f), 0.001f, new Vector3f(0, 1, 0), 0.001f);
         var result3 = StackBasedRayTraversal.traverse(parallelRay, octree5Level);
-        
+
         assertTrue(result3.iterations >= 0, "Should handle parallel rays");
     }
-    
+
     @Test
     @DisplayName("Test octant mirroring consistency")
     void testOctantMirroring() {
-        // Test all 8 octant directions
+        // Test all 8 octant directions - in [0,1] space
         var directions = new Vector3f[] {
             new Vector3f(-1, -1, -1), new Vector3f( 1, -1, -1),
             new Vector3f(-1,  1, -1), new Vector3f( 1,  1, -1),
             new Vector3f(-1, -1,  1), new Vector3f( 1, -1,  1),
             new Vector3f(-1,  1,  1), new Vector3f( 1,  1,  1)
         };
-        
+
         for (var dir : directions) {
-            var ray = new EnhancedRay(new Vector3f(1.5f, 1.5f, 1.5f), 0.001f, dir, 0.001f);
+            var ray = new EnhancedRay(new Vector3f(0.5f, 0.5f, 0.5f), 0.001f, dir, 0.001f);
             var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-            
+
             // Each direction should produce valid results
-            assertTrue(result.iterations >= 0, 
+            assertTrue(result.iterations >= 0,
                       "Should handle direction: " + dir);
             assertTrue(result.traversalDepth >= 0,
                       "Should track depth for direction: " + dir);
@@ -415,26 +417,26 @@ public class ESVOPhase2Tests {
     void testAllCriticalFixesTogether() {
         // Create scenario that exercises all three fixes:
         // 1. Stack operations (multiple levels)
-        // 2. Coordinate space transformation 
+        // 2. Coordinate space transformation
         // 3. Iteration counting
-        
+
         var camera = new Vector3f(0, 0, 3); // World space
         var ray = StackBasedRayTraversal.generateRay(320, 240, 640, 480,
                                                    camera, new Vector3f(0, 0, -1), 60.0f);
-        
+
         var result = StackBasedRayTraversal.traverse(ray, octree5Level);
-        
+
         // All fixes working: traversal completes with valid results
         assertTrue(result.iterations >= 0, "Iteration counting should work");
         assertTrue(result.traversalDepth >= 0, "Stack operations should work");
-        
+
         if (result.hit) {
-            // Coordinate space fix: hit point in [1,2]
-            assertTrue(result.hitPoint.x >= 1.0f && result.hitPoint.x <= 2.0f,
+            // Coordinate space fix: hit point in [0,1]
+            assertTrue(result.hitPoint.x >= 0.0f && result.hitPoint.x <= 1.0f,
                       "Hit point should be in octree space");
-            assertTrue(result.hitPoint.y >= 1.0f && result.hitPoint.y <= 2.0f,
+            assertTrue(result.hitPoint.y >= 0.0f && result.hitPoint.y <= 1.0f,
                       "Hit point should be in octree space");
-            assertTrue(result.hitPoint.z >= 1.0f && result.hitPoint.z <= 2.0f,
+            assertTrue(result.hitPoint.z >= 0.0f && result.hitPoint.z <= 1.0f,
                       "Hit point should be in octree space");
         }
     }

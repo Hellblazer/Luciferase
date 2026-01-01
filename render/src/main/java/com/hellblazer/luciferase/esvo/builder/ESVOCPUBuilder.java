@@ -63,23 +63,23 @@ public class ESVOCPUBuilder implements AutoCloseable {
         float maxY = Math.max(Math.max(v0.y, v1.y), v2.y);
         float maxZ = Math.max(Math.max(v0.z, v1.z), v2.z);
         
-        // Map to [1,2] octree space
-        minX = Math.max(1.0f, Math.min(2.0f, minX));
-        minY = Math.max(1.0f, Math.min(2.0f, minY));
-        minZ = Math.max(1.0f, Math.min(2.0f, minZ));
-        maxX = Math.max(1.0f, Math.min(2.0f, maxX));
-        maxY = Math.max(1.0f, Math.min(2.0f, maxY));
-        maxZ = Math.max(1.0f, Math.min(2.0f, maxZ));
-        
+        // Map to [0,1] voxel space
+        minX = Math.max(0.0f, Math.min(1.0f, minX));
+        minY = Math.max(0.0f, Math.min(1.0f, minY));
+        minZ = Math.max(0.0f, Math.min(1.0f, minZ));
+        maxX = Math.max(0.0f, Math.min(1.0f, maxX));
+        maxY = Math.max(0.0f, Math.min(1.0f, maxY));
+        maxZ = Math.max(0.0f, Math.min(1.0f, maxZ));
+
         int resolution = 1 << targetLevel;
         float voxelSize = 1.0f / resolution;
-        
-        int startX = (int)((minX - 1.0f) / voxelSize);
-        int endX = (int)((maxX - 1.0f) / voxelSize) + 1;
-        int startY = (int)((minY - 1.0f) / voxelSize);
-        int endY = (int)((maxY - 1.0f) / voxelSize) + 1;
-        int startZ = (int)((minZ - 1.0f) / voxelSize);
-        int endZ = (int)((maxZ - 1.0f) / voxelSize) + 1;
+
+        int startX = (int)(minX / voxelSize);
+        int endX = (int)(maxX / voxelSize) + 1;
+        int startY = (int)(minY / voxelSize);
+        int endY = (int)(maxY / voxelSize) + 1;
+        int startZ = (int)(minZ / voxelSize);
+        int endZ = (int)(maxZ / voxelSize) + 1;
         
         for (int x = startX; x < endX && x < resolution; x++) {
             for (int y = startY; y < endY && y < resolution; y++) {

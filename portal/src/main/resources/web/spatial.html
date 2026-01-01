@@ -22,7 +22,7 @@
             position: absolute;
             top: 10px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.75);
+            background: rgba(0, 0, 0, 0.8);
             color: #fff;
             padding: 15px;
             border-radius: 8px;
@@ -34,7 +34,7 @@
         #info-panel h2 {
             margin: 0 0 10px 0;
             font-size: 16px;
-            color: #6ee7b7;
+            color: #f472b6;
         }
 
         #info-panel .status {
@@ -84,35 +84,60 @@
             position: absolute;
             top: 10px;
             right: 10px;
-            background: rgba(0, 0, 0, 0.75);
+            background: rgba(0, 0, 0, 0.8);
             color: #fff;
             padding: 15px;
             border-radius: 8px;
             font-size: 13px;
+            min-width: 200px;
             z-index: 100;
+        }
+
+        #controls-panel label {
+            display: block;
+            margin-top: 10px;
+            margin-bottom: 4px;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        /* Section dividers */
+        .section-divider {
+            border: none;
+            border-top: 1px solid #4b5563;
+            margin: 15px 0;
+        }
+
+        .section-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #9ca3af;
+            margin-bottom: 10px;
         }
 
         #controls-panel h3 {
             margin: 0 0 10px 0;
             font-size: 14px;
-            color: #a78bfa;
+            color: #f472b6;
         }
 
         #controls-panel button {
             display: block;
             width: 100%;
-            padding: 8px 12px;
-            margin: 5px 0;
-            background: #3b82f6;
+            padding: 10px 12px;
+            margin: 8px 0;
+            background: #8b5cf6;
             color: #fff;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             font-size: 13px;
+            font-weight: 500;
         }
 
         #controls-panel button:hover {
-            background: #2563eb;
+            background: #7c3aed;
         }
 
         #controls-panel button:disabled {
@@ -223,21 +248,7 @@
             background: #6b7280;
         }
 
-        /* Query section styling */
-        #controls-panel .query-section {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #4b5563;
-        }
-
-        #controls-panel .query-section h4 {
-            margin: 0 0 8px 0;
-            font-size: 12px;
-            color: #a78bfa;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
+        /* Query and utility button variants */
         #controls-panel button.query-btn {
             background: #7c3aed;
         }
@@ -252,6 +263,30 @@
 
         #controls-panel button.clear-btn:hover {
             background: #4b5563;
+        }
+
+        /* Color scheme buttons */
+        .color-schemes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 8px 0;
+        }
+
+        .color-scheme-btn {
+            padding: 4px 8px !important;
+            font-size: 11px !important;
+            width: auto !important;
+            display: inline-block !important;
+            background: #4b5563 !important;
+        }
+
+        .color-scheme-btn:hover {
+            background: #6b7280 !important;
+        }
+
+        .color-scheme-btn.active {
+            background: #8b5cf6 !important;
         }
     </style>
 </head>
@@ -271,8 +306,16 @@
                 <span id="stat-index-type" class="stat-value">-</span>
             </div>
             <div class="stat-row">
+                <span class="stat-label">Nodes</span>
+                <span id="stat-nodes" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
                 <span class="stat-label">Entities</span>
                 <span id="stat-entities" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Build Time</span>
+                <span id="stat-build-time" class="stat-value">-</span>
             </div>
             <div class="stat-row">
                 <span class="stat-label">FPS</span>
@@ -282,25 +325,69 @@
     </div>
 
     <div id="controls-panel">
-        <h3>Controls</h3>
+        <h3>Spatial Index</h3>
+
         <label>Index Type</label>
         <select id="index-type">
             <option value="TETREE">Tetree</option>
             <option value="OCTREE">Octree</option>
             <option value="SFC">SFC Array</option>
         </select>
+
+        <label>Shape</label>
+        <select id="shape-select">
+            <option value="random">Random</option>
+            <option value="sphere">Sphere</option>
+            <option value="cube">Cube</option>
+            <option value="torus">Torus</option>
+            <option value="bunny">Stanford Bunny</option>
+        </select>
+
+        <label>Entity Count</label>
+        <input type="range" id="entity-count" min="50" max="2000" value="500" style="width: 100%;">
+        <span id="entity-count-value" style="font-size: 11px; color: #9ca3af;">500</span>
+
+        <label>Primitive</label>
+        <select id="primitive-select">
+            <option value="sphere">Sphere</option>
+            <option value="index">Index Native (Cube/Tet)</option>
+        </select>
+
         <button id="btn-create-index">Create Index</button>
-        <button id="btn-add-random" disabled>Add Random Entities</button>
+        <button id="btn-add-random" disabled>Add Entities</button>
         <button id="btn-clear" disabled>Clear All</button>
 
-        <div class="query-section">
-            <h4>Queries</h4>
-            <button id="btn-range-query" class="query-btn" disabled>Range Query (Center)</button>
-            <button id="btn-knn-query" class="query-btn" disabled>KNN Query (k=10)</button>
-            <button id="btn-clear-query" class="clear-btn">Clear Highlights</button>
+        <hr class="section-divider">
+
+        <div class="section-title">Color Scheme</div>
+        <div class="color-schemes">
+            <button class="color-scheme-btn active" data-scheme="DEPTH">Depth</button>
+            <button class="color-scheme-btn" data-scheme="NORMAL">Normal</button>
+            <button class="color-scheme-btn" data-scheme="SOLID">Solid</button>
+            <button class="color-scheme-btn" data-scheme="RAINBOW">Rainbow</button>
+            <button class="color-scheme-btn" data-scheme="INDEX_TYPE">Index</button>
         </div>
 
-        <hr style="border-color: #4b5563; margin: 10px 0;">
+        <hr class="section-divider">
+
+        <div class="section-title">Clipping</div>
+        <label style="font-size: 11px;">X Min: <span id="clip-x-min-value">0.0</span></label>
+        <input type="range" id="clip-x-min" min="0" max="100" value="0" style="width: 100%;">
+        <label style="font-size: 11px;">Y Min: <span id="clip-y-min-value">0.0</span></label>
+        <input type="range" id="clip-y-min" min="0" max="100" value="0" style="width: 100%;">
+        <label style="font-size: 11px;">Z Min: <span id="clip-z-min-value">0.0</span></label>
+        <input type="range" id="clip-z-min" min="0" max="100" value="0" style="width: 100%;">
+        <button id="btn-reset-clipping" class="clear-btn">Reset Clipping</button>
+
+        <hr class="section-divider">
+
+        <div class="section-title">Queries</div>
+        <button id="btn-range-query" class="query-btn" disabled>Range Query (Center)</button>
+        <button id="btn-knn-query" class="query-btn" disabled>KNN Query (k=10)</button>
+        <button id="btn-clear-query" class="clear-btn">Clear Highlights</button>
+
+        <hr class="section-divider">
+
         <button id="btn-reset-camera">Reset Camera</button>
     </div>
 

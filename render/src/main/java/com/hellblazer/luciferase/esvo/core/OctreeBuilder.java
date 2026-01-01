@@ -52,14 +52,14 @@ public class OctreeBuilder implements AutoCloseable {
     public void addVoxel(int x, int y, int z, int level, float density) {
         ensureNotClosed();
         
-        // Calculate position in [1,2] coordinate space
+        // Calculate position in [0,1] coordinate space
         int resolution = 1 << level;
         float voxelSize = 1.0f / resolution;
-        
+
         Vector3f position = new Vector3f(
-            1.0f + (x + 0.5f) * voxelSize,
-            1.0f + (y + 0.5f) * voxelSize,
-            1.0f + (z + 0.5f) * voxelSize
+            (x + 0.5f) * voxelSize,
+            (y + 0.5f) * voxelSize,
+            (z + 0.5f) * voxelSize
         );
         
         voxels.add(new VoxelData(position, level, density));
@@ -306,10 +306,10 @@ public class OctreeBuilder implements AutoCloseable {
      * Uses Morton encoding for spatial hashing.
      */
     private long computeNodeKey(Vector3f position, int level) {
-        // Normalize position to [0,1] range within the [1,2] coordinate space
-        float x = position.x - 1.0f;
-        float y = position.y - 1.0f;
-        float z = position.z - 1.0f;
+        // Position is already in [0,1] coordinate space
+        float x = position.x;
+        float y = position.y;
+        float z = position.z;
         
         // Convert to integer coordinates at this level
         int resolution = 1 << level;

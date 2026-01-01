@@ -24,7 +24,7 @@ The ESVO (Efficient Sparse Voxel Octrees) implementation has been successfully c
 ### ✅ Critical Systems Implemented
 
 1. **Child Indexing Algorithm**: Correct sparse indexing `parent_ptr + popc8(child_masks & ((1 << childIdx) - 1))`
-2. **Coordinate System**: [1,2] space with octant mirroring optimization
+2. **Coordinate System**: [0,1] normalized space with octant mirroring optimization
 3. **Stack Management**: 23-level traversal stack with h-value optimization
 4. **Serialization**: Complete I/O pipeline with compression support
 
@@ -73,7 +73,7 @@ public int getChildOffset(int childIdx) {
 
 #### Coordinate Space (CoordinateSpace.java)
 
-- **Range**: [1,2] octree space (not [0,1])
+- **Range**: [0,1] normalized octree space (unified with ESVT)
 - **Octant Mirroring**: Optimization for ray traversal
 - **World-to-Octree**: Proper transformation pipeline
 
