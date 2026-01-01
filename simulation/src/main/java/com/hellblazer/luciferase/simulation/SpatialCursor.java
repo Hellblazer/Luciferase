@@ -48,12 +48,14 @@ public class SpatialCursor<Key extends SpatialKey<Key>, ID extends EntityID, Con
 
     private static final int   DEFAULT_K_NEIGHBORS   = 10;
     private static final float DEFAULT_MAX_DISTANCE  = Float.MAX_VALUE;
+    private static final float DEFAULT_WORLD_SCALE   = 1.0f;
 
     private final SpatialIndex<Key, ID, Content> index;
     private final ID                             entityId;
     private final byte                           level;
     private final int                            kNeighbors;
     private final float                          maxNeighborDistance;
+    private final float                          worldScale;
 
     /**
      * Creates a SpatialCursor with default neighbor query parameters.
@@ -63,7 +65,7 @@ public class SpatialCursor<Key extends SpatialKey<Key>, ID extends EntityID, Con
      * @param level    the spatial level for position updates
      */
     public SpatialCursor(SpatialIndex<Key, ID, Content> index, ID entityId, byte level) {
-        this(index, entityId, level, DEFAULT_K_NEIGHBORS, DEFAULT_MAX_DISTANCE);
+        this(index, entityId, level, DEFAULT_K_NEIGHBORS, DEFAULT_MAX_DISTANCE, DEFAULT_WORLD_SCALE);
     }
 
     /**
@@ -77,11 +79,27 @@ public class SpatialCursor<Key extends SpatialKey<Key>, ID extends EntityID, Con
      */
     public SpatialCursor(SpatialIndex<Key, ID, Content> index, ID entityId, byte level,
                          int kNeighbors, float maxNeighborDistance) {
+        this(index, entityId, level, kNeighbors, maxNeighborDistance, DEFAULT_WORLD_SCALE);
+    }
+
+    /**
+     * Creates a SpatialCursor with custom neighbor query parameters and world scale.
+     *
+     * @param index               the spatial index containing the entity
+     * @param entityId            the entity ID this cursor represents
+     * @param level               the spatial level for position updates
+     * @param kNeighbors          number of neighbors to return in neighbor queries
+     * @param maxNeighborDistance maximum distance for neighbor queries
+     * @param worldScale          scale factor for converting world to normalized coordinates
+     */
+    public SpatialCursor(SpatialIndex<Key, ID, Content> index, ID entityId, byte level,
+                         int kNeighbors, float maxNeighborDistance, float worldScale) {
         this.index = index;
         this.entityId = entityId;
         this.level = level;
         this.kNeighbors = kNeighbors;
         this.maxNeighborDistance = maxNeighborDistance;
+        this.worldScale = worldScale;
     }
 
     @Override
@@ -95,14 +113,25 @@ public class SpatialCursor<Key extends SpatialKey<Key>, ID extends EntityID, Con
         if (current == null) {
             throw new IllegalStateException("Entity " + entityId + " not found in index");
         }
+        // Normalize the delta to match the octree coordinate space
+        var normalizedDelta = new Point3f(delta.x / worldScale, delta.y / worldScale, delta.z / worldScale);
         var newPosition = new Point3f(current);
-        newPosition.add(delta);
+        newPosition.add(normalizedDelta);
+        // Clamp to valid range [0,1]
+        newPosition.x = Math.max(0, Math.min(1, newPosition.x));
+        newPosition.y = Math.max(0, Math.min(1, newPosition.y));
+        newPosition.z = Math.max(0, Math.min(1, newPosition.z));
         index.updateEntity(entityId, newPosition, level);
     }
 
     @Override
     public void moveTo(Tuple3f position) {
-        var newPosition = new Point3f(position);
+        // Normalize position to octree coordinate space
+        var newPosition = new Point3f(position.x / worldScale, position.y / worldScale, position.z / worldScale);
+        // Clamp to valid range [0,1]
+        newPosition.x = Math.max(0, Math.min(1, newPosition.x));
+        newPosition.y = Math.max(0, Math.min(1, newPosition.y));
+        newPosition.z = Math.max(0, Math.min(1, newPosition.z));
         index.updateEntity(entityId, newPosition, level);
     }
 
@@ -115,7 +144,7 @@ public class SpatialCursor<Key extends SpatialKey<Key>, ID extends EntityID, Con
         return index.kNearestNeighbors(position, kNeighbors + 1, maxNeighborDistance)
                     .stream()
                     .filter(id -> !id.equals(entityId)) // Exclude self
-                    .map(id -> new SpatialCursor<>(index, id, level, kNeighbors, maxNeighborDistance));
+                    .map(id -> new SpatialCursor<>(index, id, level, kNeighbors, maxNeighborDistance, worldScale));
     }
 
     @Override
