@@ -19,8 +19,8 @@ package com.hellblazer.luciferase.simulation;
 
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
-import com.hellblazer.luciferase.lucien.octree.MortonKey;
-import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.tetree.Tetree;
+import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;
@@ -35,7 +35,7 @@ import java.util.logging.Logger;
 /**
  * An event controller for a volume of space.
  * <p>
- * Uses Lucien's Octree spatial index for entity tracking instead of Sentry's
+ * Uses Lucien's Tetree (tetrahedral) spatial index for entity tracking instead of Sentry's
  * MutableGrid (Delaunay tetrahedralization). This provides O(log n) position
  * updates instead of O(n log n) per-frame rebuilds.
  *
@@ -46,13 +46,13 @@ public class VolumeAnimator {
     private static final byte   LEVEL       = 12; // Spatial resolution level
     private static final float  WORLD_SCALE = 32200f; // Scale for normalizing world coords to [0,1]
 
-    private final Octree<LongEntityID, Void> index;
+    private final Tetree<LongEntityID, Void> index;
     private final RealTimeController         controller;
     private final AnimationFrame             frame = new AnimationFrame(100);
 
     public VolumeAnimator(String name) {
         this.controller = new RealTimeController(name);
-        this.index = new Octree<>(new SequentialLongIDGenerator(), 16, (byte) 21);
+        this.index = new Tetree<>(new SequentialLongIDGenerator(), 16, (byte) 21);
         Kairos.setController(controller);
     }
 
@@ -89,11 +89,11 @@ public class VolumeAnimator {
         }
         var entityId = index.insert(normalized, LEVEL, null);
         // Pass WORLD_SCALE so cursor can properly normalize deltas in moveBy/moveTo
-        return new SpatialCursor<>(index, entityId, LEVEL, 10, Float.MAX_VALUE, WORLD_SCALE);
+        return new SpatialCursor<TetreeKey<?>, LongEntityID, Void>(index, entityId, LEVEL, 10, Float.MAX_VALUE, WORLD_SCALE);
     }
 
     /**
-     * Normalize position to octree coordinate space [0,1].
+     * Normalize position to tetree coordinate space [0,1].
      */
     private Point3f normalizePosition(Point3f p) {
         return new Point3f(p.x / WORLD_SCALE, p.y / WORLD_SCALE, p.z / WORLD_SCALE);
