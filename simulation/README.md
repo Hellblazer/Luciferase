@@ -1,6 +1,6 @@
 # Simulation Module
 
-**Last Updated**: 2025-12-31
+**Last Updated**: 2026-01-03
 **Status**: Work in Progress
 
 Event-driven simulation framework for 3D spatial systems, built on PrimeMover discrete event simulation.
@@ -12,11 +12,15 @@ Event-driven simulation framework for 3D spatial systems, built on PrimeMover di
 Frame-rate controlled animation loop using PrimeMover's discrete event simulation:
 
 ```java
-var animator = new VolumeAnimator("scene", tetCell, random);
+var animator = new VolumeAnimator("scene");
 animator.start(); // Begins 100 FPS frame loop
+
+// Track entities
+Cursor cursor = animator.track(new Point3f(x, y, z));
+cursor.moveTo(newPosition);
 ```
 
-- Integrates with Sentry's `MutableGrid` for Delaunay tetrahedralization
+- Uses Lucien's `Tetree` for O(log n) spatial indexing (replaced MutableGrid)
 - Uses `Kronos.sleep()` for precise timing control
 - Tracks frame statistics (count, cumulative duration, delay)
 
@@ -27,20 +31,19 @@ Basic interfaces for entity positioning:
 - **Locatable**: `position()` - query entity location
 - **Moveable**: `moveBy(delta)`, `moveTo(position)` - entity movement
 
+## Architecture
+
+See [doc/SIMULATION_BUBBLES.md](doc/SIMULATION_BUBBLES.md) for the distributed simulation design based on player-centric "simulation bubbles".
+
+Key concepts:
+- **Simulation Bubble**: Connected component of entities that can interact
+- **Interaction Graph**: Edges between entities within Area of Interest
+- **Server Assignment**: Bubbles (not spatial regions) assigned to servers
+
 ## Dependencies
 
 - **PrimeMover**: Discrete event simulation framework (`RealTimeController`, `Kronos`, `@Entity`)
-- **Sentry**: `MutableGrid` for spatial tracking via Delaunay tetrahedralization
-- **Lucien**: `Tet` for tetrahedral cell definitions
-
-## Future Directions
-
-The following are aspirational goals, not current features:
-
-- Physics simulation (rigid body dynamics, collision response)
-- Animation framework (keyframe interpolation, skeletal animation)
-- Behavioral patterns (flocking, steering, path following)
-- Particle systems
+- **Lucien**: `Tetree` for spatial indexing, `Entity` for tracked objects
 
 ## Usage
 
