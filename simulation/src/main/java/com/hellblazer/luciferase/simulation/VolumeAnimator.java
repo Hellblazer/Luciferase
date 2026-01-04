@@ -21,6 +21,9 @@ import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.tumbler.SpatialTumbler;
+import com.hellblazer.luciferase.simulation.tumbler.SpatialTumblerImpl;
+import com.hellblazer.luciferase.simulation.tumbler.TumblerConfig;
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.annotations.NonEvent;
 import com.hellblazer.primeMover.api.Kronos;
@@ -38,6 +41,10 @@ import java.util.logging.Logger;
  * Uses Lucien's Tetree (tetrahedral) spatial index for entity tracking instead of Sentry's
  * MutableGrid (Delaunay tetrahedralization). This provides O(log n) position
  * updates instead of O(n log n) per-frame rebuilds.
+ * <p>
+ * Phase 4: Optionally supports SpatialTumbler for adaptive volume sharding.
+ * When enabled, provides automatic region split/join and boundary management
+ * for improved scalability with large entity counts.
  *
  * @author hal.hildebrand
  */
@@ -46,13 +53,33 @@ public class VolumeAnimator {
     private static final byte   LEVEL       = 12; // Spatial resolution level
     private static final float  WORLD_SCALE = 32200f; // Scale for normalizing world coords to [0,1]
 
-    private final Tetree<LongEntityID, Void> index;
-    private final RealTimeController         controller;
-    private final AnimationFrame             frame = new AnimationFrame(100);
+    private final Tetree<LongEntityID, Void>         index;
+    private final RealTimeController                 controller;
+    private final AnimationFrame                     frame = new AnimationFrame(100);
+    private final SpatialTumbler<LongEntityID, Void> tumbler; // Phase 4: Optional adaptive sharding
 
+    /**
+     * Create VolumeAnimator without adaptive sharding (backward compatible).
+     *
+     * @param name Controller name
+     */
     public VolumeAnimator(String name) {
+        this(name, null);
+    }
+
+    /**
+     * Create VolumeAnimator with optional adaptive sharding.
+     * <p>
+     * Phase 4: When tumblerConfig is non-null, enables SpatialTumbler for
+     * adaptive region management. When null, uses direct Tetree access (backward compatible).
+     *
+     * @param name          Controller name
+     * @param tumblerConfig Tumbler configuration (null to disable adaptive sharding)
+     */
+    public VolumeAnimator(String name, TumblerConfig tumblerConfig) {
         this.controller = new RealTimeController(name);
         this.index = new Tetree<>(new SequentialLongIDGenerator(), 16, (byte) 21);
+        this.tumbler = (tumblerConfig != null) ? new SpatialTumblerImpl<>(index, tumblerConfig) : null;
         Kairos.setController(controller);
     }
 
@@ -77,19 +104,54 @@ public class VolumeAnimator {
 
     /**
      * Track a point in the spatial index.
+     * <p>
+     * Phase 4: When SpatialTumbler is enabled (tumblerConfig non-null in constructor),
+     * uses adaptive sharding for improved scalability. Otherwise uses direct Tetree access
+     * for backward compatibility.
      *
      * @param p the position to track
      * @return a Cursor for the tracked entity, or null if tracking failed
      */
     public Cursor track(Point3f p) {
-        // Normalize position to [0,1] range for octree
+        // Normalize position to [0,1] range for tetree
         var normalized = normalizePosition(p);
         if (!isValidPosition(normalized)) {
             return null;
         }
-        var entityId = index.insert(normalized, LEVEL, null);
+
+        // Phase 4: Use tumbler if enabled, otherwise direct Tetree access
+        LongEntityID entityId;
+        if (tumbler != null) {
+            // Adaptive sharding path
+            entityId = index.insert(normalized, LEVEL, null);
+            tumbler.track(entityId, normalized, null);
+        } else {
+            // Direct Tetree access (backward compatible)
+            entityId = index.insert(normalized, LEVEL, null);
+        }
+
         // Pass WORLD_SCALE so cursor can properly normalize deltas in moveBy/moveTo
         return new SpatialCursor<TetreeKey<?>, LongEntityID, Void>(index, entityId, LEVEL, 10, Float.MAX_VALUE, WORLD_SCALE);
+    }
+
+    /**
+     * Check if SpatialTumbler adaptive sharding is enabled.
+     *
+     * @return true if tumbler is enabled
+     */
+    @NonEvent
+    public boolean isTumblerEnabled() {
+        return tumbler != null;
+    }
+
+    /**
+     * Get the SpatialTumbler instance (if enabled).
+     *
+     * @return SpatialTumbler instance, or null if not enabled
+     */
+    @NonEvent
+    public SpatialTumbler<LongEntityID, Void> getTumbler() {
+        return tumbler;
     }
 
     /**
