@@ -5,11 +5,11 @@
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
-3D spatial indexing and visualization library for Java 24.
+3D spatial indexing and visualization library for Java 25.
 
 ## Overview
 
-Luciferase is a spatial data structure library providing 3D indexing, collision detection, and visualization capabilities. Built with Java 24 and the Foreign Function & Memory (FFM) API.
+Luciferase is a spatial data structure library providing 3D indexing, collision detection, and visualization capabilities. Built with Java 25 and the Foreign Function & Memory (FFM) API.
 
 ## Features
 
@@ -65,7 +65,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 
 ## Requirements
 
-- Java 24 (uses stable FFM API)
+- Java 25 (uses stable FFM API)
 - Maven 3.9.1+
 - JavaFX 24 (for visualization)
 - LWJGL 3 (for OpenGL rendering)

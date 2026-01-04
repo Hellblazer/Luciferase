@@ -46,6 +46,7 @@ com.hellblazer.luciferase.lucien.von/
 ### Node
 
 A `Node` represents a participant in the spatial overlay network. It has:
+
 - A position in 3D space
 - An area-of-interest (AOI) radius defining perception range
 - Perception callbacks for detecting nearby nodes
@@ -53,6 +54,7 @@ A `Node` represents a participant in the spatial overlay network. It has:
 ### Sphere of Interaction (SoI)
 
 The `SphereOfInteraction` manages spatial relationships between nodes:
+
 - Tracks which nodes are within perception range of each other
 - Provides efficient queries for finding nearby nodes
 - Maintains spatial index for fast updates and lookups
@@ -60,6 +62,7 @@ The `SphereOfInteraction` manages spatial relationships between nodes:
 ### Perceiving
 
 The `Perceiving` interface provides callbacks for perception events:
+
 - Node enters perception range
 - Node moves within perception range
 - Node leaves perception range
@@ -136,6 +139,7 @@ Based on the underlying spatial index (Octree):
 | getEnclosingNeighbors | O(k log n) | k-NN query |
 
 Where:
+
 - n = total number of nodes
 - k = number of neighbors to find
 

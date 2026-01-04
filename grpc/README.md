@@ -30,11 +30,13 @@ grpc/
 ### Message Types
 
 **Core Types:**
+
 - `Point3f` - 3D position (x, y, z)
 - `EntityBounds` - AABB bounding box (min, max)
 - `SpatialKey` - Polymorphic key (MortonKey | TetreeKey)
 
 **Ghost Messages:**
+
 - `GhostElement` - Complete ghost entity with position, bounds, content, ownership
 - `GhostBatch` - Collection of ghost elements for bulk transfer
 - `GhostRequest` - Request for ghost elements from boundary keys
@@ -43,6 +45,7 @@ grpc/
 - `GhostAck` - Acknowledgment with success/error status
 
 **Synchronization:**
+
 - `SyncRequest` - Request ghosts changed since timestamp
 - `SyncResponse` - Batch response with sync time and element count
 - `StatsRequest` / `StatsResponse` - Ghost layer statistics

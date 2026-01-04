@@ -18,6 +18,7 @@ Common provides high-performance data structures shared across all Luciferase mo
 - **ShortArrayList**: Dynamically growing array for short primitives
 
 **Benefits:**
+
 - No boxing/unboxing overhead
 - Direct memory access for maximum performance
 - Growable capacity with minimal allocations
@@ -30,6 +31,7 @@ Common provides high-performance data structures shared across all Luciferase mo
 - **IdentitySet<T>**: Identity-based set (uses == instead of equals())
 
 **Benefits:**
+
 - Better cache locality than chained hashing (HashMap)
 - Lower memory overhead (no separate Entry objects)
 - Fast membership testing and iteration
