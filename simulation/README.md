@@ -36,6 +36,7 @@ Basic interfaces for entity positioning:
 See [doc/SIMULATION_BUBBLES.md](doc/SIMULATION_BUBBLES.md) for the distributed simulation design based on player-centric "simulation bubbles".
 
 Key concepts:
+
 - **Simulation Bubble**: Connected component of entities that can interact
 - **Interaction Graph**: Edges between entities within Area of Interest
 - **Server Assignment**: Bubbles (not spatial regions) assigned to servers
