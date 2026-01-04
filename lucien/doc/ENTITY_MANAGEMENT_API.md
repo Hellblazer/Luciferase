@@ -1,6 +1,6 @@
 # Entity Management API
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2026-01-04
 **Status**: Current
 
 The Entity Management API provides centralized entity lifecycle management for spatial indexing operations. This API handles entity creation, identification, spatial bounds, and lifecycle operations across both single trees and forest configurations.
