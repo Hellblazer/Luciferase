@@ -262,10 +262,11 @@ class SpatialTumblerBasicTest {
     }
 
     @Test
-    void testGetSpanStub() {
-        // Phase 3: Span is not implemented yet
+    void testGetSpan() {
+        // Phase 3: Span is now implemented
         var span = tumbler.getSpan();
-        assertNull(span);
+        assertNotNull(span, "SpatialSpan should be initialized");
+        assertNotNull(span.getConfig(), "Span should have config");
     }
 
     @Test

@@ -3,7 +3,9 @@ package com.hellblazer.luciferase.simulation.tumbler;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.tetree.Tetree;
 import com.hellblazer.luciferase.lucien.tetree.TetreeKey;
+import com.hellblazer.luciferase.simulation.span.SpanConfig;
 import com.hellblazer.luciferase.simulation.span.SpatialSpan;
+import com.hellblazer.luciferase.simulation.span.SpatialSpanImpl;
 
 import javax.vecmath.Point3f;
 import java.util.Collection;
@@ -74,7 +76,12 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
         this.regions = new ConcurrentHashMap<>();
         this.entityRegions = new ConcurrentHashMap<>();
         this.operationCounter = new AtomicInteger(0);
-        this.span = null;  // Phase 3
+
+        // Phase 3: Initialize boundary span manager
+        var spanConfig = SpanConfig.defaults()
+            .withSpanWidthRatio(config.spanWidthRatio())
+            .withMinSpanDistance(config.minSpanDistance());
+        this.span = new SpatialSpanImpl<>(tetree, spanConfig, () -> regions.keySet());
 
         // Phase 1.5: Regions are created lazily as entities are tracked
         // No need to pre-create root regions
@@ -90,6 +97,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
         var regionKey = getOrCreateRegionForPosition(position);
         entityRegions.put(entityId, regionKey);
         incrementRegionCount(regionKey, entityId);
+
+        // Phase 3: Update boundary tracking
+        span.updateBoundary(entityId, position);
 
         // Auto-adapt check
         checkAutoAdapt();
@@ -117,6 +127,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
             incrementRegionCount(newRegionKey, entityId);
         }
 
+        // Phase 3: Update boundary tracking
+        span.updateBoundary(entityId, newPosition);
+
         // Auto-adapt check
         checkAutoAdapt();
 
@@ -133,6 +146,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
             if (regionKey != null) {
                 decrementRegionCount(regionKey, entityId);
             }
+
+            // Phase 3: Remove from boundary tracking
+            span.removeBoundary(entityId);
 
             // Auto-adapt check
             checkAutoAdapt();
@@ -417,6 +433,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
                 .withState(TumblerRegion.RegionState.ACTIVE);
             regions.put(parentKey, emptyParent);
 
+            // Phase 3: Recalculate boundary zones after split
+            span.recalculateBoundaries();
+
             return true;
         } catch (Exception e) {
             // If split fails, restore parent to ACTIVE state
@@ -540,6 +559,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
                     .withState(TumblerRegion.RegionState.ACTIVE);
                 regions.put(parentKey, updatedParent);
             }
+
+            // Phase 3: Recalculate boundary zones after join
+            span.recalculateBoundaries();
 
             return true;
         } catch (Exception e) {
