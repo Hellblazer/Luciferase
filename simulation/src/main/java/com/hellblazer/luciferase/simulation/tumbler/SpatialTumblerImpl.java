@@ -161,21 +161,45 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
     @Override
     public int checkAndSplit() {
         // Phase 2: Implement split logic
-        // - Find regions exceeding splitThreshold
-        // - Subdivide using OCTANT strategy (8-way tetrahedral split)
-        // - Redistribute entities to child regions
-        // - Update region hierarchy
-        return 0;
+        int splitCount = 0;
+
+        // Find regions that need splitting (avoid ConcurrentModificationException)
+        var regionsToSplit = regions.values().stream()
+            .filter(region -> region.needsSplit(config))
+            .map(TumblerRegion::key)
+            .toList();
+
+        // Split each region
+        for (var regionKey : regionsToSplit) {
+            if (splitRegion(regionKey)) {
+                splitCount++;
+            }
+        }
+
+        return splitCount;
     }
 
     @Override
     public int checkAndJoin() {
         // Phase 2: Implement join logic
-        // - Find sibling groups below joinThreshold
-        // - Consolidate entities to parent region
-        // - Remove child regions
-        // - Update region hierarchy
-        return 0;
+        int joinCount = 0;
+
+        // Find parent regions whose children all need joining
+        var parentsToJoin = regions.values().stream()
+            .filter(region -> !region.isLeaf())  // Has children
+            .filter(region -> region.isActive())  // Is active
+            .filter(this::allChildrenNeedJoin)    // All children below threshold
+            .map(TumblerRegion::key)
+            .toList();
+
+        // Join each parent's children
+        for (var parentKey : parentsToJoin) {
+            if (joinRegion(parentKey)) {
+                joinCount++;
+            }
+        }
+
+        return joinCount;
     }
 
     @Override
@@ -302,8 +326,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
             var density = calculateDensity(updatedRegion);
             updatedRegion = updatedRegion.withDensity(density);
 
-            // Remove region if empty (cleanup)
-            if (updatedRegion.entityCount() == 0 && !updatedRegion.isLeaf()) {
+            // Remove region if empty AND is a leaf (cleanup)
+            // Non-leaf regions may temporarily have 0 entities during split/join
+            if (updatedRegion.entityCount() == 0 && updatedRegion.isLeaf()) {
                 return null;  // Remove from map
             }
 
@@ -336,5 +361,216 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
         float volume = (float) Math.pow(0.125, level);  // 1/8^level
 
         return region.entityCount() / volume;
+    }
+
+    // ===== Phase 2: Split/Join Logic =====
+
+    /**
+     * Split a region into 8 child regions using Bey tetrahedral subdivision.
+     * <p>
+     * Algorithm:
+     * 1. Change parent region to SPLITTING state
+     * 2. Create 8 child TetreeKeys (Bey subdivision: 1 tet → 8 tets)
+     * 3. Create child TumblerRegions
+     * 4. Redistribute entities from parent to children
+     * 5. Update parent's childKeys list
+     * 6. Change parent state to ACTIVE
+     *
+     * @param parentKey Parent region key to split
+     * @return true if split succeeded, false if split was skipped
+     */
+    private boolean splitRegion(TetreeKey<?> parentKey) {
+        var parentRegion = regions.get(parentKey);
+        if (parentRegion == null || !parentRegion.isActive()) {
+            return false;  // Region doesn't exist or not active
+        }
+
+        // Change to SPLITTING state (prevents concurrent splits)
+        var splittingRegion = parentRegion.withState(TumblerRegion.RegionState.SPLITTING);
+        if (!regions.replace(parentKey, parentRegion, splittingRegion)) {
+            return false;  // Another thread changed the region
+        }
+
+        try {
+            // Create parent Tet for subdivision
+            var parentTet = com.hellblazer.luciferase.lucien.tetree.Tet.tetrahedron(parentKey);
+
+            // Create 8 child regions using Bey subdivision
+            var childKeys = new java.util.ArrayList<TetreeKey<?>>(8);
+            for (int childIndex = 0; childIndex < 8; childIndex++) {
+                var childTet = parentTet.child(childIndex);
+                var childKey = childTet.tmIndex();
+                childKeys.add(childKey);
+
+                // Create child region with parent link
+                var childRegion = TumblerRegion.<ID>createChild(childKey, parentKey);
+                regions.put(childKey, childRegion);
+            }
+
+            // Redistribute entities from parent to children
+            redistributeEntities(splittingRegion, childKeys);
+
+            // Update parent: clear entities, add children, return to ACTIVE
+            // After split, parent has no entities (all moved to children)
+            var emptyParent = TumblerRegion.<ID>create(parentKey)
+                .withChildren(childKeys)
+                .withState(TumblerRegion.RegionState.ACTIVE);
+            regions.put(parentKey, emptyParent);
+
+            return true;
+        } catch (Exception e) {
+            // If split fails, restore parent to ACTIVE state
+            var restoredParent = splittingRegion.withState(TumblerRegion.RegionState.ACTIVE);
+            regions.put(parentKey, restoredParent);
+            throw new RuntimeException("Split failed for region " + parentKey, e);
+        }
+    }
+
+    /**
+     * Redistribute entities from parent region to child regions.
+     * <p>
+     * For each entity in the parent:
+     * - Get entity position from Tetree
+     * - Find which child tetrahedron contains it
+     * - Move entity to that child region
+     *
+     * @param parentRegion Parent region with entities
+     * @param childKeys    Child region keys
+     */
+    private void redistributeEntities(TumblerRegion<ID> parentRegion, java.util.List<TetreeKey<?>> childKeys) {
+        for (var entityId : parentRegion.entities()) {
+            // Get entity position from Tetree
+            var position = tetree.getEntityPosition(entityId);
+            if (position == null) {
+                continue;  // Entity was removed
+            }
+
+            // Find which child contains this entity
+            TetreeKey<?> containingChild = null;
+            for (var childKey : childKeys) {
+                var childTet = com.hellblazer.luciferase.lucien.tetree.Tet.tetrahedron(childKey);
+                if (childTet.contains(position)) {
+                    containingChild = childKey;
+                    break;
+                }
+            }
+
+            if (containingChild != null) {
+                // Update entity-region mapping
+                entityRegions.put(entityId, containingChild);
+
+                // Add entity to child region
+                incrementRegionCount(containingChild, entityId);
+            }
+        }
+    }
+
+    /**
+     * Check if all children of a parent region are below join threshold.
+     *
+     * @param parentRegion Parent region to check
+     * @return true if all children can be joined
+     */
+    private boolean allChildrenNeedJoin(TumblerRegion<ID> parentRegion) {
+        if (parentRegion.childKeys() == null || parentRegion.childKeys().isEmpty()) {
+            return false;
+        }
+
+        // Check if all children exist and are below threshold
+        for (var childKey : parentRegion.childKeys()) {
+            var childRegion = regions.get(childKey);
+            if (childRegion == null || !childRegion.canJoin(config)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Join child regions back to parent.
+     * <p>
+     * Algorithm:
+     * 1. Change parent and children to JOINING state
+     * 2. Consolidate all entities from children to parent
+     * 3. Remove child regions
+     * 4. Update parent's childKeys to empty
+     * 5. Change parent state to ACTIVE
+     *
+     * @param parentKey Parent region key
+     * @return true if join succeeded, false if join was skipped
+     */
+    private boolean joinRegion(TetreeKey<?> parentKey) {
+        var parentRegion = regions.get(parentKey);
+        if (parentRegion == null || !parentRegion.isActive() || parentRegion.isLeaf()) {
+            return false;
+        }
+
+        // Change to JOINING state (prevents concurrent joins)
+        var joiningParent = parentRegion.withState(TumblerRegion.RegionState.JOINING);
+        if (!regions.replace(parentKey, parentRegion, joiningParent)) {
+            return false;  // Another thread changed the region
+        }
+
+        try {
+            // Change all children to JOINING state
+            var childKeys = joiningParent.childKeys();
+            for (var childKey : childKeys) {
+                var childRegion = regions.get(childKey);
+                if (childRegion != null) {
+                    var joiningChild = childRegion.withState(TumblerRegion.RegionState.JOINING);
+                    regions.put(childKey, joiningChild);
+                }
+            }
+
+            // Consolidate entities from children to parent
+            consolidateEntities(joiningParent, childKeys);
+
+            // Remove child regions
+            for (var childKey : childKeys) {
+                regions.remove(childKey);
+            }
+
+            // Get current parent region (after consolidation updated it with entities)
+            // Then update children list and return to ACTIVE state
+            var currentParent = regions.get(parentKey);
+            if (currentParent != null) {
+                var updatedParent = currentParent
+                    .withChildren(java.util.List.of())
+                    .withState(TumblerRegion.RegionState.ACTIVE);
+                regions.put(parentKey, updatedParent);
+            }
+
+            return true;
+        } catch (Exception e) {
+            // If join fails, restore parent to ACTIVE state
+            var restoredParent = joiningParent.withState(TumblerRegion.RegionState.ACTIVE);
+            regions.put(parentKey, restoredParent);
+            throw new RuntimeException("Join failed for region " + parentKey, e);
+        }
+    }
+
+    /**
+     * Consolidate entities from child regions to parent region.
+     *
+     * @param parentRegion Parent region
+     * @param childKeys    Child region keys
+     */
+    private void consolidateEntities(TumblerRegion<ID> parentRegion, java.util.List<TetreeKey<?>> childKeys) {
+        for (var childKey : childKeys) {
+            var childRegion = regions.get(childKey);
+            if (childRegion == null) {
+                continue;
+            }
+
+            // Move all entities from child to parent
+            for (var entityId : childRegion.entities()) {
+                // Update entity-region mapping
+                entityRegions.put(entityId, parentRegion.key());
+
+                // Add entity to parent region
+                incrementRegionCount(parentRegion.key(), entityId);
+            }
+        }
     }
 }
