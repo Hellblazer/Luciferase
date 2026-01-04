@@ -120,7 +120,7 @@ All gaps properly documented as future work:
 
 #### Lucien API Documentation (16 files)
 
-8. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/BULK_OPERATIONS_API.md` - 2025-12-08 → 2026-01-04
+1. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/BULK_OPERATIONS_API.md` - 2025-12-08 → 2026-01-04
 2. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/COLLISION_DETECTION_API.md` - 2025-12-08 → 2026-01-04
 3. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/CORE_SPATIAL_INDEX_API.md` - 2025-12-08 → 2026-01-04
 4. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/DSOC_API.md` - 2025-12-08 → 2026-01-04
@@ -139,13 +139,13 @@ All gaps properly documented as future work:
 
 #### Architecture Documents (3 files)
 
-24. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/ARCHITECTURE_SUMMARY.md` - 2025-12-08 → 2026-01-04
+1. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/ARCHITECTURE_SUMMARY.md` - 2025-12-08 → 2026-01-04
 2. `/Users/hal.hildebrand/git/Luciferase/portal/doc/PORTAL_ARCHITECTURE.md` - 2025-12-08 → 2026-01-04
 3. `/Users/hal.hildebrand/git/Luciferase/sentry/doc/SENTRY_ARCHITECTURE.md` - 2025-12-08 → 2026-01-04
 
 #### Status Documents (1 file)
 
-27. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/PROJECT_STATUS.md` - Added "Last Updated: 2026-01-04" header
+1. `/Users/hal.hildebrand/git/Luciferase/lucien/doc/PROJECT_STATUS.md` - Added "Last Updated: 2026-01-04" header
 
 ---
 
