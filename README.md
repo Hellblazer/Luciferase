@@ -5,7 +5,7 @@
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
 
-3D spatial indexing and visualization library for Java 25.
+3D spatial indexing and visualization library for Java 24.
 
 ## Overview
 
@@ -65,7 +65,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 
 ## Requirements
 
-- Java 25 (uses stable FFM API)
+- Java 24 (uses stable FFM API)
 - Maven 3.9.1+
 - JavaFX 24 (for visualization)
 - LWJGL 3 (for OpenGL rendering)
@@ -117,7 +117,7 @@ var position = new Point3f(10, 20, 30);
 octree.insert(position, (byte)5, "My Entity");
 
 // Find nearest neighbors
-var neighbors = octree.findKNearestNeighbors(position, 5, Float.MAX_VALUE);
+var neighbors = octree.kNearestNeighbors(position, 5, Float.MAX_VALUE);
 
 // Perform ray intersection
 var ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 0, 0));
