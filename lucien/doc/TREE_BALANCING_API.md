@@ -1,6 +1,6 @@
 # Tree Balancing API Documentation
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2026-01-04
 **Status**: Current
 
 ## Overview

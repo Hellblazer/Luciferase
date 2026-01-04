@@ -1,6 +1,6 @@
 # Bulk Operations API Documentation
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2026-01-04
 **Status**: Current
 
 The Bulk Operations API provides high-performance methods for inserting, updating, and managing large numbers of

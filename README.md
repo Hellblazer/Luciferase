@@ -1,6 +1,6 @@
 # Luciferase
 
-**Last Updated**: 2025-12-25
+**Last Updated**: 2026-01-04
 **Status**: Current
 
 ![Build Status](https://github.com/hellblazer/Luciferase/actions/workflows/maven.yml/badge.svg)
@@ -55,7 +55,7 @@ Luciferase is a spatial data structure library providing 3D indexing, collision 
 | [sentry](sentry/README.md) | Delaunay tetrahedralization for kinetic point tracking |
 | [portal](portal/README.md) | JavaFX 3D visualization and mesh handling |
 | [von](von/README.md) | Distributed spatial perception framework |
-| [simulation](simulation/README.md) | Animation and movement simulation |
+| [simulation](simulation/README.md) | Distributed simulation with adaptive volume sharding and simulation bubbles |
 | [grpc](grpc/README.md) | Protocol buffer definitions for serialization |
 
 ## Requirements
