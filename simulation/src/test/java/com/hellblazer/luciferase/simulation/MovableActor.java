@@ -3,7 +3,7 @@ package com.hellblazer.luciferase.simulation;
 import com.hellblazer.luciferase.simulation.facets.Locatable;
 import com.hellblazer.luciferase.simulation.facets.Moveable;
 import com.hellblazer.primeMover.annotations.Entity;
-import com.hellblazer.sentry.Cursor;
+import com.hellblazer.luciferase.simulation.Cursor;
 
 import javax.vecmath.Tuple3f;
 

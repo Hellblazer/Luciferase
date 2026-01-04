@@ -47,7 +47,6 @@
         <module>e2e-test</module>
         <module>portal</module>
         <module>common</module>
-        <module>von</module>
         <module>simulation</module>
         <module>sentry</module>
         <module>render</module>
@@ -80,11 +79,6 @@
                 <groupId>${project.groupId}</groupId>
                 <version>${project.version}</version>
                 <artifactId>portal</artifactId>
-            </dependency>
-            <dependency>
-                <groupId>${project.groupId}</groupId>
-                <version>${project.version}</version>
-                <artifactId>von</artifactId>
             </dependency>
             <dependency>
                 <groupId>${project.groupId}</groupId>

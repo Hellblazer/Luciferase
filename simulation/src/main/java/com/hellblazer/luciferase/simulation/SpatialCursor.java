@@ -19,7 +19,6 @@ package com.hellblazer.luciferase.simulation;
 import com.hellblazer.luciferase.lucien.SpatialIndex;
 import com.hellblazer.luciferase.lucien.SpatialKey;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.sentry.Cursor;
 
 import javax.vecmath.Point3f;
 import javax.vecmath.Tuple3f;

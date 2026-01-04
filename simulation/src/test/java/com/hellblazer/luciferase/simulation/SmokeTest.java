@@ -2,8 +2,7 @@ package com.hellblazer.luciferase.simulation;
 
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.api.Kronos;
-import com.hellblazer.sentry.Cursor;
-import com.hellblazer.sentry.Vertex;
+import com.hellblazer.luciferase.simulation.Cursor;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;

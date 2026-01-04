@@ -19,7 +19,7 @@ package com.hellblazer.luciferase.simulation;
 import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
 import com.hellblazer.luciferase.lucien.octree.Octree;
-import com.hellblazer.sentry.Cursor;
+import com.hellblazer.luciferase.simulation.Cursor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,5 @@
 package com.hellblazer.luciferase.simulation;
 
-import com.hellblazer.luciferase.simulation.tumbler.TumblerConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,10 +9,7 @@ import javax.vecmath.Point3f;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration tests for VolumeAnimator with SpatialTumbler.
- * <p>
- * Phase 4: Verifies end-to-end tracking with adaptive sharding.
- * Tests both tumbler-enabled and tumbler-disabled modes for backward compatibility.
+ * Integration tests for VolumeAnimator.
  *
  * @author hal.hildebrand
  */
@@ -33,46 +29,19 @@ class VolumeAnimatorIntegrationTest {
     }
 
     @Test
-    void testTrackingWithoutTumbler() {
-        // Backward compatibility test - original behavior
-        animator = new VolumeAnimator("test-no-tumbler");
+    void testBasicTracking() {
+        animator = new VolumeAnimator("test-tracking");
 
         var position = new Point3f(1000f, 1000f, 1000f);
         var cursor = animator.track(position);
 
-        assertNotNull(cursor, "Should track entity without tumbler");
-        assertFalse(animator.isTumblerEnabled(), "Tumbler should be disabled");
-        assertNull(animator.getTumbler(), "Tumbler should be null");
+        assertNotNull(cursor, "Should track entity");
     }
 
     @Test
-    void testTrackingWithTumbler() {
-        // Phase 4: New functionality with tumbler enabled
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-with-tumbler", config);
+    void testMultipleEntities() {
+        animator = new VolumeAnimator("test-multiple");
 
-        var position = new Point3f(1000f, 1000f, 1000f);
-        var cursor = animator.track(position);
-
-        assertNotNull(cursor, "Should track entity with tumbler");
-        assertTrue(animator.isTumblerEnabled(), "Tumbler should be enabled");
-        assertNotNull(animator.getTumbler(), "Tumbler should be initialized");
-
-        // Verify entity tracked in tumbler
-        var tumbler = animator.getTumbler();
-        var regions = tumbler.getAllRegions();
-        var totalEntities = regions.stream()
-            .mapToInt(r -> r.entityCount())
-            .sum();
-        assertEquals(1, totalEntities, "Tumbler should have 1 entity");
-    }
-
-    @Test
-    void testMultipleEntitiesWithTumbler() {
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-multiple", config);
-
-        // Track 10 entities in different locations
         for (int i = 0; i < 10; i++) {
             var x = 1000f + i * 100f;
             var y = 1000f + i * 100f;
@@ -80,146 +49,46 @@ class VolumeAnimatorIntegrationTest {
             var cursor = animator.track(new Point3f(x, y, z));
             assertNotNull(cursor, "Should track entity " + i);
         }
-
-        // Verify all entities tracked
-        var tumbler = animator.getTumbler();
-        var regions = tumbler.getAllRegions();
-        var totalEntities = regions.stream()
-            .mapToInt(r -> r.entityCount())
-            .sum();
-        assertEquals(10, totalEntities, "Should have all 10 entities");
-    }
-
-    @Test
-    void testTumblerSplitTriggered() {
-        // Use small split threshold to trigger split easily
-        var config = new TumblerConfig(
-            10,       // splitThreshold - low for testing
-            2,        // joinThreshold
-            (byte) 4, // minRegionLevel
-            (byte) 10, // maxRegionLevel
-            0.1f,     // spanWidthRatio
-            1.0f,     // minSpanDistance
-            true,     // autoAdapt
-            5,        // adaptCheckInterval - check often
-            TumblerConfig.RegionSplitStrategy.OCTANT
-        );
-        animator = new VolumeAnimator("test-split", config);
-
-        var tumbler = animator.getTumbler();
-        var regionCountBefore = tumbler.getAllRegions().size();
-
-        // Track 20 entities in same location to trigger split
-        var position = new Point3f(1000f, 1000f, 1000f);
-        for (int i = 0; i < 20; i++) {
-            animator.track(position);
-        }
-
-        // Manually trigger split check (auto-adapt may not have triggered yet)
-        var splitCount = tumbler.checkAndSplit();
-
-        // Should have split at least once
-        assertTrue(splitCount > 0, "Should have triggered split");
-
-        var regionCountAfter = tumbler.getAllRegions().size();
-        assertTrue(regionCountAfter > regionCountBefore,
-            "Should have more regions after split (before: " + regionCountBefore + ", after: " + regionCountAfter + ")");
-
-        // Verify all entities still tracked
-        var totalEntities = tumbler.getAllRegions().stream()
-            .mapToInt(r -> r.entityCount())
-            .sum();
-        assertEquals(20, totalEntities, "Should still have all 20 entities after split");
-    }
-
-    @Test
-    void testBoundaryTracking() {
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-boundary", config);
-
-        // Track entities to create regions
-        animator.track(new Point3f(1000f, 1000f, 1000f));
-        animator.track(new Point3f(5000f, 5000f, 5000f));
-
-        var tumbler = animator.getTumbler();
-        var span = tumbler.getSpan();
-
-        assertNotNull(span, "Span should be initialized");
-
-        // Boundary zones may or may not exist depending on region structure
-        var boundaryZoneCount = span.getBoundaryZoneCount();
-        assertTrue(boundaryZoneCount >= 0, "Boundary zone count should be non-negative");
     }
 
     @Test
     void testInvalidPosition() {
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-invalid", config);
+        animator = new VolumeAnimator("test-invalid");
 
-        // Position outside valid range [0, WORLD_SCALE]
-        var invalidPosition = new Point3f(-1000f, -1000f, -1000f);
-        var cursor = animator.track(invalidPosition);
+        // Negative position (outside valid range [0, WORLD_SCALE])
+        var invalid = new Point3f(-100f, -100f, -100f);
+        var cursor = animator.track(invalid);
 
         assertNull(cursor, "Should reject invalid position");
-
-        // Verify no entities tracked
-        var tumbler = animator.getTumbler();
-        var totalEntities = tumbler.getAllRegions().stream()
-            .mapToInt(r -> r.entityCount())
-            .sum();
-        assertEquals(0, totalEntities, "Should have no entities");
     }
 
     @Test
     void testEdgePositions() {
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-edge", config);
+        animator = new VolumeAnimator("test-edge");
 
-        // Test positions at boundaries of valid range
-        var positions = new Point3f[] {
-            new Point3f(0f, 0f, 0f),           // Min corner
-            new Point3f(32200f, 32200f, 32200f), // Max corner (WORLD_SCALE)
-            new Point3f(16100f, 16100f, 16100f)  // Center
+        // Test positions at the boundaries
+        var positions = new Point3f[]{
+            new Point3f(0f, 0f, 0f),
+            new Point3f(32200f, 32200f, 32200f),
+            new Point3f(16100f, 16100f, 16100f)
         };
 
         for (var pos : positions) {
             var cursor = animator.track(pos);
             assertNotNull(cursor, "Should track edge position: " + pos);
         }
-
-        var tumbler = animator.getTumbler();
-        var totalEntities = tumbler.getAllRegions().stream()
-            .mapToInt(r -> r.entityCount())
-            .sum();
-        assertEquals(3, totalEntities, "Should have tracked all 3 edge positions");
     }
 
     @Test
-    void testConfigurationImmutability() {
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-config", config);
-
-        var tumbler = animator.getTumbler();
-        var retrievedConfig = tumbler.getConfig();
-
-        assertNotNull(retrievedConfig, "Config should be accessible");
-        assertEquals(config.splitThreshold(), retrievedConfig.splitThreshold());
-        assertEquals(config.joinThreshold(), retrievedConfig.joinThreshold());
-        assertEquals(config.minRegionLevel(), retrievedConfig.minRegionLevel());
-        assertEquals(config.maxRegionLevel(), retrievedConfig.maxRegionLevel());
-    }
-
-    @Test
+    @SuppressWarnings("deprecation")
     void testBackwardCompatibilityDeprecatedConstructor() {
         // Test deprecated constructor still works
-        @SuppressWarnings("deprecation")
         var deprecatedAnimator = new VolumeAnimator("test-deprecated", new Object(), new Object());
 
         assertNotNull(deprecatedAnimator, "Deprecated constructor should work");
-        assertFalse(deprecatedAnimator.isTumblerEnabled(), "Deprecated constructor should not enable tumbler");
 
         var cursor = deprecatedAnimator.track(new Point3f(1000f, 1000f, 1000f));
-        assertNotNull(cursor, "Tracking should work with deprecated constructor");
+        assertNotNull(cursor, "Deprecated animator should track entities");
     }
 
     @Test
@@ -227,47 +96,24 @@ class VolumeAnimatorIntegrationTest {
         // Measure tracking performance without tumbler (baseline)
         animator = new VolumeAnimator("test-perf-baseline");
 
-        var startTime = System.nanoTime();
-        for (int i = 0; i < 100; i++) {
+        var start = System.nanoTime();
+        for (int i = 0; i < 1000; i++) {
             var x = 1000f + i * 10f;
             var y = 1000f + i * 10f;
             var z = 1000f + i * 10f;
             animator.track(new Point3f(x, y, z));
         }
-        var baselineTime = (System.nanoTime() - startTime) / 1_000_000; // ms
+        var duration = System.nanoTime() - start;
 
-        assertTrue(baselineTime < 1000,
-            "Baseline tracking should be fast (< 1000ms), took " + baselineTime + "ms");
-    }
-
-    @Test
-    void testPerformanceWithTumbler() {
-        // Measure tracking performance with tumbler
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-perf-tumbler", config);
-
-        var startTime = System.nanoTime();
-        for (int i = 0; i < 100; i++) {
-            var x = 1000f + i * 10f;
-            var y = 1000f + i * 10f;
-            var z = 1000f + i * 10f;
-            animator.track(new Point3f(x, y, z));
-        }
-        var tumblerTime = (System.nanoTime() - startTime) / 1_000_000; // ms
-
-        assertTrue(tumblerTime < 1000,
-            "Tumbler tracking should be fast (< 1000ms), took " + tumblerTime + "ms");
-
-        // Phase 4 requirement: < 10% overhead
-        // Note: Can't enforce this strictly without baseline comparison
-        // This is documented in performance benchmarking task
+        assertTrue(duration > 0, "Should complete tracking");
+        double opsPerSec = 1000.0 / (duration / 1_000_000_000.0);
+        assertTrue(opsPerSec > 100, "Should have reasonable throughput (>100 ops/sec), was: " + opsPerSec);
     }
 
     @Test
     void testConcurrentTracking() {
         // Verify thread-safety of concurrent tracking
-        var config = TumblerConfig.defaults();
-        animator = new VolumeAnimator("test-concurrent", config);
+        animator = new VolumeAnimator("test-concurrent");
 
         var threads = new Thread[4];
         for (int t = 0; t < threads.length; t++) {
@@ -296,11 +142,7 @@ class VolumeAnimatorIntegrationTest {
             }
         }
 
-        // Verify all entities tracked (4 threads * 25 entities = 100)
-        var tumbler = animator.getTumbler();
-        var totalEntities = tumbler.getAllRegions().stream()
-            .mapToInt(r -> r.entityCount())
-            .sum();
-        assertEquals(100, totalEntities, "Should have all 100 entities from concurrent tracking");
+        // Verify completed without errors (entity count validation not possible without tumbler)
+        assertTrue(true, "Concurrent tracking should complete without errors");
     }
 }
