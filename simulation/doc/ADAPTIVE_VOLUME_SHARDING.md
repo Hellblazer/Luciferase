@@ -12,12 +12,14 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 ## Context
 
 ### Current State
+
 - VolumeAnimator uses Tetree for entity tracking (migration from MutableGrid complete)
 - Simple API: `track(Point3f) -> Cursor`, `start()`
 - Single Tetree instance per VolumeAnimator
 - No dynamic volume partitioning capability
 
 ### Target State
+
 - SpatialTumbler manages dynamic regions within a Tetree
 - SpatialSpan tracks boundary entities between regions
 - Automatic split when region entity count exceeds threshold
@@ -25,6 +27,7 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 - Integration with BubbleDynamicsManager for simulation bubbles
 
 ### Related Components
+
 - **Tetree**: Tetrahedral spatial index with TetreeKey hierarchy
 - **AdaptiveForest**: Multi-tree management with split/merge (reference architecture)
 - **ForestLoadBalancer**: Load metric tracking and migration planning
@@ -38,12 +41,14 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 **Decision**: Region-based architecture operating on TetreeKey hierarchies within a single Tetree.
 
 **Rationale**:
+
 - Tetree's hierarchical TetreeKey structure naturally supports regions
 - More memory-efficient than multiple Tetree instances
 - Leverages existing S0-S5 tetrahedral subdivision
 - O(log n) operations maintained through single spatial index
 
 **Alternatives Rejected**:
+
 - **Multiple Tetree instances**: Higher memory overhead, complex cross-tree queries
 - **Wrap AdaptiveForest directly**: Overhead of forest management for single simulation
 
@@ -52,11 +57,13 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 **Decision**: Distance-based boundary zones with configurable span width.
 
 **Rationale**:
+
 - Entities within span distance of region boundary visible to both regions
 - Enables efficient cross-region neighbor queries
 - Lazy evaluation prevents unnecessary computation
 
 **Parameters**:
+
 - `spanWidthRatio`: Span width as fraction of region size (default: 0.1)
 - `minSpanDistance`: Absolute minimum span in world units (default: 1.0)
 
@@ -65,6 +72,7 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 **Decision**: Dual-threshold system with hysteresis.
 
 **Parameters**:
+
 - `splitThreshold`: Entity count triggering split (default: 5000)
 - `joinThreshold`: Combined count below which adjacent regions join (default: 500)
 - `minRegionLevel`: Minimum TetreeKey level for regions (default: 4)
@@ -75,6 +83,7 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 **Decision**: Composition - VolumeAnimator delegates to SpatialTumbler.
 
 **Rationale**:
+
 - Maintains backward compatibility with existing track() API
 - SpatialTumbler manages regions transparently
 - Easy to enable/disable volume sharding per VolumeAnimator
@@ -85,7 +94,7 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 
 ### Class Diagram
 
-```
+```text
 +------------------+       +-------------------+       +------------------+
 |  VolumeAnimator  |------>|  SpatialTumbler   |------>|      Tetree      |
 +------------------+       +-------------------+       +------------------+
@@ -109,7 +118,7 @@ Adaptive Volume Sharding introduces SpatialTumbler and SpatialSpan components to
 
 ### Package Structure
 
-```
+```text
 simulation/src/main/java/com/hellblazer/luciferase/simulation/
   tumbler/
     SpatialTumbler.java           # Main interface
@@ -325,6 +334,7 @@ public record TumblerConfig(
 ## Implementation Plan
 
 ### Phase 1: Foundation - SpatialTumbler Core
+
 **Duration**: 3-4 days
 **Dependencies**: None
 
@@ -341,17 +351,20 @@ public record TumblerConfig(
 | 1.7 | Write unit tests for region management | 4h |
 
 #### Test Strategy
+
 - `TumblerRegionTest`: State transitions, count tracking
 - `SpatialTumblerBasicTest`: Entity insertion, region lookup
 - `TumblerConfigTest`: Builder pattern, defaults validation
 
 #### Success Criteria
+
 - [ ] TumblerRegion correctly tracks entity count and density
 - [ ] SpatialTumbler can create regions and track entities
 - [ ] Entity lookup returns correct region
 - [ ] All unit tests pass
 
 #### Deliverables
+
 - `tumbler/TumblerConfig.java`
 - `tumbler/TumblerRegion.java`
 - `tumbler/SpatialTumbler.java`
@@ -361,6 +374,7 @@ public record TumblerConfig(
 ---
 
 ### Phase 2: Split/Join Logic
+
 **Duration**: 4-5 days
 **Dependencies**: Phase 1
 
@@ -378,12 +392,14 @@ public record TumblerConfig(
 | 2.8 | Write unit tests for split/join | 6h |
 
 #### Test Strategy
+
 - `RegionSplitTest`: Verify correct subdivision geometry
 - `RegionJoinTest`: Verify correct consolidation
 - `SplitJoinConcurrencyTest`: Thread-safe operations
 - `SplitThresholdTest`: Trigger conditions
 
 #### Success Criteria
+
 - [ ] Split correctly creates 8 child regions
 - [ ] Entities redistribute to correct child regions
 - [ ] Join correctly consolidates child entities to parent
@@ -392,6 +408,7 @@ public record TumblerConfig(
 - [ ] Performance: split < 100ms for 10K entities
 
 #### Deliverables
+
 - `tumbler/RegionSplitStrategy.java`
 - Enhanced `tumbler/SpatialTumblerImpl.java`
 - Split/join unit tests
@@ -399,6 +416,7 @@ public record TumblerConfig(
 ---
 
 ### Phase 3: SpatialSpan Boundary Management
+
 **Duration**: 3-4 days
 **Dependencies**: Phase 1
 
@@ -416,17 +434,20 @@ public record TumblerConfig(
 | 3.8 | Write unit tests for boundary management | 4h |
 
 #### Test Strategy
+
 - `BoundaryZoneTest`: Zone creation and geometry
 - `SpanEntityTrackingTest`: Entity in/out of boundary
 - `CrossRegionQueryTest`: Entities visible to adjacent regions
 
 #### Success Criteria
+
 - [ ] Boundary zones correctly calculated for adjacent regions
 - [ ] Entities near boundaries tracked in both regions
 - [ ] Cross-region queries return expected entities
 - [ ] Boundary updates efficient (< 1ms per entity)
 
 #### Deliverables
+
 - `span/SpanConfig.java`
 - `span/BoundaryZone.java`
 - `span/SpatialSpan.java`
@@ -436,6 +457,7 @@ public record TumblerConfig(
 ---
 
 ### Phase 4: VolumeAnimator Integration
+
 **Duration**: 2-3 days
 **Dependencies**: Phases 1-3
 
@@ -451,23 +473,27 @@ public record TumblerConfig(
 | 4.6 | Performance benchmarking | 3h |
 
 #### Test Strategy
+
 - `VolumeAnimatorIntegrationTest`: End-to-end tracking
 - `VolumeAnimatorBackwardCompatTest`: API unchanged
 - `VolumeAnimatorPerformanceTest`: Comparison with previous impl
 
 #### Success Criteria
+
 - [ ] VolumeAnimator.track() works with SpatialTumbler
 - [ ] Existing tests continue to pass
 - [ ] No performance regression (< 10% overhead)
 - [ ] Tumbler can be enabled/disabled via config
 
 #### Deliverables
+
 - Updated `VolumeAnimator.java`
 - Integration tests
 
 ---
 
 ### Phase 5: Load Balancing Integration
+
 **Duration**: 2-3 days
 **Dependencies**: Phase 4
 
@@ -482,16 +508,19 @@ public record TumblerConfig(
 | 5.5 | Write integration tests | 4h |
 
 #### Test Strategy
+
 - `LoadBalancingIntegrationTest`: Metrics flow correctly
 - `AffinityRegionTest`: Entities assigned to optimal regions
 - `MigrationHookTest`: Transfers trigger correctly
 
 #### Success Criteria
+
 - [ ] Load metrics flow from SpatialTumbler to BubbleDynamicsManager
 - [ ] Entity affinity influences region assignment
 - [ ] Bubble migration triggers region rebalancing
 
 #### Deliverables
+
 - Updated `BubbleDynamicsManager.java`
 - Integration with `TumblerStatistics`
 - Integration tests
@@ -499,6 +528,7 @@ public record TumblerConfig(
 ---
 
 ### Phase 6: Ghost Layer Integration
+
 **Duration**: 2-3 days
 **Dependencies**: Phase 3
 
@@ -512,15 +542,18 @@ public record TumblerConfig(
 | 6.4 | Write integration tests | 4h |
 
 #### Test Strategy
+
 - `GhostSpanIntegrationTest`: Span entities sync as ghosts
 - `PartitionRecoveryTest`: Span state recovers after partition
 
 #### Success Criteria
+
 - [ ] Span boundary entities available as ghosts
 - [ ] Ghost sync latency < 10ms
 - [ ] Partition recovery maintains entity consistency
 
 #### Deliverables
+
 - Updated `SpatialSpanImpl.java` with ghost integration
 - Ghost layer integration tests
 
@@ -549,26 +582,31 @@ public record TumblerConfig(
 ## Dependencies
 
 ### External
+
 - Tetree (lucien module) - stable
 - BubbleDynamicsManager (simulation) - stable
 - GhostZoneManager (lucien/forest) - stable
 
 ### Internal
+
 - Phase dependencies as documented above
 
 ## Testing Requirements
 
 ### Unit Tests (Per Phase)
+
 - Each class has corresponding test class
 - Minimum 80% code coverage
 - All edge cases documented
 
 ### Integration Tests
+
 - VolumeAnimator end-to-end
 - BubbleDynamicsManager integration
 - Ghost layer integration
 
 ### Performance Tests
+
 - Split/join benchmarks
 - Memory profiling
 - Concurrent operation stress tests
@@ -588,7 +626,7 @@ public record TumblerConfig(
 
 Regions are defined by TetreeKey ancestors. A region at level L contains all entities with TetreeKeys that have the same ancestor at level L.
 
-```
+```text
 Level 0: Root (1 region covering entire space)
 Level 4: 6^4 = 1,296 possible regions
 Level 8: 6^8 = 1,679,616 possible regions
@@ -601,6 +639,7 @@ Join consolidates 6 child regions into parent.
 ## Appendix B: Boundary Zone Geometry
 
 For adjacent regions at level L:
+
 - Region size: ~1/6^L of unit cube
 - Span width: spanWidthRatio * region_size
 - Boundary entities: within span distance of shared face

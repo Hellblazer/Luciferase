@@ -8,6 +8,7 @@
 ## Overview
 
 Bubbles are **emergent**, not computed. No node knows "the bubble". Each node only knows:
+
 - Entities it simulates (local)
 - Entities nearby that might interact (ghosts from peers)
 
@@ -17,6 +18,7 @@ No one computes this. It emerges from pairwise peer coordination.
 ## Consistency Model
 
 This design uses **Causal Consistency** (not global determinism):
+
 - Causal ordering within interaction bubbles
 - Eventual consistency across bubbles
 - Bounded rollback window (100-200ms, GGPO-style)
@@ -26,7 +28,7 @@ This design uses **Causal Consistency** (not global determinism):
 
 ## Architecture
 
-```
+```text
 Layer 4: SIMULATION BUBBLES (simulation module)
   SimulationNode, BucketScheduler, CausalRollback, MigrationManager
          | uses
@@ -59,6 +61,7 @@ Layer 1: FOREST (lucien module)
 - VON papers (Voronoi Overlay Network)
 
 See ChromaDB:
+
 - `research::distributed-consistency::causal-consistency-games`
 - `research::distributed-consistency::implementation-recommendations`
 - `research::von::*`

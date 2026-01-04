@@ -11,6 +11,7 @@
 The Simulation Bubbles architecture requires ghost entities to carry additional simulation-specific metadata beyond what the generic `GhostZoneManager` provides.
 
 **Current `GhostEntity` fields** (from `lucien` module):
+
 - `entityId` - Entity identifier
 - `content` - Entity content/state
 - `position` - 3D position
@@ -19,6 +20,7 @@ The Simulation Bubbles architecture requires ghost entities to carry additional 
 - `timestamp` - Creation timestamp
 
 **Required simulation fields**:
+
 - `sourceBubbleId` (UUID) - Which bubble owns this entity (enables distributed bubble discovery)
 - `bucket` (long) - Simulation time bucket for causal ordering
 - `epoch` (long) - Entity authority epoch for stale update detection
@@ -43,11 +45,13 @@ public static class GhostEntity<ID extends EntityID, Content> {
 ```
 
 **Pros**:
+
 - Single source of truth
 - No wrapper overhead
 - Direct access to all fields
 
 **Cons**:
+
 - ❌ Couples `lucien` module to simulation concepts
 - ❌ Breaks separation of concerns
 - ❌ Makes GhostZoneManager less generic/reusable
@@ -77,6 +81,7 @@ public class SimulationGhostManager<Key extends SpatialKey<Key>, ID extends Enti
 ```
 
 **Pros**:
+
 - ✅ Clean separation of concerns
 - ✅ `lucien` module remains generic
 - ✅ Simulation module depends on lucien (correct direction)
@@ -85,6 +90,7 @@ public class SimulationGhostManager<Key extends SpatialKey<Key>, ID extends Enti
 - ✅ Record pattern provides immutability
 
 **Cons**:
+
 - Additional abstraction layer (minor)
 - Need to maintain mapping between ghost and metadata (solvable via concurrent map)
 
@@ -264,6 +270,7 @@ class SimulationGhostEntity extends GhostEntity {
 ```
 
 **Rejected because**:
+
 - GhostEntity is a static inner class (can't extend)
 - Would still couple lucien to simulation
 - Composition is more flexible than inheritance
@@ -281,6 +288,7 @@ class SimulationGhostEntity extends GhostEntity {
 **Verification**: GhostZoneManager API confirmed compatible. Constructor `GhostZoneManager(Forest, float)` exists and works as planned.
 
 **Next Steps**:
+
 1. Implement `SimulationGhostManager` in Phase 1
 2. Test integration with existing GhostZoneManager
 3. Verify VON bubble discovery pattern works

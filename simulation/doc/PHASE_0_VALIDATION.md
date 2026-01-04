@@ -14,10 +14,12 @@
 **Actual**: `View.context.active()` → `Stream<Participant>`
 
 **Location**:
+
 - `DynamicContext.java:61` - `Stream<T> active()`
 - Path: `/Delos/memberships/src/main/java/com/hellblazer/delos/context/DynamicContext.java`
 
 **API Usage**:
+
 ```java
 View view = ...; // Fireflies View
 Stream<Participant> activeMembers = view.context.active();
@@ -27,6 +29,7 @@ int memberCount = view.context.activeCount();
 **Assessment**: ✅ API available and functional. Direct equivalent to `getMembers()`.
 
 **Integration Notes**:
+
 - View holds `DynamicContext<Participant> context`
 - Active members can be iterated, filtered, collected
 - Additional methods: `activeCount()`, `activate(Member)`, `offline(Member)`
@@ -39,6 +42,7 @@ int memberCount = view.context.activeCount();
 **Actual**: Router uses `Digest context` for routing, not SFC spatial keys
 
 **Location**:
+
 - `Router.java` - No TetreeKey/MortonKey routing methods
 - Path: `/Delos/memberships/src/main/java/com/hellblazer/delos/archipelago/Router.java`
 
@@ -73,6 +77,7 @@ public class TetreeKeyRouter {
 ```
 
 **Rationale**:
+
 - Delos Router is context-based (Digest), not spatially-aware
 - Fireflies rings provide consistent hashing for any Digest
 - `context.successor(ring, digest)` finds nearest member on ring
@@ -88,11 +93,13 @@ public class TetreeKeyRouter {
 **Actual**: `CommonCommunications.connect(Member to)` → `Client`
 
 **Location**:
+
 - `RouterImpl.java:258` - `connect(Member to)` method
 - `CommonCommunications` class provides client connection pooling
 - Path: `/Delos/memberships/src/main/java/com/hellblazer/delos/archipelago/RouterImpl.java`
 
 **API Usage**:
+
 ```java
 // Router creates CommonCommunications for a service
 Router router = ...;
@@ -108,6 +115,7 @@ client.someMethod(request);
 **Assessment**: ✅ MTLS client pooling available via CommonCommunications pattern.
 
 **Integration Notes**:
+
 - `ServerConnectionCache` manages connection pool
 - Automatic local loopback for self-connections
 - Connections are cached and reused (pool behavior)
@@ -141,6 +149,7 @@ client.someMethod(request);
 ### Test Results
 
 All 5 tests passed:
+
 - ✅ `testCheckpointRestore` - State restoration accuracy
 - ✅ `testReplayProducesSameResult` - Deterministic replay
 - ✅ `testBoundedRollbackWindow` - Window eviction (3 checkpoint max)
@@ -150,6 +159,7 @@ All 5 tests passed:
 ### Assessment
 
 Bounded rollback (GGPO-style) is **viable** for Simulation Bubbles:
+
 - 200ms window = 2-3 checkpoints @ 100ms/bucket
 - Memory overhead acceptable
 - Deterministic replay validated
@@ -201,6 +211,7 @@ public class SimulationGhostManager<Key, ID, Content> {
 **Location**: `/Delos/fireflies/src/test/java/com/hellblazer/delos/fireflies/`
 
 1. **NetworkPartitionTest.java** (lines 143-144):
+
    ```java
    // Stop routers for minority nodes to simulate partition
    for (int i = 0; i < minoritySize; i++) {
@@ -229,6 +240,7 @@ public class SimulationGhostManager<Key, ID, Content> {
 ### Assessment
 
 ✅ **VALIDATED**: Fireflies view change latency meets requirements
+
 - View changes complete within **< 5 seconds** (measured: 2-5s)
 - Satisfies 3s RTO requirement for Simulation Bubbles
 - BFT voting (3/4 supermajority) completes within deadline

@@ -9,6 +9,7 @@
 ## Purpose
 
 This document consolidates the complete simulation module architecture including:
+
 - Adaptive Volume Sharding (Epic Luciferase-1oo)
 - Simulation Bubbles (Phases 0-5)
 - Cross-system integration points
@@ -16,7 +17,7 @@ This document consolidates the complete simulation module architecture including
 
 ## System Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    SIMULATION MODULE                         │
 ├─────────────────────────────────────────────────────────────┤
@@ -61,6 +62,7 @@ This document consolidates the complete simulation module architecture including
 **Purpose**: Dynamic tetrahedral volume management with split/join for load balancing
 
 **Main Classes**:
+
 - `SpatialTumbler` - Dynamic region management interface
 - `SpatialTumblerImpl` - Implementation with split/join logic
 - `TumblerRegion` - Region state record
@@ -72,6 +74,7 @@ This document consolidates the complete simulation module architecture including
 - `SpanConfig` - Span configuration
 
 **Test Classes** (7):
+
 - `SpatialTumblerBasicTest` - Basic operations
 - `TumblerRegionTest` - Region state management
 - `TumblerConfigTest` - Configuration validation
@@ -81,6 +84,7 @@ This document consolidates the complete simulation module architecture including
 - `PartitionRecoveryTest` - Partition handling
 
 **Key Metrics**:
+
 - Split threshold: 5000 entities per region
 - Join threshold: 500 entities (combined)
 - Performance: Split < 100ms for 10K entities
@@ -95,6 +99,7 @@ This document consolidates the complete simulation module architecture including
 **Purpose**: Massively distributed simulation with causal consistency
 
 **Phase 0: Validation** (Complete)
+
 - Validated Delos integration (Fireflies membership, MTLS)
 - Prototyped causal rollback mechanism
 - Verified GhostZoneManager API compatibility
@@ -103,6 +108,7 @@ This document consolidates the complete simulation module architecture including
 
 **Phase 1: Bubble Ownership** (Complete)
 Classes:
+
 - `Bubble` - Entity cluster record
 - `AffinityTracker` - Internal/external interaction tracking
 - `SimulationGhostEntity` - Ghost with bubble metadata
@@ -113,6 +119,7 @@ Classes:
 
 **Phase 2: Causal Synchronization** (Complete)
 Classes:
+
 - `BucketScheduler` - 100ms time bucket coordination
 - `CausalRollback` - Bounded rollback window (200ms)
 - `BucketBarrier` - Synchronization barrier
@@ -120,12 +127,14 @@ Classes:
 
 **Phase 3: Ghost Layer Integration** (Complete)
 Classes:
+
 - `GhostBoundarySync` - Boundary entity synchronization
 - `GhostLayerHealth` - NC (Neighbor Consistency) monitoring
 - Integration with `ExternalBubbleTracker` from Phase 1
 
 **Phase 4: Bubble Dynamics** (Complete)
 Classes:
+
 - `BubbleDynamicsManager` - Merge/split/transfer orchestration
 - `MigrationLog` - Idempotency tracking
 - `BubbleEvent` - Sealed interface for lifecycle events
@@ -133,9 +142,11 @@ Classes:
 
 **Phase 5: Dead Reckoning** (Complete)
 Classes:
+
 - `DeadReckoningEstimator` - Animation smoothing
 
 **Key Metrics**:
+
 - Bucket duration: 100ms
 - Rollback window: 200ms (2 buckets)
 - Checkpoint interval: 1 second
@@ -143,6 +154,7 @@ Classes:
 - Drift threshold: Entity affinity < 0.5
 
 **Documentation**:
+
 - `simulation/doc/SIMULATION_BUBBLES.md` (71 lines, overview)
 - `.pm/SIMULATION_BUBBLES_PLAN.md` (437 lines, complete plan)
 - `simulation/doc/PHASE_0_VALIDATION.md` (327 lines, validation results)
@@ -154,18 +166,21 @@ Classes:
 ### Shared Components (3 classes)
 
 **VolumeAnimator**:
+
 - Frame-rate controlled animation using PrimeMover
 - Integrates with SpatialTumbler for dynamic regions
 - Uses Tetree for O(log n) spatial indexing
 - 100 FPS default frame rate
 
 **BubbleDynamicsManager**:
+
 - Used by both systems for entity clustering
 - Merge threshold: 0.6 (60% cross-bubble affinity)
 - Drift threshold: 0.5 (50% internal affinity)
 - Partition recovery via StockNeighborList
 
 **GhostBoundarySync**:
+
 - Synchronizes boundary entities between regions/bubbles
 - Batched updates at bucket boundaries
 - Ghost TTL: 500ms (5 buckets)
@@ -180,6 +195,7 @@ Classes:
 **Shared Goal**: Dynamic load balancing based on entity distribution
 
 **Integration Path**:
+
 1. `SpatialTumbler` tracks entity density per region
 2. `TumblerStatistics` exposes load metrics
 3. `BubbleDynamicsManager` uses metrics for bubble assignment
@@ -187,7 +203,8 @@ Classes:
 5. Low-density regions trigger bubble merges
 
 **Data Flow**:
-```
+
+```text
 SpatialTumbler.getStatistics()
     → TumblerStatistics { entityCount, density per region }
     → BubbleDynamicsManager.processBucketDynamics()
@@ -196,6 +213,7 @@ SpatialTumbler.getStatistics()
 ```
 
 **Shared Components**:
+
 - `GhostZoneManager` (from lucien) - spatial boundary tracking
 - `GhostBoundarySync` - entity synchronization
 - `GhostLayerHealth` - health monitoring (NC metric)
@@ -208,18 +226,21 @@ SpatialTumbler.getStatistics()
 Both systems depend on lucien's spatial indexing:
 
 **Tetree**:
+
 - Tetrahedral spatial index with TetreeKey hierarchy
 - O(log n) insertion, lookup, removal
 - S0-S5 tetrahedral subdivision
 - Used by both SpatialTumbler and VolumeAnimator
 
 **GhostZoneManager**:
+
 - Boundary entity tracking
 - Ghost width: `maxAoiRadius * 1.5`
 - Extended by `SimulationGhostManager` wrapper (composition pattern)
 - Provides spatial replication for failover
 
 **Forest**:
+
 - Multi-tree coordination
 - Ghost layer integration
 - Distributed support (future)
@@ -459,6 +480,7 @@ Both systems depend on lucien's spatial indexing:
 Both Adaptive Volume Sharding and Simulation Bubbles implementations are complete with comprehensive documentation. The systems integrate cleanly through shared components (BubbleDynamicsManager, GhostBoundarySync, GhostLayerHealth) and leverage lucien's spatial indexing infrastructure.
 
 **Key Achievements**:
+
 - 27 main implementation classes
 - 18 test classes
 - 615+ lines of architecture documentation
@@ -467,6 +489,7 @@ Both Adaptive Volume Sharding and Simulation Bubbles implementations are complet
 - VON-style distributed bubble discovery
 
 **Remaining Work** (non-blocking):
+
 - Performance benchmarking
 - End-to-end integration testing
 - Multi-node distributed validation
