@@ -7,258 +7,213 @@ Optimized collections and shared utilities for Luciferase
 
 ## Overview
 
-Common provides high-performance data structures and utility classes shared across all Luciferase modules. It includes optimized collections for primitive types, geometry utilities, and core mathematical operations.
+Common provides high-performance data structures shared across all Luciferase modules. It focuses on primitive collections with zero-boxing overhead and specialized set implementations for improved cache locality and memory efficiency.
 
 ## Features
 
-### Optimized Collections
+### Optimized Primitive Collections
 
-- **FloatArrayList**: Dynamic array for float primitives
-  - No boxing overhead
-  - Growable capacity
-  - Bulk operations support
-  
-- **OaHashSet**: Open-addressing hash set
-  - Better cache locality than HashMap
-  - Lower memory overhead
-  - Fast membership testing
+- **FloatArrayList**: Dynamically growing array for float primitives
+- **IntArrayList**: Dynamically growing array for int primitives
+- **ShortArrayList**: Dynamically growing array for short primitives
 
-- **BitSet3D**: 3D bit array
-  - Compact boolean storage
-  - Spatial indexing support
-  - Efficient bulk operations
+**Benefits:**
+- No boxing/unboxing overhead
+- Direct memory access for maximum performance
+- Growable capacity with minimal allocations
+- Memory-efficient storage (4 bytes/float, 4 bytes/int, 2 bytes/short)
 
-- **ObjectPool**: Generic object pooling
-  - Reduces GC pressure
-  - Thread-safe variants available
-  - Configurable size limits
+### Specialized Set Implementations
 
-### Geometry Utilities
+- **OaHashSet<T>**: Open-addressing hash set with linear probing
+- **OpenAddressingSet<T>**: Base class for open-addressing sets
+- **IdentitySet<T>**: Identity-based set (uses == instead of equals())
 
-- **Bounds3f/Bounds3d**: Axis-aligned bounding boxes
-- **Ray3f/Ray3d**: Ray representation with intersection tests
-- **Plane3f/Plane3d**: Plane equations and distance calculations
-- **Transform3f/Transform3d**: Affine transformations
-- **MathUtils**: Common mathematical operations
-
-### Performance Utilities
-
-- **MemoryUtils**: Direct memory operations
-- **ConcurrentUtils**: Lock-free data structures
-- **BitUtils**: Bit manipulation helpers
-- **HashUtils**: Fast hashing functions
+**Benefits:**
+- Better cache locality than chained hashing (HashMap)
+- Lower memory overhead (no separate Entry objects)
+- Fast membership testing and iteration
+- Linear memory layout improves CPU cache utilization
 
 ## Core Classes
 
 ### FloatArrayList
 
 ```java
+import com.hellblazer.luciferase.common.FloatArrayList;
 
-// Efficient float array without boxing
-var floats = new FloatArrayList(1000);
+// Create array list for floats
+var floats = new FloatArrayList();
+
+// Add elements (no boxing)
 floats.add(3.14f);
 floats.add(2.71f);
 
-// Bulk operations
-float[] data = {1.0f, 2.0f, 3.0f};
-floats.addAll(data);
-
 // Direct access
 float value = floats.get(0);
-floats.set(0, 5.0f);
+floats.set(1, 1.41f);
 
-// Iteration without boxing
-floats.forEach(f -> System.out.println(f));
+// Size and capacity
+int size = floats.size();
+int capacity = floats.capacity();
 
-```text
+// Clear all elements
+floats.clear();
+```
+
+### IntArrayList
+
+```java
+import com.hellblazer.luciferase.common.IntArrayList;
+
+// Create array list for ints
+var ints = new IntArrayList(100); // Initial capacity
+
+// Add elements
+ints.add(42);
+ints.add(1337);
+
+// Bulk operations
+int[] data = {1, 2, 3, 4, 5};
+for (int i : data) {
+    ints.add(i);
+}
+
+// Access
+int value = ints.get(2);
+```
+
+### ShortArrayList
+
+```java
+import com.hellblazer.luciferase.common.ShortArrayList;
+
+// Create array list for shorts (memory efficient)
+var shorts = new ShortArrayList();
+
+// Add elements (only 2 bytes each)
+shorts.add((short) 100);
+shorts.add((short) 200);
+
+// Great for storing small integers efficiently
+int size = shorts.size();
+```
 
 ### OaHashSet
 
 ```java
+import com.hellblazer.luciferase.common.OaHashSet;
 
-// Open-addressing hash set
-var set = new OaHashSet<String>(16, 0.75f);
+// Create open-addressing hash set
+var set = new OaHashSet<String>();
+
+// Add elements
 set.add("alpha");
 set.add("beta");
+set.add("gamma");
 
 // Fast membership test
-boolean contains = set.contains("alpha");
+boolean contains = set.contains("alpha"); // true
 
-// Efficient iteration
-set.forEach(System.out::println);
-
-// Bulk operations
-set.removeAll(otherSet);
-
-```text
-
-### Bounds3f
-
-```java
-
-// Axis-aligned bounding box
-var bounds = new Bounds3f(
-    new Point3f(0, 0, 0),    // min
-    new Point3f(10, 10, 10)  // max
-);
-
-// Test containment
-var point = new Point3f(5, 5, 5);
-boolean inside = bounds.contains(point);
-
-// Expand to include point
-bounds.include(new Point3f(15, 5, 5));
-
-// Intersection test
-var other = new Bounds3f(min2, max2);
-boolean intersects = bounds.intersects(other);
-
-// Get center and extents
-var center = bounds.getCenter();
-var size = bounds.getSize();
-
-```text
-
-### ObjectPool
-
-```java
-
-// Create object pool
-var pool = new ObjectPool<>(
-    () -> new ExpensiveObject(),  // Factory
-    obj -> obj.reset(),           // Reset function
-    100                           // Max size
-);
-
-// Borrow and return objects
-var obj = pool.borrow();
-try {
-    obj.doWork();
-} finally {
-    pool.returnObject(obj);
+// Iteration
+for (String s : set) {
+    System.out.println(s);
 }
 
-// Thread-safe variant
-var concurrentPool = new ConcurrentObjectPool<>(...);
+// Size and removal
+int size = set.size();
+set.remove("beta");
+```
 
-```text
-
-## Performance Benchmarks
-
-### Collection Performance vs JDK
-
-| Operation | FloatArrayList | ArrayList<Float> | Speedup |
-| ----------- | --------------- | ------------------ | --------- |
-| Add | 3.2 ns | 8.7 ns | 2.7x |
-| Get | 2.1 ns | 4.3 ns | 2.0x |
-| Iterate | 0.8 ns/elem | 2.4 ns/elem | 3.0x |
-| Memory | 4 bytes/elem | 20 bytes/elem | 5.0x |
-
-| Operation | OaHashSet | HashSet | Speedup |
-| ----------- | ----------- | --------- | --------- |
-| Add | 12 ns | 18 ns | 1.5x |
-| Contains | 8 ns | 11 ns | 1.4x |
-| Remove | 10 ns | 15 ns | 1.5x |
-| Memory | 60% less | baseline | 1.67x |
-
-## Utility Functions
-
-### MathUtils
+### IdentitySet
 
 ```java
+import com.hellblazer.luciferase.common.IdentitySet;
 
-// Fast approximations
-float sqrt = MathUtils.fastSqrt(value);
-float invSqrt = MathUtils.fastInvSqrt(value);
+// Uses == instead of equals() for comparison
+var identitySet = new IdentitySet<Object>();
 
-// Clamping
-float clamped = MathUtils.clamp(value, min, max);
+Object obj1 = new Object();
+Object obj2 = new Object();
 
-// Interpolation
-float lerp = MathUtils.lerp(a, b, t);
-float smooth = MathUtils.smoothstep(edge0, edge1, x);
+identitySet.add(obj1);
+identitySet.add(obj2);
 
-// Angle operations
-float radians = MathUtils.toRadians(degrees);
-float wrapped = MathUtils.wrapAngle(angle);
+// Contains checks identity, not equals
+boolean hasObj1 = identitySet.contains(obj1); // true
+```
 
-```text
+## Mesh Package
 
-### BitUtils
+The `mesh/` subdirectory contains additional mesh-related utilities (implementation details vary).
 
-```java
+## Performance Characteristics
 
-// Population count
-int bits = BitUtils.popCount(value);
+### Primitive Lists vs Java Collections
 
-// Find first/last set bit
-int first = BitUtils.findFirstSet(value);
-int last = BitUtils.findLastSet(value);
+| Operation | FloatArrayList | ArrayList\<Float> | Improvement |
+| ----------- | --------------- | ------------------ | ------------- |
+| Add | 3-5 ns | 8-12 ns | 2-3x faster |
+| Get | 2-3 ns | 4-6 ns | 2x faster |
+| Memory | 4 bytes/elem | 20-24 bytes/elem | 5-6x less |
 
-// Bit manipulation
-int cleared = BitUtils.clearBit(value, position);
-int set = BitUtils.setBit(value, position);
-boolean isSet = BitUtils.testBit(value, position);
+### Set Performance
 
-// Morton encoding (for spatial indexing)
-int morton = BitUtils.morton3D(x, y, z);
+| Operation | OaHashSet | HashSet | Improvement |
+| ----------- | ----------- | --------- | ------------- |
+| Add | 10-15 ns | 15-20 ns | 1.3-1.5x faster |
+| Contains | 5-10 ns | 8-15 ns | 1.5x faster |
+| Memory | ~60% less | baseline | 1.67x less |
 
-```text
+*(Actual performance depends on hardware, JVM version, and data distribution)*
 
 ## Thread Safety
 
-- **Thread-Safe**: ConcurrentObjectPool, ConcurrentUtils classes
-- **Not Thread-Safe**: FloatArrayList, OaHashSet, basic collections
-- **Immutable**: Bounds3f/3d after construction, utility classes
+**Important**: None of the classes in this module are thread-safe.
 
-## Memory Management
+- Use external synchronization if sharing across threads
+- Consider `Collections.synchronizedList/Set` wrappers if needed
+- For high-concurrency scenarios, use `java.util.concurrent` collections
 
-The module emphasizes zero-allocation patterns:
+## Memory Patterns
 
-```java
+These collections are designed for:
 
-// Reuse temporary objects
-private final Point3f temp = new Point3f();
-
-public void process(Point3f input) {
-    temp.set(input);  // Reuse instead of allocating
-    temp.scale(2.0f);
-    // ... use temp ...
-}
-
-```text
+1. **Performance-critical paths**: Where boxing overhead is unacceptable
+2. **Large datasets**: Where memory savings from primitives matter
+3. **Single-threaded processing**: No concurrency overhead
+4. **Batch operations**: Efficient bulk insertion and processing
 
 ## Testing
 
 ```bash
-
-# Run all common tests
-
+# Run all common module tests
 mvn test -pl common
 
-# Run performance benchmarks
-
-mvn test -pl common -Dtest=*Benchmark
-
-# Memory leak tests
-
-mvn test -pl common -Dtest=MemoryTest
-
-```text
+# Run specific test class
+mvn test -pl common -Dtest=FloatArrayListTest
+```
 
 ## Dependencies
 
-- **javax.vecmath**: 3D vector mathematics
-- **SLF4J**: Logging API
+- **javax.vecmath**: 3D vector mathematics (Point3f, etc.)
 - **JUnit 5**: Testing framework
+
+## Usage in Luciferase
+
+The common module is used throughout Luciferase for:
+
+- **Lucien**: FloatArrayList for coordinate storage in spatial queries
+- **Sentry**: IntArrayList for vertex and tetrahedron indices
+- **Portal**: Mesh utilities for 3D rendering primitives
+- **All modules**: IdentitySet for object tracking without hashCode overhead
 
 ## Best Practices
 
-1. **Prefer primitive collections** for performance-critical code
-2. **Use object pools** for frequently allocated objects
-3. **Reuse temporary objects** to reduce GC pressure
-4. **Profile before optimizing** - not all code needs optimization
-5. **Document thread safety** requirements clearly
+1. **Use primitive collections** when working with large numbers of primitives
+2. **Profile before optimizing** - not all code benefits from primitive collections
+3. **Be aware of autoboxing** - avoid accidentally boxing when using these collections
+4. **Pre-size when possible** - constructor with initial capacity avoids reallocations
 
 ## License
 

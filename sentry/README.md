@@ -3,204 +3,225 @@
 **Last Updated**: 2026-01-04
 **Status**: Current
 
-Delaunay tetrahedralization and kinetic point tracking for Luciferase
+Delaunay tetrahedralization for kinetic point tracking in Luciferase
 
 ## Overview
 
-Sentry provides robust 3D Delaunay tetrahedralization with support for kinetic (moving) points, essential for dynamic spatial decomposition and computational geometry operations. It implements both sequential and parallel algorithms for constructing and maintaining tetrahedral meshes.
+Sentry provides 3D Delaunay tetrahedralization optimized for kinetic (moving) point tracking. It uses incremental construction with periodic rebuilding to maintain topological correctness as points move through 3D space.
+
+This implementation prioritizes topology and relative position tracking over geometric precision, making it ideal for spatial simulation and dynamic mesh applications.
 
 ## Features
 
 ### Core Capabilities
 
-- **3D Delaunay Tetrahedralization**: Robust incremental construction
-- **Kinetic Point Support**: Track and update moving vertices
-- **Convex Hull Computation**: 3D convex hull generation
-- **Voronoi Diagrams**: Dual of Delaunay triangulation
-- **Point Location**: Fast tetrahedron queries
+- **3D Delaunay Tetrahedralization**: Incremental mesh construction with random walk point location
+- **Kinetic Point Tracking**: Maintains topological relationships for moving vertices
+- **Fast Rebuilding**: Periodic mesh reconstruction for topology repair
+- **Vertex Management**: Track, update, and remove spatial points
+- **Tetrahedron Traversal**: Walk-based queries for point location
 
-### Algorithms
+### Implementation Details
 
-- **Sequential Construction**: Stable incremental insertion
-- **Parallel Construction**: Multi-threaded mesh generation
-- **Flip Operations**: 1-4, 2-3, 3-2, 4-1 tetrahedral flips
-- **Walking Algorithm**: Efficient point location in mesh
-- **Boundary Handling**: Proper treatment of convex hull
-
-### Performance Features
-
-- Packed vertex representation for memory efficiency
-- Optimized orientation predicates
-- Spatial indexing for fast queries
-- Batch insertion support
+- **Coordinate Range**: {-32k, +32k} based on float precision
+- **Predicates**: Fast inSphere predicate (not exact) for performance
+- **Memory Management**: Pooled allocation for tetrahedra to reduce GC pressure
+- **Topology Focus**: Optimized for relative position, not precise geometry
 
 ## Architecture
 
 ```text
-
-com.hellblazer.luciferase.sentry/
-├── Tetrahedralization      # Main tetrahedralization class
-├── Vertex                  # 3D vertex representation
-├── Tetrahedron            # Tetrahedral cell
-├── Face                   # Triangular face
-├── OrientationPredicate   # Geometric predicates
-├── packed/                # Memory-efficient implementations
-│   ├── PackedVertex
-│   ├── PackedTetrahedron
-│   └── PackedWalker
-└── parallel/              # Parallel algorithms
-
-```text
+com.hellblazer.sentry/
+├── Grid.java                    # Base Delaunay tetrahedralization (immutable)
+├── MutableGrid.java             # Mutable grid with tracking and rebuild
+├── Vertex.java                  # 3D vertex with tetrahedron reference
+├── Tetrahedron.java             # Tetrahedral cell with adjacency
+├── OrientedFace.java            # Triangle face with orientation
+├── Cursor.java                  # Interface for spatial cursors
+├── TetrahedronPool.java         # Object pool for tetrahedra
+├── FlipOptimizer.java           # Tetrahedral flip operations
+├── StarVisitor.java             # Visitor for star traversal
+└── cast/                        # Spatial publish/subscribe
+    ├── SpatialPublish.java      # Publication interface
+    ├── SpatialSubscription.java # Subscription interface
+    └── SphericalSubscription.java # Sphere-based subscriptions
+```
 
 ## Usage Examples
 
-### Basic Tetrahedralization
+### Basic Grid Creation
 
 ```java
+import com.hellblazer.sentry.MutableGrid;
+import com.hellblazer.sentry.Vertex;
+import javax.vecmath.Point3f;
+import java.util.Random;
 
-import com.hellblazer.luciferase.sentry.Tetrahedralization;
-import com.hellblazer.luciferase.sentry.Vertex;
+// Create mutable grid for tracking points
+var grid = new MutableGrid();
+var random = new Random();
 
-// Create tetrahedralization
-var mesh = new Tetrahedralization();
+// Track a point (creates vertex in Delaunay mesh)
+var point = new Point3f(10.0f, 20.0f, 30.0f);
+Vertex vertex = grid.track(point, random);
 
-// Add vertices
-var v1 = mesh.addVertex(0, 0, 0);
-var v2 = mesh.addVertex(1, 0, 0);
-var v3 = mesh.addVertex(0, 1, 0);
-var v4 = mesh.addVertex(0, 0, 1);
+// Access vertex data
+float x = vertex.x;
+float y = vertex.y;
+float z = vertex.z;
 
-// Build Delaunay mesh
-mesh.build();
+// Get current tetrahedron containing the vertex
+Tetrahedron tet = vertex.getAdjacent();
 
-// Query point location
-var point = new Point3d(0.25, 0.25, 0.25);
-var tet = mesh.locate(point);
+// Iterate over all tracked vertices
+for (Vertex v : grid) {
+    System.out.println("Vertex at: " + v.x + ", " + v.y + ", " + v.z);
+}
+```
 
-```text
-
-### Kinetic Points
-
-```java
-
-// Create kinetic tetrahedralization
-var kinetic = new KineticTetrahedralization();
-
-// Add moving vertices with velocities
-var v1 = kinetic.addKineticVertex(x, y, z, vx, vy, vz);
-
-// Update positions over time
-kinetic.updateTime(deltaTime);
-
-// Maintain Delaunay property
-kinetic.repair();
-
-```text
-
-### Convex Hull
+### Kinetic Points (Moving Vertices)
 
 ```java
+// Track multiple moving points
+var vertices = new ArrayList<Vertex>();
+for (int i = 0; i < 100; i++) {
+    var pos = new Point3f(
+        random.nextFloat() * 100,
+        random.nextFloat() * 100,
+        random.nextFloat() * 100
+    );
+    vertices.add(grid.track(pos, random));
+}
 
-// Compute 3D convex hull
-var points = List.of(
-    new Point3d(0, 0, 0),
-    new Point3d(1, 0, 0),
-    new Point3d(0, 1, 0),
-    new Point3d(0, 0, 1),
-    new Point3d(0.5, 0.5, 0.5)
-);
+// Simulate movement by updating positions
+for (Vertex v : vertices) {
+    v.x += velocityX * deltaTime;
+    v.y += velocityY * deltaTime;
+    v.z += velocityZ * deltaTime;
+}
 
-var hull = ConvexHull3D.compute(points);
-var faces = hull.getFaces();
+// Rebuild mesh to maintain topological correctness
+grid.rebuild(random);
 
-```text
+// Check grid size
+int vertexCount = grid.size();
+```
 
-### Voronoi Diagram
+### Spatial Queries
 
 ```java
+// Find tetrahedron containing a point
+var searchPoint = new Point3f(15.0f, 25.0f, 35.0f);
 
-// Generate Voronoi diagram (dual of Delaunay)
-var voronoi = mesh.getVoronoiDiagram();
+// Start from any vertex in the grid
+Vertex startVertex = grid.iterator().next();
+Tetrahedron foundTet = startVertex.getAdjacent(); // Starting tetrahedron
 
-// Get Voronoi cell for a vertex
-var cell = voronoi.getCell(vertex);
-var cellFaces = cell.getFaces();
+// Walk through mesh to find containing tetrahedron
+// (Note: Walking implementation details are in Grid.locate())
 
-```text
+// Visit all tetrahedra in a vertex's star
+var visitor = new StarVisitor() {
+    @Override
+    public boolean visit(Tetrahedron t) {
+        // Process tetrahedron
+        System.out.println("Visiting tetrahedron");
+        return true; // Continue visiting
+    }
+};
+vertex.visitStar(visitor);
+```
 
-## Performance
+### Object Pooling
 
-### Benchmarks (10,000 random points)
+```java
+import com.hellblazer.sentry.TetrahedronPool;
+import com.hellblazer.sentry.PooledAllocator;
 
-| Operation | Time (ms) | Throughput |
-| ----------- | ----------- | ------------ |
-| Sequential Build | 245 | 40K vertices/sec |
-| Parallel Build (8 cores) | 67 | 149K vertices/sec |
-| Point Location | 0.012 | 83K queries/sec |
-| Incremental Insert | 0.089 | 11K inserts/sec |
-| Flip Operation | 0.003 | 333K flips/sec |
+// Use pooled allocation to reduce GC pressure
+var poolContext = new TetrahedronPoolContext();
+var allocator = new PooledAllocator(poolContext);
+
+// Grid will use pooled tetrahedra internally
+// Pool automatically manages tetrahedron lifecycle
+```
+
+## Performance Characteristics
+
+### Operations
+
+| Operation | Complexity | Notes |
+| ----------- | ------------ | ------- |
+| track() | O(n) amortized | Random walk location + insertion |
+| rebuild() | O(n log n) | Full mesh reconstruction |
+| iterate | O(n) | Linear traversal of vertices |
+| locate() | O(√n) expected | Random walk through mesh |
+
+Where n = number of tracked vertices
 
 ### Memory Usage
 
-- Packed vertex: 24 bytes (3 doubles)
-- Packed tetrahedron: 32 bytes (4 vertex indices + adjacency)
-- Typical mesh: ~100 bytes per vertex (including connectivity)
+- **Vertex**: 12 bytes (3 floats)
+- **Tetrahedron**: ~32 bytes (4 vertex refs + 4 adjacency refs)
+- **Typical mesh**: ~150 bytes per vertex (including tetrahedra and connectivity)
 
-## Geometric Predicates
+### Known Limitations
 
-Sentry uses robust geometric predicates to handle numerical precision:
+- **Coordinate range**: Limited to ±32,768 (short float precision)
+- **Precision**: Uses fast (not exact) inSphere predicate
+- **Degenerate cases**: Coplanar or collinear points require special handling
+- **Rebuild cost**: Full mesh reconstruction can be expensive for large point sets
 
-```java
+## Integration with Other Modules
 
-// Orientation predicate (sign of volume)
-var orient = OrientationPredicate.orient3d(p1, p2, p3, p4);
+### Von Module
 
-// In-sphere predicate
-var inSphere = InSpherePredicate.inSphere(p1, p2, p3, p4, query);
+Sentry provides the foundation for VON's Voronoi-based spatial perception:
 
-// Collinearity test
-var collinear = GeometricPredicates.areCollinear(p1, p2, p3);
+- `Cursor` interface: Used by VON nodes for spatial tracking
+- `Vertex` interface: Provides spatial position for perception queries
 
-```text
+### Simulation Module
+
+Historical usage (now replaced by SpatialIndex):
+
+- Early simulation prototypes used MutableGrid for entity tracking
+- Now uses Lucien spatial indices (Octree/Tetree) for better performance
 
 ## Testing
 
 ```bash
-
 # Run all Sentry tests
-
 mvn test -pl sentry
 
-# Run specific test suite
-
-mvn test -pl sentry -Dtest=TetrahedralizationTest
-
-# Run packed implementation tests
-
-mvn test -pl sentry -Dtest=Packed*Test
+# Specific test suites
+mvn test -pl sentry -Dtest=RebuildTest
+mvn test -pl sentry -Dtest=DelaunayValidationTest
 
 # Performance benchmarks
-
-mvn test -pl sentry -Dtest=*Benchmark
-
-```text
-
-## Known Issues
-
-- Degenerate cases (coplanar points) require special handling
-- Very thin tetrahedra can cause numerical instability
-- Large coordinate values may require scaling
+mvn test -pl sentry -Dtest=RebuildPerformanceTest
+mvn test -pl sentry -Dtest=AllocationPerformanceTest
+```
 
 ## Dependencies
 
-- `common`: Shared geometry utilities
-- `javax.vecmath`: 3D mathematics
-- SLF4J/Logback: Logging
+- **common**: Shared geometry utilities (IdentitySet, etc.)
+- **javax.vecmath**: 3D mathematics (Point3f, Tuple3f)
+- **SLF4J/Logback**: Logging
+
+## Historical Context
+
+This implementation is based on classic incremental Delaunay construction algorithms, optimized specifically for Luciferase's needs:
+
+- **Float precision** instead of double (sufficient for game/simulation coordinates)
+- **Random walk** location instead of complex spatial indexing (mesh topology provides implicit structure)
+- **Periodic rebuild** instead of continuous repair (simpler, more robust)
+- **Topology focus** instead of exact geometry (relative position more important than precise measurements)
 
 ## References
 
-- [Delaunay Triangulation in 3D](https://www.cs.cmu.edu/~quake/tripaper/triangle2.html)
-- [Kinetic Data Structures](https://graphics.stanford.edu/courses/cs268-11-spring/notes/g-kds.pdf)
+- [Delaunay Triangulation](https://www.cs.cmu.edu/~quake/tripaper/triangle2.html) - Classic computational geometry reference
+- [Kinetic Data Structures](https://graphics.stanford.edu/courses/cs268-11-spring/notes/g-kds.pdf) - Theory of moving point tracking
 
 ## License
 

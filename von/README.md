@@ -3,300 +3,170 @@
 **Last Updated**: 2026-01-04
 **Status**: Current
 
-Distributed spatial perception framework for Luciferase
+Voronoi-based area-of-interest perception framework for spatial simulation
 
 ## Overview
 
-Von (named after Von Neumann neighborhoods) provides distributed spatial awareness and perception capabilities, enabling multiple agents or systems to share and reason about spatial information across network boundaries. It implements spatial gossip protocols, distributed octree synchronization, and consensus mechanisms for spatial data.
+Von (Voronoi Overlay Network) provides area-of-interest (AOI) management for spatial simulations. It implements a sphere-of-interaction pattern using k-nearest neighbor queries to efficiently manage which entities perceive each other in a spatial environment.
+
+This module is based on the Thoth Interest Management and Load Balancing Framework and provides the foundation for distributed spatial perception in the simulation module.
 
 ## Features
 
-### Distributed Spatial Systems
-
-- **Spatial Gossip Protocol**: Efficient spatial data propagation
-- **Distributed Octree**: Synchronized spatial indexing across nodes
-- **Spatial Consensus**: Agreement protocols for spatial updates
-- **Interest Management**: Area-of-interest based data filtering
-- **Peer Discovery**: Automatic spatial neighbor discovery
-
-### Network Architecture
-
-- **P2P Communication**: Direct peer-to-peer spatial updates
-- **Hierarchical Overlay**: Multi-level spatial network topology
-- **Fault Tolerance**: Resilient to node failures
-- **Scalability**: Supports thousands of distributed nodes
-- **Low Latency**: Optimized for real-time updates
-
 ### Spatial Perception
 
-- **Field of View**: Visibility-based information filtering
-- **Level of Detail**: Distance-based detail reduction
-- **Predictive Caching**: Pre-fetch likely needed data
-- **Dead Reckoning**: Movement prediction and correction
-- **Spatial Queries**: Distributed range and k-NN queries
+- **Sphere of Interaction (SoI)**: Area-of-interest management using spatial proximity
+- **k-NN Based Discovery**: Find nearby entities using efficient spatial queries
+- **Node Management**: Insert, update, remove, and query spatial participants
+- **Overlap Detection**: Check if nodes' areas of interest overlap
+- **Enclosing Neighbors**: Find all neighbors within a node's perception radius
+
+### Implementation Strategies
+
+- **SpatialSoI**: k-NN based implementation using Octree spatial index
+- **GridSoI**: Grid-based partitioning for uniform distributions
+- **Perceptron**: Abstract base class for perception implementations
 
 ## Architecture
 
 ```text
+com.hellblazer.luciferase.lucien.von/
+├── Node.java                    # Node interface (participant in overlay)
+├── SphereOfInteraction.java     # SoI interface for AOI management
+├── Perceiving.java              # Perception callback interface
+└── impl/
+    ├── AbstractNode.java        # Base implementation for nodes
+    ├── Perceptron.java          # Abstract perception implementation
+    ├── SpatialSoI.java          # k-NN based SoI using spatial index
+    └── GridSoI.java             # Grid-based SoI implementation
+```
 
-com.hellblazer.luciferase.von/
-├── network/
-│   ├── SpatialNode         # Network node with spatial awareness
-│   ├── GossipProtocol      # Spatial gossip implementation
-│   ├── OverlayNetwork      # P2P overlay management
-│   └── MessageRouter       # Spatial message routing
-├── distributed/
-│   ├── DistributedOctree   # Synchronized octree
-│   ├── SpatialConsensus    # Consensus protocols
-│   ├── ReplicationManager  # Data replication
-│   └── PartitionManager    # Spatial partitioning
-├── perception/
-│   ├── FieldOfView         # FOV calculations
-│   ├── InterestManager     # AOI management
-│   ├── PredictiveCache     # Prefetching logic
-│   └── DeadReckoning       # Movement prediction
-└── protocol/
-    ├── SpatialMessage      # Message definitions
-    ├── UpdateProtocol      # Update propagation
-    └── QueryProtocol       # Distributed queries
+## Core Concepts
 
-```text
+### Node
 
-## Usage Examples
+A `Node` represents a participant in the spatial overlay network. It has:
+- A position in 3D space
+- An area-of-interest (AOI) radius defining perception range
+- Perception callbacks for detecting nearby nodes
 
-### Creating a Spatial Node
+### Sphere of Interaction (SoI)
 
-```java
+The `SphereOfInteraction` manages spatial relationships between nodes:
+- Tracks which nodes are within perception range of each other
+- Provides efficient queries for finding nearby nodes
+- Maintains spatial index for fast updates and lookups
 
-import com.hellblazer.luciferase.von.network.SpatialNode;
+### Perceiving
 
-// Create spatial node
-var config = new NodeConfig()
-    .setNodeId(UUID.randomUUID())
-    .setPosition(new Point3f(0, 0, 0))
-    .setPort(8080)
-    .setMaxPeers(32);
+The `Perceiving` interface provides callbacks for perception events:
+- Node enters perception range
+- Node moves within perception range
+- Node leaves perception range
 
-var node = new SpatialNode(config);
+## Usage Example
 
-// Start node
-node.start();
-
-// Join spatial network
-node.join("seed.example.com:8080");
-
-```text
-
-### Distributed Octree
+### Creating a Spatial SoI
 
 ```java
+import com.hellblazer.luciferase.lucien.von.impl.SpatialSoI;
+import com.hellblazer.luciferase.lucien.von.Node;
+import com.hellblazer.luciferase.lucien.octree.Octree;
+import com.hellblazer.luciferase.lucien.entity.SequentialLongIDGenerator;
+import com.hellblazer.luciferase.lucien.entity.LongEntityID;
 
-import com.hellblazer.luciferase.von.distributed.DistributedOctree;
-
-// Create distributed octree
-var octree = new DistributedOctree(node);
-
-// Insert entity (propagates to network)
-var entity = new SpatialEntity(id, position, data);
-octree.insert(entity);
-
-// Query with consistency level
-var options = QueryOptions.builder()
-    .consistency(ConsistencyLevel.QUORUM)
-    .timeout(Duration.ofSeconds(1))
-    .build();
-
-var results = octree.query(bounds, options);
-
-```text
-
-### Interest Management
-
-```java
-
-import com.hellblazer.luciferase.von.perception.InterestManager;
-
-// Setup interest management
-var interest = new InterestManager(node);
-
-// Define area of interest
-var aoi = new Sphere(position, radius);
-interest.setAreaOfInterest(aoi);
-
-// Subscribe to updates
-interest.onUpdate(entity -> {
-    System.out.println("Entity updated: " + entity);
-});
-
-// Automatic filtering of distant entities
-interest.setLevelOfDetail(distance -> {
-    if (distance < 10) return DetailLevel.HIGH;
-    if (distance < 100) return DetailLevel.MEDIUM;
-    return DetailLevel.LOW;
-});
-
-```text
-
-### Spatial Gossip
-
-```java
-
-import com.hellblazer.luciferase.von.network.GossipProtocol;
-
-// Configure gossip protocol
-var gossip = new GossipProtocol()
-    .setFanout(3)           // Propagate to 3 peers
-    .setTTL(5)              // 5 hop maximum
-    .setInterval(100);      // 100ms gossip interval
-
-node.setGossipProtocol(gossip);
-
-// Broadcast spatial event
-var event = new SpatialEvent(
-    EventType.ENTITY_MOVED,
-    entityId,
-    oldPosition,
-    newPosition
+// Create spatial index
+var octree = new Octree<LongEntityID, Node>(
+    new SequentialLongIDGenerator(),
+    16,      // maxEntitiesPerNode
+    (byte)21 // maxDepth
 );
 
-node.broadcast(event);
+// Create sphere of interaction with k=5 neighbors, radius=100
+var soi = new SpatialSoI<>(octree, 5, 100f);
 
-```text
+// Insert nodes
+var node1 = createNode(new Point3f(10, 20, 30));
+soi.insert(node1, new Point3f(10, 20, 30));
 
-### Consensus Operations
+// Find closest node to a position
+var closest = soi.closestTo(new Point3f(15, 25, 35));
 
-```java
+// Get neighbors within AOI radius
+var neighbors = soi.getEnclosingNeighbors(node1);
 
-import com.hellblazer.luciferase.von.distributed.SpatialConsensus;
+// Update node position
+soi.update(node1, new Point3f(20, 30, 40));
 
-// Propose spatial update with consensus
-var consensus = node.getConsensus();
+// Check if nodes' AOIs overlap
+boolean overlaps = soi.overlaps(node1, new Point3f(25, 35, 45), 5f);
 
-var proposal = new SpatialProposal(
-    ProposalType.INSERT_ENTITY,
-    entity,
-    requiredVotes
-);
+// Remove node
+soi.remove(node1);
+```
 
-consensus.propose(proposal).thenAccept(result -> {
-    if (result.isAccepted()) {
-        System.out.println("Proposal accepted by " + 
-            result.getVotes() + " nodes");
-    }
-});
+## Integration with Simulation Module
 
-```text
+VON is used by the simulation module's bubble discovery mechanism:
 
-## Performance
+- **Bubble Discovery**: Nodes use SoI to find nearby simulation bubbles
+- **Interest Management**: Bubbles track which entities are within their perception range
+- **Dynamic Updates**: As entities move, VON efficiently updates spatial relationships
 
-### Network Metrics (100 nodes, 1000 entities)
+See the [simulation module](../simulation/README.md) for details on how VON enables distributed animation.
 
-| Operation | Latency (p50) | Latency (p99) | Throughput |
-| ----------- | --------------- | --------------- | ------------ |
-| Insert Propagation | 12ms | 45ms | 8.3K/sec |
-| Query (Local) | 0.5ms | 2ms | 200K/sec |
-| Query (Distributed) | 15ms | 60ms | 6.6K/sec |
-| Gossip Round | 5ms | 20ms | 20K msgs/sec |
-| Consensus | 50ms | 200ms | 1K/sec |
+## Implementation Details
 
-### Scalability
+### SpatialSoI Parameters
 
-| Nodes | Entities | Memory/Node | CPU/Node | Network |
-| ------- | ---------- | ------------- | ---------- | --------- |
-| 10 | 1K | 50MB | 5% | 100KB/s |
-| 100 | 10K | 150MB | 15% | 500KB/s |
-| 1000 | 100K | 500MB | 25% | 2MB/s |
-| 10000 | 1M | 2GB | 40% | 10MB/s |
+- **k**: Number of nearest neighbors to consider (typically 5-10)
+- **radius**: Maximum perception distance for area-of-interest
+- **spatialIndex**: Underlying Octree or other spatial index implementation
 
-## Configuration
+### Performance Characteristics
 
-### Node Configuration
+Based on the underlying spatial index (Octree):
 
-```yaml
+| Operation | Complexity | Notes |
+| ----------- | ------------ | ------- |
+| Insert | O(log n) | Inserts into Octree |
+| Update | O(log n) | Remove + Insert |
+| Remove | O(log n) | Removes from Octree |
+| closestTo | O(k log n) | k-NN query |
+| getEnclosingNeighbors | O(k log n) | k-NN query |
 
-von:
-  node:
-    id: ${NODE_ID}
-    position: [0, 0, 0]
-    port: 8080
-    
-  network:
-    max-peers: 32
-    heartbeat-interval: 1000
-    timeout: 5000
-    
-  gossip:
-    fanout: 3
-    ttl: 5
-    interval: 100
-    
-  consensus:
-    type: RAFT
-    election-timeout: 1000
-    heartbeat-interval: 100
-    
-  interest:
-    default-radius: 100
-    update-rate: 30
-    compression: true
-
-```text
-
-## Fault Tolerance
-
-Von handles various failure scenarios:
-
-- **Node Failures**: Automatic peer replacement
-- **Network Partitions**: Eventual consistency
-- **Message Loss**: Reliable delivery with retries
-- **Byzantine Faults**: Optional BFT consensus
-- **Data Corruption**: Checksums and validation
-
-## Security
-
-- **Authentication**: Node identity verification
-- **Encryption**: TLS for all communications
-- **Authorization**: Role-based access control
-- **Rate Limiting**: DoS protection
-- **Audit Logging**: Complete operation history
+Where:
+- n = total number of nodes
+- k = number of neighbors to find
 
 ## Testing
 
 ```bash
-
 # Unit tests
-
 mvn test -pl von
 
-# Integration tests (requires network)
-
-mvn test -pl von -Dtest=*IntegrationTest
-
-# Distributed tests (requires Docker)
-
-mvn test -pl von -Pdistr distributed
-
-# Performance benchmarks
-
-mvn test -pl von -Dtest=*Benchmark
-
-```text
+# Specific test class
+mvn test -pl von -Dtest=SpatialSoITest
+```
 
 ## Dependencies
 
-- **lucien**: Core spatial data structures
-- **grpc**: Network communication
+- **lucien**: Core spatial data structures (Octree for spatial indexing)
+- **sentry**: Delaunay tetrahedralization (Cursor, Vertex interfaces)
 - **common**: Shared utilities
-- **Netty**: Async networking
-- **Protocol Buffers**: Message serialization
+
+## Historical Context
+
+This module is based on the **Thoth Interest Management and Load Balancing Framework** (copyright 2008-2009), which provided foundational work on Voronoi-based overlay networks for distributed virtual environments.
+
+The original Thoth framework used Voronoi diagrams computed via Delaunay tetrahedralization for managing spatial interest. The current implementation uses k-NN queries on spatial indices for improved performance.
 
 ## Future Work
 
-- [ ] Blockchain integration for spatial consensus
-- [ ] Machine learning for predictive caching
-- [ ] WebRTC support for browser clients
-- [ ] Quantum-resistant cryptography
-- [ ] Edge computing optimization
+- [ ] Performance benchmarks for different k values
+- [ ] Grid-based SoI optimization for uniform distributions
+- [ ] Hierarchical AOI management for multi-scale perception
+- [ ] Integration with ghost layer for distributed simulations
 
 ## License
 

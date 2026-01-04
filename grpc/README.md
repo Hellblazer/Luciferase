@@ -3,368 +3,188 @@
 **Last Updated**: 2026-01-04
 **Status**: Current
 
-Protocol Buffer definitions and gRPC services for distributed spatial computing.
+Protocol Buffer definitions for ghost layer synchronization in distributed spatial indices
 
 ## Overview
 
-The gRPC module provides the communication layer for Luciferase's distributed features. It defines Protocol Buffer messages for efficient serialization of spatial data structures and gRPC services for network communication between nodes in a distributed spatial computing system.
+The gRPC module provides Protocol Buffer message definitions and gRPC services for synchronizing ghost layer data between distributed Forest instances. Ghost layers represent boundary entities from neighboring spatial partitions that are cached locally for efficient cross-partition queries.
 
 ## Features
 
-### Protocol Buffer Definitions
-
-- **Spatial Data Types**: Efficient serialization of octrees, tetrees, and spatial indices
-- **Entity Messages**: Compact representation of entities with positions and metadata
-- **Query Messages**: Spatial queries including range, k-NN, ray intersection, frustum
-- **Update Messages**: Entity movement, insertion, deletion, bulk operations
-- **Synchronization**: Distributed state synchronization protocols
-
-### gRPC Services
-
-- **SpatialIndexService**: Remote spatial index operations
-- **EntityService**: Entity management across nodes
-- **QueryService**: Distributed spatial queries
-- **SyncService**: State synchronization and replication
-- **StreamService**: Real-time entity update streams
+- **Ghost Element Serialization**: Efficient Protocol Buffer messages for spatial entities
+- **Batch Operations**: Support for bulk ghost synchronization
+- **Real-Time Streaming**: Bidirectional streaming for live ghost updates
+- **Multi-Key Support**: Handles both Morton (Octree) and Tetree keys
+- **Timestamped Updates**: Incremental synchronization support
 
 ## Architecture
 
-### Message Definitions
-
 ```text
-
 grpc/
-├── src/main/proto/
-│   ├── spatial/
-│   │   ├── common.proto         # Common spatial data types
-│   │   ├── octree.proto         # Octree-specific messages
-│   │   ├── tetree.proto         # Tetree-specific messages
-│   │   └── index.proto          # Spatial index operations
-│   ├── entity/
-│   │   ├── entity.proto         # Entity definitions
-│   │   ├── movement.proto       # Movement updates
-│   │   └── bulk.proto           # Bulk operations
-│   ├── query/
-│   │   ├── range.proto          # Range queries
-│   │   ├── knn.proto            # k-NN queries
-│   │   ├── ray.proto            # Ray intersection
-│   │   └── frustum.proto        # Frustum culling
-│   └── service/
-│       ├── spatial_service.proto # Spatial index service
-│       ├── entity_service.proto  # Entity management service
-│       └── sync_service.proto    # Synchronization service
+└── src/main/proto/lucien/
+    └── ghost.proto              # Ghost layer Protocol Buffer definitions
+```
 
-```text
+## Protocol Buffer Definitions
 
-## Protocol Buffer Schemas
+### Message Types
 
-### Entity Message
+**Core Types:**
+- `Point3f` - 3D position (x, y, z)
+- `EntityBounds` - AABB bounding box (min, max)
+- `SpatialKey` - Polymorphic key (MortonKey | TetreeKey)
 
-```protobuf
+**Ghost Messages:**
+- `GhostElement` - Complete ghost entity with position, bounds, content, ownership
+- `GhostBatch` - Collection of ghost elements for bulk transfer
+- `GhostRequest` - Request for ghost elements from boundary keys
+- `GhostUpdate` - Insert/update/remove notification
+- `GhostRemoval` - Entity removal notification
+- `GhostAck` - Acknowledgment with success/error status
 
-message Entity {
-    string id = 1;
-    Position position = 2;
-    BoundingBox bounds = 3;
-    bytes metadata = 4;
-    int64 timestamp = 5;
-}
+**Synchronization:**
+- `SyncRequest` - Request ghosts changed since timestamp
+- `SyncResponse` - Batch response with sync time and element count
+- `StatsRequest` / `StatsResponse` - Ghost layer statistics
 
-message Position {
-    float x = 1;
-    float y = 2;
-    float z = 3;
-}
-
-message BoundingBox {
-    Position min = 1;
-    Position max = 2;
-}
-
-```text
-
-### Spatial Query
+### gRPC Service
 
 ```protobuf
-
-message RangeQuery {
-    Position center = 1;
-    float radius = 2;
-    int32 max_results = 3;
+service GhostExchange {
+    rpc RequestGhosts(GhostRequest) returns (GhostBatch);
+    rpc StreamGhostUpdates(stream GhostUpdate) returns (stream GhostAck);
+    rpc SyncGhosts(SyncRequest) returns (SyncResponse);
+    rpc GetGhostStats(StatsRequest) returns (StatsResponse);
 }
+```
 
-message KNNQuery {
-    Position point = 1;
-    int32 k = 2;
-    float max_distance = 3;
-}
+## Usage Example
 
-message RayQuery {
-    Position origin = 1;
-    Vector3 direction = 2;
-    float max_distance = 3;
-}
+### Generated Java Classes
 
-```text
+Protocol Buffers generates Java classes in package `com.hellblazer.luciferase.lucien.forest.ghost.proto`:
 
-### Service Definition
+- `GhostElement`
+- `GhostBatch`
+- `GhostExchangeGrpc` (service stub)
+- etc.
 
-```protobuf
-
-service SpatialIndexService {
-    rpc Insert(InsertRequest) returns (InsertResponse);
-    rpc Update(UpdateRequest) returns (UpdateResponse);
-    rpc Delete(DeleteRequest) returns (DeleteResponse);
-    rpc RangeQuery(RangeQueryRequest) returns (stream Entity);
-    rpc KNNQuery(KNNQueryRequest) returns (KNNQueryResponse);
-    rpc Subscribe(SubscribeRequest) returns (stream EntityUpdate);
-}
-
-```text
-
-## Usage Examples
-
-### Client Implementation
+### Client Example
 
 ```java
+import com.hellblazer.luciferase.lucien.forest.ghost.proto.*;
+import io.grpc.ManagedChannelBuilder;
 
 // Create gRPC channel
 var channel = ManagedChannelBuilder
-    .forAddress("localhost", 50051)
+    .forAddress("remote-host", 50051)
     .usePlaintext()
     .build();
 
-// Create stub
-var spatialStub = SpatialIndexServiceGrpc.newBlockingStub(channel);
+// Create blocking stub
+var ghostStub = GhostExchangeGrpc.newBlockingStub(channel);
 
-// Insert entity
-var entity = Entity.newBuilder()
-    .setId("entity-123")
-    .setPosition(Position.newBuilder()
-        .setX(10.0f)
-        .setY(20.0f)
-        .setZ(30.0f))
-    .build();
-
-var response = spatialStub.insert(
-    InsertRequest.newBuilder()
-        .setEntity(entity)
-        .build());
-
-```text
-
-### Server Implementation
-
-```java
-
-public class SpatialIndexServiceImpl 
-    extends SpatialIndexServiceGrpc.SpatialIndexServiceImplBase {
-    
-    private final SpatialIndex index;
-    
-    @Override
-    public void insert(InsertRequest request, 
-                      StreamObserver<InsertResponse> observer) {
-        var entity = request.getEntity();
-        index.insert(
-            entity.getId(),
-            new Vector3f(
-                entity.getPosition().getX(),
-                entity.getPosition().getY(),
-                entity.getPosition().getZ()
-            )
-        );
-        
-        observer.onNext(InsertResponse.newBuilder()
-            .setSuccess(true)
-            .build());
-        observer.onCompleted();
-    }
-}
-
-```text
-
-### Streaming Updates
-
-```java
-
-// Subscribe to entity updates
-var subscription = spatialStub.subscribe(
-    SubscribeRequest.newBuilder()
-        .setRegion(BoundingBox.newBuilder()
-            .setMin(Position.newBuilder().setX(0).setY(0).setZ(0))
-            .setMax(Position.newBuilder().setX(100).setY(100).setZ(100)))
-        .build());
-
-// Process stream
-subscription.forEachRemaining(update -> {
-    switch (update.getTypeCase()) {
-        case INSERTED:
-            handleInsert(update.getInserted());
-            break;
-        case MOVED:
-            handleMove(update.getMoved());
-            break;
-        case DELETED:
-            handleDelete(update.getDeleted());
-            break;
-    }
-});
-
-```text
-
-## Serialization Performance
-
-### Message Sizes
-
-- Entity: 50-200 bytes (depending on metadata)
-- Position: 12 bytes
-- BoundingBox: 24 bytes
-- Spatial Node: 100-500 bytes
-- Query Request: 20-50 bytes
-
-### Throughput
-
-- Serialization: 500K entities/second
-- Deserialization: 450K entities/second
-- Network transfer: Limited by bandwidth
-- Compression: 2-5x reduction with gzip
-
-## Network Optimization
-
-### Connection Pooling
-
-```java
-
-// Configure connection pool
-var channel = ManagedChannelBuilder
-    .forAddress("localhost", 50051)
-    .usePlaintext()
-    .maxInboundMessageSize(10 * 1024 * 1024) // 10MB
-    .keepAliveTime(30, TimeUnit.SECONDS)
-    .keepAliveTimeout(5, TimeUnit.SECONDS)
-    .build();
-
-```text
-
-### Load Balancing
-
-```java
-
-// Round-robin load balancing
-var channel = ManagedChannelBuilder
-    .forTarget("dns:///spatial.service:50051")
-    .defaultLoadBalancingPolicy("round_robin")
-    .build();
-
-```text
-
-### Compression
-
-```java
-
-// Enable gzip compression
-var spatialStub = SpatialIndexServiceGrpc
-    .newBlockingStub(channel)
-    .withCompression("gzip");
-
-```text
-
-## Security
-
-### TLS Configuration
-
-```java
-
-// Configure TLS
-var channel = NettyChannelBuilder
-    .forAddress("spatial.service", 443)
-    .sslContext(GrpcSslContexts.forClient()
-        .trustManager(new File("ca-cert.pem"))
+// Request ghosts for boundary keys
+var request = GhostRequest.newBuilder()
+    .setRequesterRank(0)
+    .setRequesterTreeId(12345)
+    .setGhostType(GhostType.FACES)
+    .addBoundaryKeys(SpatialKey.newBuilder()
+        .setMorton(MortonKey.newBuilder()
+            .setMortonCode(0x123456789ABCDEFL)
+            .build())
         .build())
     .build();
 
-```text
+GhostBatch batch = ghostStub.requestGhosts(request);
+for (GhostElement ghost : batch.getElementsList()) {
+    System.out.println("Ghost entity: " + ghost.getEntityId());
+}
+```
 
-### Authentication
-
-```java
-
-// Add authentication metadata
-var spatialStub = SpatialIndexServiceGrpc
-    .newBlockingStub(channel)
-    .withCallCredentials(new CallCredentials() {
-        @Override
-        public void applyRequestMetadata(RequestInfo requestInfo,
-                                        Executor appExecutor,
-                                        MetadataApplier applier) {
-            var metadata = new Metadata();
-            metadata.put(AUTH_TOKEN_KEY, "Bearer " + token);
-            applier.apply(metadata);
-        }
-    });
-
-```text
-
-## Integration
-
-### With Von Distribution
+### Server Example
 
 ```java
+import io.grpc.stub.StreamObserver;
 
-// Von uses gRPC for node communication
-var vonNode = new VonNode();
-vonNode.setGrpcService(new SpatialIndexServiceImpl(spatialIndex));
-vonNode.start(50051);
+public class GhostExchangeService
+    extends GhostExchangeGrpc.GhostExchangeImplBase {
 
-```text
+    private final Forest forest;
 
-### With Lucien Spatial Indices
+    @Override
+    public void requestGhosts(GhostRequest request,
+                            StreamObserver<GhostBatch> responseObserver) {
+        // Collect ghosts from forest ghost layer
+        var ghosts = forest.collectGhosts(
+            request.getBoundaryKeysList(),
+            request.getGhostType()
+        );
 
-```java
+        var batch = GhostBatch.newBuilder()
+            .addAllElements(ghosts)
+            .setSourceRank(forest.getRank())
+            .setSourceTreeId(forest.getTreeId())
+            .setTimestamp(Timestamps.fromMillis(System.currentTimeMillis()))
+            .build();
 
-// Serialize spatial index nodes
-var octreeNode = octree.getNode(key);
-var protoNode = OctreeNodeProto.newBuilder()
-    .setKey(octreeNode.getKey())
-    .setLevel(octreeNode.getLevel())
-    .addAllEntities(octreeNode.getEntityIds())
-    .build();
+        responseObserver.onNext(batch);
+        responseObserver.onCompleted();
+    }
+}
+```
 
-```text
+## Integration with Lucien Forest
 
-## Testing
+The gRPC ghost messages are used by Lucien's Forest module for distributed spatial index coordination:
+
+- **GhostLayer**: Manages boundary entities from neighboring processes
+- **Forest**: Uses GhostExchange service to synchronize ghost elements
+- **RemoteGhostProvider**: gRPC client for fetching remote ghosts
+- **GhostLayerSynchronizer**: Periodic sync of ghost layer state
+
+See [lucien/doc/GHOST_API.md](../lucien/doc/GHOST_API.md) for details.
+
+## Build and Code Generation
 
 ```bash
-
-# Run gRPC tests
-
-mvn test -pl grpc
-
-# Generate protocol buffer code
-
+# Generate Protocol Buffer Java code
 mvn protobuf:compile
 
-# Run integration tests
+# Compile module
+mvn compile -pl grpc
 
-mvn test -pl grpc -Dtest=GrpcIntegrationTest
+# Run tests
+mvn test -pl grpc
+```
 
-```text
+Generated files are placed in `target/generated-sources/protobuf/`.
 
 ## Dependencies
 
-- **gRPC-Java**: Core gRPC runtime
-- **Protocol Buffers**: Message serialization
-- **Netty**: Network transport layer
-- **gRPC-Services**: Health checking, reflection
+- **gRPC-Java**: Core gRPC runtime (`io.grpc`)
+- **Protocol Buffers**: Message serialization (`com.google.protobuf`)
+- **grpc-protobuf**: gRPC Protocol Buffer integration
+- **grpc-stub**: Service stub generation
 
-## Performance Metrics
+## Performance Characteristics
 
-- Message serialization: 2μs per entity
-- RPC latency: 1-5ms local, 10-50ms WAN
-- Throughput: 50K requests/second per connection
-- Stream processing: 100K updates/second
+- **Message Size**: Ghost elements are 100-500 bytes depending on content size
+- **Serialization**: ~1-2 μs per ghost element
+- **Batch Transfer**: Efficient for 100-10,000 elements per batch
+- **Streaming**: Bi-directional for real-time updates with backpressure
+
+## Ghost Type Levels
+
+The `GhostType` enum defines the depth of ghost layer:
+
+- `NONE` (0): No ghost layer
+- `FACES` (1): Face neighbors only (most common)
+- `EDGES` (2): Face and edge neighbors
+- `VERTICES` (3): Face, edge, and vertex neighbors (complete)
+
+Higher levels provide more complete ghost coverage but increase memory and network costs.
 
 ## License
 
-AGPL v3.0 - See LICENSE file for details
+AGPL-3.0 - See [LICENSE](../LICENSE) for details
