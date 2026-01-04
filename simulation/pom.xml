@@ -29,6 +29,10 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>lucien</artifactId>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>portal</artifactId>
+        </dependency>
 
         <!-- Test Only Dependencies Below This Line-->
         <dependency>
