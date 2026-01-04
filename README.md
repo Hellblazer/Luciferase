@@ -9,7 +9,7 @@
 
 ## Overview
 
-Luciferase is a spatial data structure library providing 3D indexing, collision detection, and visualization capabilities. Built with Java 24 and the Foreign Function & Memory (FFM) API.
+Luciferase is a spatial data structure library providing 3D indexing, collision detection, and visualization capabilities. Built with Java 25 and the Foreign Function & Memory (FFM) API.
 
 ## Features
 
@@ -117,7 +117,7 @@ var position = new Point3f(10, 20, 30);
 octree.insert(position, (byte)5, "My Entity");
 
 // Find nearest neighbors
-var neighbors = octree.findKNearestNeighbors(position, 5, Float.MAX_VALUE);
+var neighbors = octree.kNearestNeighbors(position, 5, Float.MAX_VALUE);
 
 // Perform ray intersection
 var ray = new Ray3D(new Point3f(0, 0, 0), new Vector3f(1, 0, 0));
