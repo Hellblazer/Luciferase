@@ -101,6 +101,25 @@ public class EnhancedBubble {
     }
 
     /**
+     * Get all entities with their data (position, content, bucket).
+     * This avoids coordinate issues with large radius queries.
+     *
+     * @return List of all entity records
+     */
+    public List<EntityRecord> getAllEntityRecords() {
+        var results = new ArrayList<EntityRecord>();
+        for (var entry : idMapping.entrySet()) {
+            var originalId = entry.getKey();
+            var internalId = entry.getValue();
+            var data = spatialIndex.getEntity(internalId);
+            if (data != null) {
+                results.add(new EntityRecord(originalId, data.position, data.content, data.addedBucket));
+            }
+        }
+        return results;
+    }
+
+    /**
      * Add an entity to this bubble.
      * Inserts into spatial index and updates bounds.
      *
