@@ -131,7 +131,7 @@ public class EnhancedBubbleTest {
         assertNotNull(results, "Query results should not be null");
         assertEquals(2, results.size(), "Should find 2 nearby entities");
 
-        var ids = results.stream().map(EntityRecord::id).toList();
+        var ids = results.stream().map(EnhancedBubble.EntityRecord::id).toList();
         assertTrue(ids.contains("near-1"), "Should find near-1");
         assertTrue(ids.contains("near-2"), "Should find near-2");
         assertFalse(ids.contains("far-1"), "Should not find far-1");
@@ -159,7 +159,7 @@ public class EnhancedBubbleTest {
         assertNotNull(results, "kNN results should not be null");
         assertEquals(2, results.size(), "Should find exactly k=2 neighbors");
 
-        var ids = results.stream().map(EntityRecord::id).toList();
+        var ids = results.stream().map(EnhancedBubble.EntityRecord::id).toList();
         assertTrue(ids.contains("nearest"), "Should find nearest");
         assertTrue(ids.contains("middle"), "Should find middle");
         assertFalse(ids.contains("farthest"), "Should not find farthest");
@@ -375,11 +375,5 @@ public class EnhancedBubbleTest {
      * Simple EntityContent record for testing.
      */
     record EntityContent() {
-    }
-
-    /**
-     * EntityRecord for query results.
-     */
-    record EntityRecord(String id, Point3f position, EntityContent content, long addedBucket) {
     }
 }
