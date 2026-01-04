@@ -125,7 +125,14 @@ public final class BubbleBounds {
 
         // Locate tetrahedron containing centroid at level 10
         var tet = Tet.locatePointBeyRefinementFromRoot(cx, cy, cz, (byte) 10);
-        var key = tet.tmIndex();
+        TetreeKey<?> key;
+
+        if (tet != null) {
+            key = tet.tmIndex();
+        } else {
+            // Fallback to root tetrahedron if position is outside valid range
+            key = TetreeKey.create((byte) 10, 0L, 0L);
+        }
 
         return new BubbleBounds(key, rdgMin, rdgMax);
     }
