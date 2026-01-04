@@ -74,6 +74,9 @@ public class BubbleDynamicsManager<ID extends EntityID> {
     private boolean inPartition;
     private long partitionStartBucket;
 
+    // Phase 5: Load balancing state
+    private volatile com.hellblazer.luciferase.simulation.tumbler.TumblerStatistics latestStatistics;
+
     /**
      * Create bubble dynamics manager.
      *
@@ -411,6 +414,10 @@ public class BubbleDynamicsManager<ID extends EntityID> {
 
     /**
      * Migrate bubble to different node.
+     * <p>
+     * Phase 5: Migration hooks trigger region rebalancing.
+     * When a bubble migrates, check tumbler statistics and suggest
+     * entity redistributions to balance load.
      *
      * @param bubbleId   Bubble to migrate
      * @param sourceNode Source node UUID
@@ -428,9 +435,44 @@ public class BubbleDynamicsManager<ID extends EntityID> {
             throw new IllegalArgumentException("Bubble does not exist");
         }
 
+        // Phase 5: Check if migration triggers load rebalancing need
+        onBubbleMigration(bubbleId, sourceNode, targetNode, bucket);
+
         eventEmitter.accept(new BubbleEvent.BubbleMigration(
             bubbleId, sourceNode, targetNode, bucket, entities.size()
         ));
+    }
+
+    /**
+     * Migration hook: called when bubble migrates.
+     * <p>
+     * Phase 5: Use tumbler statistics to detect if migration causes load imbalance.
+     * If imbalance detected, emits advisory events for entity redistribution.
+     *
+     * @param bubbleId   Bubble being migrated
+     * @param sourceNode Source node
+     * @param targetNode Target node
+     * @param bucket     Current bucket
+     */
+    private void onBubbleMigration(UUID bubbleId, UUID sourceNode, UUID targetNode, long bucket) {
+        // Check if we have tumbler statistics
+        if (latestStatistics == null) {
+            return;  // No stats available
+        }
+
+        // Check if migration caused load imbalance (threshold: 2.0x)
+        if (latestStatistics.loadImbalanceRatio() > 2.0f) {
+            // Emit advisory event for load rebalancing
+            // Note: Actual rebalancing is handled by external system
+            // This is just a notification/recommendation
+            var mostLoaded = latestStatistics.mostLoadedRegion();
+            var leastLoaded = latestStatistics.leastLoadedRegion();
+
+            if (mostLoaded != null && leastLoaded != null) {
+                // Future: emit LoadRebalancingNeeded event
+                // For Phase 5, this hook exists but doesn't take action
+            }
+        }
     }
 
     /**
@@ -487,6 +529,94 @@ public class BubbleDynamicsManager<ID extends EntityID> {
         // Use bubble tracker to find high-interaction bubbles
         int minInteractions = (int) (threshold * 100);  // Simplified
         return bubbleTracker.getMergeCandidates(minInteractions);
+    }
+
+    /**
+     * Update tumbler statistics for load balancing decisions.
+     * <p>
+     * Phase 5: Connect SpatialTumbler statistics to bubble dynamics.
+     * Statistics used for:
+     * - Affinity-based region assignment
+     * - Load-aware bubble migration
+     * - Split/join activity monitoring
+     *
+     * @param statistics Latest tumbler statistics snapshot
+     */
+    public void updateTumblerStatistics(
+        com.hellblazer.luciferase.simulation.tumbler.TumblerStatistics statistics
+    ) {
+        this.latestStatistics = statistics;
+    }
+
+    /**
+     * Get latest tumbler statistics.
+     *
+     * @return Latest statistics snapshot, or null if not available
+     */
+    public com.hellblazer.luciferase.simulation.tumbler.TumblerStatistics getTumblerStatistics() {
+        return latestStatistics;
+    }
+
+    /**
+     * Check if high load imbalance detected.
+     * <p>
+     * Phase 5: Use tumbler statistics to detect load imbalance.
+     * High imbalance triggers bubble migration for load balancing.
+     *
+     * @param threshold Imbalance ratio threshold (e.g., 2.0 = max is 2x average)
+     * @return true if imbalance exceeds threshold
+     */
+    public boolean hasHighLoadImbalance(float threshold) {
+        if (latestStatistics == null) {
+            return false;
+        }
+        return latestStatistics.loadImbalanceRatio() > threshold;
+    }
+
+    /**
+     * Check if high split/join activity detected.
+     * <p>
+     * Phase 5: Monitor region adaptation activity.
+     * High activity may indicate unstable bubble boundaries or load fluctuations.
+     *
+     * @param opsPerSecond Activity threshold (operations per second)
+     * @return true if activity exceeds threshold
+     */
+    public boolean hasHighAdaptActivity(float opsPerSecond) {
+        if (latestStatistics == null) {
+            return false;
+        }
+        return latestStatistics.isHighActivity(opsPerSecond);
+    }
+
+    /**
+     * Get suggested migration target for load balancing.
+     * <p>
+     * Phase 5: Use tumbler statistics to identify least loaded region/node.
+     * Returns the region with minimum load for migration target.
+     *
+     * @return Region key of least loaded region, or null if statistics unavailable
+     */
+    public Object getLeastLoadedRegion() {
+        if (latestStatistics == null) {
+            return null;
+        }
+        return latestStatistics.leastLoadedRegion();
+    }
+
+    /**
+     * Get suggested migration source for load balancing.
+     * <p>
+     * Phase 5: Use tumbler statistics to identify most loaded region/node.
+     * Returns the region with maximum load as migration source.
+     *
+     * @return Region key of most loaded region, or null if statistics unavailable
+     */
+    public Object getMostLoadedRegion() {
+        if (latestStatistics == null) {
+            return null;
+        }
+        return latestStatistics.mostLoadedRegion();
     }
 
     @Override

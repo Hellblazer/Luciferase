@@ -64,6 +64,13 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
     // Span manager (Phase 3)
     private final SpatialSpan<ID> span;
 
+    // Phase 5: Statistics tracking
+    private final AtomicInteger totalSplitCount;
+    private final AtomicInteger totalJoinCount;
+    private final AtomicInteger splitsSinceSnapshot;
+    private final AtomicInteger joinsSinceSnapshot;
+    private volatile long lastSnapshotTime;
+
     /**
      * Create a SpatialTumbler with the given Tetree and configuration.
      *
@@ -82,6 +89,13 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
             .withSpanWidthRatio(config.spanWidthRatio())
             .withMinSpanDistance(config.minSpanDistance());
         this.span = new SpatialSpanImpl<>(tetree, spanConfig, () -> regions.keySet());
+
+        // Phase 5: Initialize statistics tracking
+        this.totalSplitCount = new AtomicInteger(0);
+        this.totalJoinCount = new AtomicInteger(0);
+        this.splitsSinceSnapshot = new AtomicInteger(0);
+        this.joinsSinceSnapshot = new AtomicInteger(0);
+        this.lastSnapshotTime = System.currentTimeMillis();
 
         // Phase 1.5: Regions are created lazily as entities are tracked
         // No need to pre-create root regions
@@ -189,6 +203,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
         for (var regionKey : regionsToSplit) {
             if (splitRegion(regionKey)) {
                 splitCount++;
+                // Phase 5: Track statistics
+                totalSplitCount.incrementAndGet();
+                splitsSinceSnapshot.incrementAndGet();
             }
         }
 
@@ -212,6 +229,9 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
         for (var parentKey : parentsToJoin) {
             if (joinRegion(parentKey)) {
                 joinCount++;
+                // Phase 5: Track statistics
+                totalJoinCount.incrementAndGet();
+                joinsSinceSnapshot.incrementAndGet();
             }
         }
 
@@ -231,12 +251,84 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
 
     @Override
     public TumblerStatistics getStatistics() {
-        // Phase 5: Implement statistics collection
-        // - Region count by level
-        // - Entity distribution
-        // - Split/join history
-        // - Performance metrics
-        return null;
+        // Phase 5: Collect comprehensive statistics
+        var currentTime = System.currentTimeMillis();
+        var timeSinceSnapshot = (currentTime - lastSnapshotTime) / 1000.0f; // seconds
+
+        // Collect region distribution by level
+        var regionsByLevel = new java.util.HashMap<Byte, Integer>();
+        var entityCounts = new java.util.HashMap<TetreeKey<?>, Integer>();
+        int totalEntities = 0;
+        int maxEntities = 0;
+        int minEntities = Integer.MAX_VALUE;
+        TetreeKey<?> mostLoadedRegion = null;
+        TetreeKey<?> leastLoadedRegion = null;
+
+        for (var entry : regions.entrySet()) {
+            var regionKey = entry.getKey();
+            var region = entry.getValue();
+
+            // Count by level
+            byte level = regionKey.getLevel();
+            regionsByLevel.merge(level, 1, Integer::sum);
+
+            // Entity counts
+            int count = region.entityCount();
+            entityCounts.put(regionKey, count);
+            totalEntities += count;
+
+            // Track max/min
+            if (count > maxEntities) {
+                maxEntities = count;
+                mostLoadedRegion = regionKey;
+            }
+            if (count < minEntities && count > 0) {  // Ignore empty regions for min
+                minEntities = count;
+                leastLoadedRegion = regionKey;
+            }
+        }
+
+        // Calculate averages
+        float avgEntitiesPerRegion = regions.isEmpty() ? 0.0f : (float) totalEntities / regions.size();
+        if (minEntities == Integer.MAX_VALUE) {
+            minEntities = 0;
+        }
+
+        // Calculate throughput
+        float splitThroughput = timeSinceSnapshot > 0 ? splitsSinceSnapshot.get() / timeSinceSnapshot : 0.0f;
+        float joinThroughput = timeSinceSnapshot > 0 ? joinsSinceSnapshot.get() / timeSinceSnapshot : 0.0f;
+
+        // Get boundary metrics from span
+        int boundaryZoneCount = span.getBoundaryZoneCount();
+        int boundaryEntityCount = span.getTotalBoundaryEntities();
+
+        // Reset snapshot counters
+        var splitsSince = splitsSinceSnapshot.getAndSet(0);
+        var joinsSince = joinsSinceSnapshot.getAndSet(0);
+        lastSnapshotTime = currentTime;
+
+        return new TumblerStatistics(
+            regions.size(),
+            Map.copyOf(regionsByLevel),
+            Map.copyOf(entityCounts),
+            totalEntities,
+            avgEntitiesPerRegion,
+            maxEntities,
+            minEntities,
+            mostLoadedRegion,
+            leastLoadedRegion,
+            totalSplitCount.get(),
+            totalJoinCount.get(),
+            splitsSince,
+            joinsSince,
+            0L,  // TODO: Track average split time
+            0L,  // TODO: Track average join time
+            splitThroughput,
+            joinThroughput,
+            boundaryZoneCount,
+            boundaryEntityCount,
+            currentTime
+        );
     }
 
     /**
@@ -594,5 +686,89 @@ public class SpatialTumblerImpl<ID extends EntityID, Content> implements Spatial
                 incrementRegionCount(parentRegion.key(), entityId);
             }
         }
+    }
+
+    // ===== Phase 5: Affinity-Based Assignment and Load Balancing =====
+
+    /**
+     * Get migration recommendations for load balancing.
+     * <p>
+     * Phase 5: Affinity-based region assignment.
+     * Returns entities that should migrate from over-loaded to under-loaded regions.
+     *
+     * @param imbalanceThreshold Load imbalance threshold (e.g., 2.0 = max is 2x average)
+     * @return Map of entityId -> target region for migration
+     */
+    public java.util.Map<ID, TetreeKey<?>> getMigrationRecommendations(float imbalanceThreshold) {
+        var stats = getStatistics();
+        var recommendations = new java.util.HashMap<ID, TetreeKey<?>>();
+
+        // Check if load imbalance exceeds threshold
+        if (stats.loadImbalanceRatio() <= imbalanceThreshold) {
+            return recommendations;  // Load is balanced
+        }
+
+        // Get most and least loaded regions
+        var mostLoaded = stats.mostLoadedRegion();
+        var leastLoaded = stats.leastLoadedRegion();
+
+        if (mostLoaded == null || leastLoaded == null) {
+            return recommendations;  // No migration possible
+        }
+
+        // Calculate target migration count to balance load
+        int maxLoad = stats.maxEntitiesPerRegion();
+        int minLoad = stats.minEntitiesPerRegion();
+        int targetMigrationCount = (maxLoad - minLoad) / 2;  // Move half the difference
+
+        // Find entities in most-loaded region to migrate
+        var mostLoadedRegion = regions.get(mostLoaded);
+        if (mostLoadedRegion != null) {
+            int migrated = 0;
+            for (var entity : mostLoadedRegion.entities()) {
+                if (migrated >= targetMigrationCount) {
+                    break;
+                }
+                recommendations.put(entity, leastLoaded);
+                migrated++;
+            }
+        }
+
+        return recommendations;
+    }
+
+    /**
+     * Calculate entity affinity with its current region.
+     * <p>
+     * Phase 5: Support for affinity-based assignment decisions.
+     * Affinity based on:
+     * - Region load (lower load = higher affinity)
+     * - Distance from region center (closer = higher affinity)
+     *
+     * @param entityId Entity to check
+     * @return Affinity score [0.0, 1.0], or 0.0 if entity not tracked
+     */
+    public float getEntityRegionAffinity(ID entityId) {
+        var regionKey = entityRegions.get(entityId);
+        if (regionKey == null) {
+            return 0.0f;
+        }
+
+        var region = regions.get(regionKey);
+        if (region == null) {
+            return 0.0f;
+        }
+
+        // Calculate load-based affinity component
+        var stats = getStatistics();
+        float avgLoad = stats.averageEntitiesPerRegion();
+        int regionLoad = region.entityCount();
+
+        // Inverse relationship: lower load = higher affinity
+        float loadAffinity = avgLoad > 0 ? Math.min(1.0f, avgLoad / regionLoad) : 1.0f;
+
+        // For Phase 5, use load-based affinity
+        // Future: could add spatial distance component
+        return loadAffinity;
     }
 }

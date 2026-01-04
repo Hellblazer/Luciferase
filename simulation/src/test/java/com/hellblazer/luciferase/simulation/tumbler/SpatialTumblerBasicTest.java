@@ -270,9 +270,11 @@ class SpatialTumblerBasicTest {
     }
 
     @Test
-    void testGetStatisticsStub() {
-        // Phase 5: Statistics is not implemented yet
+    void testGetStatistics() {
+        // Phase 5: Statistics is now implemented
         var stats = tumbler.getStatistics();
-        assertNull(stats);
+        assertNotNull(stats, "Statistics should be initialized");
+        assertEquals(0, stats.totalEntities(), "Should have no entities initially");
+        assertEquals(0, stats.totalRegions(), "Should have no regions initially");
     }
 }
