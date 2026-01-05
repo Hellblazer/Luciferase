@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.simulation.metrics;
 
+import com.hellblazer.luciferase.simulation.bubble.*;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

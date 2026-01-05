@@ -4,7 +4,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.simulation.SimulationGhostEntity;
+import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
 import com.hellblazer.luciferase.simulation.metrics.LatencyStats;
 import com.hellblazer.luciferase.simulation.metrics.LatencyTracker;
 

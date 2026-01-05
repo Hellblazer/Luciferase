@@ -3,7 +3,7 @@
  */
 package com.hellblazer.luciferase.simulation.ghost;
 
-import com.hellblazer.luciferase.simulation.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 
 import javax.vecmath.Point3f;
 import java.util.List;

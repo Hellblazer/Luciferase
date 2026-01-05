@@ -1,8 +1,10 @@
 package com.hellblazer.luciferase.simulation;
 
+import com.hellblazer.luciferase.simulation.animation.*;
+
 import com.hellblazer.primeMover.annotations.Entity;
 import com.hellblazer.primeMover.api.Kronos;
-import com.hellblazer.luciferase.simulation.Cursor;
+import com.hellblazer.luciferase.simulation.spatial.Cursor;
 import org.junit.jupiter.api.Test;
 
 import javax.vecmath.Point3f;

@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.viz;
 
 import com.hellblazer.luciferase.lucien.tetree.Tet;
-import com.hellblazer.luciferase.simulation.BubbleBounds;
+import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import io.javalin.Javalin;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

@@ -6,7 +6,7 @@ package com.hellblazer.luciferase.simulation.ghost;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
-import com.hellblazer.luciferase.simulation.SimulationGhostEntity;
+import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

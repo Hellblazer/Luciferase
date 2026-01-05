@@ -4,7 +4,7 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.simulation.SimulationGhostEntity;
+import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

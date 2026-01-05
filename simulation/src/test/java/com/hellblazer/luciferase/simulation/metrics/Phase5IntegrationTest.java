@@ -4,10 +4,10 @@
 package com.hellblazer.luciferase.simulation.metrics;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.simulation.EnhancedBubble;
-import com.hellblazer.luciferase.simulation.GhostLayerHealth;
-import com.hellblazer.luciferase.simulation.SimulationGhostEntity;
-import com.hellblazer.luciferase.simulation.StringEntityID;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.ghost.GhostLayerHealth;
+import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
+import com.hellblazer.luciferase.simulation.entity.StringEntityID;
 import com.hellblazer.luciferase.simulation.config.SimulationConfig;
 import com.hellblazer.luciferase.simulation.ghost.InMemoryGhostChannel;
 import com.hellblazer.luciferase.simulation.ghost.InstrumentedGhostChannel;

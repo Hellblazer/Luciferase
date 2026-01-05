@@ -3,6 +3,8 @@
  */
 package com.hellblazer.luciferase.simulation.ghost;
 
+import com.hellblazer.luciferase.simulation.bubble.*;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;

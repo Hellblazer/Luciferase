@@ -1,5 +1,7 @@
 package com.hellblazer.luciferase.simulation.metrics;
 
+import com.hellblazer.luciferase.simulation.bubble.*;
+
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;

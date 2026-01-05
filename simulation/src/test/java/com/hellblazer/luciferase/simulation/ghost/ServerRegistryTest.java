@@ -3,6 +3,8 @@
  */
 package com.hellblazer.luciferase.simulation.ghost;
 
+import com.hellblazer.luciferase.simulation.bubble.*;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;

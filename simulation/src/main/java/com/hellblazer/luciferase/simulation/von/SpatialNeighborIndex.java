@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.simulation.von;
 
-import com.hellblazer.luciferase.simulation.BubbleBounds;
+import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import javafx.geometry.Point3D;
 
 import java.util.*;
@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  */
 public class SpatialNeighborIndex {
 
-    private final Map<UUID, VONNode> nodes = new ConcurrentHashMap<>();
+    private final Map<UUID, Node> nodes = new ConcurrentHashMap<>();
     private final float aoiRadius;
     private final float boundaryBuffer;
 
@@ -47,7 +47,7 @@ public class SpatialNeighborIndex {
      *
      * @param node VON node to insert
      */
-    public void insert(VONNode node) {
+    public void insert(Node node) {
         nodes.put(node.id(), node);
     }
 
@@ -64,9 +64,9 @@ public class SpatialNeighborIndex {
      * Get a node by ID.
      *
      * @param nodeId Node UUID
-     * @return VONNode or null if not found
+     * @return Node or null if not found
      */
-    public VONNode get(UUID nodeId) {
+    public Node get(UUID nodeId) {
         return nodes.get(nodeId);
     }
 
@@ -90,9 +90,9 @@ public class SpatialNeighborIndex {
      * Replaces SFVoronoi.closestTo().
      *
      * @param position Query position
-     * @return Closest VONNode or null if index is empty
+     * @return Closest Node or null if index is empty
      */
-    public VONNode findClosestTo(Point3D position) {
+    public Node findClosestTo(Point3D position) {
         return nodes.values().stream()
             .min(Comparator.comparingDouble(n -> distance(n.position(), position)))
             .orElse(null);
@@ -107,7 +107,7 @@ public class SpatialNeighborIndex {
      * @param k        Number of neighbors
      * @return List of k nearest nodes (may be < k if index has fewer nodes)
      */
-    public List<VONNode> findKNearest(Point3D position, int k) {
+    public List<Node> findKNearest(Point3D position, int k) {
         return nodes.values().stream()
             .sorted(Comparator.comparingDouble(n -> distance(n.position(), position)))
             .limit(k)
@@ -122,7 +122,7 @@ public class SpatialNeighborIndex {
      * @param bounds Bounds to test
      * @return Set of overlapping nodes
      */
-    public Set<VONNode> findOverlapping(BubbleBounds bounds) {
+    public Set<Node> findOverlapping(BubbleBounds bounds) {
         return nodes.values().stream()
             .filter(n -> n.bounds().overlaps(bounds))
             .collect(Collectors.toSet());
@@ -137,7 +137,7 @@ public class SpatialNeighborIndex {
      * @param radius Search radius
      * @return List of nodes within radius
      */
-    public List<VONNode> findWithinRadius(Point3D center, float radius) {
+    public List<Node> findWithinRadius(Point3D center, float radius) {
         return nodes.values().stream()
             .filter(n -> distance(n.position(), center) <= radius)
             .toList();
@@ -152,7 +152,7 @@ public class SpatialNeighborIndex {
      * @param target Target node
      * @return true if target is in boundary zone
      */
-    public boolean isBoundaryNeighbor(VONNode source, VONNode target) {
+    public boolean isBoundaryNeighbor(Node source, Node target) {
         double dist = distance(source.position(), target.position());
         return dist > aoiRadius && dist <= (aoiRadius + boundaryBuffer);
     }
@@ -166,7 +166,7 @@ public class SpatialNeighborIndex {
      * @param target Target node
      * @return true if bounds overlap
      */
-    public boolean isEnclosingNeighbor(VONNode source, VONNode target) {
+    public boolean isEnclosingNeighbor(Node source, Node target) {
         return source.bounds().overlaps(target.bounds());
     }
 
@@ -175,7 +175,7 @@ public class SpatialNeighborIndex {
      *
      * @return Collection of all VON nodes
      */
-    public Collection<VONNode> getAllNodes() {
+    public Collection<Node> getAllNodes() {
         return nodes.values();
     }
 

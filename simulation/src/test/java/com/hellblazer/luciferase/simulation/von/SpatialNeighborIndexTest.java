@@ -1,7 +1,7 @@
 package com.hellblazer.luciferase.simulation.von;
 
-import com.hellblazer.luciferase.simulation.BubbleBounds;
-import com.hellblazer.luciferase.simulation.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +36,7 @@ public class SpatialNeighborIndexTest {
     private static final float EPSILON = 0.001f;
 
     private SpatialNeighborIndex index;
-    private List<VONNode> testNodes;
+    private List<Node> testNodes;
 
     @BeforeEach
     public void setup() {
@@ -47,7 +47,7 @@ public class SpatialNeighborIndexTest {
     /**
      * Test 1: Add bubble to index
      * <p>
-     * Validates: insert() stores VONNode
+     * Validates: insert() stores Node
      */
     @Test
     public void testInsertBubble() {
@@ -64,7 +64,7 @@ public class SpatialNeighborIndexTest {
     /**
      * Test 2: Remove bubble from index
      * <p>
-     * Validates: remove() deletes VONNode
+     * Validates: remove() deletes Node
      */
     @Test
     public void testRemoveBubble() {
@@ -101,7 +101,7 @@ public class SpatialNeighborIndexTest {
 
         // Query point at origin
         Point3D queryPoint = new Point3D(0.0, 0.0, 0.0);
-        VONNode closest = index.findClosestTo(queryPoint);
+        Node closest = index.findClosestTo(queryPoint);
 
         assertNotNull(closest, "Should find closest bubble");
         assertEquals(bubble3.id(), closest.id(), "Bubble3 at (5,0,0) should be closest to origin");
@@ -123,7 +123,7 @@ public class SpatialNeighborIndexTest {
 
         // Query for 3 nearest to origin
         Point3D queryPoint = new Point3D(0.0, 0.0, 0.0);
-        List<VONNode> nearest = index.findKNearest(queryPoint, 3);
+        List<Node> nearest = index.findKNearest(queryPoint, 3);
 
         assertEquals(3, nearest.size(), "Should return exactly 3 neighbors");
 
@@ -277,16 +277,16 @@ public class SpatialNeighborIndexTest {
         Point3D queryPoint = new Point3D(0.0, 0.0, 0.0);
 
         // findClosestTo on empty index
-        VONNode closest = index.findClosestTo(queryPoint);
+        Node closest = index.findClosestTo(queryPoint);
         assertNull(closest, "Empty index should return null for closestTo");
 
         // findKNearest on empty index
-        List<VONNode> nearest = index.findKNearest(queryPoint, 5);
+        List<Node> nearest = index.findKNearest(queryPoint, 5);
         assertNotNull(nearest, "Should return non-null list");
         assertEquals(0, nearest.size(), "Empty index should return empty list");
 
         // findWithinRadius on empty index
-        List<VONNode> inRange = index.findWithinRadius(queryPoint, AOI_RADIUS);
+        List<Node> inRange = index.findWithinRadius(queryPoint, AOI_RADIUS);
         assertNotNull(inRange, "Should return non-null list");
         assertEquals(0, inRange.size(), "Empty index should return empty list");
     }
@@ -313,9 +313,9 @@ public class SpatialNeighborIndexTest {
     }
 
     /**
-     * Wrap EnhancedBubble as VONNode.
+     * Wrap EnhancedBubble as Node.
      */
-    private VONNode wrapBubble(EnhancedBubble bubble) {
-        return new BubbleVONNode(bubble, event -> {});  // No-op event handler for tests
+    private Node wrapBubble(EnhancedBubble bubble) {
+        return new BubbleNode(bubble, event -> {});  // No-op event handler for tests
     }
 }

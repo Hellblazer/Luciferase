@@ -6,10 +6,10 @@ package com.hellblazer.luciferase.simulation.ghost;
 import com.hellblazer.luciferase.lucien.entity.EntityBounds;
 import com.hellblazer.luciferase.lucien.entity.EntityID;
 import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
-import com.hellblazer.luciferase.simulation.EnhancedBubble;
-import com.hellblazer.luciferase.simulation.ExternalBubbleTracker;
-import com.hellblazer.luciferase.simulation.GhostLayerHealth;
-import com.hellblazer.luciferase.simulation.SimulationGhostEntity;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.ExternalBubbleTracker;
+import com.hellblazer.luciferase.simulation.ghost.GhostLayerHealth;
+import com.hellblazer.luciferase.simulation.ghost.SimulationGhostEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

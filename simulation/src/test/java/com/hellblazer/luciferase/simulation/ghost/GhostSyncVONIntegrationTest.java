@@ -4,12 +4,12 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
-import com.hellblazer.luciferase.simulation.EnhancedBubble;
-import com.hellblazer.luciferase.simulation.ExternalBubbleTracker;
-import com.hellblazer.luciferase.simulation.GhostLayerHealth;
-import com.hellblazer.luciferase.simulation.von.BubbleVONNode;
+import com.hellblazer.luciferase.simulation.bubble.EnhancedBubble;
+import com.hellblazer.luciferase.simulation.bubble.ExternalBubbleTracker;
+import com.hellblazer.luciferase.simulation.ghost.GhostLayerHealth;
+import com.hellblazer.luciferase.simulation.von.BubbleNode;
 import com.hellblazer.luciferase.simulation.von.SpatialNeighborIndex;
-import com.hellblazer.luciferase.simulation.von.VONEvent;
+import com.hellblazer.luciferase.simulation.von.Event;
 import javafx.geometry.Point3D;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,14 +69,14 @@ class GhostSyncVONIntegrationTest {
     }
 
     private EnhancedBubble bubble;
-    private BubbleVONNode vonNode;
+    private BubbleNode vonNode;
     private BubbleGhostManager<TestEntityID, String> ghostManager;
     private SpatialNeighborIndex neighborIndex;
     private GhostSyncVONIntegration integration;
     private ServerRegistry serverRegistry;
     private InMemoryGhostChannel<TestEntityID, String> ghostChannel;
     private SameServerOptimizer optimizer;
-    private List<VONEvent> capturedEvents;
+    private List<Event> capturedEvents;
 
     @BeforeEach
     void setUp() {
@@ -84,7 +84,7 @@ class GhostSyncVONIntegrationTest {
         capturedEvents = new ArrayList<>();
 
         // Create VON node with event capture
-        vonNode = new BubbleVONNode(bubble, capturedEvents::add);
+        vonNode = new BubbleNode(bubble, capturedEvents::add);
 
         // Create spatial index
         neighborIndex = new SpatialNeighborIndex(10.0f, 2.0f);
@@ -141,7 +141,7 @@ class GhostSyncVONIntegrationTest {
     void testGhostTriggersVONDiscovery() {
         // Create a neighbor bubble
         var neighborBubble = new EnhancedBubble(UUID.randomUUID(), (byte) 5, 16);
-        var neighborNode = new BubbleVONNode(neighborBubble, e -> {});
+        var neighborNode = new BubbleNode(neighborBubble, e -> {});
         neighborIndex.insert(neighborNode);
 
         // Neighbor is NOT in VON neighbors yet
@@ -159,7 +159,7 @@ class GhostSyncVONIntegrationTest {
     void testBoundaryNeighborPattern() {
         // Create two bubbles with overlapping bounds
         var neighbor1Bubble = new EnhancedBubble(UUID.randomUUID(), (byte) 5, 16);
-        var neighbor1Node = new BubbleVONNode(neighbor1Bubble, e -> {});
+        var neighbor1Node = new BubbleNode(neighbor1Bubble, e -> {});
         neighborIndex.insert(neighbor1Node);
 
         // Check if they're boundary neighbors (depends on bounds overlap)
@@ -183,7 +183,7 @@ class GhostSyncVONIntegrationTest {
     void testVONMoveTriggersGhostUpdate() {
         // Create a nearby neighbor
         var neighborBubble = new EnhancedBubble(UUID.randomUUID(), (byte) 5, 16);
-        var neighborNode = new BubbleVONNode(neighborBubble, e -> {});
+        var neighborNode = new BubbleNode(neighborBubble, e -> {});
         neighborIndex.insert(neighborNode);
 
         // Initial neighbor count

@@ -1,6 +1,6 @@
 package com.hellblazer.luciferase.simulation.viz;
 
-import com.hellblazer.luciferase.simulation.BubbleBounds;
+import com.hellblazer.luciferase.simulation.bubble.BubbleBounds;
 import com.hellblazer.luciferase.simulation.viz.dto.BubbleBoundsDTO;
 import com.hellblazer.luciferase.simulation.viz.dto.BubbleBoundsDTO.CartesianPoint;
 import io.javalin.Javalin;
