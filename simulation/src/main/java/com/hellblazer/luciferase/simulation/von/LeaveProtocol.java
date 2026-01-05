@@ -101,6 +101,6 @@ public class LeaveProtocol {
 
     @Override
     public String toString() {
-        return String.format("VONLeaveProtocol{indexSize=%d}", index.size());
+        return String.format("LeaveProtocol{indexSize=%d}", index.size());
     }
 }

@@ -169,7 +169,7 @@ public class MoveProtocol {
 
     @Override
     public String toString() {
-        return String.format("VONMoveProtocol{indexSize=%d, aoiRadius=%.2f}",
+        return String.format("MoveProtocol{indexSize=%d, aoiRadius=%.2f}",
                            index.size(), aoiRadius);
     }
 }

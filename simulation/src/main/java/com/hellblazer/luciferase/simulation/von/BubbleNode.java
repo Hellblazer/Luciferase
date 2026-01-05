@@ -71,7 +71,7 @@ public class BubbleNode implements Node {
 
         // TODO: Check if neighbor is still in AOI radius
         // TODO: Remove neighbor if out of range
-        // This will be implemented in VONMoveProtocol (Task 4)
+        // This will be implemented in MoveProtocol (Task 4)
     }
 
     @Override

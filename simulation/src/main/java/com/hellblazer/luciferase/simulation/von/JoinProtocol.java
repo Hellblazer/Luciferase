@@ -135,6 +135,6 @@ public class JoinProtocol {
 
     @Override
     public String toString() {
-        return String.format("VONJoinProtocol{indexSize=%d}", index.size());
+        return String.format("JoinProtocol{indexSize=%d}", index.size());
     }
 }

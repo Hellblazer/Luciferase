@@ -76,7 +76,7 @@ public interface Node {
      * <p>
      * Triggered when neighbor is shutting down gracefully. This node should:
      * 1. Remove neighbor from neighbor list
-     * 2. Emit VONEvent.Leave
+     * 2. Emit Event.Leave
      *
      * @param neighbor Neighbor that is leaving
      */
@@ -87,7 +87,7 @@ public interface Node {
      * <p>
      * Triggered when new node enters this node's AOI. This node should:
      * 1. Add neighbor to neighbor list
-     * 2. Emit VONEvent.Join
+     * 2. Emit Event.Join
      *
      * @param neighbor New neighbor
      */
