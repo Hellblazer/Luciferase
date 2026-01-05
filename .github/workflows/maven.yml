@@ -61,8 +61,8 @@ jobs:
         run: |
           cd ..
           git clone --depth 1 https://github.com/Hellblazer/Delos.git
-          cd Delos/fireflies
-          ../mvnw -batch-mode clean install -DskipTests -pl fireflies -am
+          cd Delos
+          ./mvnw -batch-mode clean install -DskipTests -pl fireflies -am
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
