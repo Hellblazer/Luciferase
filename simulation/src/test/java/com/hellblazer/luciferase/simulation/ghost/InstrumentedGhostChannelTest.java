@@ -4,8 +4,8 @@
 package com.hellblazer.luciferase.simulation.ghost;
 
 import com.hellblazer.luciferase.lucien.entity.EntityID;
+import com.hellblazer.luciferase.lucien.forest.ghost.GhostZoneManager;
 import com.hellblazer.luciferase.simulation.SimulationGhostEntity;
-import com.hellblazer.luciferase.simulation.metrics.LatencyStats;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,10 +26,10 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class InstrumentedGhostChannelTest {
 
-    private InMemoryGhostChannel<EntityID, String> delegate;
-    private InstrumentedGhostChannel<EntityID, String> instrumented;
+    private InMemoryGhostChannel<TestEntityID, String> delegate;
+    private InstrumentedGhostChannel<TestEntityID, String> instrumented;
     private UUID targetBubbleId;
-    private List<SimulationGhostEntity<EntityID, String>> testGhosts;
+    private List<SimulationGhostEntity<TestEntityID, String>> testGhosts;
 
     @BeforeEach
     void setUp() {
@@ -119,7 +119,7 @@ class InstrumentedGhostChannelTest {
         instrumented = new InstrumentedGhostChannel<>(delegate);
 
         // Set up handler to track delivery
-        var delivered = new ArrayList<SimulationGhostEntity<EntityID, String>>();
+        var delivered = new ArrayList<SimulationGhostEntity<TestEntityID, String>>();
         delegate.onReceive((from, ghosts) -> delivered.addAll(ghosts));
 
         // Queue ghosts
@@ -190,11 +190,13 @@ class InstrumentedGhostChannelTest {
     /**
      * Helper: Create test ghosts.
      */
-    private List<SimulationGhostEntity<EntityID, String>> createTestGhosts(int count) {
-        var ghosts = new ArrayList<SimulationGhostEntity<EntityID, String>>();
+    private List<SimulationGhostEntity<TestEntityID, String>> createTestGhosts(int count) {
+        var ghosts = new ArrayList<SimulationGhostEntity<TestEntityID, String>>();
         for (int i = 0; i < count; i++) {
-            ghosts.add(new SimulationGhostEntity<>(new TestEntityID(i), new Point3f(i, i, i), "content-" + i, 0, 1, 0L,
-                                                    UUID.randomUUID()));
+            var position = new Point3f(i, i, i);
+            var ghostEntity = new GhostZoneManager.GhostEntity<>(new TestEntityID(i), "content-" + i, position, null,
+                                                                 "source-tree");
+            ghosts.add(new SimulationGhostEntity<>(ghostEntity, UUID.randomUUID(), 1L, 0L, 0L));
         }
         return ghosts;
     }
@@ -202,7 +204,18 @@ class InstrumentedGhostChannelTest {
     /**
      * Simple EntityID for testing.
      */
-    private record TestEntityID(int id) implements EntityID {
+    static class TestEntityID implements EntityID {
+        private final int id;
+
+        TestEntityID(int id) {
+            this.id = id;
+        }
+
+        @Override
+        public String toDebugString() {
+            return "TestEntity-" + id;
+        }
+
         @Override
         public int compareTo(EntityID o) {
             return Integer.compare(id, ((TestEntityID) o).id);
