@@ -57,6 +57,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
+      - name: Build Delos/fireflies dependency
+        run: |
+          cd ..
+          git clone --depth 1 https://github.com/Hellblazer/Delos.git
+          cd Delos
+          ./mvnw -batch-mode clean install -DskipTests -pl fireflies -am
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Compile with Maven
         run: ./mvnw -batch-mode clean compile test-compile --file pom.xml
         env:

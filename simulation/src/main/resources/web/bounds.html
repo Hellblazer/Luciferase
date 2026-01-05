@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bubble Bounds Visualization - Luciferase</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 220px;
+            z-index: 100;
+        }
+
+        #info-panel h2 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #34d399;
+        }
+
+        #info-panel .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        #info-panel .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #fbbf24;
+        }
+
+        #info-panel .status-dot.connected {
+            background: #34d399;
+        }
+
+        #info-panel .status-dot.error {
+            background: #f87171;
+        }
+
+        #info-panel .stats {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #info-panel .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+
+        #info-panel .stat-label {
+            color: #9ca3af;
+        }
+
+        #info-panel .stat-value {
+            color: #fff;
+            font-family: monospace;
+        }
+
+        #controls-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            min-width: 200px;
+            z-index: 100;
+        }
+
+        #controls-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #60a5fa;
+        }
+
+        #controls-panel button {
+            width: 100%;
+            padding: 8px;
+            margin-top: 8px;
+            background: #34d399;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        #controls-panel button:hover {
+            background: #10b981;
+        }
+
+        #controls-panel button:active {
+            background: #059669;
+        }
+
+        #controls-panel .refresh-rate {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+
+        #controls-panel label {
+            display: block;
+            margin-bottom: 4px;
+            color: #9ca3af;
+            font-size: 12px;
+        }
+
+        #controls-panel select {
+            width: 100%;
+            padding: 6px;
+            background: #2d2d44;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .error-message {
+            color: #f87171;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="info-panel">
+        <h2>Bubble Bounds</h2>
+        <div class="status">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">Connecting...</span>
+        </div>
+        <div class="stats">
+            <div class="stat-row">
+                <span class="stat-label">Bubbles:</span>
+                <span class="stat-value" id="bubble-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Connections:</span>
+                <span class="stat-value" id="connection-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">FPS:</span>
+                <span class="stat-value" id="fps">60</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="controls-panel">
+        <h3>Controls</h3>
+        <button id="refresh-btn">Refresh Data</button>
+
+        <div class="refresh-rate">
+            <label for="refresh-rate">Auto Refresh:</label>
+            <select id="refresh-rate">
+                <option value="0">Off</option>
+                <option value="1000">1 second</option>
+                <option value="2000" selected>2 seconds</option>
+                <option value="5000">5 seconds</option>
+                <option value="10000">10 seconds</option>
+            </select>
+        </div>
+
+        <div id="error-container"></div>
+    </div>
+
+    <script type="module" src="bounds.js"></script>
+</body>
+</html>

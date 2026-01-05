@@ -9,10 +9,4 @@
     </parent>
     <artifactId>e2e-test</artifactId>
     <name>E2E Testing</name>
-    <dependencies>
-        <dependency>
-            <groupId>com.hellblazer.luciferase</groupId>
-            <artifactId>von</artifactId>
-        </dependency>
-    </dependencies>
 </project>
