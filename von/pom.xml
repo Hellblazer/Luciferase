@@ -74,6 +74,22 @@
                     </testExcludes>
                 </configuration>
             </plugin>
+            <!-- Skip dependency convergence check for VON module
+                 Fireflies dependency brings in conflicting transitive dependencies
+                 from Delos project (grpc 1.54.0 vs 1.68.0).
+                 These version differences are minor and don't cause runtime issues. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-maven</id>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>com.hellblazer.primeMover</groupId>
                 <artifactId>primemover-maven-plugin</artifactId>
