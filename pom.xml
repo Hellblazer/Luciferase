@@ -51,7 +51,6 @@
         <module>sentry</module>
         <module>render</module>
         <module>dyada-java</module>
-        <module>von</module>
     </modules>
 
     <dependencyManagement>
